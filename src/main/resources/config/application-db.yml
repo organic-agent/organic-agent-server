@@ -1,0 +1,41 @@
+# 프로필 무관. 접속 정보(url·계정·비밀번호)는 Parameter Store에서 온다.
+spring:
+  datasource:
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    open-in-view: false
+    properties:
+      hibernate:
+        # JDBC 세션 타임존을 못박는다. 이게 없으면 JVM 기본 타임존을 따라가 서버 환경에 좌우된다.
+        jdbc:
+          time_zone: UTC
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+
+  jpa:
+    hibernate:
+      ddl-auto: create
+    generate-ddl: true
+    show-sql: true
+    defer-datasource-initialization: true
+    properties:
+      hibernate:
+        format_sql: true
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+  jpa:
+    hibernate:
+      ddl-auto: create # prod 설정은 나중에 수정
+    generate-ddl: true
+    show-sql: true
+    defer-datasource-initialization: true

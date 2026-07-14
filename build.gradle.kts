@@ -21,9 +21,11 @@ repositories {
 }
 
 // Spring Boot 4.x BOM은 Testcontainers 버전을 관리하지 않으므로 직접 임포트한다.
+// Spring Cloud AWS 4.0.x가 Boot 4 계열 대응 라인이다(3.x는 Boot 3 전용).
 dependencyManagement {
     imports {
         mavenBom("org.testcontainers:testcontainers-bom:1.21.4")
+        mavenBom("io.awspring.cloud:spring-cloud-aws-dependencies:4.0.2")
     }
 }
 
@@ -44,6 +46,9 @@ dependencies {
     // Database
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     runtimeOnly("org.postgresql:postgresql")
+
+    // Aws
+    implementation("io.awspring.cloud:spring-cloud-aws-starter-parameter-store")
 
     // Kotlin & JSON
     implementation("org.jetbrains.kotlin:kotlin-reflect")
