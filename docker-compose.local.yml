@@ -1,0 +1,13 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: wes-postgres-local
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: wes
+      POSTGRES_USER: wes
+      POSTGRES_PASSWORD: wes
+    volumes:
+      - ./postgres-data-local:/var/lib/postgresql/data
+
