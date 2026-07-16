@@ -9,7 +9,7 @@ spring:
     properties:
       hibernate:
         jdbc:
-          time_zone: UTC
+          time_zone: Asia/Seoul
 
   # 테스트 컨텍스트가 ClientRegistrationRepository를 만들 수 있도록 형태만 갖춘 더미 설정.
   security:

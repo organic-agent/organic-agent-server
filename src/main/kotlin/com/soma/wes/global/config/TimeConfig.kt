@@ -13,15 +13,15 @@ import java.util.Optional
 /**
  * 시각을 다루는 공통 설정.
  *
- * 저장·연산은 UTC로 하고, 한국 시간은 사람에게 보여줄 때와 날짜 경계를 따질 때만 쓴다.
- * 시각은 절대적인 순간이고 "한국 시간 오후 3시"는 그 순간을 표시하는 방식일 뿐이다.
+ * 서버 애플리케이션과 DB 시간대를 KST(Asia/Seoul)로 고정한다.
+ * 시각의 생성·저장·표시를 모두 KST 기준으로 통일해, 로그와 조회 결과가 +09:00으로 일관된다.
  */
 @Configuration
 @EnableJpaAuditing(dateTimeProviderRef = "auditingDateTimeProvider")
 class TimeConfig {
 
     companion object {
-        /** 날짜 경계(예: "오늘"의 시작과 끝)를 따질 때 쓴다. 저장 형식이 아니다. */
+        /** 서버·DB 공통 기준 시간대. 시각 생성과 날짜 경계 판단 모두 이 존을 따른다. */
         val KST: ZoneId = ZoneId.of("Asia/Seoul")
     }
 
@@ -30,7 +30,7 @@ class TimeConfig {
      * 테스트에서 `Clock.fixed(...)`로 갈아끼워 시간을 고정할 수 있다.
      */
     @Bean
-    fun clock(): Clock = Clock.systemUTC()
+    fun clock(): Clock = Clock.system(KST)
 
     /**
      * JPA 감사(@CreatedDate/@LastModifiedDate)가 쓸 시각.

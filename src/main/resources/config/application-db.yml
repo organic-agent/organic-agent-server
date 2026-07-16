@@ -7,9 +7,9 @@ spring:
     open-in-view: false
     properties:
       hibernate:
-        # JDBC 세션 타임존을 못박는다. 이게 없으면 JVM 기본 타임존을 따라가 서버 환경에 좌우된다.
+        # 서버·DB 시간대를 KST로 고정한다. 못박지 않으면 JVM 기본 타임존을 따라가 서버 환경에 좌우된다.
         jdbc:
-          time_zone: UTC
+          time_zone: Asia/Seoul
 
 ---
 spring:
