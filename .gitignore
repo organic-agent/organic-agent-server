@@ -38,3 +38,13 @@ out/
 
 ### Kotlin ###
 .kotlin
+
+### macOS ###
+.DS_Store
+
+### local ###
+postgres-data-local
+
+# 작업 계획(docs/plans)과 해결한 작업의 기록. 개인 작업 노트라 저장소에 올리지 않는다.
+# 루트의 docs만 지정한다. 하위 모듈이 나중에 자기 docs를 가져도 함께 묻히지 않도록.
+/docs/

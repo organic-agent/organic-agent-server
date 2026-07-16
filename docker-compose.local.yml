@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: wes-postgres-local
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: wes
+      POSTGRES_USER: wes
+      POSTGRES_PASSWORD: wes
+      # 컨테이너·DB 세션 시간대를 KST로 고정한다.
+      TZ: Asia/Seoul
+      PGTZ: Asia/Seoul
+    volumes:
+      - ./postgres-data-local:/var/lib/postgresql/data
+

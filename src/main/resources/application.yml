@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: wes
+
+  config:
+    import:
+      - optional:classpath:/config/application-cloud.yml
+      - optional:classpath:/config/application-db.yml
+      - optional:classpath:/config/application-variable.yml
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+    import: aws-parameterstore:/wes/local/
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+    import: aws-parameterstore:/wes/prod/

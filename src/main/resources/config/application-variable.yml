@@ -1,0 +1,71 @@
+# 비밀도 아니고 배포 인프라에 종속되지도 않는 값들. 코드와 함께 리뷰·추적돼야 하므로
+# Parameter Store가 아니라 저장소에 둔다.
+# Parameter Store로 가는 값은 docs/notes/parameter-store-mapping.md 참고.
+
+spring:
+  security:
+    oauth2:
+      client:
+        # registration은 전부 Parameter Store에서 온다(client-id/secret, redirect-uri, scope 등).
+        # 여기에는 제공자 엔드포인트만 둔다. 바뀌면 코드 변경이지 환경 설정이 아니다.
+        # google은 Spring Boot에 내장되어 있어 따로 적지 않는다.
+        provider:
+          kakao:
+            authorization-uri: https://kauth.kakao.com/oauth/authorize
+            token-uri: https://kauth.kakao.com/oauth/token
+            user-info-uri: https://kapi.kakao.com/v2/user/me
+            user-name-attribute: id
+          naver:
+            authorization-uri: https://nid.naver.com/oauth2.0/authorize
+            token-uri: https://nid.naver.com/oauth2.0/token
+            user-info-uri: https://openapi.naver.com/v1/nid/me
+            user-name-attribute: response
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: alpha
+    tags-sorter: alpha
+    # Authorize로 넣은 토큰이 새로고침 후에도 유지된다. 매번 다시 붙여넣지 않아도 된다.
+    persist-authorization: true
+
+# 만료 시간은 비밀이 아니라 보안 정책이다. 30분을 30일로 늘리는 건 PR에 남아야 하므로
+# Parameter Store에 두지 않는다. secret만 Parameter Store에서 온다.
+jwt:
+  access-token-expiration: 30m
+  refresh-token-expiration: 14d
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+
+# localhost 고정값이라 숨길 것도, 인프라에 따라 달라질 것도 없다.
+# prod 값은 도메인이 정해져야 하므로 Parameter Store에서 온다.
+springdoc:
+  server-url: http://localhost:8080
+
+# 쉼표로 구분된 목록.
+cors:
+  allowed-origins: http://localhost:3000,http://localhost:5173
+
+# 기본 레벨은 INFO다. SQL·필터·요청 로그는 전부 DEBUG 이하라 켜주지 않으면 한 줄도 안 남는다.
+# 운영에 그대로 나가면 매 쿼리와 필터 실행이 찍혀 로그를 잡아먹으므로 로컬 전용으로 둔다.
+logging:
+  level:
+    com.soma.wes: DEBUG
+    org.hibernate.SQL: DEBUG
+    # SQL의 `?`에 실제로 바인딩된 값. Hibernate 6부터 로거 이름이 이걸로 바뀌었다.
+    org.hibernate.orm.jdbc.bind: TRACE
+    org.springframework.security.web.FilterChainProxy: TRACE
+    # 시작 시 "Mapping filters: ..." — 서블릿 컨테이너에 등록된 필터 목록과 순서(order)
+    org.springframework.boot.web.servlet: DEBUG
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
