@@ -22,7 +22,6 @@ Use the Gradle wrapper (`./gradlew`), not a system-installed Gradle.
 - Base package: `com.soma.wes`.
 - Web stack: `spring-boot-starter-webmvc` (servlet-based Spring MVC, not WebFlux).
 - JSON: `jackson-module-kotlin` (via the `tools.jackson.module` coordinates used by Spring Boot 4.x) for idiomatic Kotlin data class (de)serialization.
-- Lombok is available (`compileOnly`/`annotationProcessor`) for use from Java-interop scenarios, though the codebase is Kotlin-first.
 - Configuration lives in `src/main/resources/application.yaml` (YAML, not `.properties`).
 - Kotlin compiler flags of note (`build.gradle.kts`): `-Xjsr305=strict` (treats JSR-305 nullability annotations strictly) and `-Xannotation-default-target=param-property` (annotations on constructor properties apply to both the parameter and the property by default).
 - Tests use JUnit 5 (`useJUnitPlatform()`) plus `kotlin-test-junit5` and Spring's `spring-boot-starter-webmvc-test`.

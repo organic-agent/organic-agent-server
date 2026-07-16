@@ -3,8 +3,6 @@ package com.soma.wes.global
 import jakarta.persistence.Column
 import jakarta.persistence.EntityListeners
 import jakarta.persistence.MappedSuperclass
-import org.hibernate.annotations.DynamicInsert
-import org.hibernate.annotations.DynamicUpdate
 import org.springframework.data.annotation.CreatedDate
 import org.springframework.data.annotation.LastModifiedDate
 import org.springframework.data.jpa.domain.support.AuditingEntityListener
@@ -18,8 +16,6 @@ import java.time.ZonedDateTime
  */
 @MappedSuperclass
 @EntityListeners(AuditingEntityListener::class)
-@DynamicInsert
-@DynamicUpdate
 abstract class BaseEntity {
 
     @CreatedDate

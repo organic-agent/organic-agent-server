@@ -58,12 +58,6 @@ dependencies {
     // springdoc 2.x는 Spring Boot 3 전용이다. Boot 4는 3.x 라인을 써야 한다.
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3")
 
-    // Development Tools
-    compileOnly("org.projectlombok:lombok")
-    annotationProcessor("org.projectlombok:lombok")
-    testCompileOnly("org.projectlombok:lombok")
-    testAnnotationProcessor("org.projectlombok:lombok")
-
     // Testing
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
