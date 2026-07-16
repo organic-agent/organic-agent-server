@@ -15,6 +15,7 @@ import com.soma.wes.auth.token.config.JwtProperties
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
 import io.jsonwebtoken.Claims
+import org.slf4j.LoggerFactory
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
 import org.springframework.security.core.Authentication
 import org.springframework.security.core.authority.SimpleGrantedAuthority
@@ -33,6 +34,8 @@ class AuthTokenProvider(
     private val tokenStorage: TokenStorage,
     private val userRepository: UserRepository,
 ) {
+
+    private val log = LoggerFactory.getLogger(javaClass)
 
     companion object {
         private const val TOKEN_TYPE_CLAIM = "type"
@@ -80,6 +83,8 @@ class AuthTokenProvider(
         val subject = try {
             parseSubject(requestedRefreshToken)
         } catch (e: TokenException) {
+            // /reissue에 대한 무효·만료 refresh token 시도를 남겨 남용 탐지에 쓴다.
+            log.debug("유효하지 않은 refresh token: {}", e.message)
             return false
         }
         return tokenStorage.find(subject) == requestedRefreshToken

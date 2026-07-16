@@ -23,6 +23,9 @@ class OAuthUserInfoService(
 
     companion object {
         private const val GRANT_TYPE = "authorization_code"
+
+        // %XX 형태의 퍼센트 이스케이프가 실제로 있을 때만 디코딩 대상으로 본다.
+        private val PERCENT_ESCAPE = Regex("%[0-9A-Fa-f]{2}")
     }
 
     fun getUserInfo(provider: OAuthProvider, authCode: String): OAuthUserInfo {
@@ -31,14 +34,23 @@ class OAuthUserInfoService(
         }
         val registration = registrations.of(provider)
 
-        // 웹에서 인가 코드가 URL 인코딩된 채로 전달되는 경우가 있다.
-        val decodedCode = URLDecoder.decode(authCode, StandardCharsets.UTF_8)
-
-        val accessToken = exchangeAuthCodeForAccessToken(registration, decodedCode)
+        val accessToken = exchangeAuthCodeForAccessToken(registration, normalizeAuthCode(authCode))
         val attributes = oAuthClient.getUserInfoWithAccessToken(registration.userInfoUri, accessToken)
 
         return extractorFactory.resolve(provider).extract(attributes)
     }
+
+    /**
+     * 프론트가 인가 코드를 URL 인코딩된 채로 넘기는 경우가 있어 되돌린다.
+     * 단 이미 디코딩된 raw 코드를 무조건 디코딩하면 `+`가 공백으로 깨지므로,
+     * 퍼센트 이스케이프(%XX)가 실제로 있을 때만 디코딩한다.
+     */
+    private fun normalizeAuthCode(authCode: String): String =
+        if (PERCENT_ESCAPE.containsMatchIn(authCode)) {
+            URLDecoder.decode(authCode, StandardCharsets.UTF_8)
+        } else {
+            authCode
+        }
 
     private fun exchangeAuthCodeForAccessToken(registration: OAuthRegistration, code: String): String {
         val tokenRequest = LinkedMultiValueMap<String, String>().apply {

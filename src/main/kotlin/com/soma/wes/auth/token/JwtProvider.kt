@@ -27,7 +27,20 @@ class JwtProvider(
     jwtProperties: JwtProperties,
 ) {
 
-    private val secretKey = SecretKeySpec(jwtProperties.secret.toByteArray(), "HmacSHA256")
+    private val secretKey: SecretKeySpec
+
+    init {
+        val secretBytes = jwtProperties.secret.toByteArray()
+        // HS256은 256비트(32바이트) 이상 키를 요구한다. 짧으면 첫 토큰 발급 때 터지는 대신 기동 시점에 막는다.
+        require(secretBytes.size >= MIN_SECRET_BYTES) {
+            "jwt.secret은 최소 ${MIN_SECRET_BYTES}바이트여야 합니다 (현재 ${secretBytes.size}바이트)."
+        }
+        secretKey = SecretKeySpec(secretBytes, "HmacSHA256")
+    }
+
+    companion object {
+        private const val MIN_SECRET_BYTES = 32
+    }
 
     fun generateToken(
         subject: Subject,
