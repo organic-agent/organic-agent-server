@@ -48,11 +48,11 @@ spring:
 springdoc:
   server-url: "http://localhost:8080"
 
-# 쉼표로 구분된 목록.
+# 쉼표로 구분된 문자열. @Value("${cors.allowed-origins}") List<String>가 쉼표로 쪼갠다.
+# YAML 리스트로 쓰면 cors.allowed-origins[0]... 인덱스 키가 되어 스칼라 플레이스홀더가 안 잡힌다.
+# prod는 Parameter Store에서 같은 쉼표 문자열로 온다.
 cors:
-  allowed-origins:
-    - "http://localhost:3000"
-    - "http://localhost:5173"
+  allowed-origins: "http://localhost:3000,http://localhost:5173"
 
 # 기본 레벨은 INFO다. SQL·필터·요청 로그는 전부 DEBUG 이하라 켜주지 않으면 한 줄도 안 남는다.
 # 운영에 그대로 나가면 매 쿼리와 필터 실행이 찍혀 로그를 잡아먹으므로 로컬 전용으로 둔다.
