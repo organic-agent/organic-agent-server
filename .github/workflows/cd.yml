@@ -75,7 +75,12 @@ jobs:
           # 초기 단계라 latest 하나만 올린다. 버저닝(태그 롤백)은 나중에 도입한다.
           tags: ${{ steps.image_meta.outputs.image_name }}:latest
 
-  # --- Job 2: 배포 (읽기 권한) ---
+  # --- Job 2: 배포 (SSM Run Command) ---
+  # SSH 대신 SSM을 쓴다: 보안그룹에 22번 인바운드가 없고(인프라 기본값), EC2 퍼블릭 IP는
+  # stop/start 때마다 바뀌어 HOST 시크릿이 낡는다. SSM은 인스턴스를 Name 태그로 찾고
+  # OIDC로 임시 자격증명을 받으므로 SSH 키·호스트 IP·고정 시크릿이 전부 필요 없다.
+  # 필요한 시크릿은 AWS_DEPLOY_ROLE_ARN 하나 — WES-Infra의
+  # `terraform output -raw github_deploy_role_arn` 값이다.
   deploy:
     name: EC2에 배포
     needs: build-and-push
@@ -83,9 +88,12 @@ jobs:
     permissions:
       contents: read
       packages: read
+      id-token: write # OIDC로 AWS 롤을 assume 하기 위한 토큰 발급 권한
 
     env:
       OWNER_LOWERCASE: ${{ needs.build-and-push.outputs.owner_lowercase }}
+      AWS_REGION: ap-northeast-2
+      INSTANCE_NAME_TAG: wes-app
 
     steps:
       # 서버로 보낼 것은 compose 파일 하나뿐이라 저장소 전체를 받지 않는다.
@@ -95,61 +103,99 @@ jobs:
           sparse-checkout: docker-compose.prod.yml
           sparse-checkout-cone-mode: false
 
-      - name: compose 파일 전송
+      - name: AWS 자격증명 설정 (OIDC — 장기 액세스 키 없음)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 배포 대상 인스턴스 조회
+        id: instance
         run: |
-          echo "${{ secrets.PRIVATE_KEY }}" > deploy_key.pem
-          chmod 600 deploy_key.pem
+          INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=${INSTANCE_NAME_TAG}" 'Name=instance-state-name,Values=running' \
+            --query 'Reservations[0].Instances[0].InstanceId' --output text)
 
-          WORK_DIR="/home/${{ secrets.USERNAME }}/wes-prod"
+          if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
+            echo "실행 중인 ${INSTANCE_NAME_TAG} 인스턴스가 없습니다 (인프라 destroy 상태인지 확인)" >&2
+            exit 1
+          fi
+          echo "id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
 
-          # 첫 배포에는 디렉터리가 없다. scp는 없는 경로에 못 쓴다.
-          # StrictHostKeyChecking=no는 러너가 매번 새 호스트라 known_hosts가 비어 있기 때문이다.
-          ssh -i deploy_key.pem -o StrictHostKeyChecking=no \
-            "${{ secrets.USERNAME }}@${{ secrets.HOST }}" "mkdir -p $WORK_DIR"
-
-          scp -i deploy_key.pem -o StrictHostKeyChecking=no \
-            ./docker-compose.prod.yml \
-            "${{ secrets.USERNAME }}@${{ secrets.HOST }}:$WORK_DIR/"
-
-      - name: 컨테이너 교체
+      - name: 컨테이너 교체 및 헬스체크 (SSM Run Command)
         run: |
-          ssh -i deploy_key.pem -o StrictHostKeyChecking=no \
-            "${{ secrets.USERNAME }}@${{ secrets.HOST }}" '
-              set -e
+          INSTANCE_ID="${{ steps.instance.outputs.id }}"
 
-              # compose 파일의 ${...}를 채울 값. 서버에 .env를 남기지 않는다.
-              # IMAGE_TAG는 넘기지 않는다 — compose의 ${IMAGE_TAG:-latest} 기본값이 latest다.
-              export OWNER_LOWERCASE="${{ env.OWNER_LOWERCASE }}"
-              WORK_DIR="/home/${{ secrets.USERNAME }}/wes-prod"
+          # scp가 없으므로 compose 파일은 base64로 스크립트에 실어 보낸다.
+          COMPOSE_B64=$(base64 -w0 docker-compose.prod.yml)
 
-              # GHCR 패키지가 private이면 pull에 로그인이 필요하다.
-              # 패키지를 public으로 바꾸면 이 줄은 지워도 된다.
-              echo "${{ secrets.GITHUB_TOKEN }}" \
-                | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          # 원격(EC2)에서 root로 실행될 스크립트. \$ 는 원격에서 평가되는 변수다.
+          # GITHUB_TOKEN은 잡 종료와 함께 만료되는 단기 토큰이라 SSM 명령 이력에 남아도
+          # 재사용이 불가능하다. 패키지를 public으로 바꾸면 login 단계는 지워도 된다.
+          cat > deploy_script.sh <<SCRIPT
+          set -e
 
-              cd "$WORK_DIR"
-              docker compose -f docker-compose.prod.yml pull
-              docker compose -f docker-compose.prod.yml up -d --force-recreate
+          # compose 파일의 \${...}를 채울 값. 서버에 .env를 남기지 않는다.
+          # IMAGE_TAG는 넘기지 않는다 — compose의 \${IMAGE_TAG:-latest} 기본값이 latest다.
+          export OWNER_LOWERCASE="${OWNER_LOWERCASE}"
+          WORK_DIR=/opt/wes-prod
 
-              # 새 latest를 pull하면 이전 이미지는 태그를 잃고 dangling(<none>)이 된다.
-              # 작은 EC2는 이미지로 디스크가 차므로 그것들을 지운다.
-              docker image prune -f
-            '
+          mkdir -p "\$WORK_DIR"
+          echo "${COMPOSE_B64}" | base64 -d > "\$WORK_DIR/docker-compose.prod.yml"
 
-      - name: 헬스체크
-        run: |
-          ssh -i deploy_key.pem -o StrictHostKeyChecking=no \
-            "${{ secrets.USERNAME }}@${{ secrets.HOST }}" '
-              # 기동에 시간이 걸린다(Parameter Store 조회 + 컨텍스트 초기화).
-              # 상태 코드로 판단한다. 200 = UP, 503 = DOWN.
-              for i in $(seq 1 30); do
-                HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-                  --connect-timeout 2 "http://localhost:8080/actuator/health" || true)
-                [ "$HTTP_CODE" = "200" ] && { echo "기동 완료 (${i}번째 시도)"; exit 0; }
-                sleep 5
-              done
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-              echo "150초 안에 기동하지 못했습니다" >&2
-              docker logs --tail 50 wes-app
-              exit 1
-            '
+          cd "\$WORK_DIR"
+          docker compose -f docker-compose.prod.yml pull
+          docker compose -f docker-compose.prod.yml up -d --force-recreate
+
+          # 새 latest를 pull하면 이전 이미지는 태그를 잃고 dangling(<none>)이 된다.
+          # 작은 EC2는 이미지로 디스크가 차므로 그것들을 지운다.
+          docker image prune -f
+
+          # 기동에 시간이 걸린다(Parameter Store 조회 + 컨텍스트 초기화).
+          # 상태 코드로 판단한다. 200 = UP, 503 = DOWN.
+          for i in \$(seq 1 30); do
+            HTTP_CODE=\$(curl -s -o /dev/null -w '%{http_code}' \
+              --connect-timeout 2 "http://localhost:8080/actuator/health" || true)
+            [ "\$HTTP_CODE" = "200" ] && { echo "기동 완료 (\${i}번째 시도)"; exit 0; }
+            sleep 5
+          done
+
+          echo "150초 안에 기동하지 못했습니다" >&2
+          docker logs --tail 50 wes-app >&2
+          exit 1
+          SCRIPT
+
+          # 스크립트를 통째로 JSON 파라미터에 담는다 (따옴표/개행 이스케이프는 jq가 처리).
+          jq -n --rawfile script deploy_script.sh '{commands: [$script]}' > params.json
+
+          COMMAND_ID=$(aws ssm send-command \
+            --document-name AWS-RunShellScript \
+            --instance-ids "$INSTANCE_ID" \
+            --comment "wes-server deploy ${{ github.sha }}" \
+            --timeout-seconds 600 \
+            --parameters file://params.json \
+            --query 'Command.CommandId' --output text)
+
+          # 원격 스크립트가 pull + 헬스체크(최대 150초)까지 하므로 넉넉히 10분 폴링.
+          STATUS=Pending
+          for i in $(seq 1 60); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+              --query Status --output text 2>/dev/null || echo Pending)
+            case "$STATUS" in
+              Success|Failed|Cancelled|TimedOut) break ;;
+            esac
+            sleep 10
+          done
+
+          # 성공이든 실패든 원격 로그를 러너 콘솔에 그대로 남긴다.
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+            --query '{status:Status,stdout:StandardOutputContent,stderr:StandardErrorContent}' \
+            --output json \
+            | jq -r '"--- status: \(.status)\n--- stdout ---\n\(.stdout)\n--- stderr ---\n\(.stderr)"'
+
+          [ "$STATUS" = "Success" ]
