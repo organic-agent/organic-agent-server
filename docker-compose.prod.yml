@@ -1,0 +1,20 @@
+services:
+  wes-server:
+    image: ghcr.io/${OWNER_LOWERCASE}/wes-server:${IMAGE_TAG:-latest}
+    container_name: wes-app
+    restart: always
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - SERVER_PORT=8080
+      - AWS_REGION=ap-northeast-2
+      - TZ=Asia/Seoul
+      - JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75
+    ports:
+      - "8080:8080"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }

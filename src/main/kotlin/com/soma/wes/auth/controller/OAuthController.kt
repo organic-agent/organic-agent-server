@@ -8,6 +8,9 @@ import com.soma.wes.auth.dto.response.LoginUrlResponse
 import com.soma.wes.auth.service.oauth.OAuthLoginProcessor
 import com.soma.wes.auth.service.oauth.OAuthLoginUrlService
 import com.soma.wes.auth.service.oauth.OAuthUserInfoService
+import org.springframework.http.CacheControl
+import org.springframework.http.HttpHeaders
+import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 
 /**
@@ -26,18 +29,27 @@ class OAuthController(
     private val oAuthLoginProcessor: OAuthLoginProcessor,
 ) : OAuthControllerDocs {
 
+    /**
+     * 응답의 `redirect_uri`가 요청 Origin에 따라 달라지므로 `no-store`를 붙인다.
+     * 앞단(CloudFront 등)이 이 GET을 캐시하면 로컬 프론트용으로 만든 URL이 배포 프론트 사용자에게
+     * 나가고, 그러면 provider가 redirect_uri_mismatch로 거절한다.
+     */
     @GetMapping("/login-url/{provider}")
     override fun loginUrl(
         @PathVariable provider: String,
-    ): LoginUrlResponse =
-        LoginUrlResponse.from(oAuthLoginUrlService.generateLoginUrl(OAuthProvider.from(provider)))
+        @RequestHeader(HttpHeaders.ORIGIN, required = false) origin: String?,
+    ): ResponseEntity<LoginUrlResponse> =
+        ResponseEntity.ok()
+            .cacheControl(CacheControl.noStore())
+            .body(LoginUrlResponse.from(oAuthLoginUrlService.generateLoginUrl(OAuthProvider.from(provider), origin)))
 
     @PostMapping("/{provider}")
     override fun login(
         @PathVariable provider: String,
         @RequestBody request: AuthCodeRequest,
+        @RequestHeader(HttpHeaders.ORIGIN, required = false) origin: String?,
     ): LoginResponse {
-        val userInfo = oAuthUserInfoService.getUserInfo(OAuthProvider.from(provider), request.code)
+        val userInfo = oAuthUserInfoService.getUserInfo(OAuthProvider.from(provider), request.code, origin)
         return oAuthLoginProcessor.process(userInfo)
     }
 }
