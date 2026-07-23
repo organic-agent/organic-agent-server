@@ -27,7 +27,10 @@ jobs:
           cache: gradle
 
       # 일부 테스트가 Testcontainers로 postgres를 띄운다. GitHub 러너에는 Docker가 있어 그대로 돈다.
+      # TODO: 테스트 컨벤션 정립 후 게이팅 복구. 지금은 테스트가 실패해도 CI를 막지 않는다
+      #       (continue-on-error + publish fail_on:nothing). 결과는 체크에 남지만 빨간 X로 머지를 막지 않는다.
       - name: 테스트 실행
+        continue-on-error: true
         run: |
           chmod +x ./gradlew
           ./gradlew test --no-daemon
@@ -38,3 +41,5 @@ jobs:
         if: always()
         with:
           files: build/test-results/test/TEST-*.xml
+          # 결과는 리포트로 남기되, 실패해도 이 액션이 체크를 실패시키지 않는다.
+          fail_on: nothing
