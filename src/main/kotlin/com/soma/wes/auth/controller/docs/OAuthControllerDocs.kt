@@ -14,6 +14,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.security.SecurityRequirements
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.http.MediaType
+import org.springframework.http.ResponseEntity
 
 
 @Tag(name = "[OAuth]", description = "소셜 로그인 API")
@@ -22,7 +23,10 @@ interface OAuthControllerDocs {
     @Operation(
         summary = "로그인 URL 생성",
         description = "provider의 인가 페이지 주소를 만들어 응답한다. 클라이언트는 이 URL로 이동시키기만 하면 된다. " +
-            "client-id·redirect-uri·scope를 서버가 쥐고 있으므로 provider 설정이 바뀌어도 클라이언트는 고칠 게 없다.",
+            "client-id·redirect-uri·scope를 서버가 쥐고 있으므로 provider 설정이 바뀌어도 클라이언트는 고칠 게 없다.\n\n" +
+            "로그인 후 돌아올 주소(redirect_uri)는 요청의 Origin으로 정해진다. " +
+            "로컬 프론트에서 부르면 로컬로, 배포 프론트에서 부르면 배포 도메인으로 돌아온다. " +
+            "이 문서(Swagger)에서 직접 부르면 서버에 설정된 기본 오리진이 쓰인다.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "로그인 URL 생성 성공"),
@@ -66,7 +70,10 @@ interface OAuthControllerDocs {
             schema = Schema(allowableValues = ["google", "naver", "kakao"], example = "kakao"),
         )
         provider: String,
-    ): LoginUrlResponse
+        // 브라우저가 알아서 붙이는 헤더다. 문서에 입력란으로 띄우면 손으로 채우라는 뜻이 되어버린다.
+        @Parameter(hidden = true)
+        origin: String?,
+    ): ResponseEntity<LoginUrlResponse>
 
     @Operation(
         summary = "소셜 로그인 / 회원가입",
@@ -128,5 +135,7 @@ interface OAuthControllerDocs {
         )
         provider: String,
         request: AuthCodeRequest,
+        @Parameter(hidden = true)
+        origin: String?,
     ): LoginResponse
 }

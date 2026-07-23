@@ -15,9 +15,14 @@ import org.springframework.stereotype.Component
 @Component
 class OAuthRegistrations(
     private val clientRegistrationRepository: ClientRegistrationRepository,
+    private val redirectUriResolver: OAuthRedirectUriResolver,
 ) {
 
-    fun of(provider: OAuthProvider): OAuthRegistration {
+    /**
+     * @param requestOrigin 요청의 `Origin` 헤더. redirect-uri를 어느 프론트로 잡을지 정하는 데만 쓴다.
+     *   자세한 규칙은 [OAuthRedirectUriResolver]에 있다. 넘기지 않으면 설정값이 그대로 쓰인다.
+     */
+    fun of(provider: OAuthProvider, requestOrigin: String? = null): OAuthRegistration {
         val registration = clientRegistrationRepository.findByRegistrationId(provider.key)
             ?: throw OAuthException(AuthErrorCode.PROVIDER_NOT_SUPPORTED)
         val details = registration.providerDetails
@@ -25,7 +30,7 @@ class OAuthRegistrations(
         return OAuthRegistration(
             clientId = registration.clientId,
             clientSecret = registration.clientSecret.orMisconfigured(),
-            redirectUri = registration.redirectUri.orMisconfigured(),
+            redirectUri = redirectUriResolver.resolve(registration.redirectUri.orMisconfigured(), requestOrigin),
             authorizationUri = details.authorizationUri.orMisconfigured(),
             tokenUri = details.tokenUri,
             userInfoUri = details.userInfoEndpoint.uri.orMisconfigured(),

@@ -28,11 +28,16 @@ class OAuthUserInfoService(
         private val PERCENT_ESCAPE = Regex("%[0-9A-Fa-f]{2}")
     }
 
-    fun getUserInfo(provider: OAuthProvider, authCode: String): OAuthUserInfo {
+    /**
+     * @param requestOrigin 요청의 `Origin` 헤더. 토큰 교환에 보낼 `redirect_uri`를 정한다.
+     *   인가 URL을 만들 때([OAuthLoginUrlService])와 값이 달라지면 provider가 거절하므로,
+     *   두 요청이 같은 출처에서 와야 한다.
+     */
+    fun getUserInfo(provider: OAuthProvider, authCode: String, requestOrigin: String? = null): OAuthUserInfo {
         if (authCode.isBlank()) {
             throw OAuthException(AuthErrorCode.AUTH_CODE_INVALID)
         }
-        val registration = registrations.of(provider)
+        val registration = registrations.of(provider, requestOrigin)
 
         val accessToken = exchangeAuthCodeForAccessToken(registration, normalizeAuthCode(authCode))
         val attributes = oAuthClient.getUserInfoWithAccessToken(registration.userInfoUri, accessToken)

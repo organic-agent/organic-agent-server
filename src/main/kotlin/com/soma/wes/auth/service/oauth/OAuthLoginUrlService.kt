@@ -14,8 +14,13 @@ class OAuthLoginUrlService(
     private val registrations: OAuthRegistrations,
 ) {
 
-    fun generateLoginUrl(provider: OAuthProvider): String {
-        val registration = registrations.of(provider)
+    /**
+     * @param requestOrigin 요청의 `Origin` 헤더. 어느 프론트로 돌려보낼지를 정한다([OAuthRedirectUriResolver]).
+     *   여기서 만든 URL의 `redirect_uri`는 나중에 [OAuthUserInfoService]가 코드를 교환할 때와
+     *   같은 값이어야 하므로, 그쪽에도 같은 헤더가 전달돼야 한다.
+     */
+    fun generateLoginUrl(provider: OAuthProvider, requestOrigin: String? = null): String {
+        val registration = registrations.of(provider, requestOrigin)
 
         return UriComponentsBuilder.fromUriString(registration.authorizationUri)
             .queryParam("client_id", registration.clientId)
