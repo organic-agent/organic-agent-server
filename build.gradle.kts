@@ -50,6 +50,7 @@ dependencies {
     // Aws
     implementation("io.awspring.cloud:spring-cloud-aws-starter-parameter-store")
 
+
     // Kotlin & JSON
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("tools.jackson.module:jackson-module-kotlin")
@@ -64,6 +65,9 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-data-jpa-test")
     testImplementation("org.springframework.security:spring-security-test")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+    // Monitoring
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
 
     // TestContainer
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
@@ -81,6 +85,12 @@ allOpen {
     annotation("jakarta.persistence.Entity")
     annotation("jakarta.persistence.MappedSuperclass")
     annotation("jakarta.persistence.Embeddable")
+}
+
+// bootJar와 별개로 라이브러리용 `-plain.jar`가 함께 만들어진다. 이 프로젝트를 다른 모듈이
+// 의존하지 않으므로 쓸 일이 없고, build/libs에 jar가 둘이면 Dockerfile의 COPY 글롭이 실패한다.
+tasks.jar {
+    enabled = false
 }
 
 tasks.withType<Test> {
