@@ -7,6 +7,10 @@ import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.repository.GalleryInviteRepository
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
+import com.soma.wes.user.domain.UserType
+import com.soma.wes.user.exception.UserErrorCode
+import com.soma.wes.user.exception.UserException
+import com.soma.wes.user.repository.UserRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -26,6 +30,7 @@ class GalleryInviteService(
     private val galleryRepository: GalleryRepository,
     private val galleryInviteRepository: GalleryInviteRepository,
     private val galleryMemberRepository: GalleryMemberRepository,
+    private val userRepository: UserRepository,
     private val galleryAccessPolicy: GalleryAccessPolicy,
     private val tokenGenerator: GalleryInviteTokenGenerator,
     private val clock: Clock,
@@ -96,8 +101,27 @@ class GalleryInviteService(
         galleryMemberRepository.findByGalleryIdAndUserId(invite.galleryId, userId)
             ?.let { return it }
 
+        confirmAsClientIfNotOnboarded(userId)
+
         return galleryMemberRepository.save(
             GalleryMember(galleryId = invite.galleryId, userId = userId),
         )
+    }
+
+    /**
+     * 예비 부부의 온보딩. 초대 링크로만 가입할 수 있으므로 수락이 곧 종류 확정이다.
+     *
+     * **아직 정해지지 않았을 때만** 정한다. 작가가 남의 갤러리에 초대받는 것은 정상 시나리오인데
+     * ([MANAGER_CANNOT_ACCEPT_INVITE][GalleryErrorCode.MANAGER_CANNOT_ACCEPT_INVITE]는 자기
+     * 갤러리만 막는다), 무조건 덮어쓰면 이미 PHOTOGRAPHER인 사용자가
+     * `USER_TYPE_ALREADY_SELECTED`에 걸려 초대 수락 자체가 실패한다.
+     */
+    private fun confirmAsClientIfNotOnboarded(userId: Long) {
+        val user = userRepository.findById(userId)
+            .orElseThrow { UserException(UserErrorCode.USER_NOT_FOUND) }
+
+        if (!user.isOnboarded) {
+            user.selectType(UserType.CLIENT)
+        }
     }
 }

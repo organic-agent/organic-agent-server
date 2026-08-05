@@ -85,6 +85,13 @@ class User(
      * 그 갤러리의 멤버가 되면 되는 일이므로, 변경 수단이 없어도 막히지 않는다.
      */
     fun selectType(userType: UserType) {
+        // 같은 종류로 다시 정하는 것은 변경이 아니다. 스튜디오 생성이 종류를 확정하는데,
+        // 그 둘이 한 트랜잭션이 아니었던 과거 데이터나 중간에 실패한 요청 때문에
+        // "PHOTOGRAPHER인데 스튜디오는 없는" 계정이 생길 수 있다. 여기서 막아버리면
+        // 그 계정은 영영 스튜디오를 만들지 못한다.
+        if (this.userType == userType) {
+            return
+        }
         if (this.userType != null) {
             throw UserException(UserErrorCode.USER_TYPE_ALREADY_SELECTED)
         }

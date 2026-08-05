@@ -68,12 +68,21 @@ class Studio(
     }
 
     private fun validateGalleryUrl(galleryUrl: String) {
-        if (!GALLERY_URL_FORMAT.matches(galleryUrl) || galleryUrl in RESERVED_GALLERY_URLS) {
+        if (!isValidGalleryUrl(galleryUrl)) {
             throw StudioException(StudioErrorCode.INVALID_GALLERY_URL)
         }
     }
 
     companion object {
+
+        /**
+         * 주소가 쓸 수 있는 모양인지. 온보딩의 중복 확인이 저장 전에 같은 규칙을 물어보려고 쓴다.
+         *
+         * 규칙을 여기 한 곳에만 두는 것이 요점이다. 확인 API가 자기 정규식을 따로 들고 있으면
+         * "확인할 때는 통과했는데 저장이 거절되는" 상황이 생긴다.
+         */
+        fun isValidGalleryUrl(galleryUrl: String): Boolean =
+            GALLERY_URL_FORMAT.matches(galleryUrl) && galleryUrl !in RESERVED_GALLERY_URLS
         /**
          * 소문자·숫자·하이픈만 3~50자. 대문자를 허용하면 대소문자만 다른 주소가 서로 다른
          * 스튜디오로 잡혀 유니크 제약이 무의미해진다.

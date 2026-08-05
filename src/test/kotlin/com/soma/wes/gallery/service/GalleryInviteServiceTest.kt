@@ -10,8 +10,13 @@ import com.soma.wes.gallery.repository.GalleryInviteRepository
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.global.config.TimeConfig
+import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
+import com.soma.wes.user.domain.User
+import com.soma.wes.user.domain.UserType
+import com.soma.wes.user.repository.UserRepository
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
@@ -37,14 +42,35 @@ class GalleryInviteServiceTest @Autowired constructor(
     private val galleryMemberRepository: GalleryMemberRepository,
     private val galleryRepository: GalleryRepository,
     private val studioRepository: StudioRepository,
+    private val userRepository: UserRepository,
     private val clock: Clock,
 ) {
 
     private val now: ZonedDateTime get() = ZonedDateTime.now(clock)
 
-    private val photographerId = 10L
-    private val groomId = 100L
-    private val brideId = 101L
+    // 초대 수락이 사용자 종류를 확정하므로 실제 users 행이 있어야 한다.
+    // 예전에는 임의의 id 상수로 충분했다.
+    private var photographerId = 0L
+    private var groomId = 0L
+    private var brideId = 0L
+
+    @BeforeEach
+    fun setUpUsers() {
+        photographerId = saveUser("photographer").let(::requiredId)
+        groomId = saveUser("groom").let(::requiredId)
+        brideId = saveUser("bride").let(::requiredId)
+    }
+
+    private fun saveUser(providerId: String): User = userRepository.save(
+        User(
+            provider = OAuthProvider.KAKAO,
+            providerId = providerId,
+            nickname = providerId,
+            email = "$providerId@example.com",
+        ),
+    )
+
+    private fun requiredId(user: User): Long = checkNotNull(user.id)
 
     private fun saveGallery(ownerUserId: Long = photographerId): Gallery {
         val studio = studioRepository.save(
@@ -104,6 +130,36 @@ class GalleryInviteServiceTest @Autowired constructor(
         assertEquals(galleryId(gallery), member.galleryId)
         assertEquals(groomId, member.userId)
         assertNotNull(galleryMemberRepository.findByGalleryIdAndUserId(galleryId(gallery), groomId))
+    }
+
+    @Test
+    fun `링크를 수락하면 예비 부부로 온보딩된다`() {
+        // 예비 부부는 초대 링크로만 가입한다. 종류를 고르는 화면이 따로 없으므로
+        // 수락이 곧 온보딩이다.
+        val gallery = saveGallery()
+        val invite = galleryInviteService.issue(galleryId(gallery), photographerId)
+
+        galleryInviteService.accept(invite.token, groomId)
+
+        assertEquals(UserType.CLIENT, userRepository.findById(groomId).orElseThrow().userType)
+    }
+
+    @Test
+    fun `작가가 남의 갤러리 초대를 수락해도 작가로 남는다`() {
+        // 무조건 CLIENT로 덮어쓰면 이미 PHOTOGRAPHER인 사용자가 USER_TYPE_ALREADY_SELECTED에
+        // 걸려 수락 자체가 실패한다. 본인 결혼식 갤러리에 초대받는 것은 정상 시나리오다.
+        val otherGallery = saveGallery()
+        val invite = galleryInviteService.issue(galleryId(otherGallery), photographerId)
+
+        val guestPhotographerId = requiredId(saveUser("guest-photographer"))
+        userRepository.findById(guestPhotographerId).orElseThrow().selectType(UserType.PHOTOGRAPHER)
+
+        galleryInviteService.accept(invite.token, guestPhotographerId)
+
+        assertEquals(
+            UserType.PHOTOGRAPHER,
+            userRepository.findById(guestPhotographerId).orElseThrow().userType,
+        )
     }
 
     @Test
