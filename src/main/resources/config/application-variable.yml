@@ -37,6 +37,24 @@ jwt:
   access-token-expiration: 30m
   refresh-token-expiration: 14d
 
+app:
+  storage:
+    # 버킷 이름만 인프라에 종속된다. prod는 Parameter Store(app.storage.bucket)가 덮어쓰고,
+    # 로컬·테스트에는 실제 버킷이 없으므로 서명 형태만 확인하는 더미 값을 둔다.
+    bucket: wes-local-photos
+    # 프론트가 수천 장을 순차 업로드하는 동안 만료되지 않을 만큼은 길어야 한다.
+    upload-url-ttl: 30m
+    # 조회용 서명 URL의 수명. 업로드보다 짧게 잡는다 — 목록을 다시 부르면 새 URL이 나오므로
+    # 짧아도 화면이 막히지 않고, 응답의 viewUrlTtlSeconds로 프론트에 그 시간을 알려준다.
+    view-url-ttl: 15m
+    # 한 요청에서 발급할 수 있는 URL 개수이자 목록 조회의 페이지 크기 상한.
+    max-batch-size: 1000
+
+  embedding:
+    # prod는 Parameter Store(app.embedding.function-name)가 덮어쓴다.
+    # 로컬·테스트에는 Lambda가 없으므로 빈 값이 정상이다 — 기동이 아니라 호출 시점에 실패한다.
+    function-name: ""
+
 ---
 spring:
   config:

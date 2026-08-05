@@ -46,17 +46,25 @@ dependencies {
     // Database
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     runtimeOnly("org.postgresql:postgresql")
+    implementation("org.springframework.boot:spring-boot-flyway")
+    runtimeOnly("org.flywaydb:flyway-database-postgresql")
+
+    // pgvector의 vector 타입을 FloatArray 필드로 매핑한다.
+    implementation("org.hibernate.orm:hibernate-vector")
+
+    // Validation
+    implementation("org.springframework.boot:spring-boot-starter-validation")
 
     // Aws
     implementation("io.awspring.cloud:spring-cloud-aws-starter-parameter-store")
-
+    implementation("io.awspring.cloud:spring-cloud-aws-starter-s3")
+    implementation("software.amazon.awssdk:lambda")
 
     // Kotlin & JSON
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("tools.jackson.module:jackson-module-kotlin")
 
     // API Docs
-    // springdoc 2.x는 Spring Boot 3 전용이다. Boot 4는 3.x 라인을 써야 한다.
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3")
 
     // Testing
@@ -64,6 +72,8 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
     testImplementation("org.springframework.boot:spring-boot-data-jpa-test")
     testImplementation("org.springframework.security:spring-security-test")
+    // Mockito의 자바 API는 Kotlin의 non-null 파라미터에서 깨진다(any()가 null을 반환한다).
+    testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
     // Monitoring

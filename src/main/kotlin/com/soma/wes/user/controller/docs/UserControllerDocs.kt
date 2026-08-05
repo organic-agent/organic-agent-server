@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.http.MediaType
+import org.springframework.http.ResponseEntity
 
 @Tag(name = "[User]", description = "사용자 API")
 interface UserControllerDocs {
@@ -67,5 +68,5 @@ interface UserControllerDocs {
             ],
         ),
     )
-    fun getMe(loginUser: LoginUser): UserResponse
+    fun getMe(loginUser: LoginUser): ResponseEntity<UserResponse>
 }

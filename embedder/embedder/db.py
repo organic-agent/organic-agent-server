@@ -1,0 +1,110 @@
+"""photos 테이블 읽기/쓰기.
+
+스키마는 앱(Flyway)이 소유한다. 이 모듈이 건드리는 것은 세 컬럼뿐이다 --
+`embedding`, `status`, `updated_at`.
+
+접속에는 비밀번호가 아니라 **RDS IAM 인증 토큰**을 쓴다. 토큰 생성(`generate_db_auth_token`)은
+로컬 서명 연산이라 네트워크를 타지 않는다 -- NAT도 인터페이스 엔드포인트도 없는 이 서브넷에서
+자격증명을 얻을 수 있는 유일한 방법이고, 덕분에 비밀번호가 Lambda 환경변수에도 Terraform
+state에도 남지 않는다.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from typing import Iterable, Sequence
+
+import boto3
+import numpy as np
+import psycopg
+from pgvector.psycopg import register_vector
+
+from embedder.config import Settings
+
+log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class PhotoRef:
+    photo_id: int
+    storage_key: str
+
+
+def connect(settings: Settings) -> psycopg.Connection:
+    # 리전은 Lambda가 넣어 주는 AWS_REGION에서 온다. 토큰 수명은 15분이고, 잡은 시작할 때
+    # 한 번만 연결하므로 실행이 15분을 채워도 연결이 끊기지 않는다(만료는 인증 시점에만 본다).
+    token = boto3.client("rds").generate_db_auth_token(
+        DBHostname=settings.db_auth_host,
+        Port=settings.db_port,
+        DBUsername=settings.db_user,
+    )
+
+    connection = psycopg.connect(
+        host=settings.db_host,
+        port=settings.db_port,
+        dbname=settings.db_name,
+        user=settings.db_user,
+        password=token,
+        # IAM 인증은 TLS 없이는 아예 동작하지 않는다. 토큰이 평문으로 흐르면 그대로 재사용된다.
+        sslmode=settings.db_sslmode,
+        sslrootcert=settings.db_sslrootcert,
+        connect_timeout=10,
+    )
+
+    # 이걸 해야 파이썬 리스트/ndarray를 vector 컬럼에 그대로 바인딩할 수 있다. 없으면
+    # '[0.1,0.2,...]' 문자열을 손으로 조립하게 되는데, 표기가 조금만 어긋나도 예외가 아니라
+    # 파싱 실패로 나타난다.
+    register_vector(connection)
+    return connection
+
+
+def fetch_targets(connection: psycopg.Connection, gallery_id: int, force: bool) -> list[PhotoRef]:
+    """이번 실행이 처리할 사진.
+
+    기본값은 아직 임베딩이 없는 것만 고른다. 그래서 중간에 죽은 실행을 다시 부르면 남은 것만
+    이어서 처리하고, 재시도 로직을 따로 짤 필요가 없다. force는 모델이나 전처리를 바꿔 전량
+    다시 계산할 때만 쓴다.
+
+    PENDING은 건너뛴다 -- 업로드 URL만 발급되고 S3에 객체가 아직 없을 수 있는 상태다.
+    """
+    sql = """
+        SELECT id, storage_key
+        FROM photos
+        WHERE gallery_id = %s
+          AND status <> 'PENDING'
+    """
+    if not force:
+        sql += " AND embedding IS NULL"
+    sql += " ORDER BY id"
+
+    with connection.cursor() as cursor:
+        cursor.execute(sql, (gallery_id,))
+        return [PhotoRef(photo_id=row[0], storage_key=row[1]) for row in cursor.fetchall()]
+
+
+def store_embeddings(
+    connection: psycopg.Connection,
+    results: Iterable[tuple[PhotoRef, np.ndarray]],
+) -> int:
+    """계산된 벡터를 배치로 적재한다.
+
+    벡터 차원은 vector(n) 컬럼이 강제한다. 모델을 바꿔 폭이 달라지면 여기서 DB 에러로
+    떨어진다 -- 조용히 틀린 값이 들어가지 않는다는 뜻이라 굳이 앞단에서 또 막지 않는다.
+    """
+    rows: Sequence[tuple] = [(vector, ref.photo_id) for ref, vector in results]
+    if not rows:
+        return 0
+
+    with connection.cursor() as cursor:
+        cursor.executemany(
+            """
+            UPDATE photos
+            SET embedding = %s,
+                status = 'EMBEDDED',
+                updated_at = now()
+            WHERE id = %s
+            """,
+            rows,
+        )
+    return len(rows)

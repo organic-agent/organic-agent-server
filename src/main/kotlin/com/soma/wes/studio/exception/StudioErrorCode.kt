@@ -9,11 +9,7 @@ enum class StudioErrorCode(
     override val message: String,
 ) : ErrorCode {
 
-    INVALID_GALLERY_URL(
-        HttpStatus.BAD_REQUEST,
-        "STUDIO_400_1",
-        "갤러리 주소는 소문자·숫자·하이픈으로 3~50자여야 하며, 사용할 수 없는 주소입니다.",
-    ),
+    INVALID_GALLERY_URL(HttpStatus.BAD_REQUEST, "STUDIO_400_1", "갤러리 주소는 소문자·숫자·하이픈으로 3~50자여야 하며, 사용할 수 없는 주소입니다.",),
 
     NOT_STUDIO_OWNER(HttpStatus.FORBIDDEN, "STUDIO_403_1", "스튜디오 소유자만 할 수 있습니다."),
     STUDIO_NOT_FOUND(HttpStatus.NOT_FOUND, "STUDIO_404_1", "존재하지 않는 스튜디오입니다."),

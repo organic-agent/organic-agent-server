@@ -137,5 +137,5 @@ interface OAuthControllerDocs {
         request: AuthCodeRequest,
         @Parameter(hidden = true)
         origin: String?,
-    ): LoginResponse
+    ): ResponseEntity<LoginResponse>
 }

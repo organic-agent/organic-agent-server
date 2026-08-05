@@ -1,7 +1,7 @@
 package com.soma.wes.auth.service.oauth
 
-import com.soma.wes.auth.dto.response.LoginResponse
 import com.soma.wes.auth.dto.OAuthUserInfo
+import com.soma.wes.auth.dto.response.LoginResponse
 import com.soma.wes.auth.service.AuthTokenProvider
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
@@ -9,9 +9,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
-/**
- * 소셜 사용자 정보를 받아 신규 가입 또는 기존 사용자 로그인을 처리하고 토큰을 발급한다.
- */
+
 @Service
 class OAuthLoginProcessor(
     private val userRepository: UserRepository,

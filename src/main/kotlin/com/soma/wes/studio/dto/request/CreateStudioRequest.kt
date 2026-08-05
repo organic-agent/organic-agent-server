@@ -24,15 +24,3 @@ data class CreateStudioRequest(
     @field:Schema(description = "유입 경로. 마케팅 집계용이라 없어도 가입은 된다.", example = "인스타그램")
     val inflowChannel: String? = null,
 )
-
-@Schema(description = "스튜디오 수정 요청")
-data class UpdateStudioRequest(
-
-    @field:NotBlank
-    @field:Size(max = 255)
-    val name: String,
-
-    @field:NotBlank
-    @field:Size(min = 3, max = 50)
-    val galleryUrl: String,
-)

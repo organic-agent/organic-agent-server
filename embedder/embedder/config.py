@@ -1,0 +1,72 @@
+"""환경변수 하나로 모아 읽는다.
+
+Lambda에는 Terraform이 값을 넣어 주고(인프라 레포의 `modules/embedding`), 로컬 실행은 셸
+환경에서 온다.
+
+DB 비밀번호가 여기 없는 것이 이 모듈에서 가장 중요한 점이다. 접속은 RDS IAM 인증을 쓴다 --
+`db.py`가 매 실행마다 짧은 수명의 토큰을 만들어 비밀번호 자리에 넣는다. 그래서 비밀번호를
+Lambda 환경변수로 주입할 필요가 없고, Terraform state에도 남지 않는다.
+"""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class Settings:
+    #: 실제로 TCP 연결을 맺을 곳. Lambda에서는 RDS 엔드포인트다.
+    db_host: str
+    db_port: int
+    db_name: str
+    db_user: str
+
+    #: IAM 인증 토큰에 서명할 호스트. 보통 db_host와 같고, SSM 포트 포워딩으로 로컬에서
+    #: 돌릴 때만 갈린다 -- 그때 연결은 localhost로 하지만 토큰은 RDS 엔드포인트로 서명해야
+    #: RDS가 받아준다.
+    db_auth_host: str
+
+    #: Lambda 기본값은 verify-full이다. RDS IAM 인증은 TLS를 요구하고, 인증서까지 검증해야
+    #: 토큰을 가로챌 중간자가 설 자리가 없어진다. 터널을 쓰는 로컬 실행은 호스트명이 맞지
+    #: 않으므로 require로 낮춰야 한다.
+    db_sslmode: str
+    db_sslrootcert: str
+
+    s3_bucket: str
+
+    embed_dim: int
+    batch_size: int
+    model_id: str
+
+    #: 임베딩 전에 줄이는 긴 변 길이. DINOv2가 실제로 보는 것은 224px이고 프로세서가 알아서
+    #: 줄이므로, 여기서는 디코딩 직후 메모리를 눌러 두는 것이 목적이다. 원본 그대로 배치를
+    #: 쌓으면 4천만 화소 몇 장으로 Lambda 메모리가 넘어간다.
+    resize_long_edge: int
+
+    @staticmethod
+    def from_env() -> "Settings":
+        db_host = _required("DB_HOST")
+
+        return Settings(
+            db_host=db_host,
+            db_port=int(os.environ.get("DB_PORT", "5432")),
+            db_name=_required("DB_NAME"),
+            db_user=_required("DB_USER"),
+            db_auth_host=os.environ.get("DB_AUTH_HOST") or db_host,
+            db_sslmode=os.environ.get("DB_SSLMODE", "verify-full"),
+            db_sslrootcert=os.environ.get("DB_SSLROOTCERT", "/opt/rds-ca/global-bundle.pem"),
+            s3_bucket=_required("S3_BUCKET"),
+            embed_dim=int(os.environ.get("EMBED_DIM", "768")),
+            batch_size=int(os.environ.get("EMBED_BATCH_SIZE", "8")),
+            model_id=os.environ.get("EMBED_MODEL_ID", "facebook/dinov2-base"),
+            resize_long_edge=int(os.environ.get("RESIZE_LONG_EDGE", "1024")),
+        )
+
+
+def _required(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        # 초기화 시점에 죽는 편이 낫다. 늦게 발견하면 이미 사진 절반을 처리한 뒤다.
+        raise RuntimeError(f"환경변수 {name}이(가) 비어 있습니다")
+    return value

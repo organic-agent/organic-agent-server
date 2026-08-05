@@ -1,10 +1,10 @@
 package com.soma.wes.auth.controller
 
 import com.soma.wes.auth.controller.docs.AuthControllerDocs
-import com.soma.wes.auth.domain.RefreshToken
 import com.soma.wes.auth.dto.request.ReissueRequest
 import com.soma.wes.auth.dto.response.ReissueResponse
 import com.soma.wes.auth.service.AuthTokenService
+import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
@@ -23,6 +23,11 @@ class AuthController(
      * access token이 만료됐을 때 refresh token으로 새 access token을 받는다.
      */
     @PostMapping("/reissue")
-    override fun reissue(@RequestBody request: ReissueRequest): ReissueResponse =
-        authTokenService.reissue(RefreshToken(request.refreshToken))
+    override fun reissue(
+        @RequestBody request: ReissueRequest,
+    ): ResponseEntity<ReissueResponse> {
+        val result = authTokenService.reissue(request)
+
+        return ResponseEntity.ok(result)
+    }
 }
