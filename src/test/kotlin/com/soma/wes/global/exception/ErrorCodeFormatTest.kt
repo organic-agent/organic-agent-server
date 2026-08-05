@@ -1,7 +1,10 @@
 package com.soma.wes.global.exception
 
 import com.soma.wes.auth.exception.AuthErrorCode
+import com.soma.wes.gallery.exception.GalleryErrorCode
+import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.security.exception.AuthorizationErrorCode
+import com.soma.wes.studio.exception.StudioErrorCode
 import com.soma.wes.user.exception.UserErrorCode
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
@@ -18,7 +21,8 @@ import kotlin.test.assertTrue
 class ErrorCodeFormatTest {
 
     private val allErrorCodes: List<ErrorCode> =
-        GlobalErrorCode.entries + AuthErrorCode.entries + AuthorizationErrorCode.entries + UserErrorCode.entries
+        GlobalErrorCode.entries + AuthErrorCode.entries + AuthorizationErrorCode.entries + UserErrorCode.entries +
+            StudioErrorCode.entries + GalleryErrorCode.entries + PhotoErrorCode.entries
 
     private val format = Regex("""^([A-Z]+)_(\d{3})_(\d+)$""")
 
