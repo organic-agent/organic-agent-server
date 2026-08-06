@@ -9,7 +9,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.http.ResponseEntity
 
-@Tag(name = "사진 클러스터", description = "닮은 사진끼리 묶어 보여준다")
+@Tag(name = "[Cluster]", description = "유사도 기반 사진 묶음 조회 API")
 interface PhotoClusterControllerDocs {
 
     @Operation(

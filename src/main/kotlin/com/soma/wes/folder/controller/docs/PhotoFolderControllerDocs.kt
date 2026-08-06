@@ -12,7 +12,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.http.ResponseEntity
 
-@Tag(name = "사진 폴더", description = "예비 부부가 확정한 사진 묶음")
+@Tag(name = "[Folder]", description = "확정한 사진 묶음 폴더 API (예비 부부 전용)")
 interface PhotoFolderControllerDocs {
 
     @Operation(
