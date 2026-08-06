@@ -27,6 +27,28 @@ class PhotoTest {
     }
 
     @Test
+    fun `파생본이 없으면 원본을 보여준다`() {
+        // 파생본은 임베딩 Lambda가 만든다. 그전까지는 원본밖에 없고, JPEG·PNG라면
+        // 브라우저가 그대로 그린다 -- 아무것도 못 보여주는 것보다 낫다.
+        val photo = photo()
+
+        assertNull(photo.previewKey)
+        assertEquals(photo.storageKey, photo.viewKey)
+    }
+
+    @Test
+    fun `파생본이 있으면 원본 대신 그쪽을 보여준다`() {
+        // 원본이 HEIC면 브라우저가 그리지 못하므로 이 대체가 미리보기의 유일한 통로다.
+        val photo = photo()
+
+        photo.previewKey = "previews/galleries/1/a.jpg"
+
+        assertEquals("previews/galleries/1/a.jpg", photo.viewKey)
+        // 원본 위치는 그대로다. 파생본은 화면용일 뿐 원본을 대신하지 않는다.
+        assertEquals("galleries/1/a.jpg", photo.storageKey)
+    }
+
+    @Test
     fun `완료 통보를 받으면 UPLOADED가 된다`() {
         val photo = photo()
 

@@ -24,3 +24,16 @@ class PhotoStorage:
     def read(self, key: str) -> bytes:
         response = self._client.get_object(Bucket=self.bucket, Key=key)
         return response["Body"].read()
+
+    def write(self, key: str, data: bytes, content_type: str) -> None:
+        """파생본을 올린다.
+
+        content_type을 못박아야 한다. S3가 응답에 그대로 실어 주는 값이고, 비워 두면
+        기본값(binary/octet-stream)이 나가 브라우저가 이미지 대신 다운로드를 띄운다.
+        """
+        self._client.put_object(
+            Bucket=self.bucket,
+            Key=key,
+            Body=data,
+            ContentType=content_type,
+        )

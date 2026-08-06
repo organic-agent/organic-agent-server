@@ -123,6 +123,10 @@ interface PhotoControllerDocs {
 
             viewUrl은 응답의 viewUrlTtlSeconds 동안만 살아 있다. 그 시간이 지나기 전에
             목록을 다시 부르면 새 URL이 온다. 아직 올라오지 않은(PENDING) 사진은 null이다.
+
+            previewReady가 true면 viewUrl은 브라우저가 그릴 수 있는 파생 JPEG를 가리킨다.
+            false면 원본이라 형식에 따라(아이폰 HEIC 등) 그려지지 않을 수 있다. 파생본은
+            임베딩이 끝나야 생기므로, 그전까지는 '미리보기 준비 중'으로 안내하면 된다.
         """,
     )
     @ApiResponses(

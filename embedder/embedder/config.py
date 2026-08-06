@@ -42,7 +42,15 @@ class Settings:
     #: 임베딩 전에 줄이는 긴 변 길이. DINOv2가 실제로 보는 것은 224px이고 프로세서가 알아서
     #: 줄이므로, 여기서는 디코딩 직후 메모리를 눌러 두는 것이 목적이다. 원본 그대로 배치를
     #: 쌓으면 4천만 화소 몇 장으로 Lambda 메모리가 넘어간다.
+    #:
+    #: 미리보기 파생본도 이 크기로 나간다. 모델 입력에는 영향이 없으므로(프로세서가 224로
+    #: 다시 줄인다) 화질이 아쉬우면 올려도 되지만, 배치 하나가 메모리에 올리는 픽셀 수가
+    #: 제곱으로 늘어난다.
     resize_long_edge: int
+
+    #: 파생본 JPEG 품질. 82는 1024px에서 확대하지 않는 한 열화가 눈에 띄지 않으면서
+    #: 장당 200KB 안팎으로 떨어지는 지점이다.
+    preview_quality: int
 
     @staticmethod
     def from_env() -> "Settings":
@@ -61,6 +69,7 @@ class Settings:
             batch_size=int(os.environ.get("EMBED_BATCH_SIZE", "8")),
             model_id=os.environ.get("EMBED_MODEL_ID", "facebook/dinov2-base"),
             resize_long_edge=int(os.environ.get("RESIZE_LONG_EDGE", "1024")),
+            preview_quality=int(os.environ.get("PREVIEW_QUALITY", "82")),
         )
 
 

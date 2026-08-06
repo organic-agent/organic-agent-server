@@ -1,4 +1,8 @@
-"""갤러리 하나의 임베딩을 계산해 적재한다.
+"""갤러리 하나의 임베딩을 계산해 적재하고, 같은 김에 미리보기 파생본을 만든다.
+
+파생본을 여기서 만드는 이유는 이 잡이 이미 원본을 받아 HEIC를 디코딩하고 EXIF 회전과
+축소까지 마친 이미지를 들고 있기 때문이다. 비싼 부분은 이미 지불했고 남은 것은 인코딩과
+PUT 하나뿐이다. 별도 잡으로 빼면 같은 이미지를 두 번 받아 두 번 디코딩하게 된다.
 
 진입점(`handler.py` / `__main__.py`)이 둘이고 본체는 이 함수 하나다. Lambda로 감싸기 전에
 로컬에서 실제 S3·RDS를 상대로 같은 코드를 검증할 수 있어야 해서 이렇게 갈라 두었다.
@@ -10,6 +14,8 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
+
+from PIL import Image
 
 from embedder import db, images, model
 from embedder.config import Settings
@@ -24,6 +30,9 @@ class RunResult:
     targets: int = 0
     processed: int = 0
     failed: list[str] = field(default_factory=list)
+    #: 벡터는 나왔지만 파생본만 올리지 못한 사진. failed와 섞으면 안 된다 -- 이쪽은
+    #: 임베딩이 성공했으므로 다시 불러도 fetch_targets가 집어 오지 않는다.
+    previews_failed: list[str] = field(default_factory=list)
     elapsed_seconds: float = 0.0
 
     def to_dict(self) -> dict:
@@ -32,6 +41,7 @@ class RunResult:
             "targets": self.targets,
             "processed": self.processed,
             "failed": self.failed,
+            "previewsFailed": self.previews_failed,
             "elapsedSeconds": round(self.elapsed_seconds, 1),
         }
 
@@ -69,7 +79,16 @@ def run(gallery_id: int, force: bool = False, settings: Settings | None = None) 
 
             batch_started = time.monotonic()
             vectors = embedder.encode(loaded_images)
-            stored = db.store_embeddings(connection, zip(loaded_refs, vectors))
+
+            preview_keys = [
+                _upload_preview(storage, ref, image, settings, result)
+                for ref, image in zip(loaded_refs, loaded_images)
+            ]
+
+            stored = db.store_embeddings(
+                connection,
+                zip(loaded_refs, vectors, preview_keys),
+            )
 
             # 배치 단위로 커밋한다. 15분 타임아웃에 걸려 중간에 끊겨도 여기까지는 남고,
             # 다음 호출이 남은 것만 이어서 한다.
@@ -82,6 +101,33 @@ def run(gallery_id: int, force: bool = False, settings: Settings | None = None) 
     result.elapsed_seconds = time.monotonic() - started
     log.info("완료: %s", result.to_dict())
     return result.to_dict()
+
+
+def _upload_preview(
+    storage: PhotoStorage,
+    ref: db.PhotoRef,
+    image: Image.Image,
+    settings: Settings,
+    result: RunResult,
+) -> str | None:
+    """브라우저가 그릴 수 있는 파생본을 올리고 그 키를 돌려준다. 실패하면 None.
+
+    임베딩과 분리된 try인 것이 핵심이다. IAM에 s3:PutObject가 없으면 이 호출이 사진마다
+    실패하는데, 바깥 try가 이를 삼키면 사진이 '읽지 못했다'로 분류되어 embedding까지
+    NULL로 남는다 -- 미리보기 권한 문제가 임베딩 실패로 둔갑한다.
+
+    파생본이 없어도 사진은 보인다(원본을 그대로 서명해 준다). 그래서 여기서 잡을 멈추지
+    않고, 대신 결과의 previewsFailed로 드러낸다.
+    """
+    key = images.preview_key_for(ref.storage_key)
+    try:
+        data = images.to_jpeg(image, settings.preview_quality)
+        storage.write(key, data, "image/jpeg")
+        return key
+    except Exception:
+        log.exception("미리보기를 올리지 못했습니다: %s", key)
+        result.previews_failed.append(ref.storage_key)
+        return None
 
 
 def _chunked(items: list, size: int):

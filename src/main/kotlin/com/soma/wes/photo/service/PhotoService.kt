@@ -186,7 +186,9 @@ class PhotoService(
         photo = photo,
         // PENDING은 URL만 발급되고 실제 객체는 아직 없을 수 있다. URL을 주면 프론트의
         // <img>가 깨진 이미지를 그리므로, 올라온 것이 확실한 사진에만 채운다.
-        viewUrl = if (photo.status == PhotoStatus.PENDING) null else photoStorage.presignView(photo.storageKey),
+        //
+        // 서명 대상은 원본이 아니라 viewKey다 — 파생본이 있으면 그쪽을 준다.
+        viewUrl = if (photo.status == PhotoStatus.PENDING) null else photoStorage.presignView(photo.viewKey),
     )
 
     /** 임베딩 진행 상황을 확인하는 곳. Lambda는 비동기라 이 집계 말고는 알 방법이 없다. */

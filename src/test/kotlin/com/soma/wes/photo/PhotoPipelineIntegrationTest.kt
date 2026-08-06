@@ -155,6 +155,50 @@ class PhotoPipelineIntegrationTest @Autowired constructor(
     }
 
     @Test
+    fun `파생본이 생기기 전에는 원본을 주고 준비되지 않았음을 알린다`() {
+        // 임베딩 실행 전까지는 파생본이 없다. 원본이 HEIC라면 이 구간에서 미리보기가
+        // 비어 보이는데, previewReady가 false라는 사실만으로 프론트가 그 사정을 안내할 수 있다.
+        val photographer = signUpPhotographer()
+        val galleryId = createGallery(photographer)
+        val photoIds = issueUploadUrls(photographer, galleryId, count = 1)
+        completeUpload(photographer, galleryId, photoIds)
+
+        val storageKey = photoRepository.findById(photoIds.first()).orElseThrow().storageKey
+
+        mockMvc.get("/api/v1/galleries/$galleryId/photos") { authorize(photographer) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.photos[0].previewReady") { value(false) }
+                jsonPath("$.photos[0].viewUrl") { value(containsString(storageKey)) }
+            }
+    }
+
+    @Test
+    fun `파생본이 있으면 조회 URL이 원본이 아니라 파생본을 가리킨다`() {
+        // 아이폰 원본(HEIC)은 Chrome·Firefox·Edge가 디코딩하지 못한다. 임베딩 Lambda가
+        // 만들어 둔 JPEG 파생본을 서명해 줘야 <img src>에 그대로 넣을 수 있다.
+        val photographer = signUpPhotographer()
+        val galleryId = createGallery(photographer)
+        val photoIds = issueUploadUrls(photographer, galleryId, count = 1)
+        completeUpload(photographer, galleryId, photoIds)
+
+        val photo = photoRepository.findById(photoIds.first()).orElseThrow()
+        val previewKey = "previews/${photo.storageKey.substringBeforeLast('.')}.jpg"
+        photo.previewKey = previewKey
+        photoRepository.saveAndFlush(photo)
+
+        mockMvc.get("/api/v1/galleries/$galleryId/photos") { authorize(photographer) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.photos[0].previewReady") { value(true) }
+                jsonPath("$.photos[0].viewUrl") { value(containsString(previewKey)) }
+                jsonPath("$.photos[0].viewUrl") { value(containsString("X-Amz-Signature")) }
+                // storageKey는 그대로 원본을 가리킨다. 파생본은 화면용일 뿐 원본을 대신하지 않는다.
+                jsonPath("$.photos[0].storageKey") { value(photo.storageKey) }
+            }
+    }
+
+    @Test
     fun `상태로 걸러 받을 수 있다`() {
         val photographer = signUpPhotographer()
         val galleryId = createGallery(photographer)

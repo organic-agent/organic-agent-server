@@ -17,9 +17,17 @@ data class PhotoResponse(
 
     @field:Schema(
         description = "서명된 조회 URL. 버킷이 비공개라 이것 없이는 이미지를 띄울 수 없다. " +
-            "아직 올라오지 않은(PENDING) 사진은 null이다.",
+            "아직 올라오지 않은(PENDING) 사진은 null이다. " +
+            "previewReady가 true면 파생 JPEG를, false면 원본을 가리킨다.",
     )
     val viewUrl: String?,
+
+    @field:Schema(
+        description = "viewUrl이 브라우저가 그릴 수 있는 파생 JPEG를 가리키는지. " +
+            "false면 원본을 그대로 내려주는 것이라 형식에 따라(HEIC 등) 그려지지 않을 수 있다. " +
+            "파생본은 임베딩이 끝나야 생기므로, 그전까지는 '미리보기 준비 중'으로 안내하면 된다.",
+    )
+    val previewReady: Boolean,
 ) {
 
     companion object {
@@ -32,6 +40,7 @@ data class PhotoResponse(
             displayOrder = photo.displayOrder,
             createdAt = photo.createdAt,
             viewUrl = viewUrl,
+            previewReady = photo.previewKey != null,
         )
     }
 }
