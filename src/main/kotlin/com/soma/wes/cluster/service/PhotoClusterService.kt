@@ -47,7 +47,7 @@ class PhotoClusterService(
     fun cluster(galleryId: Long, userId: Long, threshold: Double?): PhotoClustersResponse {
         // 담당 작가와 초대받은 부부 양쪽이 볼 수 있어야 한다. 작가는 어떻게 묶이는지 확인해야
         // 하고, 고르는 것은 부부의 일이다.
-        galleryAccessPolicy.requireViewer(galleryId, userId)
+        galleryAccessPolicy.requirePhotographerOrCouple(galleryId, userId)
 
         val similarity = threshold ?: properties.defaultThreshold
         // 컨트롤러의 @Valid에만 맡기지 않는다. 이 서비스를 다른 곳에서 부르면 그 검증이 돌지 않고,

@@ -68,7 +68,7 @@ class GalleryAccessPolicyTest @Autowired constructor(
         val studio = saveStudio(userId = 10L)
         val gallery = saveGallery(studio)
 
-        val found = galleryAccessPolicy.requireManager(galleryId(gallery), userId = 10L)
+        val found = galleryAccessPolicy.requirePhotographer(galleryId(gallery), userId = 10L)
 
         assertEquals(gallery.id, found.id)
     }
@@ -80,7 +80,7 @@ class GalleryAccessPolicyTest @Autowired constructor(
         val gallery = saveGallery(studio)
 
         val exception = assertFailsWith<GalleryException> {
-            galleryAccessPolicy.requireManager(galleryId(gallery), userId = 20L)
+            galleryAccessPolicy.requirePhotographer(galleryId(gallery), userId = 20L)
         }
 
         assertEquals(GalleryErrorCode.GALLERY_ACCESS_DENIED, exception.errorCode)
@@ -93,7 +93,7 @@ class GalleryAccessPolicyTest @Autowired constructor(
         val gallery = saveGallery(studio)
 
         assertFailsWith<GalleryException> {
-            galleryAccessPolicy.requireManager(galleryId(gallery), userId = 30L)
+            galleryAccessPolicy.requirePhotographer(galleryId(gallery), userId = 30L)
         }
     }
 
@@ -104,7 +104,7 @@ class GalleryAccessPolicyTest @Autowired constructor(
         saveMember(galleryId(gallery), userId = 100L)
 
         assertFailsWith<GalleryException> {
-            galleryAccessPolicy.requireManager(galleryId(gallery), userId = 100L)
+            galleryAccessPolicy.requirePhotographer(galleryId(gallery), userId = 100L)
         }
     }
 
@@ -156,7 +156,7 @@ class GalleryAccessPolicyTest @Autowired constructor(
         val gallery = saveGallery(saveStudio(userId = 10L), status = GalleryStatus.OPEN)
         val saved = saveMember(galleryId(gallery), userId = 100L)
 
-        val member = galleryAccessPolicy.requireSelector(galleryId(gallery), userId = 100L)
+        val member = galleryAccessPolicy.requireCouple(galleryId(gallery), userId = 100L)
 
         assertEquals(saved.id, member.id)
     }
@@ -166,7 +166,7 @@ class GalleryAccessPolicyTest @Autowired constructor(
         val gallery = saveGallery(saveStudio(userId = 10L), status = GalleryStatus.OPEN)
 
         val exception = assertFailsWith<GalleryException> {
-            galleryAccessPolicy.requireSelector(galleryId(gallery), userId = 101L)
+            galleryAccessPolicy.requireCouple(galleryId(gallery), userId = 101L)
         }
 
         assertEquals(GalleryErrorCode.GALLERY_ACCESS_DENIED, exception.errorCode)
@@ -177,7 +177,7 @@ class GalleryAccessPolicyTest @Autowired constructor(
         val gallery = saveGallery(saveStudio(userId = 10L), selectionDeadline = now.plusDays(3))
         val saved = saveMember(galleryId(gallery), userId = 100L)
 
-        val member = galleryAccessPolicy.requireSelector(galleryId(gallery), userId = 100L)
+        val member = galleryAccessPolicy.requireCouple(galleryId(gallery), userId = 100L)
 
         assertEquals(saved.id, member.id)
     }
@@ -188,7 +188,7 @@ class GalleryAccessPolicyTest @Autowired constructor(
         saveMember(galleryId(gallery), userId = 100L)
 
         val exception = assertFailsWith<GalleryException> {
-            galleryAccessPolicy.requireSelector(galleryId(gallery), userId = 100L)
+            galleryAccessPolicy.requireCouple(galleryId(gallery), userId = 100L)
         }
 
         // 아직 안 열린 것과 구분해서 알려줘야 사용자가 연장을 요청할 수 있다.
@@ -211,7 +211,7 @@ class GalleryAccessPolicyTest @Autowired constructor(
         saveMember(galleryId(gallery), userId = 100L)
 
         val exception = assertFailsWith<GalleryException> {
-            galleryAccessPolicy.requireSelector(galleryId(gallery), userId = 100L)
+            galleryAccessPolicy.requireCouple(galleryId(gallery), userId = 100L)
         }
 
         assertEquals(GalleryErrorCode.GALLERY_NOT_OPEN, exception.errorCode)
@@ -223,7 +223,51 @@ class GalleryAccessPolicyTest @Autowired constructor(
         val gallery = saveGallery(studio, status = GalleryStatus.OPEN)
 
         val exception = assertFailsWith<GalleryException> {
-            galleryAccessPolicy.requireSelector(galleryId(gallery), userId = 10L)
+            galleryAccessPolicy.requireCouple(galleryId(gallery), userId = 10L)
+        }
+
+        assertEquals(GalleryErrorCode.GALLERY_ACCESS_DENIED, exception.errorCode)
+    }
+
+    @Test
+    fun `작가는 마감이 지나도 폴더와 클러스터를 만질 수 있다`() {
+        // 마감은 고객이 고르는 기한이지 작가의 작업 기한이 아니다.
+        val studio = saveStudio(userId = 10L)
+        val gallery = saveGallery(studio, status = GalleryStatus.CLOSED, selectionDeadline = now.minusDays(1))
+
+        val found = galleryAccessPolicy.requirePhotographerOrCouple(galleryId(gallery), userId = 10L)
+
+        assertEquals(gallery.id, found.id)
+    }
+
+    @Test
+    fun `부부는 고를 수 있는 동안에만 폴더와 클러스터를 만질 수 있다`() {
+        val gallery = saveGallery(saveStudio(userId = 10L), status = GalleryStatus.OPEN)
+        saveMember(galleryId(gallery), userId = 100L)
+
+        val found = galleryAccessPolicy.requirePhotographerOrCouple(galleryId(gallery), userId = 100L)
+
+        assertEquals(gallery.id, found.id)
+    }
+
+    @Test
+    fun `부부는 마감이 지나면 폴더와 클러스터를 만질 수 없다`() {
+        val gallery = saveGallery(saveStudio(userId = 10L), selectionDeadline = now.minusMinutes(1))
+        saveMember(galleryId(gallery), userId = 100L)
+
+        val exception = assertFailsWith<GalleryException> {
+            galleryAccessPolicy.requirePhotographerOrCouple(galleryId(gallery), userId = 100L)
+        }
+
+        assertEquals(GalleryErrorCode.SELECTION_DEADLINE_PASSED, exception.errorCode)
+    }
+
+    @Test
+    fun `갤러리와 무관한 사용자는 폴더와 클러스터를 만질 수 없다`() {
+        val gallery = saveGallery(saveStudio(userId = 10L), status = GalleryStatus.OPEN)
+
+        val exception = assertFailsWith<GalleryException> {
+            galleryAccessPolicy.requirePhotographerOrCouple(galleryId(gallery), userId = 999L)
         }
 
         assertEquals(GalleryErrorCode.GALLERY_ACCESS_DENIED, exception.errorCode)

@@ -31,7 +31,7 @@ class EmbeddingService(
     private val log = LoggerFactory.getLogger(javaClass)
 
     fun run(galleryId: Long, userId: Long, force: Boolean): EmbeddingRunResponse {
-        galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requirePhotographer(galleryId, userId)
 
         // 기동이 아니라 여기서 실패한다. 로컬·테스트에는 실행기가 없는 것이 정상이라
         // 설정이 비어 있다고 앱을 못 뜨게 만들면 개발이 막힌다.

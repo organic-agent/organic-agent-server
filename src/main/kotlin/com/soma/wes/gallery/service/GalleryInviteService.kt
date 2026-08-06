@@ -43,7 +43,7 @@ class GalleryInviteService(
 
     @Transactional
     fun issue(galleryId: Long, userId: Long): GalleryInvite {
-        galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requirePhotographer(galleryId, userId)
 
         return galleryInviteRepository.save(
             GalleryInvite(
@@ -60,7 +60,7 @@ class GalleryInviteService(
      */
     @Transactional
     fun revoke(galleryId: Long, inviteId: Long, userId: Long) {
-        galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requirePhotographer(galleryId, userId)
 
         val invite = galleryInviteRepository.findById(inviteId)
             .orElseThrow { GalleryException(GalleryErrorCode.INVITE_NOT_FOUND) }
@@ -93,7 +93,7 @@ class GalleryInviteService(
 
         val gallery = galleryRepository.findById(invite.galleryId)
             .orElseThrow { GalleryException(GalleryErrorCode.GALLERY_NOT_FOUND) }
-        if (galleryAccessPolicy.isManager(gallery, userId)) {
+        if (galleryAccessPolicy.isPhotographer(gallery, userId)) {
             throw GalleryException(GalleryErrorCode.MANAGER_CANNOT_ACCEPT_INVITE)
         }
 

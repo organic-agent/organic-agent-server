@@ -27,7 +27,7 @@ import org.springframework.transaction.annotation.Transactional
  * 프론트가 S3에 직접 올린 뒤 완료를 통보한다. 수천 장 원본이 서버 메모리를 지나가면
  * 1GB 컨테이너가 버티지 못한다.
  *
- * 모든 경로가 [GalleryAccessPolicy.requireManager]를 지난다. 사진을 올리고 지우고 다시
+ * 모든 경로가 [GalleryAccessPolicy.requirePhotographer]를 지난다. 사진을 올리고 지우고 다시
  * 정렬하는 것은 담당 작가의 일이고, 예비 부부는 [갤러리 조회][com.soma.wes.gallery.service.GalleryService]와
  * 선택 API로만 사진을 만난다.
  */
@@ -70,7 +70,7 @@ class PhotoService(
         userId: Long,
         request: IssueUploadUrlsRequest,
     ): IssueUploadUrlsResponse {
-        galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requirePhotographer(galleryId, userId)
 
         if (request.files.size > properties.maxBatchSize) {
             throw PhotoException(PhotoErrorCode.TOO_MANY_PHOTOS)
@@ -115,7 +115,7 @@ class PhotoService(
      */
     @Transactional
     fun completeUpload(galleryId: Long, userId: Long, request: CompleteUploadRequest): PhotoCountResponse {
-        galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requirePhotographer(galleryId, userId)
 
         val photos = loadPhotosIn(galleryId, request.photoIds)
         photos.forEach { it.markUploaded() }
@@ -154,7 +154,7 @@ class PhotoService(
         page: Int,
         size: Int,
     ): PhotoPageResponse {
-        galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requirePhotographer(galleryId, userId)
 
         if (size !in 1..properties.maxBatchSize) {
             throw PhotoException(PhotoErrorCode.TOO_MANY_PHOTOS)
@@ -186,7 +186,7 @@ class PhotoService(
     /** 임베딩 진행 상황을 확인하는 곳. Lambda는 비동기라 이 집계 말고는 알 방법이 없다. */
     @Transactional(readOnly = true)
     fun summarize(galleryId: Long, userId: Long): PhotoSummaryResponse {
-        galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requirePhotographer(galleryId, userId)
 
         return PhotoSummaryResponse(
             total = photoRepository.countByGalleryId(galleryId),

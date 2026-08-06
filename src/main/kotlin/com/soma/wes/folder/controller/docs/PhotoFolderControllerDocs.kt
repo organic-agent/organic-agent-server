@@ -12,7 +12,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.http.ResponseEntity
 
-@Tag(name = "사진 폴더", description = "예비 부부가 확정한 사진 묶음")
+@Tag(name = "[Folder]", description = "확정한 사진 묶음 폴더 API")
 interface PhotoFolderControllerDocs {
 
     @Operation(
@@ -23,13 +23,14 @@ interface PhotoFolderControllerDocs {
             저장 시점의 사진 목록이 그대로 고정된다. 나중에 임계값을 바꾸거나 사진이 더 올라와도
             이 폴더는 달라지지 않는다 — 폴더는 클러스터를 가리키는 포인터가 아니라 확정한 목록이다.
 
-            폴더 관련 API는 전부 초대받은 부부만 쓸 수 있다. 갤러리가 열려 있고 선택 마감 기한 안이어야 한다.
+            담당 작가와 초대받은 부부가 쓴다. 부부는 갤러리가 열려 있고 선택 마감 기한 안일 때만 가능하고,
+            작가에게는 그 제약이 없다 -- 마감은 고객이 고르는 기한이지 작가의 작업 기한이 아니다.
         """,
     )
     @ApiResponses(
         ApiResponse(responseCode = "201", description = "생성 성공"),
         ApiResponse(responseCode = "400", description = "이 갤러리의 사진이 아니거나 개수 상한을 넘음", content = []),
-        ApiResponse(responseCode = "403", description = "멤버가 아니거나 마감/미공개 갤러리", content = []),
+        ApiResponse(responseCode = "403", description = "갤러리와 무관한 사용자이거나, 부부인데 마감/미공개 갤러리", content = []),
     )
     fun create(
         loginUser: LoginUser,
@@ -39,11 +40,12 @@ interface PhotoFolderControllerDocs {
 
     @Operation(
         summary = "폴더 목록",
-        description = "사진 없이 이름과 개수만 온다. 최근에 만든 것이 먼저다.",
+        description = "사진 전부 대신 대표 한 장(coverPhoto)과 개수만 온다. 최근에 만든 것이 먼저다.\n"
+            + "카드 미리보기를 위해 폴더마다 상세를 따로 부르지 않아도 된다.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "조회 성공"),
-        ApiResponse(responseCode = "403", description = "멤버가 아니거나 마감/미공개 갤러리", content = []),
+        ApiResponse(responseCode = "403", description = "갤러리와 무관한 사용자이거나, 부부인데 마감/미공개 갤러리", content = []),
     )
     fun list(loginUser: LoginUser, galleryId: Long): ResponseEntity<List<PhotoFolderResponse>>
 
@@ -57,7 +59,7 @@ interface PhotoFolderControllerDocs {
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "조회 성공"),
-        ApiResponse(responseCode = "403", description = "멤버가 아니거나 마감/미공개 갤러리", content = []),
+        ApiResponse(responseCode = "403", description = "갤러리와 무관한 사용자이거나, 부부인데 마감/미공개 갤러리", content = []),
         ApiResponse(responseCode = "404", description = "존재하지 않는 폴더", content = []),
     )
     fun get(loginUser: LoginUser, galleryId: Long, folderId: Long): ResponseEntity<PhotoFolderDetailResponse>
@@ -66,7 +68,7 @@ interface PhotoFolderControllerDocs {
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "변경 성공"),
         ApiResponse(responseCode = "400", description = "이름이 비었거나 100자를 넘음", content = []),
-        ApiResponse(responseCode = "403", description = "멤버가 아니거나 마감/미공개 갤러리", content = []),
+        ApiResponse(responseCode = "403", description = "갤러리와 무관한 사용자이거나, 부부인데 마감/미공개 갤러리", content = []),
         ApiResponse(responseCode = "404", description = "존재하지 않는 폴더", content = []),
     )
     fun rename(
@@ -82,7 +84,7 @@ interface PhotoFolderControllerDocs {
     )
     @ApiResponses(
         ApiResponse(responseCode = "204", description = "삭제 성공"),
-        ApiResponse(responseCode = "403", description = "멤버가 아니거나 마감/미공개 갤러리", content = []),
+        ApiResponse(responseCode = "403", description = "갤러리와 무관한 사용자이거나, 부부인데 마감/미공개 갤러리", content = []),
         ApiResponse(responseCode = "404", description = "존재하지 않는 폴더", content = []),
     )
     fun delete(loginUser: LoginUser, galleryId: Long, folderId: Long): ResponseEntity<Unit>
@@ -94,7 +96,7 @@ interface PhotoFolderControllerDocs {
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "추가 성공"),
         ApiResponse(responseCode = "400", description = "이 갤러리의 사진이 아니거나 개수 상한을 넘음", content = []),
-        ApiResponse(responseCode = "403", description = "멤버가 아니거나 마감/미공개 갤러리", content = []),
+        ApiResponse(responseCode = "403", description = "갤러리와 무관한 사용자이거나, 부부인데 마감/미공개 갤러리", content = []),
         ApiResponse(responseCode = "404", description = "존재하지 않는 폴더", content = []),
     )
     fun addPhotos(
@@ -110,7 +112,7 @@ interface PhotoFolderControllerDocs {
     )
     @ApiResponses(
         ApiResponse(responseCode = "204", description = "제거 성공"),
-        ApiResponse(responseCode = "403", description = "멤버가 아니거나 마감/미공개 갤러리", content = []),
+        ApiResponse(responseCode = "403", description = "갤러리와 무관한 사용자이거나, 부부인데 마감/미공개 갤러리", content = []),
         ApiResponse(responseCode = "404", description = "존재하지 않는 폴더이거나 폴더에 없는 사진", content = []),
     )
     fun removePhoto(
