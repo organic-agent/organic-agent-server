@@ -1,4 +1,4 @@
-package com.soma.wes.gallery.service
+package com.soma.wes.gallery.support
 
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryMember
@@ -15,7 +15,6 @@ import java.time.ZonedDateTime
 
 
 @Service
-@Transactional(readOnly = true)
 class GalleryAccessPolicy(
     private val galleryRepository: GalleryRepository,
     private val galleryMemberRepository: GalleryMemberRepository,
@@ -23,6 +22,7 @@ class GalleryAccessPolicy(
     private val clock: Clock,
 ) {
 
+    @Transactional(readOnly = true)
     fun requireManager(galleryId: Long, userId: Long): Gallery {
         val gallery = findGallery(galleryId)
         if (!isManager(gallery, userId)) {
@@ -31,6 +31,7 @@ class GalleryAccessPolicy(
         return gallery
     }
 
+    @Transactional(readOnly = true)
     fun requireViewer(galleryId: Long, userId: Long): Gallery {
         val gallery = findGallery(galleryId)
         if (isManager(gallery, userId)) {
@@ -44,6 +45,7 @@ class GalleryAccessPolicy(
         return gallery
     }
 
+    @Transactional(readOnly = true)
     fun requireSelector(galleryId: Long, userId: Long): GalleryMember {
         val gallery = findGallery(galleryId)
         val member = findMember(galleryId, userId)
@@ -69,7 +71,8 @@ class GalleryAccessPolicy(
         galleryMemberRepository.findByGalleryIdAndUserId(galleryId, userId)
             ?: throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
 
-    /** 내부에서도 쓰지만 [GalleryInviteService]가 부르는 공개 API다. */
+    /** 내부에서도 쓰지만 [com.soma.wes.gallery.service.GalleryInviteService]가 부르는 공개 API다. */
+    @Transactional(readOnly = true)
     fun isManager(gallery: Gallery, userId: Long): Boolean =
         studioRepository.findByUserId(userId)?.id == gallery.studioId
 }

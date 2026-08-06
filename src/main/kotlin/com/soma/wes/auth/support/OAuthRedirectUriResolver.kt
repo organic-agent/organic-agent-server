@@ -1,4 +1,4 @@
-package com.soma.wes.auth.service.oauth
+package com.soma.wes.auth.support
 
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value

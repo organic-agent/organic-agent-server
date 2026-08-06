@@ -1,6 +1,7 @@
 package com.soma.wes.gallery.service
 
 import com.soma.wes.TestcontainersConfiguration
+import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryInvite
 import com.soma.wes.gallery.domain.GalleryStatus
@@ -9,24 +10,25 @@ import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.repository.GalleryInviteRepository
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
+import com.soma.wes.gallery.support.GalleryAccessPolicy
+import com.soma.wes.gallery.support.GalleryInviteTokenGenerator
 import com.soma.wes.global.config.TimeConfig
-import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.domain.UserType
 import com.soma.wes.user.repository.UserRepository
-import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Test
-import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
-import org.springframework.context.annotation.Import
 import java.time.Clock
 import java.time.ZonedDateTime
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
+import org.springframework.context.annotation.Import
 
 @DataJpaTest
 @Import(

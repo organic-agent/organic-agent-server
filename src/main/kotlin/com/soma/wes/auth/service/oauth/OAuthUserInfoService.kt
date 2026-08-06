@@ -5,10 +5,12 @@ import com.soma.wes.auth.dto.OAuthUserInfo
 import com.soma.wes.auth.exception.AuthErrorCode
 import com.soma.wes.auth.exception.OAuthException
 import com.soma.wes.auth.strategy.OAuthUserInfoExtractorFactory
-import org.springframework.stereotype.Service
-import org.springframework.util.LinkedMultiValueMap
+import com.soma.wes.auth.support.OAuthRegistration
+import com.soma.wes.auth.support.OAuthRegistrations
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import org.springframework.stereotype.Service
+import org.springframework.util.LinkedMultiValueMap
 
 
 @Service

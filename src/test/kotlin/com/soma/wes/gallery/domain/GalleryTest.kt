@@ -15,7 +15,7 @@ import kotlin.test.assertTrue
  * 상태 전이와 마감 기한 판단만 본다.
  *
  * "지금 사진을 고를 수 있는가"는 상태와 기한을 함께 봐야 나오는 결론이라
- * [com.soma.wes.gallery.service.GalleryAccessPolicy] 쪽에서 검증한다.
+ * [com.soma.wes.gallery.support.GalleryAccessPolicy] 쪽에서 검증한다.
  */
 class GalleryTest {
 

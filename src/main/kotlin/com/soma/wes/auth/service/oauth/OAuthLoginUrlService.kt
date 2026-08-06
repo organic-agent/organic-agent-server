@@ -2,6 +2,7 @@ package com.soma.wes.auth.service.oauth
 
 import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.auth.dto.response.LoginUrlResponse
+import com.soma.wes.auth.support.OAuthRegistrations
 import org.springframework.stereotype.Service
 import org.springframework.web.util.UriComponentsBuilder
 

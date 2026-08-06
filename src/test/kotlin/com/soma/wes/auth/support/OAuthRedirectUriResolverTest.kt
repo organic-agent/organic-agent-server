@@ -1,4 +1,4 @@
-package com.soma.wes.auth.service.oauth
+package com.soma.wes.auth.support
 
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
