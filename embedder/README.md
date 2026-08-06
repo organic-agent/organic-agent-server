@@ -32,19 +32,25 @@ WHERE gallery_id = ? AND status <> 'PENDING' AND embedding IS NULL
 - **`--force`는 이미 채워진 것까지 다시 계산한다.** 모델이나 전처리를 바꿔 전량 재계산할 때만.
 - **`PENDING`은 건너뛴다.** 업로드 URL만 발급되고 S3에 객체가 없을 수 있는 상태다.
 
-## 접속: 비밀번호가 없다
+## 접속: 원래는 비밀번호가 없었다
 
-DB 접속은 **RDS IAM 인증**이다. `boto3`가 만드는 15분짜리 토큰을 비밀번호 자리에 넣는다.
+설계는 **RDS IAM 인증**이었다. `boto3`가 만드는 15분짜리 토큰을 비밀번호 자리에 넣는다.
 토큰 생성은 로컬 서명 연산이라 네트워크를 타지 않는데, 이 함수가 붙는 서브넷에는 NAT도
 인터페이스 엔드포인트도 없으므로 그 점이 결정적이다 — Parameter Store를 읽으려면 시간당
-과금되는 엔드포인트가 두 개(ssm, kms) 필요해진다.
+과금되는 엔드포인트가 필요해진다. 부수 효과로 비밀번호가 어디에도 남지 않았다.
 
-부수 효과로 비밀번호가 Lambda 환경변수에도 Terraform state에도 남지 않는다.
+**지금은 못 쓴다.** 조직 SCP가 이 계정 전체에서 `rds-db:connect`를 거부한다. 계정은 조직의
+멤버 계정이라 여기서 풀 수 없다(SCP는 관리 계정에 적용되지 않으므로, 관리자인데도 막힌다는
+것이 곧 멤버 계정이라는 증거다). 그래서 임시로 `DB_PASSWORD` 환경변수를 쓴다.
 
-전제 조건 두 가지는 인프라 레포가 책임진다:
+이 환경변수는 Terraform이 넣지 않는다 — 넣으면 state에 평문으로 남는다. apply 밖에서 한 번
+주입하고 `ignore_changes`가 지켜 준다. 주입 명령은 인프라 레포 런북에 있다.
 
-- RDS 인스턴스에 `iam_database_authentication_enabled = true`
-- Lambda 롤에 `rds-db:connect`
+**`GRANT rds_iam`은 지금 있으면 안 된다.** pg_hba가 `hostssl all +rds_iam pam`을 먼저
+매칭해서 비밀번호를 보지도 않고 PAM으로 보낸다. 증상은 `PAM authentication failed`다.
+
+전제 조건은 인프라 레포가 책임진다. 원복 절차(SCP를 푼 뒤)도 거기 있다 —
+`docs/runbook.md`의 "SCP 차단" 절.
 
 그리고 **DB 안에 사용자를 한 번 만들어 줘야 한다**(Terraform이 못 하는 부분).
 인프라 레포 `docs/runbook.md`의 "임베딩 파이프라인" 절을 볼 것:
@@ -75,9 +81,9 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 
 export DB_HOST=localhost DB_PORT=15432 DB_NAME=wes_db DB_USER=embedder
-# 토큰은 RDS 엔드포인트로 서명해야 RDS가 받아준다. 연결은 터널(localhost)로 하지만
-# 서명 대상은 실제 호스트다.
-export DB_AUTH_HOST="<rds-endpoint>"
+export DB_PASSWORD="$(aws ssm get-parameter --region ap-northeast-2 \
+  --name /wes/prod/embedder.db.password --with-decryption \
+  --query Parameter.Value --output text)"
 # 터널을 거치면 인증서의 호스트명이 localhost와 맞지 않아 verify-full이 실패한다.
 export DB_SSLMODE=require
 export S3_BUCKET="$(cd ../../../organic-agent-infra && terraform output -raw photo_bucket)"
@@ -129,7 +135,8 @@ python -m embedder --gallery-id 1
 | 변수 | 기본값 | 비고 |
 |---|---|---|
 | `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` | — | 필수(포트 기본 5432). Lambda는 Terraform이 주입 |
-| `DB_AUTH_HOST` | `DB_HOST` | IAM 토큰에 서명할 호스트. 터널로 로컬 실행할 때만 다르다 |
+| `DB_PASSWORD` | — | 필수. **Terraform이 주입하지 않는다** — apply 밖에서 넣고 `ignore_changes`가 지킨다. SCP 우회로용이라 원복 시 사라진다 |
+| `DB_AUTH_HOST` | `DB_HOST` | IAM 토큰에 서명할 호스트. 지금은 안 쓰인다(원복용). 터널로 로컬 실행할 때만 달라진다 |
 | `DB_SSLMODE` | `verify-full` | 터널로 로컬 실행할 때는 `require` |
 | `DB_SSLROOTCERT` | `/opt/rds-ca/global-bundle.pem` | 이미지에 구워져 있다 |
 | `S3_BUCKET` | — | 필수 |

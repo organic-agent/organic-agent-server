@@ -3,9 +3,15 @@
 Lambda에는 Terraform이 값을 넣어 주고(인프라 레포의 `modules/embedding`), 로컬 실행은 셸
 환경에서 온다.
 
-DB 비밀번호가 여기 없는 것이 이 모듈에서 가장 중요한 점이다. 접속은 RDS IAM 인증을 쓴다 --
-`db.py`가 매 실행마다 짧은 수명의 토큰을 만들어 비밀번호 자리에 넣는다. 그래서 비밀번호를
-Lambda 환경변수로 주입할 필요가 없고, Terraform state에도 남지 않는다.
+원래 이 모듈에서 가장 중요한 점은 DB 비밀번호가 **없다**는 것이었다. 접속은 RDS IAM 인증을
+쓰고, `db.py`가 매 실행마다 짧은 수명의 토큰을 만들어 비밀번호 자리에 넣었다.
+
+지금은 조직 SCP가 `rds-db:connect`를 계정 전체에서 거부해 그 설계를 쓰지 못한다. 임시로
+`DB_PASSWORD`를 받아 쓴다. 이 환경변수는 Terraform이 넣지 않는다 -- 넣으면 state에 평문으로
+남기 때문에, apply 밖에서 주입하고 `ignore_changes`가 지켜 준다.
+
+**이건 임시 우회로다.** SCP가 풀리면 `db_password`와 `db.py`의 password 인자를 지우고 토큰
+생성으로 되돌린다. 절차는 인프라 레포 `docs/runbook.md`의 "SCP 차단" 절.
 """
 
 from __future__ import annotations
@@ -22,9 +28,19 @@ class Settings:
     db_name: str
     db_user: str
 
+    #: embedder 전용 DB 사용자의 비밀번호. 마스터 비밀번호가 아니다.
+    #:
+    #: 원래는 이 필드가 없었다 -- RDS IAM 인증으로 비밀번호 자체가 필요 없는 설계였다.
+    #: 조직 SCP가 rds-db:connect를 거부해 임시로 되돌린 상태다. SCP가 풀리면 이 필드와
+    #: db.py의 password 인자를 함께 지우고 토큰 생성으로 돌아간다.
+    #: 자세한 경위와 원복 절차는 인프라 레포의 docs/runbook.md "SCP 차단" 절에 있다.
+    db_password: str
+
     #: IAM 인증 토큰에 서명할 호스트. 보통 db_host와 같고, SSM 포트 포워딩으로 로컬에서
     #: 돌릴 때만 갈린다 -- 그때 연결은 localhost로 하지만 토큰은 RDS 엔드포인트로 서명해야
     #: RDS가 받아준다.
+    #:
+    #: 지금은 비밀번호 인증이라 쓰이지 않는다. 원복할 때 필요하므로 남겨 둔다.
     db_auth_host: str
 
     #: Lambda 기본값은 verify-full이다. RDS IAM 인증은 TLS를 요구하고, 인증서까지 검증해야
@@ -61,6 +77,7 @@ class Settings:
             db_port=int(os.environ.get("DB_PORT", "5432")),
             db_name=_required("DB_NAME"),
             db_user=_required("DB_USER"),
+            db_password=_required("DB_PASSWORD"),
             db_auth_host=os.environ.get("DB_AUTH_HOST") or db_host,
             db_sslmode=os.environ.get("DB_SSLMODE", "verify-full"),
             db_sslrootcert=os.environ.get("DB_SSLROOTCERT", "/opt/rds-ca/global-bundle.pem"),
