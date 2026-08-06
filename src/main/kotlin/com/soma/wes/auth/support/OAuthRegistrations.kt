@@ -1,4 +1,4 @@
-package com.soma.wes.auth.service.oauth
+package com.soma.wes.auth.support
 
 import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.auth.exception.AuthErrorCode

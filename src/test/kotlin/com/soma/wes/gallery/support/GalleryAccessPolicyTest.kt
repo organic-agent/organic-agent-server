@@ -1,4 +1,4 @@
-package com.soma.wes.gallery.service
+package com.soma.wes.gallery.support
 
 import com.soma.wes.TestcontainersConfiguration
 import com.soma.wes.gallery.domain.Gallery

@@ -1,4 +1,4 @@
-package com.soma.wes.gallery.service
+package com.soma.wes.gallery.support
 
 import org.springframework.stereotype.Component
 import java.security.SecureRandom
