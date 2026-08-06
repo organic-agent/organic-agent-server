@@ -52,7 +52,7 @@ RDS는 퍼블릭 접근이 없으므로 SSM 포트 포워딩으로 터널을 먼
 
 ```bash
 aws ssm start-session --region ap-northeast-2 \
-  --target "$(cd ../../../organic-agent-infrastructure && terraform output -raw ec2_instance_id)" \
+  --target "$(cd ../../../organic-agent-infra && terraform output -raw ec2_instance_id)" \
   --document-name AWS-StartPortForwardingSessionToRemoteHost \
   --parameters '{"host":["<rds-endpoint>"],"portNumber":["5432"],"localPortNumber":["15432"]}'
 ```
@@ -71,7 +71,7 @@ export DB_HOST=localhost DB_PORT=15432 DB_NAME=wes_db DB_USER=embedder
 export DB_AUTH_HOST="<rds-endpoint>"
 # 터널을 거치면 인증서의 호스트명이 localhost와 맞지 않아 verify-full이 실패한다.
 export DB_SSLMODE=require
-export S3_BUCKET="$(cd ../../../organic-agent-infrastructure && terraform output -raw photo_bucket)"
+export S3_BUCKET="$(cd ../../../organic-agent-infra && terraform output -raw photo_bucket)"
 
 python -m embedder --gallery-id 1
 ```
@@ -81,7 +81,7 @@ python -m embedder --gallery-id 1
 ## 빌드와 배포
 
 ```bash
-REPO="$(cd ../../../organic-agent-infrastructure && terraform output -raw embedder_repository_url)"
+REPO="$(cd ../../../organic-agent-infra && terraform output -raw embedder_repository_url)"
 aws ecr get-login-password --region ap-northeast-2 \
   | docker login --username AWS --password-stdin "${REPO%%/*}"
 
@@ -89,7 +89,7 @@ docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
   -t "$REPO:latest" --push .
 
 aws lambda update-function-code --region ap-northeast-2 \
-  --function-name "$(cd ../../../organic-agent-infrastructure && terraform output -raw embedder_function_name)" \
+  --function-name "$(cd ../../../organic-agent-infra && terraform output -raw embedder_function_name)" \
   --image-uri "$REPO:latest"
 ```
 

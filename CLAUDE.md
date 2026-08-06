@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `wes` is a Spring Boot 4.1.0 + Kotlin 2.3.21 backend, part of the larger `organic-agent-server` project (this directory is the `wes` service/module). It targets JVM 21 via the Gradle Kotlin DSL toolchain. It serves a wedding photo-selection product: photographers create galleries and upload originals; invited couples pick from them.
 
-The infrastructure counterpart is the sibling repo `../../organic-agent-infrastructure` (Terraform: VPC/ALB/EC2/RDS, the photo S3 bucket, and the embedding Lambda). Deployment topology and the `/wes/prod/*` parameter contract are documented in the local-only `docs/notes/` (gitignored).
+The infrastructure counterpart is the sibling repo `../../organic-agent-infra` (Terraform: VPC/ALB/EC2/RDS, the photo S3 bucket, and the embedding Lambda). Deployment topology and the `/wes/prod/*` parameter contract are documented in the local-only `docs/notes/` (gitignored).
 
 ## Commands
 
