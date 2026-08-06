@@ -90,19 +90,22 @@ python -m embedder --gallery-id 1
 ## 빌드와 배포
 
 ```bash
-REPO="$(cd ../../../organic-agent-infra && terraform output -raw embedder_repository_url)"
-aws ecr get-login-password --region ap-northeast-2 \
-  | docker login --username AWS --password-stdin "${REPO%%/*}"
-
-docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
-  -t "$REPO:latest" --push .
-
-aws lambda update-function-code --region ap-northeast-2 \
-  --function-name "$(cd ../../../organic-agent-infra && terraform output -raw embedder_function_name)" \
-  --image-uri "$REPO:latest"
+./deploy.sh
 ```
 
-세 플래그가 전부 필요하다.
+이미지를 만들어 ECR에 올리고, Lambda가 그 이미지를 집게 한 뒤, 실제로 걸렸는지까지 확인한다.
+`torch`와 모델 가중치 레이어는 캐시되므로 파이썬 코드만 고쳤다면 1분이 안 걸린다.
+
+**앱과 배포 경로가 다르다.** `cd.yml`은 `embedder/`를 건드리지 않으므로 main에 머지해도 운영
+함수는 그대로다. 따로 안 나가는 것이 둘 더 있다:
+
+- **`terraform apply`로도 코드는 안 나간다.** 인프라의 `modules/embedding`에
+  `lifecycle { ignore_changes = [image_uri] }`가 걸려 있다. 저장소·함수·IAM만 관리하고 이미지
+  태그는 일부러 손대지 않는다 — 그래야 코드를 고칠 때마다 terraform을 돌리지 않는다.
+- **ECR에 `:latest`를 푸시하는 것만으로도 안 나간다.** Lambda는 갱신 시점의 다이제스트를 고정해
+  둔다. 태그가 새 이미지를 가리켜도 함수는 옛 다이제스트를 계속 실행한다.
+
+스크립트가 쓰는 세 플래그가 전부 필요하다.
 
 - **`--platform linux/amd64`** — 맥에서 빌드하면 기본이 arm64다. Lambda 함수는 x86_64로
   만들어져 있어서 아키텍처가 다르면 실행 시점에 죽는다. (앱 컨테이너는 Graviton EC2에
