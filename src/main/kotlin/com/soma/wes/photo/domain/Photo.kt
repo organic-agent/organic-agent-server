@@ -78,8 +78,27 @@ class Photo(
     @Column(name = "embedding")
     var embedding: FloatArray? = null
 
+    /**
+     * 브라우저가 그릴 수 있는 파생 JPEG의 위치. [embedding]과 마찬가지로 이 서버가 아니라
+     * 임베딩 Lambda가 채운다 — 그쪽이 이미 원본을 디코딩해 들고 있다.
+     *
+     * null은 "아직 파생본이 없다"는 뜻이다. 업로드 완료와 임베딩 실행 사이가 그렇고,
+     * 파생본 업로드만 실패한 사진도 여기 null로 남는다.
+     */
+    @Column(name = "preview_key", length = 500)
+    var previewKey: String? = null
+
     val requiredId: Long
         get() = id ?: error("아직 저장되지 않은 Photo 다")
+
+    /**
+     * 화면에 그릴 객체의 위치.
+     *
+     * 파생본이 있으면 그쪽이다. 원본은 HEIC일 수 있어서 브라우저가 그리지 못할 뿐 아니라,
+     * 목록에 수백 장을 띄우기에는 그대로 내려주기에 너무 크다.
+     */
+    val viewKey: String
+        get() = previewKey ?: storageKey
 
     fun changeDisplayOrder(displayOrder: Int) {
         this.displayOrder = displayOrder

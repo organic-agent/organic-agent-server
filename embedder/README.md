@@ -15,11 +15,20 @@ __main__.py   로컬 CLI    python -m embedder --gallery-id 1
 SELECT id, storage_key FROM photos
 WHERE gallery_id = ? AND status <> 'PENDING' AND embedding IS NULL
   → S3 GET → HEIC 디코드 · EXIF 회전 · 리사이즈 → DINOv2(L2 정규화)
-  → UPDATE photos SET embedding = ?, status = 'EMBEDDED'
+  → S3 PUT previews/{원본키}.jpg
+  → UPDATE photos SET embedding = ?, preview_key = ?, status = 'EMBEDDED'
 ```
 
 - **재실행이 안전하다.** 기본 조건이 `embedding IS NULL`이라 중간에 죽어도 다시 부르면 남은
   것만 이어서 한다. 한 장이 실패해도 잡을 죽이지 않고 `failed`에 키만 모아 돌려준다.
+- **미리보기 파생본도 여기서 만든다.** 임베딩을 하려면 어차피 HEIC를 디코딩하고 EXIF 회전을
+  굽고 크기를 줄여야 하는데, 그 결과가 그대로 브라우저가 그릴 수 있는 이미지다. 남은 일은
+  JPEG 인코딩과 PUT 하나뿐이라 별도 잡으로 뺄 이유가 없다 — 빼면 같은 이미지를 두 번 받아
+  두 번 디코딩하게 된다. 아이폰 원본(HEIC)은 Chrome·Firefox·Edge가 그리지 못하므로
+  이 파생본이 미리보기의 유일한 통로다.
+- **파생본 실패는 임베딩을 죽이지 않는다.** IAM에 `s3:PutObject`가 없으면 사진마다 실패하는데,
+  그때도 벡터는 그대로 적재되고 실패한 키만 `previewsFailed`로 나온다. 이 배열이 비어 있지
+  않으면 임베딩이 아니라 권한을 봐야 한다.
 - **`--force`는 이미 채워진 것까지 다시 계산한다.** 모델이나 전처리를 바꿔 전량 재계산할 때만.
 - **`PENDING`은 건너뛴다.** 업로드 URL만 발급되고 S3에 객체가 없을 수 있는 상태다.
 
@@ -52,7 +61,7 @@ RDS는 퍼블릭 접근이 없으므로 SSM 포트 포워딩으로 터널을 먼
 
 ```bash
 aws ssm start-session --region ap-northeast-2 \
-  --target "$(cd ../../../organic-agent-infrastructure && terraform output -raw ec2_instance_id)" \
+  --target "$(cd ../../../organic-agent-infra && terraform output -raw ec2_instance_id)" \
   --document-name AWS-StartPortForwardingSessionToRemoteHost \
   --parameters '{"host":["<rds-endpoint>"],"portNumber":["5432"],"localPortNumber":["15432"]}'
 ```
@@ -71,7 +80,7 @@ export DB_HOST=localhost DB_PORT=15432 DB_NAME=wes_db DB_USER=embedder
 export DB_AUTH_HOST="<rds-endpoint>"
 # 터널을 거치면 인증서의 호스트명이 localhost와 맞지 않아 verify-full이 실패한다.
 export DB_SSLMODE=require
-export S3_BUCKET="$(cd ../../../organic-agent-infrastructure && terraform output -raw photo_bucket)"
+export S3_BUCKET="$(cd ../../../organic-agent-infra && terraform output -raw photo_bucket)"
 
 python -m embedder --gallery-id 1
 ```
@@ -81,7 +90,7 @@ python -m embedder --gallery-id 1
 ## 빌드와 배포
 
 ```bash
-REPO="$(cd ../../../organic-agent-infrastructure && terraform output -raw embedder_repository_url)"
+REPO="$(cd ../../../organic-agent-infra && terraform output -raw embedder_repository_url)"
 aws ecr get-login-password --region ap-northeast-2 \
   | docker login --username AWS --password-stdin "${REPO%%/*}"
 
@@ -89,7 +98,7 @@ docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
   -t "$REPO:latest" --push .
 
 aws lambda update-function-code --region ap-northeast-2 \
-  --function-name "$(cd ../../../organic-agent-infrastructure && terraform output -raw embedder_function_name)" \
+  --function-name "$(cd ../../../organic-agent-infra && terraform output -raw embedder_function_name)" \
   --image-uri "$REPO:latest"
 ```
 
@@ -124,4 +133,5 @@ aws lambda update-function-code --region ap-northeast-2 \
 | `EMBED_DIM` | `768` | `vector(n)` 컬럼과 `Photo.EMBEDDING_DIMENSION`과 셋이 같아야 한다 |
 | `EMBED_BATCH_SIZE` | `8` | 모델에 한 번에 넣는 장수 |
 | `EMBED_MODEL_ID` | `facebook/dinov2-base` | 바꾸면 이미지를 다시 빌드해야 한다(가중치가 구워져 있다) |
-| `RESIZE_LONG_EDGE` | `1024` | 디코딩 직후 메모리를 누르는 용도 |
+| `RESIZE_LONG_EDGE` | `1024` | 디코딩 직후 메모리를 누르는 용도. 미리보기 파생본도 이 크기로 나간다 |
+| `PREVIEW_QUALITY` | `82` | 파생본 JPEG 품질. 1024px에서 장당 200KB 안팎 |

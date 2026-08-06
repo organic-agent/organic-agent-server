@@ -1,7 +1,7 @@
 """photos 테이블 읽기/쓰기.
 
-스키마는 앱(Flyway)이 소유한다. 이 모듈이 건드리는 것은 세 컬럼뿐이다 --
-`embedding`, `status`, `updated_at`.
+스키마는 앱(Flyway)이 소유한다. 이 모듈이 건드리는 것은 네 컬럼뿐이다 --
+`embedding`, `preview_key`, `status`, `updated_at`.
 
 접속에는 비밀번호가 아니라 **RDS IAM 인증 토큰**을 쓴다. 토큰 생성(`generate_db_auth_token`)은
 로컬 서명 연산이라 네트워크를 타지 않는다 -- NAT도 인터페이스 엔드포인트도 없는 이 서브넷에서
@@ -85,14 +85,22 @@ def fetch_targets(connection: psycopg.Connection, gallery_id: int, force: bool) 
 
 def store_embeddings(
     connection: psycopg.Connection,
-    results: Iterable[tuple[PhotoRef, np.ndarray]],
+    results: Iterable[tuple[PhotoRef, np.ndarray, str | None]],
 ) -> int:
-    """계산된 벡터를 배치로 적재한다.
+    """계산된 벡터와 파생본 위치를 배치로 적재한다.
 
     벡터 차원은 vector(n) 컬럼이 강제한다. 모델을 바꿔 폭이 달라지면 여기서 DB 에러로
     떨어진다 -- 조용히 틀린 값이 들어가지 않는다는 뜻이라 굳이 앞단에서 또 막지 않는다.
+
+    preview_key를 벡터와 같은 UPDATE에 쓰는 것이 중요하다. 따로 쓰면 "벡터는 있는데
+    미리보기는 없는" 중간 상태가 생기고, 그 상태를 프론트가 구분할 방법이 없다.
+
+    COALESCE인 이유: 이번 실행에서 파생본 업로드만 실패하면 preview_key가 None으로
+    오는데, 그때 이전 실행이 남긴 멀쩡한 값을 지우면 안 된다.
     """
-    rows: Sequence[tuple] = [(vector, ref.photo_id) for ref, vector in results]
+    rows: Sequence[tuple] = [
+        (vector, preview_key, ref.photo_id) for ref, vector, preview_key in results
+    ]
     if not rows:
         return 0
 
@@ -101,6 +109,7 @@ def store_embeddings(
             """
             UPDATE photos
             SET embedding = %s,
+                preview_key = COALESCE(%s, preview_key),
                 status = 'EMBEDDED',
                 updated_at = now()
             WHERE id = %s
