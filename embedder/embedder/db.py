@@ -3,10 +3,13 @@
 스키마는 앱(Flyway)이 소유한다. 이 모듈이 건드리는 것은 네 컬럼뿐이다 --
 `embedding`, `preview_key`, `status`, `updated_at`.
 
-접속에는 비밀번호가 아니라 **RDS IAM 인증 토큰**을 쓴다. 토큰 생성(`generate_db_auth_token`)은
-로컬 서명 연산이라 네트워크를 타지 않는다 -- NAT도 인터페이스 엔드포인트도 없는 이 서브넷에서
-자격증명을 얻을 수 있는 유일한 방법이고, 덕분에 비밀번호가 Lambda 환경변수에도 Terraform
-state에도 남지 않는다.
+접속은 원래 **RDS IAM 인증 토큰**을 썼다. 토큰 생성(`generate_db_auth_token`)은 로컬 서명
+연산이라 네트워크를 타지 않는다 -- NAT도 인터페이스 엔드포인트도 없는 이 서브넷에서
+자격증명을 얻을 수 있는 유일한 방법이었고, 덕분에 비밀번호가 어디에도 남지 않았다.
+
+**지금은 비밀번호를 쓴다.** 조직 SCP가 `rds-db:connect`를 계정 전체에서 거부하기 때문이다.
+이 계정은 조직의 멤버 계정이라 여기서는 풀 수 없다. 원복 절차는 인프라 레포
+`docs/runbook.md`의 "SCP 차단" 절에 있다.
 """
 
 from __future__ import annotations
@@ -15,7 +18,6 @@ import logging
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
-import boto3
 import numpy as np
 import psycopg
 from pgvector.psycopg import register_vector
@@ -32,21 +34,25 @@ class PhotoRef:
 
 
 def connect(settings: Settings) -> psycopg.Connection:
-    # 리전은 Lambda가 넣어 주는 AWS_REGION에서 온다. 토큰 수명은 15분이고, 잡은 시작할 때
-    # 한 번만 연결하므로 실행이 15분을 채워도 연결이 끊기지 않는다(만료는 인증 시점에만 본다).
-    token = boto3.client("rds").generate_db_auth_token(
-        DBHostname=settings.db_auth_host,
-        Port=settings.db_port,
-        DBUsername=settings.db_user,
-    )
-
+    # SCP가 풀리면 아래 password 인자를 지우고 이 토큰 생성으로 되돌린다 (import boto3 필요):
+    #
+    #     token = boto3.client("rds").generate_db_auth_token(
+    #         DBHostname=settings.db_auth_host,
+    #         Port=settings.db_port,
+    #         DBUsername=settings.db_user,
+    #     )
+    #
+    # 그때 DB 쪽에서 `GRANT rds_iam TO embedder;`도 함께 해줘야 한다. 반대로 지금은 그 GRANT가
+    # 있으면 안 된다 -- pg_hba가 `hostssl all +rds_iam pam`을 먼저 매칭해서 비밀번호를 아예
+    # 보지 않고 PAM으로 보낸다. 그 상태의 증상은 `PAM authentication failed`다.
     connection = psycopg.connect(
         host=settings.db_host,
         port=settings.db_port,
         dbname=settings.db_name,
         user=settings.db_user,
-        password=token,
-        # IAM 인증은 TLS 없이는 아예 동작하지 않는다. 토큰이 평문으로 흐르면 그대로 재사용된다.
+        password=settings.db_password,
+        # TLS는 IAM 인증 때문만이 아니다. RDS PostgreSQL 15+ 는 rds.force_ssl이 기본 1이라
+        # 평문 접속 자체를 거부한다. 비밀번호로 바뀐 지금도 그대로 필요하다.
         sslmode=settings.db_sslmode,
         sslrootcert=settings.db_sslrootcert,
         connect_timeout=10,
