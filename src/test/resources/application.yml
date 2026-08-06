@@ -8,10 +8,23 @@ spring:
     aws:
       parameterstore:
         enabled: false
+      region:
+        # S3Presigner와 LambdaClient는 파라미터 스토어와 달리 끌 수 없다(빈이 필요하다).
+        # CI 러너에는 AWS_REGION도 ~/.aws/config도 없어서 못박지 않으면 기동이 깨진다.
+        static: ap-northeast-2
+      credentials:
+        # presigned URL 서명은 순수 로컬 계산이라 아무 자격증명이나 있으면 되고,
+        # 없으면 SDK가 자격증명 탐색에 실패해 기동이 깨진다. 이 키로는 AWS에 아무것도 못 한다.
+        access-key: test-access-key
+        secret-key: test-secret-key
+
+  # 운영과 같은 방식으로 스키마를 만든다. 마이그레이션이 깨지면 배포가 아니라 여기서 먼저 걸린다.
+  flyway:
+    enabled: true
 
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: validate
     open-in-view: false
     properties:
       hibernate:
@@ -64,3 +77,14 @@ jwt:
   secret: test-secret-key-for-hs256-must-be-at-least-32-bytes
   access-token-expiration: 30m
   refresh-token-expiration: 14d
+
+app:
+  storage:
+    # 실제 버킷이 아니다. 서명 URL의 형태만 확인하는 용도로, 이 이름으로는 아무것도 올라가지 않는다.
+    bucket: wes-test-photos
+    upload-url-ttl: 30m
+    view-url-ttl: 15m
+    max-batch-size: 1000
+  embedding:
+    # 테스트에는 Lambda가 없다. 비어 있는 것이 정상이고, 호출 시점에 503으로 실패한다.
+    function-name: ""

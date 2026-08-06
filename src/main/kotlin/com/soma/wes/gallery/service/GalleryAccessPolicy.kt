@@ -59,14 +59,17 @@ class GalleryAccessPolicy(
         return member
     }
 
-    fun isManager(gallery: Gallery, userId: Long): Boolean =
-        studioRepository.findByUserId(userId)?.id == gallery.studioId
-
+    /** 위 `require*` 셋이 모두 쓴다. */
     private fun findGallery(galleryId: Long): Gallery =
         galleryRepository.findById(galleryId)
             .orElseThrow { GalleryException(GalleryErrorCode.GALLERY_NOT_FOUND) }
 
+    /** [requireViewer]와 [requireSelector]가 쓴다. */
     private fun findMember(galleryId: Long, userId: Long): GalleryMember =
         galleryMemberRepository.findByGalleryIdAndUserId(galleryId, userId)
             ?: throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+
+    /** 내부에서도 쓰지만 [GalleryInviteService]가 부르는 공개 API다. */
+    fun isManager(gallery: Gallery, userId: Long): Boolean =
+        studioRepository.findByUserId(userId)?.id == gallery.studioId
 }

@@ -42,6 +42,11 @@ out/
 ### macOS ###
 .DS_Store
 
+### Python (embedder/) ###
+__pycache__/
+*.py[cod]
+.venv/
+
 ### local ###
 postgres-data-local
 

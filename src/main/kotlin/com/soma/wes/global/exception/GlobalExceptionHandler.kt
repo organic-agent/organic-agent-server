@@ -4,6 +4,7 @@ import com.soma.wes.security.exception.CustomAuthenticationException
 import org.slf4j.LoggerFactory
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
+import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
@@ -64,6 +65,25 @@ class GlobalExceptionHandler {
     @ExceptionHandler(HttpMessageNotReadableException::class)
     fun handleUnreadableBody(e: HttpMessageNotReadableException): ResponseEntity<ErrorResponse> {
         log.warn("요청 본문을 읽지 못했습니다: {}", e.message)
+
+        return ResponseEntity
+            .status(GlobalErrorCode.INVALID_REQUEST_BODY.httpStatus)
+            .body(ErrorResponse.from(GlobalErrorCode.INVALID_REQUEST_BODY))
+    }
+
+    /**
+     * 본문은 읽혔지만 제약(`@NotBlank`, `@Size` 등)을 어긴 경우.
+     *
+     * 이걸 잡지 않으면 아래 [handleUnexpected]가 삼켜 500이 된다. 클라이언트가 고칠 수 있는
+     * 잘못을 서버 장애로 알려주는 셈이라, "다시 시도"가 아니라 "값을 고쳐라"를 말해줘야 한다.
+     *
+     * 어느 필드가 왜 틀렸는지는 응답에 담지 않는다. [ErrorResponse]는 `{code, message}` 한
+     * 형태로 고정되어 있고, 필드 목록을 여기에만 얹으면 그 계약이 이 경로에서만 깨진다.
+     */
+    @ExceptionHandler(MethodArgumentNotValidException::class)
+    fun handleValidationFailure(e: MethodArgumentNotValidException): ResponseEntity<ErrorResponse> {
+        val fields = e.bindingResult.fieldErrors.joinToString(", ") { "${it.field}=${it.defaultMessage}" }
+        log.warn("요청 본문 검증 실패: {}", fields)
 
         return ResponseEntity
             .status(GlobalErrorCode.INVALID_REQUEST_BODY.httpStatus)

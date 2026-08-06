@@ -73,9 +73,6 @@ class AuthTokenProvider(
         return tokenStorage.save(subject, refreshToken)
     }
 
-    private fun requireId(user: User): Long =
-        checkNotNull(user.id) { "저장되지 않은 사용자로는 토큰을 발급할 수 없습니다." }
-
     /**
      * 서명·만료·종류가 유효하면서, 서버가 마지막으로 발급한 것과 일치하는 refresh token인지 확인한다.
      */
@@ -109,7 +106,7 @@ class AuthTokenProvider(
     }
 
     /**
-     * 우리가 발급한 토큰이라면 반드시 있어야 하는 클레임이다.
+     * [getAuthUser]가 쓴다. 우리가 발급한 토큰이라면 반드시 있어야 하는 클레임이다.
      * 없다면 위조됐거나 형식이 바뀐 토큰이므로, 500이 아니라 401로 돌려보낸다.
      */
     private fun Claims.requireString(key: String): String =
@@ -121,10 +118,7 @@ class AuthTokenProvider(
 
     fun parseSubject(token: Token): Subject = Subject(verifiedClaims(token).subject)
 
-    fun logout(user: User) {
-        tokenStorage.delete(Subject.from(requireId(user)))
-    }
-
+    /** [getAuthUser]와 [parseSubject]가 쓴다. */
     private fun verifiedClaims(token: Token): Claims {
         val claims = jwtProvider.parseClaims(token.value)
 
@@ -138,4 +132,12 @@ class AuthTokenProvider(
         }
         return claims
     }
+
+    fun logout(user: User) {
+        tokenStorage.delete(Subject.from(requireId(user)))
+    }
+
+    /** [generateAccessToken]·[generateRefreshToken]·[logout]이 쓴다. */
+    private fun requireId(user: User): Long =
+        checkNotNull(user.id) { "저장되지 않은 사용자로는 토큰을 발급할 수 없습니다." }
 }

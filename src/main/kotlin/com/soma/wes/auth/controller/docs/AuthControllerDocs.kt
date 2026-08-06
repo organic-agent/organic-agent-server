@@ -12,6 +12,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.security.SecurityRequirements
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.http.MediaType
+import org.springframework.http.ResponseEntity
 
 @Tag(name = "[Auth]", description = "토큰 재발급 API")
 interface AuthControllerDocs {
@@ -62,5 +63,5 @@ interface AuthControllerDocs {
         ),
     )
     @SecurityRequirements // access token이 만료된 상태로 부르는 API다. Authorization 헤더를 요구하면 안 된다.
-    fun reissue(request: ReissueRequest): ReissueResponse
+    fun reissue(request: ReissueRequest): ResponseEntity<ReissueResponse>
 }

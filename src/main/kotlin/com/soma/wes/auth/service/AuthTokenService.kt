@@ -1,6 +1,7 @@
 package com.soma.wes.auth.service
 
 import com.soma.wes.auth.domain.RefreshToken
+import com.soma.wes.auth.dto.request.ReissueRequest
 import com.soma.wes.auth.dto.response.ReissueResponse
 import com.soma.wes.auth.exception.AuthErrorCode
 import com.soma.wes.auth.exception.TokenException
@@ -22,7 +23,9 @@ class AuthTokenService(
      * 제한하기 위해서다. access token만 갱신하면 탈취된 refresh token은 만료일까지 계속 살아 있다.
      */
     @Transactional
-    fun reissue(requestedRefreshToken: RefreshToken): ReissueResponse {
+    fun reissue(request: ReissueRequest): ReissueResponse {
+        val requestedRefreshToken = RefreshToken(request.refreshToken)
+
         if (!authTokenProvider.isValidRefreshToken(requestedRefreshToken)) {
             throw TokenException(AuthErrorCode.REFRESH_TOKEN_INVALID)
         }

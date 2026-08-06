@@ -1,6 +1,8 @@
 services:
   postgres:
-    image: postgres:16
+    # 순정 postgres가 아니라 pgvector 확장이 들어 있는 이미지여야 한다.
+    # V2 마이그레이션의 CREATE EXTENSION vector가 통과하지 못하면 앱이 기동하지 못한다.
+    image: pgvector/pgvector:pg16
     container_name: wes-postgres-local
     ports:
       - "5432:5432"

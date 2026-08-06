@@ -14,6 +14,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.http.MediaType
+import org.springframework.http.ResponseEntity
 
 @Tag(name = "[Studio]", description = "스튜디오 API (사진작가 온보딩)")
 interface StudioControllerDocs {
@@ -73,7 +74,7 @@ interface StudioControllerDocs {
             ],
         ),
     )
-    fun create(loginUser: LoginUser, request: CreateStudioRequest): StudioResponse
+    fun create(loginUser: LoginUser, request: CreateStudioRequest): ResponseEntity<StudioResponse>
 
     @Operation(
         summary = "공개 주소 사용 가능 여부",
@@ -104,7 +105,7 @@ interface StudioControllerDocs {
             ],
         ),
     )
-    fun checkGalleryUrl(galleryUrl: String): GalleryUrlAvailabilityResponse
+    fun checkGalleryUrl(galleryUrl: String): ResponseEntity<GalleryUrlAvailabilityResponse>
 
     @Operation(summary = "내 스튜디오 조회")
     @ApiResponses(
@@ -126,7 +127,7 @@ interface StudioControllerDocs {
             ],
         ),
     )
-    fun getMine(loginUser: LoginUser): StudioResponse
+    fun getMyStudio(loginUser: LoginUser): ResponseEntity<StudioResponse>
 
     @Operation(
         summary = "내 스튜디오 수정",
@@ -183,5 +184,5 @@ interface StudioControllerDocs {
             ],
         ),
     )
-    fun updateMine(loginUser: LoginUser, request: UpdateStudioRequest): StudioResponse
+    fun updateMyStudio(loginUser: LoginUser, request: UpdateStudioRequest): ResponseEntity<StudioResponse>
 }

@@ -4,6 +4,7 @@ import com.soma.wes.TestcontainersConfiguration
 import com.soma.wes.auth.domain.AccessToken
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.auth.domain.RefreshToken
+import com.soma.wes.auth.dto.request.ReissueRequest
 import com.soma.wes.auth.exception.AuthErrorCode
 import com.soma.wes.auth.exception.TokenException
 import com.soma.wes.auth.domain.OAuthProvider
@@ -34,7 +35,7 @@ class AuthTokenServiceTest @Autowired constructor(
         val user = signUp("kakao-reissue-1")
         val refreshToken = authTokenProvider.generateRefreshToken(user)
 
-        val response = authTokenService.reissue(refreshToken)
+        val response = authTokenService.reissue(ReissueRequest(refreshToken.value))
 
         // 재발급된 토큰이 실제로 인증에 쓸 수 있는지까지 확인한다.
         val authentication = authTokenProvider.getAuthUser(AccessToken(response.accessToken))
@@ -46,16 +47,16 @@ class AuthTokenServiceTest @Autowired constructor(
         val user = signUp("kakao-rotate-1")
         val oldRefreshToken = authTokenProvider.generateRefreshToken(user)
 
-        val response = authTokenService.reissue(oldRefreshToken)
+        val response = authTokenService.reissue(ReissueRequest(oldRefreshToken.value))
 
         // 새 refresh token은 이전 것과 달라야 하고, 곧바로 다시 재발급에 쓸 수 있어야 한다.
         val newRefreshToken = RefreshToken(response.refreshToken)
         assertNotEquals(oldRefreshToken, newRefreshToken)
-        authTokenService.reissue(newRefreshToken)
+        authTokenService.reissue(ReissueRequest(newRefreshToken.value))
 
         // 한 번 쓴 refresh token은 재사용할 수 없다.
         val exception = assertFailsWith<TokenException> {
-            authTokenService.reissue(oldRefreshToken)
+            authTokenService.reissue(ReissueRequest(oldRefreshToken.value))
         }
         assertEquals(AuthErrorCode.REFRESH_TOKEN_INVALID, exception.errorCode)
     }
@@ -69,7 +70,7 @@ class AuthTokenServiceTest @Autowired constructor(
         authTokenProvider.generateRefreshToken(user)
 
         val exception = assertFailsWith<TokenException> {
-            authTokenService.reissue(oldRefreshToken)
+            authTokenService.reissue(ReissueRequest(oldRefreshToken.value))
         }
         assertEquals(AuthErrorCode.REFRESH_TOKEN_INVALID, exception.errorCode)
     }
@@ -80,14 +81,14 @@ class AuthTokenServiceTest @Autowired constructor(
         val accessToken = authTokenProvider.generateAccessToken(user)
 
         assertFailsWith<TokenException> {
-            authTokenService.reissue(RefreshToken(accessToken.value))
+            authTokenService.reissue(ReissueRequest(accessToken.value))
         }
     }
 
     @Test
     fun `위조된 refresh token은 거부한다`() {
         assertFailsWith<TokenException> {
-            authTokenService.reissue(RefreshToken("not-a-jwt"))
+            authTokenService.reissue(ReissueRequest("not-a-jwt"))
         }
     }
 }
