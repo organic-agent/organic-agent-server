@@ -12,6 +12,7 @@ import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.support.PhotoViewAssembler
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Isolation
 import org.springframework.transaction.annotation.Transactional
 
 /**
@@ -38,7 +39,11 @@ class PhotoClusterService(
      * @param threshold 0.0~1.0의 코사인 유사도. 생략하면 서버 기본값을 쓴다.
      *   높일수록 잘게, 낮출수록 크게 묶인다.
      */
-    @Transactional(readOnly = true)
+    // 한 응답을 만드는 데 질의가 셋(미임베딩 수 · 사진 목록 · 유사 쌍)이다. 기본
+    // READ COMMITTED에서는 질의마다 스냅샷이 새로 잡혀서, 임베딩 Lambda가 그 사이에
+    // 커밋하면 unclassified와 clusters가 서로 다른 시점을 말하게 된다. 읽기 전용이라
+    // 직렬화 실패 위험 없이 스냅샷 하나로 묶을 수 있다.
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     fun cluster(galleryId: Long, userId: Long, threshold: Double?): PhotoClustersResponse {
         // 담당 작가와 초대받은 부부 양쪽이 볼 수 있어야 한다. 작가는 어떻게 묶이는지 확인해야
         // 하고, 고르는 것은 부부의 일이다.

@@ -66,25 +66,6 @@ class PhotoFolderService(
             throw FolderException(FolderErrorCode.INVALID_FOLDER_NAME)
         }
 
-    /**
-     * 요청에 다른 갤러리의 사진 id가 섞여 있는지 확인하고, 노출 순서대로 돌려준다.
-     *
-     * 갤러리 권한만 보고 사진 id를 그대로 믿으면, 자기 갤러리에 만든 폴더로 남의 사진을 끌어와
-     * 서명 URL까지 받아낼 수 있다.
-     */
-    private fun loadPhotosIn(galleryId: Long, photoIds: List<Long>): List<Photo> {
-        if (photoIds.size > properties.maxBatchSize) {
-            throw FolderException(FolderErrorCode.TOO_MANY_PHOTOS)
-        }
-
-        val requested = photoIds.toSet()
-        val photos = photoRepository.findAllByGalleryIdAndIdIn(galleryId, requested)
-        if (photos.size != requested.size) {
-            throw FolderException(FolderErrorCode.PHOTO_NOT_IN_GALLERY)
-        }
-        return photos.sortedWith(compareBy({ it.displayOrder }, { it.requiredId }))
-    }
-
     @Transactional(readOnly = true)
     fun list(galleryId: Long, userId: Long): List<PhotoFolderResponse> {
         galleryAccessPolicy.requireSelector(galleryId, userId)
@@ -95,8 +76,13 @@ class PhotoFolderService(
         }
 
         // 폴더마다 count를 부르면 목록 길이만큼 질의가 늘어난다. 한 번에 읽어 세어 나눈다.
-        val countByFolderId = photoFolderItemRepository
-            .findAllByFolderIdIn(folders.map { it.requiredId })
+        val items = photoFolderItemRepository.findAllByFolderIdIn(folders.map { it.requiredId })
+
+        // 항목 행이 아니라 실제로 남아 있는 사진을 센다. 항목만 세면 사진이 지워진 뒤
+        // 목록의 photoCount가 상세 조회의 photos.size보다 커진다 -- 같은 폴더를 두 화면이
+        // 다르게 말하게 된다.
+        val alive = existingPhotoIds(galleryId, items.map { it.photoId })
+        val countByFolderId = items.filter { it.photoId in alive }
             .groupingBy { it.folderId }
             .eachCount()
 
@@ -109,29 +95,6 @@ class PhotoFolderService(
 
         val folder = findFolder(galleryId, folderId)
         return detailOf(folder, loadPhotosOf(folder))
-    }
-
-    /** [get]과 [create]가 쓴다. */
-    private fun detailOf(folder: PhotoFolder, photos: List<Photo>) = PhotoFolderDetailResponse.of(
-        folder = folder,
-        photos = photoViewAssembler.toResponses(photos),
-        viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
-    )
-
-    /**
-     * 폴더에 담긴 사진을 노출 순서대로 읽는다.
-     *
-     * 사진이 지워졌다면 그 행은 자연히 빠진다 -- 폴더 항목이 id만 들고 있어 존재 여부는
-     * 읽는 시점에 확인된다.
-     */
-    private fun loadPhotosOf(folder: PhotoFolder): List<Photo> {
-        val photoIds = photoFolderItemRepository.findAllByFolderId(folder.requiredId).map { it.photoId }
-        if (photoIds.isEmpty()) {
-            return emptyList()
-        }
-
-        return photoRepository.findAllByGalleryIdAndIdIn(folder.galleryId, photoIds)
-            .sortedWith(compareBy({ it.displayOrder }, { it.requiredId }))
     }
 
     @Transactional
@@ -173,11 +136,15 @@ class PhotoFolderService(
     ): PhotoFolderDetailResponse {
         galleryAccessPolicy.requireSelector(galleryId, userId)
 
-        val folder = findFolder(galleryId, folderId)
+        // 폴더 행을 잠그고 시작한다. "이미 든 것 읽기 -> 없는 것만 저장" 사이에 같은 폴더로
+        // 다른 요청이 끼어들면 둘 다 없다고 판단해 같은 행을 저장하고, 유니크 제약에 걸린
+        // 한쪽이 통째로 실패한다.
+        val folder = photoFolderRepository.findWithLockByIdAndGalleryId(folderId, galleryId)
+            ?: throw FolderException(FolderErrorCode.FOLDER_NOT_FOUND)
         val photos = loadPhotosIn(galleryId, request.photoIds)
 
-        // 이미 들어 있는 사진은 건너뛴다. 유니크 제약이 마지막으로 막지만, 거기까지 가면
-        // 요청 전체가 실패한다 -- 사용자가 보기에는 "몇 장은 이미 있다"일 뿐인 상황이다.
+        // 이미 들어 있는 사진은 건너뛴다. 사용자가 보기에는 "몇 장은 이미 있다"일 뿐인
+        // 상황이라 요청 전체를 실패시킬 이유가 없다.
         val existing = photoFolderItemRepository.findAllByFolderId(folder.requiredId).map { it.photoId }.toSet()
         photoFolderItemRepository.saveAll(
             photos.filter { it.requiredId !in existing }
@@ -185,6 +152,54 @@ class PhotoFolderService(
         )
 
         return detailOf(folder, loadPhotosOf(folder))
+    }
+
+    /**
+     * 요청에 다른 갤러리의 사진 id가 섞여 있는지 확인하고, 노출 순서대로 돌려준다.
+     *
+     * 갤러리 권한만 보고 사진 id를 그대로 믿으면, 자기 갤러리에 만든 폴더로 남의 사진을 끌어와
+     * 서명 URL까지 받아낼 수 있다.
+     *
+     * [create]와 [addPhotos]가 쓴다.
+     */
+    private fun loadPhotosIn(galleryId: Long, photoIds: List<Long>): List<Photo> {
+        // 빈 목록을 통과시키면 사진 없는 폴더가 만들어진다. DTO의 @NotEmpty는 컨트롤러를
+        // 지날 때만 도는 검증이라 여기서 한 번 더 막는다.
+        if (photoIds.isEmpty()) {
+            throw FolderException(FolderErrorCode.EMPTY_PHOTO_IDS)
+        }
+        if (photoIds.size > properties.maxBatchSize) {
+            throw FolderException(FolderErrorCode.TOO_MANY_PHOTOS)
+        }
+
+        val requested = photoIds.toSet()
+        val photos = photoRepository.findAllByGalleryIdAndIdIn(galleryId, requested)
+        if (photos.size != requested.size) {
+            throw FolderException(FolderErrorCode.PHOTO_NOT_IN_GALLERY)
+        }
+        return photos.sortedWith(PHOTO_ORDER)
+    }
+
+    /** [create]·[get]·[addPhotos]가 쓴다. */
+    private fun detailOf(folder: PhotoFolder, photos: List<Photo>) = PhotoFolderDetailResponse.of(
+        folder = folder,
+        photos = photoViewAssembler.toResponses(photos),
+        viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
+    )
+
+    /**
+     * 폴더에 담긴 사진을 노출 순서대로 읽는다. [get]과 [addPhotos]가 쓴다.
+     *
+     * 사진이 지워졌다면 그 행은 자연히 빠진다 -- 폴더 항목이 id만 들고 있어 존재 여부는
+     * 읽는 시점에 확인된다.
+     */
+    private fun loadPhotosOf(folder: PhotoFolder): List<Photo> {
+        val photoIds = photoFolderItemRepository.findAllByFolderId(folder.requiredId).map { it.photoId }
+        if (photoIds.isEmpty()) {
+            return emptyList()
+        }
+
+        return photoRepository.findAllByGalleryIdAndIdIn(folder.galleryId, photoIds).sortedWith(PHOTO_ORDER)
     }
 
     @Transactional
@@ -199,8 +214,23 @@ class PhotoFolderService(
         }
     }
 
-    /** 위 다섯 경로가 모두 쓴다. */
+    /** [get]·[rename]·[delete]·[removePhoto]가 쓴다. [addPhotos]만 잠금이 필요해 따로 읽는다. */
     private fun findFolder(galleryId: Long, folderId: Long): PhotoFolder =
         photoFolderRepository.findByIdAndGalleryId(folderId, galleryId)
             ?: throw FolderException(FolderErrorCode.FOLDER_NOT_FOUND)
+
+    /** 아직 남아 있는 사진의 id. [list]가 지워진 사진을 세지 않으려고 쓴다. */
+    private fun existingPhotoIds(galleryId: Long, photoIds: List<Long>): Set<Long> {
+        if (photoIds.isEmpty()) {
+            return emptySet()
+        }
+        return photoRepository.findAllByGalleryIdAndIdIn(galleryId, photoIds.toSet())
+            .map { it.requiredId }
+            .toSet()
+    }
+
+    companion object {
+        /** 화면 순서는 갤러리에서 정한 노출 순서를 따른다. 같으면 id로 한 번 더 갈라 흔들리지 않게 한다. */
+        private val PHOTO_ORDER = compareBy<Photo>({ it.displayOrder }, { it.requiredId })
+    }
 }

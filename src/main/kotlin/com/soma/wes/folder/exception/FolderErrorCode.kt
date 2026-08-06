@@ -23,6 +23,14 @@ enum class FolderErrorCode(
     /** 이름이 공백뿐이거나 길이를 넘긴 경우. */
     INVALID_FOLDER_NAME(HttpStatus.BAD_REQUEST, "FOLDER_400_3", "폴더 이름이 올바르지 않습니다."),
 
+    /**
+     * 사진 id가 하나도 없는 경우.
+     *
+     * `@field:NotEmpty`가 컨트롤러에서 먼저 걸러내지만 그 검증은 컨트롤러를 지날 때만 돈다.
+     * 여기서 막지 않으면 사진 없는 폴더가 만들어지고, 목록에 0장짜리로 남는다.
+     */
+    EMPTY_PHOTO_IDS(HttpStatus.BAD_REQUEST, "FOLDER_400_4", "사진을 하나 이상 지정해야 합니다."),
+
     FOLDER_NOT_FOUND(HttpStatus.NOT_FOUND, "FOLDER_404_1", "존재하지 않는 폴더입니다."),
 
     /** 폴더에 들어 있지 않은 사진을 빼려는 경우. */

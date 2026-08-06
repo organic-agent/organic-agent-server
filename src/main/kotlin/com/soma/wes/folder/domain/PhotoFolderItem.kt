@@ -6,7 +6,6 @@ import jakarta.persistence.Entity
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
-import jakarta.persistence.Index
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
 
@@ -21,6 +20,8 @@ import jakarta.persistence.UniqueConstraint
  * 것이 자연스럽고, 폴더마다 순서를 따로 두면 원본 정렬을 바꿨을 때 둘이 어긋난다.
  */
 @Entity
+// folder_id 단독 조회는 아래 유니크 제약이 만드는 인덱스가 받는다(선두 컬럼이 folder_id다).
+// 따로 인덱스를 더 두면 쓰기 비용만 늘어난다.
 @Table(
     name = "photo_folder_items",
     uniqueConstraints = [
@@ -28,9 +29,6 @@ import jakarta.persistence.UniqueConstraint
             name = "uk_photo_folder_items_folder_id_photo_id",
             columnNames = ["folder_id", "photo_id"],
         ),
-    ],
-    indexes = [
-        Index(name = "idx_photo_folder_items_folder_id", columnList = "folder_id"),
     ],
 )
 class PhotoFolderItem(

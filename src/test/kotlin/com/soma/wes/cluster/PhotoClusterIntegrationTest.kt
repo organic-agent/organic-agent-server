@@ -13,6 +13,7 @@ import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
+import org.hamcrest.Matchers.containsString
 import org.hamcrest.Matchers.hasSize
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -21,6 +22,7 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
+import org.springframework.test.web.servlet.MockHttpServletRequestDsl
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
@@ -175,9 +177,7 @@ class PhotoClusterIntegrationTest @Autowired constructor(
         mockMvc.get("/api/v1/galleries/$galleryId/photo-clusters") { authorize(photographer) }
             .andExpect {
                 status { isOk() }
-                jsonPath("$.clusters[0].photos[0].viewUrl") {
-                    value(org.hamcrest.Matchers.containsString("X-Amz-Signature"))
-                }
+                jsonPath("$.clusters[0].photos[0].viewUrl") { value(containsString("X-Amz-Signature")) }
             }
     }
 
@@ -259,7 +259,7 @@ class PhotoClusterIntegrationTest @Autowired constructor(
         return user
     }
 
-    private fun org.springframework.test.web.servlet.MockHttpServletRequestDsl.authorize(user: User) {
+    private fun MockHttpServletRequestDsl.authorize(user: User) {
         header("Authorization", "Bearer ${authTokenProvider.generateAccessToken(user).value}")
     }
 

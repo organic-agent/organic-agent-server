@@ -23,6 +23,7 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
+import org.springframework.test.web.servlet.MockHttpServletRequestDsl
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
@@ -182,6 +183,27 @@ class PhotoFolderIntegrationTest @Autowired constructor(
             status { isOk() }
             jsonPath("$.photos") { value(hasSize<Any>(2)) }
         }
+
+        // 응답만 보면 중복 행이 생겼는지 알 수 없다. 응답은 사진을 조인해 돌려주므로
+        // 항목이 두 벌 쌓여 있어도 같은 크기로 보인다.
+        assertEquals(2, photoFolderItemRepository.countByFolderId(folderId))
+    }
+
+    @Test
+    fun `사진을 하나도 지정하지 않으면 400`() {
+        // DTO의 @NotEmpty는 컨트롤러를 지날 때만 도는 검증이라 서비스에서 한 번 더 막는다.
+        // 통과시키면 사진 없는 폴더가 목록에 0장짜리로 남는다.
+        val fixture = openGalleryWithMember()
+        val folderId = createFolder(fixture, "본식", uploadPhotos(fixture, count = 1))
+
+        mockMvc.post("/api/v1/galleries/${fixture.galleryId}/photo-folders/$folderId/photos") {
+            authorize(fixture.member)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"photoIds":[]}"""
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.code") { value("GLOBAL_400_2") }
+        }
     }
 
     @Test
@@ -292,7 +314,12 @@ class PhotoFolderIntegrationTest @Autowired constructor(
             authorize(fixture.member)
             contentType = MediaType.APPLICATION_JSON
             content = """{"name":"   ","photoIds":$photoIds}"""
-        }.andExpect { status { isBadRequest() } }
+        }.andExpect {
+            status { isBadRequest() }
+            // @NotBlank가 컨트롤러에서 먼저 걸러 GLOBAL 코드가 나간다. 도메인의
+            // FOLDER_400_3은 서비스를 직접 부르는 경로를 위한 두 번째 방어선이다.
+            jsonPath("$.code") { value("GLOBAL_400_2") }
+        }
     }
 
     // --- helpers ---
@@ -346,7 +373,7 @@ class PhotoFolderIntegrationTest @Autowired constructor(
         return user
     }
 
-    private fun org.springframework.test.web.servlet.MockHttpServletRequestDsl.authorize(user: User) {
+    private fun MockHttpServletRequestDsl.authorize(user: User) {
         header("Authorization", "Bearer ${authTokenProvider.generateAccessToken(user).value}")
     }
 

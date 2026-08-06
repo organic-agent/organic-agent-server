@@ -28,8 +28,7 @@ CREATE TABLE photo_folder_items
     updated_at TIMESTAMP(6) WITH TIME ZONE,
     -- 같은 사진을 두 번 넣는 것은 사용자의 의도가 아니라 중복 요청이다. 애플리케이션에서도
     -- 거르지만, 동시에 두 번 눌린 요청은 거기서 새므로 DB가 마지막으로 막는다.
+    -- 폴더 하나를 여는 질의(folder_id 단독)도 이 제약이 만드는 인덱스가 받는다.
+    -- 선두 컬럼이 folder_id라서, 따로 인덱스를 더 두면 쓰기 비용만 늘고 얻는 것이 없다.
     CONSTRAINT uk_photo_folder_items_folder_id_photo_id UNIQUE (folder_id, photo_id)
 );
-
--- 폴더 하나를 열 때마다 도는 질의다.
-CREATE INDEX idx_photo_folder_items_folder_id ON photo_folder_items (folder_id);
