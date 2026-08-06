@@ -5,6 +5,7 @@ import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.dto.response.GalleryResponse
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
+import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.studio.exception.StudioErrorCode
 import com.soma.wes.studio.exception.StudioException
 import com.soma.wes.studio.repository.StudioRepository
@@ -13,7 +14,6 @@ import org.springframework.transaction.annotation.Transactional
 
 
 @Service
-@Transactional(readOnly = true)
 class GalleryService(
     private val galleryRepository: GalleryRepository,
     private val galleryMemberRepository: GalleryMemberRepository,
@@ -36,6 +36,7 @@ class GalleryService(
         return GalleryResponse.from(gallery)
     }
 
+    @Transactional(readOnly = true)
     fun findAllVisibleTo(userId: Long): List<GalleryResponse> {
         val ownStudio = studioRepository.findByUserId(userId)
         if (ownStudio != null) {
@@ -52,6 +53,7 @@ class GalleryService(
             .map(GalleryResponse::from)
     }
 
+    @Transactional(readOnly = true)
     fun get(galleryId: Long, userId: Long): GalleryResponse =
         GalleryResponse.from(galleryAccessPolicy.requireViewer(galleryId, userId))
 }

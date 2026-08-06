@@ -1,6 +1,6 @@
 package com.soma.wes.photo.service
 
-import com.soma.wes.gallery.service.GalleryAccessPolicy
+import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoStatus
@@ -32,7 +32,6 @@ import org.springframework.transaction.annotation.Transactional
  * 선택 API로만 사진을 만난다.
  */
 @Service
-@Transactional(readOnly = true)
 class PhotoService(
     private val photoRepository: PhotoRepository,
     private val galleryAccessPolicy: GalleryAccessPolicy,
@@ -146,6 +145,7 @@ class PhotoService(
      * 사진마다 서명된 조회 URL이 붙어 온다. 버킷이 비공개라 `storageKey`만으로는 아무것도
      * 띄울 수 없어서, 그 URL이 이미지를 화면에 그리는 유일한 통로다.
      */
+    @Transactional(readOnly = true)
     fun list(
         galleryId: Long,
         userId: Long,
@@ -192,6 +192,7 @@ class PhotoService(
     )
 
     /** 임베딩 진행 상황을 확인하는 곳. Lambda는 비동기라 이 집계 말고는 알 방법이 없다. */
+    @Transactional(readOnly = true)
     fun summarize(galleryId: Long, userId: Long): PhotoSummaryResponse {
         galleryAccessPolicy.requireManager(galleryId, userId)
 

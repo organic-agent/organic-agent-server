@@ -7,15 +7,17 @@ import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.repository.GalleryInviteRepository
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
+import com.soma.wes.gallery.support.GalleryAccessPolicy
+import com.soma.wes.gallery.support.GalleryInviteTokenGenerator
 import com.soma.wes.user.domain.UserType
 import com.soma.wes.user.exception.UserErrorCode
 import com.soma.wes.user.exception.UserException
 import com.soma.wes.user.repository.UserRepository
-import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.Duration
 import java.time.ZonedDateTime
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 
 /**
  * 초대 링크의 발급·폐기와 수락을 다룬다.
@@ -25,7 +27,6 @@ import java.time.ZonedDateTime
  * 권한을 만들어주는 것이 이 동작이기 때문이다.
  */
 @Service
-@Transactional(readOnly = true)
 class GalleryInviteService(
     private val galleryRepository: GalleryRepository,
     private val galleryInviteRepository: GalleryInviteRepository,

@@ -17,7 +17,6 @@ import org.springframework.transaction.annotation.Transactional
 
 
 @Service
-@Transactional(readOnly = true)
 class StudioService(
     private val studioRepository: StudioRepository,
     private val userRepository: UserRepository,
@@ -50,6 +49,7 @@ class StudioService(
         return StudioResponse.from(studio)
     }
 
+    @Transactional(readOnly = true)
     fun getMyStudio(userId: Long): StudioResponse = StudioResponse.from(findMyStudio(userId))
 
     @Transactional
@@ -68,6 +68,7 @@ class StudioService(
         studioRepository.findByUserId(userId)
             ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
 
+    @Transactional(readOnly = true)
     fun checkGalleryUrl(galleryUrl: String): GalleryUrlAvailabilityResponse {
         if (!Studio.isValidGalleryUrl(galleryUrl)) {
             throw StudioException(StudioErrorCode.INVALID_GALLERY_URL)
