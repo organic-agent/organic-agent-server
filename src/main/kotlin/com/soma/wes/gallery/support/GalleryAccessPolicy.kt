@@ -13,7 +13,22 @@ import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.ZonedDateTime
 
-
+/**
+ * 갤러리에서 누가 무엇을 할 수 있는지.
+ *
+ * 메서드 이름을 능력이 아니라 **역할**로 둔다. 호출부에 `requirePhotographer`가 적혀 있으면
+ * 누가 통과하는지가 그 줄에서 끝나지만, `requireManager`·`requireSelector`는 매번 이 파일을
+ * 열어봐야 했다.
+ *
+ * 역할은 둘이다:
+ * - **사진작가** — 갤러리를 소유한 스튜디오의 주인. 자기 갤러리에서는 모든 기능을 쓴다.
+ *   선택 마감은 고객이 고르는 기한이지 작가의 작업 기한이 아니므로 작가에게는 걸지 않는다.
+ * - **예비 부부** — 초대를 수락해 [GalleryMember]가 된 사람. 사진을 올리지는 못하고,
+ *   갤러리가 열려 있고 마감 전인 동안에만 고르고 묶는다.
+ *
+ * 하객(게스트)은 아직 없다. [GalleryMember]가 부부와 게스트를 구분하지 않아서, 도입하려면
+ * 역할 컬럼과 초대 흐름이 함께 바뀐다.
+ */
 @Service
 class GalleryAccessPolicy(
     private val galleryRepository: GalleryRepository,
@@ -22,57 +37,92 @@ class GalleryAccessPolicy(
     private val clock: Clock,
 ) {
 
+    /** 갤러리를 소유한 스튜디오의 작가만. 업로드·임베딩·초대가 여기를 지난다. */
     @Transactional(readOnly = true)
-    fun requireManager(galleryId: Long, userId: Long): Gallery {
+    fun requirePhotographer(galleryId: Long, userId: Long): Gallery {
         val gallery = findGallery(galleryId)
-        if (!isManager(gallery, userId)) {
+        if (!isPhotographer(gallery, userId)) {
             throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
         }
         return gallery
     }
 
+    /**
+     * 초대받은 예비 부부만. 지금 고를 수 있는 상태인지까지 본다.
+     *
+     * 작가는 통과하지 못한다 — 작가가 고객 대신 고르면 안 되는 경로에 쓴다.
+     */
     @Transactional(readOnly = true)
-    fun requireViewer(galleryId: Long, userId: Long): Gallery {
+    fun requireCouple(galleryId: Long, userId: Long): GalleryMember {
         val gallery = findGallery(galleryId)
-        if (isManager(gallery, userId)) {
+        val member = findMember(galleryId, userId)
+
+        requireSelectable(gallery)
+        return member
+    }
+
+    /**
+     * 작가는 무조건, 부부는 고를 수 있는 동안만.
+     *
+     * 클러스터 조회와 폴더 기능이 여기를 지난다. 작가는 어떻게 묶이는지 확인해야 하고 부부는
+     * 그것으로 고르므로 둘 다 필요하지만, 마감이 지난 뒤에도 만질 수 있는 것은 작가뿐이다.
+     */
+    @Transactional(readOnly = true)
+    fun requirePhotographerOrCouple(galleryId: Long, userId: Long): Gallery {
+        val gallery = findGallery(galleryId)
+        if (isPhotographer(gallery, userId)) {
             return gallery
         }
 
         findMember(galleryId, userId)
+        requireSelectable(gallery)
+        return gallery
+    }
+
+    /**
+     * 갤러리를 열람할 수 있는지만. 마감과 무관하다.
+     *
+     * 갤러리 상세는 마감 뒤에도 보여야 한다 — 마감됐다는 사실 자체를 그 화면에서 알려준다.
+     */
+    @Transactional(readOnly = true)
+    fun requireViewer(galleryId: Long, userId: Long): Gallery {
+        val gallery = findGallery(galleryId)
+        if (isPhotographer(gallery, userId)) {
+            return gallery
+        }
+
+        findMember(galleryId, userId)
+        // DRAFT는 아직 초대받은 사람에게 보이지 않는다.
         if (!gallery.isVisibleToMember) {
             throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
         }
         return gallery
     }
 
-    @Transactional(readOnly = true)
-    fun requireSelector(galleryId: Long, userId: Long): GalleryMember {
-        val gallery = findGallery(galleryId)
-        val member = findMember(galleryId, userId)
-
+    /** [requireCouple]과 [requirePhotographerOrCouple]이 부부 쪽 분기에서 쓴다. */
+    private fun requireSelectable(gallery: Gallery) {
         // 기한 초과와 아직 안 열림은 사용자가 할 수 있는 일이 달라 따로 알려준다.
-        val now = ZonedDateTime.now(clock)
-        if (gallery.isDeadlinePassed(now)) {
+        // 기한이 지났다면 작가에게 연장을 요청하면 되고, 아직 안 열렸다면 기다리는 수밖에 없다.
+        if (gallery.isDeadlinePassed(ZonedDateTime.now(clock))) {
             throw GalleryException(GalleryErrorCode.SELECTION_DEADLINE_PASSED)
         }
         if (gallery.status != GalleryStatus.OPEN) {
             throw GalleryException(GalleryErrorCode.GALLERY_NOT_OPEN)
         }
-        return member
     }
 
-    /** 위 `require*` 셋이 모두 쓴다. */
+    /** 위 `require*` 넷이 모두 쓴다. */
     private fun findGallery(galleryId: Long): Gallery =
         galleryRepository.findById(galleryId)
             .orElseThrow { GalleryException(GalleryErrorCode.GALLERY_NOT_FOUND) }
 
-    /** [requireViewer]와 [requireSelector]가 쓴다. */
+    /** 부부 분기가 쓴다. 멤버가 아니면 갤러리의 존재 자체를 알려주지 않는다. */
     private fun findMember(galleryId: Long, userId: Long): GalleryMember =
         galleryMemberRepository.findByGalleryIdAndUserId(galleryId, userId)
             ?: throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
 
     /** 내부에서도 쓰지만 [com.soma.wes.gallery.service.GalleryInviteService]가 부르는 공개 API다. */
     @Transactional(readOnly = true)
-    fun isManager(gallery: Gallery, userId: Long): Boolean =
+    fun isPhotographer(gallery: Gallery, userId: Long): Boolean =
         studioRepository.findByUserId(userId)?.id == gallery.studioId
 }

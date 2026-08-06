@@ -9,7 +9,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.http.ResponseEntity
 
-@Tag(name = "사진 클러스터", description = "닮은 사진끼리 묶어 보여준다")
+@Tag(name = "[Cluster]", description = "유사도 기반 사진 묶음 조회 API")
 interface PhotoClusterControllerDocs {
 
     @Operation(
@@ -24,13 +24,14 @@ interface PhotoClusterControllerDocs {
             아직 임베딩이 없는 사진은 어느 묶음에도 들어가지 못하고 unclassified 수로만 나온다.
             0이 아니면 임베딩 실행이 끝나지 않은 것이다 — POST /galleries/{galleryId}/embeddings/run 참고.
 
-            담당 작가와 초대받은 부부 양쪽이 볼 수 있다. 저장되는 값이 아니므로 값을 바꿔가며 여러 번 불러도 된다.
+            담당 작가와 초대받은 부부 양쪽이 볼 수 있다. 부부는 갤러리가 열려 있고 마감 전일 때만 가능하다.
+            저장되는 값이 아니므로 값을 바꿔가며 여러 번 불러도 된다.
         """,
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "조회 성공"),
         ApiResponse(responseCode = "400", description = "threshold가 0.0~1.0을 벗어남", content = []),
-        ApiResponse(responseCode = "403", description = "갤러리에 접근할 권한이 없음", content = []),
+        ApiResponse(responseCode = "403", description = "갤러리와 무관한 사용자이거나, 부부인데 마감/미공개 갤러리", content = []),
         ApiResponse(responseCode = "404", description = "존재하지 않는 갤러리", content = []),
     )
     fun cluster(

@@ -118,6 +118,11 @@ class PhotoFolderIntegrationTest @Autowired constructor(
                 jsonPath("$[0].name") { value("두 번째") }
                 jsonPath("$[0].photoCount") { value(3) }
                 jsonPath("$[1].photoCount") { value(1) }
+                // 카드 미리보기를 위해 폴더마다 상세를 따로 부르지 않아도 된다.
+                jsonPath("$[0].coverPhoto.photoId") { value(photoIds.first().toInt()) }
+                jsonPath("$[0].coverPhoto.viewUrl") { value(containsString("X-Amz-Signature")) }
+                // 상세 조회와 같은 정렬이라 카드의 대표와 팝업의 첫 장이 어긋나지 않는다.
+                jsonPath("$[1].coverPhoto.photoId") { value(photoIds.first().toInt()) }
             }
     }
 
@@ -271,8 +276,9 @@ class PhotoFolderIntegrationTest @Autowired constructor(
     }
 
     @Test
-    fun `담당 작가는 폴더를 만들 수 없다`() {
-        // 폴더는 부부가 고른 결과다. 작가가 대신 만들면 "작가는 고객 대신 고르지 않는다"가 깨진다.
+    fun `담당 작가도 자기 갤러리의 폴더를 만들 수 있다`() {
+        // 고르는 것은 부부의 일이지만, 작가가 자기 갤러리에서 아무것도 못 하면
+        // 폴더 기능을 확인할 방법이 없다. 작가는 스튜디오의 모든 기능을 쓴다.
         val fixture = openGalleryWithMember()
         val photoIds = uploadPhotos(fixture, count = 1)
 
@@ -281,19 +287,16 @@ class PhotoFolderIntegrationTest @Autowired constructor(
             contentType = MediaType.APPLICATION_JSON
             content = """{"name":"작가가 만든 폴더","photoIds":$photoIds}"""
         }.andExpect {
-            status { isForbidden() }
-            jsonPath("$.code") { value("GALLERY_403_1") }
+            status { isCreated() }
+            jsonPath("$.name") { value("작가가 만든 폴더") }
         }
     }
 
     @Test
-    fun `선택 마감이 지나면 폴더를 만들 수 없다`() {
+    fun `선택 마감이 지나면 부부는 폴더를 만들 수 없다`() {
         val fixture = openGalleryWithMember()
         val photoIds = uploadPhotos(fixture, count = 1)
-
-        val gallery = galleryRepository.findById(fixture.galleryId).orElseThrow()
-        gallery.changeSelectionDeadline(ZonedDateTime.now().minusDays(1))
-        galleryRepository.saveAndFlush(gallery)
+        passDeadline(fixture)
 
         mockMvc.post("/api/v1/galleries/${fixture.galleryId}/photo-folders") {
             authorize(fixture.member)
@@ -303,6 +306,25 @@ class PhotoFolderIntegrationTest @Autowired constructor(
             status { isForbidden() }
             jsonPath("$.code") { value("GALLERY_403_4") }
         }
+    }
+
+    @Test
+    fun `선택 마감이 지나도 작가는 폴더를 만질 수 있다`() {
+        // 마감은 고객이 고르는 기한이지 작가의 작업 기한이 아니다.
+        val fixture = openGalleryWithMember()
+        val photoIds = uploadPhotos(fixture, count = 1)
+        val folderId = createFolder(fixture, "본식", photoIds)
+        passDeadline(fixture)
+
+        mockMvc.get("/api/v1/galleries/${fixture.galleryId}/photo-folders/$folderId") {
+            authorize(fixture.photographer)
+        }.andExpect { status { isOk() } }
+
+        mockMvc.get("/api/v1/galleries/${fixture.galleryId}/photo-folders") { authorize(fixture.member) }
+            .andExpect {
+                status { isForbidden() }
+                jsonPath("$.code") { value("GALLERY_403_4") }
+            }
     }
 
     @Test
@@ -326,7 +348,7 @@ class PhotoFolderIntegrationTest @Autowired constructor(
 
     private data class Fixture(val photographer: User, val member: User, val galleryId: Long)
 
-    /** 폴더 API는 전부 requireSelector를 지나므로, 열린 갤러리와 멤버가 매번 필요하다. */
+    /** 폴더 API는 전부 requirePhotographerOrCouple을 지나므로, 열린 갤러리와 멤버가 매번 필요하다. */
     private fun openGalleryWithMember(): Fixture {
         val photographer = signUpPhotographer()
         val galleryId = createGallery(photographer)
@@ -339,6 +361,13 @@ class PhotoFolderIntegrationTest @Autowired constructor(
         galleryMemberRepository.save(GalleryMember(galleryId = galleryId, userId = member.id!!))
 
         return Fixture(photographer, member, galleryId)
+    }
+
+    /** 선택 마감을 과거로 밀어 부부의 작업을 잠근다. */
+    private fun passDeadline(fixture: Fixture) {
+        val gallery = galleryRepository.findById(fixture.galleryId).orElseThrow()
+        gallery.changeSelectionDeadline(ZonedDateTime.now().minusDays(1))
+        galleryRepository.saveAndFlush(gallery)
     }
 
     private fun createFolder(fixture: Fixture, name: String, photoIds: List<Long>): Long {

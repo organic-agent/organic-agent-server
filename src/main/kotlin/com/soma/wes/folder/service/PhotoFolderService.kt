@@ -26,8 +26,9 @@ import org.springframework.transaction.annotation.Transactional
  * 시점의 사진 목록을 [PhotoFolderItem] 행으로 고정한다 — 클러스터를 가리키는 포인터가 아니라
  * 사용자가 "이걸로 하겠다"고 확정한 목록이다.
  *
- * 모든 경로가 [GalleryAccessPolicy.requireSelector]를 지난다. 폴더를 만들고 고치는 것은
- * 부부의 일이고, 작가는 [클러스터 조회][com.soma.wes.cluster.service.PhotoClusterService]까지만 한다.
+ * 모든 경로가 [GalleryAccessPolicy.requirePhotographerOrCouple]를 지난다. 고르는 것은 부부의
+ * 일이지만 작가도 자기 갤러리의 폴더를 만지고 확인할 수 있어야 한다 — 다만 부부에게만 갤러리가
+ * 열려 있고 마감 전이어야 한다는 조건이 붙는다.
  */
 @Service
 class PhotoFolderService(
@@ -41,7 +42,7 @@ class PhotoFolderService(
 
     @Transactional
     fun create(galleryId: Long, userId: Long, request: CreatePhotoFolderRequest): PhotoFolderDetailResponse {
-        galleryAccessPolicy.requireSelector(galleryId, userId)
+        galleryAccessPolicy.requirePhotographerOrCouple(galleryId, userId)
 
         val photos = loadPhotosIn(galleryId, request.photoIds)
         val folder = photoFolderRepository.save(newFolder(galleryId, request.name))
@@ -68,30 +69,33 @@ class PhotoFolderService(
 
     @Transactional(readOnly = true)
     fun list(galleryId: Long, userId: Long): List<PhotoFolderResponse> {
-        galleryAccessPolicy.requireSelector(galleryId, userId)
+        galleryAccessPolicy.requirePhotographerOrCouple(galleryId, userId)
 
         val folders = photoFolderRepository.findAllByGalleryIdOrderByCreatedAtDesc(galleryId)
         if (folders.isEmpty()) {
             return emptyList()
         }
 
-        // 폴더마다 count를 부르면 목록 길이만큼 질의가 늘어난다. 한 번에 읽어 세어 나눈다.
+        // 폴더마다 질의를 돌리면 목록 길이만큼 늘어난다. 항목과 사진을 한 번씩만 읽어 나눈다.
         val items = photoFolderItemRepository.findAllByFolderIdIn(folders.map { it.requiredId })
 
-        // 항목 행이 아니라 실제로 남아 있는 사진을 센다. 항목만 세면 사진이 지워진 뒤
+        // 항목 행이 아니라 실제로 남아 있는 사진을 본다. 항목만 세면 사진이 지워진 뒤
         // 목록의 photoCount가 상세 조회의 photos.size보다 커진다 -- 같은 폴더를 두 화면이
-        // 다르게 말하게 된다.
-        val alive = existingPhotoIds(galleryId, items.map { it.photoId })
-        val countByFolderId = items.filter { it.photoId in alive }
-            .groupingBy { it.folderId }
-            .eachCount()
+        // 다르게 말하게 된다. 대표 사진도 같은 이유로 살아 있는 것 중에서 고른다.
+        val alive = existingPhotos(galleryId, items.map { it.photoId })
+        val photosByFolderId = items.mapNotNull { item -> alive[item.photoId]?.let { item.folderId to it } }
+            .groupBy({ it.first }, { it.second })
 
-        return folders.map { PhotoFolderResponse.of(it, (countByFolderId[it.requiredId] ?: 0).toLong()) }
+        return folders.map { folder ->
+            // 상세 조회와 같은 정렬이라 카드의 대표 사진과 팝업의 첫 장이 어긋나지 않는다.
+            val photos = photosByFolderId[folder.requiredId].orEmpty().sortedWith(PHOTO_ORDER)
+            summaryOf(folder, photos)
+        }
     }
 
     @Transactional(readOnly = true)
     fun get(galleryId: Long, folderId: Long, userId: Long): PhotoFolderDetailResponse {
-        galleryAccessPolicy.requireSelector(galleryId, userId)
+        galleryAccessPolicy.requirePhotographerOrCouple(galleryId, userId)
 
         val folder = findFolder(galleryId, folderId)
         return detailOf(folder, loadPhotosOf(folder))
@@ -104,7 +108,7 @@ class PhotoFolderService(
         userId: Long,
         request: RenamePhotoFolderRequest,
     ): PhotoFolderResponse {
-        galleryAccessPolicy.requireSelector(galleryId, userId)
+        galleryAccessPolicy.requirePhotographerOrCouple(galleryId, userId)
 
         val folder = findFolder(galleryId, folderId)
         try {
@@ -113,12 +117,12 @@ class PhotoFolderService(
             throw FolderException(FolderErrorCode.INVALID_FOLDER_NAME)
         }
 
-        return PhotoFolderResponse.of(folder, photoFolderItemRepository.countByFolderId(folder.requiredId))
+        return summaryOf(folder, loadPhotosOf(folder))
     }
 
     @Transactional
     fun delete(galleryId: Long, folderId: Long, userId: Long) {
-        galleryAccessPolicy.requireSelector(galleryId, userId)
+        galleryAccessPolicy.requirePhotographerOrCouple(galleryId, userId)
 
         val folder = findFolder(galleryId, folderId)
         // 외래키를 걸지 않았으므로 항목을 먼저 지운다. 남겨 두면 어느 폴더에도 속하지 않은
@@ -134,7 +138,7 @@ class PhotoFolderService(
         userId: Long,
         request: AddPhotosRequest,
     ): PhotoFolderDetailResponse {
-        galleryAccessPolicy.requireSelector(galleryId, userId)
+        galleryAccessPolicy.requirePhotographerOrCouple(galleryId, userId)
 
         // 폴더 행을 잠그고 시작한다. "이미 든 것 읽기 -> 없는 것만 저장" 사이에 같은 폴더로
         // 다른 요청이 끼어들면 둘 다 없다고 판단해 같은 행을 저장하고, 유니크 제약에 걸린
@@ -204,7 +208,7 @@ class PhotoFolderService(
 
     @Transactional
     fun removePhoto(galleryId: Long, folderId: Long, photoId: Long, userId: Long) {
-        galleryAccessPolicy.requireSelector(galleryId, userId)
+        galleryAccessPolicy.requirePhotographerOrCouple(galleryId, userId)
 
         val folder = findFolder(galleryId, folderId)
         // 0이면 없는 사진을 뺀 것이다. 조용히 성공시키면 프론트는 지운 줄 알고 화면에서
@@ -219,15 +223,26 @@ class PhotoFolderService(
         photoFolderRepository.findByIdAndGalleryId(folderId, galleryId)
             ?: throw FolderException(FolderErrorCode.FOLDER_NOT_FOUND)
 
-    /** 아직 남아 있는 사진의 id. [list]가 지워진 사진을 세지 않으려고 쓴다. */
-    private fun existingPhotoIds(galleryId: Long, photoIds: List<Long>): Set<Long> {
+    /**
+     * 아직 남아 있는 사진을 id로 찾을 수 있게 모아 돌려준다.
+     *
+     * [list]가 지워진 사진을 세지 않고 대표 사진도 살아 있는 것에서 고르려고 쓴다.
+     * 폴더 수와 무관하게 질의는 하나다.
+     */
+    private fun existingPhotos(galleryId: Long, photoIds: List<Long>): Map<Long, Photo> {
         if (photoIds.isEmpty()) {
-            return emptySet()
+            return emptyMap()
         }
         return photoRepository.findAllByGalleryIdAndIdIn(galleryId, photoIds.toSet())
-            .map { it.requiredId }
-            .toSet()
+            .associateBy { it.requiredId }
     }
+
+    /** 목록용 응답. 사진 전부 대신 대표 한 장만 담는다. [list]와 [rename]이 쓴다. */
+    private fun summaryOf(folder: PhotoFolder, photos: List<Photo>) = PhotoFolderResponse.of(
+        folder = folder,
+        photoCount = photos.size.toLong(),
+        coverPhoto = photos.firstOrNull()?.let(photoViewAssembler::toResponse),
+    )
 
     companion object {
         /** 화면 순서는 갤러리에서 정한 노출 순서를 따른다. 같으면 id로 한 번 더 갈라 흔들리지 않게 한다. */
