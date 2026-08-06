@@ -88,3 +88,5 @@ app:
   embedding:
     # 테스트에는 Lambda가 없다. 비어 있는 것이 정상이고, 호출 시점에 503으로 실패한다.
     function-name: ""
+  cluster:
+    default-threshold: 0.9
