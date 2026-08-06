@@ -16,6 +16,15 @@ interface PhotoRepository : JpaRepository<Photo, Long> {
 
     fun findAllByGalleryIdAndIdIn(galleryId: Long, ids: Collection<Long>): List<Photo>
 
+    /**
+     * 클러스터링 대상.
+     *
+     * `status`가 아니라 `embedding` 컬럼을 본다 — 벡터가 있어야 거리를 잴 수 있고, 상태 값이
+     * 어긋나 있어도 이 조건은 진실을 말한다. 정렬을 못박는 이유는 묶음 안의 첫 장이 대표로
+     * 쓰이기 때문이다. `displayOrder`만으로는 같은 배치에 발급된 사진들의 순서가 흔들린다.
+     */
+    fun findAllByGalleryIdAndEmbeddingIsNotNullOrderByDisplayOrderAscIdAsc(galleryId: Long): List<Photo>
+
     fun countByGalleryId(galleryId: Long): Long
 
     fun countByGalleryIdAndStatus(galleryId: Long, status: PhotoStatus): Long
