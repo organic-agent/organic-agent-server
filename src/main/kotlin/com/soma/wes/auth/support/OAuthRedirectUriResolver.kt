@@ -18,10 +18,6 @@ class OAuthRedirectUriResolver(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    /**
-     * @param configuredRedirectUri 설정(Parameter Store)에 적힌 redirect-uri. 경로는 여기서 가져온다.
-     * @param requestOrigin 요청의 `Origin` 헤더. 없으면 null.
-     */
     fun resolve(configuredRedirectUri: String, requestOrigin: String?): String {
         val origin = when {
             requestOrigin in allowedOrigins -> requestOrigin!!
@@ -36,10 +32,6 @@ class OAuthRedirectUriResolver(
         return replaceOrigin(configuredRedirectUri, origin)
     }
 
-    /**
-     * 경로(`/login/oauth2/code/google`)는 그대로 두고 오리진만 갈아끼운다.
-     * 경로까지 조합하지 않는 이유는 provider마다 콜백 경로가 다를 수 있고, 그건 설정이 정할 몫이기 때문이다.
-     */
     private fun replaceOrigin(redirectUri: String, origin: String): String {
         val parsed = URI(origin)
 
