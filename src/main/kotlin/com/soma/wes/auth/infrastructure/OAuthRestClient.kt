@@ -1,4 +1,4 @@
-package com.soma.wes.auth.infrastructure.client
+package com.soma.wes.auth.infrastructure
 
 import com.soma.wes.auth.exception.AuthErrorCode
 import com.soma.wes.auth.exception.OAuthException
@@ -15,7 +15,7 @@ import org.springframework.web.client.RestClient
 import org.springframework.web.client.RestClientException
 
 @Component
-class OAuthHttpClientAdapter(
+class OAuthRestClient(
     private val restClient: RestClient,
 ) : OAuthClient {
 
