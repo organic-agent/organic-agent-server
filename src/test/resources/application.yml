@@ -90,3 +90,6 @@ app:
     function-name: ""
   cluster:
     default-threshold: 0.9
+  invite:
+    # 실제 프론트가 아니다. 링크가 "베이스 + 토큰"으로 조립되는지만 확인한다.
+    base-url: "http://localhost:3000/invite"

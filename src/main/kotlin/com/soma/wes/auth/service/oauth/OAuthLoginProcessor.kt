@@ -1,5 +1,6 @@
 package com.soma.wes.auth.service.oauth
 
+import com.soma.wes.auth.dto.OAuthLoginResult
 import com.soma.wes.auth.dto.OAuthUserInfo
 import com.soma.wes.auth.dto.response.LoginResponse
 import com.soma.wes.auth.service.AuthTokenProvider
@@ -19,13 +20,16 @@ class OAuthLoginProcessor(
     private val log = LoggerFactory.getLogger(javaClass)
 
     @Transactional
-    fun process(userInfo: OAuthUserInfo): LoginResponse {
+    fun process(userInfo: OAuthUserInfo): OAuthLoginResult {
         val user = findOrCreateUser(userInfo)
 
         val accessToken = authTokenProvider.generateAccessToken(user)
         val refreshToken = authTokenProvider.generateRefreshToken(user)
 
-        return LoginResponse.of(accessToken, refreshToken)
+        return OAuthLoginResult(
+            userId = checkNotNull(user.id) { "저장되지 않은 사용자입니다." },
+            response = LoginResponse.of(accessToken, refreshToken),
+        )
     }
 
     private fun findOrCreateUser(userInfo: OAuthUserInfo): User {

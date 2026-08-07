@@ -25,8 +25,9 @@ class OAuthController(
     override fun loginUrl(
         @PathVariable provider: String,
         @RequestHeader(HttpHeaders.ORIGIN, required = false) origin: String?,
+        @RequestParam(required = false) inviteToken: String?,
     ): ResponseEntity<LoginUrlResponse> {
-        val result = oAuthLoginUrlService.generateLoginUrl(provider, origin)
+        val result = oAuthLoginUrlService.generateLoginUrl(provider, origin, inviteToken)
 
         return ResponseEntity.ok()
             .cacheControl(CacheControl.noStore())

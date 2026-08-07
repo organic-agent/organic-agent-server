@@ -18,10 +18,7 @@ class OAuthRegistrations(
     private val redirectUriResolver: OAuthRedirectUriResolver,
 ) {
 
-    /**
-     * @param requestOrigin 요청의 `Origin` 헤더. redirect-uri를 어느 프론트로 잡을지 정하는 데만 쓴다.
-     *   자세한 규칙은 [OAuthRedirectUriResolver]에 있다. 넘기지 않으면 설정값이 그대로 쓰인다.
-     */
+
     fun of(provider: OAuthProvider, requestOrigin: String? = null): OAuthRegistration {
         val registration = clientRegistrationRepository.findByRegistrationId(provider.key)
             ?: throw OAuthException(AuthErrorCode.PROVIDER_NOT_SUPPORTED)
@@ -38,25 +35,11 @@ class OAuthRegistrations(
         )
     }
 
-    /**
-     * Spring은 공개 클라이언트나 다른 grant type도 지원하느라 이 값들을 nullable로 선언한다.
-     * 우리 플로우(authorization_code + 서버가 사용자 정보 조회)에서는 모두 필수다.
-     *
-     * null만 걸러서는 안 된다. `client-secret`을 적지 않으면 Spring은 null이 아니라 **빈 문자열**을
-     * 담아둔다. 그대로 통과시키면 `client_secret=`를 빈 값으로 보내고, provider가 거부한 것을
-     * `AUTH_400_2`(인가 코드가 유효하지 않음)로 보고하게 된다. 우리 설정 문제인데 클라이언트를 탓하는 꼴이다.
-     *
-     * 클라이언트가 고칠 수 있는 문제가 아니므로 400이 아니라 500으로 응답한다.
-     */
     private fun String?.orMisconfigured(): String =
         if (isNullOrBlank()) throw OAuthException(AuthErrorCode.OAUTH_MISCONFIGURED) else this
 }
 
-/**
- * 빠진 값이 없음이 확인된 provider 설정.
- *
- * 서비스는 이 타입만 보므로 Spring의 nullable 값을 만질 일도, 매번 null을 확인할 일도 없다.
- */
+
 data class OAuthRegistration(
     val clientId: String,
     val clientSecret: String,

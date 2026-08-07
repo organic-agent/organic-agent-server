@@ -62,6 +62,18 @@ class GalleryInvite(
     fun isUsableAt(at: ZonedDateTime): Boolean = !isRevoked && !isExpiredAt(at)
 
     /**
+     * 목록 화면이 유효·만료·폐기를 구분해 보여주기 위한 값.
+     *
+     * 폐기를 만료보다 먼저 본다. 폐기된 링크를 그대로 두면 언젠가 만료 시각도 지나는데,
+     * 그때 "만료됨"으로 보이면 작가가 자기가 거둬들인 링크를 재발급해도 되는 것으로 읽는다.
+     */
+    fun statusAt(at: ZonedDateTime): GalleryInviteStatus = when {
+        isRevoked -> GalleryInviteStatus.REVOKED
+        isExpiredAt(at) -> GalleryInviteStatus.EXPIRED
+        else -> GalleryInviteStatus.ACTIVE
+    }
+
+    /**
      * 링크를 거둬들인다. 이미 폐기됐으면 처음 폐기한 시각을 유지하고 아무것도 하지 않는다.
      * 폐기의 목적은 "못 쓰게 만드는 것"이고 그건 이미 이뤄진 상태라, 버튼을 두 번 눌렀다고
      * 실패를 돌려줄 이유가 없다.

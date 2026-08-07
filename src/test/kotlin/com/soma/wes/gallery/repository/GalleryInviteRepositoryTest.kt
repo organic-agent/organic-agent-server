@@ -52,6 +52,9 @@ class GalleryInviteRepositoryTest @Autowired constructor(
         galleryInviteRepository.save(newInvite(galleryId = 1L, token = "token-a"))
         galleryInviteRepository.save(newInvite(galleryId = 1L, token = "token-b"))
 
-        assertEquals(2, galleryInviteRepository.findAllByGalleryId(1L).size)
+        // 최근 것이 먼저 온다. 작가 화면이 방금 만든 링크를 맨 위에 놓는다.
+        val invites = galleryInviteRepository.findAllByGalleryIdOrderByIdDesc(1L)
+
+        assertEquals(listOf("token-b", "token-a"), invites.map { it.token })
     }
 }
