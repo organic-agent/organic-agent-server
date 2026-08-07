@@ -41,11 +41,13 @@ class OAuthLoginProcessorTest @Autowired constructor(
     fun `첫 로그인이면 가입시킨다`() {
         val providerId = "oauth-signup-${sequence.incrementAndGet()}"
 
-        val response = oAuthLoginProcessor.process(userInfo(providerId, "새 사용자", "new@example.com"))
+        val result = oAuthLoginProcessor.process(userInfo(providerId, "새 사용자", "new@example.com"))
 
-        assertNotNull(response.accessToken)
+        assertNotNull(result.response.accessToken)
         val saved = userRepository.findByProviderAndProviderId(OAuthProvider.KAKAO, providerId)
         assertEquals("새 사용자", saved?.nickname)
+        // 초대 수락을 이어서 하려면 호출부가 "방금 누가 로그인했는지"를 알아야 한다.
+        assertEquals(saved?.id, result.userId)
     }
 
     @Test
