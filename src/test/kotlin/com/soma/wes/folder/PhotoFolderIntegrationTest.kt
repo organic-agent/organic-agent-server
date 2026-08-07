@@ -363,10 +363,16 @@ class PhotoFolderIntegrationTest @Autowired constructor(
         return Fixture(photographer, member, galleryId)
     }
 
-    /** 선택 마감을 과거로 밀어 부부의 작업을 잠근다. */
+    /**
+     * 선택 마감을 과거로 밀어 부부의 작업을 잠근다.
+     *
+     * `changeSelectionDeadline`을 쓰지 않는다 — 지난 기한은 그쪽에서 막힌다. 여기서 필요한 것은
+     * "기한을 과거로 정하는 동작"이 아니라 시간이 흘러 기한이 지나버린 **상태**라, 시계를 돌리는
+     * 대신 필드를 직접 세운다.
+     */
     private fun passDeadline(fixture: Fixture) {
         val gallery = galleryRepository.findById(fixture.galleryId).orElseThrow()
-        gallery.changeSelectionDeadline(ZonedDateTime.now().minusDays(1))
+        gallery.selectionDeadline = ZonedDateTime.now().minusDays(1)
         galleryRepository.saveAndFlush(gallery)
     }
 

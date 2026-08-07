@@ -11,6 +11,14 @@ enum class GalleryErrorCode(
 
     INVALID_STATUS_TRANSITION(HttpStatus.BAD_REQUEST, "GALLERY_400_1", "현재 상태에서는 할 수 없는 동작입니다."),
 
+    /**
+     * 이미 지난 기한을 갤러리 생성·재오픈 요청에 넣은 경우.
+     *
+     * [SELECTION_DEADLINE_PASSED]와 다르다. 저쪽은 정상적으로 정해둔 기한이 흘러서 지난 것이라
+     * 부부에게 나가는 403이고, 이쪽은 작가가 지금 보낸 값이 잘못됐다는 400이다.
+     */
+    INVALID_SELECTION_DEADLINE(HttpStatus.BAD_REQUEST, "GALLERY_400_2", "사진 선택 마감 기한은 현재 시각보다 뒤여야 합니다."),
+
     /** 멤버도 담당 작가도 아닌 사용자의 접근. */
     GALLERY_ACCESS_DENIED(HttpStatus.FORBIDDEN, "GALLERY_403_1", "갤러리에 접근할 권한이 없습니다."),
     GALLERY_NOT_OPEN(HttpStatus.FORBIDDEN, "GALLERY_403_2", "지금은 사진을 고를 수 없는 갤러리입니다."),

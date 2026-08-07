@@ -3,6 +3,7 @@ package com.soma.wes.gallery.controller
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.gallery.controller.docs.GalleryControllerDocs
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
+import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
 import com.soma.wes.gallery.dto.response.GalleryResponse
 import com.soma.wes.gallery.service.GalleryService
 import jakarta.validation.Valid
@@ -49,6 +50,37 @@ class GalleryController(
         @PathVariable galleryId: Long,
     ): ResponseEntity<GalleryResponse> {
         val result = galleryService.get(galleryId, loginUser.id)
+
+        return ResponseEntity.ok(result)
+    }
+
+    @PostMapping("/{galleryId}/open")
+    override fun open(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+    ): ResponseEntity<GalleryResponse> {
+        val result = galleryService.open(galleryId, loginUser.id)
+
+        return ResponseEntity.ok(result)
+    }
+
+    @PostMapping("/{galleryId}/close")
+    override fun close(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+    ): ResponseEntity<GalleryResponse> {
+        val result = galleryService.close(galleryId, loginUser.id)
+
+        return ResponseEntity.ok(result)
+    }
+
+    @PostMapping("/{galleryId}/reopen")
+    override fun reopen(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @RequestBody request: ReopenGalleryRequest,
+    ): ResponseEntity<GalleryResponse> {
+        val result = galleryService.reopen(galleryId, loginUser.id, request)
 
         return ResponseEntity.ok(result)
     }

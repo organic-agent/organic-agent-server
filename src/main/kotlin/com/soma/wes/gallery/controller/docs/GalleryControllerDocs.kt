@@ -2,6 +2,7 @@ package com.soma.wes.gallery.controller.docs
 
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
+import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
 import com.soma.wes.gallery.dto.response.GalleryResponse
 import com.soma.wes.global.exception.ErrorResponse
 import io.swagger.v3.oas.annotations.Operation
@@ -23,6 +24,22 @@ interface GalleryControllerDocs {
     )
     @ApiResponses(
         ApiResponse(responseCode = "201", description = "생성 성공"),
+        ApiResponse(
+            responseCode = "400",
+            description = "이미 지난 선택 마감 기한",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "지난 기한",
+                            value = """{"code": "GALLERY_400_2", "message": "사진 선택 마감 기한은 현재 시각보다 뒤여야 합니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
         ApiResponse(
             responseCode = "404",
             description = "온보딩을 마치지 않아 스튜디오가 없음",
@@ -92,4 +109,186 @@ interface GalleryControllerDocs {
         ),
     )
     fun get(loginUser: LoginUser, galleryId: Long): ResponseEntity<GalleryResponse>
+
+    @Operation(
+        summary = "갤러리 열기",
+        description = "DRAFT 갤러리를 OPEN으로 바꿔 초대된 사람에게 보인다. 담당 작가만 할 수 있다. " +
+            "이미 열렸거나 마감된 갤러리에는 400이 나간다.",
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "열기 성공"),
+        ApiResponse(
+            responseCode = "400",
+            description = "DRAFT가 아닌 갤러리를 열려고 함",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "이미 열렸거나 마감된 갤러리",
+                            value = """{"code": "GALLERY_400_1", "message": "현재 상태에서는 할 수 없는 동작입니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(
+            responseCode = "403",
+            description = "담당 작가가 아님",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "권한 없음",
+                            value = """{"code": "GALLERY_403_1", "message": "갤러리에 접근할 권한이 없습니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(
+            responseCode = "404",
+            description = "존재하지 않는 갤러리",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "갤러리 없음",
+                            value = """{"code": "GALLERY_404_1", "message": "존재하지 않는 갤러리입니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    )
+    fun open(loginUser: LoginUser, galleryId: Long): ResponseEntity<GalleryResponse>
+
+    @Operation(
+        summary = "갤러리 선택 마감",
+        description = "OPEN 갤러리를 CLOSED로 바꾼다. 담당 작가만 할 수 있다. " +
+            "마감한 뒤에도 부부는 갤러리와 사진을 계속 볼 수 있고, 고르거나 묶는 것만 막힌다.",
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "마감 성공"),
+        ApiResponse(
+            responseCode = "400",
+            description = "OPEN이 아닌 갤러리를 마감하려고 함",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "아직 열지 않았거나 이미 마감된 갤러리",
+                            value = """{"code": "GALLERY_400_1", "message": "현재 상태에서는 할 수 없는 동작입니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(
+            responseCode = "403",
+            description = "담당 작가가 아님",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "권한 없음",
+                            value = """{"code": "GALLERY_403_1", "message": "갤러리에 접근할 권한이 없습니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(
+            responseCode = "404",
+            description = "존재하지 않는 갤러리",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "갤러리 없음",
+                            value = """{"code": "GALLERY_404_1", "message": "존재하지 않는 갤러리입니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    )
+    fun close(loginUser: LoginUser, galleryId: Long): ResponseEntity<GalleryResponse>
+
+    @Operation(
+        summary = "갤러리 재오픈",
+        description = "CLOSED 갤러리를 다시 OPEN으로 바꾼다. 담당 작가만 할 수 있다. " +
+            "선택 마감 기한을 요청에서 다시 받는다 — 지난 기한을 그대로 두면 열자마자 다시 막히기 때문이다.",
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "재오픈 성공"),
+        ApiResponse(
+            responseCode = "400",
+            description = "CLOSED가 아닌 갤러리를 다시 열려고 하거나, 이미 지난 기한을 보냄",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "마감된 적 없는 갤러리",
+                            value = """{"code": "GALLERY_400_1", "message": "현재 상태에서는 할 수 없는 동작입니다."}""",
+                        ),
+                        ExampleObject(
+                            name = "지난 기한",
+                            value = """{"code": "GALLERY_400_2", "message": "사진 선택 마감 기한은 현재 시각보다 뒤여야 합니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(
+            responseCode = "403",
+            description = "담당 작가가 아님",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "권한 없음",
+                            value = """{"code": "GALLERY_403_1", "message": "갤러리에 접근할 권한이 없습니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(
+            responseCode = "404",
+            description = "존재하지 않는 갤러리",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "갤러리 없음",
+                            value = """{"code": "GALLERY_404_1", "message": "존재하지 않는 갤러리입니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    )
+    fun reopen(
+        loginUser: LoginUser,
+        galleryId: Long,
+        request: ReopenGalleryRequest,
+    ): ResponseEntity<GalleryResponse>
 }
