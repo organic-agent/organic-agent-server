@@ -2,12 +2,15 @@ package com.soma.wes.gallery.service
 
 import com.soma.wes.gallery.domain.GalleryInvite
 import com.soma.wes.gallery.domain.GalleryMember
+import com.soma.wes.gallery.dto.response.GalleryInviteAcceptResponse
+import com.soma.wes.gallery.dto.response.GalleryInviteResponse
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.repository.GalleryInviteRepository
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.support.GalleryAccessPolicy
+import com.soma.wes.gallery.support.GalleryInviteLinkAssembler
 import com.soma.wes.gallery.support.GalleryInviteTokenGenerator
 import com.soma.wes.user.domain.UserType
 import com.soma.wes.user.exception.UserErrorCode
@@ -34,6 +37,7 @@ class GalleryInviteService(
     private val userRepository: UserRepository,
     private val galleryAccessPolicy: GalleryAccessPolicy,
     private val tokenGenerator: GalleryInviteTokenGenerator,
+    private val linkAssembler: GalleryInviteLinkAssembler,
     private val clock: Clock,
 ) {
 
@@ -42,17 +46,42 @@ class GalleryInviteService(
     }
 
     @Transactional
-    fun issue(galleryId: Long, userId: Long): GalleryInvite {
+    fun issue(galleryId: Long, userId: Long): GalleryInviteResponse {
         galleryAccessPolicy.requirePhotographer(galleryId, userId)
 
-        return galleryInviteRepository.save(
+        val now = ZonedDateTime.now(clock)
+        val invite = galleryInviteRepository.save(
             GalleryInvite(
                 galleryId = galleryId,
                 token = tokenGenerator.generate(),
-                expiresAt = ZonedDateTime.now(clock).plus(VALIDITY),
+                expiresAt = now.plus(VALIDITY),
             ),
         )
+        return toResponse(invite, now)
     }
+
+    /**
+     * 갤러리에 발급된 링크 전부. 만료·폐기된 것도 함께 내려보낸다.
+     *
+     * 걸러내면 작가가 "분명 발급했는데 목록에 없다"를 보게 되고, 그게 폐기한 것인지 만료된
+     * 것인지 새로 발급해야 하는지 화면에서 알 방법이 사라진다. 판단 근거는
+     * [status][GalleryInviteResponse.status]가 준다.
+     */
+    @Transactional(readOnly = true)
+    fun list(galleryId: Long, userId: Long): List<GalleryInviteResponse> {
+        galleryAccessPolicy.requirePhotographer(galleryId, userId)
+
+        val now = ZonedDateTime.now(clock)
+        return galleryInviteRepository.findAllByGalleryIdOrderByIdDesc(galleryId)
+            .map { toResponse(it, now) }
+    }
+
+    private fun toResponse(invite: GalleryInvite, at: ZonedDateTime): GalleryInviteResponse =
+        GalleryInviteResponse.of(
+            invite = invite,
+            inviteUrl = linkAssembler.assemble(invite.token),
+            at = at,
+        )
 
     /**
      * 링크를 거둬들인다. 링크가 엉뚱한 곳에 퍼졌을 때 쓰며, 이미 들어온 멤버는 그대로 남는다.
@@ -79,7 +108,7 @@ class GalleryInviteService(
      * 두 번째 요청에 에러를 돌려주면 "링크가 잘못됐나" 싶게 만들 뿐이다.
      */
     @Transactional
-    fun accept(token: String, userId: Long): GalleryMember {
+    fun accept(token: String, userId: Long): GalleryInviteAcceptResponse {
         val invite = galleryInviteRepository.findByToken(token)
             ?: throw GalleryException(GalleryErrorCode.INVITE_NOT_FOUND)
 
@@ -100,13 +129,14 @@ class GalleryInviteService(
         // TODO(#3과 같은 부류): 같은 사용자의 동시 요청 둘이 모두 이 검사를 통과하면
         //  UK(gallery_id, user_id)에 걸려 한쪽이 실패한다. 중복 멤버가 생기지는 않는다.
         galleryMemberRepository.findByGalleryIdAndUserId(invite.galleryId, userId)
-            ?.let { return it }
+            ?.let { return GalleryInviteAcceptResponse.from(it) }
 
         confirmAsClientIfNotOnboarded(userId)
 
-        return galleryMemberRepository.save(
+        val member = galleryMemberRepository.save(
             GalleryMember(galleryId = invite.galleryId, userId = userId),
         )
+        return GalleryInviteAcceptResponse.from(member)
     }
 
     /**

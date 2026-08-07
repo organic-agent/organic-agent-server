@@ -7,5 +7,6 @@ interface GalleryInviteRepository : JpaRepository<GalleryInvite, Long> {
 
     fun findByToken(token: String): GalleryInvite?
 
-    fun findAllByGalleryId(galleryId: Long): List<GalleryInvite>
+    /** 최근에 발급한 것이 위로. 작가가 방금 만든 링크를 목록 맨 위에서 찾게 한다. */
+    fun findAllByGalleryIdOrderByIdDesc(galleryId: Long): List<GalleryInvite>
 }

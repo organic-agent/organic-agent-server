@@ -4,13 +4,17 @@ import com.soma.wes.TestcontainersConfiguration
 import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryInvite
+import com.soma.wes.gallery.domain.GalleryInviteStatus
 import com.soma.wes.gallery.domain.GalleryStatus
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.repository.GalleryInviteRepository
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
+import com.soma.wes.gallery.config.GalleryInviteProperties
+import com.soma.wes.gallery.dto.response.GalleryInviteResponse
 import com.soma.wes.gallery.support.GalleryAccessPolicy
+import com.soma.wes.gallery.support.GalleryInviteLinkAssembler
 import com.soma.wes.gallery.support.GalleryInviteTokenGenerator
 import com.soma.wes.global.config.TimeConfig
 import com.soma.wes.studio.domain.Studio
@@ -27,6 +31,7 @@ import kotlin.test.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
 import org.springframework.context.annotation.Import
 
@@ -37,7 +42,9 @@ import org.springframework.context.annotation.Import
     GalleryAccessPolicy::class,
     GalleryInviteService::class,
     GalleryInviteTokenGenerator::class,
+    GalleryInviteLinkAssembler::class,
 )
+@EnableConfigurationProperties(GalleryInviteProperties::class)
 class GalleryInviteServiceTest @Autowired constructor(
     private val galleryInviteService: GalleryInviteService,
     private val galleryInviteRepository: GalleryInviteRepository,
@@ -90,6 +97,13 @@ class GalleryInviteServiceTest @Autowired constructor(
             GalleryInvite(galleryId = galleryId(gallery), token = "fixed-token", expiresAt = expiresAt),
         )
 
+    /**
+     * 응답에는 토큰이 없다 — 조립이 끝난 링크만 준다. 수락을 호출하려면 저장된 행에서 꺼낸다.
+     * 프론트도 같은 처지라 링크를 그대로 쓰지 토큰을 따로 다루지 않는다.
+     */
+    private fun tokenOf(invite: GalleryInviteResponse): String =
+        galleryInviteRepository.findById(invite.id).orElseThrow().token
+
     @Test
     fun `담당 작가는 초대 링크를 발급한다`() {
         val gallery = saveGallery()
@@ -97,8 +111,18 @@ class GalleryInviteServiceTest @Autowired constructor(
         val invite = galleryInviteService.issue(galleryId(gallery), photographerId)
 
         assertEquals(galleryId(gallery), invite.galleryId)
-        assertTrue(invite.isUsableAt(now))
+        assertEquals(GalleryInviteStatus.ACTIVE, invite.status)
         assertTrue(invite.expiresAt.isAfter(now))
+    }
+
+    @Test
+    fun `발급 응답은 토큰이 아니라 완성된 링크를 준다`() {
+        // 토큰만 주면 도메인을 붙이는 규칙이 링크 복사·카톡 공유·메일 본문에 각각 흩어진다.
+        val gallery = saveGallery()
+
+        val invite = galleryInviteService.issue(galleryId(gallery), photographerId)
+
+        assertEquals("http://localhost:3000/invite/${tokenOf(invite)}", invite.inviteUrl)
     }
 
     @Test
@@ -107,8 +131,8 @@ class GalleryInviteServiceTest @Autowired constructor(
 
         val invite = galleryInviteService.issue(galleryId(gallery), photographerId)
 
-        assertTrue(invite.isUsableAt(now.plus(GalleryInviteService.VALIDITY).minusMinutes(1)))
-        assertTrue(invite.isExpiredAt(now.plus(GalleryInviteService.VALIDITY).plusMinutes(1)))
+        assertTrue(invite.expiresAt.isAfter(now.plus(GalleryInviteService.VALIDITY).minusMinutes(1)))
+        assertTrue(invite.expiresAt.isBefore(now.plus(GalleryInviteService.VALIDITY).plusMinutes(1)))
     }
 
     @Test
@@ -127,11 +151,12 @@ class GalleryInviteServiceTest @Autowired constructor(
         val gallery = saveGallery()
         val invite = galleryInviteService.issue(galleryId(gallery), photographerId)
 
-        val member = galleryInviteService.accept(invite.token, groomId)
+        val member = galleryInviteService.accept(tokenOf(invite), groomId)
 
         assertEquals(galleryId(gallery), member.galleryId)
-        assertEquals(groomId, member.userId)
-        assertNotNull(galleryMemberRepository.findByGalleryIdAndUserId(galleryId(gallery), groomId))
+        val saved = galleryMemberRepository.findByGalleryIdAndUserId(galleryId(gallery), groomId)
+        assertNotNull(saved)
+        assertEquals(saved.id, member.memberId)
     }
 
     @Test
@@ -141,7 +166,7 @@ class GalleryInviteServiceTest @Autowired constructor(
         val gallery = saveGallery()
         val invite = galleryInviteService.issue(galleryId(gallery), photographerId)
 
-        galleryInviteService.accept(invite.token, groomId)
+        galleryInviteService.accept(tokenOf(invite), groomId)
 
         assertEquals(UserType.CLIENT, userRepository.findById(groomId).orElseThrow().userType)
     }
@@ -156,7 +181,7 @@ class GalleryInviteServiceTest @Autowired constructor(
         val guestPhotographerId = requiredId(saveUser("guest-photographer"))
         userRepository.findById(guestPhotographerId).orElseThrow().selectType(UserType.PHOTOGRAPHER)
 
-        galleryInviteService.accept(invite.token, guestPhotographerId)
+        galleryInviteService.accept(tokenOf(invite), guestPhotographerId)
 
         assertEquals(
             UserType.PHOTOGRAPHER,
@@ -170,8 +195,9 @@ class GalleryInviteServiceTest @Autowired constructor(
         val gallery = saveGallery()
         val invite = galleryInviteService.issue(galleryId(gallery), photographerId)
 
-        galleryInviteService.accept(invite.token, groomId)
-        galleryInviteService.accept(invite.token, brideId)
+        val token = tokenOf(invite)
+        galleryInviteService.accept(token, groomId)
+        galleryInviteService.accept(token, brideId)
 
         assertEquals(2, galleryMemberRepository.findAllByGalleryId(galleryId(gallery)).size)
     }
@@ -181,10 +207,11 @@ class GalleryInviteServiceTest @Autowired constructor(
         val gallery = saveGallery()
         val invite = galleryInviteService.issue(galleryId(gallery), photographerId)
 
-        val first = galleryInviteService.accept(invite.token, groomId)
-        val second = galleryInviteService.accept(invite.token, groomId)
+        val token = tokenOf(invite)
+        val first = galleryInviteService.accept(token, groomId)
+        val second = galleryInviteService.accept(token, groomId)
 
-        assertEquals(first.id, second.id)
+        assertEquals(first.memberId, second.memberId)
         assertEquals(1, galleryMemberRepository.findAllByGalleryId(galleryId(gallery)).size)
     }
 
@@ -205,10 +232,11 @@ class GalleryInviteServiceTest @Autowired constructor(
         val gallery = saveGallery()
         val invite = galleryInviteService.issue(galleryId(gallery), photographerId)
 
-        galleryInviteService.revoke(galleryId(gallery), checkNotNull(invite.id), photographerId)
+        val token = tokenOf(invite)
+        galleryInviteService.revoke(galleryId(gallery), invite.id, photographerId)
 
         val exception = assertFailsWith<GalleryException> {
-            galleryInviteService.accept(invite.token, groomId)
+            galleryInviteService.accept(token, groomId)
         }
         assertEquals(GalleryErrorCode.INVITE_REVOKED, exception.errorCode)
     }
@@ -218,9 +246,9 @@ class GalleryInviteServiceTest @Autowired constructor(
         // 폐기는 "더 들어오지 못하게" 하는 것이지 내보내는 동작이 아니다.
         val gallery = saveGallery()
         val invite = galleryInviteService.issue(galleryId(gallery), photographerId)
-        galleryInviteService.accept(invite.token, groomId)
+        galleryInviteService.accept(tokenOf(invite), groomId)
 
-        galleryInviteService.revoke(galleryId(gallery), checkNotNull(invite.id), photographerId)
+        galleryInviteService.revoke(galleryId(gallery), invite.id, photographerId)
 
         assertNotNull(galleryMemberRepository.findByGalleryIdAndUserId(galleryId(gallery), groomId))
     }
@@ -241,7 +269,7 @@ class GalleryInviteServiceTest @Autowired constructor(
         val invite = galleryInviteService.issue(galleryId(gallery), photographerId)
 
         val exception = assertFailsWith<GalleryException> {
-            galleryInviteService.accept(invite.token, photographerId)
+            galleryInviteService.accept(tokenOf(invite), photographerId)
         }
 
         assertEquals(GalleryErrorCode.MANAGER_CANNOT_ACCEPT_INVITE, exception.errorCode)
@@ -254,7 +282,7 @@ class GalleryInviteServiceTest @Autowired constructor(
         val otherInvite = galleryInviteService.issue(galleryId(other), userId = 20L)
 
         val exception = assertFailsWith<GalleryException> {
-            galleryInviteService.revoke(galleryId(mine), checkNotNull(otherInvite.id), photographerId)
+            galleryInviteService.revoke(galleryId(mine), otherInvite.id, photographerId)
         }
 
         assertEquals(GalleryErrorCode.INVITE_NOT_FOUND, exception.errorCode)
@@ -266,7 +294,54 @@ class GalleryInviteServiceTest @Autowired constructor(
         val invite = galleryInviteService.issue(galleryId(gallery), photographerId)
 
         assertFailsWith<GalleryException> {
-            galleryInviteService.revoke(galleryId(gallery), checkNotNull(invite.id), userId = 999L)
+            galleryInviteService.revoke(galleryId(gallery), invite.id, userId = 999L)
         }
+    }
+
+    @Test
+    fun `목록은 만료와 폐기를 구분해 함께 보여준다`() {
+        // 걸러내면 작가가 "분명 발급했는데 없다"를 보게 되고, 폐기한 것인지 만료된 것인지
+        // 새로 발급해야 하는지 화면에서 알 방법이 사라진다.
+        val gallery = saveGallery()
+        val active = galleryInviteService.issue(galleryId(gallery), photographerId)
+        val revoked = galleryInviteService.issue(galleryId(gallery), photographerId)
+        galleryInviteService.revoke(galleryId(gallery), revoked.id, photographerId)
+        val expired = saveInvite(gallery, expiresAt = now.minusMinutes(1))
+
+        val invites = galleryInviteService.list(galleryId(gallery), photographerId)
+
+        assertEquals(3, invites.size)
+        assertEquals(
+            mapOf(
+                active.id to GalleryInviteStatus.ACTIVE,
+                revoked.id to GalleryInviteStatus.REVOKED,
+                checkNotNull(expired.id) to GalleryInviteStatus.EXPIRED,
+            ),
+            invites.associate { it.id to it.status },
+        )
+    }
+
+    @Test
+    fun `폐기한 링크는 만료 시각이 지나도 폐기로 남는다`() {
+        // 만료로 보이면 작가가 자기가 거둬들인 링크를 재발급해도 되는 것으로 읽는다.
+        val gallery = saveGallery()
+        val invite = saveInvite(gallery, expiresAt = now.minusMinutes(1))
+        invite.revoke(now.minusHours(1))
+        galleryInviteRepository.save(invite)
+
+        val listed = galleryInviteService.list(galleryId(gallery), photographerId).single()
+
+        assertEquals(GalleryInviteStatus.REVOKED, listed.status)
+    }
+
+    @Test
+    fun `담당 작가가 아니면 목록을 볼 수 없다`() {
+        val gallery = saveGallery()
+
+        val exception = assertFailsWith<GalleryException> {
+            galleryInviteService.list(galleryId(gallery), userId = 999L)
+        }
+
+        assertEquals(GalleryErrorCode.GALLERY_ACCESS_DENIED, exception.errorCode)
     }
 }

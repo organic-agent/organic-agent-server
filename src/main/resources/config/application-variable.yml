@@ -60,6 +60,13 @@ app:
     # 바꾸면 사용자가 처음 보는 결과가 통째로 달라진다. 올리면 잘게, 내리면 크게 묶인다.
     default-threshold: 0.9
 
+  invite:
+    # 초대 링크의 앞부분. 뒤에 토큰이 붙어 완성된 링크가 된다.
+    # 서버 주소가 아니라 프론트 주소다 — 링크를 받은 사람이 여는 것은 API가 아니라 수락 화면이고,
+    # 그 화면이 로그인을 확인한 뒤 수락 API를 부른다.
+    # prod는 배포 도메인을 따라가므로 Parameter Store(app.invite.base-url)가 덮어쓴다.
+    base-url: "http://localhost:3000/invite"
+
 ---
 spring:
   config:

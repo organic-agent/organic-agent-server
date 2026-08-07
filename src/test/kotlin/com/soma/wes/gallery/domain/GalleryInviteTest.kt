@@ -78,4 +78,22 @@ class GalleryInviteTest {
 
         assertFalse(invite.isUsableAt(now))
     }
+
+    @Test
+    fun `상태는 저장된 값이 아니라 물어본 시각으로 갈린다`() {
+        val invite = newInvite(expiresAt = now.plusDays(7))
+
+        assertEquals(GalleryInviteStatus.ACTIVE, invite.statusAt(now))
+        assertEquals(GalleryInviteStatus.EXPIRED, invite.statusAt(now.plusDays(8)))
+    }
+
+    @Test
+    fun `폐기가 만료보다 앞선다`() {
+        // 폐기해 둔 링크는 언젠가 만료 시각도 지난다. 그때 만료로 보이면 작가가 자기가
+        // 거둬들인 링크를 재발급해도 되는 것으로 읽는다.
+        val invite = newInvite(expiresAt = now.plusDays(7))
+        invite.revoke(now)
+
+        assertEquals(GalleryInviteStatus.REVOKED, invite.statusAt(now.plusDays(8)))
+    }
 }
