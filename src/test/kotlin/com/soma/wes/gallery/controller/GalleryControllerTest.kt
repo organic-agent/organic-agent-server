@@ -95,6 +95,21 @@ class GalleryControllerTest @Autowired constructor(
     }
 
     @Test
+    fun `이미 지난 마감 기한으로는 갤러리를 만들 수 없다`() {
+        // 만들자마자 아무도 못 고르는 갤러리가 된다. 작가가 알아챌 수 있는 지점은 여기뿐이다.
+        val photographer = signUpPhotographer()
+
+        mockMvc.post("/api/v1/galleries") {
+            authorize(photographer)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"title":"본식","selectionDeadline":"2020-01-01T00:00:00+09:00"}"""
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.code") { value("GALLERY_400_2") }
+        }
+    }
+
+    @Test
     fun `작가 목록에는 자기 스튜디오의 갤러리만 나온다`() {
         val mine = signUpPhotographer()
         val other = signUpPhotographer()
@@ -152,6 +167,127 @@ class GalleryControllerTest @Autowired constructor(
                 status { isNotFound() }
                 jsonPath("$.code") { value("GALLERY_404_1") }
             }
+    }
+
+    @Test
+    fun `작가가 갤러리를 열면 초대된 부부에게 보인다`() {
+        // 여는 경로가 없으면 갤러리는 영원히 DRAFT로 남고, 멤버 행이 있어도 부부는 403만 받는다.
+        val photographer = signUpPhotographer()
+        val gallery = saveGallery(studioIdOf(photographer), "본식")
+        val member = signUpUser()
+        galleryMemberRepository.save(GalleryMember(galleryId = gallery.id!!, userId = member.id!!))
+
+        mockMvc.post("/api/v1/galleries/${gallery.id}/open") { authorize(photographer) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.status") { value("OPEN") }
+            }
+
+        mockMvc.get("/api/v1/galleries/${gallery.id}") { authorize(member) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.title") { value("본식") }
+            }
+    }
+
+    @Test
+    fun `담당 작가가 아니면 갤러리를 열 수 없다`() {
+        val photographer = signUpPhotographer()
+        val gallery = saveGallery(studioIdOf(photographer), "남의 갤러리")
+        val other = signUpPhotographer()
+
+        mockMvc.post("/api/v1/galleries/${gallery.id}/open") { authorize(other) }
+            .andExpect {
+                status { isForbidden() }
+                jsonPath("$.code") { value("GALLERY_403_1") }
+            }
+    }
+
+    @Test
+    fun `이미 열린 갤러리는 다시 열 수 없다`() {
+        val photographer = signUpPhotographer()
+        val gallery = saveGallery(studioIdOf(photographer), "본식").also { it.open() }
+        galleryRepository.save(gallery)
+
+        mockMvc.post("/api/v1/galleries/${gallery.id}/open") { authorize(photographer) }
+            .andExpect {
+                status { isBadRequest() }
+                jsonPath("$.code") { value("GALLERY_400_1") }
+            }
+    }
+
+    @Test
+    fun `마감해도 부부는 갤러리를 계속 볼 수 있다`() {
+        // 마감은 선택을 멈추는 것이지 갤러리를 숨기는 것이 아니다. 마감됐다는 사실 자체를
+        // 그 화면에서 알려줘야 한다.
+        val photographer = signUpPhotographer()
+        val gallery = saveGallery(studioIdOf(photographer), "본식").also { it.open() }
+        galleryRepository.save(gallery)
+        val member = signUpUser()
+        galleryMemberRepository.save(GalleryMember(galleryId = gallery.id!!, userId = member.id!!))
+
+        mockMvc.post("/api/v1/galleries/${gallery.id}/close") { authorize(photographer) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.status") { value("CLOSED") }
+            }
+
+        mockMvc.get("/api/v1/galleries/${gallery.id}") { authorize(member) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.status") { value("CLOSED") }
+            }
+    }
+
+    @Test
+    fun `재오픈하면 마감 기한을 새로 받는다`() {
+        val photographer = signUpPhotographer()
+        val gallery = saveGallery(studioIdOf(photographer), "본식").also { it.open(); it.close() }
+        galleryRepository.save(gallery)
+
+        mockMvc.post("/api/v1/galleries/${gallery.id}/reopen") {
+            authorize(photographer)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"selectionDeadline":"2099-09-30T23:59:59+09:00"}"""
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.status") { value("OPEN") }
+            jsonPath("$.selectionDeadline") { exists() }
+        }
+    }
+
+    @Test
+    fun `이미 지난 기한으로는 재오픈할 수 없다`() {
+        val photographer = signUpPhotographer()
+        val gallery = saveGallery(studioIdOf(photographer), "본식").also { it.open(); it.close() }
+        galleryRepository.save(gallery)
+
+        mockMvc.post("/api/v1/galleries/${gallery.id}/reopen") {
+            authorize(photographer)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"selectionDeadline":"2020-01-01T00:00:00+09:00"}"""
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.code") { value("GALLERY_400_2") }
+        }
+
+        mockMvc.get("/api/v1/galleries/${gallery.id}") { authorize(photographer) }
+            .andExpect { jsonPath("$.status") { value("CLOSED") } }
+    }
+
+    @Test
+    fun `마감된 적 없는 갤러리는 재오픈할 수 없다`() {
+        val photographer = signUpPhotographer()
+        val gallery = saveGallery(studioIdOf(photographer), "본식")
+
+        mockMvc.post("/api/v1/galleries/${gallery.id}/reopen") {
+            authorize(photographer)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{}"""
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.code") { value("GALLERY_400_1") }
+        }
     }
 
     // --- helpers ---
