@@ -2,8 +2,12 @@ package com.soma.wes.cluster
 
 import com.soma.wes.TestcontainersConfiguration
 import com.soma.wes.cluster.repository.PhotoSimilarityRepository
+import com.soma.wes.gallery.domain.Gallery
+import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.repository.PhotoRepository
+import com.soma.wes.studio.domain.Studio
+import com.soma.wes.studio.repository.StudioRepository
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -31,6 +35,8 @@ import kotlin.test.assertTrue
 class PhotoClusterScaleTest @Autowired constructor(
     private val photoRepository: PhotoRepository,
     private val photoSimilarityRepository: PhotoSimilarityRepository,
+    private val studioRepository: StudioRepository,
+    private val galleryRepository: GalleryRepository,
 ) {
 
     private val sequence = AtomicLong(System.nanoTime())
@@ -39,7 +45,7 @@ class PhotoClusterScaleTest @Autowired constructor(
     fun `갤러리 규모별 쌍 질의 시간을 잰다`() {
         // 실제 웨딩 갤러리는 수백~수천 장이다. 500장이면 쌍이 12만 개가 넘는다.
         listOf(100, 300, 500).forEach { size ->
-            val galleryId = sequence.incrementAndGet()
+            val galleryId = createGallery()
             insertPhotos(galleryId, size)
 
             // 유사도 0.9 = 거리 0.1.
@@ -56,7 +62,7 @@ class PhotoClusterScaleTest @Autowired constructor(
     fun `임계값을 낮추면 더 많은 쌍이 걸린다`() {
         // N²이 문제인 것은 쌍의 개수만이 아니다. 임계값이 낮으면 통과하는 쌍도 함께 늘어
         // 애플리케이션이 받아 드는 간선 수가 커진다.
-        val galleryId = sequence.incrementAndGet()
+        val galleryId = createGallery()
         insertPhotos(galleryId, 300)
 
         val strict = photoSimilarityRepository.findSimilarPairs(galleryId, 0.02).size
@@ -93,5 +99,20 @@ class PhotoClusterScaleTest @Autowired constructor(
         }
         photoRepository.saveAll(photos)
         photoRepository.flush()
+    }
+
+    private fun createGallery(): Long {
+        val suffix = sequence.incrementAndGet()
+        val studio = studioRepository.save(
+            Studio(
+                userId = suffix,
+                name = "클러스터 규모 테스트",
+                galleryUrl = "cluster-scale-$suffix",
+            ),
+        )
+        val gallery = galleryRepository.save(
+            Gallery(studioId = checkNotNull(studio.id), title = "규모 테스트"),
+        )
+        return checkNotNull(gallery.id)
     }
 }

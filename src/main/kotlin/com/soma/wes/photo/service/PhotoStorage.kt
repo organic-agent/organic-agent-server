@@ -23,4 +23,7 @@ interface PhotoStorage {
      * 돌려주므로, 사용자에게는 사진이 깨진 것처럼 보인다.
      */
     fun presignOriginal(key: String): String
+
+    /** 운영자 승인 삭제에서 원본과 미리보기를 물리 삭제한다. 없는 키를 다시 지워도 성공해야 한다. */
+    fun deleteAll(keys: Collection<String>)
 }
