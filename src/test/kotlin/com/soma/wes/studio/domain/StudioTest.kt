@@ -19,17 +19,23 @@ class StudioTest {
     }
 
     @Test
-    fun `대문자가 섞인 주소는 받지 않는다`() {
-        // 허용하면 대소문자만 다른 주소가 서로 다른 스튜디오로 잡혀 유니크 제약이 무의미해진다.
-        val exception = assertFailsWith<StudioException> { newStudio("Soma-Studio") }
+    fun `앞뒤 공백과 대문자를 canonical 주소로 정규화한다`() {
+        val studio = newStudio("  Soma-Studio  ")
 
-        assertEquals(StudioErrorCode.INVALID_GALLERY_URL, exception.errorCode)
+        assertEquals("soma-studio", studio.galleryUrl)
     }
 
     @Test
-    fun `공백이나 슬래시가 들어간 주소는 받지 않는다`() {
+    fun `내부 공백이나 슬래시와 언더스코어가 들어간 주소는 받지 않는다`() {
         assertFailsWith<StudioException> { newStudio("soma studio") }
         assertFailsWith<StudioException> { newStudio("soma/studio") }
+        assertFailsWith<StudioException> { newStudio("soma_studio") }
+    }
+
+    @Test
+    fun `비 ASCII 문자가 들어간 주소는 받지 않는다`() {
+        assertFailsWith<StudioException> { newStudio("소마-studio") }
+        assertFailsWith<StudioException> { newStudio("Kelvin-studio") }
     }
 
     @Test
@@ -47,16 +53,19 @@ class StudioTest {
     @Test
     fun `서비스가 먼저 쓰는 경로는 선점할 수 없다`() {
         // 도메인 바로 아래에 붙는 주소라, 선점당하면 해당 경로로 못 간다.
-        assertFailsWith<StudioException> { newStudio("api") }
+        assertFailsWith<StudioException> { newStudio("  API  ") }
         assertFailsWith<StudioException> { newStudio("login") }
         assertFailsWith<StudioException> { newStudio("admin") }
     }
 
     @Test
-    fun `주소를 바꿀 때도 같은 규칙을 적용한다`() {
+    fun `주소를 바꿀 때도 정규화와 검증을 적용한다`() {
         val studio = newStudio("soma-studio")
 
         assertFailsWith<StudioException> { studio.update(name = "이름", galleryUrl = "API") }
         assertEquals("soma-studio", studio.galleryUrl)
+
+        studio.update(name = "이름", galleryUrl = "  New-Studio  ")
+        assertEquals("new-studio", studio.galleryUrl)
     }
 }

@@ -53,7 +53,7 @@ class StudioControllerTest @Autowired constructor(
         mockMvc.post("/api/v1/studios") {
             authorize(user)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"name":"오가닉 스튜디오","galleryUrl":"organic-studio","inflowChannel":"인스타그램"}"""
+            content = """{"name":"오가닉 스튜디오","galleryUrl":"  Organic-Studio  ","inflowChannel":"인스타그램"}"""
         }.andExpect {
             status { isCreated() }
             jsonPath("$.id") { exists() }
@@ -88,7 +88,7 @@ class StudioControllerTest @Autowired constructor(
         mockMvc.post("/api/v1/studios") {
             authorize(signUp())
             contentType = MediaType.APPLICATION_JSON
-            content = """{"name":"나중에 온 곳","galleryUrl":"taken-url"}"""
+            content = """{"name":"나중에 온 곳","galleryUrl":"  TAKEN-URL  "}"""
         }.andExpect {
             status { isConflict() }
             jsonPath("$.code") { value("STUDIO_409_2") }
@@ -111,7 +111,10 @@ class StudioControllerTest @Autowired constructor(
     fun `주소 중복을 미리 확인한다`() {
         val user = signUp()
 
-        mockMvc.get("/api/v1/studios/gallery-url/availability?galleryUrl=free-url") { authorize(user) }
+        mockMvc.get("/api/v1/studios/gallery-url/availability") {
+            authorize(user)
+            param("galleryUrl", "  FREE-URL  ")
+        }
             .andExpect {
                 status { isOk() }
                 jsonPath("$.galleryUrl") { value("free-url") }
@@ -130,7 +133,7 @@ class StudioControllerTest @Autowired constructor(
     @Test
     fun `확인 단계도 생성과 같은 규칙으로 거절한다`() {
         // 여기서 통과했는데 저장이 거절되면 사용자는 이유를 알 수 없다.
-        mockMvc.get("/api/v1/studios/gallery-url/availability?galleryUrl=Studio") { authorize(signUp()) }
+        mockMvc.get("/api/v1/studios/gallery-url/availability?galleryUrl=studio_url") { authorize(signUp()) }
             .andExpect {
                 status { isBadRequest() }
                 jsonPath("$.code") { value("STUDIO_400_1") }
@@ -161,7 +164,7 @@ class StudioControllerTest @Autowired constructor(
         mockMvc.patch("/api/v1/studios/me") {
             authorize(user)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"name":"새 이름","galleryUrl":"new-url"}"""
+            content = """{"name":"새 이름","galleryUrl":"  NEW-URL  "}"""
         }.andExpect {
             status { isOk() }
             jsonPath("$.name") { value("새 이름") }
