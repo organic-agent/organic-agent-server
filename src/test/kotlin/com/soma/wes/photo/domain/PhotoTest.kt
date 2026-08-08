@@ -5,7 +5,9 @@ import com.soma.wes.photo.exception.PhotoException
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class PhotoTest {
 
@@ -46,6 +48,33 @@ class PhotoTest {
         assertEquals("previews/galleries/1/a.jpg", photo.viewKey)
         // 원본 위치는 그대로다. 파생본은 화면용일 뿐 원본을 대신하지 않는다.
         assertEquals("galleries/1/a.jpg", photo.storageKey)
+    }
+
+    @Test
+    fun `촬영 정보는 임베딩 Lambda가 채우기 전까지 비어 있다`() {
+        // 이 서버는 이미지 바이트를 만지지 않아 EXIF를 읽을 방법이 없다. 발급 시점에
+        // 짐작해 채워두면 값이 있다는 것과 실제 촬영 정보가 어긋난다.
+        assertNull(photo().metadata)
+    }
+
+    @Test
+    fun `촬영 정보를 적재한다`() {
+        val photo = photo()
+
+        photo.applyMetadata(PhotoMetadata(cameraMake = "Apple", width = 4032, height = 3024))
+
+        assertEquals("Apple", photo.metadata?.cameraMake)
+        assertEquals(4032, photo.metadata?.width)
+        // EXIF가 없는 파일도 있어서 나머지는 비어 있는 것이 정상이다.
+        assertNull(photo.metadata?.takenAt)
+    }
+
+    @Test
+    fun `값이 하나도 없는 촬영 정보는 비어 있다고 말한다`() {
+        // 응답을 만드는 쪽이 이 값을 보고 metadata를 통째로 null로 내린다. 빈 객체를
+        // 내려주면 화면이 "촬영 정보" 칸을 열어놓고 빈 줄만 늘어놓는다.
+        assertTrue(PhotoMetadata().isEmpty)
+        assertFalse(PhotoMetadata(byteSize = 1_024).isEmpty)
     }
 
     @Test

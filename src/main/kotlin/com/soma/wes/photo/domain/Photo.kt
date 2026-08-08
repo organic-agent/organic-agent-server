@@ -4,6 +4,7 @@ import com.soma.wes.global.BaseEntity
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
 import jakarta.persistence.Column
+import jakarta.persistence.Embedded
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
@@ -88,6 +89,16 @@ class Photo(
     @Column(name = "preview_key", length = 500)
     var previewKey: String? = null
 
+    /**
+     * 촬영 정보(EXIF). [embedding]·[previewKey]와 마찬가지로 임베딩 Lambda가 채운다 —
+     * 이 서버는 이미지 바이트를 만지지 않아 EXIF를 읽을 방법이 없다.
+     *
+     * 컬럼이 전부 비어 있으면 Hibernate가 null을 넣는다. 아직 Lambda가 돌지 않았거나,
+     * 원본에 EXIF가 없고 크기조차 읽지 못한 경우다.
+     */
+    @Embedded
+    var metadata: PhotoMetadata? = null
+
     val requiredId: Long
         get() = id ?: error("아직 저장되지 않은 Photo 다")
 
@@ -117,6 +128,11 @@ class Photo(
             return
         }
         status = PhotoStatus.UPLOADED
+    }
+
+    /** [embedding]과 같은 이유로 둔다 — 정상 경로는 Lambda의 UPDATE라 이 메서드를 지나지 않는다. */
+    fun applyMetadata(metadata: PhotoMetadata) {
+        this.metadata = metadata
     }
 
     fun applyEmbedding(vector: FloatArray) {

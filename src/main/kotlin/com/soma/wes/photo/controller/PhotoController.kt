@@ -7,6 +7,7 @@ import com.soma.wes.photo.dto.request.CompleteUploadRequest
 import com.soma.wes.photo.dto.request.IssueUploadUrlsRequest
 import com.soma.wes.photo.dto.response.IssueUploadUrlsResponse
 import com.soma.wes.photo.dto.response.PhotoCountResponse
+import com.soma.wes.photo.dto.response.PhotoDetailResponse
 import com.soma.wes.photo.dto.response.PhotoPageResponse
 import com.soma.wes.photo.dto.response.PhotoSummaryResponse
 import com.soma.wes.photo.service.PhotoService
@@ -59,6 +60,17 @@ class PhotoController(
         @RequestParam(defaultValue = "200") size: Int,
     ): ResponseEntity<PhotoPageResponse> {
         val result = photoService.list(galleryId, loginUser.id, status, page, size)
+
+        return ResponseEntity.ok(result)
+    }
+
+    @GetMapping("/{photoId}")
+    override fun get(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @PathVariable photoId: Long,
+    ): ResponseEntity<PhotoDetailResponse> {
+        val result = photoService.get(galleryId, photoId, loginUser.id)
 
         return ResponseEntity.ok(result)
     }

@@ -7,6 +7,7 @@ import com.soma.wes.photo.dto.request.CompleteUploadRequest
 import com.soma.wes.photo.dto.request.IssueUploadUrlsRequest
 import com.soma.wes.photo.dto.response.IssueUploadUrlsResponse
 import com.soma.wes.photo.dto.response.PhotoCountResponse
+import com.soma.wes.photo.dto.response.PhotoDetailResponse
 import com.soma.wes.photo.dto.response.PhotoPageResponse
 import com.soma.wes.photo.dto.response.PhotoSummaryResponse
 import io.swagger.v3.oas.annotations.Operation
@@ -19,7 +20,10 @@ import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 
-@Tag(name = "[Photo]", description = "원본 사진 업로드·조회 API (담당 작가 전용)")
+@Tag(
+    name = "[Photo]",
+    description = "원본 사진 업로드·조회 API. 상세 조회만 초대받은 예비 부부에게도 열려 있고 나머지는 담당 작가 전용이다.",
+)
 interface PhotoControllerDocs {
 
     @Operation(
@@ -155,6 +159,67 @@ interface PhotoControllerDocs {
         page: Int,
         size: Int,
     ): ResponseEntity<PhotoPageResponse>
+
+    @Operation(
+        summary = "사진 상세 조회",
+        description = """
+            사진 한 장을 크게 볼 때 부른다. 목록과 달리 조회 URL이 둘이다.
+
+            viewUrl은 파생 JPEG(브라우저가 확실히 그리지만 긴 변이 줄어 있다)를, originalUrl은
+            원본(원래 크기지만 아이폰 HEIC면 그려지지 않는다)을 가리킨다. 화면에는 viewUrl로
+            그리고 확대·다운로드에 originalUrl을 쓰면 된다. previewReady가 false면 아직 파생본이
+            없어 둘이 같은 객체를 가리킨다 — 수명만 다르다.
+
+            originalUrl은 viewUrl보다 오래 산다(originalUrlTtlSeconds). 상세는 한 장을 오래
+            열어두는 화면이라 목록과 같은 수명으로 서명하면 보는 도중에 만료된다.
+
+            metadata는 촬영 정보(EXIF)다. 임베딩 Lambda가 원본을 디코딩할 때 함께 읽으므로,
+            임베딩 전(PENDING·UPLOADED)이거나 원본에 촬영 정보가 없으면 null이다.
+
+            담당 작가와 초대받은 예비 부부가 볼 수 있다. 부부는 갤러리가 열려 있고 선택 마감
+            전인 동안에만 열린다.
+        """,
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "조회 성공"),
+        ApiResponse(
+            responseCode = "403",
+            description = "이 갤러리의 작가도 초대받은 멤버도 아니거나, 부부가 마감 뒤에 부름",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "권한 없음",
+                            value = """{"code": "GALLERY_403_1", "message": "갤러리에 접근할 권한이 없습니다."}""",
+                        ),
+                        ExampleObject(
+                            name = "선택 마감이 지남",
+                            value = """{"code": "GALLERY_403_4", "message": "선택 기한이 지났습니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(
+            responseCode = "404",
+            description = "이 갤러리에 없는 사진 id",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "다른 갤러리의 사진",
+                            value = """{"code": "PHOTO_404_1", "message": "존재하지 않는 사진입니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    )
+    fun get(loginUser: LoginUser, galleryId: Long, photoId: Long): ResponseEntity<PhotoDetailResponse>
 
     @Operation(
         summary = "사진 상태 집계",

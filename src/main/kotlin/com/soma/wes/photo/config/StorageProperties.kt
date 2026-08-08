@@ -19,6 +19,15 @@ data class StorageProperties(
     /** 조회용 서명 URL의 수명. 목록을 다시 부르면 새 URL이 나오므로 업로드보다 짧게 잡는다. */
     val viewUrlTtl: Duration,
 
+    /**
+     * 원본 조회용 서명 URL의 수명. [viewUrlTtl]과 따로 두는 것은 화면의 성격이 달라서다.
+     *
+     * 목록은 스크롤하며 지나가지만 상세는 한 장을 오래 열어둔다. 목록과 같은 15분으로
+     * 서명하면 확대해 보는 도중에 만료되고, 그때 S3는 403을 돌려주므로 사용자에게는
+     * 사진이 깨진 것처럼 보인다.
+     */
+    val originalUrlTtl: Duration,
+
     /** 한 요청에서 발급할 URL 개수이자 목록 조회 페이지 크기의 상한. */
     val maxBatchSize: Int,
 )
