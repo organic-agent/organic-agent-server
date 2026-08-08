@@ -1,8 +1,9 @@
-"""갤러리 하나의 임베딩을 계산해 적재하고, 같은 김에 미리보기 파생본을 만든다.
+"""갤러리 하나의 임베딩을 계산해 적재하고, 같은 김에 미리보기 파생본과 촬영 정보를 만든다.
 
-파생본을 여기서 만드는 이유는 이 잡이 이미 원본을 받아 HEIC를 디코딩하고 EXIF 회전과
+파생본과 EXIF를 여기서 만드는 이유는 이 잡이 이미 원본을 받아 HEIC를 디코딩하고 EXIF 회전과
 축소까지 마친 이미지를 들고 있기 때문이다. 비싼 부분은 이미 지불했고 남은 것은 인코딩과
-PUT 하나뿐이다. 별도 잡으로 빼면 같은 이미지를 두 번 받아 두 번 디코딩하게 된다.
+PUT 하나, 태그를 훑는 일뿐이다. 별도 잡으로 빼면 같은 이미지를 두 번 받아 두 번 디코딩하게
+된다. 앱 서버는 이미지 바이트를 만지지 않으므로 애초에 그쪽에는 선택지가 없다.
 
 진입점(`handler.py` / `__main__.py`)이 둘이고 본체는 이 함수 하나다. Lambda로 감싸기 전에
 로컬에서 실제 S3·RDS를 상대로 같은 코드를 검증할 수 있어야 해서 이렇게 갈라 두었다.
@@ -17,7 +18,7 @@ from dataclasses import dataclass, field
 
 from PIL import Image
 
-from embedder import db, images, model
+from embedder import db, images, metadata, model
 from embedder.config import Settings
 from embedder.storage import PhotoStorage
 
@@ -33,6 +34,9 @@ class RunResult:
     #: 벡터는 나왔지만 파생본만 올리지 못한 사진. failed와 섞으면 안 된다 -- 이쪽은
     #: 임베딩이 성공했으므로 다시 불러도 fetch_targets가 집어 오지 않는다.
     previews_failed: list[str] = field(default_factory=list)
+    #: 벡터는 나왔지만 촬영 정보만 읽지 못한 사진. previews_failed와 같은 취급이다 --
+    #: 상세 화면에 정보가 덜 나올 뿐 사진은 멀쩡히 보이고 임베딩도 끝나 있다.
+    metadata_failed: list[str] = field(default_factory=list)
     elapsed_seconds: float = 0.0
 
     def to_dict(self) -> dict:
@@ -42,6 +46,7 @@ class RunResult:
             "processed": self.processed,
             "failed": self.failed,
             "previewsFailed": self.previews_failed,
+            "metadataFailed": self.metadata_failed,
             "elapsedSeconds": round(self.elapsed_seconds, 1),
         }
 
@@ -62,12 +67,19 @@ def run(gallery_id: int, force: bool = False, settings: Settings | None = None) 
         for batch in _chunked(targets, settings.batch_size):
             loaded_refs = []
             loaded_images = []
+            loaded_metadata = []
 
             for ref in batch:
                 try:
                     data = storage.read(ref.storage_key)
-                    loaded_images.append(images.load(data, settings.resize_long_edge))
+                    original = images.open_original(data)
+                    prepared = images.prepare(original, settings.resize_long_edge)
+
+                    # 세 리스트를 여기서 함께 늘린다. 위 두 줄 중 하나라도 실패하면 이 사진은
+                    # 어느 리스트에도 들어가지 않아, 아래에서 벡터와 짝이 어긋날 일이 없다.
                     loaded_refs.append(ref)
+                    loaded_images.append(prepared)
+                    loaded_metadata.append(_read_metadata(ref, original, len(data), result))
                 except Exception:
                     # 한 장이 잡 전체를 죽이지 않게 한다. 실패한 사진은 embedding이 NULL로
                     # 남으므로, 다시 호출하면 fetch_targets가 자연히 다시 집어 온다.
@@ -87,7 +99,7 @@ def run(gallery_id: int, force: bool = False, settings: Settings | None = None) 
 
             stored = db.store_embeddings(
                 connection,
-                zip(loaded_refs, vectors, preview_keys),
+                zip(loaded_refs, vectors, preview_keys, loaded_metadata),
             )
 
             # 배치 단위로 커밋한다. 15분 타임아웃에 걸려 중간에 끊겨도 여기까지는 남고,
@@ -101,6 +113,29 @@ def run(gallery_id: int, force: bool = False, settings: Settings | None = None) 
     result.elapsed_seconds = time.monotonic() - started
     log.info("완료: %s", result.to_dict())
     return result.to_dict()
+
+
+def _read_metadata(
+    ref: db.PhotoRef,
+    original: Image.Image,
+    byte_size: int,
+    result: RunResult,
+) -> metadata.PhotoMetadata | None:
+    """원본에서 촬영 정보를 읽는다. 실패하면 None.
+
+    바깥 try와 분리된 것이 핵심이다. 여기서 예외를 그대로 올려보내면 사진이 '읽지 못했다'로
+    분류되어 embedding까지 NULL로 남는다 -- EXIF 파싱 문제 하나가 임베딩 실패로 둔갑한다.
+    파생본 업로드와 같은 취급이고, 이유도 같다: 이 값이 없어도 사진은 멀쩡히 보인다.
+
+    회전·축소를 거치기 전의 이미지를 넘겨야 한다. 그쪽은 Orientation 태그가 지워지고 크기도
+    원본이 아니다.
+    """
+    try:
+        return metadata.extract(original, byte_size)
+    except Exception:
+        log.exception("촬영 정보를 읽지 못했습니다: %s", ref.storage_key)
+        result.metadata_failed.append(ref.storage_key)
+        return None
 
 
 def _upload_preview(
