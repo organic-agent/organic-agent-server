@@ -86,10 +86,23 @@ class PhotoFolderService(
         val photosByFolderId = items.mapNotNull { item -> alive[item.photoId]?.let { item.folderId to it } }
             .groupBy({ it.first }, { it.second })
 
+        // 상세 조회와 같은 정렬이라 카드의 대표 사진과 팝업의 첫 장이 어긋나지 않는다.
+        val photosByFolder = folders.associateWith {
+            photosByFolderId[it.requiredId].orEmpty().sortedWith(PHOTO_ORDER)
+        }
+
+        // 대표 사진도 한 번에 응답으로 만든다. 폴더마다 toResponse를 부르면 사진에 붙는
+        // 별점 조회가 폴더 수만큼 늘어난다 -- 위에서 항목과 사진을 한 번씩만 읽은 것이 무의미해진다.
+        val covers = photoViewAssembler.toResponses(photosByFolder.values.mapNotNull { it.firstOrNull() })
+            .associateBy { it.photoId }
+
         return folders.map { folder ->
-            // 상세 조회와 같은 정렬이라 카드의 대표 사진과 팝업의 첫 장이 어긋나지 않는다.
-            val photos = photosByFolderId[folder.requiredId].orEmpty().sortedWith(PHOTO_ORDER)
-            summaryOf(folder, photos)
+            val photos = photosByFolder.getValue(folder)
+            PhotoFolderResponse.of(
+                folder = folder,
+                photoCount = photos.size.toLong(),
+                coverPhoto = photos.firstOrNull()?.let { covers[it.requiredId] },
+            )
         }
     }
 
@@ -237,7 +250,7 @@ class PhotoFolderService(
             .associateBy { it.requiredId }
     }
 
-    /** 목록용 응답. 사진 전부 대신 대표 한 장만 담는다. [list]와 [rename]이 쓴다. */
+    /** 목록용 응답. 사진 전부 대신 대표 한 장만 담는다. [rename]이 쓴다 — [list]는 대표 사진을 한 번에 만든다. */
     private fun summaryOf(folder: PhotoFolder, photos: List<Photo>) = PhotoFolderResponse.of(
         folder = folder,
         photoCount = photos.size.toLong(),

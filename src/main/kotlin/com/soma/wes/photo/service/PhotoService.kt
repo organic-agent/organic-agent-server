@@ -3,6 +3,7 @@ package com.soma.wes.photo.service
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.domain.Photo
+import com.soma.wes.photo.domain.PhotoRating
 import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.dto.request.CompleteUploadRequest
 import com.soma.wes.photo.dto.request.IssueUploadUrlsRequest
@@ -16,6 +17,7 @@ import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.support.PhotoViewAssembler
+import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
@@ -146,14 +148,18 @@ class PhotoService(
     /**
      * 작가의 사진 목록.
      *
-     * 사진마다 서명된 조회 URL이 붙어 온다. 버킷이 비공개라 `storageKey`만으로는 아무것도
+     * 사진마다 서명된 조회 URL과 별점이 붙어 온다. 버킷이 비공개라 `storageKey`만으로는 아무것도
      * 띄울 수 없어서, 그 URL이 이미지를 화면에 그리는 유일한 통로다.
+     *
+     * `minScore`를 주면 그 점수 이상만 온다 — 부부가 별을 달아둔 뒤 작가가 "4점 이상만 보기"로
+     * 좁히는 화면이다. 별점이 아예 없는 사진은 이때 빠진다.
      */
     @Transactional(readOnly = true)
     fun list(
         galleryId: Long,
         userId: Long,
         status: PhotoStatus?,
+        minScore: Int?,
         page: Int,
         size: Int,
     ): PhotoPageResponse {
@@ -161,6 +167,11 @@ class PhotoService(
 
         if (size !in 1..properties.maxBatchSize) {
             throw PhotoException(PhotoErrorCode.TOO_MANY_PHOTOS)
+        }
+        // 컨트롤러의 @Min·@Max가 먼저 걸러내지만 그 검증은 컨트롤러를 지날 때만 돈다.
+        // 범위를 벗어난 값은 조용히 빈 목록이 되어, 화면에는 "고른 사진이 없다"로 보인다.
+        if (minScore != null && minScore !in PhotoRating.MIN_SCORE..PhotoRating.MAX_SCORE) {
+            throw PhotoException(PhotoErrorCode.INVALID_SCORE)
         }
 
         // displayOrder가 같은 사진(같은 배치에 동시 발급된 것들)이 페이지를 넘길 때마다
@@ -170,11 +181,7 @@ class PhotoService(
             size,
             Sort.by(Sort.Direction.ASC, "displayOrder", "id"),
         )
-        val found = if (status == null) {
-            photoRepository.findAllByGalleryId(galleryId, pageable)
-        } else {
-            photoRepository.findAllByGalleryIdAndStatus(galleryId, status, pageable)
-        }
+        val found = findPage(galleryId, status, minScore, pageable)
 
         return PhotoPageResponse(
             photos = photoViewAssembler.toResponses(found.content),
@@ -184,6 +191,27 @@ class PhotoService(
             hasNext = found.hasNext(),
             viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
         )
+    }
+
+    /**
+     * 상태와 최소 점수는 각각 있을 수도 없을 수도 있어 네 갈래다. [list]가 쓴다.
+     *
+     * 하나의 질의에 `(:status IS NULL OR ...)`을 넣지 않는다 — 그렇게 쓰면 어느 조건도 안 걸린
+     * 흔한 경우까지 옵티마이저가 매번 다시 판단해야 하고, 파라미터가 null일 때의 타입 추론이
+     * enum에서 어긋난다.
+     */
+    private fun findPage(
+        galleryId: Long,
+        status: PhotoStatus?,
+        minScore: Int?,
+        pageable: PageRequest,
+    ): Page<Photo> = when {
+        status != null && minScore != null ->
+            photoRepository.findAllByGalleryIdAndStatusAndScoreAtLeast(galleryId, status, minScore, pageable)
+
+        status != null -> photoRepository.findAllByGalleryIdAndStatus(galleryId, status, pageable)
+        minScore != null -> photoRepository.findAllByGalleryIdAndScoreAtLeast(galleryId, minScore, pageable)
+        else -> photoRepository.findAllByGalleryId(galleryId, pageable)
     }
 
     /**
@@ -207,6 +235,7 @@ class PhotoService(
             originalUrl = photoViewAssembler.originalUrlOf(photo),
             viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
             originalUrlTtlSeconds = properties.originalUrlTtl.seconds,
+            score = photoViewAssembler.scoreOf(photo),
         )
     }
 

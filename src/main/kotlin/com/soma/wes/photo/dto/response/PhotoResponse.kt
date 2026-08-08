@@ -28,10 +28,16 @@ data class PhotoResponse(
             "파생본은 임베딩이 끝나야 생기므로, 그전까지는 '미리보기 준비 중'으로 안내하면 된다.",
     )
     val previewReady: Boolean,
+
+    @field:Schema(
+        description = "이 사진에 매겨진 별점(1~5). 아무도 매기지 않았으면 null이다. " +
+            "부부와 작가가 같은 한 칸을 나눠 쓰므로 '내 점수'와 '남의 점수'는 없다.",
+    )
+    val score: Int?,
 ) {
 
     companion object {
-        fun of(photo: Photo, viewUrl: String?) = PhotoResponse(
+        fun of(photo: Photo, viewUrl: String?, score: Int?) = PhotoResponse(
             photoId = photo.requiredId,
             storageKey = photo.storageKey,
             originalFileName = photo.originalFileName,
@@ -41,6 +47,7 @@ data class PhotoResponse(
             createdAt = photo.createdAt,
             viewUrl = viewUrl,
             previewReady = photo.previewKey != null,
+            score = score,
         )
     }
 }

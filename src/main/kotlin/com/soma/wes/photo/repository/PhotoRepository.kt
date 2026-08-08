@@ -2,9 +2,13 @@ package com.soma.wes.photo.repository
 
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoStatus
+import jakarta.persistence.LockModeType
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Lock
+import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
 
 interface PhotoRepository : JpaRepository<Photo, Long> {
 
@@ -24,6 +28,64 @@ interface PhotoRepository : JpaRepository<Photo, Long> {
      * 없을 때와 남의 것일 때가 여기서 같은 결과(null)가 되는 것도 그래서 맞다.
      */
     fun findByIdAndGalleryId(id: Long, galleryId: Long): Photo?
+
+    /**
+     * 사진 행을 잠그고 찾는다. 별점을 매길 때 쓴다.
+     *
+     * 별점은 사진당 한 행이라 "없으면 만들고 있으면 고친다"인데, 신랑과 신부가 같은 사진에
+     * 동시에 별을 달면 둘 다 "아직 없다"를 읽고 각자 INSERT 한다. 유니크 제약이 막아주긴
+     * 하지만 그때는 한쪽 요청이 통째로 500으로 실패한다. 별점 행은 아직 없을 수 있어
+     * 잠글 대상이 못 되므로, 그 별점이 매달릴 사진 행을 잠근다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    fun findWithLockByIdAndGalleryId(id: Long, galleryId: Long): Photo?
+
+    /**
+     * 최소 점수로 거른 목록. "4점 이상만 보기"가 지나는 곳이다.
+     *
+     * 별점을 조인이 아니라 EXISTS로 본다. 사진당 별점이 하나뿐이라 조인해도 행이 늘지는
+     * 않지만, EXISTS는 페이지 크기만큼 찾으면 멈출 수 있고 무엇보다 "별점이 있는 사진만"이라는
+     * 뜻이 질의에 그대로 드러난다.
+     */
+    @Query(
+        value = """
+            SELECT p FROM Photo p
+            WHERE p.galleryId = :galleryId
+              AND EXISTS (SELECT 1 FROM PhotoRating r WHERE r.photoId = p.id AND r.score >= :minScore)
+        """,
+        countQuery = """
+            SELECT COUNT(p) FROM Photo p
+            WHERE p.galleryId = :galleryId
+              AND EXISTS (SELECT 1 FROM PhotoRating r WHERE r.photoId = p.id AND r.score >= :minScore)
+        """,
+    )
+    fun findAllByGalleryIdAndScoreAtLeast(
+        @Param("galleryId") galleryId: Long,
+        @Param("minScore") minScore: Int,
+        pageable: Pageable,
+    ): Page<Photo>
+
+    /** [findAllByGalleryIdAndScoreAtLeast]에 상태 조건을 더한 것. 두 조건은 함께 올 수 있다. */
+    @Query(
+        value = """
+            SELECT p FROM Photo p
+            WHERE p.galleryId = :galleryId
+              AND p.status = :status
+              AND EXISTS (SELECT 1 FROM PhotoRating r WHERE r.photoId = p.id AND r.score >= :minScore)
+        """,
+        countQuery = """
+            SELECT COUNT(p) FROM Photo p
+            WHERE p.galleryId = :galleryId
+              AND p.status = :status
+              AND EXISTS (SELECT 1 FROM PhotoRating r WHERE r.photoId = p.id AND r.score >= :minScore)
+        """,
+    )
+    fun findAllByGalleryIdAndStatusAndScoreAtLeast(
+        @Param("galleryId") galleryId: Long,
+        @Param("status") status: PhotoStatus,
+        @Param("minScore") minScore: Int,
+        pageable: Pageable,
+    ): Page<Photo>
 
     /**
      * 클러스터링 대상.

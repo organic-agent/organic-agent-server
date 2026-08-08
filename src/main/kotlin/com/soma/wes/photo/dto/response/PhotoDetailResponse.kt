@@ -46,6 +46,12 @@ data class PhotoDetailResponse(
 
     @field:Schema(description = "촬영 정보. 아직 채워지지 않았거나 원본에 EXIF가 없으면 null이다")
     val metadata: PhotoMetadataResponse?,
+
+    @field:Schema(
+        description = "이 사진에 매겨진 별점(1~5). 아무도 매기지 않았으면 null이다. " +
+            "부부와 작가가 같은 한 칸을 나눠 쓰므로 '내 점수'와 '남의 점수'는 없다.",
+    )
+    val score: Int?,
 ) {
 
     companion object {
@@ -55,6 +61,7 @@ data class PhotoDetailResponse(
             originalUrl: String?,
             viewUrlTtlSeconds: Long,
             originalUrlTtlSeconds: Long,
+            score: Int?,
         ) = PhotoDetailResponse(
             photoId = photo.requiredId,
             storageKey = photo.storageKey,
@@ -69,6 +76,7 @@ data class PhotoDetailResponse(
             viewUrlTtlSeconds = viewUrlTtlSeconds,
             originalUrlTtlSeconds = originalUrlTtlSeconds,
             metadata = PhotoMetadataResponse.from(photo.metadata),
+            score = score,
         )
     }
 }
