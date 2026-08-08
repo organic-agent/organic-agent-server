@@ -1,5 +1,6 @@
 package com.soma.wes.studio.controller
 
+import com.jayway.jsonpath.JsonPath
 import com.soma.wes.TestcontainersConfiguration
 import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.auth.service.AuthTokenProvider
@@ -10,19 +11,27 @@ import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.service.PhotoStorage
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioDeletionAuditRepository
+import com.soma.wes.studio.repository.StudioDeletionClaimRepository
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.user.domain.Role
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.domain.UserType
 import com.soma.wes.user.repository.UserRepository
 import java.util.UUID
+import java.util.concurrent.Callable
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.any
+import org.mockito.kotlin.doAnswer
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.reset
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.TestConfiguration
@@ -33,6 +42,7 @@ import org.springframework.context.annotation.Primary
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockHttpServletRequestDsl
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.MvcResult
 import org.springframework.test.web.servlet.post
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -49,6 +59,7 @@ class AdminStudioControllerTest @Autowired constructor(
     private val galleryRepository: GalleryRepository,
     private val photoRepository: PhotoRepository,
     private val auditRepository: StudioDeletionAuditRepository,
+    private val claimRepository: StudioDeletionClaimRepository,
     private val photoStorage: PhotoStorage,
 ) {
 
@@ -63,6 +74,7 @@ class AdminStudioControllerTest @Autowired constructor(
     @BeforeEach
     fun clear() {
         reset(photoStorage)
+        claimRepository.deleteAllInBatch()
         auditRepository.deleteAllInBatch()
         studioRepository.deleteAllInBatch()
     }
@@ -90,9 +102,10 @@ class AdminStudioControllerTest @Autowired constructor(
         photo.previewKey = "previews/galleries/$galleryId/original.jpg"
         photoRepository.saveAndFlush(photo)
         val requestId = UUID.fromString("e64b9298-faa8-42c8-a108-3ef8587bc2f0")
+        val auditIds = mutableListOf<Long>()
 
         repeat(2) {
-            mockMvc.post("/api/v1/admin/studios/$studioId/hard-delete") {
+            val body = mockMvc.post("/api/v1/admin/studios/$studioId/hard-delete") {
                 authorize(operator)
                 header("Idempotency-Key", requestId.toString())
                 contentType = MediaType.APPLICATION_JSON
@@ -104,9 +117,11 @@ class AdminStudioControllerTest @Autowired constructor(
                 jsonPath("$.galleryCount") { value(1) }
                 jsonPath("$.photoCount") { value(1) }
                 jsonPath("$.objectCount") { value(2) }
-            }
+            }.andReturn().response.contentAsString
+            auditIds += JsonPath.read<Int>(body, "$.auditId").toLong()
         }
 
+        assertEquals(1, auditIds.distinct().size)
         val keys = argumentCaptor<Collection<String>>()
         verify(photoStorage, times(1)).deleteAll(keys.capture())
         assertEquals(
@@ -124,6 +139,57 @@ class AdminStudioControllerTest @Autowired constructor(
         }.andExpect {
             status { isCreated() }
             jsonPath("$.galleryUrl") { value("organic-reopened") }
+        }
+    }
+
+    @Test
+    fun `같은 요청 ID를 동시에 실행해도 S3 삭제는 한 번만 수행한다`() {
+        val operator = signUp("deletion-concurrent-admin", Role.ADMIN)
+        val owner = signUp("deletion-concurrent-owner")
+        val studio = studioRepository.saveAndFlush(
+            Studio(userId = checkNotNull(owner.id), name = "동시 삭제 대상", galleryUrl = "concurrent-studio"),
+        )
+        val studioId = checkNotNull(studio.id)
+        val requestId = UUID.fromString("957949c6-f2a7-4c52-9e7b-07d7a087b619")
+        val authorization = "Bearer ${authTokenProvider.generateAccessToken(operator).value}"
+        val deletionStarted = CountDownLatch(1)
+        val allowDeletion = CountDownLatch(1)
+        doAnswer {
+            deletionStarted.countDown()
+            assertTrue(allowDeletion.await(5, TimeUnit.SECONDS))
+            Unit
+        }.whenever(photoStorage).deleteAll(any())
+
+        fun executeDeletion(): MvcResult = mockMvc.post("/api/v1/admin/studios/$studioId/hard-delete") {
+            header("Authorization", authorization)
+            header("Idempotency-Key", requestId.toString())
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"confirmedGalleryUrl":"concurrent-studio","reason":"문의 WES-CS-20 최종 확인"}"""
+        }.andReturn()
+
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val first = executor.submit(Callable { executeDeletion() })
+            assertTrue(deletionStarted.await(5, TimeUnit.SECONDS))
+
+            val duplicate = executor.submit(Callable { executeDeletion() }).get(5, TimeUnit.SECONDS)
+            assertEquals(409, duplicate.response.status)
+            assertEquals("STUDIO_409_6", JsonPath.read(duplicate.response.contentAsString, "$.code"))
+
+            allowDeletion.countDown()
+            val completed = first.get(5, TimeUnit.SECONDS)
+            assertEquals(200, completed.response.status)
+            val auditId = JsonPath.read<Int>(completed.response.contentAsString, "$.auditId").toLong()
+
+            val repeated = executeDeletion()
+            assertEquals(200, repeated.response.status)
+            assertEquals(auditId, JsonPath.read<Int>(repeated.response.contentAsString, "$.auditId").toLong())
+            verify(photoStorage, times(1)).deleteAll(any())
+            assertEquals(1, auditRepository.count())
+            assertEquals(0, claimRepository.count())
+        } finally {
+            allowDeletion.countDown()
+            executor.shutdownNow()
         }
     }
 

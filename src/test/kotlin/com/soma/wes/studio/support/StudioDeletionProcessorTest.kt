@@ -24,6 +24,7 @@ import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.exception.StudioErrorCode
 import com.soma.wes.studio.exception.StudioException
 import com.soma.wes.studio.repository.StudioDeletionAuditRepository
+import com.soma.wes.studio.repository.StudioDeletionClaimRepository
 import com.soma.wes.studio.repository.StudioRepository
 import java.time.ZonedDateTime
 import java.util.UUID
@@ -52,6 +53,7 @@ class StudioDeletionProcessorTest @Autowired constructor(
     private val photoSelectionItemRepository: PhotoSelectionItemRepository,
     private val photoRatingRepository: PhotoRatingRepository,
     private val auditRepository: StudioDeletionAuditRepository,
+    private val claimRepository: StudioDeletionClaimRepository,
 ) {
 
     @Test
@@ -114,6 +116,7 @@ class StudioDeletionProcessorTest @Autowired constructor(
         assertEquals(0, photoSelectionItemRepository.count())
         assertEquals(0, photoRatingRepository.count())
         assertEquals(result.auditId, auditRepository.findByRequestId(requestId)?.id)
+        assertEquals(0, claimRepository.count())
 
         val repeated = processor.prepare(
             studioId = studioId,
@@ -123,6 +126,61 @@ class StudioDeletionProcessorTest @Autowired constructor(
             reason = "문의 WES-CS-1 최종 확인",
         )
         assertEquals(result, assertIs<StudioDeletionPreparation.Completed>(repeated).result)
+    }
+
+    @Test
+    fun `같은 요청 ID가 실행 중이면 S3 삭제 준비를 하나만 허용한다`() {
+        val studio = studioRepository.save(
+            Studio(userId = 10L, name = "오가닉", galleryUrl = "organic-studio"),
+        )
+        val studioId = checkNotNull(studio.id)
+        val requestId = UUID.randomUUID()
+        val reason = "문의 WES-CS-5 최종 확인"
+
+        val first = processor.prepare(studioId, 99L, requestId, "organic-studio", reason)
+        assertIs<StudioDeletionPreparation.Pending>(first)
+
+        val exception = assertFailsWith<StudioException> {
+            processor.prepare(studioId, 99L, requestId, "organic-studio", reason)
+        }
+
+        assertEquals(StudioErrorCode.DELETION_REQUEST_IN_PROGRESS, exception.errorCode)
+        assertEquals(1, claimRepository.count())
+    }
+
+    @Test
+    fun `실패한 실행의 claim을 해제하면 같은 요청으로 다시 준비할 수 있다`() {
+        val studio = studioRepository.save(
+            Studio(userId = 10L, name = "오가닉", galleryUrl = "organic-studio"),
+        )
+        val studioId = checkNotNull(studio.id)
+        val requestId = UUID.randomUUID()
+        val reason = "문의 WES-CS-6 최종 확인"
+        val first = assertIs<StudioDeletionPreparation.Pending>(
+            processor.prepare(studioId, 99L, requestId, "organic-studio", reason),
+        )
+
+        processor.release(first.plan)
+        val retried = processor.prepare(studioId, 99L, requestId, "organic-studio", reason)
+
+        assertIs<StudioDeletionPreparation.Pending>(retried)
+        assertEquals(1, claimRepository.count())
+    }
+
+    @Test
+    fun `실행 중인 요청 ID를 다른 내용으로 재사용하면 충돌로 거절한다`() {
+        val studio = studioRepository.save(
+            Studio(userId = 10L, name = "오가닉", galleryUrl = "organic-studio"),
+        )
+        val studioId = checkNotNull(studio.id)
+        val requestId = UUID.randomUUID()
+
+        processor.prepare(studioId, 99L, requestId, "organic-studio", "문의 WES-CS-7 최종 확인")
+        val exception = assertFailsWith<StudioException> {
+            processor.prepare(studioId, 99L, requestId, "organic-studio", "다른 문의 내용")
+        }
+
+        assertEquals(StudioErrorCode.DELETION_REQUEST_CONFLICT, exception.errorCode)
     }
 
     @Test

@@ -10,6 +10,7 @@ import com.soma.wes.studio.dto.response.StudioDeletionResponse
 import com.soma.wes.studio.exception.StudioErrorCode
 import com.soma.wes.studio.exception.StudioException
 import com.soma.wes.studio.repository.StudioDeletionAuditRepository
+import com.soma.wes.studio.repository.StudioDeletionClaimRepository
 import com.soma.wes.studio.repository.StudioRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -29,9 +30,10 @@ class StudioDeletionProcessor(
     private val galleryRepository: GalleryRepository,
     private val photoRepository: PhotoRepository,
     private val auditRepository: StudioDeletionAuditRepository,
+    private val claimRepository: StudioDeletionClaimRepository,
 ) {
 
-    @Transactional(readOnly = true)
+    @Transactional
     fun prepare(
         studioId: Long,
         operatorUserId: Long,
@@ -43,13 +45,48 @@ class StudioDeletionProcessor(
             return StudioDeletionPreparation.Completed(it)
         }
 
-        val studio = studioRepository.findById(studioId)
-            .orElseThrow { StudioException(StudioErrorCode.STUDIO_NOT_FOUND) }
+        val studio = studioRepository.findById(studioId).orElse(null)
+            ?: return completedResult(studioId, operatorUserId, requestId, confirmedGalleryUrl, reason)
+                ?.let(StudioDeletionPreparation::Completed)
+                ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
         requireConfirmedTarget(studio, confirmedGalleryUrl)
 
         val galleries = galleryRepository.findAllByStudioId(studioId)
         val photos = findPhotos(galleries)
-        return StudioDeletionPreparation.Pending(snapshot(requestId, studio, galleries, photos))
+        val claimToken = UUID.randomUUID()
+        val claimed = claimRepository.tryClaim(
+            requestId = requestId,
+            claimToken = claimToken,
+            studioId = studioId,
+            operatorUserId = operatorUserId,
+            studioGalleryUrl = confirmedGalleryUrl,
+            reason = reason,
+        )
+        if (claimed == 0) {
+            completedResult(studioId, operatorUserId, requestId, confirmedGalleryUrl, reason)?.let {
+                return StudioDeletionPreparation.Completed(it)
+            }
+            val existing = claimRepository.findById(requestId)
+                .orElseThrow { StudioException(StudioErrorCode.DELETION_REQUEST_IN_PROGRESS) }
+            requireSameRequest(
+                existing.studioId,
+                existing.operatorUserId,
+                existing.studioGalleryUrl,
+                existing.reason,
+                studioId,
+                operatorUserId,
+                confirmedGalleryUrl,
+                reason,
+            )
+            throw StudioException(StudioErrorCode.DELETION_REQUEST_IN_PROGRESS)
+        }
+
+        completedResult(studioId, operatorUserId, requestId, confirmedGalleryUrl, reason)?.let {
+            claimRepository.release(requestId, claimToken)
+            return StudioDeletionPreparation.Completed(it)
+        }
+
+        return StudioDeletionPreparation.Pending(snapshot(requestId, claimToken, studio, galleries, photos))
     }
 
     @Transactional
@@ -64,7 +101,23 @@ class StudioDeletionProcessor(
             plan.requestId,
             plan.studioGalleryUrl,
             reason,
-        )?.let { return it }
+        )?.let {
+            claimRepository.release(plan.requestId, plan.claimToken)
+            return it
+        }
+
+        val claim = claimRepository.findOwnedForUpdate(plan.requestId, plan.claimToken)
+            ?: throw StudioException(StudioErrorCode.DELETION_REQUEST_IN_PROGRESS)
+        requireSameRequest(
+            claim.studioId,
+            claim.operatorUserId,
+            claim.studioGalleryUrl,
+            claim.reason,
+            plan.studioId,
+            operatorUserId,
+            plan.studioGalleryUrl,
+            reason,
+        )
 
         val studio = studioRepository.findByIdForUpdate(plan.studioId)
             ?: return completedResult(
@@ -81,7 +134,7 @@ class StudioDeletionProcessor(
         // 뒤늦게 끼어들지 못하게 한다.
         val galleries = galleryRepository.findAllByStudioIdForUpdate(plan.studioId)
         val photos = findPhotosForUpdate(galleries)
-        val current = snapshot(plan.requestId, studio, galleries, photos)
+        val current = snapshot(plan.requestId, plan.claimToken, studio, galleries, photos)
         if (current.galleryIds != plan.galleryIds || current.photos != plan.photos) {
             throw StudioException(StudioErrorCode.DELETION_TARGET_CHANGED)
         }
@@ -103,7 +156,13 @@ class StudioDeletionProcessor(
                 objectCount = plan.objectKeys.size,
             ),
         )
+        claimRepository.delete(claim)
         return StudioDeletionResponse.from(audit)
+    }
+
+    @Transactional
+    fun release(plan: StudioDeletionPlan) {
+        claimRepository.release(plan.requestId, plan.claimToken)
     }
 
     private fun completedResult(
@@ -125,6 +184,26 @@ class StudioDeletionProcessor(
         return StudioDeletionResponse.from(audit)
     }
 
+    private fun requireSameRequest(
+        claimedStudioId: Long,
+        claimedOperatorUserId: Long,
+        claimedGalleryUrl: String,
+        claimedReason: String,
+        studioId: Long,
+        operatorUserId: Long,
+        confirmedGalleryUrl: String,
+        reason: String,
+    ) {
+        if (
+            claimedStudioId != studioId ||
+            claimedOperatorUserId != operatorUserId ||
+            claimedGalleryUrl != confirmedGalleryUrl ||
+            claimedReason != reason
+        ) {
+            throw StudioException(StudioErrorCode.DELETION_REQUEST_CONFLICT)
+        }
+    }
+
     private fun requireConfirmedTarget(studio: Studio, confirmedGalleryUrl: String) {
         if (studio.galleryUrl != confirmedGalleryUrl) {
             throw StudioException(StudioErrorCode.DELETION_TARGET_MISMATCH)
@@ -143,12 +222,14 @@ class StudioDeletionProcessor(
 
     private fun snapshot(
         requestId: UUID,
+        claimToken: UUID,
         studio: Studio,
         galleries: List<Gallery>,
         photos: List<Photo>,
     ): StudioDeletionPlan =
         StudioDeletionPlan(
             requestId = requestId,
+            claimToken = claimToken,
             studioId = checkNotNull(studio.id) { "저장되지 않은 스튜디오입니다." },
             studioUserId = studio.userId,
             studioGalleryUrl = studio.galleryUrl,

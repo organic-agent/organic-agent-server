@@ -5,6 +5,7 @@ import com.soma.wes.studio.dto.request.ExecuteStudioDeletionRequest
 import com.soma.wes.studio.dto.response.StudioDeletionResponse
 import com.soma.wes.studio.exception.StudioErrorCode
 import com.soma.wes.studio.exception.StudioException
+import com.soma.wes.studio.support.StudioDeletionPlan
 import com.soma.wes.studio.support.StudioDeletionPreparation
 import com.soma.wes.studio.support.StudioDeletionProcessor
 import org.slf4j.LoggerFactory
@@ -50,20 +51,35 @@ class StudioDeletionService(
             )
         ) {
             is StudioDeletionPreparation.Completed -> preparation.result
-            is StudioDeletionPreparation.Pending -> {
-                photoStorage.deleteAll(preparation.plan.objectKeys)
-                val result = processor.delete(preparation.plan, operatorUserId, reason)
-                log.info(
-                    "스튜디오 hard delete 완료: studioId={}, operatorUserId={}, requestId={}, galleries={}, photos={}, objects={}",
-                    result.studioId,
-                    operatorUserId,
-                    result.requestId,
-                    result.galleryCount,
-                    result.photoCount,
-                    result.objectCount,
-                )
-                result
+            is StudioDeletionPreparation.Pending -> execute(preparation.plan, operatorUserId, reason)
+        }
+    }
+
+    private fun execute(
+        plan: StudioDeletionPlan,
+        operatorUserId: Long,
+        reason: String,
+    ): StudioDeletionResponse {
+        try {
+            photoStorage.deleteAll(plan.objectKeys)
+            val result = processor.delete(plan, operatorUserId, reason)
+            log.info(
+                "스튜디오 hard delete 완료: studioId={}, operatorUserId={}, requestId={}, galleries={}, photos={}, objects={}",
+                result.studioId,
+                operatorUserId,
+                result.requestId,
+                result.galleryCount,
+                result.photoCount,
+                result.objectCount,
+            )
+            return result
+        } catch (failure: RuntimeException) {
+            try {
+                processor.release(plan)
+            } catch (releaseFailure: RuntimeException) {
+                failure.addSuppressed(releaseFailure)
             }
+            throw failure
         }
     }
 

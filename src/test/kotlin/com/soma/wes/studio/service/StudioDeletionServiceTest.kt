@@ -1,8 +1,8 @@
 package com.soma.wes.studio.service
 
-import com.soma.wes.photo.service.PhotoStorage
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
+import com.soma.wes.photo.service.PhotoStorage
 import com.soma.wes.studio.dto.request.ExecuteStudioDeletionRequest
 import com.soma.wes.studio.dto.response.StudioDeletionResponse
 import com.soma.wes.studio.exception.StudioErrorCode
@@ -39,6 +39,7 @@ class StudioDeletionServiceTest {
     fun `S3 객체를 먼저 지우고 DB cascade delete를 실행한다`() {
         val plan = StudioDeletionPlan(
             requestId = requestId,
+            claimToken = UUID.randomUUID(),
             studioId = 10L,
             studioUserId = 20L,
             studioGalleryUrl = "organic-studio",
@@ -80,6 +81,7 @@ class StudioDeletionServiceTest {
     fun `S3 삭제가 실패하면 DB cascade delete를 시작하지 않는다`() {
         val plan = StudioDeletionPlan(
             requestId = requestId,
+            claimToken = UUID.randomUUID(),
             studioId = 10L,
             studioUserId = 20L,
             studioGalleryUrl = "organic-studio",
@@ -100,6 +102,32 @@ class StudioDeletionServiceTest {
             setOf("galleries/100/original.jpg", "previews/galleries/100/original.jpg"),
         )
         verify(processor, never()).delete(org.mockito.kotlin.any(), org.mockito.kotlin.any(), org.mockito.kotlin.any())
+        verify(processor).release(plan)
+    }
+
+    @Test
+    fun `DB cascade delete가 실패하면 실행 claim을 해제한다`() {
+        val plan = StudioDeletionPlan(
+            requestId = requestId,
+            claimToken = UUID.randomUUID(),
+            studioId = 10L,
+            studioUserId = 20L,
+            studioGalleryUrl = "organic-studio",
+            galleryIds = setOf(100L),
+            photos = setOf(PhotoDeletionTarget(1000L, "galleries/100/original.jpg", null)),
+        )
+        whenever(processor.prepare(10L, 30L, requestId, "organic-studio", request.reason))
+            .thenReturn(StudioDeletionPreparation.Pending(plan))
+        whenever(processor.delete(plan, 30L, request.reason))
+            .thenThrow(StudioException(StudioErrorCode.DELETION_TARGET_CHANGED))
+
+        val exception = assertFailsWith<StudioException> {
+            service.execute(10L, 30L, requestId, request)
+        }
+
+        assertEquals(StudioErrorCode.DELETION_TARGET_CHANGED, exception.errorCode)
+        verify(photoStorage).deleteAll(plan.objectKeys)
+        verify(processor).release(plan)
     }
 
     @Test

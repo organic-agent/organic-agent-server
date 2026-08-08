@@ -36,7 +36,7 @@ enum class PhotoErrorCode(
     EMBEDDING_INVOCATION_FAILED(HttpStatus.BAD_GATEWAY, "PHOTO_502_1", "임베딩 실행을 시작하지 못했습니다."),
 
     /** 운영자 승인 삭제에서 S3 원본 또는 미리보기를 모두 지우지 못한 경우. */
-    STORAGE_DELETE_FAILED(HttpStatus.BAD_GATEWAY, "PHOTO_502_2", "사진 원본 삭제를 완료하지 못했습니다."),
+    STORAGE_DELETE_FAILED(HttpStatus.BAD_GATEWAY, "PHOTO_502_2", "사진 원본 또는 미리보기 삭제를 완료하지 못했습니다."),
 
     /**
      * 임베딩 함수 이름이 설정되지 않은 경우.

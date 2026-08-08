@@ -12,6 +12,7 @@ sealed interface StudioDeletionPreparation {
 
 data class StudioDeletionPlan(
     val requestId: UUID,
+    val claimToken: UUID,
     val studioId: Long,
     val studioUserId: Long,
     val studioGalleryUrl: String,

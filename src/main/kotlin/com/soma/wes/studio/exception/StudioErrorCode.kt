@@ -20,4 +20,5 @@ enum class StudioErrorCode(
     DELETION_TARGET_MISMATCH(HttpStatus.CONFLICT, "STUDIO_409_3", "확인한 스튜디오와 삭제 대상이 일치하지 않습니다."),
     DELETION_REQUEST_CONFLICT(HttpStatus.CONFLICT, "STUDIO_409_4", "같은 삭제 요청 ID가 다른 내용으로 사용됐습니다."),
     DELETION_TARGET_CHANGED(HttpStatus.CONFLICT, "STUDIO_409_5", "삭제 준비 중 대상 데이터가 변경됐습니다. 같은 요청 ID로 다시 실행해주세요."),
+    DELETION_REQUEST_IN_PROGRESS(HttpStatus.CONFLICT, "STUDIO_409_6", "같은 삭제 요청이 이미 실행 중입니다."),
 }

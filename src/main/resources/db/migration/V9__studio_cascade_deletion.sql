@@ -45,19 +45,8 @@ ALTER TABLE photo_ratings
     ADD CONSTRAINT fk_photo_ratings_photo
         FOREIGN KEY (photo_id) REFERENCES photos (id) ON DELETE CASCADE NOT VALID;
 
--- NOT VALID로 제약을 먼저 설치하면 새 쓰기는 즉시 보호하면서 기존 행 스캔 동안의 강한 잠금을
--- 짧게 끝낼 수 있다. 아래 검증은 고아 행이 하나라도 있으면 배포를 멈춘다.
-ALTER TABLE galleries VALIDATE CONSTRAINT fk_galleries_studio;
-ALTER TABLE gallery_members VALIDATE CONSTRAINT fk_gallery_members_gallery;
-ALTER TABLE gallery_invites VALIDATE CONSTRAINT fk_gallery_invites_gallery;
-ALTER TABLE photos VALIDATE CONSTRAINT fk_photos_gallery;
-ALTER TABLE photo_folders VALIDATE CONSTRAINT fk_photo_folders_gallery;
-ALTER TABLE photo_folder_items VALIDATE CONSTRAINT fk_photo_folder_items_folder;
-ALTER TABLE photo_folder_items VALIDATE CONSTRAINT fk_photo_folder_items_photo;
-ALTER TABLE photo_selections VALIDATE CONSTRAINT fk_photo_selections_gallery;
-ALTER TABLE photo_selection_items VALIDATE CONSTRAINT fk_photo_selection_items_selection;
-ALTER TABLE photo_selection_items VALIDATE CONSTRAINT fk_photo_selection_items_photo;
-ALTER TABLE photo_ratings VALIDATE CONSTRAINT fk_photo_ratings_photo;
+-- NOT VALID로 제약을 먼저 설치하면 새 쓰기는 즉시 보호한다. 기존 행 검증은 이 트랜잭션이
+-- 커밋된 뒤 V10에서 수행해 ADD CONSTRAINT가 잡은 강한 잠금을 검증 시간까지 유지하지 않는다.
 
 -- 삭제 대상은 사라져도 누가 어떤 확인값으로 실행했는지는 남아야 한다.
 -- 삭제된 스튜디오와 FK를 맺지 않는 이유도 같다.
@@ -83,3 +72,16 @@ CREATE INDEX idx_studio_deletion_audits_studio_id
 
 CREATE INDEX idx_studio_deletion_audits_operator_user_id
     ON studio_deletion_audits (operator_user_id);
+
+-- S3 호출 전에 커밋되는 실행 점유 행. 같은 request_id는 한 요청만 삽입할 수 있으며,
+-- 성공하면 감사 기록과 교체되고 실패하면 지워 같은 요청의 재시도를 허용한다.
+CREATE TABLE studio_deletion_claims
+(
+    request_id          UUID          PRIMARY KEY,
+    claim_token         UUID          NOT NULL,
+    studio_id           BIGINT        NOT NULL,
+    operator_user_id    BIGINT        NOT NULL,
+    studio_gallery_url  VARCHAR(255)  NOT NULL,
+    reason              VARCHAR(1000) NOT NULL,
+    claimed_at          TIMESTAMP(6) WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
