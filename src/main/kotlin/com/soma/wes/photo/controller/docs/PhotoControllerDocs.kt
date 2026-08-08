@@ -22,7 +22,8 @@ import org.springframework.http.ResponseEntity
 
 @Tag(
     name = "[Photo]",
-    description = "원본 사진 업로드·조회 API. 상세 조회만 초대받은 예비 부부에게도 열려 있고 나머지는 담당 작가 전용이다.",
+    description = "원본 사진 업로드·조회 API. 목록과 상세 조회는 초대받은 예비 부부에게도 열려 있고, "
+        + "올리고 통보하고 집계를 보는 것은 담당 작가 전용이다.",
 )
 interface PhotoControllerDocs {
 
@@ -122,6 +123,12 @@ interface PhotoControllerDocs {
     @Operation(
         summary = "사진 목록 조회",
         description = """
+            갤러리의 사진 전체를 그리드로 그릴 때 부른다. 담당 작가와 초대받은 예비 부부가 함께 쓴다 —
+            부부에게는 이것이 전체를 훑는 화면이고, 비슷한 사진 묶음(클러스터·폴더)은 그다음이다.
+
+            마감된 뒤에도, 선택이 끝난 뒤에도 열린다. 보는 동작이라 고르는 기한과 무관하다.
+            다만 아직 열리지 않은(DRAFT) 갤러리는 부부에게 보이지 않는다.
+
             사진마다 서명된 조회 URL(viewUrl)이 붙어 오므로 그대로 <img src>에 넣으면 된다.
             버킷이 비공개라 storageKey만으로는 이미지를 띄울 수 없다.
 
@@ -138,6 +145,11 @@ interface PhotoControllerDocs {
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "조회 성공"),
+        ApiResponse(
+            responseCode = "403",
+            description = "이 갤러리의 작가도 초대받은 멤버도 아니거나, 부부가 아직 열리지 않은(DRAFT) 갤러리를 부름",
+            content = [],
+        ),
         ApiResponse(
             responseCode = "400",
             description = "size가 허용 범위를 벗어나거나 minScore가 1~5 밖임",
