@@ -2,6 +2,7 @@ package com.soma.wes.embedding.service
 
 import com.soma.wes.embedding.dto.response.EmbeddingRunResponse
 import com.soma.wes.gallery.support.GalleryAccessPolicy
+import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
 import com.soma.wes.photo.repository.PhotoRepository
@@ -39,12 +40,12 @@ class EmbeddingService(
             throw PhotoException(PhotoErrorCode.EMBEDDING_NOT_CONFIGURED)
         }
 
-        // 실제로 무엇을 계산할지는 실행기가 같은 기준으로 다시 고른다. 여기서 세는 것은
-        // 호출자에게 "몇 장이 대상인지"를 즉시 알려주기 위한 값일 뿐이다.
+        // 실제 실행기와 똑같이 PENDING을 제외한다. URL만 발급된 사진은 S3 객체가 아직 없을 수 있어
+        // 실행기가 읽지 않으므로, 여기서 포함하면 응답의 대상 수와 실제 처리 수가 어긋난다.
         val targets = if (force) {
-            photoRepository.countByGalleryId(galleryId)
+            photoRepository.countByGalleryIdAndStatusNot(galleryId, PhotoStatus.PENDING)
         } else {
-            photoRepository.countByGalleryIdAndEmbeddingIsNull(galleryId)
+            photoRepository.countByGalleryIdAndStatusNotAndEmbeddingIsNull(galleryId, PhotoStatus.PENDING)
         }
 
         embeddingInvoker.invoke(galleryId, force)
