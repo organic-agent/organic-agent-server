@@ -131,13 +131,16 @@ interface PhotoControllerDocs {
             previewReady가 true면 viewUrl은 브라우저가 그릴 수 있는 파생 JPEG를 가리킨다.
             false면 원본이라 형식에 따라(아이폰 HEIC 등) 그려지지 않을 수 있다. 파생본은
             임베딩이 끝나야 생기므로, 그전까지는 '미리보기 준비 중'으로 안내하면 된다.
+
+            사진마다 매겨진 별점(score, 1~5)이 함께 온다. 아무도 매기지 않았으면 null이다.
+            minScore를 주면 그 점수 이상만 온다 — 별점이 없는 사진은 이때 빠진다.
         """,
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "조회 성공"),
         ApiResponse(
             responseCode = "400",
-            description = "size가 허용 범위를 벗어남",
+            description = "size가 허용 범위를 벗어나거나 minScore가 1~5 밖임",
             content = [
                 Content(
                     mediaType = MediaType.APPLICATION_JSON_VALUE,
@@ -146,6 +149,10 @@ interface PhotoControllerDocs {
                         ExampleObject(
                             name = "페이지 크기 초과",
                             value = """{"code": "PHOTO_400_1", "message": "한 번에 처리할 수 있는 사진 수를 넘었습니다."}""",
+                        ),
+                        ExampleObject(
+                            name = "범위 밖 minScore",
+                            value = """{"code": "PHOTO_400_4", "message": "별점은 1점에서 5점 사이여야 합니다."}""",
                         ),
                     ],
                 ),
@@ -156,6 +163,7 @@ interface PhotoControllerDocs {
         loginUser: LoginUser,
         galleryId: Long,
         status: PhotoStatus?,
+        minScore: Int?,
         page: Int,
         size: Int,
     ): ResponseEntity<PhotoPageResponse>

@@ -22,6 +22,13 @@ enum class PhotoErrorCode(
      */
     EMBEDDING_DIMENSION_MISMATCH(HttpStatus.BAD_REQUEST, "PHOTO_400_3", "임베딩 차원이 올바르지 않습니다."),
 
+    /**
+     * 별점이 1~5 밖인 경우. 목록을 거르는 `minScore`도 같은 범위를 쓴다.
+     *
+     * 컨트롤러의 `@Min`·`@Max`가 대부분 먼저 걸러내지만, 그 검증은 컨트롤러를 지날 때만 돈다.
+     */
+    INVALID_SCORE(HttpStatus.BAD_REQUEST, "PHOTO_400_4", "별점은 1점에서 5점 사이여야 합니다."),
+
     /** 요청에 다른 갤러리의 사진 id가 섞여 있는 경우. */
     PHOTO_NOT_FOUND(HttpStatus.NOT_FOUND, "PHOTO_404_1", "존재하지 않는 사진입니다."),
 
