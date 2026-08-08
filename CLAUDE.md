@@ -21,6 +21,15 @@ Use the Gradle wrapper (`./gradlew`), not a system-installed Gradle.
 
 Tests need Docker (Testcontainers). The embedding Lambda in `embedder/` is a separate Python project with its own README — Gradle does not build it.
 
+## Change evidence
+
+Before modifying existing code or behavior, read `.claude/spec/change-evidence.md`. A change to existing behavior
+requires the original contract or decision source, reproducible Actual vs Expected, impact, alternatives, minimum
+scope, non-goals, and verification in the linked GitHub issue before implementation. Behavior-preserving edits and
+purely additive features use the lighter evidence defined there; do not invent a bug reproduction for a new feature.
+`git blame` may locate a decision's commit or PR, but authorship is never evidence that a change is correct or
+necessary. Stop when the applicable evidence is missing or the diff exceeds the recorded scope.
+
 ## Architecture notes
 
 - Base package: `com.soma.wes`. Packages are by domain (`auth`, `user`, `studio`, `gallery`, `photo`, `embedding`, `cluster`, `folder`, `selection`) with `global`/`security` for cross-cutting concerns. The last four are all *about* photos but are separate domains, not subpackages of `photo`: each owns its own service, controller, and config, and `folder`/`selection` own entities of their own. Folding them in would make `photo` the package everything lands in. Within a domain: `domain` / `repository` / `service` / `support` (collaborators the services lean on) / `controller` (+ `controller/docs` for the OpenAPI-annotated interface the controller implements) / `dto` / `exception` / `config` / `infrastructure`. There is no top-level `infrastructure` package — external-system adapters live inside the domain that uses them.
