@@ -9,6 +9,7 @@ import com.soma.wes.photo.dto.request.IssueUploadUrlsRequest
 import com.soma.wes.photo.dto.response.IssueUploadUrlsResponse
 import com.soma.wes.photo.dto.response.IssuedUploadResponse
 import com.soma.wes.photo.dto.response.PhotoCountResponse
+import com.soma.wes.photo.dto.response.PhotoDetailResponse
 import com.soma.wes.photo.dto.response.PhotoPageResponse
 import com.soma.wes.photo.dto.response.PhotoSummaryResponse
 import com.soma.wes.photo.exception.PhotoErrorCode
@@ -27,9 +28,11 @@ import org.springframework.transaction.annotation.Transactional
  * 프론트가 S3에 직접 올린 뒤 완료를 통보한다. 수천 장 원본이 서버 메모리를 지나가면
  * 1GB 컨테이너가 버티지 못한다.
  *
- * 모든 경로가 [GalleryAccessPolicy.requirePhotographer]를 지난다. 사진을 올리고 지우고 다시
- * 정렬하는 것은 담당 작가의 일이고, 예비 부부는 [갤러리 조회][com.soma.wes.gallery.service.GalleryService]와
- * 선택 API로만 사진을 만난다.
+ * 올리고 지우고 다시 정렬하는 경로는 [GalleryAccessPolicy.requirePhotographer]를 지난다.
+ * 원본 목록은 작가가 정리하는 대상이고, 예비 부부는 정리가 끝난 화면(클러스터·폴더)에서 사진을 만난다.
+ *
+ * 예외는 [상세 조회][get] 하나다. 부부가 클러스터·폴더에서 한 장을 눌러 크게 보는 화면이므로
+ * [GalleryAccessPolicy.requirePhotographerOrCouple]로 열어 둔다.
  */
 @Service
 class PhotoService(
@@ -180,6 +183,30 @@ class PhotoService(
             totalCount = found.totalElements,
             hasNext = found.hasNext(),
             viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
+        )
+    }
+
+    /**
+     * 사진 한 장의 상세. 원본을 원래 크기로 보는 화면이 부른다.
+     *
+     * 목록과 달리 조회 URL을 둘 준다. 파생본([PhotoViewAssembler.viewUrlOf])은 브라우저가
+     * 확실히 그리지만 긴 변을 줄인 JPEG라 확대하면 뭉개지고, 원본은 원래 크기지만 HEIC면
+     * 아무것도 그려지지 않는다. 어느 쪽을 쓸지는 화면이 정한다.
+     */
+    @Transactional(readOnly = true)
+    fun get(galleryId: Long, photoId: Long, userId: Long): PhotoDetailResponse {
+        // 작가는 언제든, 부부는 갤러리가 열려 있고 마감 전인 동안에만 본다.
+        galleryAccessPolicy.requirePhotographerOrCouple(galleryId, userId)
+
+        val photo = photoRepository.findByIdAndGalleryId(photoId, galleryId)
+            ?: throw PhotoException(PhotoErrorCode.PHOTO_NOT_FOUND)
+
+        return PhotoDetailResponse.of(
+            photo = photo,
+            viewUrl = photoViewAssembler.viewUrlOf(photo),
+            originalUrl = photoViewAssembler.originalUrlOf(photo),
+            viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
+            originalUrlTtlSeconds = properties.originalUrlTtl.seconds,
         )
     }
 

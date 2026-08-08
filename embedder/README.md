@@ -14,9 +14,10 @@ __main__.py   로컬 CLI    python -m embedder --gallery-id 1
 ```
 SELECT id, storage_key FROM photos
 WHERE gallery_id = ? AND status <> 'PENDING' AND embedding IS NULL
-  → S3 GET → HEIC 디코드 · EXIF 회전 · 리사이즈 → DINOv2(L2 정규화)
+  → S3 GET → 원본 열기 → EXIF 읽기(촬영 시각 · 카메라 · 셔터/조리개/ISO · 크기)
+           → HEIC 디코드 · EXIF 회전 · 리사이즈 → DINOv2(L2 정규화)
   → S3 PUT previews/{원본키}.jpg
-  → UPDATE photos SET embedding = ?, preview_key = ?, status = 'EMBEDDED'
+  → UPDATE photos SET embedding = ?, preview_key = ?, taken_at = ?, ... , status = 'EMBEDDED'
 ```
 
 - **재실행이 안전하다.** 기본 조건이 `embedding IS NULL`이라 중간에 죽어도 다시 부르면 남은
@@ -29,6 +30,13 @@ WHERE gallery_id = ? AND status <> 'PENDING' AND embedding IS NULL
 - **파생본 실패는 임베딩을 죽이지 않는다.** IAM에 `s3:PutObject`가 없으면 사진마다 실패하는데,
   그때도 벡터는 그대로 적재되고 실패한 키만 `previewsFailed`로 나온다. 이 배열이 비어 있지
   않으면 임베딩이 아니라 권한을 봐야 한다.
+- **촬영 정보(EXIF)도 여기서 읽는다.** 앱 서버는 이미지 바이트를 만지지 않으므로 EXIF를 읽을
+  방법이 아예 없고, 이 잡은 이미 원본을 열어 두었다. 추가 비용은 태그를 훑는 것뿐이라 벡터·
+  파생본과 같은 UPDATE에 얹는다. 읽는 값은 촬영 시각·카메라 제조사와 모델·셔터·조리개·ISO·
+  가로세로·바이트 크기이고, 컬럼은 전부 nullable이다 — 스크린샷처럼 EXIF가 없는 파일도 있다.
+  회전·축소 **전의** 원본에서 읽는다. 그 뒤에는 Orientation 태그가 지워지고 크기도 원본이 아니다.
+- **EXIF 추출 실패도 임베딩을 죽이지 않는다.** 파생본 실패와 같은 취급으로, 실패한 키만
+  `metadataFailed`로 나온다. 상세 화면에 정보가 덜 나올 뿐 사진은 보이고 벡터는 적재된다.
 - **`--force`는 이미 채워진 것까지 다시 계산한다.** 모델이나 전처리를 바꿔 전량 재계산할 때만.
 - **`PENDING`은 건너뛴다.** 업로드 URL만 발급되고 S3에 객체가 없을 수 있는 상태다.
 

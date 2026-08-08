@@ -8,6 +8,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest
+import java.time.Duration
 import java.util.UUID
 
 
@@ -38,14 +39,19 @@ class S3PhotoStorage(
         return s3Presigner.presignPutObject(presignRequest).url().toExternalForm()
     }
 
-    override fun presignView(key: String): String {
+    override fun presignView(key: String): String = presignGet(key, properties.viewUrlTtl)
+
+    override fun presignOriginal(key: String): String = presignGet(key, properties.originalUrlTtl)
+
+    /** 조회용 서명은 수명만 다르다. [presignView]와 [presignOriginal]이 쓴다. */
+    private fun presignGet(key: String, ttl: Duration): String {
         val getRequest = GetObjectRequest.builder()
             .bucket(properties.bucket)
             .key(key)
             .build()
 
         val presignRequest = GetObjectPresignRequest.builder()
-            .signatureDuration(properties.viewUrlTtl)
+            .signatureDuration(ttl)
             .getObjectRequest(getRequest)
             .build()
 

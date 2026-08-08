@@ -84,6 +84,9 @@ app:
     bucket: wes-test-photos
     upload-url-ttl: 30m
     view-url-ttl: 15m
+    # 상세 화면의 원본 URL은 목록보다 오래 산다. 테스트도 그 차이를 그대로 둔다 —
+    # 두 값을 같게 맞추면 응답이 어느 쪽으로 서명됐는지 구분할 수 없다.
+    original-url-ttl: 1h
     max-batch-size: 1000
   embedding:
     # 테스트에는 Lambda가 없다. 비어 있는 것이 정상이고, 호출 시점에 503으로 실패한다.

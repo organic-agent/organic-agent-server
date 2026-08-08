@@ -1,7 +1,8 @@
 """photos 테이블 읽기/쓰기.
 
-스키마는 앱(Flyway)이 소유한다. 이 모듈이 건드리는 것은 네 컬럼뿐이다 --
-`embedding`, `preview_key`, `status`, `updated_at`.
+스키마는 앱(Flyway)이 소유한다. 이 모듈이 건드리는 것은 벡터(`embedding`)와 파생본 위치
+(`preview_key`), 촬영 정보(EXIF) 컬럼들, 그리고 `status`·`updated_at`이다. 전부 앱이 채울 수
+없는 값이라는 공통점이 있다 -- 이미지 바이트가 앱을 거치지 않기 때문이다.
 
 접속은 원래 **RDS IAM 인증 토큰**을 썼다. 토큰 생성(`generate_db_auth_token`)은 로컬 서명
 연산이라 네트워크를 타지 않는다 -- NAT도 인터페이스 엔드포인트도 없는 이 서브넷에서
@@ -23,6 +24,7 @@ import psycopg
 from pgvector.psycopg import register_vector
 
 from embedder.config import Settings
+from embedder.metadata import PhotoMetadata
 
 log = logging.getLogger(__name__)
 
@@ -91,21 +93,28 @@ def fetch_targets(connection: psycopg.Connection, gallery_id: int, force: bool) 
 
 def store_embeddings(
     connection: psycopg.Connection,
-    results: Iterable[tuple[PhotoRef, np.ndarray, str | None]],
+    results: Iterable[tuple[PhotoRef, np.ndarray, str | None, PhotoMetadata | None]],
 ) -> int:
-    """계산된 벡터와 파생본 위치를 배치로 적재한다.
+    """계산된 벡터와 파생본 위치, 촬영 정보를 배치로 적재한다.
 
     벡터 차원은 vector(n) 컬럼이 강제한다. 모델을 바꿔 폭이 달라지면 여기서 DB 에러로
     떨어진다 -- 조용히 틀린 값이 들어가지 않는다는 뜻이라 굳이 앞단에서 또 막지 않는다.
 
-    preview_key를 벡터와 같은 UPDATE에 쓰는 것이 중요하다. 따로 쓰면 "벡터는 있는데
-    미리보기는 없는" 중간 상태가 생기고, 그 상태를 프론트가 구분할 방법이 없다.
+    셋을 한 UPDATE에 쓰는 것이 중요하다. 따로 쓰면 "벡터는 있는데 미리보기는 없는" 중간
+    상태가 생기고, 그 상태를 프론트가 구분할 방법이 없다. 촬영 정보도 마찬가지다.
 
-    COALESCE인 이유: 이번 실행에서 파생본 업로드만 실패하면 preview_key가 None으로
-    오는데, 그때 이전 실행이 남긴 멀쩡한 값을 지우면 안 된다.
+    COALESCE인 이유: 이번 실행에서 파생본 업로드나 EXIF 추출만 실패하면 그 자리에 None이
+    오는데, 그때 이전 실행이 남긴 멀쩡한 값을 지우면 안 된다. 값이 원래 없던 사진에는
+    NULL이 NULL로 덮이는 것이라 달라지는 것이 없다.
     """
     rows: Sequence[tuple] = [
-        (vector, preview_key, ref.photo_id) for ref, vector, preview_key in results
+        (
+            vector,
+            preview_key,
+            *_metadata_params(meta),
+            ref.photo_id,
+        )
+        for ref, vector, preview_key, meta in results
     ]
     if not rows:
         return 0
@@ -116,6 +125,15 @@ def store_embeddings(
             UPDATE photos
             SET embedding = %s,
                 preview_key = COALESCE(%s, preview_key),
+                taken_at = COALESCE(%s, taken_at),
+                camera_make = COALESCE(%s, camera_make),
+                camera_model = COALESCE(%s, camera_model),
+                exposure_time = COALESCE(%s, exposure_time),
+                f_number = COALESCE(%s, f_number),
+                iso = COALESCE(%s, iso),
+                width = COALESCE(%s, width),
+                height = COALESCE(%s, height),
+                byte_size = COALESCE(%s, byte_size),
                 status = 'EMBEDDED',
                 updated_at = now()
             WHERE id = %s
@@ -123,3 +141,25 @@ def store_embeddings(
             rows,
         )
     return len(rows)
+
+
+def _metadata_params(meta: PhotoMetadata | None) -> tuple:
+    """EXIF 컬럼에 들어갈 값들. 순서는 위 UPDATE의 SET 절과 같아야 한다.
+
+    추출 자체가 실패했으면(meta is None) 전부 NULL로 보낸다. COALESCE가 받아 기존 값을
+    그대로 두므로, 다시 돌려 성공했을 때 채워진다.
+    """
+    if meta is None:
+        return (None,) * 9
+
+    return (
+        meta.taken_at,
+        meta.camera_make,
+        meta.camera_model,
+        meta.exposure_time,
+        meta.f_number,
+        meta.iso,
+        meta.width,
+        meta.height,
+        meta.byte_size,
+    )
