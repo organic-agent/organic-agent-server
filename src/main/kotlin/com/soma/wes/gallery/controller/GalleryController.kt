@@ -2,6 +2,7 @@ package com.soma.wes.gallery.controller
 
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.gallery.controller.docs.GalleryControllerDocs
+import com.soma.wes.gallery.dto.request.ChangeTargetPhotoCountRequest
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
 import com.soma.wes.gallery.dto.response.GalleryResponse
@@ -11,6 +12,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -50,6 +52,17 @@ class GalleryController(
         @PathVariable galleryId: Long,
     ): ResponseEntity<GalleryResponse> {
         val result = galleryService.get(galleryId, loginUser.id)
+
+        return ResponseEntity.ok(result)
+    }
+
+    @PatchMapping("/{galleryId}/target-photo-count")
+    override fun changeTargetPhotoCount(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @Valid @RequestBody request: ChangeTargetPhotoCountRequest,
+    ): ResponseEntity<GalleryResponse> {
+        val result = galleryService.changeTargetPhotoCount(galleryId, loginUser.id, request)
 
         return ResponseEntity.ok(result)
     }

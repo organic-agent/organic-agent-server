@@ -122,6 +122,7 @@ class GalleryTest {
                 studioId = 1L,
                 title = "김철수 · 이영희 본식",
                 selectionDeadline = now.minusMinutes(1),
+                targetPhotoCount = null,
                 at = now,
             )
         }
@@ -130,12 +131,39 @@ class GalleryTest {
     }
 
     @Test
-    fun `새 갤러리는 기한 없이 만들 수 있다`() {
-        // 기한은 나중에 정해도 되는 값이라 처음부터 강제하지 않는다.
-        val gallery = Gallery.create(studioId = 1L, title = "본식", selectionDeadline = null, at = now)
+    fun `새 갤러리는 기한과 장수 없이 만들 수 있다`() {
+        // 둘 다 나중에 정해도 되는 값이라 처음부터 강제하지 않는다.
+        val gallery = Gallery.create(
+            studioId = 1L,
+            title = "본식",
+            selectionDeadline = null,
+            targetPhotoCount = null,
+            at = now,
+        )
 
         assertNull(gallery.selectionDeadline)
+        assertNull(gallery.targetPhotoCount)
         assertEquals(GalleryStatus.DRAFT, gallery.status)
+    }
+
+    @Test
+    fun `계약 장수는 1 이상이어야 한다`() {
+        // 0장짜리 갤러리에서 막히는 것은 값을 넣은 작가가 아니라 아무것도 못 고르는 부부다.
+        val gallery = newGallery(GalleryStatus.OPEN)
+
+        val exception = assertFailsWith<GalleryException> { gallery.changeTargetPhotoCount(0) }
+
+        assertEquals(GalleryErrorCode.INVALID_TARGET_PHOTO_COUNT, exception.errorCode)
+    }
+
+    @Test
+    fun `계약 장수를 null로 되돌리면 제한이 없어진다`() {
+        val gallery = newGallery(GalleryStatus.OPEN)
+        gallery.changeTargetPhotoCount(50)
+
+        gallery.changeTargetPhotoCount(null)
+
+        assertNull(gallery.targetPhotoCount)
     }
 
     @Test

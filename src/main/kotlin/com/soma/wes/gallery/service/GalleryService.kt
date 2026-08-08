@@ -1,6 +1,7 @@
 package com.soma.wes.gallery.service
 
 import com.soma.wes.gallery.domain.Gallery
+import com.soma.wes.gallery.dto.request.ChangeTargetPhotoCountRequest
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
 import com.soma.wes.gallery.dto.response.GalleryResponse
@@ -35,6 +36,7 @@ class GalleryService(
                 studioId = checkNotNull(studio.id) { "저장되지 않은 스튜디오입니다." },
                 title = request.title,
                 selectionDeadline = request.selectionDeadline,
+                targetPhotoCount = request.targetPhotoCount,
                 at = ZonedDateTime.now(clock),
             ),
         )
@@ -61,6 +63,24 @@ class GalleryService(
     @Transactional(readOnly = true)
     fun get(galleryId: Long, userId: Long): GalleryResponse =
         GalleryResponse.from(galleryAccessPolicy.requireViewer(galleryId, userId))
+
+    /**
+     * 계약 장수를 정하거나 바꾼다. 담당 작가만 할 수 있다.
+     *
+     * 부부가 바꿀 수 있으면 안 되는 값이라 갤러리 쪽에 둔다 — 계약에서 나오는 수치이지
+     * 고르는 과정에서 정해지는 것이 아니다. 선택 앨범은 이 값을 읽어 초과를 막는다.
+     */
+    @Transactional
+    fun changeTargetPhotoCount(
+        galleryId: Long,
+        userId: Long,
+        request: ChangeTargetPhotoCountRequest,
+    ): GalleryResponse {
+        val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
+
+        gallery.changeTargetPhotoCount(request.targetPhotoCount)
+        return GalleryResponse.from(gallery)
+    }
 
     /**
      * 갤러리를 열어 초대된 사람에게 보인다. DRAFT에서만 할 수 있다.

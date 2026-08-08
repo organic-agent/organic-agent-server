@@ -19,6 +19,14 @@ enum class GalleryErrorCode(
      */
     INVALID_SELECTION_DEADLINE(HttpStatus.BAD_REQUEST, "GALLERY_400_2", "사진 선택 마감 기한은 현재 시각보다 뒤여야 합니다."),
 
+    /**
+     * 계약 장수로 0이나 음수가 들어온 경우.
+     *
+     * 한 장도 고를 수 없는 갤러리가 만들어지면, 막히는 것은 값을 넣은 작가가 아니라
+     * 아무것도 못 고르는 부부다. 제한을 두지 않으려면 null을 보낸다.
+     */
+    INVALID_TARGET_PHOTO_COUNT(HttpStatus.BAD_REQUEST, "GALLERY_400_3", "선택 장수는 1 이상이어야 합니다."),
+
     /** 멤버도 담당 작가도 아닌 사용자의 접근. */
     GALLERY_ACCESS_DENIED(HttpStatus.FORBIDDEN, "GALLERY_403_1", "갤러리에 접근할 권한이 없습니다."),
     GALLERY_NOT_OPEN(HttpStatus.FORBIDDEN, "GALLERY_403_2", "지금은 사진을 고를 수 없는 갤러리입니다."),
