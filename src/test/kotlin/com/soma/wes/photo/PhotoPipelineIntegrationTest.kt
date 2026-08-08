@@ -25,6 +25,7 @@ import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
+import java.time.ZonedDateTime
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -244,8 +245,27 @@ class PhotoPipelineIntegrationTest @Autowired constructor(
     }
 
     @Test
-    fun `초대된 멤버는 원본 목록을 볼 수 없다`() {
-        // 원본은 작가가 정리하는 대상이다. 예비 부부가 만나는 것은 정리가 끝난 뒤의 화면이다.
+    fun `초대된 부부도 전체 사진 목록을 본다`() {
+        // 전체를 훑고 마음에 드는 것을 고르는 것이 부부가 하는 일이다. 그 전체가 열리지 않으면
+        // 부부는 비슷한 사진 묶음(클러스터·폴더)으로만 사진을 만나게 된다.
+        val photographer = signUpPhotographer()
+        val galleryId = createGallery(photographer)
+        openGallery(galleryId)
+        issueUploadUrls(photographer, galleryId, count = 2)
+
+        val member = signUpUser()
+        galleryMemberRepository.save(GalleryMember(galleryId = galleryId, userId = member.id!!))
+
+        mockMvc.get("/api/v1/galleries/$galleryId/photos") { authorize(member) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.photos") { value(hasSize<Any>(2)) }
+            }
+    }
+
+    @Test
+    fun `아직 열지 않은 갤러리의 목록은 부부에게 보이지 않는다`() {
+        // 작가가 사진을 올리고 정리하는 동안은 부부에게 이 갤러리가 없는 것과 같다.
         val photographer = signUpPhotographer()
         val galleryId = createGallery(photographer)
 
@@ -257,6 +277,50 @@ class PhotoPipelineIntegrationTest @Autowired constructor(
                 status { isForbidden() }
                 jsonPath("$.code") { value("GALLERY_403_1") }
             }
+    }
+
+    @Test
+    fun `마감이 지나도 부부는 목록을 볼 수 있다`() {
+        // 목록은 고르는 동작이 아니라 보는 동작이다. 마감됐다고 자기 갤러리의 사진이
+        // 통째로 사라지면 안 된다 -- requirePhotographerOrCouple이었다면 여기서 막혔다.
+        val photographer = signUpPhotographer()
+        val galleryId = createGallery(photographer)
+        openGallery(galleryId)
+        issueUploadUrls(photographer, galleryId, count = 1)
+
+        val member = signUpUser()
+        galleryMemberRepository.save(GalleryMember(galleryId = galleryId, userId = member.id!!))
+
+        val gallery = galleryRepository.findById(galleryId).orElseThrow()
+        gallery.selectionDeadline = ZonedDateTime.now().minusDays(1)
+        galleryRepository.saveAndFlush(gallery)
+
+        mockMvc.get("/api/v1/galleries/$galleryId/photos") { authorize(member) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.photos") { value(hasSize<Any>(1)) }
+            }
+    }
+
+    @Test
+    fun `갤러리와 무관한 사용자는 목록을 볼 수 없다`() {
+        val photographer = signUpPhotographer()
+        val galleryId = createGallery(photographer)
+        openGallery(galleryId)
+        val stranger = signUpUser()
+
+        mockMvc.get("/api/v1/galleries/$galleryId/photos") { authorize(stranger) }
+            .andExpect {
+                status { isForbidden() }
+                jsonPath("$.code") { value("GALLERY_403_1") }
+            }
+    }
+
+    /** 부부에게 보이려면 갤러리가 DRAFT를 벗어나야 한다. 위 목록 테스트들이 쓴다. */
+    private fun openGallery(galleryId: Long) {
+        val gallery = galleryRepository.findById(galleryId).orElseThrow()
+        gallery.open()
+        galleryRepository.saveAndFlush(gallery)
     }
 
     @Test

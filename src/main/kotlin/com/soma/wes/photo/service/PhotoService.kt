@@ -30,11 +30,12 @@ import org.springframework.transaction.annotation.Transactional
  * 프론트가 S3에 직접 올린 뒤 완료를 통보한다. 수천 장 원본이 서버 메모리를 지나가면
  * 1GB 컨테이너가 버티지 못한다.
  *
- * 올리고 지우고 다시 정렬하는 경로는 [GalleryAccessPolicy.requirePhotographer]를 지난다.
- * 원본 목록은 작가가 정리하는 대상이고, 예비 부부는 정리가 끝난 화면(클러스터·폴더)에서 사진을 만난다.
+ * 사진을 올리고 완료를 통보하고 집계를 보는 경로는 [GalleryAccessPolicy.requirePhotographer]를
+ * 지난다. 그것은 작가가 갤러리를 채우는 작업이라 부부가 볼 화면이 아니다.
  *
- * 예외는 [상세 조회][get] 하나다. 부부가 클러스터·폴더에서 한 장을 눌러 크게 보는 화면이므로
- * [GalleryAccessPolicy.requirePhotographerOrCouple]로 열어 둔다.
+ * 반면 **읽는 경로는 부부에게도 열려 있다** — [목록][list]과 [상세][get] 둘이다. 전체를 훑고
+ * 마음에 드는 것을 고르는 것이 부부가 하는 일이므로, 그 전체를 열지 않으면 부부는 비슷한 사진
+ * 묶음(클러스터·폴더)으로만 사진을 만나게 된다.
  */
 @Service
 class PhotoService(
@@ -146,13 +147,19 @@ class PhotoService(
     }
 
     /**
-     * 작가의 사진 목록.
+     * 갤러리의 사진 목록. 작가와 부부가 함께 쓰는 전체 그리드다.
      *
      * 사진마다 서명된 조회 URL과 별점이 붙어 온다. 버킷이 비공개라 `storageKey`만으로는 아무것도
      * 띄울 수 없어서, 그 URL이 이미지를 화면에 그리는 유일한 통로다.
      *
-     * `minScore`를 주면 그 점수 이상만 온다 — 부부가 별을 달아둔 뒤 작가가 "4점 이상만 보기"로
-     * 좁히는 화면이다. 별점이 아예 없는 사진은 이때 빠진다.
+     * `minScore`를 주면 그 점수 이상만 온다 — "4점 이상만 보기"다. 별점이 아예 없는 사진은
+     * 이때 빠진다.
+     *
+     * [GalleryAccessPolicy.requirePhotographerOrCouple]이 아니라
+     * [GalleryAccessPolicy.requireViewer]인 것이 중요하다. 목록은 고르는 동작이 아니라 보는
+     * 동작이라, 마감된 뒤에 자기 갤러리를 열었을 때 사진이 통째로 사라지면 안 된다 — 갤러리
+     * 상세와 선택 앨범 조회가 같은 기준을 쓴다. 아직 열리지 않은(DRAFT) 갤러리가 부부에게
+     * 보이지 않는 것은 그 정책이 그대로 막아준다.
      */
     @Transactional(readOnly = true)
     fun list(
@@ -163,7 +170,7 @@ class PhotoService(
         page: Int,
         size: Int,
     ): PhotoPageResponse {
-        galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        galleryAccessPolicy.requireViewer(galleryId, userId)
 
         if (size !in 1..properties.maxBatchSize) {
             throw PhotoException(PhotoErrorCode.TOO_MANY_PHOTOS)
