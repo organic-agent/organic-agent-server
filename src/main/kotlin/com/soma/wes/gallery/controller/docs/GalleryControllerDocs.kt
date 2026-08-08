@@ -1,6 +1,7 @@
 package com.soma.wes.gallery.controller.docs
 
 import com.soma.wes.auth.domain.LoginUser
+import com.soma.wes.gallery.dto.request.ChangeTargetPhotoCountRequest
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
 import com.soma.wes.gallery.dto.response.GalleryResponse
@@ -109,6 +110,59 @@ interface GalleryControllerDocs {
         ),
     )
     fun get(loginUser: LoginUser, galleryId: Long): ResponseEntity<GalleryResponse>
+
+    @Operation(
+        summary = "계약 장수 변경",
+        description = """
+            부부가 최종적으로 고를 사진 장수를 정하거나 바꾼다. 담당 작가만 할 수 있다 —
+            계약에서 나오는 값이라 부부가 바꿀 수 있으면 안 된다.
+
+            null을 보내면 제한이 없어진다. 이미 고른 장수보다 작은 값도 받는다: 계약이 줄어드는
+            일은 실제로 있고, 그때 부부에게 필요한 것은 몇 장이 넘쳤는지 보여주는 화면이다.
+            넘친 상태에서 더 담는 것은 선택 앨범 API가 막는다.
+        """,
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "변경 성공"),
+        ApiResponse(
+            responseCode = "400",
+            description = "0 이하의 장수를 보냄",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "0장짜리 계약",
+                            value = """{"code": "GALLERY_400_3", "message": "선택 장수는 1 이상이어야 합니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(
+            responseCode = "403",
+            description = "담당 작가가 아님",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "권한 없음",
+                            value = """{"code": "GALLERY_403_1", "message": "갤러리에 접근할 권한이 없습니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(responseCode = "404", description = "존재하지 않는 갤러리", content = []),
+    )
+    fun changeTargetPhotoCount(
+        loginUser: LoginUser,
+        galleryId: Long,
+        request: ChangeTargetPhotoCountRequest,
+    ): ResponseEntity<GalleryResponse>
 
     @Operation(
         summary = "갤러리 열기",

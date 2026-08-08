@@ -1,6 +1,7 @@
 package com.soma.wes.gallery.dto.request
 
 import io.swagger.v3.oas.annotations.media.Schema
+import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
 import java.time.ZonedDateTime
@@ -18,4 +19,12 @@ data class CreateGalleryRequest(
         example = "2026-09-30T23:59:59+09:00",
     )
     val selectionDeadline: ZonedDateTime? = null,
+
+    // Gallery.MIN_TARGET_PHOTO_COUNT과 같은 값이다. @Min은 Long 리터럴만 받아 상수를 쓸 수 없다.
+    @field:Min(1)
+    @field:Schema(
+        description = "부부가 최종적으로 고를 사진 장수(계약 장수). 지정하지 않으면 제한 없이 고를 수 있다.",
+        example = "50",
+    )
+    val targetPhotoCount: Int? = null,
 )
