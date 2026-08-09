@@ -67,7 +67,13 @@ WHERE gallery_id = ? AND status <> 'PENDING' AND embedding IS NULL
 CREATE USER embedder;
 GRANT rds_iam TO embedder;
 GRANT SELECT, UPDATE ON photos TO embedder;
+GRANT SELECT ON galleries, studio_deletion_claims TO embedder;
 ```
+
+마지막 GRANT는 hard delete와 Embedding job의 admission fence에 필요하다. 새 embedder 이미지와
+이 권한이 함께 적용되기 전에는 운영자 hard delete를 실행하지 않는다. Lambda는 studio 단위
+session advisory shared lock을 작업 전체에 잡고 삭제 claim을 확인하며, 앱 삭제 준비는 같은
+키의 exclusive lock을 얻은 경우에만 S3 삭제로 넘어간다.
 
 ## 로컬 실행
 

@@ -6,6 +6,7 @@ import com.soma.wes.studio.dto.request.CreateStudioRequest
 import com.soma.wes.studio.exception.StudioErrorCode
 import com.soma.wes.studio.exception.StudioException
 import com.soma.wes.studio.repository.StudioRepository
+import com.soma.wes.studio.support.StudioWriteAdmission
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
 import org.hibernate.exception.ConstraintViolationException
@@ -30,7 +31,7 @@ class StudioServiceConstraintTest {
     fun `동시 생성이 사전 조회를 함께 통과해도 갤러리 주소 경쟁은 표준 409로 끝난다`() {
         val studioRepository = mock<StudioRepository>()
         val userRepository = mock<UserRepository>()
-        val service = StudioService(studioRepository, userRepository)
+        val service = StudioService(studioRepository, userRepository, mock<StudioWriteAdmission>())
         val precheckBarrier = CyclicBarrier(2)
         val persisted = persistedStudio()
         val wonInsert = AtomicBoolean(false)
@@ -106,7 +107,7 @@ class StudioServiceConstraintTest {
         whenever(studioRepository.existsByGalleryUrl("studio-url")).thenReturn(false)
         whenever(studioRepository.saveAndFlush(any())).thenThrow(failure)
 
-        return StudioService(studioRepository, userRepository)
+        return StudioService(studioRepository, userRepository, mock<StudioWriteAdmission>())
     }
 
     private fun persistedStudio(): Studio = mock<Studio>().also { studio ->

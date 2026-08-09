@@ -4,6 +4,8 @@ import com.soma.wes.gallery.domain.Gallery
 import jakarta.persistence.LockModeType
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Lock
+import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
 
 interface GalleryRepository : JpaRepository<Gallery, Long> {
 
@@ -20,4 +22,7 @@ interface GalleryRepository : JpaRepository<Gallery, Long> {
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     fun findWithLockById(id: Long): Gallery?
+
+    @Query(value = "select * from galleries where studio_id = :studioId for update", nativeQuery = true)
+    fun findAllByStudioIdForUpdate(@Param("studioId") studioId: Long): List<Gallery>
 }

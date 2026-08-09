@@ -174,7 +174,7 @@ interface StudioControllerDocs {
         ),
         ApiResponse(
             responseCode = "409",
-            description = "다른 스튜디오가 이미 쓰는 주소",
+            description = "다른 스튜디오가 이미 쓰는 주소이거나 운영자 승인 hard delete가 진행 중임",
             content = [
                 Content(
                     mediaType = MediaType.APPLICATION_JSON_VALUE,
@@ -183,6 +183,10 @@ interface StudioControllerDocs {
                         ExampleObject(
                             name = "주소 중복",
                             value = """{"code": "STUDIO_409_2", "message": "이미 사용 중인 갤러리 주소입니다."}""",
+                        ),
+                        ExampleObject(
+                            name = "삭제 진행 중",
+                            value = """{"code": "STUDIO_409_7", "message": "스튜디오 삭제가 진행 중이라 새 데이터를 저장할 수 없습니다."}""",
                         ),
                     ],
                 ),

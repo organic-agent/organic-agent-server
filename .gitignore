@@ -50,6 +50,8 @@ __pycache__/
 ### local ###
 postgres-data-local
 
-# 작업 계획(docs/plans)과 해결한 작업의 기록. 개인 작업 노트라 저장소에 올리지 않는다.
-# 루트의 docs만 지정한다. 하위 모듈이 나중에 자기 docs를 가져도 함께 묻히지 않도록.
-/docs/
+# 작업 계획(docs/plans)과 해결한 작업의 기록은 개인 노트라 올리지 않는다.
+# 운영자가 따라야 하는 공용 runbook만 저장소에서 함께 버전 관리한다.
+/docs/*
+!/docs/runbooks/
+!/docs/runbooks/**
