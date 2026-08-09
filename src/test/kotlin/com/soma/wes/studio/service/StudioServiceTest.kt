@@ -52,7 +52,7 @@ class StudioServiceTest @Autowired constructor(
         // 종류를 고르는 화면이 없다. 스튜디오를 만드는 행동 자체가 "나는 작가다"라는 선언이다.
         val userId = signUp()
 
-        val studio = studioService.create(userId, CreateStudioRequest("오가닉 스튜디오", "organic-studio", "인스타그램"))
+        val studio = studioService.create(userId, CreateStudioRequest("오가닉 스튜디오", "  Organic-Studio  ", "인스타그램"))
 
         assertEquals("organic-studio", studio.galleryUrl)
         assertEquals(userId, studioRepository.findById(studio.id).orElseThrow().userId)
@@ -86,7 +86,7 @@ class StudioServiceTest @Autowired constructor(
         studioService.create(signUp(), CreateStudioRequest("먼저 만든 곳", "taken-url", null))
 
         val exception = assertFailsWith<StudioException> {
-            studioService.create(signUp(), CreateStudioRequest("나중에 온 곳", "taken-url", null))
+            studioService.create(signUp(), CreateStudioRequest("나중에 온 곳", "  TAKEN-URL  ", null))
         }
 
         assertEquals(StudioErrorCode.GALLERY_URL_DUPLICATED, exception.errorCode)
@@ -147,7 +147,7 @@ class StudioServiceTest @Autowired constructor(
         val userId = signUp()
         studioService.create(userId, CreateStudioRequest("옛 이름", "old-url", null))
 
-        val updated = studioService.updateMyStudio(userId, UpdateStudioRequest("새 이름", "new-url"))
+        val updated = studioService.updateMyStudio(userId, UpdateStudioRequest("새 이름", "  NEW-URL  "))
 
         assertEquals("새 이름", updated.name)
         assertEquals("new-url", updated.galleryUrl)
@@ -159,7 +159,7 @@ class StudioServiceTest @Autowired constructor(
         val userId = signUp()
         studioService.create(userId, CreateStudioRequest("옛 이름", "keep-url", null))
 
-        val updated = studioService.updateMyStudio(userId, UpdateStudioRequest("새 이름", "keep-url"))
+        val updated = studioService.updateMyStudio(userId, UpdateStudioRequest("새 이름", "  KEEP-URL  "))
 
         assertEquals("새 이름", updated.name)
         assertEquals("keep-url", updated.galleryUrl)
@@ -180,7 +180,10 @@ class StudioServiceTest @Autowired constructor(
 
     @Test
     fun `주소 중복 확인은 생성과 같은 규칙을 쓴다`() {
-        assertTrue(studioService.checkGalleryUrl("free-url").available)
+        val available = studioService.checkGalleryUrl("  FREE-URL  ")
+
+        assertEquals("free-url", available.galleryUrl)
+        assertTrue(available.available)
 
         studioService.create(signUp(), CreateStudioRequest("스튜디오", "free-url", null))
 
@@ -191,7 +194,9 @@ class StudioServiceTest @Autowired constructor(
     fun `확인 단계에서도 쓸 수 없는 주소는 거절한다`() {
         // 여기서 통과했는데 저장이 거절되면 사용자는 이유를 알 수 없다.
         assertFailsWith<StudioException> { studioService.checkGalleryUrl("ab").available }
-        assertFailsWith<StudioException> { studioService.checkGalleryUrl("Studio").available }
+        assertFailsWith<StudioException> { studioService.checkGalleryUrl("studio url").available }
+        assertFailsWith<StudioException> { studioService.checkGalleryUrl("studio_url").available }
+        assertFailsWith<StudioException> { studioService.checkGalleryUrl("스튜디오").available }
         assertFailsWith<StudioException> { studioService.checkGalleryUrl("admin").available }
     }
 }

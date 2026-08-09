@@ -10,6 +10,7 @@ import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
+import java.util.Locale
 
 
 @Entity
@@ -41,15 +42,17 @@ class Studio(
     val id: Long? = null
 
     init {
+        galleryUrl = normalizeGalleryUrl(galleryUrl)
         validateGalleryUrl(galleryUrl)
     }
 
     fun isOwnedBy(userId: Long): Boolean = this.userId == userId
 
     fun update(name: String, galleryUrl: String) {
-        validateGalleryUrl(galleryUrl)
+        val normalizedGalleryUrl = normalizeGalleryUrl(galleryUrl)
+        validateGalleryUrl(normalizedGalleryUrl)
         this.name = name
-        this.galleryUrl = galleryUrl
+        this.galleryUrl = normalizedGalleryUrl
     }
 
     private fun validateGalleryUrl(galleryUrl: String) {
@@ -60,10 +63,20 @@ class Studio(
 
     companion object {
 
+        fun normalizeGalleryUrl(galleryUrl: String): String {
+            if (galleryUrl.any { it.code > ASCII_MAX_CODE_POINT }) {
+                throw StudioException(StudioErrorCode.INVALID_GALLERY_URL)
+            }
+
+            return galleryUrl.trim().lowercase(Locale.ROOT)
+        }
+
         fun isValidGalleryUrl(galleryUrl: String): Boolean =
             GALLERY_URL_FORMAT.matches(galleryUrl) && galleryUrl !in RESERVED_GALLERY_URLS
 
         private val GALLERY_URL_FORMAT = Regex("^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$")
+
+        private const val ASCII_MAX_CODE_POINT = 0x7F
 
         private val RESERVED_GALLERY_URLS = setOf(
             "api", "admin", "login", "logout", "oauth", "oauth2", "signup", "auth",
