@@ -1,9 +1,17 @@
 package com.soma.wes.photo.infrastructure
 
 import com.soma.wes.photo.config.StorageProperties
+import com.soma.wes.photo.exception.PhotoErrorCode
+import com.soma.wes.photo.exception.PhotoException
 import com.soma.wes.photo.service.PhotoStorage
+import com.soma.wes.photo.service.PresignedUpload
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
+import software.amazon.awssdk.core.exception.SdkException
+import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
+import software.amazon.awssdk.services.s3.model.ObjectIdentifier
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
@@ -14,9 +22,12 @@ import java.util.UUID
 
 @Component
 class S3PhotoStorage(
+    private val s3Client: S3Client,
     private val s3Presigner: S3Presigner,
     private val properties: StorageProperties,
 ) : PhotoStorage {
+
+    private val log = LoggerFactory.getLogger(javaClass)
 
     override fun buildKey(galleryId: Long, originalFileName: String): String {
         val extension = originalFileName.substringAfterLast('.', "").lowercase()
@@ -24,7 +35,7 @@ class S3PhotoStorage(
         return "galleries/$galleryId/${UUID.randomUUID()}$suffix"
     }
 
-    override fun presignUpload(key: String, contentType: String): String {
+    override fun presignUpload(key: String, contentType: String): PresignedUpload {
         val putRequest = PutObjectRequest.builder()
             .bucket(properties.bucket)
             .key(key)
@@ -36,7 +47,11 @@ class S3PhotoStorage(
             .putObjectRequest(putRequest)
             .build()
 
-        return s3Presigner.presignPutObject(presignRequest).url().toExternalForm()
+        val presigned = s3Presigner.presignPutObject(presignRequest)
+        return PresignedUpload(
+            url = presigned.url().toExternalForm(),
+            expiresAt = presigned.expiration(),
+        )
     }
 
     override fun presignView(key: String): String = presignGet(key, properties.viewUrlTtl)
@@ -56,5 +71,41 @@ class S3PhotoStorage(
             .build()
 
         return s3Presigner.presignGetObject(presignRequest).url().toExternalForm()
+    }
+
+    override fun deleteAll(keys: Collection<String>) {
+        val targets = keys.filter(String::isNotBlank).distinct()
+        targets.chunked(MAX_DELETE_OBJECTS).forEach { chunk ->
+            val request = DeleteObjectsRequest.builder()
+                .bucket(properties.bucket)
+                .delete { delete ->
+                    delete.objects(chunk.map { key -> ObjectIdentifier.builder().key(key).build() })
+                    delete.quiet(true)
+                }
+                .build()
+
+            val response = try {
+                s3Client.deleteObjects(request)
+            } catch (e: SdkException) {
+                log.error("S3 사진 삭제 요청 실패: bucket={}, count={}", properties.bucket, chunk.size, e)
+                throw PhotoException(PhotoErrorCode.STORAGE_DELETE_FAILED)
+            }
+
+            if (response.hasErrors() && response.errors().isNotEmpty()) {
+                val errorCodes = response.errors().mapNotNull { it.code() }.distinct()
+                log.error(
+                    "S3 사진 일부 삭제 실패: bucket={}, count={}, errorCodes={}",
+                    properties.bucket,
+                    response.errors().size,
+                    errorCodes,
+                )
+                throw PhotoException(PhotoErrorCode.STORAGE_DELETE_FAILED)
+            }
+        }
+    }
+
+    companion object {
+        /** S3 DeleteObjects 한 요청의 최대 키 수. */
+        private const val MAX_DELETE_OBJECTS = 1000
     }
 }

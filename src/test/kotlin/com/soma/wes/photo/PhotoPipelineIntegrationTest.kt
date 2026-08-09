@@ -26,7 +26,10 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import java.time.ZonedDateTime
+import java.time.Instant
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 /**
  * 갤러리 생성 → 업로드 URL 발급 → 완료 통보 → 목록·집계 → 임베딩 실행까지, 이슈 #14가 만든
@@ -83,6 +86,11 @@ class PhotoPipelineIntegrationTest @Autowired constructor(
             jsonPath("$.uploads[0].storageKey") { value(org.hamcrest.Matchers.not(containsString("DSC_0001"))) }
             jsonPath("$.uploadUrlTtlSeconds") { value(1800) }
         }
+
+        val expirations = photoRepository.findAll().map { photo ->
+            assertNotNull(photo.uploadUrlExpiresAt)
+        }
+        assertTrue(expirations.all { it.isAfter(Instant.now()) })
     }
 
     @Test

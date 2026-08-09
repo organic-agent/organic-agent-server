@@ -43,6 +43,7 @@ class SecurityConfig(
 
             authorizeHttpRequests {
                 PublicPaths.PATTERNS.forEach { authorize(it, permitAll) }
+                authorize("/api/v1/admin/**", hasRole("ADMIN"))
                 authorize(anyRequest, authenticated)
             }
 
