@@ -18,6 +18,7 @@ data class StudioDeletionPlan(
     val studioGalleryUrl: String,
     val galleryIds: Set<Long>,
     val photos: Set<PhotoDeletionTarget>,
+    val planVersion: Int = 1,
 ) {
 
     val objectKeys: Set<String>

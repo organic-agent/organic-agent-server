@@ -14,6 +14,7 @@ import jakarta.persistence.Id
 import jakarta.persistence.Index
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
+import java.time.Instant
 import org.hibernate.annotations.Array
 import org.hibernate.annotations.JdbcTypeCode
 import org.hibernate.type.SqlTypes
@@ -90,6 +91,21 @@ class Photo(
     var previewKey: String? = null
 
     /**
+     * 이 사진 행을 만들 때 발급한 PUT URL의 실제 만료 시각.
+     *
+     * DB 행을 지워도 URL 자체는 취소되지 않는다. URL을 가진 클라이언트가 hard delete 뒤 같은
+     * 키를 다시 PUT하면 DB에 없는 S3 객체가 남으므로, 삭제 준비가 이 시각 전에는 S3 삭제를
+     * 시작하지 않는다. 설정 TTL을 다시 계산하지 않고 presigner가 돌려준 시각을 저장해야
+     * 자격증명 수명이나 서명 시각 차이와 어긋나지 않는다.
+     *
+     * null은 URL을 발급하지 않는 공유 샘플 사진이다. 마이그레이션 전 행과 이 컬럼을
+     * 모르는 rolling 배포 중의 구버전 writer는 DB default가 현재 TTL 30분을 보수적으로 채운다.
+     */
+    @Column(name = "upload_url_expires_at")
+    var uploadUrlExpiresAt: Instant? = null
+        protected set
+
+    /**
      * 촬영 정보(EXIF). [embedding]·[previewKey]와 마찬가지로 임베딩 Lambda가 채운다 —
      * 이 서버는 이미지 바이트를 만지지 않아 EXIF를 읽을 방법이 없다.
      *
@@ -113,6 +129,10 @@ class Photo(
 
     fun changeDisplayOrder(displayOrder: Int) {
         this.displayOrder = displayOrder
+    }
+
+    fun recordUploadUrlExpiration(expiresAt: Instant) {
+        uploadUrlExpiresAt = expiresAt
     }
 
     /**

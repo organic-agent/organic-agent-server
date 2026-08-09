@@ -21,4 +21,9 @@ enum class StudioErrorCode(
     DELETION_REQUEST_CONFLICT(HttpStatus.CONFLICT, "STUDIO_409_4", "같은 삭제 요청 ID가 다른 내용으로 사용됐습니다."),
     DELETION_TARGET_CHANGED(HttpStatus.CONFLICT, "STUDIO_409_5", "삭제 준비 중 대상 데이터가 변경됐습니다. 같은 요청 ID로 다시 실행해주세요."),
     DELETION_REQUEST_IN_PROGRESS(HttpStatus.CONFLICT, "STUDIO_409_6", "같은 삭제 요청이 이미 실행 중입니다."),
+    STUDIO_DELETION_IN_PROGRESS(HttpStatus.CONFLICT, "STUDIO_409_7", "스튜디오 삭제가 진행 중이라 새 데이터를 저장할 수 없습니다."),
+    DELETION_UPLOAD_URL_ACTIVE(HttpStatus.CONFLICT, "STUDIO_409_8", "아직 유효한 사진 업로드 URL이 있어 삭제를 시작할 수 없습니다."),
+    DELETION_WRITER_IN_PROGRESS(HttpStatus.CONFLICT, "STUDIO_409_9", "스튜디오 데이터 쓰기 작업이 진행 중이라 삭제를 시작할 수 없습니다."),
+    DELETION_PLAN_VERSION_UNSUPPORTED(HttpStatus.CONFLICT, "STUDIO_409_10", "현재 서버가 이 삭제 재시도 plan 버전을 지원하지 않습니다."),
+    HARD_DELETION_DISABLED(HttpStatus.SERVICE_UNAVAILABLE, "STUDIO_503_1", "스튜디오 hard delete가 아직 활성화되지 않았습니다."),
 }

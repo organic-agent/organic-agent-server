@@ -1,6 +1,7 @@
 package com.soma.wes.studio.service
 
 import com.soma.wes.photo.service.PhotoStorage
+import com.soma.wes.studio.config.StudioHardDeletionProperties
 import com.soma.wes.studio.dto.request.ExecuteStudioDeletionRequest
 import com.soma.wes.studio.dto.response.StudioDeletionResponse
 import com.soma.wes.studio.exception.StudioErrorCode
@@ -27,6 +28,7 @@ import java.util.UUID
 class StudioDeletionService(
     private val processor: StudioDeletionProcessor,
     private val photoStorage: PhotoStorage,
+    private val properties: StudioHardDeletionProperties,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -39,6 +41,14 @@ class StudioDeletionService(
     ): StudioDeletionResponse {
         val confirmedGalleryUrl = request.confirmedGalleryUrl.trim()
         val reason = request.reason.trim()
+        processor.findCompleted(studioId, operatorUserId, requestId, confirmedGalleryUrl, reason)?.let {
+            return it
+        }
+
+        if (!properties.enabled) {
+            throw StudioException(StudioErrorCode.HARD_DELETION_DISABLED)
+        }
+
         validate(confirmedGalleryUrl, reason)
 
         return when (
@@ -75,9 +85,18 @@ class StudioDeletionService(
             return result
         } catch (failure: RuntimeException) {
             try {
-                processor.release(plan)
-            } catch (releaseFailure: RuntimeException) {
-                failure.addSuppressed(releaseFailure)
+                processor.markRetryable(plan)
+            } catch (markFailure: RuntimeException) {
+                log.error(
+                    "스튜디오 삭제 claim RUNNING→RETRYABLE 전이 실패; fail-closed claim 수동 확인 필요: " +
+                        "studioId={}, requestId={}, claimToken={}, planVersion={}",
+                    plan.studioId,
+                    plan.requestId,
+                    plan.claimToken,
+                    plan.planVersion,
+                    markFailure,
+                )
+                failure.addSuppressed(markFailure)
             }
             throw failure
         }

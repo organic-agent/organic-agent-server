@@ -21,6 +21,14 @@ ALTER TABLE photos
     ADD CONSTRAINT fk_photos_gallery
         FOREIGN KEY (gallery_id) REFERENCES galleries (id) ON DELETE CASCADE NOT VALID;
 
+-- 발급된 PUT URL은 DB 삭제 뒤에도 만료 전까지 같은 키를 다시 쓸 수 있다. 새 서버는 SDK가
+-- 돌려준 실제 서명 만료 시각을 명시적으로 저장한다. DEFAULT는 배포 전 기존 행과 rolling
+-- 중 이 컬럼을 모르는 구버전 INSERT를 현재 설정 TTL 30분 동안 보수적으로 막는 cutover guard다.
+-- URL을 발급하지 않는 공유 샘플 writer는 이 컬럼에 NULL을 명시적으로 넣는다.
+ALTER TABLE photos
+    ADD COLUMN upload_url_expires_at TIMESTAMP(6) WITH TIME ZONE
+        DEFAULT (CURRENT_TIMESTAMP + INTERVAL '30 minutes');
+
 ALTER TABLE photo_folders
     ADD CONSTRAINT fk_photo_folders_gallery
         FOREIGN KEY (gallery_id) REFERENCES galleries (id) ON DELETE CASCADE NOT VALID;
@@ -73,8 +81,9 @@ CREATE INDEX idx_studio_deletion_audits_studio_id
 CREATE INDEX idx_studio_deletion_audits_operator_user_id
     ON studio_deletion_audits (operator_user_id);
 
--- S3 호출 전에 커밋되는 실행 점유 행. 같은 request_id는 한 요청만 삽입할 수 있으며,
--- 성공하면 감사 기록과 교체되고 실패하면 지워 같은 요청의 재시도를 허용한다.
+-- S3 호출 전에 커밋되는 실행 점유 행. 같은 request_id는 한 요청만 삽입할 수 있다.
+-- S3 전 abort만 점유를 지우고, S3 시작 뒤 실패는 RETRYABLE로 유지해 같은 요청만
+-- 새 token으로 재점유·재시도하게 한다.
 CREATE TABLE studio_deletion_claims
 (
     request_id          UUID          PRIMARY KEY,
@@ -83,5 +92,11 @@ CREATE TABLE studio_deletion_claims
     operator_user_id    BIGINT        NOT NULL,
     studio_gallery_url  VARCHAR(255)  NOT NULL,
     reason              VARCHAR(1000) NOT NULL,
-    claimed_at          TIMESTAMP(6) WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+    plan_version        INTEGER       NOT NULL DEFAULT 1,
+    state               VARCHAR(20)   NOT NULL DEFAULT 'RUNNING',
+    claimed_at          TIMESTAMP(6) WITH TIME ZONE NOT NULL DEFAULT statement_timestamp(),
+    state_changed_at    TIMESTAMP(6) WITH TIME ZONE NOT NULL DEFAULT statement_timestamp(),
+    CONSTRAINT ck_studio_deletion_claims_plan_version CHECK (plan_version > 0),
+    CONSTRAINT ck_studio_deletion_claims_state CHECK (state IN ('RUNNING', 'RETRYABLE')),
+    CONSTRAINT uk_studio_deletion_claims_studio_id UNIQUE (studio_id)
 );

@@ -21,21 +21,27 @@ import com.soma.wes.selection.domain.PhotoSelectionItem
 import com.soma.wes.selection.repository.PhotoSelectionItemRepository
 import com.soma.wes.selection.repository.PhotoSelectionRepository
 import com.soma.wes.studio.domain.Studio
+import com.soma.wes.studio.domain.StudioDeletionClaimState
 import com.soma.wes.studio.exception.StudioErrorCode
 import com.soma.wes.studio.exception.StudioException
 import com.soma.wes.studio.repository.StudioDeletionAuditRepository
 import com.soma.wes.studio.repository.StudioDeletionClaimRepository
 import com.soma.wes.studio.repository.StudioRepository
+import java.time.Instant
 import java.time.ZonedDateTime
 import java.util.UUID
+import javax.sql.DataSource
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
 import org.springframework.context.annotation.Import
+import org.springframework.jdbc.core.JdbcTemplate
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 @DataJpaTest
@@ -54,6 +60,8 @@ class StudioDeletionProcessorTest @Autowired constructor(
     private val photoRatingRepository: PhotoRatingRepository,
     private val auditRepository: StudioDeletionAuditRepository,
     private val claimRepository: StudioDeletionClaimRepository,
+    private val dataSource: DataSource,
+    private val jdbcTemplate: JdbcTemplate,
 ) {
 
     @Test
@@ -149,7 +157,164 @@ class StudioDeletionProcessorTest @Autowired constructor(
     }
 
     @Test
-    fun `실패한 실행의 claim을 해제하면 같은 요청으로 다시 준비할 수 있다`() {
+    fun `서로 다른 요청 ID도 같은 스튜디오에서는 하나만 실행한다`() {
+        val studio = studioRepository.save(
+            Studio(userId = 10L, name = "오가닉", galleryUrl = "organic-studio"),
+        )
+        val studioId = checkNotNull(studio.id)
+        val reason = "문의 WES-CS-5 최종 확인"
+
+        processor.prepare(studioId, 99L, UUID.randomUUID(), "organic-studio", reason)
+        val exception = assertFailsWith<StudioException> {
+            processor.prepare(studioId, 99L, UUID.randomUUID(), "organic-studio", reason)
+        }
+
+        assertEquals(StudioErrorCode.DELETION_REQUEST_IN_PROGRESS, exception.errorCode)
+        assertEquals(1, claimRepository.count())
+    }
+
+    @Test
+    fun `아직 유효한 PUT URL이 있으면 claim과 S3 삭제 준비를 남기지 않는다`() {
+        val studio = studioRepository.save(
+            Studio(userId = 10L, name = "오가닉", galleryUrl = "organic-studio"),
+        )
+        val studioId = checkNotNull(studio.id)
+        val gallery = galleryRepository.save(Gallery(studioId = studioId, title = "본식"))
+        val photo = Photo(
+            galleryId = checkNotNull(gallery.id),
+            storageKey = "galleries/${gallery.id}/pending.jpg",
+            originalFileName = "pending.jpg",
+            contentType = "image/jpeg",
+        )
+        photo.recordUploadUrlExpiration(Instant.now().plusSeconds(300))
+        photoRepository.saveAndFlush(photo)
+
+        val exception = assertFailsWith<StudioException> {
+            processor.prepare(
+                studioId,
+                99L,
+                UUID.randomUUID(),
+                "organic-studio",
+                "문의 WES-CS-30 최종 확인",
+            )
+        }
+
+        assertEquals(StudioErrorCode.DELETION_UPLOAD_URL_ACTIVE, exception.errorCode)
+        assertTrue(studioRepository.existsById(studioId))
+    }
+
+    @Test
+    fun `만료 컬럼을 모르는 기존 writer도 DB default가 30분 동안 삭제를 막는다`() {
+        val studio = studioRepository.save(
+            Studio(userId = 10L, name = "오가닉", galleryUrl = "organic-studio"),
+        )
+        val studioId = checkNotNull(studio.id)
+        val gallery = galleryRepository.saveAndFlush(Gallery(studioId = studioId, title = "본식"))
+        val galleryId = checkNotNull(gallery.id)
+        val insertedAt = Instant.now()
+        val photoId = jdbcTemplate.queryForObject(
+            """
+                INSERT INTO photos (
+                    gallery_id, storage_key, original_file_name, display_order, status, content_type
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                RETURNING id
+            """.trimIndent(),
+            Long::class.java,
+            galleryId,
+            "galleries/$galleryId/legacy.jpg",
+            "legacy.jpg",
+            0,
+            "PENDING",
+            "image/jpeg",
+        )
+        val expiresAt = assertNotNull(
+            jdbcTemplate.queryForObject(
+                "select upload_url_expires_at from photos where id = ?",
+                Instant::class.java,
+                photoId,
+            ),
+        )
+        assertTrue(expiresAt.isAfter(insertedAt.plusSeconds(29 * 60)))
+        assertTrue(expiresAt.isBefore(Instant.now().plusSeconds(31 * 60)))
+
+        val exception = assertFailsWith<StudioException> {
+            processor.prepare(
+                studioId,
+                99L,
+                UUID.randomUUID(),
+                "organic-studio",
+                "문의 WES-CS-30 최종 확인",
+            )
+        }
+
+        assertEquals(StudioErrorCode.DELETION_UPLOAD_URL_ACTIVE, exception.errorCode)
+    }
+
+    @Test
+    fun `PUT URL이 만료됐으면 같은 사진을 삭제 스냅샷에 포함한다`() {
+        val studio = studioRepository.save(
+            Studio(userId = 10L, name = "오가닉", galleryUrl = "organic-studio"),
+        )
+        val studioId = checkNotNull(studio.id)
+        val gallery = galleryRepository.save(Gallery(studioId = studioId, title = "본식"))
+        val photo = Photo(
+            galleryId = checkNotNull(gallery.id),
+            storageKey = "galleries/${gallery.id}/expired.jpg",
+            originalFileName = "expired.jpg",
+            contentType = "image/jpeg",
+        )
+        photo.recordUploadUrlExpiration(Instant.now().minusSeconds(1))
+        photoRepository.saveAndFlush(photo)
+
+        val preparation = processor.prepare(
+            studioId,
+            99L,
+            UUID.randomUUID(),
+            "organic-studio",
+            "문의 WES-CS-31 최종 확인",
+        )
+
+        val plan = assertIs<StudioDeletionPreparation.Pending>(preparation).plan
+        assertEquals(setOf(photo.requiredId), plan.photos.mapTo(mutableSetOf()) { it.photoId })
+    }
+
+    @Test
+    fun `Embedding job의 shared fence가 있으면 삭제 claim을 만들지 않는다`() {
+        val studio = studioRepository.saveAndFlush(
+            Studio(userId = 10L, name = "오가닉", galleryUrl = "organic-studio"),
+        )
+        val studioId = checkNotNull(studio.id)
+        val fenceKey = StudioWriteFence.key(studioId)
+
+        dataSource.connection.use { embeddingConnection ->
+            embeddingConnection.prepareStatement("select pg_advisory_lock_shared(?)").use { statement ->
+                statement.setLong(1, fenceKey)
+                statement.execute()
+            }
+            try {
+                val exception = assertFailsWith<StudioException> {
+                    processor.prepare(
+                        studioId,
+                        99L,
+                        UUID.randomUUID(),
+                        "organic-studio",
+                        "문의 WES-CS-32 최종 확인",
+                    )
+                }
+
+                assertEquals(StudioErrorCode.DELETION_WRITER_IN_PROGRESS, exception.errorCode)
+                assertEquals(0, claimRepository.count())
+            } finally {
+                embeddingConnection.prepareStatement("select pg_advisory_unlock_shared(?)").use { statement ->
+                    statement.setLong(1, fenceKey)
+                    statement.execute()
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `S3 시작 후 실패한 claim은 writer를 막은 채 같은 요청이 새 token으로 재개한다`() {
         val studio = studioRepository.save(
             Studio(userId = 10L, name = "오가닉", galleryUrl = "organic-studio"),
         )
@@ -160,10 +325,53 @@ class StudioDeletionProcessorTest @Autowired constructor(
             processor.prepare(studioId, 99L, requestId, "organic-studio", reason),
         )
 
-        processor.release(first.plan)
-        val retried = processor.prepare(studioId, 99L, requestId, "organic-studio", reason)
+        processor.markRetryable(first.plan)
+        assertEquals(StudioDeletionClaimState.RETRYABLE, claimRepository.findById(requestId).orElseThrow().state)
 
-        assertIs<StudioDeletionPreparation.Pending>(retried)
+        val staleDelete = assertFailsWith<StudioException> {
+            processor.delete(first.plan, 99L, reason)
+        }
+        assertEquals(StudioErrorCode.DELETION_REQUEST_IN_PROGRESS, staleDelete.errorCode)
+
+        val retried = assertIs<StudioDeletionPreparation.Pending>(
+            processor.prepare(studioId, 99L, requestId, "organic-studio", reason),
+        )
+
+        assertNotEquals(first.plan.claimToken, retried.plan.claimToken)
+        assertEquals(StudioDeletionProcessor.CURRENT_SUPPORTED_PLAN_VERSION, retried.plan.planVersion)
+        val staleMark = assertFailsWith<StudioException> {
+            processor.markRetryable(first.plan)
+        }
+        assertEquals(StudioErrorCode.DELETION_REQUEST_IN_PROGRESS, staleMark.errorCode)
+        val activeClaim = claimRepository.findById(requestId).orElseThrow()
+        assertEquals(StudioDeletionClaimState.RUNNING, activeClaim.state)
+        assertEquals(retried.plan.claimToken, activeClaim.claimToken)
+        assertEquals(1, claimRepository.count())
+    }
+
+    @Test
+    fun `현재 artifact가 지원하지 않는 retry plan은 claim을 유지한 채 거절한다`() {
+        val studio = studioRepository.save(
+            Studio(userId = 10L, name = "오가닉", galleryUrl = "organic-studio"),
+        )
+        val studioId = checkNotNull(studio.id)
+        val requestId = UUID.randomUUID()
+        val reason = "문의 WES-CS-61 최종 확인"
+        val first = assertIs<StudioDeletionPreparation.Pending>(
+            processor.prepare(studioId, 99L, requestId, "organic-studio", reason),
+        )
+        processor.markRetryable(first.plan)
+        jdbcTemplate.update(
+            "update studio_deletion_claims set plan_version = ? where request_id = ?",
+            StudioDeletionProcessor.CURRENT_SUPPORTED_PLAN_VERSION + 1,
+            requestId,
+        )
+
+        val exception = assertFailsWith<StudioException> {
+            processor.prepare(studioId, 99L, requestId, "organic-studio", reason)
+        }
+
+        assertEquals(StudioErrorCode.DELETION_PLAN_VERSION_UNSUPPORTED, exception.errorCode)
         assertEquals(1, claimRepository.count())
     }
 

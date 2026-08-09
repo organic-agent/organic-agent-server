@@ -4,6 +4,7 @@ import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
 import com.soma.wes.photo.service.PhotoStorage
+import com.soma.wes.photo.service.PresignedUpload
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import software.amazon.awssdk.core.exception.SdkException
@@ -34,7 +35,7 @@ class S3PhotoStorage(
         return "galleries/$galleryId/${UUID.randomUUID()}$suffix"
     }
 
-    override fun presignUpload(key: String, contentType: String): String {
+    override fun presignUpload(key: String, contentType: String): PresignedUpload {
         val putRequest = PutObjectRequest.builder()
             .bucket(properties.bucket)
             .key(key)
@@ -46,7 +47,11 @@ class S3PhotoStorage(
             .putObjectRequest(putRequest)
             .build()
 
-        return s3Presigner.presignPutObject(presignRequest).url().toExternalForm()
+        val presigned = s3Presigner.presignPutObject(presignRequest)
+        return PresignedUpload(
+            url = presigned.url().toExternalForm(),
+            expiresAt = presigned.expiration(),
+        )
     }
 
     override fun presignView(key: String): String = presignGet(key, properties.viewUrlTtl)

@@ -6,6 +6,7 @@ import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.domain.StudioDeletionAudit
+import com.soma.wes.studio.domain.StudioDeletionClaimState
 import com.soma.wes.studio.dto.response.StudioDeletionResponse
 import com.soma.wes.studio.exception.StudioErrorCode
 import com.soma.wes.studio.exception.StudioException
@@ -14,6 +15,7 @@ import com.soma.wes.studio.repository.StudioDeletionClaimRepository
 import com.soma.wes.studio.repository.StudioRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Clock
 import java.util.UUID
 
 
@@ -31,7 +33,18 @@ class StudioDeletionProcessor(
     private val photoRepository: PhotoRepository,
     private val auditRepository: StudioDeletionAuditRepository,
     private val claimRepository: StudioDeletionClaimRepository,
+    private val clock: Clock,
 ) {
+
+    @Transactional(readOnly = true)
+    fun findCompleted(
+        studioId: Long,
+        operatorUserId: Long,
+        requestId: UUID,
+        confirmedGalleryUrl: String,
+        reason: String,
+    ): StudioDeletionResponse? =
+        completedResult(studioId, operatorUserId, requestId, confirmedGalleryUrl, reason)
 
     @Transactional
     fun prepare(
@@ -45,23 +58,56 @@ class StudioDeletionProcessor(
             return StudioDeletionPreparation.Completed(it)
         }
 
-        val studio = studioRepository.findById(studioId).orElse(null)
+        val studio = studioRepository.findByIdForUpdate(studioId)
             ?: return completedResult(studioId, operatorUserId, requestId, confirmedGalleryUrl, reason)
                 ?.let(StudioDeletionPreparation::Completed)
                 ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
         requireConfirmedTarget(studio, confirmedGalleryUrl)
 
-        val galleries = galleryRepository.findAllByStudioId(studioId)
-        val photos = findPhotos(galleries)
+        val retryableClaim = claimRepository.findByStudioId(studioId)?.let { existing ->
+            if (existing.requestId != requestId) {
+                throw StudioException(StudioErrorCode.DELETION_REQUEST_IN_PROGRESS)
+            }
+            requireSameRequest(
+                existing.studioId,
+                existing.operatorUserId,
+                existing.studioGalleryUrl,
+                existing.reason,
+                studioId,
+                operatorUserId,
+                confirmedGalleryUrl,
+                reason,
+            )
+            if (existing.state != StudioDeletionClaimState.RETRYABLE) {
+                throw StudioException(StudioErrorCode.DELETION_REQUEST_IN_PROGRESS)
+            }
+            requireSupportedPlanVersion(existing.planVersion)
+            existing
+        }
+
+        if (!studioRepository.tryAcquireDeletionWriteFence(StudioWriteFence.key(studioId))) {
+            throw StudioException(StudioErrorCode.DELETION_WRITER_IN_PROGRESS)
+        }
+
         val claimToken = UUID.randomUUID()
-        val claimed = claimRepository.tryClaim(
-            requestId = requestId,
-            claimToken = claimToken,
-            studioId = studioId,
-            operatorUserId = operatorUserId,
-            studioGalleryUrl = confirmedGalleryUrl,
-            reason = reason,
-        )
+        val claimed = if (retryableClaim == null) {
+            claimRepository.tryClaim(
+                requestId = requestId,
+                claimToken = claimToken,
+                studioId = studioId,
+                operatorUserId = operatorUserId,
+                studioGalleryUrl = confirmedGalleryUrl,
+                reason = reason,
+                planVersion = CURRENT_SUPPORTED_PLAN_VERSION,
+            )
+        } else {
+            claimRepository.tryResume(
+                requestId,
+                retryableClaim.claimToken,
+                claimToken,
+                CURRENT_SUPPORTED_PLAN_VERSION,
+            )
+        }
         if (claimed == 0) {
             completedResult(studioId, operatorUserId, requestId, confirmedGalleryUrl, reason)?.let {
                 return StudioDeletionPreparation.Completed(it)
@@ -86,7 +132,18 @@ class StudioDeletionProcessor(
             return StudioDeletionPreparation.Completed(it)
         }
 
+        val galleries = galleryRepository.findAllByStudioId(studioId)
+        val photos = findPhotos(galleries)
+        requireNoActiveUploadUrls(photos)
+
         return StudioDeletionPreparation.Pending(snapshot(requestId, claimToken, studio, galleries, photos))
+    }
+
+    private fun requireNoActiveUploadUrls(photos: List<Photo>) {
+        val now = clock.instant()
+        if (photos.any { photo -> photo.uploadUrlExpiresAt?.let { !it.isBefore(now) } == true }) {
+            throw StudioException(StudioErrorCode.DELETION_UPLOAD_URL_ACTIVE)
+        }
     }
 
     @Transactional
@@ -106,8 +163,13 @@ class StudioDeletionProcessor(
             return it
         }
 
-        val claim = claimRepository.findOwnedForUpdate(plan.requestId, plan.claimToken)
+        requireSupportedPlanVersion(plan.planVersion)
+
+        val claim = claimRepository.findOwnedRunningForUpdate(plan.requestId, plan.claimToken)
             ?: throw StudioException(StudioErrorCode.DELETION_REQUEST_IN_PROGRESS)
+        if (claim.planVersion != plan.planVersion) {
+            throw StudioException(StudioErrorCode.DELETION_PLAN_VERSION_UNSUPPORTED)
+        }
         requireSameRequest(
             claim.studioId,
             claim.operatorUserId,
@@ -160,9 +222,24 @@ class StudioDeletionProcessor(
         return StudioDeletionResponse.from(audit)
     }
 
+    /** S3 호출 전에만 사용하는 abort. post-S3 실패는 [markRetryable]로 fail-closed 처리한다. */
     @Transactional
     fun release(plan: StudioDeletionPlan) {
         claimRepository.release(plan.requestId, plan.claimToken)
+    }
+
+    /** S3 삭제가 일부라도 시작된 실패는 claim을 지우지 않고 같은 요청의 재개만 허용한다. */
+    @Transactional
+    fun markRetryable(plan: StudioDeletionPlan) {
+        if (claimRepository.markRetryable(plan.requestId, plan.claimToken, plan.planVersion) == 0) {
+            throw StudioException(StudioErrorCode.DELETION_REQUEST_IN_PROGRESS)
+        }
+    }
+
+    private fun requireSupportedPlanVersion(planVersion: Int) {
+        if (planVersion != CURRENT_SUPPORTED_PLAN_VERSION) {
+            throw StudioException(StudioErrorCode.DELETION_PLAN_VERSION_UNSUPPORTED)
+        }
     }
 
     private fun completedResult(
@@ -233,6 +310,7 @@ class StudioDeletionProcessor(
             studioId = checkNotNull(studio.id) { "저장되지 않은 스튜디오입니다." },
             studioUserId = studio.userId,
             studioGalleryUrl = studio.galleryUrl,
+            planVersion = CURRENT_SUPPORTED_PLAN_VERSION,
             galleryIds = galleries.mapTo(mutableSetOf()) {
                 checkNotNull(it.id) { "저장되지 않은 갤러리입니다." }
             },
@@ -244,4 +322,9 @@ class StudioDeletionProcessor(
                 )
             },
         )
+
+    companion object {
+        /** expected preview key·snapshot 규칙을 바꾸면 기존 plan 재개 지원과 함께 올린다. */
+        const val CURRENT_SUPPORTED_PLAN_VERSION = 1
+    }
 }

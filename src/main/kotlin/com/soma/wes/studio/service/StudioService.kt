@@ -8,6 +8,7 @@ import com.soma.wes.studio.dto.response.StudioResponse
 import com.soma.wes.studio.exception.StudioErrorCode
 import com.soma.wes.studio.exception.StudioException
 import com.soma.wes.studio.repository.StudioRepository
+import com.soma.wes.studio.support.StudioWriteAdmission
 import com.soma.wes.user.domain.UserType
 import com.soma.wes.user.exception.UserErrorCode
 import com.soma.wes.user.exception.UserException
@@ -20,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional
 class StudioService(
     private val studioRepository: StudioRepository,
     private val userRepository: UserRepository,
+    private val studioWriteAdmission: StudioWriteAdmission,
 ) {
 
     @Transactional
@@ -54,7 +56,7 @@ class StudioService(
 
     @Transactional
     fun updateMyStudio(userId: Long, request: UpdateStudioRequest): StudioResponse {
-        val studio = findMyStudio(userId)
+        val studio = studioWriteAdmission.lockWritableByUserId(userId)
 
         if (request.galleryUrl != studio.galleryUrl && studioRepository.existsByGalleryUrl(request.galleryUrl)) {
             throw StudioException(StudioErrorCode.GALLERY_URL_DUPLICATED)

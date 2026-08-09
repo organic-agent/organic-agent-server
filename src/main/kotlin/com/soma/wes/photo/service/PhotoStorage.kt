@@ -10,7 +10,7 @@ interface PhotoStorage {
      * 프론트가 직접 PUT 할 URL.
      * [contentType]이 서명에 포함되므로 업로드할 때 같은 값을 보내야 서명이 맞는다.
      */
-    fun presignUpload(key: String, contentType: String): String
+    fun presignUpload(key: String, contentType: String): PresignedUpload
 
     /** 비공개 버킷의 사진을 브라우저가 그릴 수 있게 하는 유일한 통로. */
     fun presignView(key: String): String

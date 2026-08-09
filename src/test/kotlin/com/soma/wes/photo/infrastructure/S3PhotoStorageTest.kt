@@ -3,7 +3,9 @@ package com.soma.wes.photo.infrastructure
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
+import java.net.URI
 import java.time.Duration
+import java.time.Instant
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
@@ -17,15 +19,18 @@ import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse
 import software.amazon.awssdk.services.s3.model.S3Error
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
+import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest
+import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 class S3PhotoStorageTest {
 
     private val s3Client = mock<S3Client>()
+    private val s3Presigner = mock<S3Presigner>()
     private val storage = S3PhotoStorage(
         s3Client = s3Client,
-        s3Presigner = mock<S3Presigner>(),
+        s3Presigner = s3Presigner,
         properties = StorageProperties(
             bucket = "test-bucket",
             uploadUrlTtl = Duration.ofMinutes(30),
@@ -34,6 +39,20 @@ class S3PhotoStorageTest {
             maxBatchSize = 1000,
         ),
     )
+
+    @Test
+    fun `업로드 서명 URL과 SDK가 계산한 실제 만료 시각을 함께 돌려준다`() {
+        val expiresAt = Instant.parse("2026-08-09T03:30:00Z")
+        val signed = mock<PresignedPutObjectRequest>()
+        whenever(signed.url()).thenReturn(URI("https://example.test/upload?X-Amz-Signature=test").toURL())
+        whenever(signed.expiration()).thenReturn(expiresAt)
+        whenever(s3Presigner.presignPutObject(any<PutObjectPresignRequest>())).thenReturn(signed)
+
+        val result = storage.presignUpload("galleries/1/photo.jpg", "image/jpeg")
+
+        assertEquals("https://example.test/upload?X-Amz-Signature=test", result.url)
+        assertEquals(expiresAt, result.expiresAt)
+    }
 
     @Test
     fun `삭제할 키가 없으면 S3를 호출하지 않는다`() {
