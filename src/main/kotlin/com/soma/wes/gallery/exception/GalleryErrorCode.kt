@@ -54,4 +54,7 @@ enum class GalleryErrorCode(
      */
     INVITE_EXPIRED(HttpStatus.GONE, "GALLERY_410_1", "만료된 초대 링크입니다."),
     INVITE_REVOKED(HttpStatus.GONE, "GALLERY_410_2", "더 이상 사용할 수 없는 초대 링크입니다."),
+
+    /** 기능 gate가 꺼져 있거나 샘플 manifest가 배포되지 않은 신규 Mock 갤러리 요청. */
+    MOCK_GALLERY_NOT_READY(HttpStatus.SERVICE_UNAVAILABLE, "GALLERY_503_1", "Mock 갤러리가 아직 준비되지 않았습니다."),
 }

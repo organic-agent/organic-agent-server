@@ -41,6 +41,9 @@ jobs:
           distribution: "temurin"
           cache: gradle
 
+      - name: Lambda DB 계약 테스트
+        run: python3 -S -m unittest discover -s embedder/tests -p 'test_*.py' -v
+
       - name: JAR 빌드
         run: |
           chmod +x ./gradlew

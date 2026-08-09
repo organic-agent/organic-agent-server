@@ -32,7 +32,10 @@ import org.hibernate.type.SqlTypes
 @Table(
     name = "photos",
     uniqueConstraints = [
-        UniqueConstraint(name = "uk_photos_storage_key", columnNames = ["storage_key"]),
+        UniqueConstraint(
+            name = "uk_photos_gallery_id_storage_key",
+            columnNames = ["gallery_id", "storage_key"],
+        ),
     ],
     indexes = [
         Index(name = "idx_photos_gallery_id", columnList = "gallery_id"),
@@ -47,6 +50,10 @@ class Photo(
     /** 오브젝트 스토리지에서의 위치. 사진이 다른 갤러리로 옮겨가는 일은 없으므로 변경하지 않는다. */
     @Column(name = "storage_key", nullable = false, updatable = false, length = 500)
     val storageKey: String,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "storage_ownership", nullable = false, updatable = false, length = 30)
+    val storageOwnership: PhotoStorageOwnership = PhotoStorageOwnership.GALLERY,
 
     @Column(name = "original_file_name", nullable = false, updatable = false, length = 255)
     val originalFileName: String,
@@ -111,6 +118,10 @@ class Photo(
     val viewKey: String
         get() = previewKey ?: storageKey
 
+    /** 이 사진 참조가 사라질 때 실제 S3 객체도 함께 지워야 하는지 여부. */
+    val ownsStorageObjects: Boolean
+        get() = storageOwnership == PhotoStorageOwnership.GALLERY
+
     fun changeDisplayOrder(displayOrder: Int) {
         this.displayOrder = displayOrder
     }
@@ -151,5 +162,31 @@ class Photo(
          * DB에서 거절되므로 조용히 틀리지는 않는다.
          */
         const val EMBEDDING_DIMENSION = 768
+
+        /**
+         * 버전이 고정된 공유 샘플 한 장을 만든다.
+         *
+         * 원본·미리보기·임베딩은 WES-22에서 준비한 같은 템플릿 자산을 모든 스튜디오가
+         * 참조한다. 따라서 저장소 소유권은 반드시 [PhotoStorageOwnership.SHARED_TEMPLATE]이다.
+         */
+        fun createSharedTemplate(
+            galleryId: Long,
+            storageKey: String,
+            previewKey: String,
+            originalFileName: String,
+            contentType: String,
+            displayOrder: Int,
+            embedding: FloatArray,
+        ): Photo = Photo(
+            galleryId = galleryId,
+            storageKey = storageKey,
+            storageOwnership = PhotoStorageOwnership.SHARED_TEMPLATE,
+            originalFileName = originalFileName,
+            contentType = contentType,
+            displayOrder = displayOrder,
+        ).also {
+            it.previewKey = previewKey
+            it.applyEmbedding(embedding)
+        }
     }
 }

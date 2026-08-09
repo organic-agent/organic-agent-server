@@ -2,6 +2,7 @@ package com.soma.wes.photo.repository
 
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoStatus
+import com.soma.wes.photo.domain.PhotoStorageOwnership
 import jakarta.persistence.LockModeType
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
@@ -107,4 +108,18 @@ interface PhotoRepository : JpaRepository<Photo, Long> {
      * 하기 때문이다. 상태 값이 어긋나 있어도 이 수는 진실을 말한다.
      */
     fun countByGalleryIdAndEmbeddingIsNull(galleryId: Long): Long
+
+    /** PENDING과 공유 템플릿을 제외해 실제 임베딩 Lambda의 force 대상과 같은 수를 센다. */
+    fun countByGalleryIdAndStorageOwnershipAndStatusNot(
+        galleryId: Long,
+        storageOwnership: PhotoStorageOwnership,
+        status: PhotoStatus,
+    ): Long
+
+    /** PENDING·기존 임베딩·공유 템플릿을 제외해 실제 일반 실행 대상과 같은 수를 센다. */
+    fun countByGalleryIdAndStorageOwnershipAndStatusNotAndEmbeddingIsNull(
+        galleryId: Long,
+        storageOwnership: PhotoStorageOwnership,
+        status: PhotoStatus,
+    ): Long
 }

@@ -61,6 +61,50 @@ interface GalleryControllerDocs {
     fun create(loginUser: LoginUser, request: CreateGalleryRequest): ResponseEntity<GalleryResponse>
 
     @Operation(
+        summary = "Mock 갤러리 생성",
+        description = """
+            스튜디오를 가진 작가에게 버전이 고정된 샘플 사진과 사전 계산 임베딩을 seed한다.
+            요청 본문 없이 호출하면 제목은 '샘플 갤러리', 기한·계약 장수는 제한 없음으로 만든다.
+            본문을 보내면 일반 생성 요청과 같은 세 값을 최초 생성에만 사용할 수 있다.
+            스튜디오당 하나만 만들며, 반복 요청은 최초 요청의 갤러리를 200으로 그대로 반환한다.
+            이 경우 뒤 요청의 제목·기한·계약 장수는 기존 갤러리를 바꾸지 않는다.
+
+            운영 샘플 자산과 manifest가 준비되기 전에는 신규 생성만 503으로 막는다. 이미 만든
+            Mock 갤러리는 기능 gate를 다시 꺼도 반복 요청으로 조회할 수 있다.
+        """,
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "최초 생성 또는 기존 Mock 갤러리 반환"),
+        ApiResponse(
+            responseCode = "400",
+            description = "빈 제목, 지난 선택 마감 기한 또는 0 이하 계약 장수",
+            content = [Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = Schema(implementation = ErrorResponse::class))],
+        ),
+        ApiResponse(
+            responseCode = "404",
+            description = "온보딩을 마치지 않아 스튜디오가 없음",
+            content = [Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = Schema(implementation = ErrorResponse::class))],
+        ),
+        ApiResponse(
+            responseCode = "503",
+            description = "Mock 갤러리 기능이 꺼져 있거나 manifest가 준비되지 않음",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "샘플 준비 전",
+                            value = """{"code": "GALLERY_503_1", "message": "Mock 갤러리가 아직 준비되지 않았습니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    )
+    fun createMock(loginUser: LoginUser, request: CreateGalleryRequest?): ResponseEntity<GalleryResponse>
+
+    @Operation(
         summary = "내 갤러리 목록",
         description = "작가는 스튜디오의 갤러리 전부를, 예비 부부는 초대받아 들어온 갤러리를 받는다. " +
             "예비 부부에게는 아직 열리지 않은(DRAFT) 갤러리가 보이지 않는다.",

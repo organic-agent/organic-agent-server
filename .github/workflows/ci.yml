@@ -33,6 +33,7 @@ jobs:
         continue-on-error: true
         run: |
           chmod +x ./gradlew
+          python3 -S -m unittest discover -s embedder/tests -p 'test_*.py' -v
           ./gradlew test --no-daemon
 
       - name: 테스트 결과 출력

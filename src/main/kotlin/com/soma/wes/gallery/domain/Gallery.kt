@@ -27,6 +27,14 @@ class Gallery(
     @Column(name = "studio_id", nullable = false, updatable = false)
     val studioId: Long,
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "gallery_type", nullable = false, updatable = false, length = 20)
+    val galleryType: GalleryType = GalleryType.NORMAL,
+
+    /** Mock 갤러리가 어느 샘플 자산·임베딩 묶음을 복제했는지 식별한다. */
+    @Column(name = "template_version", updatable = false, length = 50)
+    val templateVersion: String? = null,
+
     @Column(nullable = false, length = 100)
     var title: String,
 
@@ -55,6 +63,7 @@ class Gallery(
 
         /** 0장짜리 계약은 없다. 장수를 정하지 않는 계약은 null로 둔다. */
         const val MIN_TARGET_PHOTO_COUNT = 1
+        const val MAX_TITLE_LENGTH = 100
 
         /**
          * 새로 만드는 갤러리.
@@ -69,10 +78,39 @@ class Gallery(
             targetPhotoCount: Int?,
             at: ZonedDateTime,
         ): Gallery {
+            requireValidTitle(title)
             requireDeadlineNotPassed(selectionDeadline, at)
             requireValidTargetPhotoCount(targetPhotoCount)
             return Gallery(
                 studioId = studioId,
+                title = title,
+                selectionDeadline = selectionDeadline,
+                targetPhotoCount = targetPhotoCount,
+            )
+        }
+
+        /**
+         * 사전 계산된 샘플 사진을 담는 갤러리.
+         *
+         * 일반 갤러리와 같은 계약 값 검증을 거치되, 템플릿 버전을 필수로 남긴다. 이 값이
+         * 없으면 같은 API 응답만 보고 어떤 S3 key와 임베딩을 복제했는지 추적할 수 없다.
+         */
+        fun createMock(
+            studioId: Long,
+            templateVersion: String,
+            title: String,
+            selectionDeadline: ZonedDateTime?,
+            targetPhotoCount: Int?,
+            at: ZonedDateTime,
+        ): Gallery {
+            require(templateVersion.isNotBlank()) { "Mock 갤러리 템플릿 버전은 비어 있을 수 없습니다." }
+            requireValidTitle(title)
+            requireDeadlineNotPassed(selectionDeadline, at)
+            requireValidTargetPhotoCount(targetPhotoCount)
+            return Gallery(
+                studioId = studioId,
+                galleryType = GalleryType.MOCK,
+                templateVersion = templateVersion,
                 title = title,
                 selectionDeadline = selectionDeadline,
                 targetPhotoCount = targetPhotoCount,
@@ -88,6 +126,12 @@ class Gallery(
         private fun requireValidTargetPhotoCount(targetPhotoCount: Int?) {
             if (targetPhotoCount != null && targetPhotoCount < MIN_TARGET_PHOTO_COUNT) {
                 throw GalleryException(GalleryErrorCode.INVALID_TARGET_PHOTO_COUNT)
+            }
+        }
+
+        private fun requireValidTitle(title: String) {
+            require(title.isNotBlank() && title.length <= MAX_TITLE_LENGTH) {
+                "갤러리 제목은 비어 있을 수 없고 $MAX_TITLE_LENGTH 자 이하여야 합니다."
             }
         }
 
@@ -120,6 +164,7 @@ class Gallery(
         selectionDeadline?.isBefore(at) ?: false
 
     fun rename(title: String) {
+        requireValidTitle(title)
         this.title = title
     }
 

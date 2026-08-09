@@ -91,6 +91,10 @@ app:
   embedding:
     # 테스트에는 Lambda가 없다. 비어 있는 것이 정상이고, 호출 시점에 503으로 실패한다.
     function-name: ""
+  mock-gallery:
+    # 통합 테스트 중 실제 seed 경로만 properties로 켠다. 기본 컨텍스트는 운영 기본값과 같다.
+    enabled: false
+    manifest-location: ""
   cluster:
     default-threshold: 0.9
   invite:

@@ -4,6 +4,7 @@ import com.soma.wes.TestcontainersConfiguration
 import com.soma.wes.global.config.TimeConfig
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoStatus
+import com.soma.wes.photo.domain.PhotoStorageOwnership
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
@@ -70,9 +71,47 @@ class PhotoRepositoryTest @Autowired constructor(
     }
 
     @Test
-    fun `같은 저장 위치를 두 사진이 나눠 가질 수 없다`() {
-        // storage_key는 S3 객체 하나를 가리킨다. 겹치면 나중에 올라온 사진이 앞선 사진을
-        // 덮어써 원본이 사라진다.
+    fun `임베딩 실행 대상에서 PENDING과 공유 템플릿을 제외한다`() {
+        val galleryId = 31L
+        photoRepository.save(photo(galleryId, 1))
+        photoRepository.save(photo(galleryId, 2).also { it.markUploaded() })
+        photoRepository.save(photo(galleryId, 3).also {
+            it.applyEmbedding(FloatArray(Photo.EMBEDDING_DIMENSION).also { vector -> vector[0] = 1f })
+        })
+        photoRepository.save(
+            Photo.createSharedTemplate(
+                galleryId = galleryId,
+                storageKey = "mock-gallery/v1/originals/a.jpg",
+                previewKey = "mock-gallery/v1/previews/a.jpg",
+                originalFileName = "a.jpg",
+                contentType = "image/jpeg",
+                displayOrder = 4,
+                embedding = FloatArray(Photo.EMBEDDING_DIMENSION).also { it[0] = 1f },
+            ),
+        )
+        photoRepository.flush()
+
+        assertEquals(
+            2,
+            photoRepository.countByGalleryIdAndStorageOwnershipAndStatusNot(
+                galleryId,
+                PhotoStorageOwnership.GALLERY,
+                PhotoStatus.PENDING,
+            ),
+        )
+        assertEquals(
+            1,
+            photoRepository.countByGalleryIdAndStorageOwnershipAndStatusNotAndEmbeddingIsNull(
+                galleryId,
+                PhotoStorageOwnership.GALLERY,
+                PhotoStatus.PENDING,
+            ),
+        )
+    }
+
+    @Test
+    fun `같은 갤러리 안에서는 같은 저장 위치를 두 사진이 나눠 가질 수 없다`() {
+        // 일반 업로드가 같은 key를 두 번 발급하면 나중의 PUT이 앞선 원본을 덮어쓴다.
         photoRepository.save(photo(4L, 1))
         photoRepository.flush()
 
@@ -81,6 +120,76 @@ class PhotoRepositoryTest @Autowired constructor(
         }
 
         assertTrue(duplicated.isFailure)
+    }
+
+    @Test
+    fun `다른 갤러리는 같은 공유 템플릿 저장 위치를 참조할 수 있다`() {
+        val embedding = FloatArray(Photo.EMBEDDING_DIMENSION).also { it[0] = 1f }
+        val first = Photo.createSharedTemplate(
+            galleryId = 41L,
+            storageKey = "mock-gallery/v1/originals/a.jpg",
+            previewKey = "mock-gallery/v1/previews/a.jpg",
+            originalFileName = "a.jpg",
+            contentType = "image/jpeg",
+            displayOrder = 0,
+            embedding = embedding,
+        )
+        val second = Photo.createSharedTemplate(
+            galleryId = 42L,
+            storageKey = first.storageKey,
+            previewKey = first.previewKey!!,
+            originalFileName = "a.jpg",
+            contentType = "image/jpeg",
+            displayOrder = 0,
+            embedding = embedding,
+        )
+
+        photoRepository.saveAllAndFlush(listOf(first, second))
+
+        assertEquals(2, photoRepository.findAll().count { it.storageKey == first.storageKey })
+    }
+
+    @Test
+    fun `일반 사진 저장 위치는 다른 갤러리에서도 중복할 수 없다`() {
+        val sharedByMistake = "galleries/51/shared-by-mistake.jpg"
+        photoRepository.save(
+            Photo(
+                galleryId = 51L,
+                storageKey = sharedByMistake,
+                originalFileName = "first.jpg",
+                contentType = "image/jpeg",
+            ),
+        )
+        photoRepository.flush()
+
+        val duplicated = runCatching {
+            photoRepository.saveAndFlush(
+                Photo(
+                    galleryId = 52L,
+                    storageKey = sharedByMistake,
+                    originalFileName = "second.jpg",
+                    contentType = "image/jpeg",
+                ),
+            )
+        }
+
+        assertTrue(duplicated.isFailure)
+    }
+
+    @Test
+    fun `일반 사진은 공유 템플릿 namespace를 사용할 수 없다`() {
+        val invalid = runCatching {
+            photoRepository.saveAndFlush(
+                Photo(
+                    galleryId = 53L,
+                    storageKey = "mock-gallery/v1/originals/not-shared.jpg",
+                    originalFileName = "not-shared.jpg",
+                    contentType = "image/jpeg",
+                ),
+            )
+        }
+
+        assertTrue(invalid.isFailure)
     }
 
     @Test
