@@ -64,12 +64,11 @@ class Studio(
     companion object {
 
         fun normalizeGalleryUrl(galleryUrl: String): String {
-            val trimmedGalleryUrl = galleryUrl.trim()
-            if (trimmedGalleryUrl.any { it.code > ASCII_MAX_CODE_POINT }) {
+            if (galleryUrl.any { it.code > ASCII_MAX_CODE_POINT }) {
                 throw StudioException(StudioErrorCode.INVALID_GALLERY_URL)
             }
 
-            return trimmedGalleryUrl.lowercase(Locale.ROOT)
+            return galleryUrl.trim().lowercase(Locale.ROOT)
         }
 
         fun isValidGalleryUrl(galleryUrl: String): Boolean =

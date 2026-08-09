@@ -36,6 +36,7 @@ class StudioTest {
     fun `비 ASCII 문자가 들어간 주소는 받지 않는다`() {
         assertFailsWith<StudioException> { newStudio("소마-studio") }
         assertFailsWith<StudioException> { newStudio("Kelvin-studio") }
+        assertFailsWith<StudioException> { newStudio("\u00A0soma-studio\u00A0") }
     }
 
     @Test
