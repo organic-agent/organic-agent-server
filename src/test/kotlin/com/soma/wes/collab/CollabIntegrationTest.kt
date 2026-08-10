@@ -10,6 +10,10 @@ import com.soma.wes.collab.repository.CollabPhotoRepository
 import com.soma.wes.collab.repository.CollabPhotoVoteRepository
 import com.soma.wes.collab.repository.CollabSessionRepository
 import com.soma.wes.collab.support.GuestTokenHeader
+import com.soma.wes.folder.domain.PhotoFolder
+import com.soma.wes.folder.domain.PhotoFolderItem
+import com.soma.wes.folder.repository.PhotoFolderItemRepository
+import com.soma.wes.folder.repository.PhotoFolderRepository
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryMember
 import com.soma.wes.gallery.domain.GalleryStatus
@@ -37,6 +41,7 @@ import org.springframework.test.web.servlet.MockHttpServletRequestDsl
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.put
 import java.time.ZonedDateTime
@@ -63,6 +68,8 @@ class CollabIntegrationTest @Autowired constructor(
     private val galleryMemberRepository: GalleryMemberRepository,
     private val photoRepository: PhotoRepository,
     private val photoRatingRepository: PhotoRatingRepository,
+    private val photoFolderRepository: PhotoFolderRepository,
+    private val photoFolderItemRepository: PhotoFolderItemRepository,
     private val collabSessionRepository: CollabSessionRepository,
     private val collabPhotoRepository: CollabPhotoRepository,
     private val collabGuestRepository: CollabGuestRepository,
@@ -74,12 +81,14 @@ class CollabIntegrationTest @Autowired constructor(
 
     @BeforeEach
     fun clear() {
-        // 자식부터 지운다. V11이 FK를 걸어두어 순서가 어긋나면 정리 자체가 실패한다.
+        // 자식부터 지운다. V12가 FK를 걸어두어 순서가 어긋나면 정리 자체가 실패한다.
         collabPhotoVoteRepository.deleteAllInBatch()
         collabPhotoCommentRepository.deleteAllInBatch()
         collabGuestRepository.deleteAllInBatch()
         collabPhotoRepository.deleteAllInBatch()
         collabSessionRepository.deleteAllInBatch()
+        photoFolderItemRepository.deleteAllInBatch()
+        photoFolderRepository.deleteAllInBatch()
         photoRatingRepository.deleteAllInBatch()
         photoRepository.deleteAllInBatch()
         galleryMemberRepository.deleteAllInBatch()
@@ -93,28 +102,73 @@ class CollabIntegrationTest @Autowired constructor(
     fun `부부가 세션을 열면 하객에게 보낼 링크가 온다`() {
         val fixture = openGalleryWithMember()
 
-        mockMvc.post(sessionUrl(fixture)) { authorize(fixture.member) }
+        mockMvc.post(sessionsUrl(fixture)) {
+            authorize(fixture.member)
+            jsonBody("""{"name":"부모님께"}""")
+        }.andExpect {
+            status { isCreated() }
+            jsonPath("$.galleryId") { value(fixture.galleryId) }
+            jsonPath("$.name") { value("부모님께") }
+            jsonPath("$.revoked") { value(false) }
+            jsonPath("$.photoCount") { value(0) }
+            // 초대 링크와 다른 화면으로 간다. 섞이면 하객이 로그인 화면을 만난다.
+            jsonPath("$.shareUrl") { value(startsWith("http://localhost:3000/collab/")) }
+            jsonPath("$.shareToken") { doesNotExist() }
+        }
+    }
+
+    @Test
+    fun `세션을 두 번 열면 링크가 따로 생긴다`() {
+        // 부부는 묶음마다 물어볼 상대가 다르다. 하나로 묶으면 돌아온 의견도 갈라지지 않는다.
+        val fixture = openGalleryWithMember()
+
+        val first = openSession(fixture, name = "부모님께")
+        val second = openSession(fixture, name = "친구들에게")
+
+        assertNotEquals(first.shareToken, second.shareToken)
+        assertEquals(2, collabSessionRepository.findAll().size)
+
+        mockMvc.get(sessionsUrl(fixture)) { authorize(fixture.member) }
             .andExpect {
                 status { isOk() }
-                jsonPath("$.galleryId") { value(fixture.galleryId) }
-                jsonPath("$.revoked") { value(false) }
-                jsonPath("$.photoCount") { value(0) }
-                // 초대 링크와 다른 화면으로 간다. 섞이면 하객이 로그인 화면을 만난다.
-                jsonPath("$.shareUrl") { value(startsWith("http://localhost:3000/collab/")) }
-                jsonPath("$.shareToken") { doesNotExist() }
+                jsonPath("$") { value(hasSize<Any>(2)) }
+                // 최근에 만든 것이 위로 온다.
+                jsonPath("$[0].name") { value("친구들에게") }
+                jsonPath("$[1].name") { value("부모님께") }
             }
     }
 
     @Test
-    fun `세션을 두 번 열어도 링크는 그대로다`() {
-        // 버튼을 두 번 눌렀다고 하객이 들고 있는 링크가 죽으면 안 된다.
+    fun `이름이 비면 세션을 열 수 없다`() {
+        // 링크가 여러 개인 순간 "어느 링크였더라"가 생긴다. 토큰은 사람이 알아볼 값이 아니다.
         val fixture = openGalleryWithMember()
 
-        val first = openSession(fixture)
-        val second = openSession(fixture)
+        mockMvc.post(sessionsUrl(fixture)) {
+            authorize(fixture.member)
+            jsonBody("""{"name":"   "}""")
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.code") { value("COLLAB_400_9") }
+        }
 
-        assertEquals(first, second)
-        assertEquals(1, collabSessionRepository.findAll().size)
+        assertEquals(0, collabSessionRepository.findAll().size)
+    }
+
+    @Test
+    fun `이름은 링크를 죽이지 않고 바꾼다`() {
+        val fixture = openGalleryWithMember()
+        val session = openSession(fixture, name = "오타난이름")
+
+        mockMvc.patch("${sessionUrl(fixture, session)}") {
+            authorize(fixture.member)
+            jsonBody("""{"name":"부모님께"}""")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.name") { value("부모님께") }
+        }
+
+        // 하객이 들고 있는 주소가 이름 때문에 죽으면 안 된다.
+        mockMvc.get("/api/v1/collab/${session.shareToken}").andExpect { status { isOk() } }
     }
 
     @Test
@@ -122,19 +176,21 @@ class CollabIntegrationTest @Autowired constructor(
         // 하객에게 무엇을 물을지는 고르는 과정의 일부라 작가가 대신 정하지 않는다.
         val fixture = openGalleryWithMember()
 
-        mockMvc.post(sessionUrl(fixture)) { authorize(fixture.photographer) }
-            .andExpect {
-                status { isForbidden() }
-                jsonPath("$.code") { value("GALLERY_403_1") }
-            }
+        mockMvc.post(sessionsUrl(fixture)) {
+            authorize(fixture.photographer)
+            jsonBody("""{"name":"작가가 여는 링크"}""")
+        }.andExpect {
+            status { isForbidden() }
+            jsonPath("$.code") { value("GALLERY_403_1") }
+        }
     }
 
     @Test
     fun `작가도 결과는 본다`() {
         val fixture = openGalleryWithMember()
-        openSession(fixture)
+        val session = openSession(fixture)
 
-        mockMvc.get(sessionUrl(fixture)) { authorize(fixture.photographer) }
+        mockMvc.get(sessionUrl(fixture, session)) { authorize(fixture.photographer) }
             .andExpect {
                 status { isOk() }
                 jsonPath("$.shareUrl") { exists() }
@@ -142,31 +198,165 @@ class CollabIntegrationTest @Autowired constructor(
     }
 
     @Test
-    fun `폐기하면 링크가 끊기고 다시 열면 새 토큰이 나온다`() {
+    fun `남의 갤러리 세션은 내 갤러리 권한으로 열리지 않는다`() {
+        // 인가는 갤러리 단위다. 세션을 id로만 찾으면 자기 부부 권한으로 남의 링크를 읽는다.
         val fixture = openGalleryWithMember()
-        val shareToken = openSession(fixture)
-        val collabPhotoId = addPhotos(fixture, savePhotos(fixture, count = 1)).single()
-        val guestToken = enter(shareToken, "친구")
-        writeComment(shareToken, collabPhotoId, guestToken, "예쁘다")
+        val other = openGalleryWithMember()
+        val othersSession = openSession(other)
 
-        mockMvc.delete(sessionUrl(fixture)) { authorize(fixture.member) }
+        mockMvc.get("${sessionsUrl(fixture)}/${othersSession.id}") { authorize(fixture.member) }
+            .andExpect {
+                status { isNotFound() }
+                jsonPath("$.code") { value("COLLAB_404_1") }
+            }
+    }
+
+    @Test
+    fun `폐기하면 링크가 끊기고 재발급하면 새 토큰이 나온다`() {
+        val fixture = openGalleryWithMember()
+        val session = openSession(fixture)
+        val collabPhotoId = addPhotos(fixture, session, savePhotos(fixture, count = 1)).single()
+        val guestToken = enter(session.shareToken, "친구")
+        writeComment(session.shareToken, collabPhotoId, guestToken, "예쁘다")
+
+        mockMvc.delete(sessionUrl(fixture, session)) { authorize(fixture.member) }
             .andExpect { status { isNoContent() } }
 
-        mockMvc.get("/api/v1/collab/$shareToken")
+        mockMvc.get("/api/v1/collab/${session.shareToken}")
             .andExpect {
                 // 우리가 발급한 링크가 맞으므로 404가 아니다.
                 status { isGone() }
                 jsonPath("$.code") { value("COLLAB_410_1") }
             }
 
-        val reopened = openSession(fixture)
-        assertNotEquals(shareToken, reopened, "폐기한 토큰을 되살리면 링크가 퍼진 단톡방이 함께 되살아난다")
+        val response = mockMvc.post("${sessionUrl(fixture, session)}/share-token") { authorize(fixture.member) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.revoked") { value(false) }
+            }
+            .andReturn().response.contentAsString
+        val reissued = JsonPath.read<String>(response, "$.shareUrl").substringAfterLast('/')
+        assertNotEquals(session.shareToken, reissued, "폐기한 토큰을 되살리면 링크가 퍼진 단톡방이 함께 되살아난다")
 
-        // 끊은 것은 링크이지 하객이 남겨준 말이 아니다.
-        mockMvc.get("/api/v1/collab/$reopened/photos/$collabPhotoId/comments")
+        // 세션을 새로 열지 않고 토큰만 갈았으므로, 받은 말은 그대로 남는다.
+        mockMvc.get("/api/v1/collab/$reissued/photos/$collabPhotoId/comments")
             .andExpect {
                 status { isOk() }
                 jsonPath("$.comments") { value(hasSize<Any>(1)) }
+            }
+        assertEquals(1, collabSessionRepository.findAll().size)
+    }
+
+    // --- 폴더에서 열기 ---
+
+    @Test
+    fun `폴더로 열면 그 폴더의 사진이 그대로 담긴다`() {
+        val fixture = openGalleryWithMember()
+        val photoIds = savePhotos(fixture, count = 3)
+        val folderId = saveFolder(fixture, "본식 후보", photoIds.take(2))
+
+        val session = openSession(fixture, name = "본식 후보", folderId = folderId)
+
+        mockMvc.get("/api/v1/collab/${session.shareToken}/photos")
+            .andExpect {
+                status { isOk() }
+                // 폴더에 없던 세 번째 사진은 오지 않는다.
+                jsonPath("$.totalCount") { value(2) }
+            }
+    }
+
+    @Test
+    fun `폴더를 고쳐도 이미 연 세션은 흔들리지 않는다`() {
+        // 참조가 아니라 복사다. 가리키게 두면 하객이 보던 사진이 발밑에서 바뀌고,
+        // 이미 받은 댓글이 어느 사진에 달린 것인지 알 수 없게 된다.
+        val fixture = openGalleryWithMember()
+        val photoIds = savePhotos(fixture, count = 2)
+        val folderId = saveFolder(fixture, "본식 후보", photoIds)
+        val session = openSession(fixture, name = "본식 후보", folderId = folderId)
+
+        photoFolderItemRepository.deleteAllInBatch(photoFolderItemRepository.findAllByFolderId(folderId))
+        photoFolderRepository.deleteById(folderId)
+
+        mockMvc.get("/api/v1/collab/${session.shareToken}/photos")
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.totalCount") { value(2) }
+            }
+    }
+
+    @Test
+    fun `빈 폴더로는 세션을 열 수 없다`() {
+        // 아무것도 담기지 않은 링크를 성공으로 돌려주면 부부는 그것을 그대로 하객에게 보낸다.
+        val fixture = openGalleryWithMember()
+        val folderId = saveFolder(fixture, "비어 있는 묶음", emptyList())
+
+        mockMvc.post(sessionsUrl(fixture)) {
+            authorize(fixture.member)
+            jsonBody("""{"name":"빈 링크","folderId":$folderId}""")
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.code") { value("COLLAB_400_11") }
+        }
+
+        assertEquals(0, collabSessionRepository.findAll().size)
+    }
+
+    @Test
+    fun `다른 갤러리의 폴더로는 세션을 열 수 없다`() {
+        val fixture = openGalleryWithMember()
+        val other = openGalleryWithMember()
+        val othersFolderId = saveFolder(other, "남의 묶음", savePhotos(other, count = 1))
+
+        mockMvc.post(sessionsUrl(fixture)) {
+            authorize(fixture.member)
+            jsonBody("""{"name":"남의 폴더로","folderId":$othersFolderId}""")
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.code") { value("COLLAB_400_10") }
+        }
+
+        // 폴더가 잘못됐는데 세션만 남으면, 실패로 보이는 요청이 빈 링크를 하나 남긴다.
+        assertEquals(0, collabSessionRepository.findAll().size)
+    }
+
+    @Test
+    fun `링크마다 자기 사진과 자기 의견만 보인다`() {
+        // 같은 사진을 부모님께도 친구들에게도 물을 수 있고, 그때 두 쪽의 의견은 따로 모인다.
+        val fixture = openGalleryWithMember()
+        val photoIds = savePhotos(fixture, count = 3)
+        val parents = openSession(
+            fixture,
+            name = "부모님께",
+            folderId = saveFolder(fixture, "본식 후보", photoIds.take(2)),
+        )
+        val friends = openSession(
+            fixture,
+            name = "친구들에게",
+            folderId = saveFolder(fixture, "2부 사진", photoIds.drop(2)),
+        )
+
+        mockMvc.get("/api/v1/collab/${parents.shareToken}/photos")
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.totalCount") { value(2) }
+            }
+        mockMvc.get("/api/v1/collab/${friends.shareToken}/photos")
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.totalCount") { value(1) }
+            }
+
+        // 한쪽에 남긴 반응이 다른 쪽 집계에 섞이지 않는다.
+        val parentsPhotoId = collabPhotoRepository
+            .findAllByCollabSessionId(parents.id)
+            .first()
+            .requiredId
+        vote(parents.shareToken, parentsPhotoId, enter(parents.shareToken, "어머니"), "GOOD")
+
+        mockMvc.get("${sessionUrl(fixture, friends)}/photos") { authorize(fixture.member) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.photos[0].reactions.good") { value(0) }
             }
     }
 
@@ -176,11 +366,11 @@ class CollabIntegrationTest @Autowired constructor(
     fun `부부가 담은 사진만 하객에게 보인다`() {
         val fixture = openGalleryWithMember()
         val photoIds = savePhotos(fixture, count = 3)
-        val shareToken = openSession(fixture)
+        val session = openSession(fixture)
 
-        addPhotos(fixture, photoIds.take(2))
+        addPhotos(fixture, session, photoIds.take(2))
 
-        mockMvc.get("/api/v1/collab/$shareToken/photos")
+        mockMvc.get("/api/v1/collab/${session.shareToken}/photos")
             .andExpect {
                 status { isOk() }
                 jsonPath("$.totalCount") { value(2) }
@@ -196,10 +386,10 @@ class CollabIntegrationTest @Autowired constructor(
         // 일부만 담아두면 화면에는 성공으로 보이고 어느 사진이 빠졌는지 아무도 모른다.
         val fixture = openGalleryWithMember()
         val photoIds = savePhotos(fixture, count = 2)
-        openSession(fixture)
-        addPhotos(fixture, photoIds.take(1))
+        val session = openSession(fixture)
+        addPhotos(fixture, session, photoIds.take(1))
 
-        mockMvc.post("${sessionUrl(fixture)}/photos") {
+        mockMvc.post("${sessionUrl(fixture, session)}/photos") {
             authorize(fixture.member)
             jsonBody("""{"photoIds":$photoIds}""")
         }.andExpect {
@@ -215,10 +405,10 @@ class CollabIntegrationTest @Autowired constructor(
         // 갤러리 권한만 보고 id를 믿으면 자기 세션으로 남의 사진 서명 URL을 하객에게 내보낸다.
         val fixture = openGalleryWithMember()
         val other = openGalleryWithMember()
-        openSession(fixture)
+        val session = openSession(fixture)
         val strangerPhotoId = savePhotos(other, count = 1).single()
 
-        mockMvc.post("${sessionUrl(fixture)}/photos") {
+        mockMvc.post("${sessionUrl(fixture, session)}/photos") {
             authorize(fixture.member)
             jsonBody("""{"photoIds":[$strangerPhotoId]}""")
         }.andExpect {
@@ -230,10 +420,10 @@ class CollabIntegrationTest @Autowired constructor(
     @Test
     fun `아직 올라오지 않은 사진은 담을 수 없다`() {
         val fixture = openGalleryWithMember()
-        openSession(fixture)
+        val session = openSession(fixture)
         val pendingId = savePhotos(fixture, count = 1, uploaded = false).single()
 
-        mockMvc.post("${sessionUrl(fixture)}/photos") {
+        mockMvc.post("${sessionUrl(fixture, session)}/photos") {
             authorize(fixture.member)
             jsonBody("""{"photoIds":[$pendingId]}""")
         }.andExpect {
@@ -247,13 +437,13 @@ class CollabIntegrationTest @Autowired constructor(
         // 세션에서 뺀다는 것은 "이 사진은 더 묻지 않겠다"는 뜻이다.
         val fixture = openGalleryWithMember()
         val photoId = savePhotos(fixture, count = 1).single()
-        val shareToken = openSession(fixture)
-        val collabPhotoId = addPhotos(fixture, listOf(photoId)).single()
-        val guestToken = enter(shareToken, "친구")
-        writeComment(shareToken, collabPhotoId, guestToken, "이거 좋다")
-        vote(shareToken, collabPhotoId, guestToken, "GOOD")
+        val session = openSession(fixture)
+        val collabPhotoId = addPhotos(fixture, session, listOf(photoId)).single()
+        val guestToken = enter(session.shareToken, "친구")
+        writeComment(session.shareToken, collabPhotoId, guestToken, "이거 좋다")
+        vote(session.shareToken, collabPhotoId, guestToken, "GOOD")
 
-        mockMvc.delete("${sessionUrl(fixture)}/photos") {
+        mockMvc.delete("${sessionUrl(fixture, session)}/photos") {
             authorize(fixture.member)
             jsonBody("""{"photoIds":[$photoId]}""")
         }.andExpect {
@@ -270,10 +460,10 @@ class CollabIntegrationTest @Autowired constructor(
     @Test
     fun `로그인하지 않아도 링크만으로 열린다`() {
         val fixture = openGalleryWithMember()
-        val shareToken = openSession(fixture)
-        addPhotos(fixture, savePhotos(fixture, count = 2))
+        val session = openSession(fixture)
+        addPhotos(fixture, session, savePhotos(fixture, count = 2))
 
-        mockMvc.get("/api/v1/collab/$shareToken")
+        mockMvc.get("/api/v1/collab/${session.shareToken}")
             .andExpect {
                 status { isOk() }
                 jsonPath("$.galleryTitle") { value("본식") }
@@ -301,10 +491,10 @@ class CollabIntegrationTest @Autowired constructor(
         val fixture = openGalleryWithMember()
         val photoId = savePhotos(fixture, count = 1).single()
         photoRatingRepository.save(PhotoRating.of(photoId = photoId, score = 2, ratedBy = fixture.member.id!!))
-        val shareToken = openSession(fixture)
-        addPhotos(fixture, listOf(photoId))
+        val session = openSession(fixture)
+        addPhotos(fixture, session, listOf(photoId))
 
-        mockMvc.get("/api/v1/collab/$shareToken/photos")
+        mockMvc.get("/api/v1/collab/${session.shareToken}/photos")
             .andExpect {
                 status { isOk() }
                 jsonPath("$.photos[0].photo.score") { doesNotExist() }
@@ -321,7 +511,8 @@ class CollabIntegrationTest @Autowired constructor(
     @Test
     fun `닉네임을 적으면 하객 토큰이 발급된다`() {
         val fixture = openGalleryWithMember()
-        val shareToken = openSession(fixture)
+        val session = openSession(fixture)
+        val shareToken = session.shareToken
 
         mockMvc.post("/api/v1/collab/$shareToken/guests") { jsonBody("""{"nickname":"신부 친구 영희"}""") }
             .andExpect {
@@ -334,7 +525,8 @@ class CollabIntegrationTest @Autowired constructor(
     @Test
     fun `닉네임이 비면 입장할 수 없다`() {
         val fixture = openGalleryWithMember()
-        val shareToken = openSession(fixture)
+        val session = openSession(fixture)
+        val shareToken = session.shareToken
 
         mockMvc.post("/api/v1/collab/$shareToken/guests") { jsonBody("""{"nickname":"   "}""") }
             .andExpect {
@@ -348,8 +540,9 @@ class CollabIntegrationTest @Autowired constructor(
     @Test
     fun `하객이 댓글을 남기면 목록에 자기 것으로 표시된다`() {
         val fixture = openGalleryWithMember()
-        val shareToken = openSession(fixture)
-        val collabPhotoId = addPhotos(fixture, savePhotos(fixture, count = 1)).single()
+        val session = openSession(fixture)
+        val shareToken = session.shareToken
+        val collabPhotoId = addPhotos(fixture, session, savePhotos(fixture, count = 1)).single()
         val mine = enter(shareToken, "영희")
         val others = enter(shareToken, "철수")
         writeComment(shareToken, collabPhotoId, mine, "이 표정이 제일 신부님답네요")
@@ -371,8 +564,9 @@ class CollabIntegrationTest @Autowired constructor(
     fun `토큰 없이는 댓글을 남길 수 없다`() {
         // 보는 것은 토큰 없이 되고, 남기는 것만 "당신이 누구인지"를 먼저 묻는다.
         val fixture = openGalleryWithMember()
-        val shareToken = openSession(fixture)
-        val collabPhotoId = addPhotos(fixture, savePhotos(fixture, count = 1)).single()
+        val session = openSession(fixture)
+        val shareToken = session.shareToken
+        val collabPhotoId = addPhotos(fixture, session, savePhotos(fixture, count = 1)).single()
 
         mockMvc.post("/api/v1/collab/$shareToken/photos/$collabPhotoId/comments") {
             jsonBody("""{"content":"익명으로 한마디"}""")
@@ -387,9 +581,10 @@ class CollabIntegrationTest @Autowired constructor(
         // 한 하객이 여러 결혼식 링크를 받을 수 있다. 토큰만 보면 A에서 받은 것으로 B에 쓴다.
         val fixture = openGalleryWithMember()
         val other = openGalleryWithMember()
-        val shareToken = openSession(fixture)
-        val otherToken = openSession(other)
-        val collabPhotoId = addPhotos(fixture, savePhotos(fixture, count = 1)).single()
+        val session = openSession(fixture)
+        val shareToken = session.shareToken
+        val otherToken = openSession(other).shareToken
+        val collabPhotoId = addPhotos(fixture, session, savePhotos(fixture, count = 1)).single()
         val otherGuest = enter(otherToken, "옆 결혼식 하객")
 
         mockMvc.post("/api/v1/collab/$shareToken/photos/$collabPhotoId/comments") {
@@ -404,8 +599,9 @@ class CollabIntegrationTest @Autowired constructor(
     @Test
     fun `하객은 자기 댓글만 지운다`() {
         val fixture = openGalleryWithMember()
-        val shareToken = openSession(fixture)
-        val collabPhotoId = addPhotos(fixture, savePhotos(fixture, count = 1)).single()
+        val session = openSession(fixture)
+        val shareToken = session.shareToken
+        val collabPhotoId = addPhotos(fixture, session, savePhotos(fixture, count = 1)).single()
         val mine = enter(shareToken, "영희")
         val others = enter(shareToken, "철수")
         val commentId = writeComment(shareToken, collabPhotoId, mine, "지울 댓글")
@@ -425,12 +621,13 @@ class CollabIntegrationTest @Autowired constructor(
         // 하객 토큰은 브라우저에 저장된 값이라 그것 하나로 남의 글을 지우게 둘 수 없다.
         // 부적절한 말을 치우는 것은 로그인한 부부·작가의 몫이다.
         val fixture = openGalleryWithMember()
-        val shareToken = openSession(fixture)
-        val collabPhotoId = addPhotos(fixture, savePhotos(fixture, count = 1)).single()
+        val session = openSession(fixture)
+        val shareToken = session.shareToken
+        val collabPhotoId = addPhotos(fixture, session, savePhotos(fixture, count = 1)).single()
         val guestToken = enter(shareToken, "누군가")
         val commentId = writeComment(shareToken, collabPhotoId, guestToken, "불편한 말")
 
-        mockMvc.delete("${sessionUrl(fixture)}/comments/$commentId") { authorize(fixture.member) }
+        mockMvc.delete("${sessionUrl(fixture, session)}/comments/$commentId") { authorize(fixture.member) }
             .andExpect { status { isNoContent() } }
 
         assertEquals(0, collabPhotoCommentRepository.findAll().size)
@@ -442,8 +639,9 @@ class CollabIntegrationTest @Autowired constructor(
     fun `같은 하객이 여러 번 눌러도 표는 하나다`() {
         // 새로고침할 때마다 표가 쌓이면 "좋아요 40"이 사람 40명이 아니게 된다.
         val fixture = openGalleryWithMember()
-        val shareToken = openSession(fixture)
-        val collabPhotoId = addPhotos(fixture, savePhotos(fixture, count = 1)).single()
+        val session = openSession(fixture)
+        val shareToken = session.shareToken
+        val collabPhotoId = addPhotos(fixture, session, savePhotos(fixture, count = 1)).single()
         val guestToken = enter(shareToken, "친구")
 
         repeat(3) { vote(shareToken, collabPhotoId, guestToken, "GOOD") }
@@ -462,13 +660,14 @@ class CollabIntegrationTest @Autowired constructor(
     @Test
     fun `하객마다 한 표씩 쌓이고 부부는 그 수를 본다`() {
         val fixture = openGalleryWithMember()
-        val shareToken = openSession(fixture)
-        val collabPhotoId = addPhotos(fixture, savePhotos(fixture, count = 1)).single()
+        val session = openSession(fixture)
+        val shareToken = session.shareToken
+        val collabPhotoId = addPhotos(fixture, session, savePhotos(fixture, count = 1)).single()
         vote(shareToken, collabPhotoId, enter(shareToken, "하객1"), "GOOD")
         vote(shareToken, collabPhotoId, enter(shareToken, "하객2"), "GOOD")
         vote(shareToken, collabPhotoId, enter(shareToken, "하객3"), "BAD")
 
-        mockMvc.get("${sessionUrl(fixture)}/photos") { authorize(fixture.member) }
+        mockMvc.get("${sessionUrl(fixture, session)}/photos") { authorize(fixture.member) }
             .andExpect {
                 status { isOk() }
                 jsonPath("$.photos[0].reactions.good") { value(2) }
@@ -481,8 +680,9 @@ class CollabIntegrationTest @Autowired constructor(
     @Test
     fun `반응은 취소할 수 있고 누른 적 없어도 성공한다`() {
         val fixture = openGalleryWithMember()
-        val shareToken = openSession(fixture)
-        val collabPhotoId = addPhotos(fixture, savePhotos(fixture, count = 1)).single()
+        val session = openSession(fixture)
+        val shareToken = session.shareToken
+        val collabPhotoId = addPhotos(fixture, session, savePhotos(fixture, count = 1)).single()
         val guestToken = enter(shareToken, "친구")
 
         mockMvc.delete("/api/v1/collab/$shareToken/photos/$collabPhotoId/vote") { guest(guestToken) }
@@ -500,10 +700,11 @@ class CollabIntegrationTest @Autowired constructor(
         // 링크는 갤러리마다 다르지만 협업 사진 id는 전역에서 이어지는 값이다.
         val fixture = openGalleryWithMember()
         val other = openGalleryWithMember()
-        val shareToken = openSession(fixture)
-        val otherShareToken = openSession(other)
-        addPhotos(fixture, savePhotos(fixture, count = 1))
-        val othersCollabPhotoId = addPhotos(other, savePhotos(other, count = 1)).single()
+        val session = openSession(fixture)
+        val shareToken = session.shareToken
+        val otherSession = openSession(other)
+        addPhotos(fixture, session, savePhotos(fixture, count = 1))
+        val othersCollabPhotoId = addPhotos(other, otherSession, savePhotos(other, count = 1)).single()
         val guestToken = enter(shareToken, "친구")
 
         mockMvc.put("/api/v1/collab/$shareToken/photos/$othersCollabPhotoId/vote") {
@@ -515,9 +716,7 @@ class CollabIntegrationTest @Autowired constructor(
         }
 
         // 다른 세션에서는 정상적으로 눌린다 — id 자체가 없는 것이 아니다.
-        assertEquals(1, collabPhotoRepository.findAllByCollabSessionId(
-            collabSessionRepository.findByShareToken(otherShareToken)!!.requiredId,
-        ).size)
+        assertEquals(1, collabPhotoRepository.findAllByCollabSessionId(otherSession.id).size)
     }
 
     // --- 마감 ---
@@ -525,8 +724,9 @@ class CollabIntegrationTest @Autowired constructor(
     @Test
     fun `마감된 뒤에는 보기만 되고 남길 수는 없다`() {
         val fixture = openGalleryWithMember()
-        val shareToken = openSession(fixture)
-        val collabPhotoId = addPhotos(fixture, savePhotos(fixture, count = 1)).single()
+        val session = openSession(fixture)
+        val shareToken = session.shareToken
+        val collabPhotoId = addPhotos(fixture, session, savePhotos(fixture, count = 1)).single()
         val guestToken = enter(shareToken, "친구")
         writeComment(shareToken, collabPhotoId, guestToken, "마감 전에 남긴 말")
         passDeadline(fixture)
@@ -560,13 +760,16 @@ class CollabIntegrationTest @Autowired constructor(
     @Test
     fun `공개 경로가 열려도 갤러리 API는 그대로 막혀 있다`() {
         val fixture = openGalleryWithMember()
-        openSession(fixture)
+        val session = openSession(fixture)
 
         mockMvc.get("/api/v1/galleries/${fixture.galleryId}/photos")
             .andExpect { status { isUnauthorized() } }
-        mockMvc.get(sessionUrl(fixture))
+        mockMvc.get(sessionsUrl(fixture))
             .andExpect { status { isUnauthorized() } }
-        mockMvc.post(sessionUrl(fixture))
+        mockMvc.post(sessionsUrl(fixture))
+            .andExpect { status { isUnauthorized() } }
+        // 세션 하나를 가리키는 경로도 마찬가지다. 공개한 것은 /api/v1/collab/** 뿐이다.
+        mockMvc.get(sessionUrl(fixture, session))
             .andExpect { status { isUnauthorized() } }
     }
 
@@ -574,7 +777,12 @@ class CollabIntegrationTest @Autowired constructor(
 
     private data class Fixture(val photographer: User, val member: User, val galleryId: Long)
 
-    private fun sessionUrl(fixture: Fixture) = "/api/v1/galleries/${fixture.galleryId}/collab-session"
+    /** 링크 하나. 갤러리에 여러 개가 열리므로 관리 경로에는 id가, 하객 경로에는 토큰이 필요하다. */
+    private data class Session(val id: Long, val shareToken: String)
+
+    private fun sessionsUrl(fixture: Fixture) = "/api/v1/galleries/${fixture.galleryId}/collab-sessions"
+
+    private fun sessionUrl(fixture: Fixture, session: Session) = "${sessionsUrl(fixture)}/${session.id}"
 
     /** 협업 세션은 열린 갤러리의 부부가 여는 것이라, 매번 열린 갤러리와 멤버가 필요하다. */
     private fun openGalleryWithMember(): Fixture {
@@ -633,22 +841,37 @@ class CollabIntegrationTest @Autowired constructor(
     }
 
     /** 응답에는 토큰이 없다 — 조립이 끝난 링크만 준다. 하객 경로를 부르려면 거기서 떼어낸다. */
-    private fun openSession(fixture: Fixture): String {
-        val response = mockMvc.post(sessionUrl(fixture)) { authorize(fixture.member) }
-            .andExpect { status { isOk() } }
+    private fun openSession(fixture: Fixture, name: String = "하객에게", folderId: Long? = null): Session {
+        val body = if (folderId == null) """{"name":"$name"}""" else """{"name":"$name","folderId":$folderId}"""
+        val response = mockMvc.post(sessionsUrl(fixture)) {
+            authorize(fixture.member)
+            jsonBody(body)
+        }.andExpect { status { isCreated() } }
             .andReturn().response.contentAsString
 
-        return JsonPath.read<String>(response, "$.shareUrl").substringAfterLast('/')
+        return Session(
+            id = JsonPath.read<Int>(response, "$.sessionId").toLong(),
+            shareToken = JsonPath.read<String>(response, "$.shareUrl").substringAfterLast('/'),
+        )
     }
 
-    private fun addPhotos(fixture: Fixture, photoIds: List<Long>): List<Long> {
-        val response = mockMvc.post("${sessionUrl(fixture)}/photos") {
+    private fun addPhotos(fixture: Fixture, session: Session, photoIds: List<Long>): List<Long> {
+        val response = mockMvc.post("${sessionUrl(fixture, session)}/photos") {
             authorize(fixture.member)
             jsonBody("""{"photoIds":$photoIds}""")
         }.andExpect { status { isOk() } }
             .andReturn().response.contentAsString
 
         return JsonPath.read<List<Int>>(response, "$.photos[*].collabPhotoId").map { it.toLong() }
+    }
+
+    /** 부부가 확정한 사진 묶음. 협업 세션은 이것을 복사해 채운다. */
+    private fun saveFolder(fixture: Fixture, name: String, photoIds: List<Long>): Long {
+        val folder = photoFolderRepository.save(PhotoFolder.of(fixture.galleryId, name))
+        photoFolderItemRepository.saveAll(
+            photoIds.map { PhotoFolderItem(folderId = folder.requiredId, photoId = it) },
+        )
+        return folder.requiredId
     }
 
     private fun enter(shareToken: String, nickname: String): String {

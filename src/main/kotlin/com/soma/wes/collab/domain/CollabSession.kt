@@ -6,6 +6,7 @@ import jakarta.persistence.Entity
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
+import jakarta.persistence.Index
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
 import java.time.ZonedDateTime
@@ -18,9 +19,20 @@ import java.time.ZonedDateTime
  * 다르다 — 초대는 계정을 만들어 멤버가 되는 입구이고, 이쪽은 계정을 만들지 않고 보고 말하는
  * 창이다. 그래서 이 링크로는 최종 선택 앨범을 건드릴 수 없다.
  *
- * **갤러리당 하나다.** 여러 개를 허용하면 "이 갤러리의 하객 의견"이 어느 세션 것인지가 화면마다
- * 갈린다. 링크가 엉뚱한 곳에 퍼졌을 때 세션을 새로 만들지 않고 [revoke] 후 [reissueToken]으로
- * 토큰만 갈아끼우는 것도 그래서다 — 이미 받은 댓글과 반응은 그대로 남는다.
+ * **갤러리당 여러 개다.** 부부는 묶음마다 물어볼 상대가 다르다 — 본식 후보는 부모님께, 2부
+ * 사진은 친구들에게. 세션이 하나뿐이면 그 둘을 한 링크에 섞어 보내야 하고, 그러면 돌아온 의견도
+ * 누구에게 무엇을 물어서 나온 것인지 갈라지지 않는다. 링크가 엉뚱한 곳에 퍼졌을 때 세션을 새로
+ * 만들지 않고 [revoke] 후 [reissueToken]으로 토큰만 갈아끼우는 것은 그대로다 — 이미 받은 댓글과
+ * 반응은 세션에 매달려 있어서, 세션을 새로 만들면 그것들이 남겨진다.
+ *
+ * 여러 개가 되는 순간 [name]이 필요해진다. "어느 링크였더라"가 곧바로 생기는데 [shareToken]은
+ * 사람이 알아볼 수 있는 값이 아니다.
+ *
+ * 어느 폴더에서 왔는지는 남기지 않는다. 폴더에서 열 때 그 시점의 사진을
+ * [com.soma.wes.collab.domain.CollabPhoto] 행으로 **복사**할 뿐이다 — 가리키게 두면 부부가 폴더를
+ * 고치거나 지웠을 때 하객이 보던 사진이 발밑에서 바뀐다.
+ * [com.soma.wes.folder.domain.PhotoFolder]가 출발점인 클러스터를 가리키지 않는 것과 같은 판단이고,
+ * 출처는 기본값으로 물려받은 이름에만 남는다.
  *
  * 만료 시각이 없다. 링크의 수명은 시계가 아니라 부부가 정한다([revoke]) — 청첩장처럼 돌다가
  * 몇 주 뒤에 열어보는 사람이 있어서, 날짜로 끊으면 그 사람에게는 이유 없이 닫힌 문이 된다.
@@ -29,14 +41,20 @@ import java.time.ZonedDateTime
 @Table(
     name = "collab_sessions",
     uniqueConstraints = [
-        UniqueConstraint(name = "uk_collab_sessions_gallery_id", columnNames = ["gallery_id"]),
         UniqueConstraint(name = "uk_collab_sessions_share_token", columnNames = ["share_token"]),
+    ],
+    indexes = [
+        Index(name = "idx_collab_sessions_gallery_id", columnList = "gallery_id"),
     ],
 )
 class CollabSession(
 
     @Column(name = "gallery_id", nullable = false, updatable = false)
     val galleryId: Long,
+
+    /** 부부가 링크를 구분하려고 붙인 이름. 하객에게도 첫 화면에 보인다. */
+    @Column(nullable = false, length = MAX_NAME_LENGTH)
+    var name: String,
 
     /** 링크에 실리는 값. 추측할 수 없어야 하므로 생성은 `SecureTokenGenerator`가 맡는다. */
     @Column(name = "share_token", nullable = false, length = 255)
@@ -82,5 +100,33 @@ class CollabSession(
     fun reissueToken(shareToken: String) {
         this.shareToken = shareToken
         revokedAt = null
+    }
+
+    fun rename(name: String) {
+        this.name = normalizeName(name)
+    }
+
+    companion object {
+        const val MAX_NAME_LENGTH = 100
+
+        /**
+         * 앞뒤 공백을 떼고 길이를 확인한다.
+         *
+         * 컨트롤러의 `@Valid`에만 맡기지 않는다 — 그 검증은 컨트롤러를 거칠 때만 돌고, 서비스를
+         * 다른 곳에서 부르면 통째로 건너뛴다. 이름은 부부가 링크를 고르는 유일한 단서라
+         * 공백만으로 된 이름이 들어오면 화면에는 이름 없는 링크 두 개가 나란히 남는다.
+         */
+        fun normalizeName(name: String): String {
+            val trimmed = name.trim()
+            require(trimmed.isNotEmpty()) { "협업 세션 이름은 비어 있을 수 없습니다." }
+            require(trimmed.length <= MAX_NAME_LENGTH) { "협업 세션 이름은 ${MAX_NAME_LENGTH}자를 넘을 수 없습니다." }
+            return trimmed
+        }
+
+        fun of(galleryId: Long, name: String, shareToken: String) = CollabSession(
+            galleryId = galleryId,
+            name = normalizeName(name),
+            shareToken = shareToken,
+        )
     }
 }

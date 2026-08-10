@@ -38,6 +38,30 @@ enum class CollabErrorCode(
     /** 한 페이지에 담을 수 있는 개수를 넘긴 경우. 사진 목록과 댓글 목록이 함께 쓴다. */
     INVALID_PAGE_SIZE(HttpStatus.BAD_REQUEST, "COLLAB_400_8", "한 번에 가져올 수 있는 개수를 넘었습니다."),
 
+    /** 세션 이름이 비었거나 100자를 넘긴 경우. */
+    INVALID_SESSION_NAME(
+        HttpStatus.BAD_REQUEST,
+        "COLLAB_400_9",
+        "협업 세션 이름은 1자 이상 100자 이하여야 합니다.",
+    ),
+
+    /**
+     * 세션을 열 때 지정한 폴더가 이 갤러리의 것이 아니거나 없는 경우.
+     *
+     * 400이다. 폴더가 없다는 사실을 404로 알려주면 다른 갤러리에 어떤 폴더 id가 있는지를
+     * 응답으로 되짚을 수 있다.
+     */
+    FOLDER_NOT_IN_GALLERY(HttpStatus.BAD_REQUEST, "COLLAB_400_10", "이 갤러리의 폴더가 아닙니다."),
+
+    /**
+     * 사진이 하나도 없는 폴더로 세션을 열려는 경우.
+     *
+     * 조용히 빈 세션을 만들지 않는다. 폴더를 골랐다는 것은 그 사진들을 물어보겠다는 뜻이라,
+     * 아무것도 담기지 않은 링크를 성공으로 돌려주면 부부는 그것을 그대로 하객에게 보낸다.
+     * 빈 세션이 필요하면 folderId 없이 열면 된다.
+     */
+    EMPTY_FOLDER(HttpStatus.BAD_REQUEST, "COLLAB_400_11", "사진이 없는 폴더로는 협업 세션을 열 수 없습니다."),
+
     /**
      * 글을 남기려는데 하객 토큰이 없거나 이 세션의 것이 아닌 경우.
      *
@@ -65,7 +89,7 @@ enum class CollabErrorCode(
     /** 남이 쓴 댓글을 지우려는 경우. 부부와 담당 작가는 인증된 경로로 지운다. */
     COMMENT_NOT_OWNED(HttpStatus.FORBIDDEN, "COLLAB_403_3", "직접 남긴 댓글만 지울 수 있습니다."),
 
-    /** 발급한 적 없는 공유 토큰이거나, 갤러리에 아직 세션이 없는 경우. */
+    /** 발급한 적 없는 공유 토큰이거나, 그 세션이 이 갤러리의 것이 아닌 경우. */
     SESSION_NOT_FOUND(HttpStatus.NOT_FOUND, "COLLAB_404_1", "존재하지 않는 협업 링크입니다."),
 
     /** 이 세션에 담기지 않은 사진. */

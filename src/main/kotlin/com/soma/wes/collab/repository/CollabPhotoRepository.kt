@@ -36,6 +36,24 @@ interface CollabPhotoRepository : JpaRepository<CollabPhoto, Long> {
     fun countByCollabSessionId(collabSessionId: Long): Long
 
     /**
+     * 세션마다 사진이 몇 장인지. 링크 목록 화면이 세션 수만큼 세지 않도록 한 번에 읽는다.
+     *
+     * 사진이 하나도 없는 세션은 결과에 아예 없다. 호출부가 0으로 채운다 — 폴더 없이 연 세션은
+     * 사진을 담기 전까지 그 상태다.
+     */
+    @Query(
+        """
+        SELECT cp.collabSessionId AS collabSessionId, COUNT(cp) AS count
+        FROM CollabPhoto cp
+        WHERE cp.collabSessionId IN :collabSessionIds
+        GROUP BY cp.collabSessionId
+        """,
+    )
+    fun countByCollabSessionIdIn(
+        @Param("collabSessionIds") collabSessionIds: Collection<Long>,
+    ): List<CollabSessionPhotoCountProjection>
+
+    /**
      * 사진을 빼낸다. 댓글·반응은 DB의 `ON DELETE CASCADE`가 함께 지운다 —
      * 세션에서 뺀다는 것은 "이 사진은 더 묻지 않겠다"는 뜻이라 그때 받은 의견도 함께 사라진다.
      *
