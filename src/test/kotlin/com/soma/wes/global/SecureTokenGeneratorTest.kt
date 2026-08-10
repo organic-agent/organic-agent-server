@@ -1,12 +1,12 @@
-package com.soma.wes.gallery.support
+package com.soma.wes.global
 
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-class GalleryInviteTokenGeneratorTest {
+class SecureTokenGeneratorTest {
 
-    private val generator = GalleryInviteTokenGenerator()
+    private val generator = SecureTokenGenerator()
 
     @Test
     fun `부를 때마다 다른 토큰을 만든다`() {

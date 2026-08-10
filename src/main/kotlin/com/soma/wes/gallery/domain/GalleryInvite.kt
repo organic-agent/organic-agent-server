@@ -37,7 +37,7 @@ class GalleryInvite(
     @Column(name = "gallery_id", nullable = false, updatable = false)
     val galleryId: Long,
 
-    /** 링크에 실리는 값. 추측할 수 없어야 하므로 생성은 `GalleryInviteTokenGenerator`가 맡는다. */
+    /** 링크에 실리는 값. 추측할 수 없어야 하므로 생성은 `SecureTokenGenerator`가 맡는다. */
     @Column(nullable = false, updatable = false, length = 255)
     val token: String,
 
