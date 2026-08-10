@@ -82,6 +82,12 @@ app:
     # prod는 배포 도메인을 따라가므로 Parameter Store(app.invite.base-url)가 덮어쓴다.
     base-url: "http://localhost:3000/invite"
 
+  collab:
+    # 하객 협업 링크의 앞부분. 초대 링크와 같은 규칙이지만 여는 화면이 다르다 —
+    # 이쪽은 로그인을 요구하면 안 된다. 로그인하지 않는 하객·부모님을 위해 만든 링크다.
+    # prod는 배포 도메인을 따라가므로 Parameter Store(app.collab.base-url)가 덮어쓴다.
+    base-url: "http://localhost:3000/collab"
+
 ---
 spring:
   config:

@@ -49,6 +49,18 @@ class PhotoViewAssembler(
     }
 
     /**
+     * 공유 링크로 여는 화면이 쓴다. 별점을 아예 붙이지 않는다.
+     *
+     * 별점은 부부와 작가가 고르는 과정에서 서로에게 남기는 표시다. 하객이 "이 사진은 2점"을
+     * 보게 되면 그건 사진이 아니라 그 사람들의 판단이 새어 나가는 것이고, 사진에 찍힌 하객
+     * 본인이 그 점수를 보는 일까지 생긴다.
+     *
+     * 별점을 읽지 않으므로 조회도 하지 않는다 — [toResponses]의 배치 조회가 통째로 빠진다.
+     */
+    fun toAnonymousResponses(photos: List<Photo>): List<PhotoResponse> =
+        photos.map { PhotoResponse.of(photo = it, viewUrl = viewUrlOf(it), score = null) }
+
+    /**
      * 이 사진에 매겨진 점수. 아무도 매기지 않았으면 null이다.
      *
      * 사진당 한 행이라 "내 점수"와 "남의 점수"가 없다 — 부부와 작가가 같은 한 칸을 나눠 쓴다.

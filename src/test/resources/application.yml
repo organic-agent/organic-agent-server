@@ -100,3 +100,6 @@ app:
   invite:
     # 실제 프론트가 아니다. 링크가 "베이스 + 토큰"으로 조립되는지만 확인한다.
     base-url: "http://localhost:3000/invite"
+  collab:
+    # 초대와 다른 화면이라 값도 다르다. 두 링크가 섞이지 않는지 테스트가 이 차이로 확인한다.
+    base-url: "http://localhost:3000/collab"

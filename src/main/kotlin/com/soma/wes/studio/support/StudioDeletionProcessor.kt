@@ -201,7 +201,8 @@ class StudioDeletionProcessor(
             throw StudioException(StudioErrorCode.DELETION_TARGET_CHANGED)
         }
 
-        // galleries → invites/members/photos는 DB FK의 ON DELETE CASCADE가 한 트랜잭션에서 지운다.
+        // galleries → invites/members/photos/협업 세션은 DB FK의 ON DELETE CASCADE가
+        // 한 트랜잭션에서 지운다(협업 세션 아래의 사진·하객·댓글·반응까지 이어진다).
         studioRepository.delete(studio)
         studioRepository.flush()
 

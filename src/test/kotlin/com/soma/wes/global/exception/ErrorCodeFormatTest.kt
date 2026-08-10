@@ -2,6 +2,7 @@ package com.soma.wes.global.exception
 
 import com.soma.wes.auth.exception.AuthErrorCode
 import com.soma.wes.cluster.exception.ClusterErrorCode
+import com.soma.wes.collab.exception.CollabErrorCode
 import com.soma.wes.folder.exception.FolderErrorCode
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.photo.exception.PhotoErrorCode
@@ -26,7 +27,8 @@ class ErrorCodeFormatTest {
     private val allErrorCodes: List<ErrorCode> =
         GlobalErrorCode.entries + AuthErrorCode.entries + AuthorizationErrorCode.entries + UserErrorCode.entries +
             StudioErrorCode.entries + GalleryErrorCode.entries + PhotoErrorCode.entries +
-            ClusterErrorCode.entries + FolderErrorCode.entries + SelectionErrorCode.entries
+            ClusterErrorCode.entries + FolderErrorCode.entries + SelectionErrorCode.entries +
+            CollabErrorCode.entries
 
     private val format = Regex("""^([A-Z]+)_(\d{3})_(\d+)$""")
 
