@@ -12,7 +12,7 @@
 #     고정해 두므로 update-function-code 를 반드시 불러야 한다.
 #
 # 주소를 terraform output 이 아니라 AWS API로 조회한다. 인프라 저장소가 어디에 있든,
-# 심지어 없어도 동작하게 하기 위해서다 (docs/db-tunnel.sh 와 같은 이유).
+# 심지어 없어도 동작하게 하기 위해서다 (scripts/db-tunnel.sh 와 같은 이유).
 set -euo pipefail
 
 REGION="ap-northeast-2"
