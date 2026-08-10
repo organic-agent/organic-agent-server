@@ -3,10 +3,14 @@ from __future__ import annotations
 import sys
 import types
 import unittest
+from pathlib import Path
 
 
 # admission SQL 테스트는 이미지·벡터·DB 드라이버를 실행하지 않는다. Lambda 의존성을 전부
 # 설치하지 않은 로컬/CI에서도 이 경계를 검증할 수 있도록 import 자리만 최소 대체한다.
+EMBEDDER_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(EMBEDDER_ROOT))
+
 try:
     import numpy  # noqa: F401
 except ModuleNotFoundError:

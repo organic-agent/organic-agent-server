@@ -96,6 +96,8 @@ echo "완료. $FUNCTION_NAME 이 ${DIGEST#sha256:} 을 실행한다."
 echo
 echo "  * 스키마가 함께 바뀌었다면 앱이 먼저 배포되어 있어야 한다. Lambda 는 photos 를"
 echo "    직접 UPDATE 하므로, 없는 컬럼을 쓰면 같은 UPDATE 에 든 임베딩 벡터까지 날아간다."
+echo "  * Mock 갤러리는 이 image가 배포된 뒤에만 활성화할 것. 구 image는 SHARED_TEMPLATE을"
+echo "    force 대상에서 제외하지 않아 버전 고정 샘플 벡터를 덮어쓸 수 있다."
 echo "  * 실행 결과의 failed 와 previewsFailed 를 함께 볼 것. previewsFailed 만 차 있으면"
 echo "    임베딩이 아니라 IAM(s3:PutObject) 문제이고, 그 사진들은 재실행으로 복구되지 않는다"
 echo "    (embedding 이 이미 채워져 대상에서 빠진다). force=true 로 전량 재계산해야 한다."

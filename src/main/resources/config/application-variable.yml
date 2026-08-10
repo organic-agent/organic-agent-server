@@ -64,6 +64,12 @@ app:
     # 로컬·테스트에는 Lambda가 없으므로 빈 값이 정상이다 — 기동이 아니라 호출 시점에 실패한다.
     function-name: ""
 
+  mock-gallery:
+    # WES-22가 운영 샘플 원본·미리보기와 manifest를 준비한 뒤에만 켠다. 기본값 false는
+    # 코드만 먼저 배포됐을 때 존재하지 않는 S3 key를 사용자에게 내보내지 않는 안전장치다.
+    enabled: false
+    manifest-location: ""
+
   cluster:
     # 프론트가 threshold를 넘기지 않았을 때 쓰는 유사도. 첫 화면의 묶음 입도를 정하는 값이라
     # 바꾸면 사용자가 처음 보는 결과가 통째로 달라진다. 올리면 잘게, 내리면 크게 묶인다.

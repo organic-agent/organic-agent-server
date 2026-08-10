@@ -29,6 +29,10 @@ jobs:
       # 일부 테스트가 Testcontainers로 postgres를 띄운다. GitHub 러너에는 Docker가 있어 그대로 돈다.
       # TODO: 테스트 컨벤션 정립 후 게이팅 복구. 지금은 테스트가 실패해도 CI를 막지 않는다
       #       (continue-on-error + publish fail_on:nothing). 결과는 체크에 남지만 빨간 X로 머지를 막지 않는다.
+      - name: Lambda DB 계약 테스트
+        continue-on-error: true
+        run: python3 -S -m unittest discover -s embedder/tests -p 'test_*.py' -v
+
       - name: 테스트 실행
         continue-on-error: true
         run: |

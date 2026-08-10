@@ -27,6 +27,8 @@ interface EmbeddingControllerDocs {
             다시 계산한다 — 모델이나 전처리를 바꿔 전량 재계산할 때만 쓴다.
 
             응답의 targets는 이번 실행이 채우려는 사진 수이며, 계산이 끝났다는 뜻이 아니다.
+            Mock 갤러리의 대상이 0이면 Lambda를 호출하지 않고 targets=0으로 같은 202 응답을 돌려준다.
+            공유 Mock 템플릿 사진은 force=true여도 사전 계산 벡터를 유지해 대상에서 제외한다.
         """,
     )
     @ApiResponses(

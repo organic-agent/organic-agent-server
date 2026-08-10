@@ -1,6 +1,7 @@
 package com.soma.wes.gallery.repository
 
 import com.soma.wes.gallery.domain.Gallery
+import com.soma.wes.gallery.domain.GalleryType
 import jakarta.persistence.LockModeType
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Lock
@@ -10,6 +11,8 @@ import org.springframework.data.repository.query.Param
 interface GalleryRepository : JpaRepository<Gallery, Long> {
 
     fun findAllByStudioId(studioId: Long): List<Gallery>
+
+    fun findByStudioIdAndGalleryType(studioId: Long, galleryType: GalleryType): Gallery?
 
     /**
      * 갤러리 행을 잠그고 읽는다. 선택 앨범을 고칠 때 쓴다.

@@ -1,5 +1,6 @@
 package com.soma.wes.studio.service
 
+import com.soma.wes.photo.domain.PhotoStorageOwnership
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
 import com.soma.wes.photo.service.PhotoStorage
@@ -99,6 +100,12 @@ class StudioDeletionServiceTest {
             galleryIds = setOf(100L),
             photos = setOf(
                 PhotoDeletionTarget(1000L, "galleries/100/original.heic", "previews/galleries/100/original.jpg"),
+                PhotoDeletionTarget(
+                    photoId = 1001L,
+                    storageKey = "mock-gallery/v1/originals/sample.jpg",
+                    previewKey = "mock-gallery/v1/previews/sample.jpg",
+                    storageOwnership = PhotoStorageOwnership.SHARED_TEMPLATE,
+                ),
             ),
         )
         val response = response()

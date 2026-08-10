@@ -319,12 +319,17 @@ class StudioDeletionProcessor(
                     photoId = it.requiredId,
                     storageKey = it.storageKey,
                     previewKey = it.previewKey,
+                    storageOwnership = it.storageOwnership,
                 )
             },
         )
 
     companion object {
-        /** expected preview key·snapshot 규칙을 바꾸면 기존 plan 재개 지원과 함께 올린다. */
+        /**
+         * V11 이전 사진은 모두 GALLERY로 backfill되고 기존 key 집합은 그대로다.
+         * 새 SHARED_TEMPLATE 생성은 이 plan의 claim·fence에 막히므로 v1 재개와 호환된다.
+         * 기존 GALLERY의 snapshot·key 의미를 바꾸는 경우에만 재개 지원과 함께 버전을 올린다.
+         */
         const val CURRENT_SUPPORTED_PLAN_VERSION = 1
     }
 }

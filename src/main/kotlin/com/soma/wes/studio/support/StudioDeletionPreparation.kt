@@ -1,5 +1,6 @@
 package com.soma.wes.studio.support
 
+import com.soma.wes.photo.domain.PhotoStorageOwnership
 import com.soma.wes.studio.dto.response.StudioDeletionResponse
 import java.util.UUID
 
@@ -22,15 +23,19 @@ data class StudioDeletionPlan(
 ) {
 
     val objectKeys: Set<String>
-        get() = photos.flatMapTo(mutableSetOf()) { photo ->
-            listOfNotNull(photo.storageKey, photo.expectedPreviewKey, photo.previewKey)
-        }
+        get() = photos.asSequence()
+            .filter { it.storageOwnership == PhotoStorageOwnership.GALLERY }
+            .flatMap { photo ->
+                sequenceOf(photo.storageKey, photo.expectedPreviewKey, photo.previewKey).filterNotNull()
+            }
+            .toSet()
 }
 
 data class PhotoDeletionTarget(
     val photoId: Long,
     val storageKey: String,
     val previewKey: String?,
+    val storageOwnership: PhotoStorageOwnership = PhotoStorageOwnership.GALLERY,
 ) {
 
     /**

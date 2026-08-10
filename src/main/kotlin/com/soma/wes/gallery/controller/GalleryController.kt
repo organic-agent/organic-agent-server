@@ -7,6 +7,7 @@ import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
 import com.soma.wes.gallery.dto.response.GalleryResponse
 import com.soma.wes.gallery.service.GalleryService
+import com.soma.wes.gallery.service.MockGalleryService
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/v1/galleries")
 class GalleryController(
     private val galleryService: GalleryService,
+    private val mockGalleryService: MockGalleryService,
 ) : GalleryControllerDocs {
 
     @PostMapping
@@ -35,6 +37,16 @@ class GalleryController(
         val status = HttpStatus.CREATED
 
         return ResponseEntity.status(status).body(result)
+    }
+
+    @PostMapping("/mock")
+    override fun createMock(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @Valid @RequestBody(required = false) request: CreateGalleryRequest?,
+    ): ResponseEntity<GalleryResponse> {
+        val result = mockGalleryService.create(loginUser.id, request)
+
+        return ResponseEntity.ok(result)
     }
 
     @GetMapping

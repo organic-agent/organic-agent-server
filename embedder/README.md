@@ -13,7 +13,8 @@ __main__.py   로컬 CLI    python -m embedder --gallery-id 1
 
 ```
 SELECT id, storage_key FROM photos
-WHERE gallery_id = ? AND status <> 'PENDING' AND embedding IS NULL
+WHERE gallery_id = ? AND storage_ownership = 'GALLERY'
+  AND status <> 'PENDING' AND embedding IS NULL
   → S3 GET → 원본 열기 → EXIF 읽기(촬영 시각 · 카메라 · 셔터/조리개/ISO · 크기)
            → HEIC 디코드 · EXIF 회전 · 리사이즈 → DINOv2(L2 정규화)
   → S3 PUT previews/{원본키}.jpg
@@ -37,7 +38,9 @@ WHERE gallery_id = ? AND status <> 'PENDING' AND embedding IS NULL
   회전·축소 **전의** 원본에서 읽는다. 그 뒤에는 Orientation 태그가 지워지고 크기도 원본이 아니다.
 - **EXIF 추출 실패도 임베딩을 죽이지 않는다.** 파생본 실패와 같은 취급으로, 실패한 키만
   `metadataFailed`로 나온다. 상세 화면에 정보가 덜 나올 뿐 사진은 보이고 벡터는 적재된다.
-- **`--force`는 이미 채워진 것까지 다시 계산한다.** 모델이나 전처리를 바꿔 전량 재계산할 때만.
+- **`--force`는 갤러리가 소유한 사진 중 이미 채워진 것까지 다시 계산한다.** 모델이나 전처리를
+  바꿔 전량 재계산할 때만 쓴다. `SHARED_TEMPLATE`은 WES-22가 버전으로 고정한 불변 벡터라
+  force에서도 제외한다.
 - **`PENDING`은 건너뛴다.** 업로드 URL만 발급되고 S3에 객체가 없을 수 있는 상태다.
 
 ## 접속: 원래는 비밀번호가 없었다
@@ -143,6 +146,11 @@ python -m embedder --gallery-id 1
 
 **첫 apply는 순서가 있다.** Lambda는 이미지가 없는 ECR을 상대로 만들어지지 않으므로,
 리포지토리만 먼저 만들고 → 푸시 → 전체 apply 한다. 인프라 레포 `docs/deploy-order.md` 참고.
+
+**Mock 갤러리 활성화도 순서가 있다.** `storage_ownership` 스키마와 서버를 먼저 배포하고 →
+이 README의 조건을 포함한 새 Lambda image를 배포한 뒤 → WES-22 manifest·S3 객체를 검증하고
+`app.mock-gallery.enabled`를 켠다. 구 Lambda를 둔 채 먼저 켜면 force 실행이 공유 벡터를 다시
+계산할 수 있으므로 순서를 바꾸지 않는다.
 
 ## 환경변수
 
