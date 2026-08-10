@@ -67,9 +67,26 @@ class PhotoRepositoryTest @Autowired constructor(
     }
 
     @Test
-    fun `임베딩이 비어 있는 사진만 센다`() {
-        // 임베딩 Lambda가 대상을 고르는 기준과 같다. 중간에 죽은 실행을 다시 불러도
-        // 남은 것만 이어서 하는 이유가 이 조건이다.
+    fun `임베딩 대상 집계는 업로드 미완료 사진을 제외한다`() {
+        // PENDING은 embedding이 비어 있어도 S3 객체가 없을 수 있어 Lambda가 읽지 않는다.
+        val galleryId = createGallery()
+        val embedded = photoRepository.save(photo(galleryId, 1))
+        embedded.applyEmbedding(FloatArray(Photo.EMBEDDING_DIMENSION))
+        photoRepository.save(photo(galleryId, 2)).markUploaded()
+        photoRepository.save(photo(galleryId, 3))
+        photoRepository.flush()
+
+        assertEquals(
+            1,
+            photoRepository.countByGalleryIdAndStatusNotAndEmbeddingIsNull(galleryId, PhotoStatus.PENDING),
+        )
+        assertEquals(2, photoRepository.countByGalleryIdAndStatusNot(galleryId, PhotoStatus.PENDING))
+    }
+
+    @Test
+    fun `클러스터 준비 집계는 PENDING도 미완료로 센다`() {
+        // 클러스터는 모든 사진의 임베딩이 준비되기 전까지 열리지 않아야 하므로,
+        // 아직 업로드되지 않은 PENDING도 embedding이 비어 있는 사진으로 센다.
         val galleryId = createGallery()
         val embedded = photoRepository.save(photo(galleryId, 1))
         embedded.applyEmbedding(FloatArray(Photo.EMBEDDING_DIMENSION))

@@ -105,11 +105,17 @@ interface PhotoRepository : JpaRepository<Photo, Long> {
 
     fun countByGalleryIdAndStatus(galleryId: Long, status: PhotoStatus): Long
 
-    /**
-     * 임베딩 실행 대상 수.
-     *
-     * `status`가 아니라 `embedding` 컬럼을 보는 이유는 Lambda가 대상을 고르는 기준과 같아야
-     * 하기 때문이다. 상태 값이 어긋나 있어도 이 수는 진실을 말한다.
-     */
+    /** 클러스터 준비 여부 확인용. 아직 업로드되지 않은 사진도 미완료로 센다. */
     fun countByGalleryIdAndEmbeddingIsNull(galleryId: Long): Long
+
+    /** force 실행 대상 수. S3 객체가 아직 없을 수 있는 [PhotoStatus.PENDING]은 제외한다. */
+    fun countByGalleryIdAndStatusNot(galleryId: Long, status: PhotoStatus): Long
+
+    /**
+     * 일반 임베딩 실행 대상 수.
+     *
+     * 실행기와 같은 조건으로 [PhotoStatus.PENDING]을 제외하고 아직 임베딩이 없는 사진만 센다.
+     * 이 조건이 어긋나면 실행 응답의 대상 수와 실제 처리 수가 달라진다.
+     */
+    fun countByGalleryIdAndStatusNotAndEmbeddingIsNull(galleryId: Long, status: PhotoStatus): Long
 }
