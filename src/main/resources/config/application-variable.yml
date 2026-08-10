@@ -38,6 +38,11 @@ jwt:
   refresh-token-expiration: 14d
 
 app:
+  studio-hard-deletion:
+    # 코드 merge와 복구 불가능한 운영 기능의 활성화를 분리한다. runbook의
+    # 앱 writer·Embedding Lambda·DB 권한·late PUT 통제를 모두 끝낸 환경만 true로 덮어쓴다.
+    enabled: false
+
   storage:
     # 버킷 이름만 인프라에 종속된다. prod는 Parameter Store(app.storage.bucket)가 덮어쓰고,
     # 로컬·테스트에는 실제 버킷이 없으므로 서명 형태만 확인하는 더미 값을 둔다.

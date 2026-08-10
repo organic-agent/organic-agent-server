@@ -3,10 +3,10 @@ package com.soma.wes.embedding.service
 import com.soma.wes.embedding.dto.response.EmbeddingRunResponse
 import com.soma.wes.gallery.domain.GalleryType
 import com.soma.wes.gallery.support.GalleryAccessPolicy
-import com.soma.wes.photo.exception.PhotoErrorCode
-import com.soma.wes.photo.exception.PhotoException
 import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.domain.PhotoStorageOwnership
+import com.soma.wes.photo.exception.PhotoErrorCode
+import com.soma.wes.photo.exception.PhotoException
 import com.soma.wes.photo.repository.PhotoRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service

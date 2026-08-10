@@ -16,8 +16,9 @@
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Iterable, Sequence
+from typing import Generator, Iterable, Sequence
 
 import numpy as np
 import psycopg
@@ -33,6 +34,58 @@ log = logging.getLogger(__name__)
 class PhotoRef:
     photo_id: int
     storage_key: str
+
+
+@contextmanager
+def studio_write_admission(
+    connection: psycopg.Connection,
+    gallery_id: int,
+) -> Generator[bool, None, None]:
+    """삭제와 Embedding job을 studio 단위로 직렬화한다.
+
+    앱의 짧은 writer는 transaction shared lock, 삭제 준비는 transaction exclusive lock을 쓴다.
+    Lambda는 배치마다 commit하므로 transaction lock으로는 작업 전체를 덮을 수 없어 connection
+    session shared lock을 잡는다. 연결이 끊기면 PostgreSQL이 자동 회수한다.
+
+    lock을 얻은 *뒤* claim을 읽는 순서가 중요하다. 삭제가 먼저 exclusive lock을 잡았다면 이
+    호출은 prepare commit까지 기다린 뒤 새 claim을 보고 false를 돌려 S3를 만지지 않는다.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT studio_id FROM galleries WHERE id = %s", (gallery_id,))
+        row = cursor.fetchone()
+    if row is None:
+        yield False
+        return
+
+    studio_id = int(row[0])
+    fence_key = _studio_write_fence_key(studio_id)
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_lock_shared(%s)", (fence_key,))
+
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT NOT EXISTS (SELECT 1 FROM studio_deletion_claims WHERE studio_id = %s)",
+                (studio_id,),
+            )
+            admitted = bool(cursor.fetchone()[0])
+        yield admitted
+    finally:
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_advisory_unlock_shared(%s)", (fence_key,))
+        except psycopg.Error:
+            # DB UPDATE가 트랜잭션을 abort시킨 경우 unlock SELECT도 실행할 수 없다. 이 함수가
+            # 원래 예외를 가리지 않게 하고, 바로 이어지는 connection close가 session lock을
+            # 회수하게 둔다.
+            log.warning("studio write fence 명시 해제 실패; connection close에서 회수", exc_info=True)
+
+
+def _studio_write_fence_key(studio_id: int) -> int:
+    """Java StudioWriteFence와 같은 signed 64-bit 음수 namespace."""
+    if studio_id <= 0 or studio_id >= 1 << 63:
+        raise ValueError("저장된 studio id만 write fence에 사용할 수 있습니다")
+    return studio_id - (1 << 63)
 
 
 def connect(settings: Settings) -> psycopg.Connection:

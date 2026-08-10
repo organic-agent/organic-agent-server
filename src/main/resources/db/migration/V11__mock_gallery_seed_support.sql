@@ -1,15 +1,13 @@
 -- WES-21 Mock 갤러리와 공유 샘플 사진 seed를 위한 식별자·소유권 경계.
 --
--- V9·V10은 WES-19의 cascade hard delete가 사용한다. 이 브랜치는 아직 그 변경이 없는
--- origin/main에서 시작했지만, 사이클 순서대로 WES-19 다음에 합쳐져도 번호가 충돌하지 않게
--- V11부터 사용한다. Flyway는 중간 버전이 아직 없는 개발 DB에서도 순서대로 적용할 수 있다.
+-- V9·V10은 WES-19의 cascade hard delete가 사용한다. WES-21은 그 다음 버전인
+-- V11에서 공유 샘플의 참조·소유권 계약을 추가한다.
 
 ALTER TABLE galleries
     ADD COLUMN gallery_type VARCHAR(20) NOT NULL DEFAULT 'NORMAL';
 
-ALTER TABLE galleries
-    ALTER COLUMN gallery_type DROP DEFAULT;
-
+-- DEFAULT는 migration 당시 기존 행뿐 아니라 이 컬럼을 모르는 rolling 구버전 writer도
+-- 일반 갤러리를 계속 만들 수 있게 하는 호환 계약이므로 제거하지 않는다.
 ALTER TABLE galleries
     ADD COLUMN template_version VARCHAR(50);
 
@@ -31,9 +29,8 @@ CREATE UNIQUE INDEX uk_galleries_studio_mock
 ALTER TABLE photos
     ADD COLUMN storage_ownership VARCHAR(30) NOT NULL DEFAULT 'GALLERY';
 
-ALTER TABLE photos
-    ALTER COLUMN storage_ownership DROP DEFAULT;
-
+-- 구버전 app과 운영 스크립트의 일반 사진 INSERT는 새 컬럼을 보내지 않는다. DEFAULT를
+-- 유지해야 NOT NULL 위반 없이 기존과 같은 갤러리 소유 사진으로 저장된다.
 ALTER TABLE photos
     ADD CONSTRAINT ck_photos_storage_ownership
         CHECK (storage_ownership IN ('GALLERY', 'SHARED_TEMPLATE')),
@@ -50,10 +47,16 @@ ALTER TABLE photos
             storage_ownership <> 'SHARED_TEMPLATE'
             OR (
                 storage_key LIKE 'mock-gallery/%'
+                AND preview_key IS NOT NULL
                 AND preview_key LIKE 'mock-gallery/%'
                 AND embedding IS NOT NULL
                 AND status = 'EMBEDDED'
             )
+        ),
+    ADD CONSTRAINT ck_photos_shared_template_no_upload_url
+        CHECK (
+            storage_ownership <> 'SHARED_TEMPLATE'
+            OR upload_url_expires_at IS NULL
         );
 
 -- 일반 업로드 key는 애초에 gallery id를 포함하므로 갤러리 안에서만 유일하면 충분하다.

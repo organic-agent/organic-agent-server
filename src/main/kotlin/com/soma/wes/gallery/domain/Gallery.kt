@@ -78,7 +78,6 @@ class Gallery(
             targetPhotoCount: Int?,
             at: ZonedDateTime,
         ): Gallery {
-            requireValidTitle(title)
             requireDeadlineNotPassed(selectionDeadline, at)
             requireValidTargetPhotoCount(targetPhotoCount)
             return Gallery(
@@ -164,7 +163,6 @@ class Gallery(
         selectionDeadline?.isBefore(at) ?: false
 
     fun rename(title: String) {
-        requireValidTitle(title)
         this.title = title
     }
 

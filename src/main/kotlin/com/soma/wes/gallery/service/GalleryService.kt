@@ -8,9 +8,8 @@ import com.soma.wes.gallery.dto.response.GalleryResponse
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.support.GalleryAccessPolicy
-import com.soma.wes.studio.exception.StudioErrorCode
-import com.soma.wes.studio.exception.StudioException
 import com.soma.wes.studio.repository.StudioRepository
+import com.soma.wes.studio.support.StudioWriteAdmission
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -22,14 +21,14 @@ class GalleryService(
     private val galleryRepository: GalleryRepository,
     private val galleryMemberRepository: GalleryMemberRepository,
     private val studioRepository: StudioRepository,
+    private val studioWriteAdmission: StudioWriteAdmission,
     private val galleryAccessPolicy: GalleryAccessPolicy,
     private val clock: Clock,
 ) {
 
     @Transactional
     fun create(userId: Long, request: CreateGalleryRequest): GalleryResponse {
-        val studio = studioRepository.findByUserId(userId)
-            ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
+        val studio = studioWriteAdmission.requireWritableByUserId(userId)
 
         val gallery = galleryRepository.save(
             Gallery.create(

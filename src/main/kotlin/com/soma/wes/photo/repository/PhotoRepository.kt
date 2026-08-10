@@ -97,16 +97,16 @@ interface PhotoRepository : JpaRepository<Photo, Long> {
      */
     fun findAllByGalleryIdAndEmbeddingIsNotNullOrderByDisplayOrderAscIdAsc(galleryId: Long): List<Photo>
 
+    fun findAllByGalleryIdIn(galleryIds: Collection<Long>): List<Photo>
+
+    @Query(value = "select * from photos where gallery_id in (:galleryIds) for update", nativeQuery = true)
+    fun findAllByGalleryIdInForUpdate(@Param("galleryIds") galleryIds: Collection<Long>): List<Photo>
+
     fun countByGalleryId(galleryId: Long): Long
 
     fun countByGalleryIdAndStatus(galleryId: Long, status: PhotoStatus): Long
 
-    /**
-     * 임베딩 실행 대상 수.
-     *
-     * `status`가 아니라 `embedding` 컬럼을 보는 이유는 Lambda가 대상을 고르는 기준과 같아야
-     * 하기 때문이다. 상태 값이 어긋나 있어도 이 수는 진실을 말한다.
-     */
+    /** 클러스터 준비 여부 확인용. 아직 업로드되지 않은 사진도 미완료로 센다. */
     fun countByGalleryIdAndEmbeddingIsNull(galleryId: Long): Long
 
     /** PENDING과 공유 템플릿을 제외해 실제 임베딩 Lambda의 force 대상과 같은 수를 센다. */

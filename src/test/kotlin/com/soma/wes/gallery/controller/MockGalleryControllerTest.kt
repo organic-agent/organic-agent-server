@@ -20,7 +20,10 @@ import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.domain.PhotoStorageOwnership
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.studio.domain.Studio
+import com.soma.wes.studio.domain.StudioDeletionClaim
+import com.soma.wes.studio.repository.StudioDeletionClaimRepository
 import com.soma.wes.studio.repository.StudioRepository
+import com.soma.wes.studio.support.StudioDeletionProcessor
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
 import org.hamcrest.Matchers.containsString
@@ -41,8 +44,10 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import tools.jackson.databind.ObjectMapper
 
 @SpringBootTest(
@@ -59,6 +64,7 @@ class MockGalleryControllerTest @Autowired constructor(
     private val mockGalleryService: MockGalleryService,
     private val userRepository: UserRepository,
     private val studioRepository: StudioRepository,
+    private val claimRepository: StudioDeletionClaimRepository,
     private val galleryRepository: GalleryRepository,
     private val galleryMemberRepository: GalleryMemberRepository,
     private val photoRepository: PhotoRepository,
@@ -69,6 +75,7 @@ class MockGalleryControllerTest @Autowired constructor(
 
     @BeforeEach
     fun clear() {
+        claimRepository.deleteAllInBatch()
         photoRepository.deleteAllInBatch()
         galleryMemberRepository.deleteAllInBatch()
         galleryRepository.deleteAllInBatch()
@@ -93,6 +100,7 @@ class MockGalleryControllerTest @Autowired constructor(
         assertEquals(PhotoStorageOwnership.SHARED_TEMPLATE, photos.single().storageOwnership)
         assertEquals(PhotoStatus.EMBEDDED, photos.single().status)
         assertEquals(Photo.EMBEDDING_DIMENSION, photos.single().embedding?.size)
+        assertNull(photos.single().uploadUrlExpiresAt)
         assertEquals("mock-gallery/test-v1/previews/sample-01.jpg", photos.single().viewKey)
     }
 
@@ -175,6 +183,33 @@ class MockGalleryControllerTest @Autowired constructor(
         } finally {
             executor.shutdownNow()
         }
+    }
+
+    @Test
+    fun `삭제 claim이 있으면 Mock 갤러리와 공유 사진을 만들지 않는다`() {
+        val photographer = signUpPhotographer()
+        val studio = studioRepository.findByUserId(photographer.id!!)!!
+        claimRepository.saveAndFlush(
+            StudioDeletionClaim(
+                requestId = UUID.randomUUID(),
+                claimToken = UUID.randomUUID(),
+                studioId = checkNotNull(studio.id),
+                operatorUserId = 99L,
+                studioGalleryUrl = studio.galleryUrl,
+                reason = "Mock seed writer admission 회귀",
+                planVersion = StudioDeletionProcessor.CURRENT_SUPPORTED_PLAN_VERSION,
+            ),
+        )
+
+        mockMvc.post("/api/v1/galleries/mock") {
+            authorize(photographer)
+        }.andExpect {
+            status { isConflict() }
+            jsonPath("$.code") { value("STUDIO_409_7") }
+        }
+
+        assertEquals(0, galleryRepository.count())
+        assertEquals(0, photoRepository.count())
     }
 
     @Test

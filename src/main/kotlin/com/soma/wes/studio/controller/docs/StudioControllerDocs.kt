@@ -25,6 +25,8 @@ interface StudioControllerDocs {
             소셜 로그인을 마친 사용자가 스튜디오를 만들어 온보딩을 끝낸다.
             **이 요청이 성공하면 사용자 종류가 PHOTOGRAPHER로 확정된다** — 종류만 정하는 API는 없다.
 
+            공개 주소는 앞뒤 공백을 제거하고 Locale.ROOT 기준 소문자로 변환한 canonical 값으로 저장한다.
+
             갤러리는 작가 개인이 아니라 스튜디오에 속하므로, 이 단계를 거치지 않으면
             갤러리 생성이 STUDIO_404_1로 실패한다.
 
@@ -82,6 +84,9 @@ interface StudioControllerDocs {
             온보딩 화면이 입력 중에 물어본다. 형식·예약어 규칙은 생성 API와 같은 것을 쓰므로
             여기서 통과한 주소가 저장 단계에서 형식 때문에 거절되는 일은 없다.
 
+            `galleryUrl` query parameter는 앞뒤 공백 제거와 Locale.ROOT 소문자 변환을 거치며,
+            응답의 `galleryUrl`에는 실제 생성·수정에 쓰이는 canonical 값이 담긴다.
+
             available이 true라도 생성이 반드시 성공하지는 않는다. 확인과 생성 사이에 다른
             사람이 같은 주소를 채갈 수 있고, 최종 판단은 생성 API의 STUDIO_409_2다.
         """,
@@ -131,7 +136,7 @@ interface StudioControllerDocs {
 
     @Operation(
         summary = "내 스튜디오 수정",
-        description = "이름과 공개 주소를 바꾼다. 주소를 그대로 두고 이름만 바꾸는 것도 된다.",
+        description = "이름과 공개 주소를 바꾼다. 공개 주소는 생성과 같은 규칙으로 정규화하며, 주소를 그대로 두고 이름만 바꾸는 것도 된다.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "수정 성공"),
@@ -169,7 +174,7 @@ interface StudioControllerDocs {
         ),
         ApiResponse(
             responseCode = "409",
-            description = "다른 스튜디오가 이미 쓰는 주소",
+            description = "다른 스튜디오가 이미 쓰는 주소이거나 운영자 승인 hard delete가 진행 중임",
             content = [
                 Content(
                     mediaType = MediaType.APPLICATION_JSON_VALUE,
@@ -178,6 +183,10 @@ interface StudioControllerDocs {
                         ExampleObject(
                             name = "주소 중복",
                             value = """{"code": "STUDIO_409_2", "message": "이미 사용 중인 갤러리 주소입니다."}""",
+                        ),
+                        ExampleObject(
+                            name = "삭제 진행 중",
+                            value = """{"code": "STUDIO_409_7", "message": "스튜디오 삭제가 진행 중이라 새 데이터를 저장할 수 없습니다."}""",
                         ),
                     ],
                 ),

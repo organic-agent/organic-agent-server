@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema
 
 @Schema(description = "공개 주소 사용 가능 여부")
 data class GalleryUrlAvailabilityResponse(
+    @field:Schema(description = "앞뒤 공백 제거와 Locale.ROOT 소문자 변환을 거친 canonical 공개 주소")
     val galleryUrl: String,
 
     @field:Schema(

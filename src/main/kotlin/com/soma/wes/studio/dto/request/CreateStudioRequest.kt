@@ -13,9 +13,9 @@ data class CreateStudioRequest(
     val name: String,
 
     @field:NotBlank
-    @field:Size(min = 3, max = 50)
+    @field:Size(max = 255)
     @field:Schema(
-        description = "공개 주소 식별자. 소문자·숫자·하이픈 3~50자이며 서비스 예약어는 쓸 수 없다.",
+        description = "공개 주소 식별자. 앞뒤 공백과 대소문자는 정규화되며, 결과는 소문자·숫자·하이픈 3~50자여야 한다.",
         example = "organic-studio",
     )
     val galleryUrl: String,

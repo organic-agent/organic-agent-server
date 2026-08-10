@@ -11,9 +11,7 @@ import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.support.MockGalleryTemplateLoader
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.repository.PhotoRepository
-import com.soma.wes.studio.exception.StudioErrorCode
-import com.soma.wes.studio.exception.StudioException
-import com.soma.wes.studio.repository.StudioRepository
+import com.soma.wes.studio.support.StudioWriteAdmission
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -23,7 +21,7 @@ import java.time.ZonedDateTime
 /** 버전이 고정된 샘플 사진과 사전 계산 임베딩을 한 트랜잭션으로 seed한다. */
 @Service
 class MockGalleryService(
-    private val studioRepository: StudioRepository,
+    private val studioWriteAdmission: StudioWriteAdmission,
     private val galleryRepository: GalleryRepository,
     private val photoRepository: PhotoRepository,
     private val templateLoader: MockGalleryTemplateLoader,
@@ -45,8 +43,7 @@ class MockGalleryService(
      */
     @Transactional
     fun create(userId: Long, request: CreateGalleryRequest?): GalleryResponse {
-        val studio = studioRepository.findByUserIdForUpdate(userId)
-            ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
+        val studio = studioWriteAdmission.lockWritableByUserId(userId)
         val studioId = checkNotNull(studio.id) { "저장되지 않은 스튜디오입니다." }
 
         galleryRepository.findByStudioIdAndGalleryType(studioId, GalleryType.MOCK)?.let { existing ->
