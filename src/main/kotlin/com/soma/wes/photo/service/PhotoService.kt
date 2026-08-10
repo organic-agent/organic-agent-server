@@ -17,6 +17,7 @@ import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.support.PhotoViewAssembler
+import com.soma.wes.studio.support.StudioWriteAdmission
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort
@@ -44,6 +45,7 @@ class PhotoService(
     private val photoStorage: PhotoStorage,
     private val photoViewAssembler: PhotoViewAssembler,
     private val properties: StorageProperties,
+    private val studioWriteAdmission: StudioWriteAdmission,
 ) {
 
     companion object {
@@ -76,7 +78,8 @@ class PhotoService(
         userId: Long,
         request: IssueUploadUrlsRequest,
     ): IssueUploadUrlsResponse {
-        galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        studioWriteAdmission.requireWritable(gallery.studioId)
 
         if (request.files.size > properties.maxBatchSize) {
             throw PhotoException(PhotoErrorCode.TOO_MANY_PHOTOS)
@@ -102,10 +105,12 @@ class PhotoService(
         }
 
         val uploads = photoRepository.saveAll(photos).map { photo ->
+            val presigned = photoStorage.presignUpload(photo.storageKey, photo.contentType)
+            photo.recordUploadUrlExpiration(presigned.expiresAt)
             IssuedUploadResponse(
                 photoId = photo.requiredId,
                 storageKey = photo.storageKey,
-                uploadUrl = photoStorage.presignUpload(photo.storageKey, photo.contentType),
+                uploadUrl = presigned.url,
             )
         }
 

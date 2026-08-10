@@ -96,6 +96,11 @@ interface PhotoRepository : JpaRepository<Photo, Long> {
      */
     fun findAllByGalleryIdAndEmbeddingIsNotNullOrderByDisplayOrderAscIdAsc(galleryId: Long): List<Photo>
 
+    fun findAllByGalleryIdIn(galleryIds: Collection<Long>): List<Photo>
+
+    @Query(value = "select * from photos where gallery_id in (:galleryIds) for update", nativeQuery = true)
+    fun findAllByGalleryIdInForUpdate(@Param("galleryIds") galleryIds: Collection<Long>): List<Photo>
+
     fun countByGalleryId(galleryId: Long): Long
 
     fun countByGalleryIdAndStatus(galleryId: Long, status: PhotoStatus): Long

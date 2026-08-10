@@ -78,6 +78,22 @@ interface PhotoControllerDocs {
                 ),
             ],
         ),
+        ApiResponse(
+            responseCode = "409",
+            description = "운영자 승인 hard delete가 이미 진행 중임",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "삭제 진행 중",
+                            value = """{"code": "STUDIO_409_7", "message": "스튜디오 삭제가 진행 중이라 새 데이터를 저장할 수 없습니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
     )
     fun issueUploadUrls(
         loginUser: LoginUser,

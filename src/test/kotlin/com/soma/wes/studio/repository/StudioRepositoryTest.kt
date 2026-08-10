@@ -3,6 +3,7 @@ package com.soma.wes.studio.repository
 import com.soma.wes.TestcontainersConfiguration
 import com.soma.wes.global.config.TimeConfig
 import com.soma.wes.studio.domain.Studio
+import org.hibernate.exception.ConstraintViolationException
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
@@ -32,9 +33,11 @@ class StudioRepositoryTest @Autowired constructor(
     fun `한 작가가 스튜디오를 두 개 만들 수 없다`() {
         studioRepository.save(newStudio(userId = 10L, galleryUrl = "soma-studio"))
 
-        assertFailsWith<DataIntegrityViolationException> {
+        val exception = assertFailsWith<DataIntegrityViolationException> {
             studioRepository.saveAndFlush(newStudio(userId = 10L, galleryUrl = "soma-studio-2"))
         }
+
+        assertEquals("uk_studios_user_id", constraintName(exception))
     }
 
     @Test
@@ -42,9 +45,11 @@ class StudioRepositoryTest @Autowired constructor(
         // 공개 주소가 겹치면 어느 스튜디오를 보여줄지 가릴 수 없다.
         studioRepository.save(newStudio(userId = 10L, galleryUrl = "soma-studio"))
 
-        assertFailsWith<DataIntegrityViolationException> {
+        val exception = assertFailsWith<DataIntegrityViolationException> {
             studioRepository.saveAndFlush(newStudio(userId = 20L, galleryUrl = "soma-studio"))
         }
+
+        assertEquals("uk_studios_gallery_url", constraintName(exception))
     }
 
     @Test
@@ -58,4 +63,10 @@ class StudioRepositoryTest @Autowired constructor(
     fun `스튜디오를 만들지 않은 사용자는 온보딩 전이다`() {
         assertFalse(studioRepository.existsByUserId(999L))
     }
+
+    private fun constraintName(exception: DataIntegrityViolationException): String? =
+        generateSequence<Throwable>(exception) { it.cause }
+            .filterIsInstance<ConstraintViolationException>()
+            .mapNotNull { it.constraintName }
+            .firstOrNull()
 }
