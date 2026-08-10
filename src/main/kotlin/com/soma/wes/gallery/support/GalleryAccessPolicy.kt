@@ -26,8 +26,9 @@ import java.time.ZonedDateTime
  * - **예비 부부** — 초대를 수락해 [GalleryMember]가 된 사람. 사진을 올리지는 못하고,
  *   갤러리가 열려 있고 마감 전인 동안에만 고르고 묶는다.
  *
- * 하객(게스트)은 아직 없다. [GalleryMember]가 부부와 게스트를 구분하지 않아서, 도입하려면
- * 역할 컬럼과 초대 흐름이 함께 바뀐다.
+ * 계정이 없는 하객은 여기 없다. 협업 링크로 들어온 사람의 자격은 계정이 아니라 토큰에서 나오므로
+ * [com.soma.wes.collab.support.CollabSessionAccess]가 따로 판단한다 — `userId`가 없는 요청을
+ * 이 파일에 섞으면 "역할로 답한다"는 규칙이 첫 줄부터 깨진다.
  */
 @Service
 class GalleryAccessPolicy(

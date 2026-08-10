@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component
  * 카카오톡 공유와 메일 본문에 각각 흩어진다. 그중 하나만 경로를 놓쳐도 그 경로로 받은
  * 사람에게만 깨진 링크가 간다.
  *
- * 토큰은 URL-safe Base64([GalleryInviteTokenGenerator])라 경로에 그대로 실어도 인코딩이
+ * 토큰은 URL-safe Base64([SecureTokenGenerator])라 경로에 그대로 실어도 인코딩이
  * 필요 없다.
  */
 @Component

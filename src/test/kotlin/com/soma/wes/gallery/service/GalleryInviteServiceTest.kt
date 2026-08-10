@@ -15,7 +15,7 @@ import com.soma.wes.gallery.config.GalleryInviteProperties
 import com.soma.wes.gallery.dto.response.GalleryInviteResponse
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.gallery.support.GalleryInviteLinkAssembler
-import com.soma.wes.gallery.support.GalleryInviteTokenGenerator
+import com.soma.wes.global.SecureTokenGenerator
 import com.soma.wes.global.config.TimeConfig
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
@@ -41,7 +41,7 @@ import org.springframework.context.annotation.Import
     TimeConfig::class,
     GalleryAccessPolicy::class,
     GalleryInviteService::class,
-    GalleryInviteTokenGenerator::class,
+    SecureTokenGenerator::class,
     GalleryInviteLinkAssembler::class,
 )
 @EnableConfigurationProperties(GalleryInviteProperties::class)

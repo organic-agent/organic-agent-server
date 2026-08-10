@@ -11,7 +11,7 @@ import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.gallery.support.GalleryInviteLinkAssembler
-import com.soma.wes.gallery.support.GalleryInviteTokenGenerator
+import com.soma.wes.global.SecureTokenGenerator
 import com.soma.wes.user.domain.UserType
 import com.soma.wes.user.exception.UserErrorCode
 import com.soma.wes.user.exception.UserException
@@ -36,7 +36,7 @@ class GalleryInviteService(
     private val galleryMemberRepository: GalleryMemberRepository,
     private val userRepository: UserRepository,
     private val galleryAccessPolicy: GalleryAccessPolicy,
-    private val tokenGenerator: GalleryInviteTokenGenerator,
+    private val tokenGenerator: SecureTokenGenerator,
     private val linkAssembler: GalleryInviteLinkAssembler,
     private val clock: Clock,
 ) {

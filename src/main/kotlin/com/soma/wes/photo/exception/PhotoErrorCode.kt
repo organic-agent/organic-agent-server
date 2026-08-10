@@ -29,6 +29,15 @@ enum class PhotoErrorCode(
      */
     INVALID_SCORE(HttpStatus.BAD_REQUEST, "PHOTO_400_4", "별점은 1점에서 5점 사이여야 합니다."),
 
+    /**
+     * 목록 요청의 페이지 번호가 음수인 경우.
+     *
+     * 막지 않으면 `PageRequest.of`가 `IllegalArgumentException`을 던져 500이 나간다.
+     * 클라이언트가 고칠 수 있는 잘못을 서버 장애로 알려주는 셈이고, 로그인 없이 열리는
+     * 공유 링크 목록에서는 아무나 그 500을 만들어낼 수 있다.
+     */
+    INVALID_PAGE(HttpStatus.BAD_REQUEST, "PHOTO_400_5", "페이지 번호는 0 이상이어야 합니다."),
+
     /** 요청에 다른 갤러리의 사진 id가 섞여 있는 경우. */
     PHOTO_NOT_FOUND(HttpStatus.NOT_FOUND, "PHOTO_404_1", "존재하지 않는 사진입니다."),
 

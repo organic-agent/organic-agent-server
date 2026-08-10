@@ -177,23 +177,13 @@ class PhotoService(
     ): PhotoPageResponse {
         galleryAccessPolicy.requireViewer(galleryId, userId)
 
-        if (size !in 1..properties.maxBatchSize) {
-            throw PhotoException(PhotoErrorCode.TOO_MANY_PHOTOS)
-        }
         // 컨트롤러의 @Min·@Max가 먼저 걸러내지만 그 검증은 컨트롤러를 지날 때만 돈다.
         // 범위를 벗어난 값은 조용히 빈 목록이 되어, 화면에는 "고른 사진이 없다"로 보인다.
         if (minScore != null && minScore !in PhotoRating.MIN_SCORE..PhotoRating.MAX_SCORE) {
             throw PhotoException(PhotoErrorCode.INVALID_SCORE)
         }
 
-        // displayOrder가 같은 사진(같은 배치에 동시 발급된 것들)이 페이지를 넘길 때마다
-        // 자리를 바꾸지 않도록 id로 한 번 더 정렬한다.
-        val pageable = PageRequest.of(
-            page,
-            size,
-            Sort.by(Sort.Direction.ASC, "displayOrder", "id"),
-        )
-        val found = findPage(galleryId, status, minScore, pageable)
+        val found = findPage(galleryId, status, minScore, pageableOf(page, size))
 
         return PhotoPageResponse(
             photos = photoViewAssembler.toResponses(found.content),
@@ -225,6 +215,24 @@ class PhotoService(
         minScore != null -> photoRepository.findAllByGalleryIdAndScoreAtLeast(galleryId, minScore, pageable)
         else -> photoRepository.findAllByGalleryId(galleryId, pageable)
     }
+
+    /**
+     * [list]가 쓴다.
+     *
+     * displayOrder가 같은 사진(같은 배치에 동시 발급된 것들)이 페이지를 넘길 때마다 자리를
+     * 바꾸지 않도록 id로 한 번 더 정렬한다.
+     */
+    private fun pageableOf(page: Int, size: Int): PageRequest {
+        if (page < 0) {
+            throw PhotoException(PhotoErrorCode.INVALID_PAGE)
+        }
+        if (size !in 1..properties.maxBatchSize) {
+            throw PhotoException(PhotoErrorCode.TOO_MANY_PHOTOS)
+        }
+
+        return PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "displayOrder", "id"))
+    }
+
 
     /**
      * 사진 한 장의 상세. 원본을 원래 크기로 보는 화면이 부른다.

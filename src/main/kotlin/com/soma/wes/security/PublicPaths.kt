@@ -21,5 +21,13 @@ object PublicPaths {
         // 아직 인증되지 않은 상태로 들어오므로 열어둬야 한다.
         "/login/oauth2/code/**",
         "/api/v1/auth/reissue",
+        // 하객이 협업 링크로 사진을 보고 의견을 남기는 경로. 계정이 없는 사람이 부르므로
+        // 로그인 토큰을 요구할 수 없다. 자격 증명은 경로의 공유 토큰과, 글을 남길 때 쓰는
+        // `X-Guest-Token` 헤더뿐이고 검증은 `CollabSessionAccess`가 한다.
+        //
+        // 세션을 열고 사진을 담고 결과를 보는 경로는 여기 없다. 그쪽은
+        // `/api/v1/galleries/{id}/collab-session`이라 부부·작가의 인증을 그대로 지난다 —
+        // 경로가 갈려 있어야 무엇을 열어줬는지가 이 목록만 보고도 분명해진다.
+        "/api/v1/collab/**",
     )
 }
