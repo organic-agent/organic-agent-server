@@ -83,6 +83,24 @@ class MockGalleryControllerTest @Autowired constructor(
     }
 
     @Test
+    fun `운영 v1 manifest는 서버 계약을 만족한다`() {
+        val template = MockGalleryTemplateLoader(
+            properties = MockGalleryProperties(
+                enabled = true,
+                manifestLocation = "classpath:/mock-gallery/v1.json",
+            ),
+            resourceLoader = DefaultResourceLoader(),
+            objectMapper = objectMapper,
+        ).load()
+
+        assertEquals("v1", template.templateVersion)
+        assertEquals("facebook/dinov2-base", template.embeddingModel)
+        assertEquals(Photo.EMBEDDING_DIMENSION, template.embeddingDimension)
+        assertEquals(80, template.photos.size)
+        assertEquals((0 until 80).toList(), template.photos.map { it.displayOrder })
+    }
+
+    @Test
     fun `Mock 갤러리를 만들면 manifest의 공유 사진과 임베딩을 함께 seed한다`() {
         val photographer = signUpPhotographer()
 
