@@ -157,6 +157,10 @@ interface PhotoControllerDocs {
 
             사진마다 매겨진 별점(score, 1~5)이 함께 온다. 아무도 매기지 않았으면 null이다.
             minScore를 주면 그 점수 이상만 온다 — 별점이 없는 사진은 이때 빠진다.
+
+            `page`와 `size`는 범위를 벗어나도 400이 아니라 깎아서 처리한다 — 음수 페이지는
+            첫 페이지로, 상한을 넘는 크기는 상한으로 맞춘다. 응답의 `page`·`size`가 실제로
+            적용된 값이다.
         """,
     )
     @ApiResponses(
@@ -168,16 +172,12 @@ interface PhotoControllerDocs {
         ),
         ApiResponse(
             responseCode = "400",
-            description = "size가 허용 범위를 벗어나거나 minScore가 1~5 밖임",
+            description = "minScore가 1~5 밖임. page·size는 400을 내지 않는다",
             content = [
                 Content(
                     mediaType = MediaType.APPLICATION_JSON_VALUE,
                     schema = Schema(implementation = ErrorResponse::class),
                     examples = [
-                        ExampleObject(
-                            name = "페이지 크기 초과",
-                            value = """{"code": "PHOTO_400_1", "message": "한 번에 처리할 수 있는 사진 수를 넘었습니다."}""",
-                        ),
                         ExampleObject(
                             name = "범위 밖 minScore",
                             value = """{"code": "PHOTO_400_4", "message": "별점은 1점에서 5점 사이여야 합니다."}""",

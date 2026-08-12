@@ -12,17 +12,7 @@ import jakarta.persistence.Index
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
 
-/**
- * 하객 한 사람이 사진 한 장에 남긴 반응.
- *
- * **하객당 한 행이다**(UK on `collab_photo_id, collab_guest_id`). 없으면 새로고침할 때마다
- * 표가 쌓여 "좋아요 40"이 사람 40명이 아니게 되고, 그 수를 보고 사진을 고르는 부부가 속는다.
- * 마음이 바뀌면 새 행이 아니라 [changeReaction]으로 덮어쓴다.
- *
- * [com.soma.wes.photo.domain.PhotoRating]과 반대 방향이다. 별점은 사진당 한 행이라 마지막
- * 사람이 덮어쓰지만(부부와 작가는 같이 고르는 한 팀이다), 하객 반응은 사람 수를 세는 것이
- * 목적이라 사람마다 한 행이어야 한다.
- */
+
 @Entity
 @Table(
     name = "collab_photo_votes",

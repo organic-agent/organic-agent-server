@@ -1,9 +1,8 @@
 package com.soma.wes.selection.service
 
 import com.soma.wes.gallery.domain.Gallery
-import com.soma.wes.gallery.exception.GalleryErrorCode
-import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.repository.GalleryRepository
+import com.soma.wes.gallery.repository.requireWithLockById
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.domain.Photo
@@ -32,8 +31,8 @@ import java.time.ZonedDateTime
  * 되돌릴 수 있으면 제출이라는 잠금이 아무것도 잠그지 않는다. 조회는 마감된 뒤에도 양쪽 모두
  * 봐야 하므로 [GalleryAccessPolicy.requireViewer] 기준이다.
  *
- * 고치는 경로는 전부 갤러리 행을 잠그고 시작한다([lockGallery]). 신랑과 신부가 동시에 담는 일이
- * 실제로 일어나는데, 잠그지 않으면 둘 다 "아직 한 장 남았다"를 읽어 계약 장수를 넘기고,
+ * 고치는 경로는 전부 갤러리 행을 잠그고 시작한다([GalleryRepository.requireWithLockById]).
+ * 신랑과 신부가 동시에 담는 일이 실제로 일어나는데, 잠그지 않으면 둘 다 "아직 한 장 남았다"를 읽어 계약 장수를 넘기고,
  * 앨범 행이 아직 없을 때는 "없으면 만든다"가 겹쳐 한쪽이 유니크 제약에 걸려 실패한다.
  */
 @Service
@@ -71,7 +70,7 @@ class PhotoSelectionService(
     fun select(galleryId: Long, userId: Long, request: SelectPhotosRequest): PhotoSelectionResponse {
         galleryAccessPolicy.requireCouple(galleryId, userId)
 
-        val gallery = lockGallery(galleryId)
+        val gallery = galleryRepository.requireWithLockById(galleryId)
         val selection = loadOrCreate(galleryId)
         selection.requireEditable()
 
@@ -103,7 +102,7 @@ class PhotoSelectionService(
     fun deselect(galleryId: Long, userId: Long, request: DeselectPhotosRequest): PhotoSelectionResponse {
         galleryAccessPolicy.requireCouple(galleryId, userId)
 
-        val gallery = lockGallery(galleryId)
+        val gallery = galleryRepository.requireWithLockById(galleryId)
         val selection = photoSelectionRepository.findByGalleryId(galleryId)
             ?: return responseOf(gallery, null)
         selection.requireEditable()
@@ -126,7 +125,7 @@ class PhotoSelectionService(
     fun deselectPhoto(galleryId: Long, photoId: Long, userId: Long) {
         galleryAccessPolicy.requireCouple(galleryId, userId)
 
-        lockGallery(galleryId)
+        galleryRepository.requireWithLockById(galleryId)
         val selection = photoSelectionRepository.findByGalleryId(galleryId)
             ?: throw SelectionException(SelectionErrorCode.PHOTO_NOT_SELECTED)
         selection.requireEditable()
@@ -146,7 +145,7 @@ class PhotoSelectionService(
     fun submit(galleryId: Long, userId: Long): PhotoSelectionResponse {
         galleryAccessPolicy.requireCouple(galleryId, userId)
 
-        val gallery = lockGallery(galleryId)
+        val gallery = galleryRepository.requireWithLockById(galleryId)
         val selection = photoSelectionRepository.findByGalleryId(galleryId)
             ?: throw SelectionException(SelectionErrorCode.EMPTY_SELECTION)
 
@@ -168,21 +167,13 @@ class PhotoSelectionService(
     fun withdraw(galleryId: Long, userId: Long): PhotoSelectionResponse {
         galleryAccessPolicy.requirePhotographer(galleryId, userId)
 
-        val gallery = lockGallery(galleryId)
+        val gallery = galleryRepository.requireWithLockById(galleryId)
         val selection = photoSelectionRepository.findByGalleryId(galleryId)
             ?: throw SelectionException(SelectionErrorCode.SELECTION_NOT_SUBMITTED)
 
         selection.withdraw()
         return responseOf(gallery, selection)
     }
-
-    /**
-     * 앨범을 고치는 모든 경로가 여기를 지난다. 잠그는 것이 앨범이 아니라 갤러리인 이유는
-     * [GalleryRepository.findWithLockById]에 적어 두었다.
-     */
-    private fun lockGallery(galleryId: Long): Gallery =
-        galleryRepository.findWithLockById(galleryId)
-            ?: throw GalleryException(GalleryErrorCode.GALLERY_NOT_FOUND)
 
     /** 첫 한 장을 담을 때 앨범이 만들어진다. 갤러리 행이 잠겨 있어 두 요청이 겹치지 않는다. */
     private fun loadOrCreate(galleryId: Long): PhotoSelection =

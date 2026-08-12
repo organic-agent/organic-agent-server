@@ -35,7 +35,7 @@ interface CollabSessionControllerDocs {
             고르는 과정의 일부라 작가가 대신 정하지 않는다.
 
             **부를 때마다 새 세션이다.** 갤러리 하나에 여러 개를 둘 수 있고, 이름(name)이 그것들을
-            가른다. 폐기한 링크를 다시 살리려는 것이라면 이쪽이 아니라 `POST /{sessionId}/share-token`이다
+            가른다. 폐기한 링크를 다시 살리려는 것이라면 이쪽이 아니라 `POST /{sessionId}/republish`이다
             — 그쪽은 이미 받은 의견을 그대로 안고 간다.
 
             `folderId`를 주면 그 폴더에 담긴 사진으로 세션을 채운다. **복사이지 참조가 아니다** —
@@ -133,7 +133,7 @@ interface CollabSessionControllerDocs {
 
     @Operation(
         summary = "협업 세션 이름 변경",
-        description = "이름만 바꾼다. 링크(shareToken)는 그대로라 하객이 들고 있는 주소가 죽지 않는다.",
+        description = "이름만 바꾼다. 링크(collabToken)는 그대로라 하객이 들고 있는 주소가 죽지 않는다.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "변경 성공"),
@@ -165,7 +165,7 @@ interface CollabSessionControllerDocs {
         summary = "협업 링크 폐기",
         description = "링크가 엉뚱한 곳에 퍼졌을 때 거둬들인다. 그 즉시 그 주소로는 아무것도 볼 수 없다. " +
             "담긴 사진과 이미 받은 의견은 지우지 않는다 — 끊는 것은 링크이지 하객이 남겨준 말이 아니다. " +
-            "다시 쓰려면 `POST /{sessionId}/share-token`으로 새 토큰을 받는다. " +
+            "다시 쓰려면 `POST /{sessionId}/republish`로 새 주소를 받는다. " +
             "이미 폐기한 세션을 또 폐기해도 204다.",
     )
     @ApiResponses(
@@ -190,17 +190,21 @@ interface CollabSessionControllerDocs {
     fun revoke(loginUser: LoginUser, galleryId: Long, sessionId: Long): ResponseEntity<Unit>
 
     @Operation(
-        summary = "협업 링크 재발급",
+        summary = "협업 링크 다시 내보내기",
         description = """
-            폐기한 세션에 **새 주소**를 발급한다. 담긴 사진과 이미 받은 의견은 그대로 남는다 —
-            세션을 새로 여는 것(`POST /collab-sessions`)과 다른 점이 이것이다.
+            폐기한 세션을 **새 주소로 되살린다.** 폐기 표시가 풀리고 담긴 사진과 이미 받은 의견은
+            그대로 남는다 — 세션을 새로 여는 것(`POST /collab-sessions`)과 다른 점이 이것이다.
+            그쪽은 사진도 의견도 없는 빈 세션이다.
 
             옛 토큰은 되살리지 않는다. 되살리면 그 링크가 퍼진 단톡방도 함께 되살아난다.
-            폐기하지 않은 세션에 불러도 된다(폐기와 재발급을 한 번에 하는 셈이다).
+            응답의 `collabUrl`이 새 주소이고, 이전 주소는 그 즉시 404가 된다.
+
+            폐기하지 않은 세션에 불러도 된다 — 토큰이 이미 샜다고 판단한 부부가 폐기와 재발급을
+            한 번에 하는 셈이고, 결과는 어느 쪽이든 "이전 주소는 죽고 새 주소가 산다"로 같다.
         """,
     )
     @ApiResponses(
-        ApiResponse(responseCode = "200", description = "재발급 성공"),
+        ApiResponse(responseCode = "200", description = "성공. 응답의 collabUrl이 새 주소다"),
         ApiResponse(
             responseCode = "404",
             description = "이 갤러리의 세션이 아니거나 존재하지 않음",
@@ -218,7 +222,7 @@ interface CollabSessionControllerDocs {
             ],
         ),
     )
-    fun reissueToken(loginUser: LoginUser, galleryId: Long, sessionId: Long): ResponseEntity<CollabSessionResponse>
+    fun republish(loginUser: LoginUser, galleryId: Long, sessionId: Long): ResponseEntity<CollabSessionResponse>
 
     @Operation(
         summary = "하객에게 보여줄 사진 담기",

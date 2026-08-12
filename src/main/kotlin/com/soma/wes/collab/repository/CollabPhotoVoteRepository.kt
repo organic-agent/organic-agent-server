@@ -1,6 +1,7 @@
 package com.soma.wes.collab.repository
 
 import com.soma.wes.collab.domain.CollabPhotoVote
+import com.soma.wes.collab.repository.projection.CollabReactionCountProjection
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param

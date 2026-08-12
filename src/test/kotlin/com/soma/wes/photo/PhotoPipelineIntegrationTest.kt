@@ -7,6 +7,7 @@ import com.soma.wes.auth.service.AuthTokenProvider
 import com.soma.wes.gallery.domain.GalleryMember
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
+import com.soma.wes.global.page.PageRequests
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
@@ -151,15 +152,15 @@ class PhotoPipelineIntegrationTest @Autowired constructor(
         mockMvc.get("/api/v1/galleries/$galleryId/photos") { authorize(photographer) }
             .andExpect {
                 status { isOk() }
-                jsonPath("$.photos") { value(hasSize<Any>(2)) }
+                jsonPath("$.contents") { value(hasSize<Any>(2)) }
                 jsonPath("$.totalCount") { value(2) }
                 jsonPath("$.hasNext") { value(false) }
                 // 버킷이 비공개라 이 URL이 브라우저가 이미지를 받을 유일한 통로다.
-                jsonPath("$.photos[0].status") { value("UPLOADED") }
-                jsonPath("$.photos[0].viewUrl") { value(containsString("X-Amz-Signature")) }
+                jsonPath("$.contents[0].status") { value("UPLOADED") }
+                jsonPath("$.contents[0].viewUrl") { value(containsString("X-Amz-Signature")) }
                 // 아직 S3에 객체가 없는 사진에 URL을 주면 <img>가 깨진 이미지를 그린다.
-                jsonPath("$.photos[1].status") { value("PENDING") }
-                jsonPath("$.photos[1].viewUrl") { value(nullValue()) }
+                jsonPath("$.contents[1].status") { value("PENDING") }
+                jsonPath("$.contents[1].viewUrl") { value(nullValue()) }
             }
     }
 
@@ -177,8 +178,8 @@ class PhotoPipelineIntegrationTest @Autowired constructor(
         mockMvc.get("/api/v1/galleries/$galleryId/photos") { authorize(photographer) }
             .andExpect {
                 status { isOk() }
-                jsonPath("$.photos[0].previewReady") { value(false) }
-                jsonPath("$.photos[0].viewUrl") { value(containsString(storageKey)) }
+                jsonPath("$.contents[0].previewReady") { value(false) }
+                jsonPath("$.contents[0].viewUrl") { value(containsString(storageKey)) }
             }
     }
 
@@ -199,11 +200,11 @@ class PhotoPipelineIntegrationTest @Autowired constructor(
         mockMvc.get("/api/v1/galleries/$galleryId/photos") { authorize(photographer) }
             .andExpect {
                 status { isOk() }
-                jsonPath("$.photos[0].previewReady") { value(true) }
-                jsonPath("$.photos[0].viewUrl") { value(containsString(previewKey)) }
-                jsonPath("$.photos[0].viewUrl") { value(containsString("X-Amz-Signature")) }
+                jsonPath("$.contents[0].previewReady") { value(true) }
+                jsonPath("$.contents[0].viewUrl") { value(containsString(previewKey)) }
+                jsonPath("$.contents[0].viewUrl") { value(containsString("X-Amz-Signature")) }
                 // storageKey는 그대로 원본을 가리킨다. 파생본은 화면용일 뿐 원본을 대신하지 않는다.
-                jsonPath("$.photos[0].storageKey") { value(photo.storageKey) }
+                jsonPath("$.contents[0].storageKey") { value(photo.storageKey) }
             }
     }
 
@@ -217,20 +218,34 @@ class PhotoPipelineIntegrationTest @Autowired constructor(
         mockMvc.get("/api/v1/galleries/$galleryId/photos?status=UPLOADED") { authorize(photographer) }
             .andExpect {
                 status { isOk() }
-                jsonPath("$.photos") { value(hasSize<Any>(2)) }
+                jsonPath("$.contents") { value(hasSize<Any>(2)) }
                 jsonPath("$.totalCount") { value(2) }
             }
     }
 
     @Test
-    fun `페이지 크기 상한을 넘기면 400`() {
+    fun `페이지 크기 상한을 넘기면 거절하지 않고 깎는다`() {
+        // 페이지 파라미터가 이상한 것은 화면의 버그이지 사용자가 고칠 수 있는 잘못이 아니다.
+        // 400을 돌려주면 목록이 통째로 비지만, 깎으면 첫 페이지라도 보인다.
         val photographer = signUpPhotographer()
         val galleryId = createGallery(photographer)
 
         mockMvc.get("/api/v1/galleries/$galleryId/photos?size=1001") { authorize(photographer) }
             .andExpect {
-                status { isBadRequest() }
-                jsonPath("$.code") { value("PHOTO_400_1") }
+                status { isOk() }
+                jsonPath("$.size") { value(PageRequests.MAX_SIZE) }
+            }
+    }
+
+    @Test
+    fun `음수 페이지는 첫 페이지로 깎는다`() {
+        val photographer = signUpPhotographer()
+        val galleryId = createGallery(photographer)
+
+        mockMvc.get("/api/v1/galleries/$galleryId/photos?page=-1") { authorize(photographer) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.page") { value(0) }
             }
     }
 
@@ -267,7 +282,7 @@ class PhotoPipelineIntegrationTest @Autowired constructor(
         mockMvc.get("/api/v1/galleries/$galleryId/photos") { authorize(member) }
             .andExpect {
                 status { isOk() }
-                jsonPath("$.photos") { value(hasSize<Any>(2)) }
+                jsonPath("$.contents") { value(hasSize<Any>(2)) }
             }
     }
 
@@ -306,7 +321,7 @@ class PhotoPipelineIntegrationTest @Autowired constructor(
         mockMvc.get("/api/v1/galleries/$galleryId/photos") { authorize(member) }
             .andExpect {
                 status { isOk() }
-                jsonPath("$.photos") { value(hasSize<Any>(1)) }
+                jsonPath("$.contents") { value(hasSize<Any>(1)) }
             }
     }
 

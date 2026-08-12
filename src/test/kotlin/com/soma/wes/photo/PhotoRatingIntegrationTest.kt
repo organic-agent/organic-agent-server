@@ -236,11 +236,11 @@ class PhotoRatingIntegrationTest @Autowired constructor(
         mockMvc.get("/api/v1/galleries/${fixture.galleryId}/photos") { authorize(fixture.photographer) }
             .andExpect {
                 status { isOk() }
-                jsonPath("$.photos") { value(hasSize<Any>(3)) }
-                jsonPath("$.photos[0].score") { value(5) }
-                jsonPath("$.photos[1].score") { value(3) }
+                jsonPath("$.contents") { value(hasSize<Any>(3)) }
+                jsonPath("$.contents[0].score") { value(5) }
+                jsonPath("$.contents[1].score") { value(3) }
                 // 아무도 매기지 않은 사진은 null이다.
-                jsonPath("$.photos[2].score") { doesNotExist() }
+                jsonPath("$.contents[2].score") { doesNotExist() }
             }
 
         mockMvc.get("/api/v1/galleries/${fixture.galleryId}/photos?minScore=4") {
@@ -248,8 +248,8 @@ class PhotoRatingIntegrationTest @Autowired constructor(
         }.andExpect {
             status { isOk() }
             // 별점이 없는 사진도 함께 빠진다.
-            jsonPath("$.photos") { value(hasSize<Any>(1)) }
-            jsonPath("$.photos[0].photoId") { value(photoIds[0].toInt()) }
+            jsonPath("$.contents") { value(hasSize<Any>(1)) }
+            jsonPath("$.contents[0].photoId") { value(photoIds[0].toInt()) }
             jsonPath("$.totalCount") { value(1) }
         }
     }
@@ -279,8 +279,8 @@ class PhotoRatingIntegrationTest @Autowired constructor(
             authorize(fixture.photographer)
         }.andExpect {
             status { isOk() }
-            jsonPath("$.photos") { value(hasSize<Any>(1)) }
-            jsonPath("$.photos[0].photoId") { value(uploadedIds[0].toInt()) }
+            jsonPath("$.contents") { value(hasSize<Any>(1)) }
+            jsonPath("$.contents[0].photoId") { value(uploadedIds[0].toInt()) }
         }
     }
 
