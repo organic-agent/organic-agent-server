@@ -41,37 +41,41 @@ class Studio(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null
 
-    init {
-        galleryUrl = normalizeGalleryUrl(galleryUrl)
-        validateGalleryUrl(galleryUrl)
-    }
-
-    fun isOwnedBy(userId: Long): Boolean = this.userId == userId
-
     fun update(name: String, galleryUrl: String) {
-        val normalizedGalleryUrl = normalizeGalleryUrl(galleryUrl)
-        validateGalleryUrl(normalizedGalleryUrl)
         this.name = name
-        this.galleryUrl = normalizedGalleryUrl
-    }
-
-    private fun validateGalleryUrl(galleryUrl: String) {
-        if (!isValidGalleryUrl(galleryUrl)) {
-            throw StudioException(StudioErrorCode.INVALID_GALLERY_URL)
-        }
+        this.galleryUrl = validateGalleryUrl(galleryUrl)
     }
 
     companion object {
+
+        fun of(userId: Long, name: String, galleryUrl: String, inflowChannel: String? = null) =
+            Studio(
+                userId = userId,
+                name = name,
+                galleryUrl = validateGalleryUrl(galleryUrl),
+                inflowChannel = inflowChannel
+            )
+
+        /**
+         * 주소가 밖에서 들어오는 모든 곳([of]·[update]·주소 확인)이 쓴다.
+         */
+        fun validateGalleryUrl(galleryUrl: String): String {
+            val normalizedGalleryUrl = normalizeGalleryUrl(galleryUrl)
+            if (!checkGalleryUrl(normalizedGalleryUrl)) {
+                throw StudioException(StudioErrorCode.INVALID_GALLERY_URL)
+            }
+            return normalizedGalleryUrl
+        }
 
         fun normalizeGalleryUrl(galleryUrl: String): String {
             if (galleryUrl.any { it.code > ASCII_MAX_CODE_POINT }) {
                 throw StudioException(StudioErrorCode.INVALID_GALLERY_URL)
             }
 
-            return galleryUrl.trim().lowercase(Locale.ROOT)
+            return galleryUrl.trim().lowercase(Locale.ROOT) // 어떤 환경에서든 유니코드 기본 매핑 규칙만 적용
         }
 
-        fun isValidGalleryUrl(galleryUrl: String): Boolean =
+        fun checkGalleryUrl(galleryUrl: String): Boolean =
             GALLERY_URL_FORMAT.matches(galleryUrl) && galleryUrl !in RESERVED_GALLERY_URLS
 
         private val GALLERY_URL_FORMAT = Regex("^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$")

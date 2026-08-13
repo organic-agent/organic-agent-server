@@ -13,8 +13,6 @@ import com.soma.wes.user.domain.UserType
 import com.soma.wes.user.exception.UserErrorCode
 import com.soma.wes.user.exception.UserException
 import com.soma.wes.user.repository.UserRepository
-import org.hibernate.exception.ConstraintViolationException
-import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -28,78 +26,73 @@ class StudioService(
 
     @Transactional
     fun create(userId: Long, request: CreateStudioRequest): StudioResponse {
-        val normalizedGalleryUrl = Studio.normalizeGalleryUrl(request.galleryUrl)
+        val normalizedGalleryUrl = Studio.validateGalleryUrl(request.galleryUrl)
         val user = userRepository.findById(userId)
             .orElseThrow { UserException(UserErrorCode.USER_NOT_FOUND) }
 
-        if (studioRepository.existsByUserId(userId)) {
-            throw StudioException(StudioErrorCode.STUDIO_ALREADY_EXISTS)
-        }
+        validateStudio(userId, normalizedGalleryUrl)
 
         // 현재 기본적인 회원가입 플로우는 사진작가에게만 부여, 신혼부부는 token기반 회원가입 flow를 타야한다.
         user.selectType(UserType.PHOTOGRAPHER)
 
-        if (studioRepository.existsByGalleryUrl(normalizedGalleryUrl)) {
-            throw StudioException(StudioErrorCode.GALLERY_URL_DUPLICATED)
-        }
-
-        val studio = saveAndFlush(
-            Studio(
+        val studio = studioRepository.save(
+            Studio.of(
                 userId = userId,
                 name = request.name,
                 galleryUrl = normalizedGalleryUrl,
                 inflowChannel = request.inflowChannel,
-            ),
+            )
         )
         return StudioResponse.from(studio)
     }
 
+    private fun validateStudio(userId: Long, normalizedGalleryUrl: String) {
+        if (studioRepository.existsByUserId(userId)) {
+            throw StudioException(StudioErrorCode.STUDIO_ALREADY_EXISTS)
+        }
+
+        if (studioRepository.existsByGalleryUrl(normalizedGalleryUrl)) {
+            throw StudioException(StudioErrorCode.GALLERY_URL_DUPLICATED)
+        }
+    }
+
     @Transactional(readOnly = true)
-    fun getMyStudio(userId: Long): StudioResponse = StudioResponse.from(findMyStudio(userId))
+    fun getMyStudio(userId: Long): StudioResponse{
+        val studio = studioRepository.findByUserId(userId)
+            ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
+
+        return StudioResponse.from(studio)
+    }
 
     @Transactional
     fun updateMyStudio(userId: Long, request: UpdateStudioRequest): StudioResponse {
         val studio = studioWriteAdmission.lockWritableByUserId(userId)
-        val normalizedGalleryUrl = Studio.normalizeGalleryUrl(request.galleryUrl)
+        val normalizedGalleryUrl = Studio.validateGalleryUrl(request.galleryUrl)
 
-        if (normalizedGalleryUrl != studio.galleryUrl && studioRepository.existsByGalleryUrl(normalizedGalleryUrl)) {
-            throw StudioException(StudioErrorCode.GALLERY_URL_DUPLICATED)
-        }
+        validateGalleryUrlChange(studio, normalizedGalleryUrl)
 
         studio.update(request.name, normalizedGalleryUrl)
-        return StudioResponse.from(saveAndFlush(studio))
+        return StudioResponse.from(studio)
     }
 
-    private fun saveAndFlush(studio: Studio): Studio =
-        try {
-            studioRepository.saveAndFlush(studio)
-        } catch (exception: DataIntegrityViolationException) {
-            val constraintName = generateSequence<Throwable>(exception) { it.cause }
-                .filterIsInstance<ConstraintViolationException>()
-                .mapNotNull { it.constraintName }
-                .firstOrNull()
-
-            when (constraintName) {
-                "uk_studios_user_id" -> throw StudioException(StudioErrorCode.STUDIO_ALREADY_EXISTS)
-                "uk_studios_gallery_url" -> throw StudioException(StudioErrorCode.GALLERY_URL_DUPLICATED)
-                else -> throw exception
-            }
+    private fun validateGalleryUrlChange(studio: Studio, normalizedGalleryUrl: String) {
+        if (normalizedGalleryUrl == studio.galleryUrl) {
+            return
         }
 
-    private fun findMyStudio(userId: Long): Studio =
-        studioRepository.findByUserId(userId)
-            ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
+        if (studioRepository.existsByGalleryUrl(normalizedGalleryUrl)) {
+            throw StudioException(StudioErrorCode.GALLERY_URL_DUPLICATED)
+        }
+    }
 
     @Transactional(readOnly = true)
     fun checkGalleryUrl(galleryUrl: String): GalleryUrlAvailabilityResponse {
-        val normalizedGalleryUrl = Studio.normalizeGalleryUrl(galleryUrl)
-        if (!Studio.isValidGalleryUrl(normalizedGalleryUrl)) {
-            throw StudioException(StudioErrorCode.INVALID_GALLERY_URL)
-        }
+        val normalizedGalleryUrl = Studio.validateGalleryUrl(galleryUrl)
+        val isExists = studioRepository.existsByGalleryUrl(normalizedGalleryUrl)
 
         return GalleryUrlAvailabilityResponse(
             galleryUrl = normalizedGalleryUrl,
-            available = !studioRepository.existsByGalleryUrl(normalizedGalleryUrl),
+            available = !isExists,
         )
     }
 }
