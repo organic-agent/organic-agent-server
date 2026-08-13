@@ -48,7 +48,7 @@ class Studio(
 
     companion object {
 
-        fun of(userId: Long, name: String, galleryUrl: String, inflowChannel: String? = null) =
+        fun create(userId: Long, name: String, galleryUrl: String, inflowChannel: String? = null) =
             Studio(
                 userId = userId,
                 name = name,

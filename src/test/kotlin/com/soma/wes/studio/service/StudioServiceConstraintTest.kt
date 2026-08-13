@@ -4,7 +4,6 @@ import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.dto.request.CreateStudioRequest
 import com.soma.wes.studio.repository.StudioRepository
-import com.soma.wes.studio.support.StudioWriteAdmission
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
 import org.hibernate.exception.ConstraintViolationException
@@ -34,7 +33,7 @@ class StudioServiceConstraintTest {
     fun `동시 생성이 사전 조회를 함께 통과하면 갤러리 주소 경쟁은 DB 제약이 막는다`() {
         val studioRepository = mock<StudioRepository>()
         val userRepository = mock<UserRepository>()
-        val service = StudioService(studioRepository, userRepository, mock<StudioWriteAdmission>())
+        val service = StudioService(studioRepository, userRepository)
         val precheckBarrier = CyclicBarrier(2)
         val persisted = persistedStudio()
         val wonInsert = AtomicBoolean(false)
@@ -98,7 +97,7 @@ class StudioServiceConstraintTest {
         whenever(studioRepository.existsByGalleryUrl("studio-url")).thenReturn(false)
         whenever(studioRepository.save(any<Studio>())).thenThrow(failure)
 
-        return StudioService(studioRepository, userRepository, mock<StudioWriteAdmission>())
+        return StudioService(studioRepository, userRepository)
     }
 
     private fun persistedStudio(): Studio = mock<Studio>().also { studio ->

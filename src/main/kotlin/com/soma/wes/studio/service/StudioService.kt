@@ -8,7 +8,6 @@ import com.soma.wes.studio.dto.response.StudioResponse
 import com.soma.wes.studio.exception.StudioErrorCode
 import com.soma.wes.studio.exception.StudioException
 import com.soma.wes.studio.repository.StudioRepository
-import com.soma.wes.studio.support.StudioWriteAdmission
 import com.soma.wes.user.domain.UserType
 import com.soma.wes.user.exception.UserErrorCode
 import com.soma.wes.user.exception.UserException
@@ -21,7 +20,6 @@ import org.springframework.transaction.annotation.Transactional
 class StudioService(
     private val studioRepository: StudioRepository,
     private val userRepository: UserRepository,
-    private val studioWriteAdmission: StudioWriteAdmission,
 ) {
 
     @Transactional
@@ -36,7 +34,7 @@ class StudioService(
         user.selectType(UserType.PHOTOGRAPHER)
 
         val studio = studioRepository.save(
-            Studio.of(
+            Studio.create(
                 userId = userId,
                 name = request.name,
                 galleryUrl = normalizedGalleryUrl,
@@ -66,7 +64,8 @@ class StudioService(
 
     @Transactional
     fun updateMyStudio(userId: Long, request: UpdateStudioRequest): StudioResponse {
-        val studio = studioWriteAdmission.lockWritableByUserId(userId)
+        val studio = studioRepository.findWithLockByUserId(userId)
+            ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
         val normalizedGalleryUrl = Studio.validateGalleryUrl(request.galleryUrl)
 
         validateGalleryUrlChange(studio, normalizedGalleryUrl)

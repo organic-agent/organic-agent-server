@@ -8,9 +8,9 @@ import kotlin.test.assertFailsWith
 
 class StudioTest {
 
-    // 생성자가 아니라 [Studio.of]를 지난다. 생성자는 JPA가 되살릴 때도 지나므로 검증하지 않는다.
+    // 생성자가 아니라 [Studio.create]를 지난다. 생성자는 JPA가 되살릴 때도 지나므로 검증하지 않는다.
     private fun newStudio(galleryUrl: String) =
-        Studio.of(userId = 1L, name = "소마 스튜디오", galleryUrl = galleryUrl)
+        Studio.create(userId = 1L, name = "소마 스튜디오", galleryUrl = galleryUrl)
 
     @Test
     fun `소문자와 숫자, 하이픈으로 된 주소를 받는다`() {
