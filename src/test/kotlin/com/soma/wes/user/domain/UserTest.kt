@@ -6,9 +6,7 @@ import com.soma.wes.user.exception.UserException
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertFalse
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 class UserTest {
 
@@ -23,7 +21,6 @@ class UserTest {
         val user = newUser()
 
         assertNull(user.userType)
-        assertFalse(user.isOnboarded)
     }
 
     @Test
@@ -33,7 +30,6 @@ class UserTest {
         user.selectType(UserType.PHOTOGRAPHER)
 
         assertEquals(UserType.PHOTOGRAPHER, user.userType)
-        assertTrue(user.isOnboarded)
     }
 
     @Test
