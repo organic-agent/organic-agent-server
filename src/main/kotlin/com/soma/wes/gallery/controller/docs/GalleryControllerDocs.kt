@@ -1,7 +1,7 @@
 package com.soma.wes.gallery.controller.docs
 
 import com.soma.wes.auth.domain.LoginUser
-import com.soma.wes.gallery.dto.request.ChangeTargetPhotoCountRequest
+import com.soma.wes.gallery.dto.request.ChangeMaxSelectablePhotoCountRequest
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
 import com.soma.wes.gallery.dto.response.GalleryResponse
@@ -234,10 +234,10 @@ interface GalleryControllerDocs {
         ),
         ApiResponse(responseCode = "404", description = "존재하지 않는 갤러리", content = []),
     )
-    fun changeTargetPhotoCount(
+    fun changeMaxSelectablePhotoCount(
         loginUser: LoginUser,
         galleryId: Long,
-        request: ChangeTargetPhotoCountRequest,
+        request: ChangeMaxSelectablePhotoCountRequest,
     ): ResponseEntity<GalleryResponse>
 
     @Operation(

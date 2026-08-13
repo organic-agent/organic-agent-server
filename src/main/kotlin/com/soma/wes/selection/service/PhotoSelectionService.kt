@@ -82,7 +82,7 @@ class PhotoSelectionService(
         // 중복이 먼저다. 겹친 채로 장수를 세면 "몇 장이 넘쳤다"가 실제와 다르고, 사용자는
         // 담기지도 않은 사진 때문에 계약 장수를 넘겼다는 말을 듣는다.
         selection.requireNotSelected(alreadySelected, photos.map { it.requiredId })
-        selection.requireWithinTarget(gallery.targetPhotoCount, alreadySelected.size + photos.size)
+        selection.requireWithinMax(gallery.maxSelectablePhotoCount, alreadySelected.size + photos.size)
 
         photoSelectionItemRepository.saveAll(
             photos.map { PhotoSelectionItem(selectionId = selection.requiredId, photoId = it.requiredId) },
@@ -218,7 +218,7 @@ class PhotoSelectionService(
         photos: List<Photo> = loadSelectedPhotos(selection),
     ) = PhotoSelectionResponse.of(
         selection = selection,
-        targetPhotoCount = gallery.targetPhotoCount,
+        maxSelectablePhotoCount = gallery.maxSelectablePhotoCount,
         photos = photoViewAssembler.toResponses(photos),
         viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
     )

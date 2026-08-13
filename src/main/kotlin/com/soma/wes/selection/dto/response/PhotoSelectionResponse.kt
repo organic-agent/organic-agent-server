@@ -13,7 +13,7 @@ data class PhotoSelectionResponse(
     val status: PhotoSelectionStatus,
 
     @field:Schema(description = "계약한 선택 장수. null이면 제한이 없다")
-    val targetPhotoCount: Int?,
+    val maxSelectablePhotoCount: Int?,
 
     @field:Schema(description = "지금까지 고른 장수")
     val selectedCount: Int,
@@ -43,14 +43,14 @@ data class PhotoSelectionResponse(
          */
         fun of(
             selection: PhotoSelection?,
-            targetPhotoCount: Int?,
+            maxSelectablePhotoCount: Int?,
             photos: List<PhotoResponse>,
             viewUrlTtlSeconds: Long,
         ) = PhotoSelectionResponse(
             status = selection?.status ?: PhotoSelectionStatus.SELECTING,
-            targetPhotoCount = targetPhotoCount,
+            maxSelectablePhotoCount = maxSelectablePhotoCount,
             selectedCount = photos.size,
-            remainingCount = targetPhotoCount?.let { (it - photos.size).coerceAtLeast(0) },
+            remainingCount = maxSelectablePhotoCount?.let { (it - photos.size).coerceAtLeast(0) },
             submittedAt = selection?.submittedAt,
             photos = photos,
             viewUrlTtlSeconds = viewUrlTtlSeconds,

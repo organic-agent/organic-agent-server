@@ -22,10 +22,10 @@ class PhotoSelectionTest {
         val selection = PhotoSelection(galleryId = 1L)
 
         val exception = assertFailsWith<SelectionException> {
-            selection.requireWithinTarget(targetPhotoCount = 50, countAfterAdd = 51)
+            selection.requireWithinMax(maxSelectablePhotoCount = 50, countAfterAdd = 51)
         }
 
-        assertEquals(SelectionErrorCode.TARGET_PHOTO_COUNT_EXCEEDED, exception.errorCode)
+        assertEquals(SelectionErrorCode.MAX_SELECTABLE_PHOTO_COUNT_EXCEEDED, exception.errorCode)
     }
 
     @Test
@@ -33,7 +33,7 @@ class PhotoSelectionTest {
         // 경계값이 막히면 부부는 마지막 한 장을 영영 담지 못한다.
         val selection = PhotoSelection(galleryId = 1L)
 
-        selection.requireWithinTarget(targetPhotoCount = 50, countAfterAdd = 50)
+        selection.requireWithinMax(maxSelectablePhotoCount = 50, countAfterAdd = 50)
     }
 
     @Test
@@ -41,7 +41,7 @@ class PhotoSelectionTest {
         // null은 "제한 없음"이다. 장수를 정하지 않고 진행하는 계약도 있다.
         val selection = PhotoSelection(galleryId = 1L)
 
-        selection.requireWithinTarget(targetPhotoCount = null, countAfterAdd = 1_000)
+        selection.requireWithinMax(maxSelectablePhotoCount = null, countAfterAdd = 1_000)
     }
 
     @Test

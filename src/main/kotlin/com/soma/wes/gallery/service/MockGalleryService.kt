@@ -62,7 +62,7 @@ class MockGalleryService(
                 templateVersion = template.templateVersion,
                 title = request?.title ?: DEFAULT_TITLE,
                 selectionDeadline = request?.selectionDeadline,
-                targetPhotoCount = request?.targetPhotoCount,
+                maxSelectablePhotoCount = request?.maxSelectablePhotoCount,
                 at = ZonedDateTime.now(clock),
             ),
         )

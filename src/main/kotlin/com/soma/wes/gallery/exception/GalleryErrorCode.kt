@@ -25,7 +25,7 @@ enum class GalleryErrorCode(
      * 한 장도 고를 수 없는 갤러리가 만들어지면, 막히는 것은 값을 넣은 작가가 아니라
      * 아무것도 못 고르는 부부다. 제한을 두지 않으려면 null을 보낸다.
      */
-    INVALID_TARGET_PHOTO_COUNT(HttpStatus.BAD_REQUEST, "GALLERY_400_3", "선택 장수는 1 이상이어야 합니다."),
+    INVALID_MAX_SELECTABLE_PHOTO_COUNT(HttpStatus.BAD_REQUEST, "GALLERY_400_3", "선택 장수는 1 이상이어야 합니다."),
 
     /** 멤버도 담당 작가도 아닌 사용자의 접근. */
     GALLERY_ACCESS_DENIED(HttpStatus.FORBIDDEN, "GALLERY_403_1", "갤러리에 접근할 권한이 없습니다."),
