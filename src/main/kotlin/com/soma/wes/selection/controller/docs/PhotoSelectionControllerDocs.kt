@@ -16,7 +16,7 @@ interface PhotoSelectionControllerDocs {
     @Operation(
         summary = "선택 앨범 조회",
         description = """
-            갤러리의 선택 앨범 하나를 연다. 고른 사진 전부와 계약 장수(targetPhotoCount),
+            갤러리의 선택 앨범 하나를 연다. 고른 사진 전부와 계약 장수(maxSelectablePhotoCount),
             남은 장수(remainingCount)가 함께 온다.
 
             갤러리를 볼 수 있는 사람이면 누구나 조회한다 — 작가는 제출 결과를 마감 뒤에도 봐야 하고,
@@ -108,7 +108,7 @@ interface PhotoSelectionControllerDocs {
             그 뒤에 조용히 바뀌면 어느 쪽이 최종인지 알 수 없어진다. 되돌리는 것은 작가만 한다.
 
             계약 장수에 못 미쳐도 제출된다 — 50장 계약에 45장만 고르는 일은 실제로 있다.
-            응답의 targetPhotoCount와 selectedCount로 화면이 미리 물어볼 수 있다.
+            응답의 maxSelectablePhotoCount와 selectedCount로 화면이 미리 물어볼 수 있다.
             한 장도 고르지 않았다면 400이다.
         """,
     )

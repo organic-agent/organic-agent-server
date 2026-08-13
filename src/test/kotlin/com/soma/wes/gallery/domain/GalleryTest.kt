@@ -122,7 +122,7 @@ class GalleryTest {
                 studioId = 1L,
                 title = "김철수 · 이영희 본식",
                 selectionDeadline = now.minusMinutes(1),
-                targetPhotoCount = null,
+                maxSelectablePhotoCount = null,
                 at = now,
             )
         }
@@ -137,12 +137,12 @@ class GalleryTest {
             studioId = 1L,
             title = "본식",
             selectionDeadline = null,
-            targetPhotoCount = null,
+            maxSelectablePhotoCount = null,
             at = now,
         )
 
         assertNull(gallery.selectionDeadline)
-        assertNull(gallery.targetPhotoCount)
+        assertNull(gallery.maxSelectablePhotoCount)
         assertEquals(GalleryStatus.DRAFT, gallery.status)
         assertEquals(GalleryType.NORMAL, gallery.galleryType)
         assertNull(gallery.templateVersion)
@@ -155,7 +155,7 @@ class GalleryTest {
             templateVersion = "sample-v1",
             title = "체험 갤러리",
             selectionDeadline = null,
-            targetPhotoCount = null,
+            maxSelectablePhotoCount = null,
             at = now,
         )
 
@@ -172,7 +172,7 @@ class GalleryTest {
                 templateVersion = " ",
                 title = "체험 갤러리",
                 selectionDeadline = null,
-                targetPhotoCount = null,
+                maxSelectablePhotoCount = null,
                 at = now,
             )
         }
@@ -186,7 +186,7 @@ class GalleryTest {
                 templateVersion = "sample-v1",
                 title = " ",
                 selectionDeadline = null,
-                targetPhotoCount = null,
+                maxSelectablePhotoCount = null,
                 at = now,
             )
         }
@@ -196,7 +196,7 @@ class GalleryTest {
                 templateVersion = "sample-v1",
                 title = "a".repeat(Gallery.MAX_TITLE_LENGTH + 1),
                 selectionDeadline = null,
-                targetPhotoCount = null,
+                maxSelectablePhotoCount = null,
                 at = now,
             )
         }
@@ -207,19 +207,19 @@ class GalleryTest {
         // 0장짜리 갤러리에서 막히는 것은 값을 넣은 작가가 아니라 아무것도 못 고르는 부부다.
         val gallery = newGallery(GalleryStatus.OPEN)
 
-        val exception = assertFailsWith<GalleryException> { gallery.changeTargetPhotoCount(0) }
+        val exception = assertFailsWith<GalleryException> { gallery.changeMaxSelectablePhotoCount(0) }
 
-        assertEquals(GalleryErrorCode.INVALID_TARGET_PHOTO_COUNT, exception.errorCode)
+        assertEquals(GalleryErrorCode.INVALID_MAX_SELECTABLE_PHOTO_COUNT, exception.errorCode)
     }
 
     @Test
     fun `계약 장수를 null로 되돌리면 제한이 없어진다`() {
         val gallery = newGallery(GalleryStatus.OPEN)
-        gallery.changeTargetPhotoCount(50)
+        gallery.changeMaxSelectablePhotoCount(50)
 
-        gallery.changeTargetPhotoCount(null)
+        gallery.changeMaxSelectablePhotoCount(null)
 
-        assertNull(gallery.targetPhotoCount)
+        assertNull(gallery.maxSelectablePhotoCount)
     }
 
     @Test

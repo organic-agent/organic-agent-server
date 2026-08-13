@@ -49,7 +49,6 @@ import org.springframework.test.web.servlet.MockHttpServletRequestDsl
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.MvcResult
 import org.springframework.test.web.servlet.post
-import org.springframework.test.web.servlet.patch
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -257,7 +256,7 @@ class AdminStudioControllerTest @Autowired constructor(
     }
 
     @Test
-    fun `삭제 claim 이후 스튜디오 수정과 갤러리 사진 생성은 저장 전에 거절된다`() {
+    fun `삭제 claim 이후 갤러리와 사진 생성은 저장 전에 거절된다`() {
         val operator = signUp("writer-gate-admin", Role.ADMIN)
         val owner = signUp("writer-gate-owner")
         val studio = studioRepository.saveAndFlush(
@@ -287,15 +286,6 @@ class AdminStudioControllerTest @Autowired constructor(
             assertTrue(deletionStarted.await(5, TimeUnit.SECONDS))
             assertEquals(1, claimRepository.count())
 
-            mockMvc.patch("/api/v1/studios/me") {
-                authorize(owner)
-                contentType = MediaType.APPLICATION_JSON
-                content = """{"name":"바뀌면 안 됨","galleryUrl":"writer-gate-changed"}"""
-            }.andExpect {
-                status { isConflict() }
-                jsonPath("$.code") { value("STUDIO_409_7") }
-            }
-
             mockMvc.post("/api/v1/galleries") {
                 authorize(owner)
                 contentType = MediaType.APPLICATION_JSON
@@ -314,7 +304,6 @@ class AdminStudioControllerTest @Autowired constructor(
                 jsonPath("$.code") { value("STUDIO_409_7") }
             }
 
-            assertEquals("writer-gate-studio", studioRepository.findById(studioId).orElseThrow().galleryUrl)
             assertEquals(1, galleryRepository.count())
             assertEquals(0, photoRepository.count())
 

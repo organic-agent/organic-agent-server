@@ -93,11 +93,11 @@ class PhotoSelection(
      * 넣을 사진 목록이 아니라 **결과 장수**를 받는 이유는, 통째로 막기 위해서다. 한 장씩
      * 검사하면 들어갈 수 있는 만큼 들어가고 나머지가 조용히 버려진다.
      *
-     * `targetPhotoCount`는 갤러리에서 온다. null이면 제한이 없다.
+     * `maxSelectablePhotoCount`는 갤러리에서 온다. null이면 제한이 없다.
      */
-    fun requireWithinTarget(targetPhotoCount: Int?, countAfterAdd: Int) {
-        if (targetPhotoCount != null && countAfterAdd > targetPhotoCount) {
-            throw SelectionException(SelectionErrorCode.TARGET_PHOTO_COUNT_EXCEEDED)
+    fun requireWithinMax(maxSelectablePhotoCount: Int?, countAfterAdd: Int) {
+        if (maxSelectablePhotoCount != null && countAfterAdd > maxSelectablePhotoCount) {
+            throw SelectionException(SelectionErrorCode.MAX_SELECTABLE_PHOTO_COUNT_EXCEEDED)
         }
     }
 

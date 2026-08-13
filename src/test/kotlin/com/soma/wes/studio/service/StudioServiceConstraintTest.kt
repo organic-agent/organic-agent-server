@@ -3,10 +3,7 @@ package com.soma.wes.studio.service
 import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.dto.request.CreateStudioRequest
-import com.soma.wes.studio.exception.StudioErrorCode
-import com.soma.wes.studio.exception.StudioException
 import com.soma.wes.studio.repository.StudioRepository
-import com.soma.wes.studio.support.StudioWriteAdmission
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
 import org.hibernate.exception.ConstraintViolationException
@@ -21,17 +18,22 @@ import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertSame
 
+/**
+ * 사전 조회(`existsBy*`)를 통과한 뒤 DB 유니크 제약에 걸리는 경로를 다룬다.
+ *
+ * 서비스는 이 위반을 도메인 예외로 바꾸지 않는다. 사전 조회가 대부분을 걸러내고, 남는 것은
+ * 두 요청이 같은 순간에 들어온 경우뿐이라 그대로 전파시킨다.
+ */
 class StudioServiceConstraintTest {
 
     @Test
-    fun `동시 생성이 사전 조회를 함께 통과해도 갤러리 주소 경쟁은 표준 409로 끝난다`() {
+    fun `동시 생성이 사전 조회를 함께 통과하면 갤러리 주소 경쟁은 DB 제약이 막는다`() {
         val studioRepository = mock<StudioRepository>()
         val userRepository = mock<UserRepository>()
-        val service = StudioService(studioRepository, userRepository, mock<StudioWriteAdmission>())
+        val service = StudioService(studioRepository, userRepository)
         val precheckBarrier = CyclicBarrier(2)
         val persisted = persistedStudio()
         val wonInsert = AtomicBoolean(false)
@@ -40,11 +42,12 @@ class StudioServiceConstraintTest {
             Optional.of(newUser(invocation.getArgument(0)))
         }
         whenever(studioRepository.existsByUserId(any())).thenReturn(false)
+        // 둘 다 "쓸 수 있다"를 보고 지나가게 만든다. 사전 조회는 TOCTOU라 이것이 실제로 가능하다.
         whenever(studioRepository.existsByGalleryUrl("race-url")).thenAnswer {
             precheckBarrier.await(5, TimeUnit.SECONDS)
             false
         }
-        whenever(studioRepository.saveAndFlush(any())).thenAnswer {
+        whenever(studioRepository.save(any<Studio>())).thenAnswer {
             if (wonInsert.compareAndSet(false, true)) {
                 persisted
             } else {
@@ -65,38 +68,25 @@ class StudioServiceConstraintTest {
                 }
             }.map { it.get(10, TimeUnit.SECONDS) }
 
-            val failure = results.filterNotNull().single()
-            assertIs<StudioException>(failure)
-            assertEquals(StudioErrorCode.GALLERY_URL_DUPLICATED, failure.errorCode)
+            // 한쪽만 실패한다. 중복 행이 생기지는 않는다는 것이 이 테스트의 요지다.
+            assertIs<DataIntegrityViolationException>(results.filterNotNull().single())
         } finally {
             executor.shutdownNow()
         }
     }
 
     @Test
-    fun `동시 온보딩의 사용자 유니크 경쟁은 이미 생성된 스튜디오 409로 변환한다`() {
-        val service = serviceFailingWith("uk_studios_user_id")
+    fun `어떤 무결성 위반이든 도메인 예외로 바꾸지 않고 그대로 전파한다`() {
+        listOf("uk_studios_gallery_url", "uk_studios_user_id", "uk_unknown").forEach { constraintName ->
+            val failure = duplicate(constraintName)
 
-        val exception = kotlin.test.assertFailsWith<StudioException> {
-            service.create(1L, CreateStudioRequest("스튜디오", "studio-url", null))
+            val thrown = kotlin.test.assertFailsWith<DataIntegrityViolationException> {
+                serviceFailingWith(failure).create(1L, CreateStudioRequest("스튜디오", "studio-url", null))
+            }
+
+            assertSame(failure, thrown, "제약 $constraintName 이 그대로 올라와야 한다")
         }
-
-        assertEquals(StudioErrorCode.STUDIO_ALREADY_EXISTS, exception.errorCode)
     }
-
-    @Test
-    fun `알 수 없는 무결성 위반은 숨기지 않는다`() {
-        val failure = duplicate("uk_unknown")
-        val service = serviceFailingWith(failure)
-
-        val thrown = kotlin.test.assertFailsWith<DataIntegrityViolationException> {
-            service.create(1L, CreateStudioRequest("스튜디오", "studio-url", null))
-        }
-
-        assertSame(failure, thrown)
-    }
-
-    private fun serviceFailingWith(constraintName: String): StudioService = serviceFailingWith(duplicate(constraintName))
 
     private fun serviceFailingWith(failure: DataIntegrityViolationException): StudioService {
         val studioRepository = mock<StudioRepository>()
@@ -105,9 +95,9 @@ class StudioServiceConstraintTest {
         whenever(userRepository.findById(1L)).thenReturn(Optional.of(newUser(1L)))
         whenever(studioRepository.existsByUserId(1L)).thenReturn(false)
         whenever(studioRepository.existsByGalleryUrl("studio-url")).thenReturn(false)
-        whenever(studioRepository.saveAndFlush(any())).thenThrow(failure)
+        whenever(studioRepository.save(any<Studio>())).thenThrow(failure)
 
-        return StudioService(studioRepository, userRepository, mock<StudioWriteAdmission>())
+        return StudioService(studioRepository, userRepository)
     }
 
     private fun persistedStudio(): Studio = mock<Studio>().also { studio ->

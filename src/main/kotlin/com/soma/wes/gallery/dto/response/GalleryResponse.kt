@@ -20,7 +20,7 @@ data class GalleryResponse(
     val selectionDeadline: ZonedDateTime?,
 
     @field:Schema(description = "부부가 최종적으로 고를 사진 장수. null이면 제한이 없다")
-    val targetPhotoCount: Int?,
+    val maxSelectablePhotoCount: Int?,
 
     val createdAt: ZonedDateTime?,
 ) {
@@ -34,7 +34,7 @@ data class GalleryResponse(
             templateVersion = gallery.templateVersion,
             status = gallery.status,
             selectionDeadline = gallery.selectionDeadline,
-            targetPhotoCount = gallery.targetPhotoCount,
+            maxSelectablePhotoCount = gallery.maxSelectablePhotoCount,
             createdAt = gallery.createdAt,
         )
     }

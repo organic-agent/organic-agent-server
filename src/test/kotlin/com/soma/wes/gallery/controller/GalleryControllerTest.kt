@@ -100,7 +100,7 @@ class GalleryControllerTest @Autowired constructor(
                 templateVersion = "existing-v1",
                 title = "이미 만든 체험 갤러리",
                 selectionDeadline = null,
-                targetPhotoCount = null,
+                maxSelectablePhotoCount = null,
                 at = java.time.ZonedDateTime.now(),
             ),
         )

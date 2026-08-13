@@ -2,7 +2,7 @@ package com.soma.wes.gallery.controller
 
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.gallery.controller.docs.GalleryControllerDocs
-import com.soma.wes.gallery.dto.request.ChangeTargetPhotoCountRequest
+import com.soma.wes.gallery.dto.request.ChangeMaxSelectablePhotoCountRequest
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
 import com.soma.wes.gallery.dto.response.GalleryResponse
@@ -68,13 +68,13 @@ class GalleryController(
         return ResponseEntity.ok(result)
     }
 
-    @PatchMapping("/{galleryId}/target-photo-count")
-    override fun changeTargetPhotoCount(
+    @PatchMapping("/{galleryId}/max-selectable-photo-count")
+    override fun changeMaxSelectablePhotoCount(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
-        @Valid @RequestBody request: ChangeTargetPhotoCountRequest,
+        @Valid @RequestBody request: ChangeMaxSelectablePhotoCountRequest,
     ): ResponseEntity<GalleryResponse> {
-        val result = galleryService.changeTargetPhotoCount(galleryId, loginUser.id, request)
+        val result = galleryService.changeMaxSelectablePhotoCount(galleryId, loginUser.id, request)
 
         return ResponseEntity.ok(result)
     }

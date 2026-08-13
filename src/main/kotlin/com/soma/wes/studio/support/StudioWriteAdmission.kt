@@ -50,7 +50,7 @@ class StudioWriteAdmission(
 
     @Transactional(propagation = Propagation.MANDATORY)
     fun lockWritableByUserId(userId: Long): Studio {
-        val studio = studioRepository.findByUserIdForUpdate(userId)
+        val studio = studioRepository.findWithLockByUserId(userId)
             ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
         admit(checkNotNull(studio.id) { "저장되지 않은 스튜디오입니다." })
         return studio

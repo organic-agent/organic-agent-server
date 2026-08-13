@@ -131,7 +131,7 @@ class GalleryInviteService(
         galleryMemberRepository.findByGalleryIdAndUserId(invite.galleryId, userId)
             ?.let { return GalleryInviteAcceptResponse.from(it) }
 
-        confirmAsClientIfNotOnboarded(userId)
+        confirmAsClientIfTypeNotSelected(userId)
 
         val member = galleryMemberRepository.save(
             GalleryMember(galleryId = invite.galleryId, userId = userId),
@@ -147,11 +147,11 @@ class GalleryInviteService(
      * 갤러리만 막는다), 무조건 덮어쓰면 이미 PHOTOGRAPHER인 사용자가
      * `USER_TYPE_ALREADY_SELECTED`에 걸려 초대 수락 자체가 실패한다.
      */
-    private fun confirmAsClientIfNotOnboarded(userId: Long) {
+    private fun confirmAsClientIfTypeNotSelected(userId: Long) {
         val user = userRepository.findById(userId)
             .orElseThrow { UserException(UserErrorCode.USER_NOT_FOUND) }
 
-        if (!user.isOnboarded) {
+        if (user.userType == null) {
             user.selectType(UserType.CLIENT)
         }
     }

@@ -15,7 +15,7 @@ enum class SelectionErrorCode(
      * 들어갈 수 있는 만큼만 담고 나머지를 버리지 않는다. 30장을 골라 보냈는데 22장만 담기면
      * 화면에는 성공으로 보이고, 어느 8장이 빠졌는지는 아무도 모른다.
      */
-    TARGET_PHOTO_COUNT_EXCEEDED(HttpStatus.BAD_REQUEST, "SELECTION_400_1", "계약한 선택 장수를 넘길 수 없습니다."),
+    MAX_SELECTABLE_PHOTO_COUNT_EXCEEDED(HttpStatus.BAD_REQUEST, "SELECTION_400_1", "계약한 선택 장수를 넘길 수 없습니다."),
 
     /** 요청에 이 갤러리의 사진이 아닌 id가 섞여 있는 경우. */
     PHOTO_NOT_IN_GALLERY(HttpStatus.BAD_REQUEST, "SELECTION_400_2", "이 갤러리의 사진이 아닙니다."),
@@ -63,7 +63,7 @@ enum class SelectionErrorCode(
      * 사실 자체가 사용자에게 필요한 정보다 — 건너뛰면 신부는 자기가 방금 담았다고 생각하고,
      * 나중에 신랑이 그 사진을 빼면 아무도 그 사진이 왜 사라졌는지 모른다.
      *
-     * [TARGET_PHOTO_COUNT_EXCEEDED]와 같이 통째로 막는다. 한 장이라도 겹치면 그 요청은
+     * [MAX_SELECTABLE_PHOTO_COUNT_EXCEEDED]와 같이 통째로 막는다. 한 장이라도 겹치면 그 요청은
      * 사용자가 보고 있는 화면이 낡았다는 뜻이라, 일부만 담아두면 화면과 실제가 더 벌어진다.
      */
     PHOTO_ALREADY_SELECTED(HttpStatus.CONFLICT, "SELECTION_409_3", "이미 선택 앨범에 담긴 사진입니다."),

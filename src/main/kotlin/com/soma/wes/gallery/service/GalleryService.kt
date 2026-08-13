@@ -1,7 +1,7 @@
 package com.soma.wes.gallery.service
 
 import com.soma.wes.gallery.domain.Gallery
-import com.soma.wes.gallery.dto.request.ChangeTargetPhotoCountRequest
+import com.soma.wes.gallery.dto.request.ChangeMaxSelectablePhotoCountRequest
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
 import com.soma.wes.gallery.dto.response.GalleryResponse
@@ -35,7 +35,7 @@ class GalleryService(
                 studioId = checkNotNull(studio.id) { "저장되지 않은 스튜디오입니다." },
                 title = request.title,
                 selectionDeadline = request.selectionDeadline,
-                targetPhotoCount = request.targetPhotoCount,
+                maxSelectablePhotoCount = request.maxSelectablePhotoCount,
                 at = ZonedDateTime.now(clock),
             ),
         )
@@ -70,14 +70,14 @@ class GalleryService(
      * 고르는 과정에서 정해지는 것이 아니다. 선택 앨범은 이 값을 읽어 초과를 막는다.
      */
     @Transactional
-    fun changeTargetPhotoCount(
+    fun changeMaxSelectablePhotoCount(
         galleryId: Long,
         userId: Long,
-        request: ChangeTargetPhotoCountRequest,
+        request: ChangeMaxSelectablePhotoCountRequest,
     ): GalleryResponse {
         val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
 
-        gallery.changeTargetPhotoCount(request.targetPhotoCount)
+        gallery.changeMaxSelectablePhotoCount(request.maxSelectablePhotoCount)
         return GalleryResponse.from(gallery)
     }
 
