@@ -1,5 +1,7 @@
 package com.soma.wes.collab.domain
 
+import com.soma.wes.collab.exception.CollabErrorCode
+import com.soma.wes.collab.exception.CollabException
 import org.junit.jupiter.api.Test
 import java.time.ZonedDateTime
 import kotlin.test.assertEquals
@@ -12,7 +14,7 @@ class CollabSessionTest {
 
     private val now: ZonedDateTime = ZonedDateTime.now()
 
-    private fun session() = CollabSession.of(galleryId = 1L, name = "부모님께", shareToken = "first-token")
+    private fun session() = CollabSession.of(galleryId = 1L, name = "부모님께", collabToken = "first-token")
 
     @Test
     fun `열린 직후에는 폐기되지 않은 상태다`() {
@@ -46,29 +48,33 @@ class CollabSessionTest {
         val session = session()
         session.revoke(now)
 
-        session.reissueToken("second-token")
+        session.republish("second-token")
 
-        assertEquals("second-token", session.shareToken)
+        assertEquals("second-token", session.collabToken)
         assertNull(session.revokedAt)
         assertFalse(session.isRevoked)
     }
 
     @Test
     fun `이름의 앞뒤 공백은 떼고 받는다`() {
-        assertEquals("부모님께", CollabSession.normalizeName("  부모님께  "))
+        assertEquals("부모님께", CollabSession.requireValidName("  부모님께  "))
     }
 
     @Test
     fun `공백뿐인 이름은 받지 않는다`() {
         // 화면에는 이름 없는 링크 두 개가 나란히 남고, 부부는 어느 쪽이 어느 쪽인지 알 수 없다.
-        assertFailsWith<IllegalArgumentException> { CollabSession.normalizeName("   ") }
+        val exception = assertFailsWith<CollabException> { CollabSession.requireValidName("   ") }
+
+        assertEquals(CollabErrorCode.INVALID_SESSION_NAME, exception.errorCode)
     }
 
     @Test
     fun `이름이 100자를 넘으면 받지 않는다`() {
-        assertFailsWith<IllegalArgumentException> {
-            CollabSession.normalizeName("가".repeat(CollabSession.MAX_NAME_LENGTH + 1))
+        val exception = assertFailsWith<CollabException> {
+            CollabSession.requireValidName("가".repeat(CollabSession.MAX_NAME_LENGTH + 1))
         }
+
+        assertEquals(CollabErrorCode.INVALID_SESSION_NAME, exception.errorCode)
     }
 
     @Test
@@ -79,6 +85,6 @@ class CollabSessionTest {
         session.rename("친구들에게")
 
         assertEquals("친구들에게", session.name)
-        assertEquals("first-token", session.shareToken)
+        assertEquals("first-token", session.collabToken)
     }
 }

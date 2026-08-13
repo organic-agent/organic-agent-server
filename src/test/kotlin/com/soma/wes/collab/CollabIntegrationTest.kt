@@ -112,8 +112,8 @@ class CollabIntegrationTest @Autowired constructor(
             jsonPath("$.revoked") { value(false) }
             jsonPath("$.photoCount") { value(0) }
             // 초대 링크와 다른 화면으로 간다. 섞이면 하객이 로그인 화면을 만난다.
-            jsonPath("$.shareUrl") { value(startsWith("http://localhost:3000/collab/")) }
-            jsonPath("$.shareToken") { doesNotExist() }
+            jsonPath("$.collabUrl") { value(startsWith("http://localhost:3000/collab/")) }
+            jsonPath("$.collabToken") { doesNotExist() }
         }
     }
 
@@ -125,7 +125,7 @@ class CollabIntegrationTest @Autowired constructor(
         val first = openSession(fixture, name = "부모님께")
         val second = openSession(fixture, name = "친구들에게")
 
-        assertNotEquals(first.shareToken, second.shareToken)
+        assertNotEquals(first.collabToken, second.collabToken)
         assertEquals(2, collabSessionRepository.findAll().size)
 
         mockMvc.get(sessionsUrl(fixture)) { authorize(fixture.member) }
@@ -168,7 +168,7 @@ class CollabIntegrationTest @Autowired constructor(
         }
 
         // 하객이 들고 있는 주소가 이름 때문에 죽으면 안 된다.
-        mockMvc.get("/api/v1/collab/${session.shareToken}").andExpect { status { isOk() } }
+        mockMvc.get("/api/v1/collab/${session.collabToken}").andExpect { status { isOk() } }
     }
 
     @Test
@@ -193,7 +193,7 @@ class CollabIntegrationTest @Autowired constructor(
         mockMvc.get(sessionUrl(fixture, session)) { authorize(fixture.photographer) }
             .andExpect {
                 status { isOk() }
-                jsonPath("$.shareUrl") { exists() }
+                jsonPath("$.collabUrl") { exists() }
             }
     }
 
@@ -216,33 +216,33 @@ class CollabIntegrationTest @Autowired constructor(
         val fixture = openGalleryWithMember()
         val session = openSession(fixture)
         val collabPhotoId = addPhotos(fixture, session, savePhotos(fixture, count = 1)).single()
-        val guestToken = enter(session.shareToken, "친구")
-        writeComment(session.shareToken, collabPhotoId, guestToken, "예쁘다")
+        val guestToken = enter(session.collabToken, "친구")
+        writeComment(session.collabToken, collabPhotoId, guestToken, "예쁘다")
 
         mockMvc.delete(sessionUrl(fixture, session)) { authorize(fixture.member) }
             .andExpect { status { isNoContent() } }
 
-        mockMvc.get("/api/v1/collab/${session.shareToken}")
+        mockMvc.get("/api/v1/collab/${session.collabToken}")
             .andExpect {
                 // 우리가 발급한 링크가 맞으므로 404가 아니다.
                 status { isGone() }
                 jsonPath("$.code") { value("COLLAB_410_1") }
             }
 
-        val response = mockMvc.post("${sessionUrl(fixture, session)}/share-token") { authorize(fixture.member) }
+        val response = mockMvc.post("${sessionUrl(fixture, session)}/republish") { authorize(fixture.member) }
             .andExpect {
                 status { isOk() }
                 jsonPath("$.revoked") { value(false) }
             }
             .andReturn().response.contentAsString
-        val reissued = JsonPath.read<String>(response, "$.shareUrl").substringAfterLast('/')
-        assertNotEquals(session.shareToken, reissued, "폐기한 토큰을 되살리면 링크가 퍼진 단톡방이 함께 되살아난다")
+        val reissued = JsonPath.read<String>(response, "$.collabUrl").substringAfterLast('/')
+        assertNotEquals(session.collabToken, reissued, "폐기한 토큰을 되살리면 링크가 퍼진 단톡방이 함께 되살아난다")
 
         // 세션을 새로 열지 않고 토큰만 갈았으므로, 받은 말은 그대로 남는다.
         mockMvc.get("/api/v1/collab/$reissued/photos/$collabPhotoId/comments")
             .andExpect {
                 status { isOk() }
-                jsonPath("$.comments") { value(hasSize<Any>(1)) }
+                jsonPath("$.contents") { value(hasSize<Any>(1)) }
             }
         assertEquals(1, collabSessionRepository.findAll().size)
     }
@@ -257,7 +257,7 @@ class CollabIntegrationTest @Autowired constructor(
 
         val session = openSession(fixture, name = "본식 후보", folderId = folderId)
 
-        mockMvc.get("/api/v1/collab/${session.shareToken}/photos")
+        mockMvc.get("/api/v1/collab/${session.collabToken}/photos")
             .andExpect {
                 status { isOk() }
                 // 폴더에 없던 세 번째 사진은 오지 않는다.
@@ -277,7 +277,7 @@ class CollabIntegrationTest @Autowired constructor(
         photoFolderItemRepository.deleteAllInBatch(photoFolderItemRepository.findAllByFolderId(folderId))
         photoFolderRepository.deleteById(folderId)
 
-        mockMvc.get("/api/v1/collab/${session.shareToken}/photos")
+        mockMvc.get("/api/v1/collab/${session.collabToken}/photos")
             .andExpect {
                 status { isOk() }
                 jsonPath("$.totalCount") { value(2) }
@@ -335,12 +335,12 @@ class CollabIntegrationTest @Autowired constructor(
             folderId = saveFolder(fixture, "2부 사진", photoIds.drop(2)),
         )
 
-        mockMvc.get("/api/v1/collab/${parents.shareToken}/photos")
+        mockMvc.get("/api/v1/collab/${parents.collabToken}/photos")
             .andExpect {
                 status { isOk() }
                 jsonPath("$.totalCount") { value(2) }
             }
-        mockMvc.get("/api/v1/collab/${friends.shareToken}/photos")
+        mockMvc.get("/api/v1/collab/${friends.collabToken}/photos")
             .andExpect {
                 status { isOk() }
                 jsonPath("$.totalCount") { value(1) }
@@ -351,12 +351,12 @@ class CollabIntegrationTest @Autowired constructor(
             .findAllByCollabSessionId(parents.id)
             .first()
             .requiredId
-        vote(parents.shareToken, parentsPhotoId, enter(parents.shareToken, "어머니"), "GOOD")
+        vote(parents.collabToken, parentsPhotoId, enter(parents.collabToken, "어머니"), "GOOD")
 
         mockMvc.get("${sessionUrl(fixture, friends)}/photos") { authorize(fixture.member) }
             .andExpect {
                 status { isOk() }
-                jsonPath("$.photos[0].reactions.good") { value(0) }
+                jsonPath("$.contents[0].reactions.good") { value(0) }
             }
     }
 
@@ -370,14 +370,14 @@ class CollabIntegrationTest @Autowired constructor(
 
         addPhotos(fixture, session, photoIds.take(2))
 
-        mockMvc.get("/api/v1/collab/${session.shareToken}/photos")
+        mockMvc.get("/api/v1/collab/${session.collabToken}/photos")
             .andExpect {
                 status { isOk() }
                 jsonPath("$.totalCount") { value(2) }
                 // 버킷이 비공개라 서명 URL 없이는 아무것도 띄울 수 없다.
-                jsonPath("$.photos[0].photo.viewUrl") { value(containsString("X-Amz-Signature")) }
-                jsonPath("$.photos[0].reactions.good") { value(0) }
-                jsonPath("$.photos[0].commentCount") { value(0) }
+                jsonPath("$.contents[0].photo.viewUrl") { value(containsString("X-Amz-Signature")) }
+                jsonPath("$.contents[0].reactions.good") { value(0) }
+                jsonPath("$.contents[0].commentCount") { value(0) }
             }
     }
 
@@ -439,9 +439,9 @@ class CollabIntegrationTest @Autowired constructor(
         val photoId = savePhotos(fixture, count = 1).single()
         val session = openSession(fixture)
         val collabPhotoId = addPhotos(fixture, session, listOf(photoId)).single()
-        val guestToken = enter(session.shareToken, "친구")
-        writeComment(session.shareToken, collabPhotoId, guestToken, "이거 좋다")
-        vote(session.shareToken, collabPhotoId, guestToken, "GOOD")
+        val guestToken = enter(session.collabToken, "친구")
+        writeComment(session.collabToken, collabPhotoId, guestToken, "이거 좋다")
+        vote(session.collabToken, collabPhotoId, guestToken, "GOOD")
 
         mockMvc.delete("${sessionUrl(fixture, session)}/photos") {
             authorize(fixture.member)
@@ -463,7 +463,7 @@ class CollabIntegrationTest @Autowired constructor(
         val session = openSession(fixture)
         addPhotos(fixture, session, savePhotos(fixture, count = 2))
 
-        mockMvc.get("/api/v1/collab/${session.shareToken}")
+        mockMvc.get("/api/v1/collab/${session.collabToken}")
             .andExpect {
                 status { isOk() }
                 jsonPath("$.galleryTitle") { value("본식") }
@@ -494,17 +494,17 @@ class CollabIntegrationTest @Autowired constructor(
         val session = openSession(fixture)
         addPhotos(fixture, session, listOf(photoId))
 
-        mockMvc.get("/api/v1/collab/${session.shareToken}/photos")
+        mockMvc.get("/api/v1/collab/${session.collabToken}/photos")
             .andExpect {
                 status { isOk() }
-                jsonPath("$.photos[0].photo.score") { doesNotExist() }
+                jsonPath("$.contents[0].photo.score") { doesNotExist() }
             }
 
         // 같은 사진을 부부가 갤러리 그리드에서 보면 그대로 보인다.
         mockMvc.get("/api/v1/galleries/${fixture.galleryId}/photos") { authorize(fixture.member) }
             .andExpect {
                 status { isOk() }
-                jsonPath("$.photos[0].score") { value(2) }
+                jsonPath("$.contents[0].score") { value(2) }
             }
     }
 
@@ -512,9 +512,9 @@ class CollabIntegrationTest @Autowired constructor(
     fun `닉네임을 적으면 하객 토큰이 발급된다`() {
         val fixture = openGalleryWithMember()
         val session = openSession(fixture)
-        val shareToken = session.shareToken
+        val collabToken = session.collabToken
 
-        mockMvc.post("/api/v1/collab/$shareToken/guests") { jsonBody("""{"nickname":"신부 친구 영희"}""") }
+        mockMvc.post("/api/v1/collab/$collabToken/guests") { jsonBody("""{"nickname":"신부 친구 영희"}""") }
             .andExpect {
                 status { isCreated() }
                 jsonPath("$.nickname") { value("신부 친구 영희") }
@@ -526,9 +526,9 @@ class CollabIntegrationTest @Autowired constructor(
     fun `닉네임이 비면 입장할 수 없다`() {
         val fixture = openGalleryWithMember()
         val session = openSession(fixture)
-        val shareToken = session.shareToken
+        val collabToken = session.collabToken
 
-        mockMvc.post("/api/v1/collab/$shareToken/guests") { jsonBody("""{"nickname":"   "}""") }
+        mockMvc.post("/api/v1/collab/$collabToken/guests") { jsonBody("""{"nickname":"   "}""") }
             .andExpect {
                 status { isBadRequest() }
                 jsonPath("$.code") { value("COLLAB_400_1") }
@@ -541,22 +541,22 @@ class CollabIntegrationTest @Autowired constructor(
     fun `하객이 댓글을 남기면 목록에 자기 것으로 표시된다`() {
         val fixture = openGalleryWithMember()
         val session = openSession(fixture)
-        val shareToken = session.shareToken
+        val collabToken = session.collabToken
         val collabPhotoId = addPhotos(fixture, session, savePhotos(fixture, count = 1)).single()
-        val mine = enter(shareToken, "영희")
-        val others = enter(shareToken, "철수")
-        writeComment(shareToken, collabPhotoId, mine, "이 표정이 제일 신부님답네요")
-        writeComment(shareToken, collabPhotoId, others, "저는 옆 사진이 더 좋아요")
+        val mine = enter(collabToken, "영희")
+        val others = enter(collabToken, "철수")
+        writeComment(collabToken, collabPhotoId, mine, "이 표정이 제일 신부님답네요")
+        writeComment(collabToken, collabPhotoId, others, "저는 옆 사진이 더 좋아요")
 
-        mockMvc.get("/api/v1/collab/$shareToken/photos/$collabPhotoId/comments") { guest(mine) }
+        mockMvc.get("/api/v1/collab/$collabToken/photos/$collabPhotoId/comments") { guest(mine) }
             .andExpect {
                 status { isOk() }
                 jsonPath("$.totalCount") { value(2) }
                 // 최근 것이 위로 온다.
-                jsonPath("$.comments[0].nickname") { value("철수") }
-                jsonPath("$.comments[0].mine") { value(false) }
-                jsonPath("$.comments[1].nickname") { value("영희") }
-                jsonPath("$.comments[1].mine") { value(true) }
+                jsonPath("$.contents[0].nickname") { value("철수") }
+                jsonPath("$.contents[0].mine") { value(false) }
+                jsonPath("$.contents[1].nickname") { value("영희") }
+                jsonPath("$.contents[1].mine") { value(true) }
             }
     }
 
@@ -565,10 +565,10 @@ class CollabIntegrationTest @Autowired constructor(
         // 보는 것은 토큰 없이 되고, 남기는 것만 "당신이 누구인지"를 먼저 묻는다.
         val fixture = openGalleryWithMember()
         val session = openSession(fixture)
-        val shareToken = session.shareToken
+        val collabToken = session.collabToken
         val collabPhotoId = addPhotos(fixture, session, savePhotos(fixture, count = 1)).single()
 
-        mockMvc.post("/api/v1/collab/$shareToken/photos/$collabPhotoId/comments") {
+        mockMvc.post("/api/v1/collab/$collabToken/photos/$collabPhotoId/comments") {
             jsonBody("""{"content":"익명으로 한마디"}""")
         }.andExpect {
             status { isUnauthorized() }
@@ -582,12 +582,12 @@ class CollabIntegrationTest @Autowired constructor(
         val fixture = openGalleryWithMember()
         val other = openGalleryWithMember()
         val session = openSession(fixture)
-        val shareToken = session.shareToken
-        val otherToken = openSession(other).shareToken
+        val collabToken = session.collabToken
+        val otherToken = openSession(other).collabToken
         val collabPhotoId = addPhotos(fixture, session, savePhotos(fixture, count = 1)).single()
         val otherGuest = enter(otherToken, "옆 결혼식 하객")
 
-        mockMvc.post("/api/v1/collab/$shareToken/photos/$collabPhotoId/comments") {
+        mockMvc.post("/api/v1/collab/$collabToken/photos/$collabPhotoId/comments") {
             guest(otherGuest)
             jsonBody("""{"content":"여긴 어디"}""")
         }.andExpect {
@@ -600,19 +600,19 @@ class CollabIntegrationTest @Autowired constructor(
     fun `하객은 자기 댓글만 지운다`() {
         val fixture = openGalleryWithMember()
         val session = openSession(fixture)
-        val shareToken = session.shareToken
+        val collabToken = session.collabToken
         val collabPhotoId = addPhotos(fixture, session, savePhotos(fixture, count = 1)).single()
-        val mine = enter(shareToken, "영희")
-        val others = enter(shareToken, "철수")
-        val commentId = writeComment(shareToken, collabPhotoId, mine, "지울 댓글")
+        val mine = enter(collabToken, "영희")
+        val others = enter(collabToken, "철수")
+        val commentId = writeComment(collabToken, collabPhotoId, mine, "지울 댓글")
 
-        mockMvc.delete("/api/v1/collab/$shareToken/comments/$commentId") { guest(others) }
+        mockMvc.delete("/api/v1/collab/$collabToken/comments/$commentId") { guest(others) }
             .andExpect {
                 status { isForbidden() }
                 jsonPath("$.code") { value("COLLAB_403_3") }
             }
 
-        mockMvc.delete("/api/v1/collab/$shareToken/comments/$commentId") { guest(mine) }
+        mockMvc.delete("/api/v1/collab/$collabToken/comments/$commentId") { guest(mine) }
             .andExpect { status { isNoContent() } }
     }
 
@@ -622,10 +622,10 @@ class CollabIntegrationTest @Autowired constructor(
         // 부적절한 말을 치우는 것은 로그인한 부부·작가의 몫이다.
         val fixture = openGalleryWithMember()
         val session = openSession(fixture)
-        val shareToken = session.shareToken
+        val collabToken = session.collabToken
         val collabPhotoId = addPhotos(fixture, session, savePhotos(fixture, count = 1)).single()
-        val guestToken = enter(shareToken, "누군가")
-        val commentId = writeComment(shareToken, collabPhotoId, guestToken, "불편한 말")
+        val guestToken = enter(collabToken, "누군가")
+        val commentId = writeComment(collabToken, collabPhotoId, guestToken, "불편한 말")
 
         mockMvc.delete("${sessionUrl(fixture, session)}/comments/$commentId") { authorize(fixture.member) }
             .andExpect { status { isNoContent() } }
@@ -640,20 +640,20 @@ class CollabIntegrationTest @Autowired constructor(
         // 새로고침할 때마다 표가 쌓이면 "좋아요 40"이 사람 40명이 아니게 된다.
         val fixture = openGalleryWithMember()
         val session = openSession(fixture)
-        val shareToken = session.shareToken
+        val collabToken = session.collabToken
         val collabPhotoId = addPhotos(fixture, session, savePhotos(fixture, count = 1)).single()
-        val guestToken = enter(shareToken, "친구")
+        val guestToken = enter(collabToken, "친구")
 
-        repeat(3) { vote(shareToken, collabPhotoId, guestToken, "GOOD") }
-        vote(shareToken, collabPhotoId, guestToken, "SOSO")
+        repeat(3) { vote(collabToken, collabPhotoId, guestToken, "GOOD") }
+        vote(collabToken, collabPhotoId, guestToken, "SOSO")
 
         assertEquals(1, collabPhotoVoteRepository.findAll().size)
-        mockMvc.get("/api/v1/collab/$shareToken/photos") { guest(guestToken) }
+        mockMvc.get("/api/v1/collab/$collabToken/photos") { guest(guestToken) }
             .andExpect {
                 status { isOk() }
-                jsonPath("$.photos[0].reactions.good") { value(0) }
-                jsonPath("$.photos[0].reactions.soso") { value(1) }
-                jsonPath("$.photos[0].myReaction") { value("SOSO") }
+                jsonPath("$.contents[0].reactions.good") { value(0) }
+                jsonPath("$.contents[0].reactions.soso") { value(1) }
+                jsonPath("$.contents[0].myReaction") { value("SOSO") }
             }
     }
 
@@ -661,19 +661,19 @@ class CollabIntegrationTest @Autowired constructor(
     fun `하객마다 한 표씩 쌓이고 부부는 그 수를 본다`() {
         val fixture = openGalleryWithMember()
         val session = openSession(fixture)
-        val shareToken = session.shareToken
+        val collabToken = session.collabToken
         val collabPhotoId = addPhotos(fixture, session, savePhotos(fixture, count = 1)).single()
-        vote(shareToken, collabPhotoId, enter(shareToken, "하객1"), "GOOD")
-        vote(shareToken, collabPhotoId, enter(shareToken, "하객2"), "GOOD")
-        vote(shareToken, collabPhotoId, enter(shareToken, "하객3"), "BAD")
+        vote(collabToken, collabPhotoId, enter(collabToken, "하객1"), "GOOD")
+        vote(collabToken, collabPhotoId, enter(collabToken, "하객2"), "GOOD")
+        vote(collabToken, collabPhotoId, enter(collabToken, "하객3"), "BAD")
 
         mockMvc.get("${sessionUrl(fixture, session)}/photos") { authorize(fixture.member) }
             .andExpect {
                 status { isOk() }
-                jsonPath("$.photos[0].reactions.good") { value(2) }
-                jsonPath("$.photos[0].reactions.bad") { value(1) }
+                jsonPath("$.contents[0].reactions.good") { value(2) }
+                jsonPath("$.contents[0].reactions.bad") { value(1) }
                 // 부부와 작가는 하객이 아니라 반응을 남기지 않는다.
-                jsonPath("$.photos[0].myReaction") { doesNotExist() }
+                jsonPath("$.contents[0].myReaction") { doesNotExist() }
             }
     }
 
@@ -681,15 +681,15 @@ class CollabIntegrationTest @Autowired constructor(
     fun `반응은 취소할 수 있고 누른 적 없어도 성공한다`() {
         val fixture = openGalleryWithMember()
         val session = openSession(fixture)
-        val shareToken = session.shareToken
+        val collabToken = session.collabToken
         val collabPhotoId = addPhotos(fixture, session, savePhotos(fixture, count = 1)).single()
-        val guestToken = enter(shareToken, "친구")
+        val guestToken = enter(collabToken, "친구")
 
-        mockMvc.delete("/api/v1/collab/$shareToken/photos/$collabPhotoId/vote") { guest(guestToken) }
+        mockMvc.delete("/api/v1/collab/$collabToken/photos/$collabPhotoId/vote") { guest(guestToken) }
             .andExpect { status { isNoContent() } }
 
-        vote(shareToken, collabPhotoId, guestToken, "GOOD")
-        mockMvc.delete("/api/v1/collab/$shareToken/photos/$collabPhotoId/vote") { guest(guestToken) }
+        vote(collabToken, collabPhotoId, guestToken, "GOOD")
+        mockMvc.delete("/api/v1/collab/$collabToken/photos/$collabPhotoId/vote") { guest(guestToken) }
             .andExpect { status { isNoContent() } }
 
         assertEquals(0, collabPhotoVoteRepository.findAll().size)
@@ -701,13 +701,13 @@ class CollabIntegrationTest @Autowired constructor(
         val fixture = openGalleryWithMember()
         val other = openGalleryWithMember()
         val session = openSession(fixture)
-        val shareToken = session.shareToken
+        val collabToken = session.collabToken
         val otherSession = openSession(other)
         addPhotos(fixture, session, savePhotos(fixture, count = 1))
         val othersCollabPhotoId = addPhotos(other, otherSession, savePhotos(other, count = 1)).single()
-        val guestToken = enter(shareToken, "친구")
+        val guestToken = enter(collabToken, "친구")
 
-        mockMvc.put("/api/v1/collab/$shareToken/photos/$othersCollabPhotoId/vote") {
+        mockMvc.put("/api/v1/collab/$collabToken/photos/$othersCollabPhotoId/vote") {
             guest(guestToken)
             jsonBody("""{"reaction":"GOOD"}""")
         }.andExpect {
@@ -725,33 +725,33 @@ class CollabIntegrationTest @Autowired constructor(
     fun `마감된 뒤에는 보기만 되고 남길 수는 없다`() {
         val fixture = openGalleryWithMember()
         val session = openSession(fixture)
-        val shareToken = session.shareToken
+        val collabToken = session.collabToken
         val collabPhotoId = addPhotos(fixture, session, savePhotos(fixture, count = 1)).single()
-        val guestToken = enter(shareToken, "친구")
-        writeComment(shareToken, collabPhotoId, guestToken, "마감 전에 남긴 말")
+        val guestToken = enter(collabToken, "친구")
+        writeComment(collabToken, collabPhotoId, guestToken, "마감 전에 남긴 말")
         passDeadline(fixture)
 
-        mockMvc.get("/api/v1/collab/$shareToken")
+        mockMvc.get("/api/v1/collab/$collabToken")
             .andExpect {
                 status { isOk() }
                 // 화면은 이 값을 보고 댓글창을 감춘다. 프론트가 마감 시각으로 따로 계산하면
                 // 서버가 막는 기준과 어긋나는 날이 온다.
                 jsonPath("$.writable") { value(false) }
             }
-        mockMvc.get("/api/v1/collab/$shareToken/photos/$collabPhotoId/comments")
+        mockMvc.get("/api/v1/collab/$collabToken/photos/$collabPhotoId/comments")
             .andExpect {
                 status { isOk() }
                 jsonPath("$.totalCount") { value(1) }
             }
 
-        mockMvc.post("/api/v1/collab/$shareToken/photos/$collabPhotoId/comments") {
+        mockMvc.post("/api/v1/collab/$collabToken/photos/$collabPhotoId/comments") {
             guest(guestToken)
             jsonBody("""{"content":"늦게 온 말"}""")
         }.andExpect {
             status { isForbidden() }
             jsonPath("$.code") { value("COLLAB_403_2") }
         }
-        mockMvc.put("/api/v1/collab/$shareToken/photos/$collabPhotoId/vote") {
+        mockMvc.put("/api/v1/collab/$collabToken/photos/$collabPhotoId/vote") {
             guest(guestToken)
             jsonBody("""{"reaction":"GOOD"}""")
         }.andExpect { status { isForbidden() } }
@@ -778,7 +778,7 @@ class CollabIntegrationTest @Autowired constructor(
     private data class Fixture(val photographer: User, val member: User, val galleryId: Long)
 
     /** 링크 하나. 갤러리에 여러 개가 열리므로 관리 경로에는 id가, 하객 경로에는 토큰이 필요하다. */
-    private data class Session(val id: Long, val shareToken: String)
+    private data class Session(val id: Long, val collabToken: String)
 
     private fun sessionsUrl(fixture: Fixture) = "/api/v1/galleries/${fixture.galleryId}/collab-sessions"
 
@@ -851,7 +851,7 @@ class CollabIntegrationTest @Autowired constructor(
 
         return Session(
             id = JsonPath.read<Int>(response, "$.sessionId").toLong(),
-            shareToken = JsonPath.read<String>(response, "$.shareUrl").substringAfterLast('/'),
+            collabToken = JsonPath.read<String>(response, "$.collabUrl").substringAfterLast('/'),
         )
     }
 
@@ -862,7 +862,7 @@ class CollabIntegrationTest @Autowired constructor(
         }.andExpect { status { isOk() } }
             .andReturn().response.contentAsString
 
-        return JsonPath.read<List<Int>>(response, "$.photos[*].collabPhotoId").map { it.toLong() }
+        return JsonPath.read<List<Int>>(response, "$.contents[*].collabPhotoId").map { it.toLong() }
     }
 
     /** 부부가 확정한 사진 묶음. 협업 세션은 이것을 복사해 채운다. */
@@ -874,8 +874,8 @@ class CollabIntegrationTest @Autowired constructor(
         return folder.requiredId
     }
 
-    private fun enter(shareToken: String, nickname: String): String {
-        val response = mockMvc.post("/api/v1/collab/$shareToken/guests") {
+    private fun enter(collabToken: String, nickname: String): String {
+        val response = mockMvc.post("/api/v1/collab/$collabToken/guests") {
             jsonBody("""{"nickname":"$nickname"}""")
         }.andExpect { status { isCreated() } }
             .andReturn().response.contentAsString
@@ -883,8 +883,8 @@ class CollabIntegrationTest @Autowired constructor(
         return JsonPath.read(response, "$.guestToken")
     }
 
-    private fun writeComment(shareToken: String, collabPhotoId: Long, guestToken: String, content: String): Long {
-        val response = mockMvc.post("/api/v1/collab/$shareToken/photos/$collabPhotoId/comments") {
+    private fun writeComment(collabToken: String, collabPhotoId: Long, guestToken: String, content: String): Long {
+        val response = mockMvc.post("/api/v1/collab/$collabToken/photos/$collabPhotoId/comments") {
             guest(guestToken)
             jsonBody("""{"content":"$content"}""")
         }.andExpect { status { isCreated() } }
@@ -893,8 +893,8 @@ class CollabIntegrationTest @Autowired constructor(
         return JsonPath.read<Int>(response, "$.commentId").toLong()
     }
 
-    private fun vote(shareToken: String, collabPhotoId: Long, guestToken: String, reaction: String) {
-        mockMvc.put("/api/v1/collab/$shareToken/photos/$collabPhotoId/vote") {
+    private fun vote(collabToken: String, collabPhotoId: Long, guestToken: String, reaction: String) {
+        mockMvc.put("/api/v1/collab/$collabToken/photos/$collabPhotoId/vote") {
             guest(guestToken)
             jsonBody("""{"reaction":"$reaction"}""")
         }.andExpect { status { isNoContent() } }
@@ -905,7 +905,7 @@ class CollabIntegrationTest @Autowired constructor(
     }
 
     private fun MockHttpServletRequestDsl.guest(guestToken: String) {
-        header(GuestTokenHeader.GUEST_TOKEN, guestToken)
+        header(GuestTokenHeader.NAME, guestToken)
     }
 
     private fun MockHttpServletRequestDsl.jsonBody(body: String) {

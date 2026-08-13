@@ -15,20 +15,6 @@ import java.time.ZonedDateTime
 
 /**
  * 갤러리에서 누가 무엇을 할 수 있는지.
- *
- * 메서드 이름을 능력이 아니라 **역할**로 둔다. 호출부에 `requirePhotographer`가 적혀 있으면
- * 누가 통과하는지가 그 줄에서 끝나지만, `requireManager`·`requireSelector`는 매번 이 파일을
- * 열어봐야 했다.
- *
- * 역할은 둘이다:
- * - **사진작가** — 갤러리를 소유한 스튜디오의 주인. 자기 갤러리에서는 모든 기능을 쓴다.
- *   선택 마감은 고객이 고르는 기한이지 작가의 작업 기한이 아니므로 작가에게는 걸지 않는다.
- * - **예비 부부** — 초대를 수락해 [GalleryMember]가 된 사람. 사진을 올리지는 못하고,
- *   갤러리가 열려 있고 마감 전인 동안에만 고르고 묶는다.
- *
- * 계정이 없는 하객은 여기 없다. 협업 링크로 들어온 사람의 자격은 계정이 아니라 토큰에서 나오므로
- * [com.soma.wes.collab.support.CollabSessionAccess]가 따로 판단한다 — `userId`가 없는 요청을
- * 이 파일에 섞으면 "역할로 답한다"는 규칙이 첫 줄부터 깨진다.
  */
 @Service
 class GalleryAccessPolicy(
@@ -50,7 +36,6 @@ class GalleryAccessPolicy(
 
     /**
      * 초대받은 예비 부부만. 지금 고를 수 있는 상태인지까지 본다.
-     *
      * 작가는 통과하지 못한다 — 작가가 고객 대신 고르면 안 되는 경로에 쓴다.
      */
     @Transactional(readOnly = true)
@@ -64,7 +49,6 @@ class GalleryAccessPolicy(
 
     /**
      * 작가는 무조건, 부부는 고를 수 있는 동안만.
-     *
      * 클러스터 조회와 폴더 기능이 여기를 지난다. 작가는 어떻게 묶이는지 확인해야 하고 부부는
      * 그것으로 고르므로 둘 다 필요하지만, 마감이 지난 뒤에도 만질 수 있는 것은 작가뿐이다.
      */
@@ -80,9 +64,20 @@ class GalleryAccessPolicy(
         return gallery
     }
 
+    /** [requireCouple]과 [requirePhotographerOrCouple]이 부부 쪽 분기에서 쓴다. */
+    private fun requireSelectable(gallery: Gallery) {
+        // 기한 초과와 아직 안 열림은 사용자가 할 수 있는 일이 달라 따로 알려준다.
+        // 기한이 지났다면 작가에게 연장을 요청하면 되고, 아직 안 열렸다면 기다리는 수밖에 없다.
+        if (gallery.isDeadlinePassed(ZonedDateTime.now(clock))) {
+            throw GalleryException(GalleryErrorCode.SELECTION_DEADLINE_PASSED)
+        }
+        if (gallery.status != GalleryStatus.OPEN) {
+            throw GalleryException(GalleryErrorCode.GALLERY_NOT_OPEN)
+        }
+    }
+
     /**
      * 갤러리를 열람할 수 있는지만. 마감과 무관하다.
-     *
      * 갤러리 상세는 마감 뒤에도 보여야 한다 — 마감됐다는 사실 자체를 그 화면에서 알려준다.
      */
     @Transactional(readOnly = true)
@@ -98,18 +93,6 @@ class GalleryAccessPolicy(
             throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
         }
         return gallery
-    }
-
-    /** [requireCouple]과 [requirePhotographerOrCouple]이 부부 쪽 분기에서 쓴다. */
-    private fun requireSelectable(gallery: Gallery) {
-        // 기한 초과와 아직 안 열림은 사용자가 할 수 있는 일이 달라 따로 알려준다.
-        // 기한이 지났다면 작가에게 연장을 요청하면 되고, 아직 안 열렸다면 기다리는 수밖에 없다.
-        if (gallery.isDeadlinePassed(ZonedDateTime.now(clock))) {
-            throw GalleryException(GalleryErrorCode.SELECTION_DEADLINE_PASSED)
-        }
-        if (gallery.status != GalleryStatus.OPEN) {
-            throw GalleryException(GalleryErrorCode.GALLERY_NOT_OPEN)
-        }
     }
 
     /** 위 `require*` 넷이 모두 쓴다. */

@@ -28,6 +28,12 @@ data class StorageProperties(
      */
     val originalUrlTtl: Duration,
 
-    /** 한 요청에서 발급할 URL 개수이자 목록 조회 페이지 크기의 상한. */
+    /**
+     * 한 요청에서 발급할 URL 개수이자 한 번에 담을 수 있는 사진 수.
+     *
+     * 목록 조회의 페이지 크기 상한은 [com.soma.wes.global.page.PageRequests.MAX_SIZE]가 따로
+     * 맡는다. 원래 이 값 하나가 두 정책을 겸했는데, 배치 상한인 1000이 페이지 크기 상한으로도
+     * 쓰여 `?size=1000` 요청 하나가 서명 URL 1000개를 만들 수 있었다.
+     */
     val maxBatchSize: Int,
 )

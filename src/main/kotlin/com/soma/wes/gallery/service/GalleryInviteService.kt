@@ -10,7 +10,7 @@ import com.soma.wes.gallery.repository.GalleryInviteRepository
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.support.GalleryAccessPolicy
-import com.soma.wes.gallery.support.GalleryInviteLinkAssembler
+import com.soma.wes.gallery.support.GalleryInviteUrlResolver
 import com.soma.wes.global.SecureTokenGenerator
 import com.soma.wes.user.domain.UserType
 import com.soma.wes.user.exception.UserErrorCode
@@ -37,7 +37,7 @@ class GalleryInviteService(
     private val userRepository: UserRepository,
     private val galleryAccessPolicy: GalleryAccessPolicy,
     private val tokenGenerator: SecureTokenGenerator,
-    private val linkAssembler: GalleryInviteLinkAssembler,
+    private val urlResolver: GalleryInviteUrlResolver,
     private val clock: Clock,
 ) {
 
@@ -79,7 +79,7 @@ class GalleryInviteService(
     private fun toResponse(invite: GalleryInvite, at: ZonedDateTime): GalleryInviteResponse =
         GalleryInviteResponse.of(
             invite = invite,
-            inviteUrl = linkAssembler.assemble(invite.token),
+            inviteUrl = urlResolver.resolve(invite.token),
             at = at,
         )
 

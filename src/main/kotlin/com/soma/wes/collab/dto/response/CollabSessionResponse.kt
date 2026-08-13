@@ -13,7 +13,7 @@ data class CollabSessionResponse(
     val name: String,
 
     @field:Schema(description = "하객에게 그대로 전달하는 링크. 토큰이 아니라 완성된 URL이다. 폐기된 세션도 이 값을 그대로 보여준다 — 무엇이 끊겼는지 알아야 한다.")
-    val shareUrl: String,
+    val collabUrl: String,
 
     @field:Schema(description = "부부가 링크를 거둬들였는지. 거둬들여도 담긴 사진과 받은 의견은 남는다.")
     val revoked: Boolean,
@@ -27,11 +27,11 @@ data class CollabSessionResponse(
 ) {
 
     companion object {
-        fun of(session: CollabSession, shareUrl: String, photoCount: Long) = CollabSessionResponse(
+        fun of(session: CollabSession, collabUrl: String, photoCount: Long) = CollabSessionResponse(
             sessionId = session.requiredId,
             galleryId = session.galleryId,
             name = session.name,
-            shareUrl = shareUrl,
+            collabUrl = collabUrl,
             revoked = session.isRevoked,
             revokedAt = session.revokedAt,
             photoCount = photoCount,

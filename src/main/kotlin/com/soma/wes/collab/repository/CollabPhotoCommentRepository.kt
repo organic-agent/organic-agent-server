@@ -1,6 +1,7 @@
 package com.soma.wes.collab.repository
 
 import com.soma.wes.collab.domain.CollabPhotoComment
+import com.soma.wes.collab.repository.projection.CollabCommentCountProjection
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository

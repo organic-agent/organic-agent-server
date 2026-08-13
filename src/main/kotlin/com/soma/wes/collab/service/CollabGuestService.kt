@@ -1,36 +1,36 @@
 package com.soma.wes.collab.service
 
 import com.soma.wes.collab.domain.CollabGuest
+import com.soma.wes.collab.domain.CollabPhotoComment
+import com.soma.wes.collab.domain.CollabPhotoVote
 import com.soma.wes.collab.dto.request.EnterCollabRequest
-import com.soma.wes.collab.dto.response.CollabCommentPageResponse
+import com.soma.wes.collab.dto.request.VoteCollabPhotoRequest
+import com.soma.wes.collab.dto.request.WriteCollabCommentRequest
 import com.soma.wes.collab.dto.response.CollabCommentResponse
 import com.soma.wes.collab.dto.response.CollabGuestResponse
-import com.soma.wes.collab.dto.response.CollabLandingResponse
-import com.soma.wes.collab.dto.response.CollabPhotoPageResponse
 import com.soma.wes.collab.exception.CollabErrorCode
 import com.soma.wes.collab.exception.CollabException
 import com.soma.wes.collab.repository.CollabGuestRepository
 import com.soma.wes.collab.repository.CollabPhotoCommentRepository
 import com.soma.wes.collab.repository.CollabPhotoRepository
-import com.soma.wes.collab.support.CollabAccess
-import com.soma.wes.collab.support.CollabPaging
-import com.soma.wes.collab.support.CollabPhotoViewAssembler
+import com.soma.wes.collab.repository.CollabPhotoVoteRepository
+import com.soma.wes.collab.repository.requireByIdAndCollabSessionId
+import com.soma.wes.collab.repository.requireWithLockByIdAndCollabSessionId
 import com.soma.wes.collab.support.CollabSessionAccess
 import com.soma.wes.global.SecureTokenGenerator
-import com.soma.wes.photo.config.StorageProperties
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
 /**
- * 하객이 링크로 들어와 보는 것들. 로그인하지 않은 사람이 부르는 유일한 서비스다.
+ * 하객이 링크로 **남기는** 것들 — 입장, 댓글, 반응. 보는 쪽은 [CollabGuestQueryService]다.
  *
- * 인가가 `userId`가 아니라 **토큰 두 개**로 끝난다 — 경로의 공유 토큰이 "이 갤러리를 봐도
- * 되는가"를, 헤더의 하객 토큰이 "당신이 누구인가"를 답한다. 뒤엣것은 볼 때는 없어도 되고
- * ([CollabSessionAccess.requireGuest]를 지나지 않는다) 남길 때만 필요하다.
+ * 갈라 둔 것은 문이 다르기 때문이다. 보는 것은 하객 토큰 없이도 되고 마감된 뒤에도 열려
+ * 있지만, 남기는 것은 누가 남겼는지 반드시 있어야 하고([CollabSessionAccess.requireGuest])
+ * 부부가 고르는 동안에만 열린다([CollabSessionAccess.requireWritable]). 한 클래스에 섞으면
+ * 새 메서드를 더할 때 어느 쪽 규칙을 따르는지가 메서드마다 달라진다.
  *
- * 조회 경로에서 하객 토큰은 **있으면 쓰고 없으면 넘어간다**. 자기가 누른 반응과 자기가 쓴
- * 댓글을 화면이 표시하려면 필요하지만, 그것 때문에 닉네임부터 받게 하면 링크를 연 사람이
- * 사진을 보기도 전에 입력창을 만난다.
+ * 입장이 조회가 아니라 여기 있는 이유도 같다 — 하객 행을 만드는 쓰기이고, 지나는 문도
+ * 댓글·반응과 같다.
  */
 @Service
 class CollabGuestService(
@@ -38,27 +38,9 @@ class CollabGuestService(
     private val collabPhotoRepository: CollabPhotoRepository,
     private val collabGuestRepository: CollabGuestRepository,
     private val collabPhotoCommentRepository: CollabPhotoCommentRepository,
-    private val collabPhotoViewAssembler: CollabPhotoViewAssembler,
+    private val collabPhotoVoteRepository: CollabPhotoVoteRepository,
     private val tokenGenerator: SecureTokenGenerator,
-    private val properties: StorageProperties,
 ) {
-
-    /**
-     * 링크를 열었을 때 처음 보는 것. 하객 토큰 없이 부른다.
-     *
-     * 여기서 `writable`이 내려가는 덕분에 화면은 "지금 의견을 받는 중인지"를 첫 화면에서 알고,
-     * 댓글창을 띄울지 감출지 정한다.
-     */
-    @Transactional(readOnly = true)
-    fun open(shareToken: String): CollabLandingResponse {
-        val access = collabSessionAccess.requireReadable(shareToken)
-
-        return CollabLandingResponse(
-            galleryTitle = access.gallery.title,
-            photoCount = collabPhotoRepository.countByCollabSessionId(access.sessionId),
-            writable = collabSessionAccess.isWritable(access),
-        )
-    }
 
     /**
      * 닉네임을 적고 들어온다. 서버가 하객 토큰을 발급한다.
@@ -72,8 +54,8 @@ class CollabGuestService(
      * 뜻으로 읽는다.
      */
     @Transactional
-    fun enter(shareToken: String, request: EnterCollabRequest): CollabGuestResponse {
-        val access = collabSessionAccess.requireWritable(shareToken)
+    fun enter(collabToken: String, request: EnterCollabRequest): CollabGuestResponse {
+        val access = collabSessionAccess.requireWritable(collabToken)
 
         val guest = collabGuestRepository.save(
             CollabGuest(
@@ -85,93 +67,104 @@ class CollabGuestService(
         return CollabGuestResponse.from(guest)
     }
 
-    /**
-     * 부부가 보여주는 사진들. 갤러리 전체가 아니라 세션에 담긴 것만이다.
-     *
-     * 사진마다 반응 수와 댓글 수가 함께 온다 — 하객도 "다들 이 사진을 좋아하는구나"를 보면서
-     * 고르게 되고, 그 수를 숨기면 부부만 아는 값이 되어 화면에 쓸 곳이 없다.
-     */
-    @Transactional(readOnly = true)
-    fun listPhotos(shareToken: String, guestToken: String?, page: Int, size: Int): CollabPhotoPageResponse {
-        val access = collabSessionAccess.requireReadable(shareToken)
-
-        val found = collabPhotoRepository.findAllByCollabSessionIdOrderByIdAsc(
-            access.sessionId,
-            CollabPaging.of(page, size, properties.maxBatchSize),
-        )
-
-        return CollabPhotoPageResponse(
-            photos = collabPhotoViewAssembler.toResponses(found.content, guestId = findGuestId(access, guestToken)),
-            page = found.number,
-            size = found.size,
-            totalCount = found.totalElements,
-            hasNext = found.hasNext(),
-            viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
-        )
-    }
-
-    /**
-     * 사진 한 장에 달린 댓글. 최근 것이 위로 온다.
-     *
-     * 닉네임은 댓글 행이 아니라 하객 행에서 읽는다. 복사해두면 이름을 고쳤을 때 과거 댓글이
-     * 남이 쓴 것처럼 보인다.
-     */
-    @Transactional(readOnly = true)
-    fun listComments(
-        shareToken: String,
+    /** 사진 한 장에 댓글을 남긴다. 수정은 없다 — 지우고 다시 쓴다. */
+    @Transactional
+    fun writeComment(
+        collabToken: String,
         collabPhotoId: Long,
         guestToken: String?,
-        page: Int,
-        size: Int,
-    ): CollabCommentPageResponse {
-        val access = collabSessionAccess.requireReadable(shareToken)
-        requireCollabPhoto(access, collabPhotoId)
+        request: WriteCollabCommentRequest,
+    ): CollabCommentResponse {
+        val access = collabSessionAccess.requireWritable(collabToken)
+        val guest = collabSessionAccess.requireGuest(access, guestToken)
+        collabPhotoRepository.requireByIdAndCollabSessionId(collabPhotoId, access.sessionId)
 
-        val found = collabPhotoCommentRepository.findAllByCollabPhotoIdOrderByIdDesc(
-            collabPhotoId,
-            CollabPaging.of(page, size, properties.maxBatchSize),
+        val comment = collabPhotoCommentRepository.save(
+            CollabPhotoComment(
+                collabPhotoId = collabPhotoId,
+                collabGuestId = guest.requiredId,
+                content = CollabPhotoComment.requireValidContent(request.content),
+            ),
         )
-        val nicknames = collabGuestRepository.findAllByIdIn(found.content.map { it.collabGuestId })
-            .associate { it.requiredId to it.nickname }
-        val myGuestId = findGuestId(access, guestToken)
 
-        return CollabCommentPageResponse(
-            comments = found.content.map {
-                CollabCommentResponse(
-                    commentId = it.requiredId,
-                    nickname = nicknames[it.collabGuestId] ?: UNKNOWN_NICKNAME,
-                    content = it.content,
-                    createdAt = it.createdAt,
-                    mine = myGuestId != null && it.isWrittenBy(myGuestId),
-                )
-            },
-            page = found.number,
-            size = found.size,
-            totalCount = found.totalElements,
-            hasNext = found.hasNext(),
+        return CollabCommentResponse(
+            commentId = comment.requiredId,
+            nickname = guest.nickname,
+            content = comment.content,
+            createdAt = comment.createdAt,
+            // 방금 쓴 사람에게 돌려주는 응답이라 언제나 자기 것이다.
+            mine = true,
         )
-    }
-
-    /** 두 조회 경로가 쓴다. 이 세션에 담긴 사진이 아니면 남의 세션을 들여다보는 요청이다. */
-    private fun requireCollabPhoto(access: CollabAccess, collabPhotoId: Long) {
-        collabPhotoRepository.findByIdAndCollabSessionId(collabPhotoId, access.sessionId)
-            ?: throw CollabException(CollabErrorCode.COLLAB_PHOTO_NOT_FOUND)
     }
 
     /**
-     * 조회에서만 쓴다. 토큰이 없거나 이 세션의 것이 아니면 그냥 익명으로 본다 —
-     * 보는 것을 막을 이유가 없고, 화면에서 "내가 누른 반응"만 비어 보인다.
+     * 자기가 쓴 댓글을 지운다.
+     *
+     * 남의 댓글은 지우지 못한다. 부적절한 말을 치우는 것은 부부와 작가의 몫이고, 그쪽은 로그인한
+     * 경로([CollabSessionService.deleteComment])로 지운다 — 하객 토큰은 브라우저에 저장된 값이라
+     * 그것 하나로 남의 글을 지우게 두면 링크를 가진 누구나 댓글창을 비울 수 있다.
      */
-    private fun findGuestId(access: CollabAccess, guestToken: String?): Long? {
-        if (guestToken.isNullOrBlank()) {
-            return null
-        }
+    @Transactional
+    fun deleteComment(collabToken: String, commentId: Long, guestToken: String?) {
+        val access = collabSessionAccess.requireWritable(collabToken)
+        val guest = collabSessionAccess.requireGuest(access, guestToken)
 
-        return collabGuestRepository.findByGuestTokenAndCollabSessionId(guestToken, access.sessionId)?.requiredId
+        val comment = collabPhotoCommentRepository.findById(commentId)
+            .orElseThrow { CollabException(CollabErrorCode.COMMENT_NOT_FOUND) }
+        // 다른 세션의 댓글 id를 넣어보는 요청을 걸러낸다. 없는 것과 같게 취급해야
+        // 남의 세션에 그 id의 댓글이 있다는 사실조차 알려주지 않는다.
+        collabPhotoRepository.requireByIdAndCollabSessionId(comment.collabPhotoId, access.sessionId)
+
+        if (!comment.isWrittenBy(guest.requiredId)) {
+            throw CollabException(CollabErrorCode.COMMENT_NOT_OWNED)
+        }
+        collabPhotoCommentRepository.delete(comment)
     }
 
-    companion object {
-        /** 하객 행이 사라진 댓글. FK가 함께 지우므로 정상 경로에서는 나오지 않는다. */
-        private const val UNKNOWN_NICKNAME = "알 수 없음"
+    /**
+     * 사진에 반응을 남기거나 바꾼다. 하객 한 사람의 표는 하나라 두 번째부터는 덮어쓴다.
+     *
+     * 사진 행을 잠그고 시작한다([requireWithLockByIdAndCollabSessionId]) — 잠그지 않으면 연타한
+     * 요청 둘이 나란히 "아직 없다"를 읽는다.
+     */
+    @Transactional
+    fun vote(
+        collabToken: String,
+        collabPhotoId: Long,
+        guestToken: String?,
+        request: VoteCollabPhotoRequest,
+    ) {
+        val access = collabSessionAccess.requireWritable(collabToken)
+        val guest = collabSessionAccess.requireGuest(access, guestToken)
+        collabPhotoRepository.requireWithLockByIdAndCollabSessionId(collabPhotoId, access.sessionId)
+
+        val vote = collabPhotoVoteRepository.findByCollabPhotoIdAndCollabGuestId(collabPhotoId, guest.requiredId)
+        if (vote != null) {
+            vote.changeReaction(request.reaction)
+            return
+        }
+
+        collabPhotoVoteRepository.save(
+            CollabPhotoVote(
+                collabPhotoId = collabPhotoId,
+                collabGuestId = guest.requiredId,
+                reaction = request.reaction,
+            ),
+        )
+    }
+
+    /**
+     * 눌렀던 반응을 거둔다. 누른 적이 없어도 성공한다.
+     *
+     * "표가 없는 상태"가 목적이고 그것은 이미 이뤄져 있다. 404를 돌려주면 화면은 방금 지운
+     * 버튼을 두고 실패했다고 알려야 한다.
+     */
+    @Transactional
+    fun cancelVote(collabToken: String, collabPhotoId: Long, guestToken: String?) {
+        val access = collabSessionAccess.requireWritable(collabToken)
+        val guest = collabSessionAccess.requireGuest(access, guestToken)
+        collabPhotoRepository.requireByIdAndCollabSessionId(collabPhotoId, access.sessionId)
+
+        collabPhotoVoteRepository.deleteByCollabPhotoIdAndCollabGuestId(collabPhotoId, guest.requiredId)
     }
 }

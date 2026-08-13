@@ -32,11 +32,9 @@ enum class CollabErrorCode(
     /** 사진 id가 하나도 없는 경우. 빈 요청을 성공시키면 화면은 담긴 줄 안다. */
     EMPTY_PHOTO_IDS(HttpStatus.BAD_REQUEST, "COLLAB_400_6", "사진을 하나 이상 지정해야 합니다."),
 
-    /** 페이지 번호가 음수인 경우. 막지 않으면 `PageRequest.of`가 던져 500이 나간다. */
-    INVALID_PAGE(HttpStatus.BAD_REQUEST, "COLLAB_400_7", "페이지 번호는 0 이상이어야 합니다."),
-
-    /** 한 페이지에 담을 수 있는 개수를 넘긴 경우. 사진 목록과 댓글 목록이 함께 쓴다. */
-    INVALID_PAGE_SIZE(HttpStatus.BAD_REQUEST, "COLLAB_400_8", "한 번에 가져올 수 있는 개수를 넘었습니다."),
+    // COLLAB_400_7, COLLAB_400_8은 페이지 번호·크기 검증용이었으나
+    // com.soma.wes.global.page.PageRequests가 거절 대신 절삭하도록 바뀌며 사라졌다.
+    // 뒤 번호를 당기면 살아 있는 코드의 계약이 바뀌므로 구멍을 그대로 둔다.
 
     /** 세션 이름이 비었거나 100자를 넘긴 경우. */
     INVALID_SESSION_NAME(
@@ -89,7 +87,7 @@ enum class CollabErrorCode(
     /** 남이 쓴 댓글을 지우려는 경우. 부부와 담당 작가는 인증된 경로로 지운다. */
     COMMENT_NOT_OWNED(HttpStatus.FORBIDDEN, "COLLAB_403_3", "직접 남긴 댓글만 지울 수 있습니다."),
 
-    /** 발급한 적 없는 공유 토큰이거나, 그 세션이 이 갤러리의 것이 아닌 경우. */
+    /** 발급한 적 없는 협업 토큰이거나, 그 세션이 이 갤러리의 것이 아닌 경우. */
     SESSION_NOT_FOUND(HttpStatus.NOT_FOUND, "COLLAB_404_1", "존재하지 않는 협업 링크입니다."),
 
     /** 이 세션에 담기지 않은 사진. */

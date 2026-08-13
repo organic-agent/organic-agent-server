@@ -1,6 +1,8 @@
 package com.soma.wes.photo.service
 
 import com.soma.wes.gallery.support.GalleryAccessPolicy
+import com.soma.wes.global.page.PageRequests
+import com.soma.wes.global.page.PageResponse
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoRating
@@ -185,12 +187,8 @@ class PhotoService(
 
         val found = findPage(galleryId, status, minScore, pageableOf(page, size))
 
-        return PhotoPageResponse(
-            photos = photoViewAssembler.toResponses(found.content),
-            page = found.number,
-            size = found.size,
-            totalCount = found.totalElements,
-            hasNext = found.hasNext(),
+        return PhotoPageResponse.of(
+            page = PageResponse.of(found, photoViewAssembler.toResponses(found.content)),
             viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
         )
     }
@@ -222,16 +220,8 @@ class PhotoService(
      * displayOrder가 같은 사진(같은 배치에 동시 발급된 것들)이 페이지를 넘길 때마다 자리를
      * 바꾸지 않도록 id로 한 번 더 정렬한다.
      */
-    private fun pageableOf(page: Int, size: Int): PageRequest {
-        if (page < 0) {
-            throw PhotoException(PhotoErrorCode.INVALID_PAGE)
-        }
-        if (size !in 1..properties.maxBatchSize) {
-            throw PhotoException(PhotoErrorCode.TOO_MANY_PHOTOS)
-        }
-
-        return PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "displayOrder", "id"))
-    }
+    private fun pageableOf(page: Int, size: Int): PageRequest =
+        PageRequests.of(page, size, Sort.by(Sort.Direction.ASC, "displayOrder", "id"))
 
 
     /**
