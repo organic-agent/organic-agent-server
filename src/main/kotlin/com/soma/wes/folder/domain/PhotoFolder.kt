@@ -2,6 +2,7 @@ package com.soma.wes.folder.domain
 
 import com.soma.wes.global.BaseEntity
 import jakarta.persistence.Column
+import jakarta.persistence.Embedded
 import jakarta.persistence.Entity
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
@@ -31,8 +32,8 @@ class PhotoFolder(
     @Column(name = "gallery_id", nullable = false, updatable = false)
     val galleryId: Long,
 
-    @Column(nullable = false, length = FolderName.MAX_LENGTH)
-    var name: String,
+    @Embedded
+    var name: FolderName,
 
 ) : BaseEntity() {
 
@@ -44,14 +45,14 @@ class PhotoFolder(
         get() = id ?: error("아직 저장되지 않은 PhotoFolder 다")
 
     fun rename(name: String) {
-        this.name = FolderName.normalize(name)
+        this.name = FolderName.of(name)
     }
 
     companion object {
         fun of(group: PhotoFolderGroup, name: String) = PhotoFolder(
             groupId = group.requiredId,
             galleryId = group.galleryId,
-            name = FolderName.normalize(name),
+            name = FolderName.of(name),
         )
     }
 }

@@ -19,7 +19,7 @@ data class PhotoFolderGroupResponse(
     companion object {
         fun of(group: PhotoFolderGroup, folders: List<PhotoFolderResponse>) = PhotoFolderGroupResponse(
             groupId = group.requiredId,
-            name = group.name,
+            name = group.name.value,
             folders = folders,
             createdAt = group.createdAt,
             updatedAt = group.updatedAt,

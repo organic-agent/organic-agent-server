@@ -29,7 +29,7 @@ data class PhotoFolderDetailResponse(
             PhotoFolderDetailResponse(
                 folderId = folder.requiredId,
                 groupId = folder.groupId,
-                name = folder.name,
+                name = folder.name.value,
                 photos = photos,
                 viewUrlTtlSeconds = viewUrlTtlSeconds,
                 createdAt = folder.createdAt,

@@ -11,7 +11,7 @@ class PhotoFolderGroupTest {
     fun `이름의 앞뒤 공백을 떼어낸다`() {
         val group = PhotoFolderGroup.of(galleryId = 1L, name = "  본식  ")
 
-        assertEquals("본식", group.name)
+        assertEquals("본식", group.name.value)
     }
 
     @Test
@@ -27,9 +27,9 @@ class PhotoFolderGroupTest {
         val group = PhotoFolderGroup.of(galleryId = 1L, name = "본식")
 
         group.rename("  리허설  ")
-        assertEquals("리허설", group.name)
+        assertEquals("리허설", group.name.value)
 
         assertFailsWith<FolderException> { group.rename(" ") }
-        assertEquals("리허설", group.name)
+        assertEquals("리허설", group.name.value)
     }
 }

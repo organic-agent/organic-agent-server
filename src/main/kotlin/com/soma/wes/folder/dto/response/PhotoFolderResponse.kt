@@ -31,7 +31,7 @@ data class PhotoFolderResponse(
         fun of(folder: PhotoFolder, photoCount: Long, coverPhoto: PhotoResponse?) = PhotoFolderResponse(
             folderId = folder.requiredId,
             groupId = folder.groupId,
-            name = folder.name,
+            name = folder.name.value,
             photoCount = photoCount,
             coverPhoto = coverPhoto,
             createdAt = folder.createdAt,
