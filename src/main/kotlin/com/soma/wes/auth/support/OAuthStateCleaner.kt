@@ -6,12 +6,6 @@ import org.springframework.stereotype.Component
 
 /**
  * 소비되지 않고 만료된 `oauth_states` 행을 주기적으로 걷어낸다.
- *
- * 동의 화면에서 창을 닫아버린 로그인은 콜백이 돌아오지 않아 행이 그대로 남는다. 수명이
- * 10분이라 금방 무의미해지지만 지워주는 사람이 없으면 테이블만 계속 커진다.
- *
- * 트랜잭션은 [OAuthStateStore.purgeExpired]가 갖는다 — 여기서 `@Transactional`을 걸면
- * 프록시를 거치지 않는 스케줄러 호출이라 의도대로 동작하지 않을 수 있다.
  */
 @Component
 class OAuthStateCleaner(
