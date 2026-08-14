@@ -8,8 +8,9 @@ import com.soma.wes.gallery.dto.response.GalleryResponse
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.support.GalleryAccessPolicy
+import com.soma.wes.studio.exception.StudioErrorCode
+import com.soma.wes.studio.exception.StudioException
 import com.soma.wes.studio.repository.StudioRepository
-import com.soma.wes.studio.support.StudioWriteAdmission
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -21,21 +22,14 @@ class GalleryService(
     private val galleryRepository: GalleryRepository,
     private val galleryMemberRepository: GalleryMemberRepository,
     private val studioRepository: StudioRepository,
-    private val studioWriteAdmission: StudioWriteAdmission,
     private val galleryAccessPolicy: GalleryAccessPolicy,
     private val clock: Clock,
 ) {
 
-    /**
-     * 새 갤러리. hard delete가 진행 중인 스튜디오라면 저장 전에 거절된다(`STUDIO_409_7`).
-     *
-     * 삭제 준비가 스냅샷을 뜬 뒤 S3를 먼저 지우고 DB를 나중에 지우므로, 그 사이에 갤러리가
-     * 끼어들면 `DELETION_TARGET_CHANGED`로 삭제가 멈추는데 사진 객체는 이미 사라진 뒤다.
-     * [com.soma.wes.gallery.support.MockGallerySeeder]도 같은 이유로 같은 관문을 지난다.
-     */
     @Transactional
     fun create(userId: Long, request: CreateGalleryRequest): GalleryResponse {
-        val studio = studioWriteAdmission.requireWritableByUserId(userId)
+        val studio = studioRepository.findByUserId(userId)
+            ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
 
         val gallery = galleryRepository.save(
             Gallery.create(
