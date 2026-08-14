@@ -133,7 +133,6 @@ def fetch_targets(connection: psycopg.Connection, gallery_id: int, force: bool) 
         SELECT id, storage_key
         FROM photos
         WHERE gallery_id = %s
-          AND storage_ownership = 'GALLERY'
           AND status <> 'PENDING'
     """
     if not force:
@@ -191,7 +190,6 @@ def store_embeddings(
                 status = 'EMBEDDED',
                 updated_at = now()
             WHERE id = %s
-              AND storage_ownership = 'GALLERY'
             """,
             rows,
         )

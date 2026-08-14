@@ -26,29 +26,6 @@ class PhotoTest {
 
         assertEquals(PhotoStatus.PENDING, photo.status)
         assertNull(photo.embedding)
-        assertEquals(PhotoStorageOwnership.GALLERY, photo.storageOwnership)
-        assertTrue(photo.ownsStorageObjects)
-    }
-
-    @Test
-    fun `공유 템플릿 사진은 미리보기와 임베딩까지 준비된 상태로 만든다`() {
-        val embedding = FloatArray(Photo.EMBEDDING_DIMENSION).also { it[0] = 1f }
-
-        val photo = Photo.createSharedTemplate(
-            galleryId = 1L,
-            storageKey = "mock-gallery/v1/originals/a.jpg",
-            previewKey = "mock-gallery/v1/previews/a.jpg",
-            originalFileName = "a.jpg",
-            contentType = "image/jpeg",
-            displayOrder = 0,
-            embedding = embedding,
-        )
-
-        assertEquals(PhotoStorageOwnership.SHARED_TEMPLATE, photo.storageOwnership)
-        assertFalse(photo.ownsStorageObjects)
-        assertEquals(PhotoStatus.EMBEDDED, photo.status)
-        assertEquals("mock-gallery/v1/previews/a.jpg", photo.viewKey)
-        assertEquals(Photo.EMBEDDING_DIMENSION, photo.embedding?.size)
     }
 
     @Test

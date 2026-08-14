@@ -3,7 +3,6 @@ package com.soma.wes.embedding.service
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.domain.PhotoStatus
-import com.soma.wes.photo.domain.PhotoStorageOwnership
 import com.soma.wes.photo.repository.PhotoRepository
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.mock
@@ -22,50 +21,31 @@ class EmbeddingServiceTest {
     fun `일반 실행은 PENDING을 제외한 미완료 임베딩 수를 반환한다`() {
         stubAvailableInvoker()
         whenever(
-            photoRepository.countByGalleryIdAndStorageOwnershipAndStatusNotAndEmbeddingIsNull(
-                GALLERY_ID,
-                PhotoStorageOwnership.GALLERY,
-                PhotoStatus.PENDING,
-            ),
+            photoRepository.countByGalleryIdAndStatusNotAndEmbeddingIsNull(GALLERY_ID, PhotoStatus.PENDING),
         ).thenReturn(2)
 
         val response = service.run(GALLERY_ID, USER_ID, force = false)
 
         assertEquals(2, response.targets)
         verify(photoRepository)
-            .countByGalleryIdAndStorageOwnershipAndStatusNotAndEmbeddingIsNull(
-                GALLERY_ID,
-                PhotoStorageOwnership.GALLERY,
-                PhotoStatus.PENDING,
-            )
+            .countByGalleryIdAndStatusNotAndEmbeddingIsNull(GALLERY_ID, PhotoStatus.PENDING)
         verify(embeddingInvoker).invoke(GALLERY_ID, false)
     }
 
     @Test
     fun `force 실행도 PENDING을 제외한 업로드 완료 사진 수를 반환한다`() {
         stubAvailableInvoker()
-        whenever(
-            photoRepository.countByGalleryIdAndStorageOwnershipAndStatusNot(
-                GALLERY_ID,
-                PhotoStorageOwnership.GALLERY,
-                PhotoStatus.PENDING,
-            ),
-        ).thenReturn(3)
+        whenever(photoRepository.countByGalleryIdAndStatusNot(GALLERY_ID, PhotoStatus.PENDING)).thenReturn(3)
 
         val response = service.run(GALLERY_ID, USER_ID, force = true)
 
         assertEquals(3, response.targets)
-        verify(photoRepository).countByGalleryIdAndStorageOwnershipAndStatusNot(
-            GALLERY_ID,
-            PhotoStorageOwnership.GALLERY,
-            PhotoStatus.PENDING,
-        )
+        verify(photoRepository).countByGalleryIdAndStatusNot(GALLERY_ID, PhotoStatus.PENDING)
         verify(embeddingInvoker).invoke(GALLERY_ID, true)
     }
 
     private fun stubAvailableInvoker() {
-        whenever(galleryAccessPolicy.requirePhotographer(GALLERY_ID, USER_ID))
-            .thenReturn(Gallery(studioId = 1L, title = "테스트 갤러리"))
+        whenever(galleryAccessPolicy.requirePhotographer(GALLERY_ID, USER_ID)).thenReturn(mock<Gallery>())
         whenever(embeddingInvoker.isAvailable).thenReturn(true)
     }
 
