@@ -19,7 +19,7 @@ data class UserResponse(
 
     companion object {
         fun from(user: User) = UserResponse(
-            id = checkNotNull(user.id) { "저장되지 않은 사용자는 응답할 수 없습니다." },
+            id = user.requiredId,
             provider = user.provider,
             nickname = user.nickname,
             email = user.email,

@@ -46,7 +46,7 @@ class AuthTokenProvider(
     fun generateAccessToken(user: User): AccessToken =
         AccessToken(
             jwtProvider.generateToken(
-                subject = Subject.from(requireId(user)),
+                subject = Subject.from(user.requiredId),
                 expiresIn = jwtProperties.accessTokenExpiration,
                 claims = mapOf(
                     TOKEN_TYPE_CLAIM to TokenType.ACCESS.name,
@@ -62,7 +62,7 @@ class AuthTokenProvider(
      * 같은 사용자가 다시 발급받으면 이전 토큰은 덮어써져 무효가 된다.
      */
     fun generateRefreshToken(user: User): RefreshToken {
-        val subject = Subject.from(requireId(user))
+        val subject = Subject.from(user.requiredId)
         val refreshToken = RefreshToken(
             jwtProvider.generateToken(
                 subject = subject,
@@ -112,6 +112,8 @@ class AuthTokenProvider(
     private fun Claims.requireString(key: String): String =
         this[key] as? String ?: throw TokenException(AuthErrorCode.TOKEN_INVALID)
 
+    // UserRepository.requireById를 쓰지 않는다. 토큰은 유효한데 주인이 사라진 것이라,
+    // 클라이언트가 할 일은 "없는 리소스"(404)가 아니라 "다시 로그인"(401)이다.
     fun parseUser(token: Token): User =
         userRepository.findById(parseSubject(token).toUserId())
             .orElseThrow { TokenException(AuthErrorCode.TOKEN_OWNER_NOT_FOUND) }
@@ -134,10 +136,6 @@ class AuthTokenProvider(
     }
 
     fun logout(user: User) {
-        tokenStorage.delete(Subject.from(requireId(user)))
+        tokenStorage.delete(Subject.from(user.requiredId))
     }
-
-    /** [generateAccessToken]·[generateRefreshToken]·[logout]이 쓴다. */
-    private fun requireId(user: User): Long =
-        checkNotNull(user.id) { "저장되지 않은 사용자로는 토큰을 발급할 수 없습니다." }
 }

@@ -27,7 +27,7 @@ class OAuthLoginProcessor(
         val refreshToken = authTokenProvider.generateRefreshToken(user)
 
         return OAuthLoginResult(
-            userId = checkNotNull(user.id) { "저장되지 않은 사용자입니다." },
+            userId = user.requiredId,
             response = LoginResponse.of(accessToken, refreshToken),
         )
     }

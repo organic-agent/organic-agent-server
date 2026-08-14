@@ -29,13 +29,10 @@ interface GalleryRepository : JpaRepository<Gallery, Long> {
     fun findAllByStudioIdForUpdate(@Param("studioId") studioId: Long): List<Gallery>
 }
 
-/**
- * [GalleryRepository.findWithLockById]에 "없으면 404"를 붙인 것. 갤러리를 잠그고 시작하는
- * 경로가 전부 이것을 부른다 — 선택 앨범(`selection`)과 협업 세션(`collab`)이 각자 같은 줄을
- * 들고 있으면, 잠금 규칙이 바뀌는 날 한쪽만 고치게 된다.
- *
- * 잠그는 것이 왜 갤러리 행인지는 [GalleryRepository.findWithLockById]에 적어 두었다.
- */
+fun GalleryRepository.requireById(id: Long): Gallery =
+    findById(id)
+        .orElseThrow { GalleryException(GalleryErrorCode.GALLERY_NOT_FOUND) }
+
 fun GalleryRepository.requireWithLockById(id: Long): Gallery =
     findWithLockById(id)
         ?: throw GalleryException(GalleryErrorCode.GALLERY_NOT_FOUND)

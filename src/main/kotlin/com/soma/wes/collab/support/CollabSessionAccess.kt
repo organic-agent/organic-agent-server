@@ -6,11 +6,9 @@ import com.soma.wes.collab.exception.CollabErrorCode
 import com.soma.wes.collab.exception.CollabException
 import com.soma.wes.collab.repository.CollabGuestRepository
 import com.soma.wes.collab.repository.CollabSessionRepository
-import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryStatus
-import com.soma.wes.gallery.exception.GalleryErrorCode
-import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.repository.GalleryRepository
+import com.soma.wes.gallery.repository.requireById
 import org.springframework.stereotype.Component
 import java.time.Clock
 import java.time.ZonedDateTime
@@ -49,7 +47,8 @@ class CollabSessionAccess(
             throw CollabException(CollabErrorCode.SESSION_REVOKED)
         }
 
-        val gallery = findGallery(session.galleryId)
+        // 세션이 있는데 갤러리가 없으면 데이터가 깨진 것이다.
+        val gallery = galleryRepository.requireById(session.galleryId)
         // 부부가 세션을 여는 시점에 갤러리는 이미 열려 있다. 나중에 DRAFT로 되돌리는 경로가
         // 생기는 날, 링크 하나로 그 갤러리가 다시 공개되지 않도록 여기서 함께 막는다.
         if (!gallery.isVisibleToMember) {
@@ -107,9 +106,4 @@ class CollabSessionAccess(
 
         return collabGuestRepository.findByGuestTokenAndCollabSessionId(guestToken, access.sessionId)
     }
-
-    /** [requireReadable]이 쓴다. 세션이 있는데 갤러리가 없으면 데이터가 깨진 것이다. */
-    private fun findGallery(galleryId: Long): Gallery =
-        galleryRepository.findById(galleryId)
-            .orElseThrow { GalleryException(GalleryErrorCode.GALLERY_NOT_FOUND) }
 }

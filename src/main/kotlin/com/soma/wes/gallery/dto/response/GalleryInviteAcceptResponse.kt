@@ -18,7 +18,7 @@ data class GalleryInviteAcceptResponse(
     companion object {
         fun from(member: GalleryMember) = GalleryInviteAcceptResponse(
             galleryId = member.galleryId,
-            memberId = checkNotNull(member.id) { "저장되지 않은 멤버는 응답할 수 없습니다." },
+            memberId = member.requiredId,
         )
     }
 }

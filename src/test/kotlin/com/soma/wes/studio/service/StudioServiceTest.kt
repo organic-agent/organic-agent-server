@@ -96,7 +96,7 @@ class StudioServiceTest @Autowired constructor(
     fun `초대로 들어온 예비 부부는 스튜디오를 만들 수 없다`() {
         // 종류를 바꾸면 이미 수락한 초대의 주인이 어긋난다.
         val userId = signUp()
-        userRepository.findById(userId).orElseThrow().selectType(UserType.CLIENT)
+        userRepository.findById(userId).orElseThrow().selectClientTypeIfUnset()
 
         val exception = assertFailsWith<UserException> {
             studioService.create(userId, CreateStudioRequest("스튜디오", "client-studio", null))

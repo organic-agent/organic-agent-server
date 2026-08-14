@@ -21,7 +21,7 @@ data class GalleryResponse(
 
     companion object {
         fun from(gallery: Gallery) = GalleryResponse(
-            id = checkNotNull(gallery.id) { "저장되지 않은 갤러리는 응답할 수 없습니다." },
+            id = gallery.requiredId,
             studioId = gallery.studioId,
             title = gallery.title,
             status = gallery.status,

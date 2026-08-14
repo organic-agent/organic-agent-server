@@ -308,13 +308,11 @@ class StudioDeletionProcessor(
         StudioDeletionPlan(
             requestId = requestId,
             claimToken = claimToken,
-            studioId = checkNotNull(studio.id) { "저장되지 않은 스튜디오입니다." },
+            studioId = studio.requiredId,
             studioUserId = studio.userId,
             studioGalleryUrl = studio.galleryUrl,
             planVersion = CURRENT_SUPPORTED_PLAN_VERSION,
-            galleryIds = galleries.mapTo(mutableSetOf()) {
-                checkNotNull(it.id) { "저장되지 않은 갤러리입니다." }
-            },
+            galleryIds = galleries.mapTo(mutableSetOf()) { it.requiredId },
             photos = photos.mapTo(mutableSetOf()) {
                 PhotoDeletionTarget(
                     photoId = it.requiredId,

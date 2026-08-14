@@ -26,7 +26,7 @@ data class GalleryInviteResponse(
 
     companion object {
         fun of(invite: GalleryInvite, inviteUrl: String, at: ZonedDateTime) = GalleryInviteResponse(
-            id = checkNotNull(invite.id) { "저장되지 않은 초대는 응답할 수 없습니다." },
+            id = invite.requiredId,
             galleryId = invite.galleryId,
             inviteUrl = inviteUrl,
             status = invite.statusAt(at),
