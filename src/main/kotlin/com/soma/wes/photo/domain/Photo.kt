@@ -33,10 +33,7 @@ import org.hibernate.type.SqlTypes
 @Table(
     name = "photos",
     uniqueConstraints = [
-        UniqueConstraint(
-            name = "uk_photos_gallery_id_storage_key",
-            columnNames = ["gallery_id", "storage_key"],
-        ),
+        UniqueConstraint(name = "uk_photos_storage_key", columnNames = ["storage_key"]),
     ],
     indexes = [
         Index(name = "idx_photos_gallery_id", columnList = "gallery_id"),
@@ -51,10 +48,6 @@ class Photo(
     /** 오브젝트 스토리지에서의 위치. 사진이 다른 갤러리로 옮겨가는 일은 없으므로 변경하지 않는다. */
     @Column(name = "storage_key", nullable = false, updatable = false, length = 500)
     val storageKey: String,
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "storage_ownership", nullable = false, updatable = false, length = 30)
-    val storageOwnership: PhotoStorageOwnership = PhotoStorageOwnership.GALLERY,
 
     @Column(name = "original_file_name", nullable = false, updatable = false, length = 255)
     val originalFileName: String,
@@ -134,10 +127,6 @@ class Photo(
     val viewKey: String
         get() = previewKey ?: storageKey
 
-    /** 이 사진 참조가 사라질 때 실제 S3 객체도 함께 지워야 하는지 여부. */
-    val ownsStorageObjects: Boolean
-        get() = storageOwnership == PhotoStorageOwnership.GALLERY
-
     fun changeDisplayOrder(displayOrder: Int) {
         this.displayOrder = displayOrder
     }
@@ -184,29 +173,46 @@ class Photo(
         const val EMBEDDING_DIMENSION = 768
 
         /**
-         * 버전이 고정된 공유 샘플 한 장을 만든다.
+         * 임베딩까지 끝난 사진을 다른 갤러리로 복제한 행을 만든다. Mock 갤러리가 템플릿
+         * 갤러리의 사진을 가져올 때 쓴다.
          *
-         * 원본·미리보기·임베딩은 WES-22에서 준비한 같은 템플릿 자산을 모든 스튜디오가
-         * 참조한다. 따라서 저장소 소유권은 반드시 [PhotoStorageOwnership.SHARED_TEMPLATE]이다.
+         * [storageKey]·[previewKey]는 호출자가 새 갤러리의 키 공간으로 복사해 둔 S3 위치다 —
+         * 원본 키를 그대로 넘기면 두 행이 한 객체를 참조해 storage_key 전역 유니크에 걸린다.
+         * 벡터와 촬영 정보는 값을 새로 떠서 담는다. detached 원본과 인스턴스를 나눠 가지면
+         * 한쪽 상태 변경이 다른 엔티티에 새어 들어간다.
          */
-        fun createSharedTemplate(
+        fun copyOf(
+            source: Photo,
             galleryId: Long,
             storageKey: String,
-            previewKey: String,
-            originalFileName: String,
-            contentType: String,
+            previewKey: String?,
             displayOrder: Int,
-            embedding: FloatArray,
         ): Photo = Photo(
             galleryId = galleryId,
             storageKey = storageKey,
-            storageOwnership = PhotoStorageOwnership.SHARED_TEMPLATE,
-            originalFileName = originalFileName,
-            contentType = contentType,
+            originalFileName = source.originalFileName,
+            contentType = source.contentType,
             displayOrder = displayOrder,
-        ).also {
-            it.previewKey = previewKey
-            it.applyEmbedding(embedding)
+        ).also { copy ->
+            copy.previewKey = previewKey
+            source.metadata?.let { metadata ->
+                copy.applyMetadata(
+                    PhotoMetadata(
+                        takenAt = metadata.takenAt,
+                        cameraMake = metadata.cameraMake,
+                        cameraModel = metadata.cameraModel,
+                        exposureTime = metadata.exposureTime,
+                        fNumber = metadata.fNumber,
+                        iso = metadata.iso,
+                        width = metadata.width,
+                        height = metadata.height,
+                        byteSize = metadata.byteSize,
+                    ),
+                )
+            }
+            copy.applyEmbedding(
+                checkNotNull(source.embedding) { "임베딩이 없는 사진은 복제할 수 없습니다." }.copyOf(),
+            )
         }
     }
 }

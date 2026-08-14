@@ -89,17 +89,6 @@ class StudioDeletionProcessorTest @Autowired constructor(
             ),
         )
         photo.previewKey = "previews/galleries/$galleryId/original.jpg"
-        photoRepository.save(
-            Photo.createSharedTemplate(
-                galleryId = galleryId,
-                storageKey = "mock-gallery/test-v1/originals/sample.jpg",
-                previewKey = "mock-gallery/test-v1/previews/sample.jpg",
-                originalFileName = "sample.jpg",
-                contentType = "image/jpeg",
-                displayOrder = 1,
-                embedding = FloatArray(Photo.EMBEDDING_DIMENSION).also { it[0] = 1f },
-            ),
-        )
         photoRepository.flush()
         val photoId = photo.requiredId
 
@@ -118,18 +107,11 @@ class StudioDeletionProcessorTest @Autowired constructor(
             reason = "문의 WES-CS-1 최종 확인",
         )
         val plan = assertIs<StudioDeletionPreparation.Pending>(preparation).plan
-        assertEquals(
-            setOf(
-                "galleries/$galleryId/original.heic",
-                "previews/galleries/$galleryId/original.jpg",
-            ),
-            plan.objectKeys,
-        )
 
         val result = processor.delete(plan, 99L, "문의 WES-CS-1 최종 확인")
 
         assertEquals(1, result.galleryCount)
-        assertEquals(2, result.photoCount)
+        assertEquals(1, result.photoCount)
         assertEquals(2, result.objectCount)
         assertFalse(studioRepository.existsById(studioId))
         assertEquals(0, galleryRepository.count())

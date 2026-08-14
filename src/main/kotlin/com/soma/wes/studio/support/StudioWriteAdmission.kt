@@ -18,9 +18,6 @@ import org.springframework.transaction.annotation.Transactional
  * 없는 writer의 shared fence를 보고 S3 호출 전에 거절된다. 삭제가 먼저 exclusive fence와 claim을
  * 확정했다면 writer가 저장 전에 거절된다. `MANDATORY`는 fence만 얻고 트랜잭션을 끝낸 뒤
  * 저장하는 잘못된 호출을 막는다.
- *
- * WES-21 Mock seed처럼 없는 행의 자연 멱등성에도 studio mutex가 필요한 경로는
- * [lockWritableByUserId]로 row lock과 같은 fence·claim 검사를 함께 재사용한다.
  */
 @Service
 class StudioWriteAdmission(
@@ -46,14 +43,6 @@ class StudioWriteAdmission(
         if (!studioRepository.existsById(studioId)) {
             throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
         }
-    }
-
-    @Transactional(propagation = Propagation.MANDATORY)
-    fun lockWritableByUserId(userId: Long): Studio {
-        val studio = studioRepository.findWithLockByUserId(userId)
-            ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
-        admit(checkNotNull(studio.id) { "저장되지 않은 스튜디오입니다." })
-        return studio
     }
 
     private fun admit(studioId: Long) {

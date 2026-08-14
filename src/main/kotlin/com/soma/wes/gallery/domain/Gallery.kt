@@ -27,14 +27,6 @@ class Gallery(
     @Column(name = "studio_id", nullable = false, updatable = false)
     val studioId: Long,
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "gallery_type", nullable = false, updatable = false, length = 20)
-    val galleryType: GalleryType = GalleryType.NORMAL,
-
-    /** Mock 갤러리가 어느 샘플 자산·임베딩 묶음을 복제했는지 식별한다. */
-    @Column(name = "template_version", updatable = false, length = 50)
-    val templateVersion: String? = null,
-
     @Column(nullable = false, length = 100)
     var title: String,
 
@@ -135,38 +127,11 @@ class Gallery(
             maxSelectablePhotoCount: Int?,
             at: ZonedDateTime,
         ): Gallery {
-            requireDeadlineNotPassed(selectionDeadline, at)
-            requireValidMaxSelectablePhotoCount(maxSelectablePhotoCount)
-            return Gallery(
-                studioId = studioId,
-                title = title,
-                selectionDeadline = selectionDeadline,
-                maxSelectablePhotoCount = maxSelectablePhotoCount,
-            )
-        }
-
-        /**
-         * 사전 계산된 샘플 사진을 담는 갤러리.
-         *
-         * 일반 갤러리와 같은 계약 값 검증을 거치되, 템플릿 버전을 필수로 남긴다. 이 값이
-         * 없으면 같은 API 응답만 보고 어떤 S3 key와 임베딩을 복제했는지 추적할 수 없다.
-         */
-        fun createMock(
-            studioId: Long,
-            templateVersion: String,
-            title: String,
-            selectionDeadline: ZonedDateTime?,
-            maxSelectablePhotoCount: Int?,
-            at: ZonedDateTime,
-        ): Gallery {
-            require(templateVersion.isNotBlank()) { "Mock 갤러리 템플릿 버전은 비어 있을 수 없습니다." }
             requireValidTitle(title)
             requireDeadlineNotPassed(selectionDeadline, at)
             requireValidMaxSelectablePhotoCount(maxSelectablePhotoCount)
             return Gallery(
                 studioId = studioId,
-                galleryType = GalleryType.MOCK,
-                templateVersion = templateVersion,
                 title = title,
                 selectionDeadline = selectionDeadline,
                 maxSelectablePhotoCount = maxSelectablePhotoCount,
@@ -185,6 +150,10 @@ class Gallery(
             }
         }
 
+        /**
+         * 컨트롤러의 `@Valid`와 겹치지만 남겨 둔다. bean validation은 컨트롤러를 지나는 요청에만
+         * 돌아서, 서비스가 직접 제목을 정해 넣는 경로는 이 문이 유일한 검증이다.
+         */
         private fun requireValidTitle(title: String) {
             require(title.isNotBlank() && title.length <= MAX_TITLE_LENGTH) {
                 "갤러리 제목은 비어 있을 수 없고 $MAX_TITLE_LENGTH 자 이하여야 합니다."

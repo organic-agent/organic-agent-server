@@ -1,97 +1,97 @@
 package com.soma.wes.gallery.service
 
 import com.soma.wes.gallery.config.MockGalleryProperties
-import com.soma.wes.gallery.domain.Gallery
-import com.soma.wes.gallery.domain.GalleryType
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.dto.response.GalleryResponse
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
-import com.soma.wes.gallery.repository.GalleryRepository
-import com.soma.wes.gallery.support.MockGalleryTemplateLoader
+import com.soma.wes.gallery.support.MockGalleryCopyPlan
+import com.soma.wes.gallery.support.MockGallerySeeder
 import com.soma.wes.photo.domain.Photo
-import com.soma.wes.photo.repository.PhotoRepository
-import com.soma.wes.studio.support.StudioWriteAdmission
+import com.soma.wes.photo.service.PhotoStorage
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
-import java.time.Clock
-import java.time.ZonedDateTime
 
-/** 버전이 고정된 샘플 사진과 사전 계산 임베딩을 한 트랜잭션으로 seed한다. */
+/**
+ * Mock 갤러리 — 온보딩 직후의 작가가 실제 촬영 없이 제품을 눌러볼 수 있는 샘플 갤러리.
+ *
+ * 결과물은 완전히 일반적인 갤러리다. 템플릿 갤러리(운영자 스튜디오가 일반 업로드·임베딩
+ * 파이프라인으로 한 번 시드해 둔 진짜 갤러리)의 사진 행과 S3 객체를 새 갤러리의 자기 키
+ * 공간(`galleries/{newId}/…`)으로 복제하므로, 만들어진 뒤에는 삭제·임베딩·클러스터링·리셋
+ * 어디에도 특수 취급이 없다. 같은 이유로 스튜디오당 개수 제한도 없다 — 부를 때마다 새로
+ * 만들고, 버튼을 언제 감출지는 화면이 정한다.
+ *
+ * 클래스에 `@Transactional`이 없는 것은 의도다. S3 복사가 흐름 한가운데 있어 전체를 한
+ * 트랜잭션으로 감싸면 객체 수백 개를 복사하는 내내 커넥션을 붙잡는다. DB 단계는
+ * [MockGallerySeeder]가 각자의 트랜잭션으로 수행한다.
+ */
 @Service
 class MockGalleryService(
-    private val studioWriteAdmission: StudioWriteAdmission,
-    private val galleryRepository: GalleryRepository,
-    private val photoRepository: PhotoRepository,
-    private val templateLoader: MockGalleryTemplateLoader,
     private val properties: MockGalleryProperties,
-    private val clock: Clock,
+    private val seeder: MockGallerySeeder,
+    private val photoStorage: PhotoStorage,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    /**
-     * 같은 스튜디오가 여러 번 요청해도 최초 갤러리를 그대로 반환한다.
-     *
-     * 아직 존재하지 않는 행은 잠글 수 없어 스튜디오 부모 행을 먼저 잠근다. 같은 스튜디오의
-     * 경쟁 요청은 잠금 뒤 기존 Mock 갤러리를 다시 읽으므로 사진을 중복 seed하지 않는다.
-     * 다른 스튜디오는 서로 다른 부모 행을 잠가 병렬로 생성할 수 있다.
-     *
-     * 기능 gate는 기존 행 조회 뒤에 본다. 운영에서 기능을 다시 꺼도 이미 만들어진 사용자의
-     * 재시도까지 503으로 바뀌지 않고 같은 id를 되돌려 주기 위해서다.
-     */
-    @Transactional
     fun create(userId: Long, request: CreateGalleryRequest?): GalleryResponse {
-        val studio = studioWriteAdmission.lockWritableByUserId(userId)
-        val studioId = checkNotNull(studio.id) { "저장되지 않은 스튜디오입니다." }
-
-        galleryRepository.findByStudioIdAndGalleryType(studioId, GalleryType.MOCK)?.let { existing ->
-            log.info("기존 Mock 갤러리 반환: studioId={}, galleryId={}", studioId, existing.id)
-            return GalleryResponse.from(existing)
-        }
-
-        if (!properties.enabled) {
+        if (!properties.isConfigured) {
             throw GalleryException(GalleryErrorCode.MOCK_GALLERY_NOT_READY)
         }
-
-        val template = templateLoader.load()
-        val gallery = galleryRepository.save(
-            Gallery.createMock(
-                studioId = studioId,
-                templateVersion = template.templateVersion,
-                title = request?.title ?: DEFAULT_TITLE,
-                selectionDeadline = request?.selectionDeadline,
-                maxSelectablePhotoCount = request?.maxSelectablePhotoCount,
-                at = ZonedDateTime.now(clock),
-            ),
-        )
+        val templates = seeder.loadTemplatePhotos(properties.templateGalleryId)
+        val gallery = seeder.createGallery(userId, request)
         val galleryId = checkNotNull(gallery.id) { "저장되지 않은 갤러리입니다." }
 
-        val photos = template.photos.map { sample ->
-            Photo.createSharedTemplate(
-                galleryId = galleryId,
-                storageKey = sample.storageKey,
-                previewKey = sample.previewKey,
-                originalFileName = sample.originalFileName,
-                contentType = sample.contentType,
-                displayOrder = sample.displayOrder,
-                embedding = sample.embedding.toFloatArray(),
-            )
+        val plans = buildPlans(galleryId, templates)
+        val copiedKeys = mutableListOf<String>()
+        try {
+            copyObjects(plans, copiedKeys)
+            seeder.persistPhotos(gallery, plans)
+        } catch (e: Exception) {
+            compensate(galleryId, copiedKeys)
+            throw e
         }
-        photoRepository.saveAll(photos)
 
-        log.info(
-            "Mock 갤러리 생성: studioId={}, galleryId={}, templateVersion={}, photos={}",
-            studioId,
-            galleryId,
-            template.templateVersion,
-            photos.size,
-        )
+        log.info("Mock 갤러리 생성: galleryId={}, templateGalleryId={}, photos={}", galleryId, properties.templateGalleryId, plans.size)
         return GalleryResponse.from(gallery)
     }
 
-    companion object {
-        const val DEFAULT_TITLE = "샘플 갤러리"
+    private fun buildPlans(galleryId: Long, templates: List<Photo>): List<MockGalleryCopyPlan> =
+        templates.map { source ->
+            val storageKey = photoStorage.buildKey(galleryId, source.originalFileName)
+            MockGalleryCopyPlan(
+                source = source,
+                storageKey = storageKey,
+                // 파생본 위치는 원본 키에서 파생되는 고정 규칙이다. 삭제 경로의
+                // PhotoDeletionTarget.expectedPreviewKey, 임베딩 Lambda의 preview_key_for와
+                // 같아야 hard delete가 이 복사본의 미리보기를 찾아 지운다.
+                previewKey = source.previewKey?.let {
+                    "previews/${storageKey.substringBeforeLast('.', storageKey)}.jpg"
+                },
+            )
+        }
+
+    private fun copyObjects(plans: List<MockGalleryCopyPlan>, copiedKeys: MutableList<String>) {
+        plans.forEach { plan ->
+            photoStorage.copy(plan.source.storageKey, plan.storageKey)
+            copiedKeys += plan.storageKey
+            if (plan.previewKey != null) {
+                photoStorage.copy(checkNotNull(plan.source.previewKey), plan.previewKey)
+                copiedKeys += plan.previewKey
+            }
+        }
+    }
+
+    /**
+     * 실패한 생성의 흔적 — 복사해 둔 객체와 사진 없는 갤러리 행 — 을 걷어낸다.
+     *
+     * best-effort다. 보상까지 실패해도 남는 것은 아무 행도 가리키지 않는 S3 객체와 빈
+     * 갤러리뿐이라 데이터가 틀려지지는 않는다. 원래 예외를 삼키지 않도록 로그만 남긴다.
+     */
+    private fun compensate(galleryId: Long, copiedKeys: List<String>) {
+        runCatching { photoStorage.deleteAll(copiedKeys) }
+            .onFailure { log.warn("Mock 갤러리 보상 삭제 실패: galleryId={}, keys={}", galleryId, copiedKeys.size, it) }
+        runCatching { seeder.discard(galleryId) }
+            .onFailure { log.warn("Mock 갤러리 행 보상 삭제 실패: galleryId={}", galleryId, it) }
     }
 }

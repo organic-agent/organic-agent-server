@@ -79,18 +79,18 @@ interface GalleryControllerDocs {
     @Operation(
         summary = "Mock 갤러리 생성",
         description = """
-            스튜디오를 가진 작가에게 버전이 고정된 샘플 사진과 사전 계산 임베딩을 seed한다.
-            요청 본문 없이 호출하면 제목은 '샘플 갤러리', 기한·계약 장수는 제한 없음으로 만든다.
-            본문을 보내면 일반 생성 요청과 같은 세 값을 최초 생성에만 사용할 수 있다.
-            스튜디오당 하나만 만들며, 반복 요청은 최초 요청의 갤러리를 200으로 그대로 반환한다.
-            이 경우 뒤 요청의 제목·기한·계약 장수는 기존 갤러리를 바꾸지 않는다.
+            운영자가 시드해 둔 샘플 템플릿 갤러리의 사진(임베딩·촬영 정보·미리보기 포함)을
+            복제해, 완전히 일반적인 갤러리 하나를 만든다. 실제 촬영 없이 제품을 눌러보려는
+            온보딩 직후의 작가를 위한 것이다.
 
-            운영 샘플 자산과 manifest가 준비되기 전에는 신규 생성만 503으로 막는다. 이미 만든
-            Mock 갤러리는 기능 gate를 다시 꺼도 반복 요청으로 조회할 수 있다.
+            요청 본문 없이 호출하면 제목은 '샘플 갤러리', 기한·계약 장수는 제한 없음으로
+            만든다. 본문을 보내면 일반 생성 요청과 같은 세 값을 쓴다. 부를 때마다 새 갤러리를
+            만든다 — 만들어진 갤러리는 일반 갤러리와 구분되지 않으므로, 버튼을 언제 감출지는
+            화면이 정한다.
         """,
     )
     @ApiResponses(
-        ApiResponse(responseCode = "200", description = "최초 생성 또는 기존 Mock 갤러리 반환"),
+        ApiResponse(responseCode = "201", description = "생성 성공. 응답은 일반 갤러리와 같다"),
         ApiResponse(
             responseCode = "400",
             description = "빈 제목, 지난 선택 마감 기한 또는 0 이하 계약 장수",
@@ -118,8 +118,24 @@ interface GalleryControllerDocs {
             ],
         ),
         ApiResponse(
+            responseCode = "502",
+            description = "템플릿 객체의 S3 복사 실패. 만들다 만 갤러리는 남지 않으므로 다시 요청하면 된다",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "복사 실패",
+                            value = """{"code": "PHOTO_502_3", "message": "샘플 사진 복제를 완료하지 못했습니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(
             responseCode = "503",
-            description = "Mock 갤러리 기능이 꺼져 있거나 manifest가 준비되지 않음",
+            description = "샘플 템플릿 갤러리가 설정되지 않았거나 임베딩까지 끝난 사진이 없음",
             content = [
                 Content(
                     mediaType = MediaType.APPLICATION_JSON_VALUE,
@@ -127,7 +143,7 @@ interface GalleryControllerDocs {
                     examples = [
                         ExampleObject(
                             name = "샘플 준비 전",
-                            value = """{"code": "GALLERY_503_1", "message": "Mock 갤러리가 아직 준비되지 않았습니다."}""",
+                            value = """{"code": "GALLERY_503_1", "message": "샘플 갤러리가 아직 준비되지 않았습니다."}""",
                         ),
                     ],
                 ),

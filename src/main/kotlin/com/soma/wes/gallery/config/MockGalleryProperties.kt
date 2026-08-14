@@ -3,13 +3,19 @@ package com.soma.wes.gallery.config
 import org.springframework.boot.context.properties.ConfigurationProperties
 
 /**
- * Mock 갤러리는 샘플 S3 객체와 manifest가 함께 준비된 배포에서만 켠다.
+ * Mock 갤러리가 복제할 샘플 템플릿 갤러리의 위치.
  *
- * 기본값을 false로 두어 코드만 먼저 배포돼도 존재하지 않는 샘플 key를 응답하지 않는다.
- * 운영 프로필은 검증을 마친 같은 버전의 manifest 위치와 enabled를 함께 덮어쓴다.
+ * 템플릿 갤러리는 운영자 스튜디오가 일반 파이프라인(업로드 + 임베딩 Lambda)으로 만든
+ * 진짜 갤러리다. 별도 manifest나 스키마 없이 갤러리 id 하나만 있으면 되고, 이 값이
+ * 없는 환경(로컬·시드 전 운영)에서는 Mock 갤러리 생성이 503으로 막힌다.
  */
 @ConfigurationProperties(prefix = "app.mock-gallery")
 data class MockGalleryProperties(
-    val enabled: Boolean = false,
-    val manifestLocation: String = "",
-)
+
+    /** 복제 원본이 되는 템플릿 갤러리 id. 0이면 기능이 꺼진 것이다. */
+    val templateGalleryId: Long = 0,
+) {
+
+    val isConfigured: Boolean
+        get() = templateGalleryId > 0
+}

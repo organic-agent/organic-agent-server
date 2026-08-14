@@ -66,10 +66,10 @@ app:
     function-name: ""
 
   mock-gallery:
-    # 운영 프로필이 검증한 버전 고정 S3 자산과 classpath manifest를 함께 덮어쓴다.
-    # 기본값 false는 로컬이나 자산이 준비되지 않은 환경이 잘못된 S3 key를 내보내지 않는 안전장치다.
-    enabled: false
-    manifest-location: ""
+    # Mock 갤러리가 복제할 샘플 템플릿 갤러리 id. 0은 "기능 꺼짐"이다(생성 요청이 503).
+    # 템플릿은 운영자 스튜디오가 일반 파이프라인으로 시드한 진짜 갤러리라 환경마다 id가 다르다.
+    # prod는 시드를 마친 뒤 Parameter Store(app.mock-gallery.template-gallery-id)가 덮어쓴다.
+    template-gallery-id: 0
 
   cluster:
     # 프론트가 threshold를 넘기지 않았을 때 쓰는 유사도. 첫 화면의 묶음 입도를 정하는 값이라
@@ -142,13 +142,6 @@ management:
       # 컨테이너·ALB의 health check는 up/down만 알면 된다. DB 접속 정보나 디스크 용량 같은
       # 내부 사정을 인증 없이 내보낼 이유가 없다.
       show-details: never
-
-# v1 원본 80개와 미리보기 80개를 운영 버킷에 조건부 업로드한 뒤 SHA-256, metadata,
-# Cache-Control, exact-prefix inventory와 앱 role 읽기 권한을 검증한 버전이다.
-app:
-  mock-gallery:
-    enabled: true
-    manifest-location: "classpath:/mock-gallery/v1.json"
 
 # springdoc.server-url과 cors.allowed-origins는 Parameter Store(/wes/prod/)에서 온다.
 # cors.allowed-origins에 배포 프론트와 함께 http://localhost:3000을 넣어두면,

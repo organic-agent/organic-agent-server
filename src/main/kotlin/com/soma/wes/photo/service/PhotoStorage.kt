@@ -26,4 +26,10 @@ interface PhotoStorage {
 
     /** 운영자 승인 삭제에서 원본과 미리보기를 물리 삭제한다. 없는 키를 다시 지워도 성공해야 한다. */
     fun deleteAll(keys: Collection<String>)
+
+    /**
+     * 같은 버킷 안에서 객체 하나를 복제한다. Mock 갤러리가 템플릿 사진을 자기 키 공간으로
+     * 가져올 때 쓴다. 스토리지 내부 복사라 바이트는 서버를 지나지 않는다.
+     */
+    fun copy(sourceKey: String, targetKey: String)
 }

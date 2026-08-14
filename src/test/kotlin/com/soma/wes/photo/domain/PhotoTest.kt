@@ -3,9 +3,11 @@ package com.soma.wes.photo.domain
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
 import org.junit.jupiter.api.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotSame
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -26,29 +28,6 @@ class PhotoTest {
 
         assertEquals(PhotoStatus.PENDING, photo.status)
         assertNull(photo.embedding)
-        assertEquals(PhotoStorageOwnership.GALLERY, photo.storageOwnership)
-        assertTrue(photo.ownsStorageObjects)
-    }
-
-    @Test
-    fun `공유 템플릿 사진은 미리보기와 임베딩까지 준비된 상태로 만든다`() {
-        val embedding = FloatArray(Photo.EMBEDDING_DIMENSION).also { it[0] = 1f }
-
-        val photo = Photo.createSharedTemplate(
-            galleryId = 1L,
-            storageKey = "mock-gallery/v1/originals/a.jpg",
-            previewKey = "mock-gallery/v1/previews/a.jpg",
-            originalFileName = "a.jpg",
-            contentType = "image/jpeg",
-            displayOrder = 0,
-            embedding = embedding,
-        )
-
-        assertEquals(PhotoStorageOwnership.SHARED_TEMPLATE, photo.storageOwnership)
-        assertFalse(photo.ownsStorageObjects)
-        assertEquals(PhotoStatus.EMBEDDED, photo.status)
-        assertEquals("mock-gallery/v1/previews/a.jpg", photo.viewKey)
-        assertEquals(Photo.EMBEDDING_DIMENSION, photo.embedding?.size)
     }
 
     @Test
@@ -144,5 +123,47 @@ class PhotoTest {
         assertEquals(PhotoErrorCode.EMBEDDING_DIMENSION_MISMATCH, exception.errorCode)
         assertEquals(PhotoStatus.PENDING, photo.status)
         assertNull(photo.embedding)
+    }
+
+    @Test
+    fun `임베딩까지 끝난 사진을 다른 갤러리로 복제한다`() {
+        val source = photo()
+        source.previewKey = "previews/galleries/1/a.jpg"
+        source.applyMetadata(PhotoMetadata(cameraMake = "Apple", width = 4032, height = 3024))
+        source.applyEmbedding(FloatArray(Photo.EMBEDDING_DIMENSION) { 0.1f })
+
+        val copy = Photo.copyOf(
+            source = source,
+            galleryId = 2L,
+            storageKey = "galleries/2/b.jpg",
+            previewKey = "previews/galleries/2/b.jpg",
+            displayOrder = 7,
+        )
+
+        assertEquals(2L, copy.galleryId)
+        assertEquals("galleries/2/b.jpg", copy.storageKey)
+        assertEquals("previews/galleries/2/b.jpg", copy.previewKey)
+        assertEquals(7, copy.displayOrder)
+        assertEquals("a.jpg", copy.originalFileName)
+        assertEquals("image/jpeg", copy.contentType)
+        assertEquals(PhotoStatus.EMBEDDED, copy.status)
+        // 업로드 URL을 발급한 적 없는 행이다. 값이 있으면 hard delete가 30분간 막힌다.
+        assertNull(copy.uploadUrlExpiresAt)
+        // 값은 같되 인스턴스는 나눠 갖지 않는다. detached 원본과 상태가 엮이면 안 된다.
+        assertContentEquals(source.embedding, copy.embedding)
+        assertNotSame(source.embedding, copy.embedding)
+        assertEquals("Apple", copy.metadata?.cameraMake)
+        assertNotSame(source.metadata, copy.metadata)
+    }
+
+    @Test
+    fun `임베딩이 없는 사진은 복제할 수 없다`() {
+        // 벡터 없는 복사본은 임베딩 실행 대상이 되어 Lambda가 S3 원본을 다시 읽게 된다.
+        // "즉시 체험"이라는 목적과 어긋나므로 템플릿 쪽 시드를 끝내고 오라는 뜻이다.
+        val source = photo()
+
+        assertFailsWith<IllegalStateException> {
+            Photo.copyOf(source, galleryId = 2L, storageKey = "galleries/2/b.jpg", previewKey = null, displayOrder = 0)
+        }
     }
 }

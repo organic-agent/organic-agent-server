@@ -45,8 +45,9 @@ class GalleryController(
         @Valid @RequestBody(required = false) request: CreateGalleryRequest?,
     ): ResponseEntity<GalleryResponse> {
         val result = mockGalleryService.create(loginUser.id, request)
+        val status = HttpStatus.CREATED
 
-        return ResponseEntity.ok(result)
+        return ResponseEntity.status(status).body(result)
     }
 
     @GetMapping

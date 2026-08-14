@@ -80,7 +80,9 @@ class GalleryControllerTest @Autowired constructor(
     }
 
     @Test
-    fun `샘플 자산 준비 전에는 신규 Mock 갤러리 생성을 503으로 막는다`() {
+    fun `샘플 템플릿이 설정되지 않은 환경에서는 Mock 갤러리 생성을 503으로 막는다`() {
+        // 기본 컨텍스트에는 app.mock-gallery.template-gallery-id가 없다(0 = 꺼짐).
+        // 로컬이나 시드 전 운영이 이 상태다. 나머지 시나리오는 MockGalleryControllerTest에 있다.
         val photographer = signUpPhotographer()
 
         mockMvc.post("/api/v1/galleries/mock") {
@@ -88,31 +90,6 @@ class GalleryControllerTest @Autowired constructor(
         }.andExpect {
             status { isServiceUnavailable() }
             jsonPath("$.code") { value("GALLERY_503_1") }
-        }
-    }
-
-    @Test
-    fun `기능을 끈 뒤에도 이미 있는 Mock 갤러리는 같은 id로 반환한다`() {
-        val photographer = signUpPhotographer()
-        val existing = galleryRepository.save(
-            Gallery.createMock(
-                studioId = studioIdOf(photographer),
-                templateVersion = "existing-v1",
-                title = "이미 만든 체험 갤러리",
-                selectionDeadline = null,
-                maxSelectablePhotoCount = null,
-                at = java.time.ZonedDateTime.now(),
-            ),
-        )
-
-        mockMvc.post("/api/v1/galleries/mock") {
-            authorize(photographer)
-        }.andExpect {
-            status { isOk() }
-            jsonPath("$.id") { value(existing.id!!.toInt()) }
-            jsonPath("$.title") { value("이미 만든 체험 갤러리") }
-            jsonPath("$.galleryType") { value("MOCK") }
-            jsonPath("$.templateVersion") { value("existing-v1") }
         }
     }
 

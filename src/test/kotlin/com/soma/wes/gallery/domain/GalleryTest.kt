@@ -144,46 +144,15 @@ class GalleryTest {
         assertNull(gallery.selectionDeadline)
         assertNull(gallery.maxSelectablePhotoCount)
         assertEquals(GalleryStatus.DRAFT, gallery.status)
-        assertEquals(GalleryType.NORMAL, gallery.galleryType)
-        assertNull(gallery.templateVersion)
     }
 
     @Test
-    fun `Mock 갤러리는 유형과 템플릿 버전을 고정한다`() {
-        val gallery = Gallery.createMock(
-            studioId = 1L,
-            templateVersion = "sample-v1",
-            title = "체험 갤러리",
-            selectionDeadline = null,
-            maxSelectablePhotoCount = null,
-            at = now,
-        )
-
-        assertEquals(GalleryType.MOCK, gallery.galleryType)
-        assertEquals("sample-v1", gallery.templateVersion)
-        assertEquals(GalleryStatus.DRAFT, gallery.status)
-    }
-
-    @Test
-    fun `Mock 갤러리는 빈 템플릿 버전을 받지 않는다`() {
+    fun `내부 호출에서도 유효한 제목만 받는다`() {
+        // 컨트롤러의 @Valid는 컨트롤러를 지나는 요청만 지킨다. 서비스가 직접 제목을 정해
+        // 넣는 경로에는 이 검증이 유일한 문이다.
         assertFailsWith<IllegalArgumentException> {
-            Gallery.createMock(
+            Gallery.create(
                 studioId = 1L,
-                templateVersion = " ",
-                title = "체험 갤러리",
-                selectionDeadline = null,
-                maxSelectablePhotoCount = null,
-                at = now,
-            )
-        }
-    }
-
-    @Test
-    fun `Mock 갤러리는 내부 호출에서도 유효한 제목만 받는다`() {
-        assertFailsWith<IllegalArgumentException> {
-            Gallery.createMock(
-                studioId = 1L,
-                templateVersion = "sample-v1",
                 title = " ",
                 selectionDeadline = null,
                 maxSelectablePhotoCount = null,
@@ -191,9 +160,8 @@ class GalleryTest {
             )
         }
         assertFailsWith<IllegalArgumentException> {
-            Gallery.createMock(
+            Gallery.create(
                 studioId = 1L,
-                templateVersion = "sample-v1",
                 title = "a".repeat(Gallery.MAX_TITLE_LENGTH + 1),
                 selectionDeadline = null,
                 maxSelectablePhotoCount = null,
