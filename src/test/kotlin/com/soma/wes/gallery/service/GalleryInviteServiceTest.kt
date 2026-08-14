@@ -179,7 +179,7 @@ class GalleryInviteServiceTest @Autowired constructor(
         val invite = galleryInviteService.issue(galleryId(otherGallery), photographerId)
 
         val guestPhotographerId = requiredId(saveUser("guest-photographer"))
-        userRepository.findById(guestPhotographerId).orElseThrow().selectType(UserType.PHOTOGRAPHER)
+        userRepository.findById(guestPhotographerId).orElseThrow().selectPhotographerType()
 
         galleryInviteService.accept(tokenOf(invite), guestPhotographerId)
 
@@ -299,49 +299,99 @@ class GalleryInviteServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `목록은 만료와 폐기를 구분해 함께 보여준다`() {
-        // 걸러내면 작가가 "분명 발급했는데 없다"를 보게 되고, 폐기한 것인지 만료된 것인지
-        // 새로 발급해야 하는지 화면에서 알 방법이 사라진다.
+    fun `재발급하면 이전 링크는 폐기된다`() {
+        // 갤러리당 살아 있는 링크는 하나다. 여러 개가 살아 있으면 퍼진 링크를 거둬들이려 해도
+        // 무엇을 폐기해야 하는지 알 수 없다.
         val gallery = saveGallery()
-        val active = galleryInviteService.issue(galleryId(gallery), photographerId)
-        val revoked = galleryInviteService.issue(galleryId(gallery), photographerId)
-        galleryInviteService.revoke(galleryId(gallery), revoked.id, photographerId)
+        val previous = galleryInviteService.issue(galleryId(gallery), photographerId)
+        val previousToken = tokenOf(previous)
+
+        val reissued = galleryInviteService.issue(galleryId(gallery), photographerId)
+
+        assertEquals(reissued.id, galleryInviteService.getCurrent(galleryId(gallery), photographerId).id)
+        val exception = assertFailsWith<GalleryException> {
+            galleryInviteService.accept(previousToken, groomId)
+        }
+        assertEquals(GalleryErrorCode.INVITE_REVOKED, exception.errorCode)
+    }
+
+    @Test
+    fun `만료된 링크는 폐기 전까지 현재 링크로 남는다`() {
+        // 걸러내면 작가가 "분명 발급했는데 없다"를 보게 되고, 다시 발급해야 하는 상황인지
+        // 화면에서 알 방법이 사라진다.
+        val gallery = saveGallery()
         val expired = saveInvite(gallery, expiresAt = now.minusMinutes(1))
 
-        val invites = galleryInviteService.list(galleryId(gallery), photographerId)
+        val current = galleryInviteService.getCurrent(galleryId(gallery), photographerId)
 
-        assertEquals(3, invites.size)
-        assertEquals(
-            mapOf(
-                active.id to GalleryInviteStatus.ACTIVE,
-                revoked.id to GalleryInviteStatus.REVOKED,
-                checkNotNull(expired.id) to GalleryInviteStatus.EXPIRED,
-            ),
-            invites.associate { it.id to it.status },
-        )
+        assertEquals(checkNotNull(expired.id), current.id)
+        assertEquals(GalleryInviteStatus.EXPIRED, current.status)
     }
 
     @Test
-    fun `폐기한 링크는 만료 시각이 지나도 폐기로 남는다`() {
-        // 만료로 보이면 작가가 자기가 거둬들인 링크를 재발급해도 되는 것으로 읽는다.
+    fun `폐기만 해둔 갤러리는 현재 링크가 없다`() {
         val gallery = saveGallery()
-        val invite = saveInvite(gallery, expiresAt = now.minusMinutes(1))
-        invite.revoke(now.minusHours(1))
-        galleryInviteRepository.save(invite)
+        val invite = galleryInviteService.issue(galleryId(gallery), photographerId)
+        galleryInviteService.revoke(galleryId(gallery), invite.id, photographerId)
 
-        val listed = galleryInviteService.list(galleryId(gallery), photographerId).single()
+        val exception = assertFailsWith<GalleryException> {
+            galleryInviteService.getCurrent(galleryId(gallery), photographerId)
+        }
 
-        assertEquals(GalleryInviteStatus.REVOKED, listed.status)
+        assertEquals(GalleryErrorCode.INVITE_NOT_FOUND, exception.errorCode)
     }
 
     @Test
-    fun `담당 작가가 아니면 목록을 볼 수 없다`() {
+    fun `담당 작가가 아니면 현재 링크를 볼 수 없다`() {
         val gallery = saveGallery()
 
         val exception = assertFailsWith<GalleryException> {
-            galleryInviteService.list(galleryId(gallery), userId = 999L)
+            galleryInviteService.getCurrent(galleryId(gallery), userId = 999L)
         }
 
         assertEquals(GalleryErrorCode.GALLERY_ACCESS_DENIED, exception.errorCode)
+    }
+
+    @Test
+    fun `한 링크로 신랑과 신부 두 사람이 들어온다`() {
+        // 부부는 공동 계정을 쓰지 않는다. 같은 링크를 각자 눌러 두 행이 생겨야 한다.
+        val gallery = saveGallery()
+        val token = tokenOf(galleryInviteService.issue(galleryId(gallery), photographerId))
+
+        galleryInviteService.accept(token, groomId)
+        galleryInviteService.accept(token, brideId)
+
+        assertEquals(2, galleryMemberRepository.countByGalleryId(galleryId(gallery)))
+    }
+
+    @Test
+    fun `정원이 차면 세 번째 사람은 들어오지 못한다`() {
+        // 수락에 작가의 승인 절차가 없으므로, 링크가 퍼졌을 때 이 상한이 유일한 방어선이다.
+        val gallery = saveGallery()
+        val token = tokenOf(galleryInviteService.issue(galleryId(gallery), photographerId))
+        galleryInviteService.accept(token, groomId)
+        galleryInviteService.accept(token, brideId)
+        val stranger = requiredId(saveUser("stranger"))
+
+        val exception = assertFailsWith<GalleryException> {
+            galleryInviteService.accept(token, stranger)
+        }
+
+        assertEquals(GalleryErrorCode.GALLERY_MEMBER_LIMIT_EXCEEDED, exception.errorCode)
+        assertEquals(2, galleryMemberRepository.countByGalleryId(galleryId(gallery)))
+    }
+
+    @Test
+    fun `정원이 찼어도 이미 멤버인 사람의 재요청은 통과한다`() {
+        // 멱등성이 정원보다 앞선다. 링크를 두 번 누른 신부에게 "정원이 찼다"를 보여줄 수는 없다.
+        val gallery = saveGallery()
+        val token = tokenOf(galleryInviteService.issue(galleryId(gallery), photographerId))
+        val first = galleryInviteService.accept(token, groomId)
+        galleryInviteService.accept(token, brideId)
+
+        val again = galleryInviteService.accept(token, groomId)
+
+        assertEquals(first.memberId, again.memberId)
+        assertEquals(2, galleryMemberRepository.countByGalleryId(galleryId(gallery)))
     }
 }

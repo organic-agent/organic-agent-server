@@ -14,7 +14,6 @@ import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.domain.UserType
 import com.soma.wes.user.repository.UserRepository
-import org.hamcrest.Matchers.hasSize
 import org.hamcrest.Matchers.startsWith
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -91,35 +90,59 @@ class GalleryInviteControllerTest @Autowired constructor(
     }
 
     @Test
-    fun `목록은 유효와 만료와 폐기를 함께 보여준다`() {
+    fun `현재 링크는 만료됐어도 상태와 함께 온다`() {
+        // 만료를 걸러내면 작가가 "분명 발급했는데 없다"를 보게 되고, 다시 발급해야 하는
+        // 상황인지 화면에서 알 방법이 사라진다.
         val photographer = signUpPhotographer()
         val gallery = saveGallery(photographer)
-        saveInvite(gallery, token = "active-token", expiresAt = now.plusDays(7))
         saveInvite(gallery, token = "expired-token", expiresAt = now.minusMinutes(1))
-        saveInvite(gallery, token = "revoked-token", expiresAt = now.plusDays(7))
-            .also { it.revoke(now); galleryInviteRepository.save(it) }
 
-        mockMvc.get("/api/v1/galleries/${gallery.id}/invites") { authorize(photographer) }
+        mockMvc.get("/api/v1/galleries/${gallery.id}/invite") { authorize(photographer) }
             .andExpect {
                 status { isOk() }
-                jsonPath("$") { value(hasSize<Any>(3)) }
-                // 최근에 발급한 것이 위로 온다.
-                jsonPath("$[0].status") { value("REVOKED") }
-                jsonPath("$[1].status") { value("EXPIRED") }
-                jsonPath("$[2].status") { value("ACTIVE") }
+                jsonPath("$.status") { value("EXPIRED") }
             }
     }
 
     @Test
-    fun `담당 작가가 아니면 목록을 볼 수 없다`() {
+    fun `폐기만 해둔 갤러리는 현재 링크가 없다`() {
+        val photographer = signUpPhotographer()
+        val gallery = saveGallery(photographer)
+        saveInvite(gallery, token = "revoked-token", expiresAt = now.plusDays(7))
+            .also { it.revoke(now); galleryInviteRepository.save(it) }
+
+        mockMvc.get("/api/v1/galleries/${gallery.id}/invite") { authorize(photographer) }
+            .andExpect {
+                status { isNotFound() }
+                jsonPath("$.code") { value("GALLERY_404_3") }
+            }
+    }
+
+    @Test
+    fun `담당 작가가 아니면 현재 링크를 볼 수 없다`() {
         val photographer = signUpPhotographer()
         val gallery = saveGallery(photographer)
         saveInvite(gallery, token = "some-token", expiresAt = now.plusDays(7))
 
-        mockMvc.get("/api/v1/galleries/${gallery.id}/invites") { authorize(signUpUser()) }
+        mockMvc.get("/api/v1/galleries/${gallery.id}/invite") { authorize(signUpUser()) }
             .andExpect {
                 status { isForbidden() }
                 jsonPath("$.code") { value("GALLERY_403_1") }
+            }
+    }
+
+    @Test
+    fun `정원이 차면 세 번째 사람은 403이다`() {
+        val photographer = signUpPhotographer()
+        val gallery = saveGallery(photographer)
+        saveInvite(gallery, token = "full-house", expiresAt = now.plusDays(7))
+        mockMvc.post("/api/v1/invites/full-house/accept") { authorize(signUpUser()) }
+        mockMvc.post("/api/v1/invites/full-house/accept") { authorize(signUpUser()) }
+
+        mockMvc.post("/api/v1/invites/full-house/accept") { authorize(signUpUser()) }
+            .andExpect {
+                status { isForbidden() }
+                jsonPath("$.code") { value("GALLERY_403_5") }
             }
     }
 

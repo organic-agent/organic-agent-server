@@ -37,12 +37,12 @@ class GalleryInviteController(
         return ResponseEntity.status(status).body(result)
     }
 
-    @GetMapping("/galleries/{galleryId}/invites")
-    override fun list(
+    @GetMapping("/galleries/{galleryId}/invite")
+    override fun getCurrent(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
-    ): ResponseEntity<List<GalleryInviteResponse>> {
-        val result = galleryInviteService.list(galleryId, loginUser.id)
+    ): ResponseEntity<GalleryInviteResponse> {
+        val result = galleryInviteService.getCurrent(galleryId, loginUser.id)
 
         return ResponseEntity.ok(result)
     }
