@@ -4,7 +4,7 @@ import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
 import com.soma.wes.photo.service.PhotoStorage
-import com.soma.wes.photo.service.PresignedUpload
+import com.soma.wes.photo.dto.PresignedUploadDto
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import software.amazon.awssdk.core.exception.SdkException
@@ -29,13 +29,18 @@ class S3PhotoStorage(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
+    companion object {
+        /** S3 DeleteObjects 한 요청의 최대 키 수. */
+        private const val MAX_DELETE_OBJECTS = 1000
+    }
+
     override fun buildKey(galleryId: Long, originalFileName: String): String {
         val extension = originalFileName.substringAfterLast('.', "").lowercase()
         val suffix = if (extension.isBlank()) "" else ".$extension"
         return "galleries/$galleryId/${UUID.randomUUID()}$suffix"
     }
 
-    override fun presignUpload(key: String, contentType: String): PresignedUpload {
+    override fun presignUpload(key: String, contentType: String): PresignedUploadDto {
         val putRequest = PutObjectRequest.builder()
             .bucket(properties.bucket)
             .key(key)
@@ -48,7 +53,7 @@ class S3PhotoStorage(
             .build()
 
         val presigned = s3Presigner.presignPutObject(presignRequest)
-        return PresignedUpload(
+        return PresignedUploadDto(
             url = presigned.url().toExternalForm(),
             expiresAt = presigned.expiration(),
         )
@@ -114,10 +119,5 @@ class S3PhotoStorage(
             log.error("S3 사진 복사 실패: bucket={}, source={}, target={}", properties.bucket, sourceKey, targetKey, e)
             throw PhotoException(PhotoErrorCode.STORAGE_COPY_FAILED)
         }
-    }
-
-    companion object {
-        /** S3 DeleteObjects 한 요청의 최대 키 수. */
-        private const val MAX_DELETE_OBJECTS = 1000
     }
 }
