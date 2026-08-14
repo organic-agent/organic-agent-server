@@ -13,9 +13,18 @@ import jakarta.persistence.Id
 import jakarta.persistence.Index
 import jakarta.persistence.Table
 import java.time.ZonedDateTime
+import org.hibernate.annotations.SQLRestriction
 
 
+/**
+ * 휴지통에 든 갤러리([moveToTrash])는 `@SQLRestriction`이 모든 JPA 조회에서 걸러낸다.
+ * 갤러리 조회 대부분이 [com.soma.wes.gallery.support.GalleryAccessPolicy]의 `findById` 한 관문을
+ * 지나므로, 갤러리를 숨기면 그 안의 사진·폴더·앨범·협업 링크도 404로 함께 닫힌다. 사진 행은
+ * 건드리지 않는다 — 그래야 복원이 갤러리를 지우기 전 모습 그대로 되살린다. 휴지통 화면과
+ * 복원·물리 삭제는 이 필터를 우회하는 trash 도메인의 네이티브 SQL이 담당한다.
+ */
 @Entity
+@SQLRestriction("deleted_at is null")
 @Table(
     name = "galleries",
     indexes = [
@@ -48,6 +57,15 @@ class Gallery(
 
     val requiredId: Long
         get() = checkNotNull(id) { "저장되지 않은 갤러리입니다." }
+
+    /** 휴지통에 들어간 시각. null이면 살아 있는 갤러리다. 자세한 규칙은 클래스 KDoc에. */
+    @Column(name = "deleted_at")
+    var deletedAt: ZonedDateTime? = null
+        protected set
+
+    fun moveToTrash(at: ZonedDateTime) {
+        deletedAt = at
+    }
 
     val isVisibleToMember: Boolean
         get() = status != GalleryStatus.DRAFT

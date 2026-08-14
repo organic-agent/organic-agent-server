@@ -8,12 +8,15 @@ import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
+import jakarta.persistence.EntityManager
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
 import org.springframework.context.annotation.Import
 import org.springframework.data.domain.PageRequest
+import java.time.ZonedDateTime
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -28,6 +31,7 @@ class PhotoRepositoryTest @Autowired constructor(
     private val photoRepository: PhotoRepository,
     private val galleryRepository: GalleryRepository,
     private val studioRepository: StudioRepository,
+    private val entityManager: EntityManager,
 ) {
 
     private var sequence = 0L
@@ -151,5 +155,39 @@ class PhotoRepositoryTest @Autowired constructor(
         assertEquals(2, page.content.size)
         assertEquals(3, page.totalElements)
         assertTrue(page.hasNext())
+    }
+
+    @Test
+    fun `휴지통 사진은 어떤 JPA 조회에도 나타나지 않는다`() {
+        // 엔티티의 @SQLRestriction이 모든 SELECT에 걸리는지 확인한다. 목록·검증 로더·집계·잠금
+        // 조회 중 하나라도 새면 지운 사진이 부부 화면에 되살아난다.
+        val galleryId = createGallery()
+        val alive = photoRepository.save(photo(galleryId, 0))
+        val trashed = photoRepository.save(photo(galleryId, 1))
+        trashed.moveToTrash(ZonedDateTime.now())
+        photoRepository.flush()
+        // 영속성 컨텍스트에 남은 인스턴스는 SQL 필터와 무관하게 돌아오므로 비운다.
+        entityManager.clear()
+
+        assertEquals(listOf(alive.requiredId), photoRepository.findAllByGalleryId(galleryId, PageRequest.of(0, 10)).content.map { it.requiredId })
+        assertEquals(listOf(alive.requiredId), photoRepository.findAllByGalleryIdAndIdIn(galleryId, listOf(alive.requiredId, trashed.requiredId)).map { it.requiredId })
+        assertEquals(1, photoRepository.countByGalleryId(galleryId))
+        assertNull(photoRepository.findByIdAndGalleryId(trashed.requiredId, galleryId))
+        assertNull(photoRepository.findWithLockByIdAndGalleryId(trashed.requiredId, galleryId))
+        assertTrue(photoRepository.findAllById(listOf(trashed.requiredId)).isEmpty())
+    }
+
+    @Test
+    fun `다음 노출 순서는 휴지통 사진까지 센다`() {
+        // 살아 있는 사진만 세면, 지운 사진이 복원되는 순간 그 사이에 올라온 사진과 순서가 겹친다.
+        val galleryId = createGallery()
+        photoRepository.save(photo(galleryId, 0))
+        val trashed = photoRepository.save(photo(galleryId, 1))
+        trashed.moveToTrash(ZonedDateTime.now())
+        photoRepository.flush()
+        entityManager.clear()
+
+        assertEquals(2, photoRepository.nextDisplayOrder(galleryId))
+        assertEquals(0, photoRepository.nextDisplayOrder(createGallery()))
     }
 }

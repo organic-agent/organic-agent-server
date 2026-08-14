@@ -4,7 +4,7 @@
 # 사용법:
 #   scripts/reset-test-data.sh                    로컬 DB의 갤러리·사진·폴더를 지운다(계정은 남긴다)
 #   scripts/reset-test-data.sh remote             SSM 터널 너머의 RDS를 같은 방식으로 지운다
-#   scripts/reset-test-data.sh remote --all       계정(users·studios·토큰·삭제 기록)까지 지운다
+#   scripts/reset-test-data.sh remote --all       계정(users·studios·토큰)까지 지운다
 #   scripts/reset-test-data.sh remote --with-s3   S3의 원본과 파생본도 함께 지운다
 #   scripts/reset-test-data.sh remote --yes       확인 프롬프트를 건너뛴다
 #
@@ -82,7 +82,7 @@ UNION ALL SELECT 'photos', count(*) FROM photos
 UNION ALL SELECT 'photo_folders', count(*) FROM photo_folders;"
 
 if [ "$SCOPE" = "all" ]; then
-  echo "범위: 갤러리·사진·폴더·협업 세션 + 계정(users·studios·토큰·삭제 기록)"
+  echo "범위: 갤러리·사진·폴더·협업 세션 + 계정(users·studios·토큰)"
 else
   echo "범위: 갤러리·사진·폴더·협업 세션 (계정은 남긴다)"
 fi
@@ -119,9 +119,7 @@ TABLES="$TABLES, photo_selection_items, photo_selections, photo_ratings"
 TABLES="$TABLES, photo_folder_items, photo_folders, photos"
 TABLES="$TABLES, gallery_invites, gallery_members, galleries"
 if [ "$SCOPE" = "all" ]; then
-  # studio_deletion_* 는 스튜디오와 외래키를 맺지 않지만(삭제된 스튜디오의 기록이라 일부러
-  # 끊어 두었다) 스튜디오를 지우면 가리키는 대상이 없어지므로 함께 지운다.
-  TABLES="$TABLES, studio_deletion_claims, studio_deletion_audits, studios"
+  TABLES="$TABLES, studios"
   TABLES="$TABLES, refresh_tokens, oauth_states, users"
 fi
 

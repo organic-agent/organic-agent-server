@@ -15,10 +15,7 @@ import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.service.PhotoStorage
 import com.soma.wes.photo.dto.PresignedUploadDto
 import com.soma.wes.studio.domain.Studio
-import com.soma.wes.studio.domain.StudioDeletionClaim
-import com.soma.wes.studio.repository.StudioDeletionClaimRepository
 import com.soma.wes.studio.repository.StudioRepository
-import com.soma.wes.studio.support.StudioDeletionProcessor
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
 import org.junit.jupiter.api.BeforeEach
@@ -58,7 +55,6 @@ class MockGalleryControllerTest @Autowired constructor(
     private val authTokenProvider: AuthTokenProvider,
     private val userRepository: UserRepository,
     private val studioRepository: StudioRepository,
-    private val claimRepository: StudioDeletionClaimRepository,
     private val galleryRepository: GalleryRepository,
     private val photoRepository: PhotoRepository,
     private val jdbcTemplate: JdbcTemplate,
@@ -69,7 +65,6 @@ class MockGalleryControllerTest @Autowired constructor(
 
     @BeforeEach
     fun clear() {
-        claimRepository.deleteAllInBatch()
         photoRepository.deleteAllInBatch()
         galleryRepository.deleteAllInBatch()
         studioRepository.deleteAllInBatch()
@@ -102,7 +97,7 @@ class MockGalleryControllerTest @Autowired constructor(
             // 키는 일반 갤러리와 같은 자기 키 공간이다. 삭제·리셋 경로가 그대로 집는다.
             assertTrue(photo.storageKey.startsWith("galleries/$galleryId/"))
             assertEquals("previews/${photo.storageKey.substringBeforeLast('.')}.jpg", photo.previewKey)
-            // 업로드 URL을 발급한 적 없는 행 — 값이 있으면 hard delete가 30분간 막힌다.
+            // 업로드 URL을 발급한 적 없는 행 — 값이 있으면 휴지통 즉시 삭제가 30분간 막힌다.
             assertNull(photo.uploadUrlExpiresAt)
         }
         // 사진마다 원본과 미리보기, 두 번의 복사가 일어난다.
@@ -187,34 +182,6 @@ class MockGalleryControllerTest @Autowired constructor(
         // 만들다 만 갤러리가 남지 않는다 — 남는 것은 템플릿 갤러리뿐이다.
         assertEquals(1, galleryRepository.count())
         assertEquals(listOf(photoStorage.copies[0].second, photoStorage.copies[1].second), photoStorage.deleted)
-    }
-
-    @Test
-    fun `삭제 claim이 있으면 복사를 시작하기 전에 409로 거절한다`() {
-        seedTemplate(photoCount = 1)
-        val photographer = signUpPhotographer()
-        val studio = studioRepository.findByUserId(photographer.id!!)!!
-        claimRepository.saveAndFlush(
-            StudioDeletionClaim(
-                requestId = UUID.randomUUID(),
-                claimToken = UUID.randomUUID(),
-                studioId = checkNotNull(studio.id),
-                operatorUserId = 99L,
-                studioGalleryUrl = studio.galleryUrl,
-                reason = "Mock 갤러리 writer admission 회귀",
-                planVersion = StudioDeletionProcessor.CURRENT_SUPPORTED_PLAN_VERSION,
-            ),
-        )
-
-        mockMvc.post("/api/v1/galleries/mock") {
-            authorize(photographer)
-        }.andExpect {
-            status { isConflict() }
-            jsonPath("$.code") { value("STUDIO_409_7") }
-        }
-
-        assertEquals(0, photoStorage.copies.size)
-        assertEquals(1, galleryRepository.count()) // 템플릿 갤러리뿐
     }
 
     @Test

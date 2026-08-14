@@ -8,6 +8,7 @@ import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoRating
 import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.dto.request.CompleteUploadRequest
+import com.soma.wes.photo.dto.request.DeletePhotosRequest
 import com.soma.wes.photo.dto.request.IssueUploadUrlsRequest
 import com.soma.wes.photo.dto.response.IssueUploadUrlsResponse
 import com.soma.wes.photo.dto.response.IssuedUploadResponse
@@ -24,6 +25,8 @@ import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Clock
+import java.time.ZonedDateTime
 
 /**
  * 원본 사진의 업로드와 조회.
@@ -35,6 +38,7 @@ class PhotoService(
     private val photoStorage: PhotoStorage,
     private val photoViewAssembler: PhotoViewAssembler,
     private val properties: StorageProperties,
+    private val clock: Clock,
 ) {
 
     companion object {
@@ -71,7 +75,7 @@ class PhotoService(
 
         // 이미 있는 사진 뒤에 이어 붙인다. 같은 갤러리에 두 배치를 동시에 발급하면 순서가
         // 겹칠 수 있지만, 목록이 id로 한 번 더 정렬하므로 뒤섞이지는 않는다.
-        val orderBase = photoRepository.countByGalleryId(galleryId).toInt()
+        val orderBase = photoRepository.nextDisplayOrder(galleryId)
 
         val photos = request.files.mapIndexed { index, file ->
             Photo(
@@ -109,6 +113,26 @@ class PhotoService(
 
         val photos = checkAndLoadPhotos(galleryId, request.photoIds)
         photos.forEach { it.markUploaded() }
+        return PhotoCountResponse(photos.size)
+    }
+
+    /**
+     * 사진들을 휴지통으로 보낸다. 갤러리를 채우는 작업의 반대라 작가만 부른다.
+     *
+     * 여기서는 표시만 한다 — `deletedAt`이 채워지는 순간 `@SQLRestriction`이 모든 화면에서
+     * 걸러낸다. 복원과 물리 삭제(재삭제·보관 만료)는 trash 도메인이 담당한다.
+     *
+     * [checkAndLoadPhotos]를 그대로 지나므로 전부-아니면-거부다. 이미 휴지통에 있는 사진도
+     * 조회에 걸리지 않아 같은 404로 떨어진다 — 두 사람이 다른 화면에서 같은 사진을 지우면
+     * 늦은 쪽 화면이 낡았다는 뜻이라, 일부만 지워진 성공처럼 보이는 것보다 낫다.
+     */
+    @Transactional
+    fun moveToTrash(galleryId: Long, userId: Long, request: DeletePhotosRequest): PhotoCountResponse {
+        galleryAccessPolicy.requirePhotographer(galleryId, userId)
+
+        val photos = checkAndLoadPhotos(galleryId, request.photoIds)
+        val now = ZonedDateTime.now(clock)
+        photos.forEach { it.moveToTrash(now) }
         return PhotoCountResponse(photos.size)
     }
 

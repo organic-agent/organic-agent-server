@@ -23,6 +23,9 @@ class PhotoSimilarityRepository(
      *
      * `b.id > a.id`로 한쪽 방향만 본다. 쌍을 두 번 세도 union 결과는 같지만 간선 수가 두 배가 된다.
      *
+     * 네이티브 SQL은 `Photo`의 `@SQLRestriction`을 타지 않으므로 휴지통 사진(`deleted_at`)을
+     * 여기서 직접 걸러야 한다. 빼먹으면 지운 사진이 묶음의 대표로 되살아난다.
+     *
      * @param maxDistance 코사인 '거리' 상한. `<=>`가 돌려주는 것이 유사도가 아니라 거리라
      *   유사도 0.9는 거리 0.1이다.
      */
@@ -35,8 +38,10 @@ class PhotoSimilarityRepository(
                           ON b.gallery_id = a.gallery_id
                               AND b.id > a.id
                               AND b.embedding IS NOT NULL
+                              AND b.deleted_at IS NULL
             WHERE a.gallery_id = :galleryId
               AND a.embedding IS NOT NULL
+              AND a.deleted_at IS NULL
               AND (a.embedding <=> b.embedding) <= :maxDistance
             """.trimIndent(),
         )

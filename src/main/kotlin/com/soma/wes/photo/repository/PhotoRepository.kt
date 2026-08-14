@@ -71,10 +71,17 @@ interface PhotoRepository : JpaRepository<Photo, Long> {
     /** 클러스터링 대상. */
     fun findAllByGalleryIdAndEmbeddingIsNotNullOrderByDisplayOrderAscIdAsc(galleryId: Long): List<Photo>
 
-    fun findAllByGalleryIdIn(galleryIds: Collection<Long>): List<Photo>
-
-    @Query(value = "select * from photos where gallery_id in (:galleryIds) for update", nativeQuery = true)
-    fun findAllByGalleryIdInForUpdate(@Param("galleryIds") galleryIds: Collection<Long>): List<Photo>
+    /**
+     * 다음 사진이 받을 노출 순서. 업로드 URL 발급이 쓴다.
+     *
+     * 휴지통 사진까지 세도록 네이티브로 둔다(`@SQLRestriction` 우회). 살아 있는 사진만 세면
+     * 휴지통에 있던 사진이 복원되는 순간 새로 올라온 사진과 순서가 겹친다.
+     */
+    @Query(
+        value = "select coalesce(max(display_order) + 1, 0) from photos where gallery_id = :galleryId",
+        nativeQuery = true,
+    )
+    fun nextDisplayOrder(@Param("galleryId") galleryId: Long): Int
 
     fun countByGalleryId(galleryId: Long): Long
 

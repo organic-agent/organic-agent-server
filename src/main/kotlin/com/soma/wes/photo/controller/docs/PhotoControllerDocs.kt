@@ -4,6 +4,7 @@ import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.global.exception.ErrorResponse
 import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.dto.request.CompleteUploadRequest
+import com.soma.wes.photo.dto.request.DeletePhotosRequest
 import com.soma.wes.photo.dto.request.IssueUploadUrlsRequest
 import com.soma.wes.photo.dto.response.IssueUploadUrlsResponse
 import com.soma.wes.photo.dto.response.PhotoCountResponse
@@ -78,22 +79,6 @@ interface PhotoControllerDocs {
                 ),
             ],
         ),
-        ApiResponse(
-            responseCode = "409",
-            description = "운영자 승인 hard delete가 이미 진행 중임",
-            content = [
-                Content(
-                    mediaType = MediaType.APPLICATION_JSON_VALUE,
-                    schema = Schema(implementation = ErrorResponse::class),
-                    examples = [
-                        ExampleObject(
-                            name = "삭제 진행 중",
-                            value = """{"code": "STUDIO_409_7", "message": "스튜디오 삭제가 진행 중이라 새 데이터를 저장할 수 없습니다."}""",
-                        ),
-                    ],
-                ),
-            ],
-        ),
     )
     fun issueUploadUrls(
         loginUser: LoginUser,
@@ -134,6 +119,60 @@ interface PhotoControllerDocs {
         loginUser: LoginUser,
         galleryId: Long,
         request: CompleteUploadRequest,
+    ): ResponseEntity<PhotoCountResponse>
+
+    @Operation(
+        summary = "사진 휴지통 이동",
+        description = """
+            사진들을 휴지통으로 보낸다. 담당 작가만 할 수 있다. 한 장을 지워도 배치로 보낸다.
+
+            휴지통의 사진은 목록·클러스터·폴더·선택 앨범·협업 화면 어디에도 보이지 않는다.
+            갤러리별 휴지통(GET /photos/trash)에서 복원하거나 즉시 삭제할 수 있고, 보관 기간이
+            지나면 원본과 함께 자동으로 물리 삭제된다.
+
+            전부-아니면-거부다. 이미 휴지통에 있거나 이 갤러리에 없는 id가 섞여 있으면
+            한 장도 옮기지 않고 404를 돌려준다 — 화면이 낡았다는 뜻이므로 다시 읽어야 한다.
+        """,
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "휴지통 이동 성공. 옮긴 사진 수를 돌려준다"),
+        ApiResponse(
+            responseCode = "403",
+            description = "담당 작가가 아님",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "권한 없음",
+                            value = """{"code": "GALLERY_403_1", "message": "갤러리에 접근할 권한이 없습니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(
+            responseCode = "404",
+            description = "이 갤러리에 없거나 이미 휴지통에 있는 사진 id가 섞여 있음",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "다른 갤러리의 사진",
+                            value = """{"code": "PHOTO_404_1", "message": "존재하지 않는 사진입니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    )
+    fun moveToTrash(
+        loginUser: LoginUser,
+        galleryId: Long,
+        request: DeletePhotosRequest,
     ): ResponseEntity<PhotoCountResponse>
 
     @Operation(

@@ -57,22 +57,6 @@ interface GalleryControllerDocs {
                 ),
             ],
         ),
-        ApiResponse(
-            responseCode = "409",
-            description = "운영자 승인 hard delete가 이미 진행 중임",
-            content = [
-                Content(
-                    mediaType = MediaType.APPLICATION_JSON_VALUE,
-                    schema = Schema(implementation = ErrorResponse::class),
-                    examples = [
-                        ExampleObject(
-                            name = "삭제 진행 중",
-                            value = """{"code": "STUDIO_409_7", "message": "스튜디오 삭제가 진행 중이라 새 데이터를 저장할 수 없습니다."}""",
-                        ),
-                    ],
-                ),
-            ],
-        ),
     )
     fun create(loginUser: LoginUser, request: CreateGalleryRequest): ResponseEntity<GalleryResponse>
 
@@ -100,22 +84,6 @@ interface GalleryControllerDocs {
             responseCode = "404",
             description = "온보딩을 마치지 않아 스튜디오가 없음",
             content = [Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = Schema(implementation = ErrorResponse::class))],
-        ),
-        ApiResponse(
-            responseCode = "409",
-            description = "운영자 승인 hard delete가 이미 진행 중임",
-            content = [
-                Content(
-                    mediaType = MediaType.APPLICATION_JSON_VALUE,
-                    schema = Schema(implementation = ErrorResponse::class),
-                    examples = [
-                        ExampleObject(
-                            name = "삭제 진행 중",
-                            value = """{"code": "STUDIO_409_7", "message": "스튜디오 삭제가 진행 중이라 새 데이터를 저장할 수 없습니다."}""",
-                        ),
-                    ],
-                ),
-            ],
         ),
         ApiResponse(
             responseCode = "502",
@@ -437,4 +405,51 @@ interface GalleryControllerDocs {
         galleryId: Long,
         request: ReopenGalleryRequest,
     ): ResponseEntity<GalleryResponse>
+
+    @Operation(
+        summary = "갤러리 휴지통 이동",
+        description = """
+            갤러리를 휴지통으로 보낸다. 담당 작가만 할 수 있다.
+
+            갤러리와 그 안의 사진·폴더·선택 앨범·협업 링크가 모두 보이지 않게 된다.
+            휴지통(GET /api/v1/trash/galleries)에서 복원하거나 즉시 삭제할 수 있고,
+            보관 기간이 지나면 사진 원본과 함께 자동으로 물리 삭제된다.
+        """,
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "204", description = "휴지통 이동 성공"),
+        ApiResponse(
+            responseCode = "403",
+            description = "담당 작가가 아님",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "권한 없음",
+                            value = """{"code": "GALLERY_403_1", "message": "갤러리에 접근할 권한이 없습니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(
+            responseCode = "404",
+            description = "존재하지 않거나 이미 휴지통에 있는 갤러리",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "갤러리 없음",
+                            value = """{"code": "GALLERY_404_1", "message": "존재하지 않는 갤러리입니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    )
+    fun moveToTrash(loginUser: LoginUser, galleryId: Long): ResponseEntity<Unit>
 }

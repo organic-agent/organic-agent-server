@@ -39,6 +39,16 @@ class GalleryTest {
     }
 
     @Test
+    fun `휴지통으로 보내면 시각이 남는다`() {
+        // 이 시각이 곧 보관 만료의 기준이다. @SQLRestriction이 이 값으로 모든 조회에서 걸러낸다.
+        val gallery = newGallery(GalleryStatus.OPEN)
+
+        gallery.moveToTrash(now)
+
+        assertEquals(now, gallery.deletedAt)
+    }
+
+    @Test
     fun `공개하면 멤버가 열람할 수 있다`() {
         val gallery = newGallery(GalleryStatus.DRAFT)
 

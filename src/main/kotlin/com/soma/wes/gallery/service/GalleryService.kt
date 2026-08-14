@@ -99,4 +99,19 @@ class GalleryService(
         gallery.reopen(request.selectionDeadline, ZonedDateTime.now(clock))
         return GalleryResponse.from(gallery)
     }
+
+    /**
+     * 갤러리를 휴지통으로 보낸다. 담당 작가만 할 수 있다.
+     *
+     * 사진 행은 건드리지 않는다. 갤러리 조회가 전부 [GalleryAccessPolicy]의 `findById` 관문을
+     * 지나므로, 갤러리 하나가 숨는 것으로 그 안의 사진·폴더·앨범·협업 링크가 모두 404가 된다.
+     * 그래야 복원이 지우기 전 모습 그대로 되살리고, 갤러리보다 먼저 개별 삭제된 사진은
+     * 복원 뒤에도 휴지통에 남는다. 복원·물리 삭제는 trash 도메인이 담당한다.
+     */
+    @Transactional
+    fun moveToTrash(galleryId: Long, userId: Long) {
+        val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
+
+        gallery.moveToTrash(ZonedDateTime.now(clock))
+    }
 }
