@@ -17,11 +17,6 @@ interface PhotoFolderGroupRepository : JpaRepository<PhotoFolderGroup, Long> {
 
     /**
      * 부모 안의 사진 구성을 바꾸는 동안 부모 행을 잠근다.
-     *
-     * "같은 부모 아래 사진 중복 금지"는 "이미 든 것 읽기 → 검사 → 저장"으로 지키는데, 같은
-     * 부모에 두 요청이 동시에 들어오면 둘 다 검사를 통과해 유니크 제약에 걸린 한쪽이 통째로
-     * 500으로 실패한다. 자식폴더 행은 이동의 출발지와 도착지가 달라 하나로 못 잠그므로,
-     * 정책의 단위인 부모가 뮤텍스다.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     fun findWithLockByIdAndGalleryId(id: Long, galleryId: Long): PhotoFolderGroup?

@@ -65,33 +65,11 @@ class PhotoFolderGroupService(
         galleryId: Long,
         folders: List<CreateFolderGroupRequest.FolderRequest>,
     ): List<List<Photo>> {
-        val allIds = folders.flatMap { it.photoIds }
-        if (allIds.size != allIds.toSet().size) {
+        val allPhotoIds = folders.flatMap { it.photoIds }
+        if (allPhotoIds.size != allPhotoIds.toSet().size) {
             throw FolderException(FolderErrorCode.DUPLICATE_PHOTO_IN_GROUP)
         }
-        return folders.map { folderPhotoLoader.loadPhotosIn(galleryId, it.photoIds) }
-    }
-
-    @Transactional(readOnly = true)
-    fun list(galleryId: Long, userId: Long): List<PhotoFolderGroupResponse> {
-        galleryAccessPolicy.requirePhotographerOrCouple(galleryId, userId)
-
-        val groups = photoFolderGroupRepository.findAllByGalleryIdOrderByCreatedAtDesc(galleryId)
-        if (groups.isEmpty()) {
-            return emptyList()
-        }
-
-        val folders = photoFolderRepository.findAllByGroupIdInOrderByIdAsc(groups.map { it.requiredId })
-        val summaries = folderViewAssembler.summariesByFolderId(folders)
-        val foldersByGroupId = folders.groupBy { it.groupId }
-
-        return groups.map { group ->
-            PhotoFolderGroupResponse.of(
-                group = group,
-                folders = foldersByGroupId[group.requiredId].orEmpty()
-                    .mapNotNull { summaries[it.requiredId] },
-            )
-        }
+        return folders.map { folderPhotoLoader.loadPhotos(galleryId, it.photoIds) }
     }
 
     @Transactional(readOnly = true)
@@ -125,6 +103,28 @@ class PhotoFolderGroupService(
             group = group,
             folders = folders.mapNotNull { summaries[it.requiredId] },
         )
+    }
+
+    @Transactional(readOnly = true)
+    fun list(galleryId: Long, userId: Long): List<PhotoFolderGroupResponse> {
+        galleryAccessPolicy.requirePhotographerOrCouple(galleryId, userId)
+
+        val groups = photoFolderGroupRepository.findAllByGalleryIdOrderByCreatedAtDesc(galleryId)
+        if (groups.isEmpty()) {
+            return emptyList()
+        }
+
+        val folders = photoFolderRepository.findAllByGroupIdInOrderByIdAsc(groups.map { it.requiredId })
+        val summaries = folderViewAssembler.summariesByFolderId(folders)
+        val foldersByGroupId = folders.groupBy { it.groupId }
+
+        return groups.map { group ->
+            PhotoFolderGroupResponse.of(
+                group = group,
+                folders = foldersByGroupId[group.requiredId].orEmpty()
+                    .mapNotNull { summaries[it.requiredId] },
+            )
+        }
     }
 
     /**

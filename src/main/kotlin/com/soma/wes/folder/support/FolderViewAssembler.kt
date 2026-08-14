@@ -31,21 +31,16 @@ class FolderViewAssembler(
         }
 
         val items = photoFolderItemRepository.findAllByFolderIdIn(folders.map { it.requiredId })
-
-        // 항목 행이 아니라 실제로 남아 있는 사진을 본다. 항목만 세면 사진이 지워진 뒤
-        // 목록의 photoCount가 상세 조회의 photos.size보다 커진다 — 같은 폴더를 두 화면이
-        // 다르게 말하게 된다. 대표 사진도 같은 이유로 살아 있는 것 중에서 고른다.
-        val alive = existingPhotos(folders.first().galleryId, items.map { it.photoId })
-        val photosByFolderId = items.mapNotNull { item -> alive[item.photoId]?.let { item.folderId to it } }
+        val alivePhotos = existingPhotos(folders.first().galleryId, items.map { it.photoId })
+        val photosByFolderId = items.mapNotNull { item -> alivePhotos[item.photoId]?.let { item.folderId to it } }
             .groupBy({ it.first }, { it.second })
 
         // 상세 조회와 같은 정렬이라 카드의 대표 사진과 팝업의 첫 장이 어긋나지 않는다.
         val photosByFolder = folders.associateWith {
-            photosByFolderId[it.requiredId].orEmpty().sortedWith(PHOTO_ORDER)
+            photosByFolderId[it.requiredId].orEmpty().sortedWith(Photo.DISPLAY_ORDER)
         }
 
-        // 대표 사진도 한 번에 응답으로 만든다. 폴더마다 toResponse를 부르면 사진에 붙는
-        // 별점 조회가 폴더 수만큼 늘어난다.
+        // 대표 사진도 한 번에 응답으로 만든다. 폴더마다 toResponse를 부르면 사진에 붙는 별점 조회가 폴더 수만큼 늘어난다.
         val covers = photoViewAssembler.toResponses(photosByFolder.values.mapNotNull { it.firstOrNull() })
             .associateBy { it.photoId }
 
@@ -96,11 +91,6 @@ class FolderViewAssembler(
         if (photoIds.isEmpty()) {
             return emptyList()
         }
-        return photoRepository.findAllByGalleryIdAndIdIn(folder.galleryId, photoIds).sortedWith(PHOTO_ORDER)
-    }
-
-    companion object {
-        /** 화면 순서는 갤러리에서 정한 노출 순서를 따른다. 같으면 id로 한 번 더 갈라 흔들리지 않게 한다. */
-        val PHOTO_ORDER = compareBy<Photo>({ it.displayOrder }, { it.requiredId })
+        return photoRepository.findAllByGalleryIdAndIdIn(folder.galleryId, photoIds).sortedWith(Photo.DISPLAY_ORDER)
     }
 }

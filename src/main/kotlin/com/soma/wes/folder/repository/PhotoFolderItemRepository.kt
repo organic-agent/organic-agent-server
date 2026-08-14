@@ -21,9 +21,6 @@ interface PhotoFolderItemRepository : JpaRepository<PhotoFolderItem, Long> {
 
     /**
      * 자식폴더 삭제 경로에서 항목을 먼저 지운다. 상위 삭제는 DB cascade가 최종 안전망이다.
-     *
-     * 파생 삭제로 두면 Spring Data가 항목을 전부 조회한 뒤 한 건씩 지운다. 폴더 하나가
-     * 수백 장일 수 있어 벌크 삭제로 못박는다.
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("DELETE FROM PhotoFolderItem i WHERE i.folderId = :folderId")
