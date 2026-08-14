@@ -75,6 +75,33 @@ GRANT SELECT ON galleries, studio_deletion_claims TO embedder;
 session advisory shared lock을 작업 전체에 잡고 삭제 claim을 확인하며, 앱 삭제 준비는 같은
 키의 exclusive lock을 얻은 경우에만 S3 삭제로 넘어간다.
 
+빠뜨리면 임베딩이 `InsufficientPrivilege: permission denied for table galleries`로
+전량 실패한다 (2026-08-14 운영에서 실제로 겪었다 — CREATE USER 때 GRANT를 같이 안 하면
+admission 코드가 배포되는 날 터진다).
+
+### 위 SQL을 실행할 관리자 접속
+
+비밀번호는 저장소에 두지 않는다 — Parameter Store에서 실행 시점에 꺼낸다.
+
+| 항목 | 값 |
+|---|---|
+| Host / Port | `localhost:15432` (`scripts/db-tunnel.sh`로 터널을 연 상태) |
+| Database | `wes_db` |
+| User | `wes_admin` |
+| Password | `aws ssm get-parameter --region ap-northeast-2 --name /wes/prod/spring.datasource.password --with-decryption --query Parameter.Value --output text` |
+| sslmode | `require` (터널 때문에 verify-full은 호스트명 검증에 실패) |
+
+로컬에 psql이 없으면 Testcontainers용으로 이미 있는 이미지의 psql을 쓴다:
+
+```bash
+scripts/db-tunnel.sh   # 다른 탭에 띄워 두고
+PGPASSWORD=$(aws ssm get-parameter --region ap-northeast-2 \
+  --name /wes/prod/spring.datasource.password --with-decryption \
+  --query Parameter.Value --output text) \
+docker run --rm -e PGPASSWORD pgvector/pgvector:pg16 \
+  psql "host=host.docker.internal port=15432 dbname=wes_db user=wes_admin sslmode=require"
+```
+
 ## 로컬 실행
 
 RDS는 퍼블릭 접근이 없으므로 SSM 포트 포워딩으로 터널을 먼저 연다.
