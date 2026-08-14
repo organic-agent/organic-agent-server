@@ -65,15 +65,47 @@ class GalleryInviteRepositoryTest @Autowired constructor(
     }
 
     @Test
-    fun `한 갤러리가 초대를 여러 개 가질 수 있다`() {
-        // 링크가 유출되면 폐기하고 새로 발급한다. 이전 링크 기록도 남아야 한다.
+    fun `한 갤러리에 살아 있는 초대는 하나뿐이다`() {
+        // 여러 개를 살려두면 작가가 어느 링크를 전달했는지 알 수 없어, 퍼진 링크를 거둬들이려
+        // 해도 무엇을 폐기할지 모르게 된다. V15의 부분 유니크 인덱스가 이것을 막는다.
         val galleryId = createGallery()
         galleryInviteRepository.save(newInvite(galleryId = galleryId, token = "token-a"))
-        galleryInviteRepository.save(newInvite(galleryId = galleryId, token = "token-b"))
 
-        // 최근 것이 먼저 온다. 작가 화면이 방금 만든 링크를 맨 위에 놓는다.
-        val invites = galleryInviteRepository.findAllByGalleryIdOrderByIdDesc(galleryId)
+        assertFailsWith<DataIntegrityViolationException> {
+            galleryInviteRepository.saveAndFlush(newInvite(galleryId = galleryId, token = "token-b"))
+        }
+    }
 
-        assertEquals(listOf("token-b", "token-a"), invites.map { it.token })
+    @Test
+    fun `폐기한 초대는 그 자리를 비워 재발급을 받아준다`() {
+        val galleryId = createGallery()
+        val previous = galleryInviteRepository.saveAndFlush(newInvite(galleryId = galleryId, token = "token-a"))
+        previous.revoke(expiresAt)
+        galleryInviteRepository.flush()
+
+        galleryInviteRepository.saveAndFlush(newInvite(galleryId = galleryId, token = "token-b"))
+
+        assertEquals("token-b", galleryInviteRepository.findByGalleryIdAndRevokedAtIsNull(galleryId)?.token)
+    }
+
+    @Test
+    fun `폐기한 초대는 현재 링크로 조회되지 않는다`() {
+        val galleryId = createGallery()
+        val invite = galleryInviteRepository.saveAndFlush(newInvite(galleryId = galleryId, token = "token-a"))
+        invite.revoke(expiresAt)
+        galleryInviteRepository.flush()
+
+        assertNull(galleryInviteRepository.findByGalleryIdAndRevokedAtIsNull(galleryId))
+    }
+
+    @Test
+    fun `만료된 초대는 폐기 전까지 현재 링크로 남는다`() {
+        // 작가 화면이 "만료됐으니 다시 발급하라"를 보여줄 수 있어야 한다.
+        val galleryId = createGallery()
+        galleryInviteRepository.saveAndFlush(
+            GalleryInvite(galleryId = galleryId, token = "token-a", expiresAt = expiresAt.minusYears(1)),
+        )
+
+        assertEquals("token-a", galleryInviteRepository.findByGalleryIdAndRevokedAtIsNull(galleryId)?.token)
     }
 }

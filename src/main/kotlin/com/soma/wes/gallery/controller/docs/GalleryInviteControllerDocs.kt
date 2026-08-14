@@ -18,10 +18,11 @@ import org.springframework.http.ResponseEntity
 interface GalleryInviteControllerDocs {
 
     @Operation(
-        summary = "초대 링크 발급",
+        summary = "초대 링크 발급(재발급)",
         description = "담당 작가만 발급할 수 있다. 응답의 inviteUrl을 그대로 예비 부부에게 전달하면 된다. " +
-            "한 링크를 여러 명이 쓸 수 있어서, 신랑에게 보낸 링크를 신부가 전달받아 눌러도 된다. " +
-            "유효 기간은 7일이며, 만료되면 다시 발급한다.",
+            "한 링크를 신랑과 신부가 각자 눌러 들어오며, 갤러리 정원은 2명이다. " +
+            "유효 기간은 7일이다. **갤러리에 살아 있던 링크는 이 요청으로 폐기된다** — " +
+            "갤러리당 유효한 링크는 항상 하나뿐이라, 다시 발급하면 이전에 전달한 링크는 즉시 쓸 수 없게 된다.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "201", description = "발급 성공"),
@@ -61,9 +62,11 @@ interface GalleryInviteControllerDocs {
     fun issue(loginUser: LoginUser, galleryId: Long): ResponseEntity<GalleryInviteResponse>
 
     @Operation(
-        summary = "초대 링크 목록",
-        description = "담당 작가만 조회할 수 있다. 만료·폐기된 링크도 함께 오며 status로 구분한다 " +
-            "(ACTIVE·EXPIRED·REVOKED). 최근에 발급한 것이 먼저 온다.",
+        summary = "현재 초대 링크 조회",
+        description = "담당 작가만 조회할 수 있다. 갤러리에 살아 있는 링크 하나가 온다. " +
+            "만료된 링크도 폐기 전까지는 함께 오며 status(ACTIVE·EXPIRED)로 구분한다 — " +
+            "다시 발급해야 하는 상황인지 화면에서 알 수 있어야 하기 때문이다. " +
+            "아직 한 번도 발급하지 않았거나 폐기만 해둔 상태면 404다.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "조회 성공"),
@@ -83,8 +86,24 @@ interface GalleryInviteControllerDocs {
                 ),
             ],
         ),
+        ApiResponse(
+            responseCode = "404",
+            description = "살아 있는 링크가 없음. 발급 버튼을 보여주면 되는 정상 상태다",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "링크 없음",
+                            value = """{"code": "GALLERY_404_3", "message": "존재하지 않는 초대 링크입니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
     )
-    fun list(loginUser: LoginUser, galleryId: Long): ResponseEntity<List<GalleryInviteResponse>>
+    fun getCurrent(loginUser: LoginUser, galleryId: Long): ResponseEntity<GalleryInviteResponse>
 
     @Operation(
         summary = "초대 링크 폐기",
@@ -133,13 +152,15 @@ interface GalleryInviteControllerDocs {
         description = "링크를 눌러 갤러리에 들어온다. 갤러리 권한은 요구하지 않지만 로그인은 필요하다 — " +
             "누가 들어왔는지 남겨야 하기 때문이다. 아직 종류를 정하지 않은 계정은 이때 예비 부부(CLIENT)로 확정된다. " +
             "멱등하다: 같은 사람이 여러 번 눌러도 멤버는 하나이며 매번 200이다. " +
-            "담당 작가는 자기 갤러리의 초대를 수락할 수 없다.",
+            "담당 작가는 자기 갤러리의 초대를 수락할 수 없다. " +
+            "갤러리 정원은 2명(부부)이며, 이미 두 사람이 들어와 있으면 403이다 — " +
+            "이미 멤버인 사람의 재요청은 정원과 무관하게 200이다.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "수락 성공. 이미 멤버였어도 같은 응답이 온다"),
         ApiResponse(
             responseCode = "403",
-            description = "담당 작가가 자기 갤러리 초대를 수락하려 함",
+            description = "담당 작가가 자기 갤러리 초대를 수락하려 하거나, 정원이 참",
             content = [
                 Content(
                     mediaType = MediaType.APPLICATION_JSON_VALUE,
@@ -148,6 +169,10 @@ interface GalleryInviteControllerDocs {
                         ExampleObject(
                             name = "작가는 수락 불가",
                             value = """{"code": "GALLERY_403_3", "message": "담당 작가는 초대를 수락할 수 없습니다."}""",
+                        ),
+                        ExampleObject(
+                            name = "정원 초과",
+                            value = """{"code": "GALLERY_403_5", "message": "이미 정원이 찬 갤러리입니다."}""",
                         ),
                     ],
                 ),

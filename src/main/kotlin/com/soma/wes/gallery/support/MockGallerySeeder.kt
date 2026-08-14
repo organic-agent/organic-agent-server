@@ -58,7 +58,7 @@ class MockGallerySeeder(
 
         return galleryRepository.save(
             Gallery.create(
-                studioId = checkNotNull(studio.id) { "저장되지 않은 스튜디오입니다." },
+                studioId = studio.requiredId,
                 title = request?.title ?: DEFAULT_TITLE,
                 selectionDeadline = request?.selectionDeadline,
                 maxSelectablePhotoCount = request?.maxSelectablePhotoCount,
@@ -83,7 +83,7 @@ class MockGallerySeeder(
             plans.mapIndexed { index, plan ->
                 Photo.copyOf(
                     source = plan.source,
-                    galleryId = checkNotNull(gallery.id) { "저장되지 않은 갤러리입니다." },
+                    galleryId = gallery.requiredId,
                     storageKey = plan.storageKey,
                     previewKey = plan.previewKey,
                     displayOrder = index,

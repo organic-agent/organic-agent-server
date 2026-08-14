@@ -8,10 +8,8 @@ import com.soma.wes.studio.dto.response.StudioResponse
 import com.soma.wes.studio.exception.StudioErrorCode
 import com.soma.wes.studio.exception.StudioException
 import com.soma.wes.studio.repository.StudioRepository
-import com.soma.wes.user.domain.UserType
-import com.soma.wes.user.exception.UserErrorCode
-import com.soma.wes.user.exception.UserException
 import com.soma.wes.user.repository.UserRepository
+import com.soma.wes.user.repository.requireById
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -25,13 +23,12 @@ class StudioService(
     @Transactional
     fun create(userId: Long, request: CreateStudioRequest): StudioResponse {
         val normalizedGalleryUrl = Studio.validateGalleryUrl(request.galleryUrl)
-        val user = userRepository.findById(userId)
-            .orElseThrow { UserException(UserErrorCode.USER_NOT_FOUND) }
+        val user = userRepository.requireById(userId)
 
         validateStudio(userId, normalizedGalleryUrl)
 
         // 현재 기본적인 회원가입 플로우는 사진작가에게만 부여, 신혼부부는 token기반 회원가입 flow를 타야한다.
-        user.selectType(UserType.PHOTOGRAPHER)
+        user.selectPhotographerType()
 
         val studio = studioRepository.save(
             Studio.create(

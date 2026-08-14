@@ -15,7 +15,7 @@ data class StudioResponse(
 
     companion object {
         fun from(studio: Studio) = StudioResponse(
-            id = checkNotNull(studio.id) { "저장되지 않은 스튜디오는 응답할 수 없습니다." },
+            id = studio.requiredId,
             name = studio.name,
             galleryUrl = studio.galleryUrl,
             inflowChannel = studio.inflowChannel,

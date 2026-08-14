@@ -56,8 +56,6 @@ class PhotoController(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
         @RequestParam(required = false) status: PhotoStatus?,
-        // 범위 검증은 서비스가 한다. 쿼리 파라미터의 @Min은 클래스에 @Validated가 있어야만
-        // 도는데, 그것을 붙이면 검증이 안 도는 줄 모르는 채로 남기 쉽다.
         @RequestParam(required = false) minScore: Int?,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "200") size: Int,

@@ -26,13 +26,20 @@ class GalleryService(
     private val clock: Clock,
 ) {
 
+    /**
+     * 새 갤러리. hard delete가 진행 중인 스튜디오라면 저장 전에 거절된다(`STUDIO_409_7`).
+     *
+     * 삭제 준비가 스냅샷을 뜬 뒤 S3를 먼저 지우고 DB를 나중에 지우므로, 그 사이에 갤러리가
+     * 끼어들면 `DELETION_TARGET_CHANGED`로 삭제가 멈추는데 사진 객체는 이미 사라진 뒤다.
+     * [com.soma.wes.gallery.support.MockGallerySeeder]도 같은 이유로 같은 관문을 지난다.
+     */
     @Transactional
     fun create(userId: Long, request: CreateGalleryRequest): GalleryResponse {
         val studio = studioWriteAdmission.requireWritableByUserId(userId)
 
         val gallery = galleryRepository.save(
             Gallery.create(
-                studioId = checkNotNull(studio.id) { "저장되지 않은 스튜디오입니다." },
+                studioId = studio.requiredId,
                 title = request.title,
                 selectionDeadline = request.selectionDeadline,
                 maxSelectablePhotoCount = request.maxSelectablePhotoCount,
@@ -44,18 +51,18 @@ class GalleryService(
 
     @Transactional(readOnly = true)
     fun findAllVisibleTo(userId: Long): List<GalleryResponse> {
-        val ownStudio = studioRepository.findByUserId(userId)
-        if (ownStudio != null) {
-            val owned = galleryRepository.findAllByStudioId(
-                checkNotNull(ownStudio.id) { "저장되지 않은 스튜디오입니다." },
-            )
-            return owned.map(GalleryResponse::from)
-        }
+        val asPhotographer = studioRepository.findByUserId(userId)
+            ?.let { galleryRepository.findAllByStudioId(it.requiredId) }
+            .orEmpty()
 
-        val galleryIds = galleryMemberRepository.findAllByUserId(userId).map { it.galleryId }
-        // DRAFT는 초대된 사람에게 아직 보이지 않는다. 정책의 requireViewer와 같은 기준이다.
-        return galleryRepository.findAllById(galleryIds)
+        val memberGalleryIds = galleryMemberRepository.findAllByUserId(userId).map { it.galleryId }
+        val asCouple = galleryRepository.findAllById(memberGalleryIds)
             .filter { it.isVisibleToMember }
+
+        // 자기 갤러리 초대는 GalleryAccessPolicy.requireNotPhotographer가 막지만,
+        // 그 규칙이 생기기 전 데이터까지 같은 갤러리를 두 번 그리게 두지는 않는다.
+        return (asPhotographer + asCouple)
+            .distinctBy { it.requiredId }
             .map(GalleryResponse::from)
     }
 
@@ -63,12 +70,6 @@ class GalleryService(
     fun get(galleryId: Long, userId: Long): GalleryResponse =
         GalleryResponse.from(galleryAccessPolicy.requireViewer(galleryId, userId))
 
-    /**
-     * 계약 장수를 정하거나 바꾼다. 담당 작가만 할 수 있다.
-     *
-     * 부부가 바꿀 수 있으면 안 되는 값이라 갤러리 쪽에 둔다 — 계약에서 나오는 수치이지
-     * 고르는 과정에서 정해지는 것이 아니다. 선택 앨범은 이 값을 읽어 초과를 막는다.
-     */
     @Transactional
     fun changeMaxSelectablePhotoCount(
         galleryId: Long,
@@ -81,12 +82,6 @@ class GalleryService(
         return GalleryResponse.from(gallery)
     }
 
-    /**
-     * 갤러리를 열어 초대된 사람에게 보인다. DRAFT에서만 할 수 있다.
-     *
-     * 만드는 것과 여는 것이 나뉘어 있는 이유가 여기다. 작가는 사진을 다 올리고 정리한 뒤에
-     * 열고, 그전까지 부부에게 이 갤러리는 없는 것과 같다.
-     */
     @Transactional
     fun open(galleryId: Long, userId: Long): GalleryResponse {
         val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
@@ -95,10 +90,6 @@ class GalleryService(
         return GalleryResponse.from(gallery)
     }
 
-    /**
-     * 선택을 마감한다. 열람은 계속 되지만 고르거나 묶을 수는 없다 —
-     * 정책의 `requireViewer`는 통과하고 `requireSelectable`은 막는 상태다.
-     */
     @Transactional
     fun close(galleryId: Long, userId: Long): GalleryResponse {
         val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
@@ -107,12 +98,6 @@ class GalleryService(
         return GalleryResponse.from(gallery)
     }
 
-    /**
-     * 마감한 갤러리를 다시 연다. 기한을 요청에서 다시 받는다.
-     *
-     * 이전 기한을 그대로 두면 대부분 열자마자 `SELECTION_DEADLINE_PASSED`로 막힌다. 마감했다는
-     * 것은 그 기한이 이미 지났거나 의미를 잃었다는 뜻이라, 다시 열 때 함께 정하게 한다.
-     */
     @Transactional
     fun reopen(galleryId: Long, userId: Long, request: ReopenGalleryRequest): GalleryResponse {
         val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)

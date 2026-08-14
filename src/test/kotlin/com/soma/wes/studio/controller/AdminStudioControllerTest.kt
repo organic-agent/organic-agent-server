@@ -88,7 +88,7 @@ class AdminStudioControllerTest @Autowired constructor(
     fun `ADMIN은 확인값을 제출해 스튜디오와 사진을 물리 삭제한다`() {
         val operator = signUp("deletion-admin", Role.ADMIN)
         val owner = signUp("deletion-owner")
-        owner.selectType(UserType.PHOTOGRAPHER)
+        owner.selectPhotographerType()
         userRepository.saveAndFlush(owner)
         val studio = studioRepository.save(
             Studio(userId = checkNotNull(owner.id), name = "오가닉", galleryUrl = "organic-studio"),

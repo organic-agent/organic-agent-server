@@ -29,7 +29,7 @@ class StudioWriteAdmission(
     fun requireWritableByUserId(userId: Long): Studio {
         val studio = studioRepository.findByUserId(userId)
             ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
-        val studioId = checkNotNull(studio.id) { "저장되지 않은 스튜디오입니다." }
+        val studioId = studio.requiredId
         admit(studioId)
         if (!studioRepository.existsById(studioId)) {
             throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)

@@ -44,6 +44,14 @@ enum class GalleryErrorCode(
      */
     SELECTION_DEADLINE_PASSED(HttpStatus.FORBIDDEN, "GALLERY_403_4", "사진 선택 마감 기한이 지났습니다."),
 
+    /**
+     * 정원([com.soma.wes.gallery.domain.GalleryMember.MAX_PER_GALLERY])이 찬 갤러리에 수락을 시도한 경우.
+     *
+     * 404가 아니라 403이다. 링크도 갤러리도 멀쩡히 존재하고, 막힌 이유가 "당신 자리가 없다"라는
+     * 사실을 알려줘야 링크를 잘못 받은 사람이 작가에게 문의할 수 있다.
+     */
+    GALLERY_MEMBER_LIMIT_EXCEEDED(HttpStatus.FORBIDDEN, "GALLERY_403_5", "이미 정원이 찬 갤러리입니다."),
+
     GALLERY_NOT_FOUND(HttpStatus.NOT_FOUND, "GALLERY_404_1", "존재하지 않는 갤러리입니다."),
     MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "GALLERY_404_2", "갤러리 멤버가 아닙니다."),
     INVITE_NOT_FOUND(HttpStatus.NOT_FOUND, "GALLERY_404_3", "존재하지 않는 초대 링크입니다."),

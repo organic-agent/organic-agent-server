@@ -40,7 +40,7 @@ class MockGalleryService(
         }
         val templates = seeder.loadTemplatePhotos(properties.templateGalleryId)
         val gallery = seeder.createGallery(userId, request)
-        val galleryId = checkNotNull(gallery.id) { "저장되지 않은 갤러리입니다." }
+        val galleryId = gallery.requiredId
 
         val plans = buildPlans(galleryId, templates)
         val copiedKeys = mutableListOf<String>()

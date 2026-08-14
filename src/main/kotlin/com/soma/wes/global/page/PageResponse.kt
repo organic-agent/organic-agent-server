@@ -24,9 +24,6 @@ data class PageResponse<T>(
 
     companion object {
 
-        /**
-         * 페이지 메타데이터는 [found]에서, 내용은 [contents]에서 가져온다.
-         */
         fun <T> of(found: Page<*>, contents: List<T>): PageResponse<T> = PageResponse(
             page = found.number,
             size = found.size,

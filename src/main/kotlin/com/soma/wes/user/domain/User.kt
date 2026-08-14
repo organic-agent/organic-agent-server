@@ -43,9 +43,6 @@ class User(
     @Column(nullable = false, length = 20)
     var role: Role = Role.USER,
 
-    /**
-     * 아직 온보딩을 마치지 않은 사용자는 `null`이다.
-     */
     @Enumerated(EnumType.STRING)
     @Column(length = 20)
     var userType: UserType? = null,
@@ -56,6 +53,9 @@ class User(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null
 
+    val requiredId: Long
+        get() = checkNotNull(id) { "저장되지 않은 사용자입니다." }
+
     fun updateProfile(nickname: String, email: String?) {
         this.nickname = nickname
         this.email = email
@@ -65,16 +65,16 @@ class User(
         this.role = role
     }
 
-    /**
-     * 온보딩에서 사용자 종류를 정한다. 한 번 정하면 바꾸지 않는다.
-     */
-    fun selectType(userType: UserType) {
-        if (this.userType == userType) {
-            return
-        }
-        if (this.userType != null) {
+    fun selectPhotographerType() {
+        if (userType != null && userType != UserType.PHOTOGRAPHER) {
             throw UserException(UserErrorCode.USER_TYPE_ALREADY_SELECTED)
         }
-        this.userType = userType
+        userType = UserType.PHOTOGRAPHER
+    }
+
+    fun selectClientTypeIfUnset() {
+        if (userType == null) {
+            userType = UserType.CLIENT
+        }
     }
 }

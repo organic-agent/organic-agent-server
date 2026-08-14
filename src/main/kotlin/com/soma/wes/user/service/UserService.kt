@@ -1,9 +1,8 @@
 package com.soma.wes.user.service
 
 import com.soma.wes.user.dto.response.UserResponse
-import com.soma.wes.user.exception.UserErrorCode
-import com.soma.wes.user.exception.UserException
 import com.soma.wes.user.repository.UserRepository
+import com.soma.wes.user.repository.requireById
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -14,7 +13,5 @@ class UserService(
 
     @Transactional(readOnly = true)
     fun getUser(id: Long): UserResponse =
-        userRepository.findById(id)
-            .map(UserResponse::from)
-            .orElseThrow { UserException(UserErrorCode.USER_NOT_FOUND) }
+        UserResponse.from(userRepository.requireById(id))
 }

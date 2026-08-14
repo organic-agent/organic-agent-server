@@ -45,4 +45,18 @@ class GalleryMember(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null
+
+    val requiredId: Long
+        get() = checkNotNull(id) { "저장되지 않은 멤버입니다." }
+
+    companion object {
+
+        /**
+         * 갤러리 하나에 들어올 수 있는 인원. 부부 두 사람이다.
+         *
+         * 공동 계정을 쓰지 않으므로 한 링크를 신랑과 신부가 각자 눌러 두 행이 생긴다.
+         * 수락에 작가의 승인 절차가 없어서, 링크가 퍼졌을 때 이 상한이 유일한 방어선이다.
+         */
+        const val MAX_PER_GALLERY = 2
+    }
 }

@@ -41,6 +41,9 @@ class Studio(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null
 
+    val requiredId: Long
+        get() = checkNotNull(id) { "저장되지 않은 스튜디오입니다." }
+
     fun update(name: String, galleryUrl: String) {
         this.name = name
         this.galleryUrl = validateGalleryUrl(galleryUrl)
