@@ -1,28 +1,25 @@
 package com.soma.wes.folder.repository
 
 import com.soma.wes.folder.domain.PhotoFolder
-import jakarta.persistence.LockModeType
 import org.springframework.data.jpa.repository.JpaRepository
-import org.springframework.data.jpa.repository.Lock
 
 interface PhotoFolderRepository : JpaRepository<PhotoFolder, Long> {
 
-    fun findAllByGalleryIdOrderByCreatedAtDesc(galleryId: Long): List<PhotoFolder>
+    /** 자식폴더는 만든 순서대로 보여준다. 클러스터 고정 시의 묶음 순서가 그대로 유지된다. */
+    fun findAllByGroupIdOrderByIdAsc(groupId: Long): List<PhotoFolder>
+
+    fun findAllByGroupIdInOrderByIdAsc(groupIds: Collection<Long>): List<PhotoFolder>
 
     /**
-     * id만으로 찾지 않는다. 갤러리를 함께 걸어야 남의 갤러리 폴더 id를 자기 갤러리 경로로
-     * 넘겨 건드리는 요청이 막힌다 -- 인가는 경로의 galleryId로만 확인하기 때문이다.
+     * 부모를 함께 걸어 찾는다. 부모가 이미 (id, galleryId)로 확인된 뒤라, 자식은 그 부모에
+     * 속하는지만 보면 된다 — 다른 부모의 자식 id를 넘기는 요청이 여기서 404가 된다.
+     */
+    fun findByIdAndGroupId(id: Long, groupId: Long): PhotoFolder?
+
+    /**
+     * 갤러리와 함께 찾는다. 협업 세션 시드처럼 부모를 모르는 호출자가 쓴다.
      */
     fun findByIdAndGalleryId(id: Long, galleryId: Long): PhotoFolder?
 
-    /**
-     * 사진을 담는 동안 폴더 행을 잠근다.
-     *
-     * 이미 든 사진을 걸러내려면 "읽고 -> 없는 것만 저장"을 하는데, 같은 폴더에 두 요청이
-     * 동시에 들어오면 둘 다 없다고 판단해 같은 행을 저장한다. 유니크 제약이 막아주긴 하지만
-     * 그때는 한쪽 요청이 통째로 500으로 실패한다 -- 신랑과 신부가 같은 사진을 동시에
-     * 담으려 한 것뿐인데.
-     */
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    fun findWithLockByIdAndGalleryId(id: Long, galleryId: Long): PhotoFolder?
+    fun deleteAllByGroupId(groupId: Long)
 }

@@ -12,23 +12,20 @@ import jakarta.persistence.Index
 import jakarta.persistence.Table
 
 /**
- * 사진을 실제로 담는 자식폴더. 항상 부모([PhotoFolderGroup]) 아래에만 존재한다.
+ * 자식폴더들을 품는 부모폴더.
  *
- * galleryId는 group으로도 알 수 있는 값이지만 함께 든다 — 인가가 갤러리 단위라, 협업 세션
- * 시드처럼 갤러리와 폴더만 아는 호출자가 부모를 거치지 않고 (id, galleryId)로 폴더를 확인한다.
+ * 이름과 id만 가지고 사진을 직접 담지 않는다 — 사진은 항상 자식([PhotoFolder])에 담긴다.
+ * "같은 부모 아래 자식들 간에는 사진이 중복될 수 없다"는 정책의 단위가 이 엔티티라서,
+ * 그 사진 구성을 바꾸는 쓰기는 모두 이 행을 잠그고 시작한다.
  */
 @Entity
 @Table(
-    name = "photo_folders",
+    name = "photo_folder_groups",
     indexes = [
-        Index(name = "idx_photo_folders_group_id", columnList = "group_id"),
-        Index(name = "idx_photo_folders_gallery_id", columnList = "gallery_id"),
+        Index(name = "idx_photo_folder_groups_gallery_id", columnList = "gallery_id"),
     ],
 )
-class PhotoFolder(
-
-    @Column(name = "group_id", nullable = false, updatable = false)
-    val groupId: Long,
+class PhotoFolderGroup(
 
     @Column(name = "gallery_id", nullable = false, updatable = false)
     val galleryId: Long,
@@ -43,7 +40,7 @@ class PhotoFolder(
     val id: Long? = null
 
     val requiredId: Long
-        get() = id ?: error("아직 저장되지 않은 PhotoFolder 다")
+        get() = id ?: error("아직 저장되지 않은 PhotoFolderGroup 이다")
 
     fun rename(name: String) {
         this.name = normalizeName(name)
@@ -52,9 +49,8 @@ class PhotoFolder(
     companion object {
         const val MAX_NAME_LENGTH = 100
 
-        fun of(group: PhotoFolderGroup, name: String) = PhotoFolder(
-            groupId = group.requiredId,
-            galleryId = group.galleryId,
+        fun of(galleryId: Long, name: String) = PhotoFolderGroup(
+            galleryId = galleryId,
             name = normalizeName(name),
         )
 

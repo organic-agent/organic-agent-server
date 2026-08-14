@@ -4,6 +4,7 @@ import com.jayway.jsonpath.JsonPath
 import com.soma.wes.TestcontainersConfiguration
 import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.auth.service.AuthTokenProvider
+import com.soma.wes.folder.repository.PhotoFolderGroupRepository
 import com.soma.wes.folder.repository.PhotoFolderItemRepository
 import com.soma.wes.folder.repository.PhotoFolderRepository
 import com.soma.wes.gallery.domain.GalleryMember
@@ -34,9 +35,9 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.test.assertEquals
 
 /**
- * 확정한 사진 묶음(폴더)의 생성·조회·수정·삭제를 HTTP 경계에서 확인한다.
+ * 부모폴더-자식폴더-사진 구조의 생성·조회·수정·이동·삭제를 HTTP 경계에서 확인한다.
  *
- * 폴더는 예비 부부의 것이라, 여기 나오는 요청은 전부 초대받은 멤버가 보낸다.
+ * 폴더는 예비 부부의 것이라, 여기 나오는 요청은 대부분 초대받은 멤버가 보낸다.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -49,6 +50,7 @@ class PhotoFolderIntegrationTest @Autowired constructor(
     private val galleryRepository: GalleryRepository,
     private val galleryMemberRepository: GalleryMemberRepository,
     private val photoRepository: PhotoRepository,
+    private val photoFolderGroupRepository: PhotoFolderGroupRepository,
     private val photoFolderRepository: PhotoFolderRepository,
     private val photoFolderItemRepository: PhotoFolderItemRepository,
 ) {
@@ -59,6 +61,7 @@ class PhotoFolderIntegrationTest @Autowired constructor(
     fun clear() {
         photoFolderItemRepository.deleteAllInBatch()
         photoFolderRepository.deleteAllInBatch()
+        photoFolderGroupRepository.deleteAllInBatch()
         photoRepository.deleteAllInBatch()
         galleryMemberRepository.deleteAllInBatch()
         galleryRepository.deleteAllInBatch()
@@ -66,159 +69,256 @@ class PhotoFolderIntegrationTest @Autowired constructor(
     }
 
     @Test
-    fun `클러스터 결과에 이름을 붙여 폴더로 저장한다`() {
+    fun `클러스터링 결과를 부모폴더 하나로 고정한다`() {
         val fixture = openGalleryWithMember()
-        val photoIds = uploadPhotos(fixture, count = 3)
+        val photoIds = uploadPhotos(fixture, count = 4)
 
-        val body = mockMvc.post("/api/v1/galleries/${fixture.galleryId}/photo-folders") {
+        val body = mockMvc.post("/api/v1/galleries/${fixture.galleryId}/folder-groups") {
             authorize(fixture.member)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"name":"  본식 - 신부 단독  ","photoIds":${photoIds.take(2)}}"""
+            content = """
+                {"name":"  본식  ","folders":[
+                    {"name":"묶음 1","photoIds":${photoIds.take(2)}},
+                    {"name":"묶음 2","photoIds":${photoIds.drop(2)}}
+                ]}
+            """.trimIndent()
         }.andExpect {
             status { isCreated() }
             // 앞뒤 공백은 떼고 저장한다.
-            jsonPath("$.name") { value("본식 - 신부 단독") }
-            jsonPath("$.photos") { value(hasSize<Any>(2)) }
-            jsonPath("$.photos[0].viewUrl") { value(containsString("X-Amz-Signature")) }
+            jsonPath("$.name") { value("본식") }
+            jsonPath("$.folders") { value(hasSize<Any>(2)) }
+            jsonPath("$.folders[0].name") { value("묶음 1") }
+            jsonPath("$.folders[0].photoCount") { value(2) }
+            jsonPath("$.folders[0].coverPhoto.viewUrl") { value(containsString("X-Amz-Signature")) }
         }.andReturn().response.contentAsString
 
-        val folderId = JsonPath.read<Int>(body, "$.folderId").toLong()
+        val folderId = JsonPath.read<Int>(body, "$.folders[0].folderId").toLong()
         assertEquals(2, photoFolderItemRepository.countByFolderId(folderId))
     }
 
     @Test
-    fun `폴더는 만든 시점의 목록을 고정한다`() {
-        // 임계값이나 클러스터 식별자를 저장하지 않는 이유다. 사진이 더 올라와도 이미 만든
-        // 폴더는 흔들리면 안 된다 -- 폴더는 클러스터의 스냅샷이 아니라 확정한 목록이다.
+    fun `묶음 간에 사진이 겹치면 전체가 거절되고 부모도 남지 않는다`() {
+        // 같은 부모 아래 사진 중복 금지. 일부만 조용히 건너뛰면 성공처럼 보이는데
+        // 무엇이 왜 빠졌는지 아무도 말할 수 없다.
         val fixture = openGalleryWithMember()
         val photoIds = uploadPhotos(fixture, count = 2)
-        val folderId = createFolder(fixture, "본식", photoIds)
 
-        uploadPhotos(fixture, count = 3)
-
-        mockMvc.get("/api/v1/galleries/${fixture.galleryId}/photo-folders/$folderId") { authorize(fixture.member) }
-            .andExpect {
-                status { isOk() }
-                jsonPath("$.photos") { value(hasSize<Any>(2)) }
-            }
-    }
-
-    @Test
-    fun `폴더 목록은 사진 없이 개수만 준다`() {
-        val fixture = openGalleryWithMember()
-        val photoIds = uploadPhotos(fixture, count = 3)
-        createFolder(fixture, "첫 번째", photoIds.take(1))
-        createFolder(fixture, "두 번째", photoIds)
-
-        mockMvc.get("/api/v1/galleries/${fixture.galleryId}/photo-folders") { authorize(fixture.member) }
-            .andExpect {
-                status { isOk() }
-                jsonPath("$") { value(hasSize<Any>(2)) }
-                // 최근에 만든 것이 먼저다.
-                jsonPath("$[0].name") { value("두 번째") }
-                jsonPath("$[0].photoCount") { value(3) }
-                jsonPath("$[1].photoCount") { value(1) }
-                // 카드 미리보기를 위해 폴더마다 상세를 따로 부르지 않아도 된다.
-                jsonPath("$[0].coverPhoto.photoId") { value(photoIds.first().toInt()) }
-                jsonPath("$[0].coverPhoto.viewUrl") { value(containsString("X-Amz-Signature")) }
-                // 상세 조회와 같은 정렬이라 카드의 대표와 팝업의 첫 장이 어긋나지 않는다.
-                jsonPath("$[1].coverPhoto.photoId") { value(photoIds.first().toInt()) }
-            }
-    }
-
-    @Test
-    fun `이름을 바꾼다`() {
-        val fixture = openGalleryWithMember()
-        val folderId = createFolder(fixture, "본식", uploadPhotos(fixture, count = 1))
-
-        mockMvc.patch("/api/v1/galleries/${fixture.galleryId}/photo-folders/$folderId") {
+        mockMvc.post("/api/v1/galleries/${fixture.galleryId}/folder-groups") {
             authorize(fixture.member)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"name":"본식 (최종)"}"""
+            content = """
+                {"name":"본식","folders":[
+                    {"name":"묶음 1","photoIds":$photoIds},
+                    {"name":"묶음 2","photoIds":[${photoIds.first()}]}
+                ]}
+            """.trimIndent()
         }.andExpect {
-            status { isOk() }
-            jsonPath("$.name") { value("본식 (최종)") }
-            jsonPath("$.photoCount") { value(1) }
+            status { isConflict() }
+            jsonPath("$.code") { value("FOLDER_409_1") }
+        }
+
+        // 검증이 저장보다 먼저라 이름뿐인 빈 부모가 남지 않는다.
+        assertEquals(0, photoFolderGroupRepository.count())
+    }
+
+    @Test
+    fun `빈 부모를 만들고 그 아래 빈 자식을 만든다`() {
+        // 수동 흐름. 드래그로 채워 넣는 UX가 빈 폴더에서 시작한다.
+        val fixture = openGalleryWithMember()
+        val groupId = createGroup(fixture, "직접 만든 부모")
+
+        mockMvc.post("/api/v1/galleries/${fixture.galleryId}/folder-groups/$groupId/folders") {
+            authorize(fixture.member)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"name":"빈 폴더"}"""
+        }.andExpect {
+            status { isCreated() }
+            jsonPath("$.groupId") { value(groupId.toInt()) }
+            jsonPath("$.photos") { value(hasSize<Any>(0)) }
         }
     }
 
     @Test
-    fun `폴더를 지워도 사진은 갤러리에 남는다`() {
+    fun `자식폴더는 만든 시점의 목록을 고정한다`() {
+        // 사진이 더 올라와도 이미 만든 폴더는 흔들리면 안 된다 -- 폴더는 클러스터를
+        // 가리키는 포인터가 아니라 확정한 목록이다.
         val fixture = openGalleryWithMember()
         val photoIds = uploadPhotos(fixture, count = 2)
-        val folderId = createFolder(fixture, "본식", photoIds)
+        val (groupId, folderId) = createGroupWithFolder(fixture, "본식", "묶음 1", photoIds)
 
-        mockMvc.delete("/api/v1/galleries/${fixture.galleryId}/photo-folders/$folderId") { authorize(fixture.member) }
-            .andExpect { status { isNoContent() } }
+        uploadPhotos(fixture, count = 3)
 
-        // 항목도 함께 지운다. 남겨 두면 어느 폴더에도 속하지 않은 행이 쌓인다.
+        mockMvc.get("/api/v1/galleries/${fixture.galleryId}/folder-groups/$groupId/folders/$folderId") {
+            authorize(fixture.member)
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.photos") { value(hasSize<Any>(2)) }
+        }
+    }
+
+    @Test
+    fun `부모 목록은 자식 요약까지 한 번에 준다`() {
+        val fixture = openGalleryWithMember()
+        val photoIds = uploadPhotos(fixture, count = 3)
+        createGroupWithFolder(fixture, "첫 부모", "묶음", photoIds.take(1))
+        createGroupWithFolder(fixture, "둘째 부모", "묶음", photoIds.drop(1))
+
+        mockMvc.get("/api/v1/galleries/${fixture.galleryId}/folder-groups") { authorize(fixture.member) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$") { value(hasSize<Any>(2)) }
+                // 최근에 만든 부모가 먼저다.
+                jsonPath("$[0].name") { value("둘째 부모") }
+                jsonPath("$[0].folders[0].photoCount") { value(2) }
+                jsonPath("$[1].folders[0].photoCount") { value(1) }
+                // 좌측 폴더 메뉴를 이 응답 하나로 그린다.
+                jsonPath("$[0].folders[0].coverPhoto.viewUrl") { value(containsString("X-Amz-Signature")) }
+            }
+    }
+
+    @Test
+    fun `같은 부모의 다른 자식에 이미 든 사진은 담을 수 없다`() {
+        val fixture = openGalleryWithMember()
+        val photoIds = uploadPhotos(fixture, count = 2)
+        val (groupId, _) = createGroupWithFolder(fixture, "본식", "묶음 1", photoIds.take(1))
+        val emptyFolderId = createFolder(fixture, groupId, "묶음 2", photoIds.drop(1))
+
+        mockMvc.post(
+            "/api/v1/galleries/${fixture.galleryId}/folder-groups/$groupId/folders/$emptyFolderId/photos",
+        ) {
+            authorize(fixture.member)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"photoIds":[${photoIds.first()}]}"""
+        }.andExpect {
+            status { isConflict() }
+            jsonPath("$.code") { value("FOLDER_409_1") }
+        }
+
+        // 전체 거절이라 항목 수가 그대로다.
+        assertEquals(1, photoFolderItemRepository.countByFolderId(emptyFolderId))
+    }
+
+    @Test
+    fun `서로 다른 부모끼리는 같은 사진을 담을 수 있다`() {
+        // 중복 금지의 범위는 부모 하나다. 다른 부모는 서로 신경 쓸 필요가 없다.
+        val fixture = openGalleryWithMember()
+        val photoIds = uploadPhotos(fixture, count = 1)
+        createGroupWithFolder(fixture, "첫 부모", "묶음", photoIds)
+
+        mockMvc.post("/api/v1/galleries/${fixture.galleryId}/folder-groups") {
+            authorize(fixture.member)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"name":"둘째 부모","folders":[{"name":"묶음","photoIds":$photoIds}]}"""
+        }.andExpect { status { isCreated() } }
+    }
+
+    @Test
+    fun `사진을 같은 부모의 다른 자식으로 옮긴다`() {
+        val fixture = openGalleryWithMember()
+        val photoIds = uploadPhotos(fixture, count = 3)
+        val (groupId, sourceId) = createGroupWithFolder(fixture, "본식", "묶음 1", photoIds)
+        val targetId = createFolder(fixture, groupId, "묶음 2", emptyList())
+
+        mockMvc.post(
+            "/api/v1/galleries/${fixture.galleryId}/folder-groups/$groupId/folders/$sourceId/photos/move",
+        ) {
+            authorize(fixture.member)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"targetFolderId":$targetId,"photoIds":${photoIds.take(2)}}"""
+        }.andExpect {
+            status { isOk() }
+            // 응답은 사진이 도착한 폴더의 상세다.
+            jsonPath("$.folderId") { value(targetId.toInt()) }
+            jsonPath("$.photos") { value(hasSize<Any>(2)) }
+        }
+
+        assertEquals(1, photoFolderItemRepository.countByFolderId(sourceId))
+        assertEquals(2, photoFolderItemRepository.countByFolderId(targetId))
+    }
+
+    @Test
+    fun `출발지에 없는 사진은 옮길 수 없다`() {
+        // 일부만 옮기면 성공처럼 보이는데 무엇이 빠졌는지 아무도 말할 수 없다.
+        val fixture = openGalleryWithMember()
+        val photoIds = uploadPhotos(fixture, count = 2)
+        val (groupId, sourceId) = createGroupWithFolder(fixture, "본식", "묶음 1", photoIds.take(1))
+        val targetId = createFolder(fixture, groupId, "묶음 2", emptyList())
+
+        mockMvc.post(
+            "/api/v1/galleries/${fixture.galleryId}/folder-groups/$groupId/folders/$sourceId/photos/move",
+        ) {
+            authorize(fixture.member)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"targetFolderId":$targetId,"photoIds":$photoIds}"""
+        }.andExpect {
+            status { isNotFound() }
+            jsonPath("$.code") { value("FOLDER_404_2") }
+        }
+
+        assertEquals(1, photoFolderItemRepository.countByFolderId(sourceId))
+        assertEquals(0, photoFolderItemRepository.countByFolderId(targetId))
+    }
+
+    @Test
+    fun `다른 부모의 자식으로는 옮길 수 없다`() {
+        // 이동은 같은 부모를 공유하는 자식들 사이에서만 허용한다.
+        val fixture = openGalleryWithMember()
+        val photoIds = uploadPhotos(fixture, count = 2)
+        val (groupId, sourceId) = createGroupWithFolder(fixture, "첫 부모", "묶음", photoIds.take(1))
+        val (_, foreignFolderId) = createGroupWithFolder(fixture, "둘째 부모", "묶음", photoIds.drop(1))
+
+        mockMvc.post(
+            "/api/v1/galleries/${fixture.galleryId}/folder-groups/$groupId/folders/$sourceId/photos/move",
+        ) {
+            authorize(fixture.member)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"targetFolderId":$foreignFolderId,"photoIds":[${photoIds.first()}]}"""
+        }.andExpect {
+            status { isNotFound() }
+            jsonPath("$.code") { value("FOLDER_404_1") }
+        }
+    }
+
+    @Test
+    fun `부모를 지우면 자식과 항목까지 사라지고 사진은 남는다`() {
+        val fixture = openGalleryWithMember()
+        val photoIds = uploadPhotos(fixture, count = 2)
+        val (groupId, folderId) = createGroupWithFolder(fixture, "본식", "묶음 1", photoIds)
+
+        mockMvc.delete("/api/v1/galleries/${fixture.galleryId}/folder-groups/$groupId") {
+            authorize(fixture.member)
+        }.andExpect { status { isNoContent() } }
+
+        assertEquals(0, photoFolderGroupRepository.count())
+        assertEquals(0, photoFolderRepository.count())
+        assertEquals(0, photoFolderItemRepository.countByFolderId(folderId))
+        // 사진 자체는 갤러리에 그대로 남는다.
+        assertEquals(2, photoRepository.countByGalleryId(fixture.galleryId))
+    }
+
+    @Test
+    fun `자식폴더를 지워도 부모와 사진은 남는다`() {
+        val fixture = openGalleryWithMember()
+        val photoIds = uploadPhotos(fixture, count = 2)
+        val (groupId, folderId) = createGroupWithFolder(fixture, "본식", "묶음 1", photoIds)
+
+        mockMvc.delete("/api/v1/galleries/${fixture.galleryId}/folder-groups/$groupId/folders/$folderId") {
+            authorize(fixture.member)
+        }.andExpect { status { isNoContent() } }
+
+        assertEquals(1, photoFolderGroupRepository.count())
         assertEquals(0, photoFolderItemRepository.countByFolderId(folderId))
         assertEquals(2, photoRepository.countByGalleryId(fixture.galleryId))
     }
 
     @Test
-    fun `폴더에 사진을 더 담는다`() {
-        val fixture = openGalleryWithMember()
-        val photoIds = uploadPhotos(fixture, count = 3)
-        val folderId = createFolder(fixture, "본식", photoIds.take(1))
-
-        mockMvc.post("/api/v1/galleries/${fixture.galleryId}/photo-folders/$folderId/photos") {
-            authorize(fixture.member)
-            contentType = MediaType.APPLICATION_JSON
-            content = """{"photoIds":${photoIds.drop(1)}}"""
-        }.andExpect {
-            status { isOk() }
-            jsonPath("$.photos") { value(hasSize<Any>(3)) }
-        }
-    }
-
-    @Test
-    fun `이미 담긴 사진을 다시 담아도 늘어나지 않는다`() {
-        // 유니크 제약이 마지막으로 막지만, 거기까지 가면 요청 전체가 실패한다.
-        // 사용자가 보기에는 "몇 장은 이미 있다"일 뿐인 상황이다.
+    fun `자식폴더에서 사진을 뺀다`() {
         val fixture = openGalleryWithMember()
         val photoIds = uploadPhotos(fixture, count = 2)
-        val folderId = createFolder(fixture, "본식", photoIds)
-
-        mockMvc.post("/api/v1/galleries/${fixture.galleryId}/photo-folders/$folderId/photos") {
-            authorize(fixture.member)
-            contentType = MediaType.APPLICATION_JSON
-            content = """{"photoIds":$photoIds}"""
-        }.andExpect {
-            status { isOk() }
-            jsonPath("$.photos") { value(hasSize<Any>(2)) }
-        }
-
-        // 응답만 보면 중복 행이 생겼는지 알 수 없다. 응답은 사진을 조인해 돌려주므로
-        // 항목이 두 벌 쌓여 있어도 같은 크기로 보인다.
-        assertEquals(2, photoFolderItemRepository.countByFolderId(folderId))
-    }
-
-    @Test
-    fun `사진을 하나도 지정하지 않으면 400`() {
-        // DTO의 @NotEmpty는 컨트롤러를 지날 때만 도는 검증이라 서비스에서 한 번 더 막는다.
-        // 통과시키면 사진 없는 폴더가 목록에 0장짜리로 남는다.
-        val fixture = openGalleryWithMember()
-        val folderId = createFolder(fixture, "본식", uploadPhotos(fixture, count = 1))
-
-        mockMvc.post("/api/v1/galleries/${fixture.galleryId}/photo-folders/$folderId/photos") {
-            authorize(fixture.member)
-            contentType = MediaType.APPLICATION_JSON
-            content = """{"photoIds":[]}"""
-        }.andExpect {
-            status { isBadRequest() }
-            jsonPath("$.code") { value("GLOBAL_400_2") }
-        }
-    }
-
-    @Test
-    fun `폴더에서 사진을 뺀다`() {
-        val fixture = openGalleryWithMember()
-        val photoIds = uploadPhotos(fixture, count = 2)
-        val folderId = createFolder(fixture, "본식", photoIds)
+        val (groupId, folderId) = createGroupWithFolder(fixture, "본식", "묶음 1", photoIds)
 
         mockMvc.delete(
-            "/api/v1/galleries/${fixture.galleryId}/photo-folders/$folderId/photos/${photoIds.first()}",
+            "/api/v1/galleries/${fixture.galleryId}/folder-groups/$groupId/folders/$folderId/photos/${photoIds.first()}",
         ) { authorize(fixture.member) }
             .andExpect { status { isNoContent() } }
 
@@ -232,10 +332,10 @@ class PhotoFolderIntegrationTest @Autowired constructor(
         // 조용히 성공시키면 프론트는 지운 줄 알고 화면에서 지운다.
         val fixture = openGalleryWithMember()
         val photoIds = uploadPhotos(fixture, count = 2)
-        val folderId = createFolder(fixture, "본식", photoIds.take(1))
+        val (groupId, folderId) = createGroupWithFolder(fixture, "본식", "묶음 1", photoIds.take(1))
 
         mockMvc.delete(
-            "/api/v1/galleries/${fixture.galleryId}/photo-folders/$folderId/photos/${photoIds.last()}",
+            "/api/v1/galleries/${fixture.galleryId}/folder-groups/$groupId/folders/$folderId/photos/${photoIds.last()}",
         ) { authorize(fixture.member) }
             .andExpect {
                 status { isNotFound() }
@@ -244,17 +344,43 @@ class PhotoFolderIntegrationTest @Autowired constructor(
     }
 
     @Test
-    fun `다른 갤러리의 사진으로는 폴더를 만들 수 없다`() {
+    fun `부모와 자식의 이름을 바꾼다`() {
+        val fixture = openGalleryWithMember()
+        val photoIds = uploadPhotos(fixture, count = 1)
+        val (groupId, folderId) = createGroupWithFolder(fixture, "본식", "묶음 1", photoIds)
+
+        mockMvc.patch("/api/v1/galleries/${fixture.galleryId}/folder-groups/$groupId") {
+            authorize(fixture.member)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"name":"본식 (최종)"}"""
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.name") { value("본식 (최종)") }
+        }
+
+        mockMvc.patch("/api/v1/galleries/${fixture.galleryId}/folder-groups/$groupId/folders/$folderId") {
+            authorize(fixture.member)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"name":"신부 단독"}"""
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.name") { value("신부 단독") }
+            jsonPath("$.photoCount") { value(1) }
+        }
+    }
+
+    @Test
+    fun `다른 갤러리의 사진으로는 고정할 수 없다`() {
         // 갤러리 권한만 보고 사진 id를 믿으면, 자기 갤러리에 만든 폴더로 남의 사진을 끌어와
         // 서명 URL까지 받아낼 수 있다.
         val fixture = openGalleryWithMember()
         val otherFixture = openGalleryWithMember()
         val otherPhotoIds = uploadPhotos(otherFixture, count = 1)
 
-        mockMvc.post("/api/v1/galleries/${fixture.galleryId}/photo-folders") {
+        mockMvc.post("/api/v1/galleries/${fixture.galleryId}/folder-groups") {
             authorize(fixture.member)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"name":"남의 사진","photoIds":$otherPhotoIds}"""
+            content = """{"name":"남의 사진","folders":[{"name":"묶음","photoIds":$otherPhotoIds}]}"""
         }.andExpect {
             status { isBadRequest() }
             jsonPath("$.code") { value("FOLDER_400_1") }
@@ -262,46 +388,30 @@ class PhotoFolderIntegrationTest @Autowired constructor(
     }
 
     @Test
-    fun `다른 갤러리의 폴더 id로는 접근할 수 없다`() {
-        // 인가는 경로의 galleryId로 확인한다. 폴더를 id만으로 찾으면 그 확인이 무의미해진다.
+    fun `다른 갤러리의 부모폴더 id로는 접근할 수 없다`() {
+        // 인가는 경로의 galleryId로 확인한다. 부모를 id만으로 찾으면 그 확인이 무의미해진다.
         val fixture = openGalleryWithMember()
         val otherFixture = openGalleryWithMember()
-        val otherFolderId = createFolder(otherFixture, "남의 폴더", uploadPhotos(otherFixture, count = 1))
+        val otherGroupId = createGroup(otherFixture, "남의 부모")
 
-        mockMvc.get("/api/v1/galleries/${fixture.galleryId}/photo-folders/$otherFolderId") { authorize(fixture.member) }
-            .andExpect {
-                status { isNotFound() }
-                jsonPath("$.code") { value("FOLDER_404_1") }
-            }
-    }
-
-    @Test
-    fun `담당 작가도 자기 갤러리의 폴더를 만들 수 있다`() {
-        // 고르는 것은 부부의 일이지만, 작가가 자기 갤러리에서 아무것도 못 하면
-        // 폴더 기능을 확인할 방법이 없다. 작가는 스튜디오의 모든 기능을 쓴다.
-        val fixture = openGalleryWithMember()
-        val photoIds = uploadPhotos(fixture, count = 1)
-
-        mockMvc.post("/api/v1/galleries/${fixture.galleryId}/photo-folders") {
-            authorize(fixture.photographer)
-            contentType = MediaType.APPLICATION_JSON
-            content = """{"name":"작가가 만든 폴더","photoIds":$photoIds}"""
+        mockMvc.get("/api/v1/galleries/${fixture.galleryId}/folder-groups/$otherGroupId") {
+            authorize(fixture.member)
         }.andExpect {
-            status { isCreated() }
-            jsonPath("$.name") { value("작가가 만든 폴더") }
+            status { isNotFound() }
+            jsonPath("$.code") { value("FOLDER_404_3") }
         }
     }
 
     @Test
     fun `선택 마감이 지나면 부부는 폴더를 만들 수 없다`() {
         val fixture = openGalleryWithMember()
-        val photoIds = uploadPhotos(fixture, count = 1)
+        uploadPhotos(fixture, count = 1)
         passDeadline(fixture)
 
-        mockMvc.post("/api/v1/galleries/${fixture.galleryId}/photo-folders") {
+        mockMvc.post("/api/v1/galleries/${fixture.galleryId}/folder-groups") {
             authorize(fixture.member)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"name":"늦은 폴더","photoIds":$photoIds}"""
+            content = """{"name":"늦은 부모"}"""
         }.andExpect {
             status { isForbidden() }
             jsonPath("$.code") { value("GALLERY_403_4") }
@@ -313,35 +423,18 @@ class PhotoFolderIntegrationTest @Autowired constructor(
         // 마감은 고객이 고르는 기한이지 작가의 작업 기한이 아니다.
         val fixture = openGalleryWithMember()
         val photoIds = uploadPhotos(fixture, count = 1)
-        val folderId = createFolder(fixture, "본식", photoIds)
+        val (groupId, _) = createGroupWithFolder(fixture, "본식", "묶음", photoIds)
         passDeadline(fixture)
 
-        mockMvc.get("/api/v1/galleries/${fixture.galleryId}/photo-folders/$folderId") {
+        mockMvc.get("/api/v1/galleries/${fixture.galleryId}/folder-groups/$groupId") {
             authorize(fixture.photographer)
         }.andExpect { status { isOk() } }
 
-        mockMvc.get("/api/v1/galleries/${fixture.galleryId}/photo-folders") { authorize(fixture.member) }
+        mockMvc.get("/api/v1/galleries/${fixture.galleryId}/folder-groups") { authorize(fixture.member) }
             .andExpect {
                 status { isForbidden() }
                 jsonPath("$.code") { value("GALLERY_403_4") }
             }
-    }
-
-    @Test
-    fun `이름이 비어 있으면 400`() {
-        val fixture = openGalleryWithMember()
-        val photoIds = uploadPhotos(fixture, count = 1)
-
-        mockMvc.post("/api/v1/galleries/${fixture.galleryId}/photo-folders") {
-            authorize(fixture.member)
-            contentType = MediaType.APPLICATION_JSON
-            content = """{"name":"   ","photoIds":$photoIds}"""
-        }.andExpect {
-            status { isBadRequest() }
-            // @NotBlank가 컨트롤러에서 먼저 걸러 GLOBAL 코드가 나간다. 도메인의
-            // FOLDER_400_3은 서비스를 직접 부르는 경로를 위한 두 번째 방어선이다.
-            jsonPath("$.code") { value("GLOBAL_400_2") }
-        }
     }
 
     // --- helpers ---
@@ -376,8 +469,37 @@ class PhotoFolderIntegrationTest @Autowired constructor(
         galleryRepository.saveAndFlush(gallery)
     }
 
-    private fun createFolder(fixture: Fixture, name: String, photoIds: List<Long>): Long {
-        val body = mockMvc.post("/api/v1/galleries/${fixture.galleryId}/photo-folders") {
+    private fun createGroup(fixture: Fixture, name: String): Long {
+        val body = mockMvc.post("/api/v1/galleries/${fixture.galleryId}/folder-groups") {
+            authorize(fixture.member)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"name":"$name"}"""
+        }.andExpect { status { isCreated() } }
+            .andReturn().response.contentAsString
+
+        return JsonPath.read<Int>(body, "$.groupId").toLong()
+    }
+
+    /** 자식폴더 하나짜리 부모를 만들고 (groupId, folderId)를 돌려준다. */
+    private fun createGroupWithFolder(
+        fixture: Fixture,
+        groupName: String,
+        folderName: String,
+        photoIds: List<Long>,
+    ): Pair<Long, Long> {
+        val body = mockMvc.post("/api/v1/galleries/${fixture.galleryId}/folder-groups") {
+            authorize(fixture.member)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"name":"$groupName","folders":[{"name":"$folderName","photoIds":$photoIds}]}"""
+        }.andExpect { status { isCreated() } }
+            .andReturn().response.contentAsString
+
+        return JsonPath.read<Int>(body, "$.groupId").toLong() to
+            JsonPath.read<Int>(body, "$.folders[0].folderId").toLong()
+    }
+
+    private fun createFolder(fixture: Fixture, groupId: Long, name: String, photoIds: List<Long>): Long {
+        val body = mockMvc.post("/api/v1/galleries/${fixture.galleryId}/folder-groups/$groupId/folders") {
             authorize(fixture.member)
             contentType = MediaType.APPLICATION_JSON
             content = """{"name":"$name","photoIds":$photoIds}"""
