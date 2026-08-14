@@ -3,6 +3,7 @@ package com.soma.wes.photo.domain
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
 import org.junit.jupiter.api.Test
+import java.time.ZonedDateTime
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -50,6 +51,17 @@ class PhotoTest {
         assertEquals("previews/galleries/1/a.jpg", photo.viewKey)
         // 원본 위치는 그대로다. 파생본은 화면용일 뿐 원본을 대신하지 않는다.
         assertEquals("galleries/1/a.jpg", photo.storageKey)
+    }
+
+    @Test
+    fun `휴지통으로 보내면 시각이 남는다`() {
+        // 이 시각이 곧 보관 만료의 기준이다. @SQLRestriction이 이 값으로 모든 조회에서 걸러낸다.
+        val photo = photo()
+        val at = ZonedDateTime.now()
+
+        photo.moveToTrash(at)
+
+        assertEquals(at, photo.deletedAt)
     }
 
     @Test
@@ -147,7 +159,7 @@ class PhotoTest {
         assertEquals("a.jpg", copy.originalFileName)
         assertEquals("image/jpeg", copy.contentType)
         assertEquals(PhotoStatus.EMBEDDED, copy.status)
-        // 업로드 URL을 발급한 적 없는 행이다. 값이 있으면 hard delete가 30분간 막힌다.
+        // 업로드 URL을 발급한 적 없는 행이다. 값이 있으면 휴지통 즉시 삭제가 30분간 막힌다.
         assertNull(copy.uploadUrlExpiresAt)
         // 값은 같되 인스턴스는 나눠 갖지 않는다. detached 원본과 상태가 엮이면 안 된다.
         assertContentEquals(source.embedding, copy.embedding)

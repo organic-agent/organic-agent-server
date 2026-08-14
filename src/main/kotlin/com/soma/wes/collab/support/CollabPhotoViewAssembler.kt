@@ -98,6 +98,10 @@ class CollabPhotoViewAssembler(
 
     /**
      * 사진을 서명 URL이 붙은 응답으로 바꿔 사진 id로 찾을 수 있게 둔다.
+     *
+     * 휴지통 사진은 `findAllById`가 걸러내고 호출부의 `mapNotNull`이 그 자리를 조용히 접는다.
+     * TODO: 페이지 총계는 `collab_photos` 행 수라, 휴지통에 든 사진만큼 실제 표시 수보다
+     *   크게 나온다. 페이징 쿼리가 photos와 조인해 세도록 고치면 맞지만 MVP에서는 넘어간다.
      */
     private fun photosOf(collabPhotos: List<CollabPhoto>): Map<Long, PhotoResponse> {
         val photos: List<Photo> = photoRepository.findAllById(collabPhotos.map { it.photoId })

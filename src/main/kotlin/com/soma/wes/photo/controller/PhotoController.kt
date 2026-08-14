@@ -4,6 +4,7 @@ import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.photo.controller.docs.PhotoControllerDocs
 import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.dto.request.CompleteUploadRequest
+import com.soma.wes.photo.dto.request.DeletePhotosRequest
 import com.soma.wes.photo.dto.request.IssueUploadUrlsRequest
 import com.soma.wes.photo.dto.response.IssueUploadUrlsResponse
 import com.soma.wes.photo.dto.response.PhotoCountResponse
@@ -14,6 +15,7 @@ import com.soma.wes.photo.service.PhotoService
 import jakarta.validation.Valid
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -47,6 +49,17 @@ class PhotoController(
         @Valid @RequestBody request: CompleteUploadRequest,
     ): ResponseEntity<PhotoCountResponse> {
         val result = photoService.completeUpload(galleryId, loginUser.id, request)
+
+        return ResponseEntity.ok(result)
+    }
+
+    @DeleteMapping
+    override fun moveToTrash(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @Valid @RequestBody request: DeletePhotosRequest,
+    ): ResponseEntity<PhotoCountResponse> {
+        val result = photoService.moveToTrash(galleryId, loginUser.id, request)
 
         return ResponseEntity.ok(result)
     }

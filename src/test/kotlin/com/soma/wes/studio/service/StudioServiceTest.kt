@@ -8,7 +8,6 @@ import com.soma.wes.studio.dto.request.UpdateStudioRequest
 import com.soma.wes.studio.exception.StudioErrorCode
 import com.soma.wes.studio.exception.StudioException
 import com.soma.wes.studio.repository.StudioRepository
-import com.soma.wes.studio.support.StudioWriteAdmission
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.domain.UserType
 import com.soma.wes.user.exception.UserErrorCode
@@ -24,7 +23,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 @DataJpaTest
-@Import(TestcontainersConfiguration::class, TimeConfig::class, StudioWriteAdmission::class, StudioService::class)
+@Import(TestcontainersConfiguration::class, TimeConfig::class, StudioService::class)
 class StudioServiceTest @Autowired constructor(
     private val studioService: StudioService,
     private val studioRepository: StudioRepository,

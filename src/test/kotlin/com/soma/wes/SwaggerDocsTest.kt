@@ -30,7 +30,6 @@ class SwaggerDocsTest @Autowired constructor(
                 jsonPath("$.paths['/api/v1/oauth/{provider}'].post") { exists() }
                 jsonPath("$.paths['/api/v1/auth/reissue'].post") { exists() }
                 jsonPath("$.paths['/api/v1/studios/me'].delete") { doesNotExist() }
-                jsonPath("$.paths['/api/v1/admin/studios/{studioId}/hard-delete']") { doesNotExist() }
             }
     }
 

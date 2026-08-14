@@ -8,7 +8,9 @@ import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.repository.PhotoRepository
-import com.soma.wes.studio.support.StudioWriteAdmission
+import com.soma.wes.studio.exception.StudioErrorCode
+import com.soma.wes.studio.exception.StudioException
+import com.soma.wes.studio.repository.StudioRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -24,7 +26,7 @@ import java.time.ZonedDateTime
  */
 @Service
 class MockGallerySeeder(
-    private val studioWriteAdmission: StudioWriteAdmission,
+    private val studioRepository: StudioRepository,
     private val galleryRepository: GalleryRepository,
     private val photoRepository: PhotoRepository,
     private val clock: Clock,
@@ -54,7 +56,8 @@ class MockGallerySeeder(
      */
     @Transactional
     fun createGallery(userId: Long, request: CreateGalleryRequest?): Gallery {
-        val studio = studioWriteAdmission.requireWritableByUserId(userId)
+        val studio = studioRepository.findByUserId(userId)
+            ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
 
         return galleryRepository.save(
             Gallery.create(
@@ -68,17 +71,13 @@ class MockGallerySeeder(
     }
 
     /**
-     * 복사된 객체들을 가리키는 사진 행을 만든다. [createGallery]와 트랜잭션이 다르므로
-     * 그 사이에 hard delete가 시작됐을 수 있다 — 여기서 admission을 다시 지나, 삭제 스냅샷에
-     * 잡히지 않은 사진 행이 뒤늦게 생기는 일을 막는다.
+     * 복사된 객체들을 가리키는 사진 행을 만든다.
      *
      * `displayOrder`는 템플릿 순서 그대로 0부터 다시 매긴다. 템플릿 갤러리의 번호를 복사하면
      * 운영자가 템플릿에서 사진을 지웠을 때 구멍 난 순서가 그대로 전파된다.
      */
     @Transactional
     fun persistPhotos(gallery: Gallery, plans: List<MockGalleryCopyPlan>) {
-        studioWriteAdmission.requireWritable(gallery.studioId)
-
         photoRepository.saveAll(
             plans.mapIndexed { index, plan ->
                 Photo.copyOf(

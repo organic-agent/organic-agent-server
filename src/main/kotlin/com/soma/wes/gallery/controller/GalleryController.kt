@@ -12,6 +12,7 @@ import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -109,5 +110,16 @@ class GalleryController(
         val result = galleryService.reopen(galleryId, loginUser.id, request)
 
         return ResponseEntity.ok(result)
+    }
+
+    @DeleteMapping("/{galleryId}")
+    override fun moveToTrash(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+    ): ResponseEntity<Unit> {
+        galleryService.moveToTrash(galleryId, loginUser.id)
+        val status = HttpStatus.NO_CONTENT
+
+        return ResponseEntity.status(status).build()
     }
 }

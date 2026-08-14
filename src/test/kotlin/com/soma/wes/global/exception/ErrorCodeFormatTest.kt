@@ -9,6 +9,7 @@ import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.security.exception.AuthorizationErrorCode
 import com.soma.wes.selection.exception.SelectionErrorCode
 import com.soma.wes.studio.exception.StudioErrorCode
+import com.soma.wes.trash.exception.TrashErrorCode
 import com.soma.wes.user.exception.UserErrorCode
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
@@ -28,7 +29,7 @@ class ErrorCodeFormatTest {
         GlobalErrorCode.entries + AuthErrorCode.entries + AuthorizationErrorCode.entries + UserErrorCode.entries +
             StudioErrorCode.entries + GalleryErrorCode.entries + PhotoErrorCode.entries +
             ClusterErrorCode.entries + FolderErrorCode.entries + SelectionErrorCode.entries +
-            CollabErrorCode.entries
+            CollabErrorCode.entries + TrashErrorCode.entries
 
     private val format = Regex("""^([A-Z]+)_(\d{3})_(\d+)$""")
 
