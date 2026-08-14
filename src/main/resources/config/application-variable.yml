@@ -65,6 +65,12 @@ app:
     # 로컬·테스트에는 Lambda가 없으므로 빈 값이 정상이다 — 기동이 아니라 호출 시점에 실패한다.
     function-name: ""
 
+  mock-gallery:
+    # Mock 갤러리가 복제할 샘플 템플릿 갤러리 id. 0은 "기능 꺼짐"이다(생성 요청이 503).
+    # 템플릿은 운영자 스튜디오가 일반 파이프라인으로 시드한 진짜 갤러리라 환경마다 id가 다르다.
+    # prod는 시드를 마친 뒤 Parameter Store(app.mock-gallery.template-gallery-id)가 덮어쓴다.
+    template-gallery-id: 0
+
   cluster:
     # 프론트가 threshold를 넘기지 않았을 때 쓰는 유사도. 첫 화면의 묶음 입도를 정하는 값이라
     # 바꾸면 사용자가 처음 보는 결과가 통째로 달라진다. 올리면 잘게, 내리면 크게 묶인다.

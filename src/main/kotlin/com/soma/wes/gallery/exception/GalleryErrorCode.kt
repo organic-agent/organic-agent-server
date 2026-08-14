@@ -54,4 +54,12 @@ enum class GalleryErrorCode(
      */
     INVITE_EXPIRED(HttpStatus.GONE, "GALLERY_410_1", "만료된 초대 링크입니다."),
     INVITE_REVOKED(HttpStatus.GONE, "GALLERY_410_2", "더 이상 사용할 수 없는 초대 링크입니다."),
+
+    /**
+     * 샘플 템플릿 갤러리가 아직 준비되지 않은 Mock 갤러리 요청.
+     *
+     * 설정(`app.mock-gallery.template-gallery-id`)이 비었거나, 가리키는 갤러리가 없거나,
+     * 임베딩까지 끝난 사진이 한 장도 없는 경우다. 셋 다 운영자가 시드를 마치면 풀린다.
+     */
+    MOCK_GALLERY_NOT_READY(HttpStatus.SERVICE_UNAVAILABLE, "GALLERY_503_1", "샘플 갤러리가 아직 준비되지 않았습니다."),
 }

@@ -104,6 +104,18 @@ class S3PhotoStorage(
         }
     }
 
+    override fun copy(sourceKey: String, targetKey: String) {
+        try {
+            s3Client.copyObject { copy ->
+                copy.sourceBucket(properties.bucket).sourceKey(sourceKey)
+                copy.destinationBucket(properties.bucket).destinationKey(targetKey)
+            }
+        } catch (e: SdkException) {
+            log.error("S3 사진 복사 실패: bucket={}, source={}, target={}", properties.bucket, sourceKey, targetKey, e)
+            throw PhotoException(PhotoErrorCode.STORAGE_COPY_FAILED)
+        }
+    }
+
     companion object {
         /** S3 DeleteObjects 한 요청의 최대 키 수. */
         private const val MAX_DELETE_OBJECTS = 1000

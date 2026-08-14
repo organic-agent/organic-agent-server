@@ -42,6 +42,9 @@ enum class PhotoErrorCode(
     /** 운영자 승인 삭제에서 S3 원본 또는 미리보기를 모두 지우지 못한 경우. */
     STORAGE_DELETE_FAILED(HttpStatus.BAD_GATEWAY, "PHOTO_502_2", "사진 원본 또는 미리보기 삭제를 완료하지 못했습니다."),
 
+    /** Mock 갤러리 생성에서 템플릿 객체의 S3 복사가 실패한 경우. 재시도하면 처음부터 다시 만든다. */
+    STORAGE_COPY_FAILED(HttpStatus.BAD_GATEWAY, "PHOTO_502_3", "샘플 사진 복제를 완료하지 못했습니다."),
+
     /**
      * 임베딩 함수 이름이 설정되지 않은 경우.
      *

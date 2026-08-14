@@ -80,6 +80,20 @@ class GalleryControllerTest @Autowired constructor(
     }
 
     @Test
+    fun `샘플 템플릿이 설정되지 않은 환경에서는 Mock 갤러리 생성을 503으로 막는다`() {
+        // 기본 컨텍스트에는 app.mock-gallery.template-gallery-id가 없다(0 = 꺼짐).
+        // 로컬이나 시드 전 운영이 이 상태다. 나머지 시나리오는 MockGalleryControllerTest에 있다.
+        val photographer = signUpPhotographer()
+
+        mockMvc.post("/api/v1/galleries/mock") {
+            authorize(photographer)
+        }.andExpect {
+            status { isServiceUnavailable() }
+            jsonPath("$.code") { value("GALLERY_503_1") }
+        }
+    }
+
+    @Test
     fun `제목이 비면 400`() {
         val photographer = signUpPhotographer()
 

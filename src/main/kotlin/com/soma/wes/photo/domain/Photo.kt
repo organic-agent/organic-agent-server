@@ -171,5 +171,48 @@ class Photo(
          * DB에서 거절되므로 조용히 틀리지는 않는다.
          */
         const val EMBEDDING_DIMENSION = 768
+
+        /**
+         * 임베딩까지 끝난 사진을 다른 갤러리로 복제한 행을 만든다. Mock 갤러리가 템플릿
+         * 갤러리의 사진을 가져올 때 쓴다.
+         *
+         * [storageKey]·[previewKey]는 호출자가 새 갤러리의 키 공간으로 복사해 둔 S3 위치다 —
+         * 원본 키를 그대로 넘기면 두 행이 한 객체를 참조해 storage_key 전역 유니크에 걸린다.
+         * 벡터와 촬영 정보는 값을 새로 떠서 담는다. detached 원본과 인스턴스를 나눠 가지면
+         * 한쪽 상태 변경이 다른 엔티티에 새어 들어간다.
+         */
+        fun copyOf(
+            source: Photo,
+            galleryId: Long,
+            storageKey: String,
+            previewKey: String?,
+            displayOrder: Int,
+        ): Photo = Photo(
+            galleryId = galleryId,
+            storageKey = storageKey,
+            originalFileName = source.originalFileName,
+            contentType = source.contentType,
+            displayOrder = displayOrder,
+        ).also { copy ->
+            copy.previewKey = previewKey
+            source.metadata?.let { metadata ->
+                copy.applyMetadata(
+                    PhotoMetadata(
+                        takenAt = metadata.takenAt,
+                        cameraMake = metadata.cameraMake,
+                        cameraModel = metadata.cameraModel,
+                        exposureTime = metadata.exposureTime,
+                        fNumber = metadata.fNumber,
+                        iso = metadata.iso,
+                        width = metadata.width,
+                        height = metadata.height,
+                        byteSize = metadata.byteSize,
+                    ),
+                )
+            }
+            copy.applyEmbedding(
+                checkNotNull(source.embedding) { "임베딩이 없는 사진은 복제할 수 없습니다." }.copyOf(),
+            )
+        }
     }
 }

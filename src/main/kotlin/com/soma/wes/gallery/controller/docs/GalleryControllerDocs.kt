@@ -77,6 +77,82 @@ interface GalleryControllerDocs {
     fun create(loginUser: LoginUser, request: CreateGalleryRequest): ResponseEntity<GalleryResponse>
 
     @Operation(
+        summary = "Mock 갤러리 생성",
+        description = """
+            운영자가 시드해 둔 샘플 템플릿 갤러리의 사진(임베딩·촬영 정보·미리보기 포함)을
+            복제해, 완전히 일반적인 갤러리 하나를 만든다. 실제 촬영 없이 제품을 눌러보려는
+            온보딩 직후의 작가를 위한 것이다.
+
+            요청 본문 없이 호출하면 제목은 '샘플 갤러리', 기한·계약 장수는 제한 없음으로
+            만든다. 본문을 보내면 일반 생성 요청과 같은 세 값을 쓴다. 부를 때마다 새 갤러리를
+            만든다 — 만들어진 갤러리는 일반 갤러리와 구분되지 않으므로, 버튼을 언제 감출지는
+            화면이 정한다.
+        """,
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "201", description = "생성 성공. 응답은 일반 갤러리와 같다"),
+        ApiResponse(
+            responseCode = "400",
+            description = "빈 제목, 지난 선택 마감 기한 또는 0 이하 계약 장수",
+            content = [Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = Schema(implementation = ErrorResponse::class))],
+        ),
+        ApiResponse(
+            responseCode = "404",
+            description = "온보딩을 마치지 않아 스튜디오가 없음",
+            content = [Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = Schema(implementation = ErrorResponse::class))],
+        ),
+        ApiResponse(
+            responseCode = "409",
+            description = "운영자 승인 hard delete가 이미 진행 중임",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "삭제 진행 중",
+                            value = """{"code": "STUDIO_409_7", "message": "스튜디오 삭제가 진행 중이라 새 데이터를 저장할 수 없습니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(
+            responseCode = "502",
+            description = "템플릿 객체의 S3 복사 실패. 만들다 만 갤러리는 남지 않으므로 다시 요청하면 된다",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "복사 실패",
+                            value = """{"code": "PHOTO_502_3", "message": "샘플 사진 복제를 완료하지 못했습니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(
+            responseCode = "503",
+            description = "샘플 템플릿 갤러리가 설정되지 않았거나 임베딩까지 끝난 사진이 없음",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "샘플 준비 전",
+                            value = """{"code": "GALLERY_503_1", "message": "샘플 갤러리가 아직 준비되지 않았습니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    )
+    fun createMock(loginUser: LoginUser, request: CreateGalleryRequest?): ResponseEntity<GalleryResponse>
+
+    @Operation(
         summary = "내 갤러리 목록",
         description = "작가는 스튜디오의 갤러리 전부를, 예비 부부는 초대받아 들어온 갤러리를 받는다. " +
             "예비 부부에게는 아직 열리지 않은(DRAFT) 갤러리가 보이지 않는다.",
