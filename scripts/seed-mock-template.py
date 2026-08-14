@@ -17,6 +17,8 @@ Parameter Store(`/wes/prod/app.mock-gallery.template-gallery-id`)에 넣고 앱�
   python3 scripts/seed-mock-template.py ... --gallery-id 123
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import mimetypes
