@@ -1,6 +1,6 @@
 package com.soma.wes.folder.dto.request
 
-import com.soma.wes.folder.domain.PhotoFolderGroup
+import com.soma.wes.folder.domain.FolderName
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
@@ -14,7 +14,7 @@ import jakarta.validation.constraints.Size
 data class CreateFolderGroupRequest(
 
     @field:NotBlank
-    @field:Size(max = PhotoFolderGroup.MAX_NAME_LENGTH)
+    @field:Size(max = FolderName.MAX_LENGTH)
     @field:Schema(description = "부모폴더 이름", example = "본식")
     val name: String,
 
@@ -30,7 +30,7 @@ data class CreateFolderGroupRequest(
     data class FolderSeed(
 
         @field:NotBlank
-        @field:Size(max = PhotoFolderGroup.MAX_NAME_LENGTH)
+        @field:Size(max = FolderName.MAX_LENGTH)
         @field:Schema(description = "자식폴더 이름", example = "묶음 1")
         val name: String,
 

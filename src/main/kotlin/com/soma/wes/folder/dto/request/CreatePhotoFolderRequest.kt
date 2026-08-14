@@ -1,6 +1,6 @@
 package com.soma.wes.folder.dto.request
 
-import com.soma.wes.folder.domain.PhotoFolder
+import com.soma.wes.folder.domain.FolderName
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
@@ -9,7 +9,7 @@ import jakarta.validation.constraints.Size
 data class CreatePhotoFolderRequest(
 
     @field:NotBlank
-    @field:Size(max = PhotoFolder.MAX_NAME_LENGTH)
+    @field:Size(max = FolderName.MAX_LENGTH)
     @field:Schema(description = "폴더 이름", example = "본식 - 신부 단독")
     val name: String,
 

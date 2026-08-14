@@ -1,7 +1,5 @@
 package com.soma.wes.folder.domain
 
-import com.soma.wes.folder.exception.FolderErrorCode
-import com.soma.wes.folder.exception.FolderException
 import com.soma.wes.global.BaseEntity
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
@@ -33,7 +31,7 @@ class PhotoFolder(
     @Column(name = "gallery_id", nullable = false, updatable = false)
     val galleryId: Long,
 
-    @Column(nullable = false, length = MAX_NAME_LENGTH)
+    @Column(nullable = false, length = FolderName.MAX_LENGTH)
     var name: String,
 
 ) : BaseEntity() {
@@ -46,24 +44,14 @@ class PhotoFolder(
         get() = id ?: error("아직 저장되지 않은 PhotoFolder 다")
 
     fun rename(name: String) {
-        this.name = normalizeName(name)
+        this.name = FolderName.normalize(name)
     }
 
     companion object {
-        const val MAX_NAME_LENGTH = 100
-
         fun of(group: PhotoFolderGroup, name: String) = PhotoFolder(
             groupId = group.requiredId,
             galleryId = group.galleryId,
-            name = normalizeName(name),
+            name = FolderName.normalize(name),
         )
-
-        fun normalizeName(name: String): String {
-            val trimmed = name.trim()
-            if (trimmed.isEmpty() || trimmed.length > MAX_NAME_LENGTH) {
-                throw FolderException(FolderErrorCode.INVALID_FOLDER_NAME)
-            }
-            return trimmed
-        }
     }
 }

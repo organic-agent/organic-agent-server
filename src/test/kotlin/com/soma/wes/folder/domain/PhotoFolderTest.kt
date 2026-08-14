@@ -9,7 +9,7 @@ class PhotoFolderTest {
 
     @Test
     fun `이름의 앞뒤 공백을 떼어낸다`() {
-        val folder = PhotoFolder(groupId = 1L, galleryId = 1L, name = PhotoFolder.normalizeName("  본식 - 신부 단독  "))
+        val folder = PhotoFolder(groupId = 1L, galleryId = 1L, name = FolderName.normalize("  본식 - 신부 단독  "))
 
         assertEquals("본식 - 신부 단독", folder.name)
     }
@@ -17,15 +17,15 @@ class PhotoFolderTest {
     @Test
     fun `공백뿐인 이름은 거부한다`() {
         // 화면에 그대로 나가는 값이라, 통과시키면 사용자에게는 이름 없는 폴더로 보인다.
-        assertFailsWith<FolderException> { PhotoFolder.normalizeName("   ") }
+        assertFailsWith<FolderException> { FolderName.normalize("   ") }
     }
 
     @Test
     fun `컬럼 길이를 넘는 이름은 거부한다`() {
         // DB가 자르거나 거절하기 전에 도메인에서 막는다. 여기서 놓치면 원인이 제약 위반으로만 드러난다.
-        val tooLong = "가".repeat(PhotoFolder.MAX_NAME_LENGTH + 1)
+        val tooLong = "가".repeat(FolderName.MAX_LENGTH + 1)
 
-        assertFailsWith<FolderException> { PhotoFolder.normalizeName(tooLong) }
+        assertFailsWith<FolderException> { FolderName.normalize(tooLong) }
     }
 
     @Test

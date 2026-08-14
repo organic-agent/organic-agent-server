@@ -18,7 +18,7 @@ class PhotoFolderGroupTest {
     fun `공백뿐이거나 길이를 넘는 이름은 거부한다`() {
         assertFailsWith<FolderException> { PhotoFolderGroup.of(galleryId = 1L, name = "   ") }
         assertFailsWith<FolderException> {
-            PhotoFolderGroup.of(galleryId = 1L, name = "가".repeat(PhotoFolderGroup.MAX_NAME_LENGTH + 1))
+            PhotoFolderGroup.of(galleryId = 1L, name = "가".repeat(FolderName.MAX_LENGTH + 1))
         }
     }
 
