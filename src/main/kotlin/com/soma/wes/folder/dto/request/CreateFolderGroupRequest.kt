@@ -23,11 +23,11 @@ data class CreateFolderGroupRequest(
         description = "함께 만들 자식폴더들. 클러스터 응답의 묶음을 그대로 옮겨오면 된다. " +
             "고정 시점의 목록이 그대로 저장되므로, 나중에 임계값을 바꿔도 폴더는 달라지지 않는다.",
     )
-    val folders: List<FolderSeed> = emptyList(),
+    val folders: List<FolderRequest> = emptyList(),
 ) {
 
     @Schema(description = "함께 만들 자식폴더 하나")
-    data class FolderSeed(
+    data class FolderRequest(
 
         @field:NotBlank
         @field:Size(max = FolderName.MAX_LENGTH)

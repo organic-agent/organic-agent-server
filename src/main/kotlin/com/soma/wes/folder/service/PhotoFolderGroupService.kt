@@ -34,21 +34,18 @@ class PhotoFolderGroupService(
     /**
      * 부모폴더를 만든다. 클러스터링 결과를 고정할 때는 folders에 묶음별 자식폴더가 함께 오고,
      * 빈 부모만 만들 때는 folders가 비어 있다.
-     *
-     * 검증을 저장보다 먼저 끝낸다 — 자식 하나가 거절될 요청이 이름뿐인 빈 부모를 남기면 안 된다.
-     * 새로 만든 부모는 커밋 전까지 아무도 볼 수 없으므로 부모 행 잠금은 필요 없다.
      */
     @Transactional
     fun create(galleryId: Long, userId: Long, request: CreateFolderGroupRequest): PhotoFolderGroupResponse {
         galleryAccessPolicy.requirePhotographerOrCouple(galleryId, userId)
 
-        val photosBySeed = loadSeedPhotos(galleryId, request.folders)
+        val photosByFolder = loadFolderPhotos(galleryId, request.folders)
 
         val group = photoFolderGroupRepository.save(PhotoFolderGroup.of(galleryId, request.name))
-        request.folders.forEachIndexed { index, seed ->
-            val folder = photoFolderRepository.save(PhotoFolder.of(group, seed.name))
+        request.folders.forEachIndexed { index, folderRequest ->
+            val folder = photoFolderRepository.save(PhotoFolder.of(group, folderRequest.name))
             photoFolderItemRepository.saveAll(
-                photosBySeed[index].map {
+                photosByFolder[index].map {
                     PhotoFolderItem(
                         groupId = group.requiredId,
                         folderId = folder.requiredId,
@@ -63,19 +60,16 @@ class PhotoFolderGroupService(
 
     /**
      * 자식폴더별 사진을 검증해 요청과 같은 순서로 돌려준다. [create]가 쓴다.
-     *
-     * 묶음 간 중복을 여기서 잡는다. "같은 부모 아래 사진 중복 금지"는 DB 유니크가 마지막으로
-     * 막지만, 그때는 요청 전체가 500으로 실패한다 — 사용자에게는 409로 이유를 말해야 한다.
      */
-    private fun loadSeedPhotos(
+    private fun loadFolderPhotos(
         galleryId: Long,
-        seeds: List<CreateFolderGroupRequest.FolderSeed>,
+        folders: List<CreateFolderGroupRequest.FolderRequest>,
     ): List<List<Photo>> {
-        val allIds = seeds.flatMap { it.photoIds }
+        val allIds = folders.flatMap { it.photoIds }
         if (allIds.size != allIds.toSet().size) {
             throw FolderException(FolderErrorCode.DUPLICATE_PHOTO_IN_GROUP)
         }
-        return seeds.map { folderPhotoLoader.loadPhotosIn(galleryId, it.photoIds) }
+        return folders.map { folderPhotoLoader.loadPhotosIn(galleryId, it.photoIds) }
     }
 
     @Transactional(readOnly = true)
@@ -122,6 +116,17 @@ class PhotoFolderGroupService(
         return responseOf(group)
     }
 
+    /** [create]·[get]·[rename]이 쓴다. [list]는 여러 부모의 요약을 한 번에 만든다. */
+    private fun responseOf(group: PhotoFolderGroup): PhotoFolderGroupResponse {
+        val folders = photoFolderRepository.findAllByGroupIdOrderByIdAsc(group.requiredId)
+        val summaries = folderViewAssembler.summariesByFolderId(folders)
+
+        return PhotoFolderGroupResponse.of(
+            group = group,
+            folders = folders.mapNotNull { summaries[it.requiredId] },
+        )
+    }
+
     /**
      * 부모를 지우면 자식폴더와 항목까지 함께 사라진다. DB cascade가 최종 안전망이지만,
      * 이 경로는 지운 수를 확인할 수 있게 명시적으로 지운다.
@@ -140,15 +145,4 @@ class PhotoFolderGroupService(
     private fun findGroup(galleryId: Long, groupId: Long): PhotoFolderGroup =
         photoFolderGroupRepository.findByIdAndGalleryId(groupId, galleryId)
             ?: throw FolderException(FolderErrorCode.GROUP_NOT_FOUND)
-
-    /** [create]·[get]·[rename]이 쓴다. [list]는 여러 부모의 요약을 한 번에 만든다. */
-    private fun responseOf(group: PhotoFolderGroup): PhotoFolderGroupResponse {
-        val folders = photoFolderRepository.findAllByGroupIdOrderByIdAsc(group.requiredId)
-        val summaries = folderViewAssembler.summariesByFolderId(folders)
-
-        return PhotoFolderGroupResponse.of(
-            group = group,
-            folders = folders.mapNotNull { summaries[it.requiredId] },
-        )
-    }
 }
