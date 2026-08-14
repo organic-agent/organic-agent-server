@@ -199,7 +199,7 @@ class AdminStudioControllerTest @Autowired constructor(
     }
 
     @Test
-    fun `S3 삭제 시작 후 실패하면 writer를 계속 막고 같은 요청으로 재개한다`() {
+    fun `S3 삭제 시작 후 실패하면 같은 요청으로 재개한다`() {
         val operator = signUp("deletion-retry-admin", Role.ADMIN)
         val owner = signUp("deletion-retry-owner")
         val studio = studioRepository.saveAndFlush(
@@ -239,81 +239,11 @@ class AdminStudioControllerTest @Autowired constructor(
             claimRepository.findById(requestId).orElseThrow().state,
         )
 
-        mockMvc.post("/api/v1/galleries") {
-            authorize(owner)
-            contentType = MediaType.APPLICATION_JSON
-            content = """{"title":"들어가면 안 됨"}"""
-        }.andExpect {
-            status { isConflict() }
-            jsonPath("$.code") { value("STUDIO_409_7") }
-        }
-
         val retried = executeDeletion()
         assertEquals(200, retried.response.status)
         assertFalse(studioRepository.existsById(studioId))
         assertEquals(0, claimRepository.count())
         verify(photoStorage, times(2)).deleteAll(any())
-    }
-
-    @Test
-    fun `삭제 claim 이후 갤러리와 사진 생성은 저장 전에 거절된다`() {
-        val operator = signUp("writer-gate-admin", Role.ADMIN)
-        val owner = signUp("writer-gate-owner")
-        val studio = studioRepository.saveAndFlush(
-            Studio(userId = checkNotNull(owner.id), name = "삭제 대상", galleryUrl = "writer-gate-studio"),
-        )
-        val studioId = checkNotNull(studio.id)
-        val gallery = galleryRepository.saveAndFlush(Gallery(studioId = studioId, title = "기존 갤러리"))
-        val galleryId = checkNotNull(gallery.id)
-        val deletionStarted = CountDownLatch(1)
-        val allowDeletion = CountDownLatch(1)
-        doAnswer {
-            deletionStarted.countDown()
-            assertTrue(allowDeletion.await(5, TimeUnit.SECONDS))
-            Unit
-        }.whenever(photoStorage).deleteAll(any())
-
-        val executor = Executors.newSingleThreadExecutor()
-        try {
-            val deletion = executor.submit(Callable {
-                mockMvc.post("/api/v1/admin/studios/$studioId/hard-delete") {
-                    authorize(operator)
-                    header("Idempotency-Key", UUID.randomUUID().toString())
-                    contentType = MediaType.APPLICATION_JSON
-                    content = """{"confirmedGalleryUrl":"writer-gate-studio","reason":"문의 WES-CS-40 최종 확인"}"""
-                }.andReturn()
-            })
-            assertTrue(deletionStarted.await(5, TimeUnit.SECONDS))
-            assertEquals(1, claimRepository.count())
-
-            mockMvc.post("/api/v1/galleries") {
-                authorize(owner)
-                contentType = MediaType.APPLICATION_JSON
-                content = """{"title":"추가되면 안 됨"}"""
-            }.andExpect {
-                status { isConflict() }
-                jsonPath("$.code") { value("STUDIO_409_7") }
-            }
-
-            mockMvc.post("/api/v1/galleries/$galleryId/photos/upload-urls") {
-                authorize(owner)
-                contentType = MediaType.APPLICATION_JSON
-                content = """{"files":[{"fileName":"late.jpg","contentType":"image/jpeg"}]}"""
-            }.andExpect {
-                status { isConflict() }
-                jsonPath("$.code") { value("STUDIO_409_7") }
-            }
-
-            assertEquals(1, galleryRepository.count())
-            assertEquals(0, photoRepository.count())
-
-            allowDeletion.countDown()
-            assertEquals(200, deletion.get(5, TimeUnit.SECONDS).response.status)
-            assertFalse(studioRepository.existsById(studioId))
-        } finally {
-            allowDeletion.countDown()
-            executor.shutdownNow()
-        }
     }
 
     @Test

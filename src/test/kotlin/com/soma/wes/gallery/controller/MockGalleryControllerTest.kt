@@ -13,7 +13,7 @@ import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.service.PhotoStorage
-import com.soma.wes.photo.service.PresignedUpload
+import com.soma.wes.photo.dto.PresignedUploadDto
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.domain.StudioDeletionClaim
 import com.soma.wes.studio.repository.StudioDeletionClaimRepository
@@ -339,8 +339,8 @@ class RecordingPhotoStorage : PhotoStorage {
         return "galleries/$galleryId/${UUID.randomUUID()}$suffix"
     }
 
-    override fun presignUpload(key: String, contentType: String): PresignedUpload =
-        PresignedUpload(url = "https://storage.test/upload/$key", expiresAt = Instant.now().plusSeconds(1800))
+    override fun presignUpload(key: String, contentType: String): PresignedUploadDto =
+        PresignedUploadDto(url = "https://storage.test/upload/$key", expiresAt = Instant.now().plusSeconds(1800))
 
     override fun presignView(key: String): String = "https://storage.test/view/$key"
 
