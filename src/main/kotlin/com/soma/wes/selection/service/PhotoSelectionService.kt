@@ -25,15 +25,6 @@ import java.time.ZonedDateTime
 
 /**
  * 예비 부부가 최종적으로 고른 사진을 담는 선택 앨범.
- *
- * 역할이 경로마다 다르다. 고르고 제출하는 것은 부부의 일이라 [GalleryAccessPolicy.requireCouple]을
- * 지나고(작가가 고객 대신 고를 수 없다), 제출을 되돌리는 것은 작가만 한다 — 부부가 스스로
- * 되돌릴 수 있으면 제출이라는 잠금이 아무것도 잠그지 않는다. 조회는 마감된 뒤에도 양쪽 모두
- * 봐야 하므로 [GalleryAccessPolicy.requireViewer] 기준이다.
- *
- * 고치는 경로는 전부 갤러리 행을 잠그고 시작한다([GalleryRepository.requireWithLockById]).
- * 신랑과 신부가 동시에 담는 일이 실제로 일어나는데, 잠그지 않으면 둘 다 "아직 한 장 남았다"를 읽어 계약 장수를 넘기고,
- * 앨범 행이 아직 없을 때는 "없으면 만든다"가 겹쳐 한쪽이 유니크 제약에 걸려 실패한다.
  */
 @Service
 class PhotoSelectionService(
@@ -49,9 +40,6 @@ class PhotoSelectionService(
 
     /**
      * 앨범을 연다. 마감 뒤에도, 제출 뒤에도 보인다.
-     *
-     * 아직 한 장도 담지 않았다면 앨범 행이 없다. 그때 행을 만들지 않고 빈 앨범으로 응답한다 —
-     * 조회가 쓰기를 하면 갤러리를 열어보기만 한 사람 수만큼 빈 앨범이 쌓인다.
      */
     @Transactional(readOnly = true)
     fun get(galleryId: Long, userId: Long): PhotoSelectionResponse {
@@ -62,9 +50,6 @@ class PhotoSelectionService(
 
     /**
      * 고른 사진을 담는다.
-     *
-     * 확인이 저장보다 먼저다. 들어갈 수 있는 만큼만 담고 나머지를 버리면 화면에는 성공으로
-     * 보이고, 어느 사진이 빠졌는지는 아무도 모른다.
      */
     @Transactional
     fun select(galleryId: Long, userId: Long, request: SelectPhotosRequest): PhotoSelectionResponse {
@@ -93,10 +78,6 @@ class PhotoSelectionService(
 
     /**
      * 여러 장을 한 번에 뺀다.
-     *
-     * 앨범에 없는 id가 섞여 있어도 막지 않는다. 여러 장을 골라 빼는 화면에서 그중 하나가 이미
-     * 빠져 있는 것은 사용자의 실수가 아니라 화면이 조금 낡은 것뿐이고, 통째로 거절하면 사용자는
-     * 어느 것이 문제인지 모른 채 다시 골라야 한다. 한 장을 지정해 빼는 [deselectPhoto]는 반대다.
      */
     @Transactional
     fun deselect(galleryId: Long, userId: Long, request: DeselectPhotosRequest): PhotoSelectionResponse {
@@ -117,9 +98,6 @@ class PhotoSelectionService(
 
     /**
      * 한 장을 빼낸다. 앨범에 없으면 404다.
-     *
-     * 조용히 성공시키면 프론트는 지운 줄 알고 화면에서 지우는데, 실제로는 다른 갤러리의
-     * 사진이었을 수 있다.
      */
     @Transactional
     fun deselectPhoto(galleryId: Long, photoId: Long, userId: Long) {
@@ -137,9 +115,6 @@ class PhotoSelectionService(
 
     /**
      * 부부가 고르기를 끝내고 작가에게 넘긴다.
-     *
-     * 계약 장수에 못 미쳐도 받는다 — 이유는 [PhotoSelection.submit]에 적어 두었다.
-     * 한 장도 담지 않아 앨범 행조차 없다면 그것은 덜 고른 것이 아니라 고르지 않은 것이다.
      */
     @Transactional
     fun submit(galleryId: Long, userId: Long): PhotoSelectionResponse {
@@ -159,9 +134,6 @@ class PhotoSelectionService(
 
     /**
      * 제출을 되돌려 부부가 다시 고를 수 있게 한다. 담당 작가만 할 수 있다.
-     *
-     * 부부가 스스로 되돌릴 수 있으면 제출이라는 잠금이 아무것도 잠그지 않는다. 되돌릴지는
-     * 이미 보정에 들어갔을 수도 있는 작가가 판단할 일이다.
      */
     @Transactional
     fun withdraw(galleryId: Long, userId: Long): PhotoSelectionResponse {
@@ -182,9 +154,6 @@ class PhotoSelectionService(
 
     /**
      * 담을 수 있는 사진인지 확인하고 돌려준다.
-     *
-     * 갤러리 권한만 보고 사진 id를 그대로 믿으면, 자기 갤러리의 앨범으로 남의 사진을 끌어와
-     * 서명 URL까지 받아낼 수 있다.
      */
     private fun loadSelectablePhotos(galleryId: Long, photoIds: List<Long>): List<Photo> {
         // 빈 목록을 통과시키면 아무 일도 하지 않고 성공한다. 200을 받은 화면은 담긴 줄 안다.
@@ -209,8 +178,6 @@ class PhotoSelectionService(
 
     /**
      * `selection`이 null이면 아직 앨범 행이 없는 갤러리다 — 빈 앨범으로 응답한다.
-     *
-     * [submit]만 사진 목록을 직접 넘긴다. 제출 장수를 세면서 이미 읽어둔 것을 다시 읽지 않는다.
      */
     private fun responseOf(
         gallery: Gallery,
@@ -225,9 +192,6 @@ class PhotoSelectionService(
 
     /**
      * 앨범에 담긴 사진을 노출 순서대로 읽는다.
-     *
-     * 사진이 지워졌다면 그 행은 자연히 빠진다 — 항목이 id만 들고 있어 존재 여부는 읽는 시점에
-     * 확인된다. [com.soma.wes.folder.service.PhotoFolderService]와 같은 방식이다.
      */
     private fun loadSelectedPhotos(selection: PhotoSelection?): List<Photo> {
         if (selection == null) {
@@ -239,11 +203,6 @@ class PhotoSelectionService(
             return emptyList()
         }
 
-        return photoRepository.findAllByGalleryIdAndIdIn(selection.galleryId, photoIds).sortedWith(PHOTO_ORDER)
-    }
-
-    companion object {
-        /** 화면 순서는 갤러리에서 정한 노출 순서를 따른다. 같으면 id로 한 번 더 갈라 흔들리지 않게 한다. */
-        private val PHOTO_ORDER = compareBy<Photo>({ it.displayOrder }, { it.requiredId })
+        return photoRepository.findAllByGalleryIdAndIdIn(selection.galleryId, photoIds).sortedWith(Photo.DISPLAY_ORDER)
     }
 }

@@ -5,9 +5,13 @@ import com.soma.wes.photo.dto.response.PhotoResponse
 import io.swagger.v3.oas.annotations.media.Schema
 import java.time.ZonedDateTime
 
-@Schema(description = "폴더 하나와 그 안의 사진 전부")
+@Schema(description = "자식폴더 하나와 그 안의 사진 전부")
 data class PhotoFolderDetailResponse(
     val folderId: Long,
+
+    @field:Schema(description = "이 폴더가 속한 부모폴더 id")
+    val groupId: Long,
+
     val name: String,
 
     @field:Schema(description = "폴더에 든 사진. 갤러리에서 정한 노출 순서를 따른다")
@@ -24,7 +28,8 @@ data class PhotoFolderDetailResponse(
         fun of(folder: PhotoFolder, photos: List<PhotoResponse>, viewUrlTtlSeconds: Long) =
             PhotoFolderDetailResponse(
                 folderId = folder.requiredId,
-                name = folder.name,
+                groupId = folder.groupId,
+                name = folder.name.value,
                 photos = photos,
                 viewUrlTtlSeconds = viewUrlTtlSeconds,
                 createdAt = folder.createdAt,

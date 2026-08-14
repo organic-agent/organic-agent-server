@@ -5,9 +5,13 @@ import com.soma.wes.photo.dto.response.PhotoResponse
 import io.swagger.v3.oas.annotations.media.Schema
 import java.time.ZonedDateTime
 
-@Schema(description = "폴더 하나. 목록에서는 사진 전부 대신 대표 한 장과 개수만 온다")
+@Schema(description = "자식폴더 하나. 목록에서는 사진 전부 대신 대표 한 장과 개수만 온다")
 data class PhotoFolderResponse(
     val folderId: Long,
+
+    @field:Schema(description = "이 폴더가 속한 부모폴더 id")
+    val groupId: Long,
+
     val name: String,
 
     @field:Schema(description = "폴더에 든 사진 수. 삭제된 사진은 세지 않는다")
@@ -26,7 +30,8 @@ data class PhotoFolderResponse(
     companion object {
         fun of(folder: PhotoFolder, photoCount: Long, coverPhoto: PhotoResponse?) = PhotoFolderResponse(
             folderId = folder.requiredId,
-            name = folder.name,
+            groupId = folder.groupId,
+            name = folder.name.value,
             photoCount = photoCount,
             coverPhoto = coverPhoto,
             createdAt = folder.createdAt,

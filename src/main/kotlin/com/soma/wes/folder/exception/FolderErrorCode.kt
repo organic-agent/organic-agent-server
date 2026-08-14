@@ -33,6 +33,18 @@ enum class FolderErrorCode(
 
     FOLDER_NOT_FOUND(HttpStatus.NOT_FOUND, "FOLDER_404_1", "존재하지 않는 폴더입니다."),
 
-    /** 폴더에 들어 있지 않은 사진을 빼려는 경우. */
+    /** 폴더에 들어 있지 않은 사진을 빼거나 옮기려는 경우. */
     PHOTO_NOT_IN_FOLDER(HttpStatus.NOT_FOUND, "FOLDER_404_2", "폴더에 없는 사진입니다."),
+
+    GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "FOLDER_404_3", "존재하지 않는 부모 폴더입니다."),
+
+    /**
+     * 부모폴더 아래 어딘가에 이미 든 사진을 다시 담으려는 경우. 전체를 거절한다(409).
+     *
+     * 같은 부모 안에서 사진은 한 자식에만 속하므로, 중복 요청은 그 사진이 이미 다른 자식에
+     * 있다는 뜻이고 대개 호출한 화면이 낡았다는 신호다. 몇 장만 조용히 건너뛰면 성공처럼
+     * 보이는데 무엇이 왜 빠졌는지 아무도 말할 수 없다 — 선택 앨범이 초과·중복을 통째로
+     * 거절하는 것과 같은 이유다.
+     */
+    DUPLICATE_PHOTO_IN_GROUP(HttpStatus.CONFLICT, "FOLDER_409_1", "이미 같은 부모 폴더에 담긴 사진입니다."),
 }

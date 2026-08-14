@@ -6,34 +6,37 @@ import jakarta.persistence.Entity
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
+import jakarta.persistence.Index
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
 
 /**
- * 폴더에 담긴 사진 한 장.
+ * 자식폴더에 담긴 사진 한 장.
  *
- * 사진을 `@ManyToOne`으로 잡지 않고 id만 든다. `open-in-view`가 false라 연관을 걸면 서비스
- * 트랜잭션 밖에서 지연 로딩이 터지고, 폴더를 읽을 때 필요한 것은 사진 목록을 한 번에 가져오는
- * 질의 하나뿐이라 연관이 주는 것이 없다.
- *
- * 담긴 순서를 따로 저장하지 않는다. 화면 순서는 갤러리에서 정한 `displayOrder`를 그대로 따르는
- * 것이 자연스럽고, 폴더마다 순서를 따로 두면 원본 정렬을 바꿨을 때 둘이 어긋난다.
+ * groupId는 folderId로도 알 수 있는 값이지만 행에 함께 든다 — "같은 부모 아래 사진 중복
+ * 금지"의 단위가 부모라서, 그 유니크 제약을 DB가 지키려면 부모 id가 이 행에 있어야 한다.
+ * 자식폴더는 부모를 옮겨 다니지 않으므로 두 값이 어긋날 일은 없다.
  */
 @Entity
-// folder_id 단독 조회는 아래 유니크 제약이 만드는 인덱스가 받는다(선두 컬럼이 folder_id다).
-// 따로 인덱스를 더 두면 쓰기 비용만 늘어난다.
 @Table(
     name = "photo_folder_items",
     uniqueConstraints = [
         UniqueConstraint(
-            name = "uk_photo_folder_items_folder_id_photo_id",
-            columnNames = ["folder_id", "photo_id"],
+            name = "uk_photo_folder_items_group_id_photo_id",
+            columnNames = ["group_id", "photo_id"],
         ),
+    ],
+    indexes = [
+        Index(name = "idx_photo_folder_items_folder_id", columnList = "folder_id"),
     ],
 )
 class PhotoFolderItem(
 
-    @Column(name = "folder_id", nullable = false, updatable = false)
+    @Column(name = "group_id", nullable = false, updatable = false)
+    val groupId: Long,
+
+    /** 같은 부모의 다른 자식으로 사진을 옮길 때 이 값만 바뀐다. 벌크 UPDATE로 처리한다. */
+    @Column(name = "folder_id", nullable = false)
     val folderId: Long,
 
     @Column(name = "photo_id", nullable = false, updatable = false)

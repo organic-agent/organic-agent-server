@@ -146,6 +146,13 @@ class Photo(
         const val EMBEDDING_DIMENSION = 768
 
         /**
+         * 화면 순서는 갤러리에서 정한 노출 순서를 따른다. 같으면 id로 한 번 더 갈라, 같은
+         * 배치로 발급돼 displayOrder가 겹치는 사진들이 화면마다 자리를 바꾸지 않게 한다.
+         * 메모리에서 사진을 정렬하는 모든 화면(폴더·선택 앨범)이 이 하나를 쓴다.
+         */
+        val DISPLAY_ORDER = compareBy<Photo>({ it.displayOrder }, { it.requiredId })
+
+        /**
          * 임베딩까지 끝난 사진을 다른 갤러리로 복제한 행을 만든다. Mock 갤러리가 템플릿
          * 갤러리의 사진을 가져올 때 쓴다.
          *

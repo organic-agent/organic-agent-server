@@ -4,6 +4,7 @@ import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.folder.controller.docs.PhotoFolderControllerDocs
 import com.soma.wes.folder.dto.request.AddPhotosRequest
 import com.soma.wes.folder.dto.request.CreatePhotoFolderRequest
+import com.soma.wes.folder.dto.request.MovePhotosRequest
 import com.soma.wes.folder.dto.request.RenamePhotoFolderRequest
 import com.soma.wes.folder.dto.response.PhotoFolderDetailResponse
 import com.soma.wes.folder.dto.response.PhotoFolderResponse
@@ -23,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController
 
 
 @RestController
-@RequestMapping("/api/v1/galleries/{galleryId}/photo-folders")
+@RequestMapping("/api/v1/galleries/{galleryId}/folder-groups/{groupId}/folders")
 class PhotoFolderController(
     private val photoFolderService: PhotoFolderService,
 ) : PhotoFolderControllerDocs {
@@ -32,31 +33,23 @@ class PhotoFolderController(
     override fun create(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
+        @PathVariable groupId: Long,
         @Valid @RequestBody request: CreatePhotoFolderRequest,
     ): ResponseEntity<PhotoFolderDetailResponse> {
-        val result = photoFolderService.create(galleryId, loginUser.id, request)
+        val result = photoFolderService.create(galleryId, groupId, loginUser.id, request)
         val status = HttpStatus.CREATED
 
         return ResponseEntity.status(status).body(result)
-    }
-
-    @GetMapping
-    override fun list(
-        @AuthenticationPrincipal loginUser: LoginUser,
-        @PathVariable galleryId: Long,
-    ): ResponseEntity<List<PhotoFolderResponse>> {
-        val result = photoFolderService.list(galleryId, loginUser.id)
-
-        return ResponseEntity.ok(result)
     }
 
     @GetMapping("/{folderId}")
     override fun get(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
+        @PathVariable groupId: Long,
         @PathVariable folderId: Long,
     ): ResponseEntity<PhotoFolderDetailResponse> {
-        val result = photoFolderService.get(galleryId, folderId, loginUser.id)
+        val result = photoFolderService.get(galleryId, groupId, folderId, loginUser.id)
 
         return ResponseEntity.ok(result)
     }
@@ -65,10 +58,11 @@ class PhotoFolderController(
     override fun rename(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
+        @PathVariable groupId: Long,
         @PathVariable folderId: Long,
         @Valid @RequestBody request: RenamePhotoFolderRequest,
     ): ResponseEntity<PhotoFolderResponse> {
-        val result = photoFolderService.rename(galleryId, folderId, loginUser.id, request)
+        val result = photoFolderService.rename(galleryId, groupId, folderId, loginUser.id, request)
 
         return ResponseEntity.ok(result)
     }
@@ -77,9 +71,10 @@ class PhotoFolderController(
     override fun delete(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
+        @PathVariable groupId: Long,
         @PathVariable folderId: Long,
     ): ResponseEntity<Unit> {
-        photoFolderService.delete(galleryId, folderId, loginUser.id)
+        photoFolderService.delete(galleryId, groupId, folderId, loginUser.id)
         val status = HttpStatus.NO_CONTENT
 
         return ResponseEntity.status(status).build()
@@ -89,10 +84,11 @@ class PhotoFolderController(
     override fun addPhotos(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
+        @PathVariable groupId: Long,
         @PathVariable folderId: Long,
         @Valid @RequestBody request: AddPhotosRequest,
     ): ResponseEntity<PhotoFolderDetailResponse> {
-        val result = photoFolderService.addPhotos(galleryId, folderId, loginUser.id, request)
+        val result = photoFolderService.addPhotos(galleryId, groupId, folderId, loginUser.id, request)
 
         return ResponseEntity.ok(result)
     }
@@ -101,12 +97,26 @@ class PhotoFolderController(
     override fun removePhoto(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
+        @PathVariable groupId: Long,
         @PathVariable folderId: Long,
         @PathVariable photoId: Long,
     ): ResponseEntity<Unit> {
-        photoFolderService.removePhoto(galleryId, folderId, photoId, loginUser.id)
+        photoFolderService.removePhoto(galleryId, groupId, folderId, photoId, loginUser.id)
         val status = HttpStatus.NO_CONTENT
 
         return ResponseEntity.status(status).build()
+    }
+
+    @PostMapping("/{folderId}/photos/move")
+    override fun movePhotos(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @PathVariable groupId: Long,
+        @PathVariable folderId: Long,
+        @Valid @RequestBody request: MovePhotosRequest,
+    ): ResponseEntity<PhotoFolderDetailResponse> {
+        val result = photoFolderService.movePhotos(galleryId, groupId, folderId, loginUser.id, request)
+
+        return ResponseEntity.ok(result)
     }
 }

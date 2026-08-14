@@ -11,7 +11,9 @@ import com.soma.wes.collab.repository.CollabPhotoVoteRepository
 import com.soma.wes.collab.repository.CollabSessionRepository
 import com.soma.wes.collab.support.GuestTokenHeader
 import com.soma.wes.folder.domain.PhotoFolder
+import com.soma.wes.folder.domain.PhotoFolderGroup
 import com.soma.wes.folder.domain.PhotoFolderItem
+import com.soma.wes.folder.repository.PhotoFolderGroupRepository
 import com.soma.wes.folder.repository.PhotoFolderItemRepository
 import com.soma.wes.folder.repository.PhotoFolderRepository
 import com.soma.wes.gallery.domain.Gallery
@@ -68,6 +70,7 @@ class CollabIntegrationTest @Autowired constructor(
     private val galleryMemberRepository: GalleryMemberRepository,
     private val photoRepository: PhotoRepository,
     private val photoRatingRepository: PhotoRatingRepository,
+    private val photoFolderGroupRepository: PhotoFolderGroupRepository,
     private val photoFolderRepository: PhotoFolderRepository,
     private val photoFolderItemRepository: PhotoFolderItemRepository,
     private val collabSessionRepository: CollabSessionRepository,
@@ -89,6 +92,7 @@ class CollabIntegrationTest @Autowired constructor(
         collabSessionRepository.deleteAllInBatch()
         photoFolderItemRepository.deleteAllInBatch()
         photoFolderRepository.deleteAllInBatch()
+        photoFolderGroupRepository.deleteAllInBatch()
         photoRatingRepository.deleteAllInBatch()
         photoRepository.deleteAllInBatch()
         galleryMemberRepository.deleteAllInBatch()
@@ -867,9 +871,12 @@ class CollabIntegrationTest @Autowired constructor(
 
     /** 부부가 확정한 사진 묶음. 협업 세션은 이것을 복사해 채운다. */
     private fun saveFolder(fixture: Fixture, name: String, photoIds: List<Long>): Long {
-        val folder = photoFolderRepository.save(PhotoFolder.of(fixture.galleryId, name))
+        val group = photoFolderGroupRepository.save(PhotoFolderGroup.of(fixture.galleryId, name))
+        val folder = photoFolderRepository.save(PhotoFolder.of(group, name))
         photoFolderItemRepository.saveAll(
-            photoIds.map { PhotoFolderItem(folderId = folder.requiredId, photoId = it) },
+            photoIds.map {
+                PhotoFolderItem(groupId = group.requiredId, folderId = folder.requiredId, photoId = it)
+            },
         )
         return folder.requiredId
     }
