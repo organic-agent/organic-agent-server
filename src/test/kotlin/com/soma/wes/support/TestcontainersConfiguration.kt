@@ -1,4 +1,4 @@
-package com.soma.wes
+package com.soma.wes.support
 
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
