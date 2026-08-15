@@ -6,6 +6,8 @@ import com.soma.wes.studio.dto.request.CreateStudioRequest
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
+import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.hibernate.exception.ConstraintViolationException
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
@@ -18,8 +20,6 @@ import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.test.assertIs
-import kotlin.test.assertSame
 
 /**
  * 사전 조회(`existsBy*`)를 통과한 뒤 DB 유니크 제약에 걸리는 경로를 다룬다.
@@ -31,6 +31,7 @@ class StudioServiceConstraintTest {
 
     @Test
     fun `동시 생성이 사전 조회를 함께 통과하면 갤러리 주소 경쟁은 DB 제약이 막는다`() {
+        // given
         val studioRepository = mock<StudioRepository>()
         val userRepository = mock<UserRepository>()
         val service = StudioService(studioRepository, userRepository)
@@ -57,6 +58,7 @@ class StudioServiceConstraintTest {
 
         val executor = Executors.newFixedThreadPool(2)
         try {
+            // when
             val results = listOf(1L, 2L).map { userId ->
                 executor.submit<Throwable?> {
                     try {
@@ -68,8 +70,10 @@ class StudioServiceConstraintTest {
                 }
             }.map { it.get(10, TimeUnit.SECONDS) }
 
+            // then
             // 한쪽만 실패한다. 중복 행이 생기지는 않는다는 것이 이 테스트의 요지다.
-            assertIs<DataIntegrityViolationException>(results.filterNotNull().single())
+            assertThat(results.filterNotNull().single())
+                .isInstanceOf(DataIntegrityViolationException::class.java)
         } finally {
             executor.shutdownNow()
         }
@@ -77,14 +81,15 @@ class StudioServiceConstraintTest {
 
     @Test
     fun `어떤 무결성 위반이든 도메인 예외로 바꾸지 않고 그대로 전파한다`() {
+        // when & then
         listOf("uk_studios_gallery_url", "uk_studios_user_id", "uk_unknown").forEach { constraintName ->
             val failure = duplicate(constraintName)
 
-            val thrown = kotlin.test.assertFailsWith<DataIntegrityViolationException> {
+            assertThatThrownBy {
                 serviceFailingWith(failure).create(1L, CreateStudioRequest("스튜디오", "studio-url", null))
-            }
-
-            assertSame(failure, thrown, "제약 $constraintName 이 그대로 올라와야 한다")
+            }.describedAs("제약 $constraintName 이 그대로 올라와야 한다")
+                .isInstanceOf(DataIntegrityViolationException::class.java)
+                .isSameAs(failure)
         }
     }
 

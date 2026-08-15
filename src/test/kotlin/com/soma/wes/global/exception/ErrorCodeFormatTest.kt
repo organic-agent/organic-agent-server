@@ -11,9 +11,8 @@ import com.soma.wes.selection.exception.SelectionErrorCode
 import com.soma.wes.studio.exception.StudioErrorCode
 import com.soma.wes.trash.exception.TrashErrorCode
 import com.soma.wes.user.exception.UserErrorCode
+import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 /**
  * [ErrorCode.code]가 `{도메인}_{HTTP상태}_{일련번호}` 규칙을 지키는지 강제한다.
@@ -36,10 +35,9 @@ class ErrorCodeFormatTest {
     @Test
     fun `코드는 도메인_상태_일련번호 형식이다`() {
         allErrorCodes.forEach { errorCode ->
-            assertTrue(
-                format.matches(errorCode.code),
-                "${errorCode.code}는 {도메인}_{HTTP상태}_{일련번호} 형식이 아니다(예: AUTH_401_2).",
-            )
+            assertThat(errorCode.code)
+                .describedAs("${errorCode.code}는 {도메인}_{HTTP상태}_{일련번호} 형식이 아니다(예: AUTH_401_2).")
+                .matches(format.pattern)
         }
     }
 
@@ -47,11 +45,9 @@ class ErrorCodeFormatTest {
     fun `코드의 상태 부분은 실제 응답 상태와 같다`() {
         allErrorCodes.forEach { errorCode ->
             val statusInCode = format.find(errorCode.code)?.groupValues?.get(2)?.toInt()
-            assertEquals(
-                errorCode.httpStatus.value(),
-                statusInCode,
-                "${errorCode.code}는 ${errorCode.httpStatus.value()}로 응답하면서 코드에는 다른 상태를 적고 있다.",
-            )
+            assertThat(statusInCode)
+                .describedAs("${errorCode.code}는 ${errorCode.httpStatus.value()}로 응답하면서 코드에는 다른 상태를 적고 있다.")
+                .isEqualTo(errorCode.httpStatus.value())
         }
     }
 
@@ -59,6 +55,6 @@ class ErrorCodeFormatTest {
     fun `코드는 서로 겹치지 않는다`() {
         // 클라이언트는 code 하나로 분기한다. 두 원인이 같은 코드를 쓰면 분기할 방법이 없다.
         val duplicates = allErrorCodes.groupBy { it.code }.filterValues { it.size > 1 }.keys
-        assertTrue(duplicates.isEmpty(), "중복된 에러 코드: $duplicates")
+        assertThat(duplicates).describedAs("중복된 에러 코드: $duplicates").isEmpty()
     }
 }

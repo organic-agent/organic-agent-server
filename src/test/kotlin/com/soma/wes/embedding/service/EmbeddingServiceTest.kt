@@ -4,11 +4,11 @@ import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.repository.PhotoRepository
+import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
-import kotlin.test.assertEquals
 
 class EmbeddingServiceTest {
 
@@ -19,14 +19,17 @@ class EmbeddingServiceTest {
 
     @Test
     fun `일반 실행은 PENDING을 제외한 미완료 임베딩 수를 반환한다`() {
+        // given
         stubAvailableInvoker()
         whenever(
             photoRepository.countByGalleryIdAndStatusNotAndEmbeddingIsNull(GALLERY_ID, PhotoStatus.PENDING),
         ).thenReturn(2)
 
+        // when
         val response = service.run(GALLERY_ID, USER_ID, force = false)
 
-        assertEquals(2, response.targets)
+        // then
+        assertThat(response.targets).isEqualTo(2)
         verify(photoRepository)
             .countByGalleryIdAndStatusNotAndEmbeddingIsNull(GALLERY_ID, PhotoStatus.PENDING)
         verify(embeddingInvoker).invoke(GALLERY_ID, false)
@@ -34,12 +37,15 @@ class EmbeddingServiceTest {
 
     @Test
     fun `force 실행도 PENDING을 제외한 업로드 완료 사진 수를 반환한다`() {
+        // given
         stubAvailableInvoker()
         whenever(photoRepository.countByGalleryIdAndStatusNot(GALLERY_ID, PhotoStatus.PENDING)).thenReturn(3)
 
+        // when
         val response = service.run(GALLERY_ID, USER_ID, force = true)
 
-        assertEquals(3, response.targets)
+        // then
+        assertThat(response.targets).isEqualTo(3)
         verify(photoRepository).countByGalleryIdAndStatusNot(GALLERY_ID, PhotoStatus.PENDING)
         verify(embeddingInvoker).invoke(GALLERY_ID, true)
     }

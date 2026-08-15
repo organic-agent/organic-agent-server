@@ -1,6 +1,5 @@
 package com.soma.wes.gallery.service
 
-import com.soma.wes.TestcontainersConfiguration
 import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryMember
@@ -13,12 +12,15 @@ import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.global.config.TimeConfig
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
+import com.soma.wes.support.TestcontainersConfiguration
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertNull
+import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
@@ -71,91 +73,120 @@ class GalleryMemberServiceTest @Autowired constructor(
     private fun join(galleryId: Long, userId: Long): Long =
         galleryMemberRepository.save(GalleryMember(galleryId = galleryId, userId = userId)).requiredId
 
-    @Test
-    fun `멤버 목록은 누구인지 알아볼 수 있게 준다`() {
-        // memberId만 주면 작가가 둘 중 누구를 내보내야 하는지 가릴 수 없다.
-        val galleryId = saveGallery()
-        join(galleryId, groomId)
+    @Nested
+    @DisplayName("멤버 목록을 볼 때")
+    inner class ListMembers {
 
-        val members = galleryMemberService.list(galleryId, photographerId).single()
+        @Test
+        fun `멤버 목록은 누구인지 알아볼 수 있게 준다`() {
+            // memberId만 주면 작가가 둘 중 누구를 내보내야 하는지 가릴 수 없다.
+            // given
+            val galleryId = saveGallery()
+            join(galleryId, groomId)
 
-        assertEquals(groomId, members.userId)
-        assertEquals("groom", members.nickname)
-        assertEquals("groom@example.com", members.email)
-    }
+            // when
+            val members = galleryMemberService.list(galleryId, photographerId).single()
 
-    @Test
-    fun `부부도 멤버 목록을 본다`() {
-        // 파트너가 들어왔는지 확인하는 화면이다.
-        val galleryId = saveGallery()
-        join(galleryId, groomId)
-        join(galleryId, brideId)
-
-        val members = galleryMemberService.list(galleryId, groomId)
-
-        assertEquals(setOf(groomId, brideId), members.map { it.userId }.toSet())
-    }
-
-    @Test
-    fun `담당 작가는 멤버를 내보낸다`() {
-        val galleryId = saveGallery()
-        val memberId = join(galleryId, groomId)
-
-        galleryMemberService.remove(galleryId, memberId, photographerId)
-
-        assertNull(galleryMemberRepository.findByGalleryIdAndUserId(galleryId, groomId))
-    }
-
-    @Test
-    fun `내보내면 자리가 비어 다른 사람이 들어올 수 있다`() {
-        // 링크가 엉뚱한 사람에게 갔을 때 되돌리는 것이 이 기능의 목적이다.
-        val galleryId = saveGallery()
-        val strangerMemberId = join(galleryId, saveUser("stranger"))
-        join(galleryId, groomId)
-
-        galleryMemberService.remove(galleryId, strangerMemberId, photographerId)
-
-        assertEquals(1, galleryMemberRepository.countByGalleryId(galleryId))
-    }
-
-    @Test
-    fun `부부는 서로를 내보낼 수 없다`() {
-        // 신랑이 신부를 지울 수 있으면 함께 고르라고 만든 갤러리가 아니게 된다.
-        val galleryId = saveGallery()
-        val brideMemberId = join(galleryId, brideId)
-        join(galleryId, groomId)
-
-        val exception = assertFailsWith<GalleryException> {
-            galleryMemberService.remove(galleryId, brideMemberId, groomId)
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(members.userId).isEqualTo(groomId)
+                softly.assertThat(members.nickname).isEqualTo("groom")
+                softly.assertThat(members.email).isEqualTo("groom@example.com")
+            }
         }
 
-        assertEquals(GalleryErrorCode.GALLERY_ACCESS_DENIED, exception.errorCode)
-        assertEquals(2, galleryMemberRepository.countByGalleryId(galleryId))
+        @Test
+        fun `부부도 멤버 목록을 본다`() {
+            // 파트너가 들어왔는지 확인하는 화면이다.
+            // given
+            val galleryId = saveGallery()
+            join(galleryId, groomId)
+            join(galleryId, brideId)
+
+            // when
+            val members = galleryMemberService.list(galleryId, groomId)
+
+            // then
+            assertThat(members.map { it.userId }.toSet()).isEqualTo(setOf(groomId, brideId))
+        }
     }
 
-    @Test
-    fun `다른 갤러리의 멤버는 내보낼 수 없다`() {
-        // 자기 갤러리 권한으로 남의 갤러리를 건드리지 못하게 한다.
-        val myGalleryId = saveGallery()
-        val otherGalleryId = saveGallery(saveUser("other-photographer"))
-        val otherMemberId = join(otherGalleryId, groomId)
+    @Nested
+    @DisplayName("멤버를 내보낼 때")
+    inner class Remove {
 
-        val exception = assertFailsWith<GalleryException> {
-            galleryMemberService.remove(myGalleryId, otherMemberId, photographerId)
+        @Test
+        fun `담당 작가는 멤버를 내보낸다`() {
+            // given
+            val galleryId = saveGallery()
+            val memberId = join(galleryId, groomId)
+
+            // when
+            galleryMemberService.remove(galleryId, memberId, photographerId)
+
+            // then
+            assertThat(galleryMemberRepository.findByGalleryIdAndUserId(galleryId, groomId)).isNull()
         }
 
-        assertEquals(GalleryErrorCode.MEMBER_NOT_FOUND, exception.errorCode)
-        assertEquals(1, galleryMemberRepository.countByGalleryId(otherGalleryId))
-    }
+        @Test
+        fun `내보내면 자리가 비어 다른 사람이 들어올 수 있다`() {
+            // 링크가 엉뚱한 사람에게 갔을 때 되돌리는 것이 이 기능의 목적이다.
+            // given
+            val galleryId = saveGallery()
+            val strangerMemberId = join(galleryId, saveUser("stranger"))
+            join(galleryId, groomId)
 
-    @Test
-    fun `없는 멤버를 내보내면 404다`() {
-        val galleryId = saveGallery()
+            // when
+            galleryMemberService.remove(galleryId, strangerMemberId, photographerId)
 
-        val exception = assertFailsWith<GalleryException> {
-            galleryMemberService.remove(galleryId, memberId = 999L, userId = photographerId)
+            // then
+            assertThat(galleryMemberRepository.countByGalleryId(galleryId)).isEqualTo(1L)
         }
 
-        assertEquals(GalleryErrorCode.MEMBER_NOT_FOUND, exception.errorCode)
+        @Test
+        fun `부부는 서로를 내보낼 수 없다`() {
+            // 신랑이 신부를 지울 수 있으면 함께 고르라고 만든 갤러리가 아니게 된다.
+            // given
+            val galleryId = saveGallery()
+            val brideMemberId = join(galleryId, brideId)
+            join(galleryId, groomId)
+
+            // when & then
+            assertThatThrownBy { galleryMemberService.remove(galleryId, brideMemberId, groomId) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+
+            assertThat(galleryMemberRepository.countByGalleryId(galleryId)).isEqualTo(2L)
+        }
+
+        @Test
+        fun `다른 갤러리의 멤버는 내보낼 수 없다`() {
+            // 자기 갤러리 권한으로 남의 갤러리를 건드리지 못하게 한다.
+            // given
+            val myGalleryId = saveGallery()
+            val otherGalleryId = saveGallery(saveUser("other-photographer"))
+            val otherMemberId = join(otherGalleryId, groomId)
+
+            // when & then
+            assertThatThrownBy { galleryMemberService.remove(myGalleryId, otherMemberId, photographerId) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.MEMBER_NOT_FOUND)
+
+            assertThat(galleryMemberRepository.countByGalleryId(otherGalleryId)).isEqualTo(1L)
+        }
+
+        @Test
+        fun `없는 멤버를 내보내면 404다`() {
+            // given
+            val galleryId = saveGallery()
+
+            // when & then
+            assertThatThrownBy { galleryMemberService.remove(galleryId, memberId = 999L, userId = photographerId) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.MEMBER_NOT_FOUND)
+        }
     }
 }
