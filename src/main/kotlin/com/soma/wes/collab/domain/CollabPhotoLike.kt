@@ -3,8 +3,6 @@ package com.soma.wes.collab.domain
 import com.soma.wes.global.BaseEntity
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
-import jakarta.persistence.EnumType
-import jakarta.persistence.Enumerated
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
@@ -13,30 +11,32 @@ import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
 
 
+/**
+ * 하객이 사진에 누른 좋아요. 행의 존재가 곧 좋아요라 값이 될 열이 따로 없다.
+ *
+ * (collab_photo_id, collab_guest_id) 유니크가 이 도메인의 전부다 — 같은 하객이 몇 번을
+ * 눌러도 행이 늘지 않아야 "좋아요 40"이 사람 40명으로 남는다.
+ */
 @Entity
 @Table(
-    name = "collab_photo_votes",
+    name = "collab_photo_likes",
     uniqueConstraints = [
         UniqueConstraint(
-            name = "uk_collab_photo_votes_photo_guest",
+            name = "uk_collab_photo_likes_photo_guest",
             columnNames = ["collab_photo_id", "collab_guest_id"],
         ),
     ],
     indexes = [
-        Index(name = "idx_collab_photo_votes_collab_photo_id", columnList = "collab_photo_id"),
+        Index(name = "idx_collab_photo_likes_collab_photo_id", columnList = "collab_photo_id"),
     ],
 )
-class CollabPhotoVote(
+class CollabPhotoLike(
 
     @Column(name = "collab_photo_id", nullable = false, updatable = false)
     val collabPhotoId: Long,
 
     @Column(name = "collab_guest_id", nullable = false, updatable = false)
     val collabGuestId: Long,
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    var reaction: CollabReaction,
 
 ) : BaseEntity() {
 
@@ -45,10 +45,5 @@ class CollabPhotoVote(
     val id: Long? = null
 
     val requiredId: Long
-        get() = checkNotNull(id) { "저장되지 않은 반응입니다." }
-
-    /** 같은 사진에 다시 반응하면 덮어쓴다. 행이 늘지 않는 것이 이 도메인의 전부다. */
-    fun changeReaction(reaction: CollabReaction) {
-        this.reaction = reaction
-    }
+        get() = checkNotNull(id) { "저장되지 않은 좋아요입니다." }
 }

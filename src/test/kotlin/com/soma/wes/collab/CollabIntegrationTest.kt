@@ -7,7 +7,7 @@ import com.soma.wes.auth.service.AuthTokenProvider
 import com.soma.wes.collab.repository.CollabGuestRepository
 import com.soma.wes.collab.repository.CollabPhotoCommentRepository
 import com.soma.wes.collab.repository.CollabPhotoRepository
-import com.soma.wes.collab.repository.CollabPhotoVoteRepository
+import com.soma.wes.collab.repository.CollabPhotoLikeRepository
 import com.soma.wes.collab.repository.CollabSessionRepository
 import com.soma.wes.collab.support.GuestTokenHeader
 import com.soma.wes.folder.domain.PhotoFolder
@@ -77,7 +77,7 @@ class CollabIntegrationTest @Autowired constructor(
     private val collabPhotoRepository: CollabPhotoRepository,
     private val collabGuestRepository: CollabGuestRepository,
     private val collabPhotoCommentRepository: CollabPhotoCommentRepository,
-    private val collabPhotoVoteRepository: CollabPhotoVoteRepository,
+    private val collabPhotoLikeRepository: CollabPhotoLikeRepository,
 ) {
 
     private val sequence = AtomicLong(System.nanoTime())
@@ -85,7 +85,7 @@ class CollabIntegrationTest @Autowired constructor(
     @BeforeEach
     fun clear() {
         // 자식부터 지운다. V12가 FK를 걸어두어 순서가 어긋나면 정리 자체가 실패한다.
-        collabPhotoVoteRepository.deleteAllInBatch()
+        collabPhotoLikeRepository.deleteAllInBatch()
         collabPhotoCommentRepository.deleteAllInBatch()
         collabGuestRepository.deleteAllInBatch()
         collabPhotoRepository.deleteAllInBatch()
@@ -350,17 +350,17 @@ class CollabIntegrationTest @Autowired constructor(
                 jsonPath("$.totalCount") { value(1) }
             }
 
-        // 한쪽에 남긴 반응이 다른 쪽 집계에 섞이지 않는다.
+        // 한쪽에 남긴 좋아요가 다른 쪽 집계에 섞이지 않는다.
         val parentsPhotoId = collabPhotoRepository
             .findAllByCollabSessionId(parents.id)
             .first()
             .requiredId
-        vote(parents.collabToken, parentsPhotoId, enter(parents.collabToken, "어머니"), "GOOD")
+        like(parents.collabToken, parentsPhotoId, enter(parents.collabToken, "어머니"))
 
         mockMvc.get("${sessionUrl(fixture, friends)}/photos") { authorize(fixture.member) }
             .andExpect {
                 status { isOk() }
-                jsonPath("$.contents[0].reactions.good") { value(0) }
+                jsonPath("$.contents[0].likeCount") { value(0) }
             }
     }
 
@@ -380,7 +380,7 @@ class CollabIntegrationTest @Autowired constructor(
                 jsonPath("$.totalCount") { value(2) }
                 // 버킷이 비공개라 서명 URL 없이는 아무것도 띄울 수 없다.
                 jsonPath("$.contents[0].photo.viewUrl") { value(containsString("X-Amz-Signature")) }
-                jsonPath("$.contents[0].reactions.good") { value(0) }
+                jsonPath("$.contents[0].likeCount") { value(0) }
                 jsonPath("$.contents[0].commentCount") { value(0) }
             }
     }
@@ -445,7 +445,7 @@ class CollabIntegrationTest @Autowired constructor(
         val collabPhotoId = addPhotos(fixture, session, listOf(photoId)).single()
         val guestToken = enter(session.collabToken, "친구")
         writeComment(session.collabToken, collabPhotoId, guestToken, "이거 좋다")
-        vote(session.collabToken, collabPhotoId, guestToken, "GOOD")
+        like(session.collabToken, collabPhotoId, guestToken)
 
         mockMvc.delete("${sessionUrl(fixture, session)}/photos") {
             authorize(fixture.member)
@@ -456,7 +456,7 @@ class CollabIntegrationTest @Autowired constructor(
         }
 
         assertEquals(0, collabPhotoCommentRepository.findAll().size)
-        assertEquals(0, collabPhotoVoteRepository.findAll().size)
+        assertEquals(0, collabPhotoLikeRepository.findAll().size)
     }
 
     // --- 하객 ---
@@ -637,10 +637,10 @@ class CollabIntegrationTest @Autowired constructor(
         assertEquals(0, collabPhotoCommentRepository.findAll().size)
     }
 
-    // --- 반응 ---
+    // --- 좋아요 ---
 
     @Test
-    fun `같은 하객이 여러 번 눌러도 표는 하나다`() {
+    fun `같은 하객이 여러 번 눌러도 좋아요는 하나다`() {
         // 새로고침할 때마다 표가 쌓이면 "좋아요 40"이 사람 40명이 아니게 된다.
         val fixture = openGalleryWithMember()
         val session = openSession(fixture)
@@ -648,59 +648,56 @@ class CollabIntegrationTest @Autowired constructor(
         val collabPhotoId = addPhotos(fixture, session, savePhotos(fixture, count = 1)).single()
         val guestToken = enter(collabToken, "친구")
 
-        repeat(3) { vote(collabToken, collabPhotoId, guestToken, "GOOD") }
-        vote(collabToken, collabPhotoId, guestToken, "SOSO")
+        repeat(3) { like(collabToken, collabPhotoId, guestToken) }
 
-        assertEquals(1, collabPhotoVoteRepository.findAll().size)
+        assertEquals(1, collabPhotoLikeRepository.findAll().size)
         mockMvc.get("/api/v1/collab/$collabToken/photos") { guest(guestToken) }
             .andExpect {
                 status { isOk() }
-                jsonPath("$.contents[0].reactions.good") { value(0) }
-                jsonPath("$.contents[0].reactions.soso") { value(1) }
-                jsonPath("$.contents[0].myReaction") { value("SOSO") }
+                jsonPath("$.contents[0].likeCount") { value(1) }
+                jsonPath("$.contents[0].liked") { value(true) }
             }
     }
 
     @Test
-    fun `하객마다 한 표씩 쌓이고 부부는 그 수를 본다`() {
+    fun `하객마다 좋아요 하나씩 쌓이고 부부는 그 수를 본다`() {
         val fixture = openGalleryWithMember()
         val session = openSession(fixture)
         val collabToken = session.collabToken
         val collabPhotoId = addPhotos(fixture, session, savePhotos(fixture, count = 1)).single()
-        vote(collabToken, collabPhotoId, enter(collabToken, "하객1"), "GOOD")
-        vote(collabToken, collabPhotoId, enter(collabToken, "하객2"), "GOOD")
-        vote(collabToken, collabPhotoId, enter(collabToken, "하객3"), "BAD")
+        like(collabToken, collabPhotoId, enter(collabToken, "하객1"))
+        like(collabToken, collabPhotoId, enter(collabToken, "하객2"))
+        like(collabToken, collabPhotoId, enter(collabToken, "하객3"))
 
         mockMvc.get("${sessionUrl(fixture, session)}/photos") { authorize(fixture.member) }
             .andExpect {
                 status { isOk() }
-                jsonPath("$.contents[0].reactions.good") { value(2) }
-                jsonPath("$.contents[0].reactions.bad") { value(1) }
-                // 부부와 작가는 하객이 아니라 반응을 남기지 않는다.
-                jsonPath("$.contents[0].myReaction") { doesNotExist() }
+                jsonPath("$.contents[0].likeCount") { value(3) }
+                // 부부와 작가는 하객이 아니라 좋아요를 남기지 않는다.
+                jsonPath("$.contents[0].liked") { value(false) }
             }
     }
 
     @Test
-    fun `반응은 취소할 수 있고 누른 적 없어도 성공한다`() {
+    fun `좋아요는 취소할 수 있고 누른 적 없어도 성공한다`() {
         val fixture = openGalleryWithMember()
         val session = openSession(fixture)
         val collabToken = session.collabToken
         val collabPhotoId = addPhotos(fixture, session, savePhotos(fixture, count = 1)).single()
         val guestToken = enter(collabToken, "친구")
 
-        mockMvc.delete("/api/v1/collab/$collabToken/photos/$collabPhotoId/vote") { guest(guestToken) }
+        mockMvc.delete("/api/v1/collab/$collabToken/photos/$collabPhotoId/like") { guest(guestToken) }
             .andExpect { status { isNoContent() } }
 
-        vote(collabToken, collabPhotoId, guestToken, "GOOD")
-        mockMvc.delete("/api/v1/collab/$collabToken/photos/$collabPhotoId/vote") { guest(guestToken) }
+        like(collabToken, collabPhotoId, guestToken)
+        mockMvc.delete("/api/v1/collab/$collabToken/photos/$collabPhotoId/like") { guest(guestToken) }
             .andExpect { status { isNoContent() } }
 
-        assertEquals(0, collabPhotoVoteRepository.findAll().size)
+        assertEquals(0, collabPhotoLikeRepository.findAll().size)
     }
 
     @Test
-    fun `남의 세션 사진에는 반응할 수 없다`() {
+    fun `남의 세션 사진에는 좋아요를 남길 수 없다`() {
         // 링크는 갤러리마다 다르지만 협업 사진 id는 전역에서 이어지는 값이다.
         val fixture = openGalleryWithMember()
         val other = openGalleryWithMember()
@@ -711,9 +708,8 @@ class CollabIntegrationTest @Autowired constructor(
         val othersCollabPhotoId = addPhotos(other, otherSession, savePhotos(other, count = 1)).single()
         val guestToken = enter(collabToken, "친구")
 
-        mockMvc.put("/api/v1/collab/$collabToken/photos/$othersCollabPhotoId/vote") {
+        mockMvc.put("/api/v1/collab/$collabToken/photos/$othersCollabPhotoId/like") {
             guest(guestToken)
-            jsonBody("""{"reaction":"GOOD"}""")
         }.andExpect {
             status { isNotFound() }
             jsonPath("$.code") { value("COLLAB_404_2") }
@@ -755,9 +751,8 @@ class CollabIntegrationTest @Autowired constructor(
             status { isForbidden() }
             jsonPath("$.code") { value("COLLAB_403_2") }
         }
-        mockMvc.put("/api/v1/collab/$collabToken/photos/$collabPhotoId/vote") {
+        mockMvc.put("/api/v1/collab/$collabToken/photos/$collabPhotoId/like") {
             guest(guestToken)
-            jsonBody("""{"reaction":"GOOD"}""")
         }.andExpect { status { isForbidden() } }
     }
 
@@ -900,10 +895,9 @@ class CollabIntegrationTest @Autowired constructor(
         return JsonPath.read<Int>(response, "$.commentId").toLong()
     }
 
-    private fun vote(collabToken: String, collabPhotoId: Long, guestToken: String, reaction: String) {
-        mockMvc.put("/api/v1/collab/$collabToken/photos/$collabPhotoId/vote") {
+    private fun like(collabToken: String, collabPhotoId: Long, guestToken: String) {
+        mockMvc.put("/api/v1/collab/$collabToken/photos/$collabPhotoId/like") {
             guest(guestToken)
-            jsonBody("""{"reaction":"$reaction"}""")
         }.andExpect { status { isNoContent() } }
     }
 

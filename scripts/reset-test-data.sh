@@ -114,7 +114,7 @@ fi
 #
 # 자식부터 적는다. RESTART IDENTITY로 id도 1부터 다시 시작한다 -- 매번 같은 id로 테스트하면
 # URL을 그대로 재사용할 수 있고, 어제 만든 갤러리 3번과 오늘 것이 헷갈리지 않는다.
-TABLES="collab_photo_votes, collab_photo_comments, collab_guests, collab_photos, collab_sessions"
+TABLES="collab_photo_likes, collab_photo_comments, collab_guests, collab_photos, collab_sessions"
 TABLES="$TABLES, photo_selection_items, photo_selections, photo_ratings"
 TABLES="$TABLES, photo_folder_items, photo_folders, photo_folder_groups, photos"
 TABLES="$TABLES, gallery_invites, gallery_members, galleries"

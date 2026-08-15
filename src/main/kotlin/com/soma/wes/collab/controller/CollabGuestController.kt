@@ -2,7 +2,6 @@ package com.soma.wes.collab.controller
 
 import com.soma.wes.collab.controller.docs.CollabGuestControllerDocs
 import com.soma.wes.collab.dto.request.EnterCollabRequest
-import com.soma.wes.collab.dto.request.VoteCollabPhotoRequest
 import com.soma.wes.collab.dto.request.WriteCollabCommentRequest
 import com.soma.wes.collab.dto.response.CollabCommentResponse
 import com.soma.wes.collab.dto.response.CollabGuestResponse
@@ -115,26 +114,25 @@ class CollabGuestController(
         return ResponseEntity.status(status).build()
     }
 
-    @PutMapping("/photos/{collabPhotoId}/vote")
-    override fun vote(
+    @PutMapping("/photos/{collabPhotoId}/like")
+    override fun like(
         @PathVariable collabToken: String,
         @PathVariable collabPhotoId: Long,
         @RequestHeader(name = GuestTokenHeader.NAME, required = false) guestToken: String?,
-        @RequestBody request: VoteCollabPhotoRequest,
     ): ResponseEntity<Unit> {
-        collabGuestService.vote(collabToken, collabPhotoId, guestToken, request)
+        collabGuestService.like(collabToken, collabPhotoId, guestToken)
         val status = HttpStatus.NO_CONTENT
 
         return ResponseEntity.status(status).build()
     }
 
-    @DeleteMapping("/photos/{collabPhotoId}/vote")
-    override fun cancelVote(
+    @DeleteMapping("/photos/{collabPhotoId}/like")
+    override fun cancelLike(
         @PathVariable collabToken: String,
         @PathVariable collabPhotoId: Long,
         @RequestHeader(name = GuestTokenHeader.NAME, required = false) guestToken: String?,
     ): ResponseEntity<Unit> {
-        collabGuestService.cancelVote(collabToken, collabPhotoId, guestToken)
+        collabGuestService.cancelLike(collabToken, collabPhotoId, guestToken)
         val status = HttpStatus.NO_CONTENT
 
         return ResponseEntity.status(status).build()
