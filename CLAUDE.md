@@ -2,87 +2,61 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project overview
+`wes`는 웨딩 사진 셀렉 서비스 백엔드다. 작가가 갤러리를 만들어 원본을 올리고, 초대받은
+부부가 그 안에서 사진을 고른다. `organic-agent-server`의 `wes` 서비스/모듈이다.
 
-`wes` is a Spring Boot 4.1.0 + Kotlin 2.3.21 backend, part of the larger `organic-agent-server` project (this directory is the `wes` service/module). It targets JVM 21 via the Gradle Kotlin DSL toolchain. It serves a wedding photo-selection product: photographers create galleries and upload originals; invited couples pick from them.
+## 기술 스택
 
-The infrastructure counterpart is the sibling repo `../../organic-agent-infra` (Terraform: VPC/ALB/EC2/RDS, the photo S3 bucket, and the embedding Lambda). Deployment topology and the `/wes/prod/*` parameter contract are documented in the local-only `docs/notes/` (gitignored).
+- Kotlin 2.3.21 / Spring Boot 4.1.0 (servlet MVC — WebFlux 아님) / Gradle Kotlin DSL, JVM 21
+- JPA + PostgreSQL + Flyway — 스키마는 Flyway 소유, `ddl-auto=validate`
+- pgvector — 로컬·Testcontainers 모두 `pgvector/pgvector:pg16` (stock `postgres` 아님)
+- Spring Security + OAuth2 (Google, Kakao, Naver) + JWT
+- jackson-module-kotlin (Spring Boot 4.x의 `tools.jackson.module` 좌표)
+- springdoc-openapi — 애노테이션은 `controller/docs`의 `*ControllerDocs` 인터페이스에
+- 테스트: JUnit 5 + Testcontainers (**Docker 필요**)
+- Kotlin 컴파일러 플래그: `-Xjsr305=strict`, `-Xannotation-default-target=param-property`
 
-## Commands
+## 빌드 & 실행
 
-Use the Gradle wrapper (`./gradlew`), not a system-installed Gradle.
+시스템 Gradle이 아니라 wrapper(`./gradlew`)를 쓴다.
 
-- Build: `./gradlew build`
-- Run the app: `./gradlew bootRun`
-- Run all tests: `./gradlew test`
-- Run a single test class: `./gradlew test --tests "com.soma.wes.WesApplicationTests"`
-- Run a single test method: `./gradlew test --tests "com.soma.wes.WesApplicationTests.contextLoads"`
-- Clean build: `./gradlew clean build`
-
-Tests need Docker (Testcontainers). The embedding Lambda in `embedder/` is a separate Python project with its own README — Gradle does not build it.
-
-Two operator scripts live in `scripts/` (tracked, unlike the personal notes in `docs/`):
-
-- `scripts/db-tunnel.sh [port]` — SSM port-forward to the private RDS (default local port 15432). Credentials are read from Parameter Store at run time; nothing is hardcoded.
-- `scripts/reset-test-data.sh [local|remote] [--all] [--with-s3]` — wipe hand-testing data. Accounts survive by default so the access token you are holding stays valid. Its `TRUNCATE` list must name **every** table that references the ones being emptied — since V9 added foreign keys, Postgres rejects the whole statement otherwise, so a new migration means editing that list.
-
-## Architecture notes
-
-- Base package: `com.soma.wes`. Packages are by domain (`auth`, `user`, `studio`, `gallery`, `photo`, `embedding`, `cluster`, `folder`, `selection`, `collab`, `trash`) with `global`/`security` for cross-cutting concerns. The last six are all *about* photos but are separate domains, not subpackages of `photo`: each owns its own service, controller, and config, and `folder`/`selection`/`collab` own entities of their own. Folding them in would make `photo` the package everything lands in. Within a domain: `domain` / `repository` / `service` / `support` (collaborators the services lean on) / `controller` (+ `controller/docs` for the OpenAPI-annotated interface the controller implements) / `dto` / `exception` / `config` / `infrastructure`. There is no top-level `infrastructure` package — external-system adapters live inside the domain that uses them.
-- Web stack: `spring-boot-starter-webmvc` (servlet-based Spring MVC, not WebFlux).
-- JSON: `jackson-module-kotlin` (via the `tools.jackson.module` coordinates used by Spring Boot 4.x) for idiomatic Kotlin data class (de)serialization.
-- Configuration lives in `src/main/resources/application.yml`, which imports `config/application-{cloud,db,variable}.yml`. Secrets and infra-derived values come from AWS Parameter Store (`/wes/{local,prod}/`) at startup.
-- **Flyway owns the schema** (`src/main/resources/db/migration`); `ddl-auto` is `validate` in every profile. This is not a style preference: `photos.embedding` is a pgvector `vector(768)` column, and `CREATE EXTENSION vector` has to run before any table, which `ddl-auto` cannot do. Adding an entity means writing a migration. Prod is baselined at V1 (it predates Flyway), so V1 runs only on empty databases.
-- **Postgres needs pgvector.** Local (`docker-compose.local.yml`) and Testcontainers both use `pgvector/pgvector:pg16`, not stock `postgres`.
-- **Image bytes never pass through this server.** The app issues presigned S3 URLs and the browser uploads directly; embeddings are computed by a Lambda invoked once per gallery (`InvocationType.EVENT`), never per photo. `embedder/` holds that Lambda (Python, DINOv2, container image on ECR) — same repo, separate deploy path from the app.
-- **Previews are derivatives written by that same Lambda**, not by this server. iPhone HEIC originals render in no major browser, so `viewUrl` signs `photos.preview_key` (`previews/{original key}.jpg`) when it is set and the original otherwise — `Photo.viewKey`. The Lambda writes `preview_key` in the same UPDATE as the vector, so a non-null value means the object exists; do not precompute it at upload time. Preview upload failure must not fail the embedding (it surfaces as `previewsFailed`).
-- **EXIF is written by the embedding Lambda, like the preview.** `photos` carries the columns (`taken_at`, camera, exposure/f-number/ISO, dimensions, byte size) but this server never fills them — it does not touch image bytes. The Lambda reads them from the *unprepared* original (after `images.prepare` the orientation tag is gone and the size is not the original's) and writes them in the same UPDATE as the vector, with `COALESCE` so a failed extraction never wipes an earlier good value. Extraction failure must not fail the embedding — it surfaces as `metadataFailed`, the same treatment as `previewsFailed`. `taken_at` is `TIMESTAMP` without a zone on purpose: EXIF carries no offset, and interpreting it in the server's zone silently moves photos shot abroad.
-- **The detail endpoint signs two URLs.** `GET /galleries/{id}/photos/{photoId}` returns `viewUrl` (the preview, or the original when there is none) *and* `originalUrl` (always `storageKey`), because the preview is downscaled and the original may be HEIC. The original is signed with its own longer TTL (`app.storage.original-url-ttl`) — a detail view stays open far longer than a list. Both are null for PENDING photos; `PhotoViewAssembler` owns that rule for every screen.
-- **A star rating belongs to the photo, not to a person.** `photo_ratings` is one row per photo (UK on `photo_id`, `CHECK score BETWEEN 1 AND 5`): both partners and the photographer write the same slot and the last writer wins, with `rated_by` kept for audit only. The couple is one team picking together, so averaging their separate scores means nothing on screen, and the photographer's pick is shown in the same place — splitting by rater would mean a UI that asks "whose stars?" on every photo. The cost is that "photos the couple gave 5" cannot be separated from "photos the photographer gave 5"; that day means adding an axis to the UK. It is a table rather than a `photos` column because comments and likes are coming, and each new column would be read by every list query that scans thousands of rows. `PhotoViewAssembler` attaches `score` for every screen and batches the lookup — `toResponse` (single) costs one query, so a loop over folders must use `toResponses`.
-- **Clustering is a read view, folders are stored.** `PhotoClusterService` groups photos by pgvector cosine distance (`<=>`) into connected components — nothing is persisted, because the threshold is a knob the user turns repeatedly. A `PhotoFolder` is what the couple confirmed: it pins the photo list as rows at creation time and stores neither the threshold nor a cluster id, so it stays put when either changes. The pair query is exact and O(N²) on purpose (a missed edge is a wrongly split group); `PhotoClusterScaleTest` records where that stops being affordable.
-- **A folder is scratch work; the selection album is the deliverable.** The two are not wired together — there is no "add this folder" endpoint, and a photo picked out of a folder is added by id like any other. `PhotoSelection` is one per gallery (UK on `gallery_id`), and submitting it locks the list — the photographer starts retouching from it, so a silent change afterwards leaves nobody able to say which list is final. Only the couple selects and submits (`requireCouple`); only the photographer withdraws a submission (`requirePhotographer`) — a couple that can unlock its own submission has not been locked out of anything. Reading it is `requireViewer`, because both sides need it after the deadline. The contract count lives on `Gallery.targetPhotoCount` (nullable = no limit), not on the album: it comes from the contract, so an album holding a copy would enforce a stale number after the photographer changes it. Adding rejects the whole request rather than taking what fits — both when it would go over the target and when any photo is already in the album (409, not a silent skip). Two people select from separate screens, so an overlap means the caller's screen is stale; a partial add looks like success and nobody can tell which photos were dropped, or who dropped them. Every write path locks the gallery row first (`GalleryRepository.findWithLockById`): the album row may not exist yet, so it cannot be the mutex, and two people picking the last slot at once would otherwise both read "one left".
-- **Deletion is a two-step trash, and the entity hides itself.** There is no user-facing hard-delete endpoint: `DELETE /galleries/{id}` and `DELETE /galleries/{id}/photos` (batch, body ids) only set `deleted_at`, and `@SQLRestriction("deleted_at is null")` on `Photo`/`Gallery` filters every JPA read — lists, the id-validation loaders, counts, lock-finds, `findAllById` — so one declaration covers every screen, guest links included (`CollabSessionAccess` loads the gallery via `findById` too). Gallery soft-delete does **not** touch photo rows; the gallery 404 hides them, which is what makes restore exact (a photo trashed *before* the gallery stays trashed after the gallery is restored). The flip side of the annotation: trashed rows are unreachable through JPA, so everything in the `trash` domain — list/restore/erase and the purge scan — goes through `TrashRepository` (JdbcClient, native SQL), and **any new native SQL outside it must filter `deleted_at IS NULL` itself** (the pgvector pair query does). Physical deletion (`TrashEraser`, shared by "delete again from trash" and the hourly purge after `app.trash.retention`, default 3d) is S3-first-DB-second — a failed S3 call retries next tick, while DB-first would strand objects forever — and one `DELETE` per unit lets the V9/V12 FK cascades sweep children. Erase keys include the derived `previews/{key}.jpg` even when `preview_key` is null (same rule as the Lambda and the mock-gallery copy). Immediate erase 409s while a presigned upload URL is still live (`uploadUrlExpiresAt`); the scheduled purge needs no such guard because retention ≫ URL TTL. Gallery-trash operations cannot use `GalleryAccessPolicy` (the gallery is hidden), so the row's `studio_id` compared against the caller's studio is the authorization.
-- `EMBEDDING_DIMENSION` exists in three places that must agree: `Photo.EMBEDDING_DIMENSION`, the `vector(n)` column in the migration, and the infra repo's `embedding_dimension` variable (the Lambda's `EMBED_DIM`).
-- **`GalleryAccessPolicy` names its methods after roles, not capabilities.** There are two: the *photographer* (owner of the studio behind the gallery, may do anything in it — the selection deadline is the customer's, not theirs) and the *couple* (invited `GalleryMember`, may not upload, and only acts while the gallery is OPEN and before the deadline). `requirePhotographerOrCouple` is the pair used by clustering, folders, and photo detail: the photographer always passes, the couple only while selecting. Pure reads take `requireViewer` instead — the photo list, the gallery detail, and the selection album stay open to the couple after the deadline, because looking is not choosing and a closed gallery must not read as an empty one. Which of the two a new endpoint wants is decided by that question, not by who calls it. A third caller has no account at all — see the share link below; it is not a `GalleryMember` and never will be.
-- **The guest collaboration session is a third audience, and it writes.** Guests and parents get a `CollabSession` (`collab_sessions`, UK on `share_token`), not a `GalleryMember` row: `gallery_members.user_id` is NOT NULL, so someone without an account cannot be a member at all. They see only what the couple curated into `collab_photos`, and they leave `collab_photo_comments` and `collab_photo_votes` (GOOD/SOSO/BAD). Opening the session and curating it is `requireCouple` — asking guests is part of choosing, and the photographer does not choose for the customer; reading results is `requireViewer`, so the photographer sees them too, after the deadline included. The guest side never touches `GalleryAccessPolicy`: `collab/support/CollabSessionAccess` answers it, because a request with no `userId` in a file whose rule is "methods are named after roles" breaks that rule on line one. It has three doors — `requireReadable` (open until revoked), `requireWritable` (only while the couple can still choose), `requireGuest` (who is writing). The landing response carries `writable` so the front end never recomputes that rule from a deadline and ends up showing an input box the server will 403.
-- **A gallery holds many sessions, and a folder seeds one by copy.** `gallery_id` is an index, not a unique key: the couple asks different groups different questions (the ceremony shortlist goes to the parents, the after-party to friends), and one link for both means the answers come back mixed. That is why the session carries a `name` — a token is not something a person recognizes. Which link a guest came through is answered by `share_token` alone, so the public paths need no gallery id and one link shows only its own `collab_photos`. Opening a session with `folderId` **copies** that `PhotoFolder`'s photos into `collab_photos` at that moment; the session stores no folder id, exactly as `PhotoFolder` stores no cluster id. Pointing at the folder would let the couple's later edit move the photos under a guest who is mid-comment, and a deleted folder would strand every comment already written. The copy validates like `addPhotos` — all-or-nothing on a foreign folder, an empty one, a PENDING photo — and it validates *before* saving the session, so a rejected request does not leave a nameless empty link behind. Because `open` now always creates, reviving a revoked link is its own door (`reissueToken`): that one keeps the photos and the feedback and only swaps the token.
-- **A guest's identity is a server-issued token, and one guest is one vote.** `collab_guests` holds the nickname once (copying it onto every comment would let one person appear under three names, and a rename would orphan their old comments), and `guest_token` is minted by `SecureTokenGenerator`, never accepted from the client — a client-chosen id lets anyone write under someone else's name or flip their vote. It travels in `X-Guest-Token`, not a query param: URLs land in access logs and `Referer`. `collab_photo_votes` is UK on `(collab_photo_id, collab_guest_id)` and updates in place; without that, one refresh per guest inflates "40 likes" into something that is not 40 people, and the couple picks photos off a number that lied. That is the opposite of `photo_ratings` (one row per *photo*) on purpose: ratings are a team's shared slot, votes are a headcount. Star ratings never reach guests at all (`PhotoViewAssembler.toAnonymousResponses`) — they are what the couple and photographer say to each other, and a guest in the photo could be reading their own score. Only `/api/v1/collab/**` is in `PublicPaths`; opening, curating, and reading results live under `/galleries/{id}/collab-sessions/{sessionId}` and stay authenticated — and every one of those resolves the session by `(id, galleryId)` together, because authorization is per gallery and a session found by id alone would open a stranger's link to anyone holding a gallery of their own. Guests delete only their own comments; the couple and photographer delete any, through the authenticated path — a token sitting in a browser must not be able to empty the comment feed.
-- The share link carries no expiry and no password: its lifetime is a decision (`revoke`), not a clock, because a link travels like a wedding invitation and someone always opens it weeks later. Revoking keeps the photos and the feedback and kills only the URL; reissuing mints a *new* token, since reviving the old one revives the group chat it leaked into.
-- Error responses are always `{code, message}` from an `ErrorCode` enum; codes follow `{DOMAIN}_{HTTP_STATUS}_{N}`, enforced by `ErrorCodeFormatTest` (add new enums to its list).
-
-## Layering conventions
-
-These are enforced by review, not by tooling. Follow them in new code.
-
-**Services own both DTOs.** A controller passes the request DTO straight through and the service returns the response DTO; the controller only wraps it in `ResponseEntity`. Two consequences to keep in mind:
-
-- **Entities must not reach a controller.** `open-in-view` is `false`, so an entity returned past the service transaction is detached — the day someone adds a `@ManyToOne`, every controller that maps one throws `LazyInitializationException` at the mapping line rather than at the real cause. Entities crossing *service → service* (e.g. `GalleryAccessPolicy.requirePhotographer` returning `Gallery`) is fine; that stays inside the transaction.
-- **Never let a bean-validation annotation be the only enforcement of a rule.** `@field:NotBlank` and friends only run because the controller says `@Valid`; a service called from anywhere else gets no validation. Real invariants live in the domain or the service (`Studio.isValidGalleryUrl`, `PhotoService.ALLOWED_CONTENT_TYPES`, `maxBatchSize`).
-
-**External systems are reached only through an adapter in the domain's own `infrastructure` package.** A service must not inject an SDK client (`S3Presigner`, `LambdaClient`, an HTTP client for a third-party API) or handle its exceptions. Instead:
-
-- The domain declares a **port** — an interface in its own `service` package, written in domain vocabulary (`PhotoStorage.presignUpload`, `EmbeddingInvoker.invoke`), naming no vendor type in its signatures.
-- `{domain}/infrastructure` holds the **adapter** that implements it, named after the technology: `photo/infrastructure/S3PhotoStorage`, `embedding/infrastructure/LambdaEmbeddingInvoker`. The `@Configuration` that builds the SDK client stays in the domain's `config` alongside its properties (`embedding/config/AwsLambdaConfig`) — move it to `global/config` only once a second domain needs the same client.
-- The adapter belongs to the domain, so keep it *in* that domain. A top-level `infrastructure` package would collect every vendor class in one bucket and split each domain in two.
-- Dependencies point inward. An adapter may import its own domain's `config` properties and throw an `ErrorCode` (`LambdaEmbeddingInvoker` turns `SdkException` into `PhotoErrorCode.EMBEDDING_INVOCATION_FAILED`); no `service`, `domain`, `controller`, `repository`, or `dto` class may import an SDK type.
-- Vendor detail stops at the boundary, logging included: the adapter logs the function name and status code, the service logs the domain event.
-
-The point is not swappability — nobody is replacing S3. It is that a vendor type in a constructor spreads: once a service holds an SDK client, its exceptions, its retries, and its test doubles all become the domain's problem. Only `infrastructure` (adapters) and `config` (client beans) may name an SDK type:
-
-```
-grep -rln "software.amazon.awssdk" src/main/kotlin | grep -vE "/(infrastructure|config)/"   # must stay empty
+```bash
+./gradlew build      # 빌드
+./gradlew test       # 전체 테스트 (Docker 필요)
+./gradlew test --tests "com.soma.wes.WesApplicationTests"               # 단일 클래스
+./gradlew test --tests "com.soma.wes.WesApplicationTests.contextLoads"  # 단일 메서드
+./gradlew bootRun    # 로컬 실행
 ```
 
-**Controllers return `ResponseEntity<T>` from a block body**, never an expression body and never `@ResponseStatus` — the status belongs in exactly one place. Non-default statuses read `ResponseEntity.status(status).body(result)`; 200 is `ResponseEntity.ok(result)`. OpenAPI annotations live on a `*ControllerDocs` interface the controller implements, so its signatures must change in lockstep.
+## 임베딩과 인프라
 
-**Collaborators that assist a service live in `{domain}/support`, not `service`.** `service` is for the use cases a controller calls; `support` is for the pieces those use cases lean on — an authorization policy, a token generator, a config reader (`gallery/support/GalleryAccessPolicy`, `gallery/support/GalleryInviteTokenGenerator`, `auth/support/OAuthRegistrations`, `auth/support/OAuthRedirectUriResolver`). The test mirrors the package. A support class may still be `@Service` when it needs transactions; the annotation is about Spring, the package is about what the class is for.
+- **이미지 바이트는 이 서버를 지나지 않는다.** 서버는 presigned S3 URL만 발급하고 브라우저가
+  직접 업로드한다. 임베딩·프리뷰·EXIF는 갤러리당 한 번(`InvocationType.EVENT`) 호출되는
+  Lambda의 일이다 — 사진당 호출은 없다.
+- `embedder/`가 그 Lambda다 (Python, DINOv2, ECR 컨테이너 이미지). 같은 repo지만 Gradle이
+  빌드하지 않는 별도 배포 경로이고, 자체 README를 따른다.
+- 인프라는 sibling repo `../../organic-agent-infra` (Terraform: VPC/ALB/EC2/RDS, 사진 S3 버킷,
+  임베딩 Lambda). `EMBEDDING_DIMENSION`은 이 repo 두 곳과 인프라 repo까지 세 곳이 일치해야
+  한다 (`.claude/rules/migration.md`).
+- 설정은 `src/main/resources/application.yml`이 `config/application-{cloud,db,variable}.yml`을
+  import한다. 시크릿과 인프라 파생 값은 시작 시 AWS Parameter Store(`/wes/{local,prod}/`)에서
+  온다.
+- 운영 스크립트는 `scripts/`에 (추적됨):
+  - `db-tunnel.sh [port]` — private RDS로 SSM 포트포워딩 (기본 15432). 자격증명은 실행 시
+    Parameter Store에서 읽는다.
+  - `reset-test-data.sh [local|remote] [--all] [--with-s3]` — 수동 테스트 데이터 초기화.
+    계정은 기본 보존(토큰 유지). TRUNCATE 목록 규칙은 `.claude/rules/migration.md` 참조.
 
-**One DTO per file**, named after the class. The only exception is a nested class used solely by its enclosing DTO (`IssueUploadUrlsRequest.FileRequest`).
+## 규칙 참조
 
-**Private helper placement:** put a private method directly below the method that calls it. If several methods call it, put it below the lowest-positioned caller. Do not sweep all private methods to the bottom of the class — the point is that a helper sits next to the code it serves.
+`.claude/rules/` — paths 매칭 파일 작업 시 자동 로드
 
-**`@Transactional` goes on methods, never on the class.** A class-level `@Transactional(readOnly = true)` silently enrolls every future method — including ones that call out to S3, Lambda, or an OAuth provider — so a method added later holds a connection across a network call without anyone deciding that. Annotate each public method with what it actually needs (`@Transactional` for writes, `@Transactional(readOnly = true)` for reads) and leave methods that touch no DB unannotated (`EmbeddingService.run` is deliberately bare for this reason). Private helpers stay unannotated; they inherit the caller's transaction.
+- 프로젝트 구조 (패키지 배치) → `project-structure.md`
+- Flyway 마이그레이션 / 스키마 변경 → `migration.md`
+- 공통 컨벤션 (레이어 흐름, 예외, 객체 생성, 상수, 포맷팅, 네이밍, 주석) → `common.md`
+- 계층별 컨벤션 → `controller.md`, `domain.md`, `dto.md`, `service.md`, `repository.md`,
+  `infrastructure.md`, `support.md`
 
-**Never call a `@Transactional` method from inside the same class.** Spring's transaction support is proxy-based, so a self-invocation bypasses the proxy and the annotation is *silently* ignored — writes then fall outside a transaction and dirty-checking updates vanish with no error. If a method needs to call transactional work, either make the helper private and untransactional (it inherits the caller's transaction) or move the transactional part to a separate bean. `OAuthLoginService` → `OAuthLoginProcessor.process` exists for exactly this reason; `OAuthLoginServiceTest` guards it.
-- Kotlin compiler flags of note (`build.gradle.kts`): `-Xjsr305=strict` (treats JSR-305 nullability annotations strictly) and `-Xannotation-default-target=param-property` (annotations on constructor properties apply to both the parameter and the property by default).
-- Tests use JUnit 5 (`useJUnitPlatform()`) plus `kotlin-test-junit5` and Spring's `spring-boot-starter-webmvc-test`.
+`.claude/spec/` — 스킬·작업에서 필요할 때만 참조 (자동 로드 아님)
+
+- Git 작업 (커밋, 브랜치, PR) → `git-convention.md`
