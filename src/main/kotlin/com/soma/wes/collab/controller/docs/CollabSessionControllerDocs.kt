@@ -303,10 +303,10 @@ interface CollabSessionControllerDocs {
 
     @Operation(
         summary = "하객 반응 결과 조회",
-        description = "담긴 사진마다 GOOD·SOSO·BAD가 몇 개씩 모였고 댓글이 몇 개인지 온다. " +
+        description = "담긴 사진마다 좋아요가 몇 개 모였고 댓글이 몇 개인지 온다. " +
             "부부가 결과를 읽는 화면이고 담당 작가도 같은 것을 본다. " +
             "이 세션에 모인 것만 나온다 — 같은 사진을 담은 옆 세션의 반응은 섞이지 않는다. " +
-            "myReaction은 늘 null이다 — 부부와 작가는 하객이 아니라 반응을 남기지 않는다. " +
+            "liked는 늘 false다 — 부부와 작가는 하객이 아니라 좋아요를 남기지 않는다. " +
             "사진의 별점(score)도 늘 null이다.",
     )
     @ApiResponses(ApiResponse(responseCode = "200", description = "조회 성공"))

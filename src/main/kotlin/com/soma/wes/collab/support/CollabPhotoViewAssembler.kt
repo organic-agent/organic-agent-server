@@ -1,13 +1,11 @@
 package com.soma.wes.collab.support
 
 import com.soma.wes.collab.domain.CollabPhoto
-import com.soma.wes.collab.domain.CollabReaction
 import com.soma.wes.collab.dto.response.CollabPhotoPageResponse
 import com.soma.wes.collab.dto.response.CollabPhotoResponse
-import com.soma.wes.collab.dto.response.CollabReactionCountResponse
 import com.soma.wes.collab.repository.CollabPhotoCommentRepository
+import com.soma.wes.collab.repository.CollabPhotoLikeRepository
 import com.soma.wes.collab.repository.CollabPhotoRepository
-import com.soma.wes.collab.repository.CollabPhotoVoteRepository
 import com.soma.wes.global.page.PageRequests
 import com.soma.wes.global.page.PageResponse
 import com.soma.wes.photo.config.StorageProperties
@@ -26,7 +24,7 @@ class CollabPhotoViewAssembler(
     private val collabPhotoRepository: CollabPhotoRepository,
     private val photoRepository: PhotoRepository,
     private val photoViewAssembler: PhotoViewAssembler,
-    private val voteRepository: CollabPhotoVoteRepository,
+    private val likeRepository: CollabPhotoLikeRepository,
     private val commentRepository: CollabPhotoCommentRepository,
     private val properties: StorageProperties,
 ) {
@@ -56,10 +54,12 @@ class CollabPhotoViewAssembler(
         }
 
         val collabPhotoIds = collabPhotos.map { it.requiredId }
-        val reactions = reactionsOf(collabPhotoIds)
+        // 좋아요가 하나도 없는 사진은 집계 결과에 아예 없다. 그 자리를 0으로 채운다.
+        val likeCounts = likeRepository.countByCollabPhotoIdIn(collabPhotoIds)
+            .associate { it.collabPhotoId to it.count }
         val commentCounts = commentRepository.countByCollabPhotoIdIn(collabPhotoIds)
             .associate { it.collabPhotoId to it.count }
-        val myReactions = myReactionsOf(collabPhotoIds, guestId)
+        val myLikes = myLikesOf(collabPhotoIds, guestId)
         val photos = photosOf(collabPhotos)
 
         return collabPhotos.mapNotNull { collabPhoto ->
@@ -67,33 +67,21 @@ class CollabPhotoViewAssembler(
             CollabPhotoResponse(
                 collabPhotoId = collabPhoto.requiredId,
                 photo = photo,
-                reactions = reactions[collabPhoto.requiredId] ?: CollabReactionCountResponse.NONE,
+                likeCount = likeCounts[collabPhoto.requiredId] ?: 0,
                 commentCount = commentCounts[collabPhoto.requiredId] ?: 0,
-                myReaction = myReactions[collabPhoto.requiredId],
+                liked = collabPhoto.requiredId in myLikes,
             )
         }
     }
 
-    /** 반응이 하나도 없는 사진은 집계 결과에 아예 없다. 그 자리는 호출부가 0으로 채운다. */
-    private fun reactionsOf(collabPhotoIds: List<Long>): Map<Long, CollabReactionCountResponse> =
-        voteRepository.countByReaction(collabPhotoIds)
-            .groupBy { it.collabPhotoId }
-            .mapValues { (_, rows) ->
-                val byReaction = rows.associate { it.reaction to it.count }
-                CollabReactionCountResponse(
-                    good = byReaction[CollabReaction.GOOD] ?: 0,
-                    soso = byReaction[CollabReaction.SOSO] ?: 0,
-                    bad = byReaction[CollabReaction.BAD] ?: 0,
-                )
-            }
-
-    private fun myReactionsOf(collabPhotoIds: List<Long>, guestId: Long?): Map<Long, CollabReaction> {
+    private fun myLikesOf(collabPhotoIds: List<Long>, guestId: Long?): Set<Long> {
         if (guestId == null) {
-            return emptyMap()
+            return emptySet()
         }
 
-        return voteRepository.findAllByCollabPhotoIdInAndCollabGuestId(collabPhotoIds, guestId)
-            .associate { it.collabPhotoId to it.reaction }
+        return likeRepository.findAllByCollabPhotoIdInAndCollabGuestId(collabPhotoIds, guestId)
+            .map { it.collabPhotoId }
+            .toSet()
     }
 
     /**

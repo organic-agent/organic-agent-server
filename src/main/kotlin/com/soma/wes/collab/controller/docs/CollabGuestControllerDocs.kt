@@ -1,7 +1,6 @@
 package com.soma.wes.collab.controller.docs
 
 import com.soma.wes.collab.dto.request.EnterCollabRequest
-import com.soma.wes.collab.dto.request.VoteCollabPhotoRequest
 import com.soma.wes.collab.dto.request.WriteCollabCommentRequest
 import com.soma.wes.collab.dto.response.CollabCommentResponse
 import com.soma.wes.collab.dto.response.CollabGuestResponse
@@ -37,7 +36,7 @@ interface CollabGuestControllerDocs {
             하객이 링크를 눌렀을 때 처음 부르는 API다. 하객 토큰 없이 부른다.
 
             응답의 `writable`이 false면 부부가 이미 고르기를 끝낸 것이라 보기만 된다 —
-            화면은 그때 댓글창과 반응 버튼을 감추면 된다. 이 값을 프론트가 마감 시각으로
+            화면은 그때 댓글창과 좋아요 버튼을 감추면 된다. 이 값을 프론트가 마감 시각으로
             따로 계산하지 않는 것이 중요하다. 서버가 막는 기준과 어긋나면 하객은 열려 있는
             입력창에 쓴 글을 403으로 돌려받는다.
         """,
@@ -83,7 +82,7 @@ interface CollabGuestControllerDocs {
     @Operation(
         summary = "하객 입장(닉네임 등록)",
         description = """
-            닉네임을 적으면 서버가 하객 토큰을 발급한다. 이후 댓글·반응 요청의 `X-Guest-Token`
+            닉네임을 적으면 서버가 하객 토큰을 발급한다. 이후 댓글·좋아요 요청의 `X-Guest-Token`
             헤더에 그대로 실으면 된다.
 
             토큰을 클라이언트가 만들지 않는 이유는 이것이 약하게나마 "본인"의 근거이기 때문이다.
@@ -136,9 +135,9 @@ interface CollabGuestControllerDocs {
     @Operation(
         summary = "하객이 보는 사진 목록",
         description = """
-            부부가 담은 사진만 온다. 사진마다 지금까지 모인 반응 수와 댓글 수가 함께 온다.
+            부부가 담은 사진만 온다. 사진마다 지금까지 모인 좋아요 수와 댓글 수가 함께 온다.
 
-            `X-Guest-Token`을 보내면 `myReaction`에 자기가 누른 반응이 채워진다. 없어도
+            `X-Guest-Token`을 보내면 자기가 누른 사진의 `liked`가 true로 온다. 없어도
             사진은 그대로 보인다 — 사진을 보기도 전에 닉네임부터 받게 하지 않으려는 것이다.
 
             사진의 `score`(별점)는 늘 null이다. 별점은 부부와 작가가 고르며 서로에게 남기는
@@ -336,10 +335,10 @@ interface CollabGuestControllerDocs {
     fun deleteComment(collabToken: String, commentId: Long, guestToken: String?): ResponseEntity<Unit>
 
     @Operation(
-        summary = "사진에 반응 남기기",
-        description = "GOOD·SOSO·BAD 중 하나를 남긴다. 하객 한 사람의 표는 하나라 다시 보내면 " +
-            "새 표가 쌓이는 것이 아니라 덮어쓴다 — 새로고침할 때마다 표가 늘면 그 수를 보고 " +
-            "사진을 고르는 부부가 속는다. PUT인 것도 그래서다.",
+        summary = "사진에 좋아요 남기기",
+        description = "하객 한 사람의 표는 하나라 이미 누른 사진에 다시 보내도 새 표가 쌓이지 " +
+            "않고 그대로 204다 — 새로고침할 때마다 표가 늘면 그 수를 보고 사진을 고르는 " +
+            "부부가 속는다. PUT인 것도 그래서다.",
         parameters = [
             Parameter(
                 name = GuestTokenHeader.NAME,
@@ -350,7 +349,7 @@ interface CollabGuestControllerDocs {
         ],
     )
     @ApiResponses(
-        ApiResponse(responseCode = "204", description = "반응 저장 성공"),
+        ApiResponse(responseCode = "204", description = "좋아요 저장 성공"),
         ApiResponse(
             responseCode = "401",
             description = "하객 토큰이 없거나 이 세션의 것이 아님",
@@ -385,17 +384,16 @@ interface CollabGuestControllerDocs {
         ),
     )
     @SecurityRequirements
-    fun vote(
+    fun like(
         collabToken: String,
         collabPhotoId: Long,
         guestToken: String?,
-        request: VoteCollabPhotoRequest,
     ): ResponseEntity<Unit>
 
     @Operation(
-        summary = "반응 취소",
-        description = "눌렀던 반응을 거둔다. 누른 적이 없어도 204다 — 목적은 '표가 없는 상태'이고 " +
-            "그건 이미 이뤄져 있다.",
+        summary = "좋아요 취소",
+        description = "눌렀던 좋아요를 거둔다. 누른 적이 없어도 204다 — 목적은 '좋아요가 없는 " +
+            "상태'이고 그건 이미 이뤄져 있다.",
         parameters = [
             Parameter(
                 name = GuestTokenHeader.NAME,
@@ -407,5 +405,5 @@ interface CollabGuestControllerDocs {
     )
     @ApiResponses(ApiResponse(responseCode = "204", description = "취소 성공"))
     @SecurityRequirements
-    fun cancelVote(collabToken: String, collabPhotoId: Long, guestToken: String?): ResponseEntity<Unit>
+    fun cancelLike(collabToken: String, collabPhotoId: Long, guestToken: String?): ResponseEntity<Unit>
 }
