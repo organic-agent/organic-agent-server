@@ -1,6 +1,5 @@
 package com.soma.wes.gallery.support
 
-import com.soma.wes.TestcontainersConfiguration
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryMember
 import com.soma.wes.gallery.domain.GalleryStatus
@@ -11,14 +10,17 @@ import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.global.config.TimeConfig
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
+import com.soma.wes.support.TestcontainersConfiguration
+import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
 import org.springframework.context.annotation.Import
 import java.time.Clock
 import java.time.ZonedDateTime
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 
 /**
  * 갤러리 인가 규칙을 한 곳에서 지키는지 확인한다.
@@ -63,222 +65,277 @@ class GalleryAccessPolicyTest @Autowired constructor(
 
     private fun galleryId(gallery: Gallery): Long = checkNotNull(gallery.id)
 
-    @Test
-    fun `스튜디오 주인은 자기 갤러리를 다룰 수 있다`() {
-        val studio = saveStudio(userId = 10L)
-        val gallery = saveGallery(studio)
+    @Nested
+    @DisplayName("갤러리를 다룰 때")
+    inner class ManageGallery {
 
-        val found = galleryAccessPolicy.requirePhotographer(galleryId(gallery), userId = 10L)
+        @Test
+        fun `스튜디오 주인은 자기 갤러리를 다룰 수 있다`() {
+            // given
+            val studio = saveStudio(userId = 10L)
+            val gallery = saveGallery(studio)
 
-        assertEquals(gallery.id, found.id)
-    }
+            // when
+            val found = galleryAccessPolicy.requirePhotographer(galleryId(gallery), userId = 10L)
 
-    @Test
-    fun `다른 스튜디오 작가는 갤러리를 다룰 수 없다`() {
-        val studio = saveStudio(userId = 10L)
-        saveStudio(userId = 20L)
-        val gallery = saveGallery(studio)
-
-        val exception = assertFailsWith<GalleryException> {
-            galleryAccessPolicy.requirePhotographer(galleryId(gallery), userId = 20L)
+            // then
+            assertThat(found.id).isEqualTo(gallery.id)
         }
 
-        assertEquals(GalleryErrorCode.GALLERY_ACCESS_DENIED, exception.errorCode)
-    }
+        @Test
+        fun `다른 스튜디오 작가는 갤러리를 다룰 수 없다`() {
+            // given
+            val studio = saveStudio(userId = 10L)
+            saveStudio(userId = 20L)
+            val gallery = saveGallery(studio)
 
-    @Test
-    fun `스튜디오를 만들지 않은 사용자는 갤러리를 다룰 수 없다`() {
-        // 온보딩을 끝내지 않은 작가 계정이 여기 해당한다.
-        val studio = saveStudio(userId = 10L)
-        val gallery = saveGallery(studio)
+            // when & then
+            assertThatThrownBy { galleryAccessPolicy.requirePhotographer(galleryId(gallery), userId = 20L) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        }
 
-        assertFailsWith<GalleryException> {
-            galleryAccessPolicy.requirePhotographer(galleryId(gallery), userId = 30L)
+        @Test
+        fun `스튜디오를 만들지 않은 사용자는 갤러리를 다룰 수 없다`() {
+            // 온보딩을 끝내지 않은 작가 계정이 여기 해당한다.
+            // given
+            val studio = saveStudio(userId = 10L)
+            val gallery = saveGallery(studio)
+
+            // when & then
+            assertThatThrownBy { galleryAccessPolicy.requirePhotographer(galleryId(gallery), userId = 30L) }
+                .isInstanceOf(GalleryException::class.java)
+        }
+
+        @Test
+        fun `멤버는 갤러리를 다룰 수 없다`() {
+            // given
+            val studio = saveStudio(userId = 10L)
+            val gallery = saveGallery(studio)
+            saveMember(galleryId(gallery), userId = 100L)
+
+            // when & then
+            assertThatThrownBy { galleryAccessPolicy.requirePhotographer(galleryId(gallery), userId = 100L) }
+                .isInstanceOf(GalleryException::class.java)
         }
     }
 
-    @Test
-    fun `멤버는 갤러리를 다룰 수 없다`() {
-        val studio = saveStudio(userId = 10L)
-        val gallery = saveGallery(studio)
-        saveMember(galleryId(gallery), userId = 100L)
+    @Nested
+    @DisplayName("갤러리를 볼 때")
+    inner class ViewGallery {
 
-        assertFailsWith<GalleryException> {
-            galleryAccessPolicy.requirePhotographer(galleryId(gallery), userId = 100L)
+        @Test
+        fun `초대로 들어온 멤버는 갤러리를 볼 수 있다`() {
+            // given
+            val gallery = saveGallery(saveStudio(userId = 10L))
+            saveMember(galleryId(gallery), userId = 100L)
+
+            // when
+            val found = galleryAccessPolicy.requireViewer(galleryId(gallery), userId = 100L)
+
+            // then
+            assertThat(found.id).isEqualTo(gallery.id)
+        }
+
+        @Test
+        fun `초대받지 않은 사용자는 갤러리를 볼 수 없다`() {
+            // given
+            val gallery = saveGallery(saveStudio(userId = 10L))
+
+            // when & then
+            assertThatThrownBy { galleryAccessPolicy.requireViewer(galleryId(gallery), userId = 777L) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        }
+
+        @Test
+        fun `준비 중인 갤러리는 멤버가 볼 수 없다`() {
+            // given
+            val gallery = saveGallery(saveStudio(userId = 10L), status = GalleryStatus.DRAFT)
+            saveMember(galleryId(gallery), userId = 100L)
+
+            // when & then
+            assertThatThrownBy { galleryAccessPolicy.requireViewer(galleryId(gallery), userId = 100L) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        }
+
+        @Test
+        fun `준비 중인 갤러리도 담당 작가는 볼 수 있다`() {
+            // given
+            val studio = saveStudio(userId = 10L)
+            val gallery = saveGallery(studio, status = GalleryStatus.DRAFT)
+
+            // when
+            val found = galleryAccessPolicy.requireViewer(galleryId(gallery), userId = 10L)
+
+            // then
+            assertThat(found.id).isEqualTo(gallery.id)
+        }
+
+        @Test
+        fun `마감 기한이 지나도 열람은 계속 된다`() {
+            // given
+            val gallery = saveGallery(saveStudio(userId = 10L), selectionDeadline = now.minusMinutes(1))
+            saveMember(galleryId(gallery), userId = 100L)
+
+            // when
+            val found = galleryAccessPolicy.requireViewer(galleryId(gallery), userId = 100L)
+
+            // then
+            assertThat(found.id).isEqualTo(gallery.id)
+        }
+
+        @Test
+        fun `없는 갤러리를 요청하면 404로 응답한다`() {
+            // when & then
+            assertThatThrownBy { galleryAccessPolicy.requireViewer(galleryId = -1L, userId = 100L) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.GALLERY_NOT_FOUND)
         }
     }
 
-    @Test
-    fun `초대로 들어온 멤버는 갤러리를 볼 수 있다`() {
-        val gallery = saveGallery(saveStudio(userId = 10L))
-        saveMember(galleryId(gallery), userId = 100L)
+    @Nested
+    @DisplayName("사진을 고를 때")
+    inner class SelectPhotos {
 
-        val found = galleryAccessPolicy.requireViewer(galleryId(gallery), userId = 100L)
+        @Test
+        fun `공개된 갤러리에서 수락한 멤버는 사진을 고를 수 있다`() {
+            // given
+            val gallery = saveGallery(saveStudio(userId = 10L), status = GalleryStatus.OPEN)
+            val saved = saveMember(galleryId(gallery), userId = 100L)
 
-        assertEquals(gallery.id, found.id)
-    }
+            // when
+            val member = galleryAccessPolicy.requireCouple(galleryId(gallery), userId = 100L)
 
-    @Test
-    fun `초대받지 않은 사용자는 갤러리를 볼 수 없다`() {
-        val gallery = saveGallery(saveStudio(userId = 10L))
-
-        val exception = assertFailsWith<GalleryException> {
-            galleryAccessPolicy.requireViewer(galleryId(gallery), userId = 777L)
+            // then
+            assertThat(member.id).isEqualTo(saved.id)
         }
 
-        assertEquals(GalleryErrorCode.GALLERY_ACCESS_DENIED, exception.errorCode)
-    }
+        @Test
+        fun `초대로 들어오지 않은 사용자는 사진을 고를 수 없다`() {
+            // given
+            val gallery = saveGallery(saveStudio(userId = 10L), status = GalleryStatus.OPEN)
 
-    @Test
-    fun `준비 중인 갤러리는 멤버가 볼 수 없다`() {
-        val gallery = saveGallery(saveStudio(userId = 10L), status = GalleryStatus.DRAFT)
-        saveMember(galleryId(gallery), userId = 100L)
-
-        val exception = assertFailsWith<GalleryException> {
-            galleryAccessPolicy.requireViewer(galleryId(gallery), userId = 100L)
+            // when & then
+            assertThatThrownBy { galleryAccessPolicy.requireCouple(galleryId(gallery), userId = 101L) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
         }
 
-        assertEquals(GalleryErrorCode.GALLERY_ACCESS_DENIED, exception.errorCode)
-    }
+        @Test
+        fun `마감 기한 안이면 사진을 고를 수 있다`() {
+            // given
+            val gallery = saveGallery(saveStudio(userId = 10L), selectionDeadline = now.plusDays(3))
+            val saved = saveMember(galleryId(gallery), userId = 100L)
 
-    @Test
-    fun `준비 중인 갤러리도 담당 작가는 볼 수 있다`() {
-        val studio = saveStudio(userId = 10L)
-        val gallery = saveGallery(studio, status = GalleryStatus.DRAFT)
+            // when
+            val member = galleryAccessPolicy.requireCouple(galleryId(gallery), userId = 100L)
 
-        val found = galleryAccessPolicy.requireViewer(galleryId(gallery), userId = 10L)
-
-        assertEquals(gallery.id, found.id)
-    }
-
-    @Test
-    fun `공개된 갤러리에서 수락한 멤버는 사진을 고를 수 있다`() {
-        val gallery = saveGallery(saveStudio(userId = 10L), status = GalleryStatus.OPEN)
-        val saved = saveMember(galleryId(gallery), userId = 100L)
-
-        val member = galleryAccessPolicy.requireCouple(galleryId(gallery), userId = 100L)
-
-        assertEquals(saved.id, member.id)
-    }
-
-    @Test
-    fun `초대로 들어오지 않은 사용자는 사진을 고를 수 없다`() {
-        val gallery = saveGallery(saveStudio(userId = 10L), status = GalleryStatus.OPEN)
-
-        val exception = assertFailsWith<GalleryException> {
-            galleryAccessPolicy.requireCouple(galleryId(gallery), userId = 101L)
+            // then
+            assertThat(member.id).isEqualTo(saved.id)
         }
 
-        assertEquals(GalleryErrorCode.GALLERY_ACCESS_DENIED, exception.errorCode)
-    }
+        @Test
+        fun `마감 기한이 지나면 상태가 OPEN이어도 사진을 고를 수 없다`() {
+            // given
+            val gallery = saveGallery(saveStudio(userId = 10L), selectionDeadline = now.minusMinutes(1))
+            saveMember(galleryId(gallery), userId = 100L)
 
-    @Test
-    fun `마감 기한 안이면 사진을 고를 수 있다`() {
-        val gallery = saveGallery(saveStudio(userId = 10L), selectionDeadline = now.plusDays(3))
-        val saved = saveMember(galleryId(gallery), userId = 100L)
-
-        val member = galleryAccessPolicy.requireCouple(galleryId(gallery), userId = 100L)
-
-        assertEquals(saved.id, member.id)
-    }
-
-    @Test
-    fun `마감 기한이 지나면 상태가 OPEN이어도 사진을 고를 수 없다`() {
-        val gallery = saveGallery(saveStudio(userId = 10L), selectionDeadline = now.minusMinutes(1))
-        saveMember(galleryId(gallery), userId = 100L)
-
-        val exception = assertFailsWith<GalleryException> {
-            galleryAccessPolicy.requireCouple(galleryId(gallery), userId = 100L)
+            // when & then
+            // 아직 안 열린 것과 구분해서 알려줘야 사용자가 연장을 요청할 수 있다.
+            assertThatThrownBy { galleryAccessPolicy.requireCouple(galleryId(gallery), userId = 100L) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.SELECTION_DEADLINE_PASSED)
         }
 
-        // 아직 안 열린 것과 구분해서 알려줘야 사용자가 연장을 요청할 수 있다.
-        assertEquals(GalleryErrorCode.SELECTION_DEADLINE_PASSED, exception.errorCode)
-    }
+        @Test
+        fun `마감된 갤러리에서는 사진을 고를 수 없다`() {
+            // given
+            val gallery = saveGallery(saveStudio(userId = 10L), status = GalleryStatus.CLOSED)
+            saveMember(galleryId(gallery), userId = 100L)
 
-    @Test
-    fun `마감 기한이 지나도 열람은 계속 된다`() {
-        val gallery = saveGallery(saveStudio(userId = 10L), selectionDeadline = now.minusMinutes(1))
-        saveMember(galleryId(gallery), userId = 100L)
-
-        val found = galleryAccessPolicy.requireViewer(galleryId(gallery), userId = 100L)
-
-        assertEquals(gallery.id, found.id)
-    }
-
-    @Test
-    fun `마감된 갤러리에서는 사진을 고를 수 없다`() {
-        val gallery = saveGallery(saveStudio(userId = 10L), status = GalleryStatus.CLOSED)
-        saveMember(galleryId(gallery), userId = 100L)
-
-        val exception = assertFailsWith<GalleryException> {
-            galleryAccessPolicy.requireCouple(galleryId(gallery), userId = 100L)
+            // when & then
+            assertThatThrownBy { galleryAccessPolicy.requireCouple(galleryId(gallery), userId = 100L) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.GALLERY_NOT_OPEN)
         }
 
-        assertEquals(GalleryErrorCode.GALLERY_NOT_OPEN, exception.errorCode)
+        @Test
+        fun `담당 작가라도 고객 대신 사진을 고를 수 없다`() {
+            // given
+            val studio = saveStudio(userId = 10L)
+            val gallery = saveGallery(studio, status = GalleryStatus.OPEN)
+
+            // when & then
+            assertThatThrownBy { galleryAccessPolicy.requireCouple(galleryId(gallery), userId = 10L) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        }
     }
 
-    @Test
-    fun `담당 작가라도 고객 대신 사진을 고를 수 없다`() {
-        val studio = saveStudio(userId = 10L)
-        val gallery = saveGallery(studio, status = GalleryStatus.OPEN)
+    @Nested
+    @DisplayName("폴더와 클러스터를 만질 때")
+    inner class OrganizeFoldersAndClusters {
 
-        val exception = assertFailsWith<GalleryException> {
-            galleryAccessPolicy.requireCouple(galleryId(gallery), userId = 10L)
+        @Test
+        fun `작가는 마감이 지나도 폴더와 클러스터를 만질 수 있다`() {
+            // 마감은 고객이 고르는 기한이지 작가의 작업 기한이 아니다.
+            // given
+            val studio = saveStudio(userId = 10L)
+            val gallery = saveGallery(studio, status = GalleryStatus.CLOSED, selectionDeadline = now.minusDays(1))
+
+            // when
+            val found = galleryAccessPolicy.requirePhotographerOrCouple(galleryId(gallery), userId = 10L)
+
+            // then
+            assertThat(found.id).isEqualTo(gallery.id)
         }
 
-        assertEquals(GalleryErrorCode.GALLERY_ACCESS_DENIED, exception.errorCode)
-    }
+        @Test
+        fun `부부는 고를 수 있는 동안에만 폴더와 클러스터를 만질 수 있다`() {
+            // given
+            val gallery = saveGallery(saveStudio(userId = 10L), status = GalleryStatus.OPEN)
+            saveMember(galleryId(gallery), userId = 100L)
 
-    @Test
-    fun `작가는 마감이 지나도 폴더와 클러스터를 만질 수 있다`() {
-        // 마감은 고객이 고르는 기한이지 작가의 작업 기한이 아니다.
-        val studio = saveStudio(userId = 10L)
-        val gallery = saveGallery(studio, status = GalleryStatus.CLOSED, selectionDeadline = now.minusDays(1))
+            // when
+            val found = galleryAccessPolicy.requirePhotographerOrCouple(galleryId(gallery), userId = 100L)
 
-        val found = galleryAccessPolicy.requirePhotographerOrCouple(galleryId(gallery), userId = 10L)
-
-        assertEquals(gallery.id, found.id)
-    }
-
-    @Test
-    fun `부부는 고를 수 있는 동안에만 폴더와 클러스터를 만질 수 있다`() {
-        val gallery = saveGallery(saveStudio(userId = 10L), status = GalleryStatus.OPEN)
-        saveMember(galleryId(gallery), userId = 100L)
-
-        val found = galleryAccessPolicy.requirePhotographerOrCouple(galleryId(gallery), userId = 100L)
-
-        assertEquals(gallery.id, found.id)
-    }
-
-    @Test
-    fun `부부는 마감이 지나면 폴더와 클러스터를 만질 수 없다`() {
-        val gallery = saveGallery(saveStudio(userId = 10L), selectionDeadline = now.minusMinutes(1))
-        saveMember(galleryId(gallery), userId = 100L)
-
-        val exception = assertFailsWith<GalleryException> {
-            galleryAccessPolicy.requirePhotographerOrCouple(galleryId(gallery), userId = 100L)
+            // then
+            assertThat(found.id).isEqualTo(gallery.id)
         }
 
-        assertEquals(GalleryErrorCode.SELECTION_DEADLINE_PASSED, exception.errorCode)
-    }
+        @Test
+        fun `부부는 마감이 지나면 폴더와 클러스터를 만질 수 없다`() {
+            // given
+            val gallery = saveGallery(saveStudio(userId = 10L), selectionDeadline = now.minusMinutes(1))
+            saveMember(galleryId(gallery), userId = 100L)
 
-    @Test
-    fun `갤러리와 무관한 사용자는 폴더와 클러스터를 만질 수 없다`() {
-        val gallery = saveGallery(saveStudio(userId = 10L), status = GalleryStatus.OPEN)
-
-        val exception = assertFailsWith<GalleryException> {
-            galleryAccessPolicy.requirePhotographerOrCouple(galleryId(gallery), userId = 999L)
+            // when & then
+            assertThatThrownBy { galleryAccessPolicy.requirePhotographerOrCouple(galleryId(gallery), userId = 100L) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.SELECTION_DEADLINE_PASSED)
         }
 
-        assertEquals(GalleryErrorCode.GALLERY_ACCESS_DENIED, exception.errorCode)
-    }
+        @Test
+        fun `갤러리와 무관한 사용자는 폴더와 클러스터를 만질 수 없다`() {
+            // given
+            val gallery = saveGallery(saveStudio(userId = 10L), status = GalleryStatus.OPEN)
 
-    @Test
-    fun `없는 갤러리를 요청하면 404로 응답한다`() {
-        val exception = assertFailsWith<GalleryException> {
-            galleryAccessPolicy.requireViewer(galleryId = -1L, userId = 100L)
+            // when & then
+            assertThatThrownBy { galleryAccessPolicy.requirePhotographerOrCouple(galleryId(gallery), userId = 999L) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
         }
-
-        assertEquals(GalleryErrorCode.GALLERY_NOT_FOUND, exception.errorCode)
     }
 }

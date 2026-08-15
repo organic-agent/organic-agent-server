@@ -1,6 +1,5 @@
 package com.soma.wes.auth.service.oauth
 
-import com.soma.wes.TestcontainersConfiguration
 import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.auth.dto.OAuthUserInfo
 import com.soma.wes.auth.dto.request.AuthCodeRequest
@@ -12,9 +11,14 @@ import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
+import com.soma.wes.support.TestcontainersConfiguration
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.domain.UserType
 import com.soma.wes.user.repository.UserRepository
+import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.SoftAssertions.assertSoftly
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
@@ -27,9 +31,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.web.util.UriComponentsBuilder
 import java.time.ZonedDateTime
 import java.util.concurrent.atomic.AtomicLong
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 
 /**
  * 로그인 진입점이 트랜잭션 경계를 제대로 넘는지 확인한다.
@@ -59,121 +60,163 @@ class OAuthLoginServiceTest @Autowired constructor(
 
     private val sequence = AtomicLong(System.nanoTime())
 
-    @Test
-    fun `로그인하면 소셜에서 바뀐 프로필이 실제로 저장된다`() {
-        val providerId = "oauth-login-${sequence.incrementAndGet()}"
-        userRepository.save(
-            User(
-                provider = OAuthProvider.KAKAO,
-                providerId = providerId,
-                nickname = "옛 닉네임",
-                email = "old@example.com",
-            ),
-        )
+    @Nested
+    @DisplayName("로그인할 때")
+    inner class Login {
 
-        whenever(oAuthUserInfoService.getUserInfo(eq(OAuthProvider.KAKAO), any(), anyOrNull())).thenReturn(
-            OAuthUserInfo(
-                provider = OAuthProvider.KAKAO,
-                providerId = providerId,
-                nickname = "새 닉네임",
-                email = "new@example.com",
-            ),
-        )
+        @Test
+        fun `로그인하면 소셜에서 바뀐 프로필이 실제로 저장된다`() {
+            // given
+            val providerId = "oauth-login-${sequence.incrementAndGet()}"
+            userRepository.save(
+                User(
+                    provider = OAuthProvider.KAKAO,
+                    providerId = providerId,
+                    nickname = "옛 닉네임",
+                    email = "old@example.com",
+                ),
+            )
 
-        oAuthLoginService.login("kakao", AuthCodeRequest("auth-code"), "http://localhost:3000")
+            whenever(oAuthUserInfoService.getUserInfo(eq(OAuthProvider.KAKAO), any(), anyOrNull())).thenReturn(
+                OAuthUserInfo(
+                    provider = OAuthProvider.KAKAO,
+                    providerId = providerId,
+                    nickname = "새 닉네임",
+                    email = "new@example.com",
+                ),
+            )
 
-        // 트랜잭션이 열리지 않았다면 준영속 엔티티에 쓴 셈이라 옛 값이 그대로 남는다.
-        val updated = userRepository.findByProviderAndProviderId(OAuthProvider.KAKAO, providerId)
-        assertEquals("새 닉네임", updated?.nickname)
-        assertEquals("new@example.com", updated?.email)
+            // when
+            oAuthLoginService.login("kakao", AuthCodeRequest("auth-code"), "http://localhost:3000")
+
+            // then
+            // 트랜잭션이 열리지 않았다면 준영속 엔티티에 쓴 셈이라 옛 값이 그대로 남는다.
+            val updated = userRepository.findByProviderAndProviderId(OAuthProvider.KAKAO, providerId)
+            assertThat(updated?.nickname).isEqualTo("새 닉네임")
+            assertThat(updated?.email).isEqualTo("new@example.com")
+        }
+
+        @Test
+        fun `첫 로그인이면 가입시키고 토큰을 준다`() {
+            // given
+            val providerId = "oauth-login-new-${sequence.incrementAndGet()}"
+            whenever(oAuthUserInfoService.getUserInfo(eq(OAuthProvider.KAKAO), any(), anyOrNull())).thenReturn(
+                OAuthUserInfo(
+                    provider = OAuthProvider.KAKAO,
+                    providerId = providerId,
+                    nickname = "새 사용자",
+                    email = "new@example.com",
+                ),
+            )
+
+            // when
+            val response = oAuthLoginService.login("kakao", AuthCodeRequest("auth-code"), null)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(userRepository.findByProviderAndProviderId(OAuthProvider.KAKAO, providerId)?.nickname)
+                    .isEqualTo("새 사용자")
+                softly.assertThat(response.accessToken).isNotBlank()
+                // 초대 없이 들어온 로그인이다. 갈 갤러리가 없다.
+                softly.assertThat(response.galleryId).isNull()
+            }
+        }
     }
 
-    @Test
-    fun `첫 로그인이면 가입시키고 토큰을 준다`() {
-        val providerId = "oauth-login-new-${sequence.incrementAndGet()}"
-        whenever(oAuthUserInfoService.getUserInfo(eq(OAuthProvider.KAKAO), any(), anyOrNull())).thenReturn(
-            OAuthUserInfo(
-                provider = OAuthProvider.KAKAO,
-                providerId = providerId,
-                nickname = "새 사용자",
-                email = "new@example.com",
-            ),
-        )
+    @Nested
+    @DisplayName("초대 링크로 로그인할 때")
+    inner class LoginWithInvite {
 
-        val response = oAuthLoginService.login("kakao", AuthCodeRequest("auth-code"), null)
+        @Test
+        fun `초대 링크로 로그인하면 가입과 수락이 한 번에 끝난다`() {
+            // 링크 클릭 → 카카오 로그인 → 갤러리 도착. 중간에 별도 수락 호출이 없어야
+            // 그 사이에서 흐름이 끊길 구간도 없다.
+            // given
+            val gallery = saveGalleryWithInvite("invite-happy")
+            val providerId = stubNewUser("oauth-invite")
 
-        assertEquals("새 사용자", userRepository.findByProviderAndProviderId(OAuthProvider.KAKAO, providerId)?.nickname)
-        assert(response.accessToken.isNotBlank())
-        // 초대 없이 들어온 로그인이다. 갈 갤러리가 없다.
-        assertNull(response.galleryId)
-    }
+            // when
+            // ① 프론트가 /invite/{token}에서 로그인 URL을 받는다
+            val state = stateOf(oAuthLoginUrlService.generateLoginUrl("kakao", null, "invite-happy").loginUrl)
 
-    @Test
-    fun `초대 링크로 로그인하면 가입과 수락이 한 번에 끝난다`() {
-        // 링크 클릭 → 카카오 로그인 → 갤러리 도착. 중간에 별도 수락 호출이 없어야
-        // 그 사이에서 흐름이 끊길 구간도 없다.
-        val gallery = saveGalleryWithInvite("invite-happy")
-        val providerId = stubNewUser("oauth-invite")
+            // ② 콜백이 돌려준 state를 그대로 넘긴다
+            val response = oAuthLoginService.login("kakao", AuthCodeRequest("auth-code", state), null)
 
-        // ① 프론트가 /invite/{token}에서 로그인 URL을 받는다
-        val state = stateOf(oAuthLoginUrlService.generateLoginUrl("kakao", null, "invite-happy").loginUrl)
+            // then
+            assertThat(response.galleryId).isEqualTo(gallery.id)
+            val user = checkNotNull(userRepository.findByProviderAndProviderId(OAuthProvider.KAKAO, providerId))
+            assertThat(user.userType).isEqualTo(UserType.CLIENT)
+            assertThat(galleryMemberRepository.findByGalleryIdAndUserId(gallery.id!!, user.id!!)).isNotNull()
+        }
 
-        // ② 콜백이 돌려준 state를 그대로 넘긴다
-        val response = oAuthLoginService.login("kakao", AuthCodeRequest("auth-code", state), null)
+        @Test
+        fun `초대 토큰은 state로 나가지 않는다`() {
+            // given
+            saveGalleryWithInvite("invite-secret")
 
-        assertEquals(gallery.id, response.galleryId)
-        val user = assertNotNull(userRepository.findByProviderAndProviderId(OAuthProvider.KAKAO, providerId))
-        assertEquals(UserType.CLIENT, user.userType)
-        assertNotNull(galleryMemberRepository.findByGalleryIdAndUserId(gallery.id!!, user.id!!))
-    }
+            // when
+            val loginUrl = oAuthLoginUrlService.generateLoginUrl("kakao", null, "invite-secret").loginUrl
 
-    @Test
-    fun `초대 토큰은 state로 나가지 않는다`() {
-        saveGalleryWithInvite("invite-secret")
+            // then
+            assertThat(loginUrl)
+                .withFailMessage("초대 토큰이 provider로 나가면 안 된다: %s", loginUrl)
+                .doesNotContain("invite-secret")
+        }
 
-        val loginUrl = oAuthLoginUrlService.generateLoginUrl("kakao", null, "invite-secret").loginUrl
+        @Test
+        fun `state가 없으면 로그인만 되고 갤러리는 비어서 온다`() {
+            // 인앱 브라우저 전환 등으로 state를 잃은 경우다. 사용자는 카톡에 남은 링크를 다시
+            // 눌러 수락 API로 합류한다.
+            // given
+            saveGalleryWithInvite("invite-lost")
+            val providerId = stubNewUser("oauth-nostate")
 
-        assert(!loginUrl.contains("invite-secret")) { "초대 토큰이 provider로 나가면 안 된다: $loginUrl" }
-    }
+            // when
+            val response = oAuthLoginService.login("kakao", AuthCodeRequest("auth-code"), null)
 
-    @Test
-    fun `state가 없으면 로그인만 되고 갤러리는 비어서 온다`() {
-        // 인앱 브라우저 전환 등으로 state를 잃은 경우다. 사용자는 카톡에 남은 링크를 다시
-        // 눌러 수락 API로 합류한다.
-        saveGalleryWithInvite("invite-lost")
-        val providerId = stubNewUser("oauth-nostate")
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.galleryId).isNull()
+                softly.assertThat(response.accessToken).isNotBlank()
+                // 수락을 안 했으므로 종류도 아직 정해지지 않는다.
+                softly.assertThat(userRepository.findByProviderAndProviderId(OAuthProvider.KAKAO, providerId)?.userType)
+                    .isNull()
+            }
+        }
 
-        val response = oAuthLoginService.login("kakao", AuthCodeRequest("auth-code"), null)
+        @Test
+        fun `만료된 초대여도 로그인은 성공한다`() {
+            // 링크 하나가 방금 만든 계정까지 되돌리면 안 된다. 수락만 조용히 실패시킨다.
+            // given
+            saveGalleryWithInvite("invite-expired", expiresAt = ZonedDateTime.now().minusDays(1))
+            val providerId = stubNewUser("oauth-expired")
 
-        assertNull(response.galleryId)
-        assert(response.accessToken.isNotBlank())
-        // 수락을 안 했으므로 종류도 아직 정해지지 않는다.
-        assertNull(userRepository.findByProviderAndProviderId(OAuthProvider.KAKAO, providerId)?.userType)
-    }
+            // when
+            val state = stateOf(oAuthLoginUrlService.generateLoginUrl("kakao", null, "invite-expired").loginUrl)
+            val response = oAuthLoginService.login("kakao", AuthCodeRequest("auth-code", state), null)
 
-    @Test
-    fun `만료된 초대여도 로그인은 성공한다`() {
-        // 링크 하나가 방금 만든 계정까지 되돌리면 안 된다. 수락만 조용히 실패시킨다.
-        saveGalleryWithInvite("invite-expired", expiresAt = ZonedDateTime.now().minusDays(1))
-        val providerId = stubNewUser("oauth-expired")
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.galleryId).isNull()
+                softly.assertThat(response.accessToken).isNotBlank()
+                softly.assertThat(userRepository.findByProviderAndProviderId(OAuthProvider.KAKAO, providerId))
+                    .isNotNull()
+            }
+        }
 
-        val state = stateOf(oAuthLoginUrlService.generateLoginUrl("kakao", null, "invite-expired").loginUrl)
-        val response = oAuthLoginService.login("kakao", AuthCodeRequest("auth-code", state), null)
+        @Test
+        fun `같은 state로 두 번 로그인해도 두 번째는 초대가 붙지 않는다`() {
+            // given
+            val gallery = saveGalleryWithInvite("invite-replay")
+            stubNewUser("oauth-replay")
 
-        assertNull(response.galleryId)
-        assert(response.accessToken.isNotBlank())
-        assertNotNull(userRepository.findByProviderAndProviderId(OAuthProvider.KAKAO, providerId))
-    }
+            val state = stateOf(oAuthLoginUrlService.generateLoginUrl("kakao", null, "invite-replay").loginUrl)
 
-    @Test
-    fun `같은 state로 두 번 로그인해도 두 번째는 초대가 붙지 않는다`() {
-        val gallery = saveGalleryWithInvite("invite-replay")
-        stubNewUser("oauth-replay")
-
-        val state = stateOf(oAuthLoginUrlService.generateLoginUrl("kakao", null, "invite-replay").loginUrl)
-
-        assertEquals(gallery.id, oAuthLoginService.login("kakao", AuthCodeRequest("c", state), null).galleryId)
-        assertNull(oAuthLoginService.login("kakao", AuthCodeRequest("c", state), null).galleryId)
+            // when & then
+            assertThat(oAuthLoginService.login("kakao", AuthCodeRequest("c", state), null).galleryId)
+                .isEqualTo(gallery.id)
+            assertThat(oAuthLoginService.login("kakao", AuthCodeRequest("c", state), null).galleryId).isNull()
+        }
     }
 
     // --- helpers ---

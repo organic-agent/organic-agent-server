@@ -56,6 +56,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 공통 컨벤션 (레이어 흐름, 예외, 객체 생성, 상수, 포맷팅, 네이밍, 주석) → `common.md`
 - 계층별 컨벤션 → `controller.md`, `domain.md`, `dto.md`, `service.md`, `repository.md`,
   `infrastructure.md`, `support.md`
+- 테스트 작성 (통합 테스트 인프라, 픽스처, 단언) → `test.md`
 
 `.claude/spec/` — 스킬·작업에서 필요할 때만 참조 (자동 로드 아님)
 
