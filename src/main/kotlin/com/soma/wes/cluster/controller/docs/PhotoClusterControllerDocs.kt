@@ -15,8 +15,12 @@ interface PhotoClusterControllerDocs {
     @Operation(
         summary = "유사도로 묶인 사진 조회",
         description = """
-            threshold 이상으로 닮은 사진끼리 한 묶음으로 돌려준다. 높일수록 잘게, 낮출수록 크게 묶인다.
-            생략하면 서버 기본값을 쓰고, 실제로 쓰인 값은 응답의 threshold에 담겨 온다.
+            레벨 프리셋(1 = 크게 묶기 … 5 = 잘게 묶기)이 정하는 기준 이상으로 닮은 사진끼리 한 묶음으로
+            돌려준다. 레벨을 올리면 반드시 더 잘게 쪼개진다. 생략하면 서버 기본 레벨을 쓰고, 실제로
+            쓰인 레벨은 응답의 level에 담겨 온다.
+
+            각 레벨의 실제 파라미터(유사도 임계값, 촬영 시각 창)는 서버가 소유한다 — 클라이언트는
+            수치를 알 필요가 없고, 알고리즘이 개선되어도 레벨의 의미와 API는 그대로다.
 
             묶음은 큰 것부터 온다. 각 묶음의 photos는 갤러리 노출 순서를 따르므로 첫 장을 대표로 쓰면 된다.
             혼자 남은 사진도 크기 1짜리 묶음으로 들어 있다.
@@ -25,19 +29,19 @@ interface PhotoClusterControllerDocs {
             0이 아니면 임베딩 실행이 끝나지 않은 것이다 — POST /galleries/{galleryId}/embeddings/run 참고.
 
             담당 작가와 초대받은 부부 양쪽이 볼 수 있다. 부부는 갤러리가 열려 있고 마감 전일 때만 가능하다.
-            저장되는 값이 아니므로 값을 바꿔가며 여러 번 불러도 된다.
+            저장되는 값이 아니므로 레벨을 바꿔가며 여러 번 불러도 된다.
         """,
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "조회 성공"),
-        ApiResponse(responseCode = "400", description = "threshold가 0.0~1.0을 벗어남", content = []),
+        ApiResponse(responseCode = "400", description = "지원하지 않는 레벨", content = []),
         ApiResponse(responseCode = "403", description = "갤러리와 무관한 사용자이거나, 부부인데 마감/미공개 갤러리", content = []),
         ApiResponse(responseCode = "404", description = "존재하지 않는 갤러리", content = []),
     )
     fun cluster(
         loginUser: LoginUser,
         galleryId: Long,
-        @Parameter(description = "0.0~1.0의 코사인 유사도. 생략하면 서버 기본값", example = "0.9")
-        threshold: Double?,
+        @Parameter(description = "1(크게 묶기)~5(잘게 묶기). 생략하면 서버 기본 레벨", example = "3")
+        level: Int?,
     ): ResponseEntity<PhotoClustersResponse>
 }

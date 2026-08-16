@@ -1,5 +1,6 @@
 package com.soma.wes.cluster
 
+import com.soma.wes.cluster.config.ClusterProperties
 import com.soma.wes.cluster.repository.PhotoSimilarityRepository
 import com.soma.wes.cluster.support.UnionFind
 import com.soma.wes.gallery.domain.Gallery
@@ -46,6 +47,7 @@ class PhotoClusterEvalTest @Autowired constructor(
     private val studioRepository: StudioRepository,
     private val galleryRepository: GalleryRepository,
     private val objectMapper: ObjectMapper,
+    private val clusterProperties: ClusterProperties,
 ) {
 
     @Test
@@ -88,6 +90,40 @@ class PhotoClusterEvalTest @Autowired constructor(
         val predictedCounts = results.map { (_, metrics) -> metrics.predictedCount }
         assertThat(predictedCounts)
             .describedAs("임계값이 오르면 예측 쌍은 줄거나 같아야 한다")
+            .isEqualTo(predictedCounts.sortedDescending())
+
+        evaluateLevels(galleryId, photoIds, truePairs)
+    }
+
+    /**
+     * 운영 레벨 번들 5개를 설정 그대로 측정한다 — 이 표가 배포되는 프리셋의 품질이다.
+     * 번들 재선정이 필요하면(임베딩 교체 등) 이 메서드를 임시로 그리드 스윕으로 바꿔 돌린다
+     * (`docs/notes/clustering-eval-phase2.md`의 절차 참조).
+     */
+    private fun evaluateLevels(
+        galleryId: Long,
+        photoIds: List<Long>,
+        truePairs: Set<Pair<Long, Long>>,
+    ) {
+        val results = clusterProperties.levels.toSortedMap().map { (level, bundle) ->
+            val edges = photoSimilarityRepository.findSimilarPairs(
+                galleryId = galleryId,
+                strictDistance = 1.0 - bundle.strictThreshold,
+                lenientDistance = 1.0 - bundle.lenientThreshold,
+                windowSeconds = bundle.windowSeconds,
+            )
+            level to score(connectedPairs(photoIds, edges), truePairs)
+        }
+
+        results.forEach { (level, metrics) ->
+            println("[cluster-eval]   level=$level  ${metrics.report()}")
+        }
+
+        // 레벨 번들은 중첩(strict·lenient 상승, window 하강)이어야 한다 — 그래야 "레벨을
+        // 올리면 반드시 더 잘게"가 성립한다. 설정이 그 규칙을 어기면 여기서 걸린다.
+        val predictedCounts = results.map { (_, metrics) -> metrics.predictedCount }
+        assertThat(predictedCounts)
+            .describedAs("레벨이 오르면 예측 쌍은 줄거나 같아야 한다")
             .isEqualTo(predictedCounts.sortedDescending())
     }
 
@@ -171,7 +207,7 @@ class PhotoClusterEvalTest @Autowired constructor(
 
     companion object {
 
-        /** 스윕 범위. 서버 기본값 0.90을 포함해 0.80~0.98을 0.02 간격으로 훑는다. */
+        /** 단일 임계값(시간 게이트 없음) 스윕 범위 — 임베딩 자체의 분리력을 보는 기준선이다. */
         private val THRESHOLDS = (80..98 step 2).map { it / 100.0 }
     }
 
