@@ -14,14 +14,7 @@ import org.springframework.stereotype.Service
  *
  * 벡터를 만드는 일 자체는 이 서버가 하지 않는다 — 이미지 바이트가 여기를 거치지 않는 것과
  * 같은 이유다. 모델 가중치만 수백 MB이고 추론은 CPU를 통째로 먹는다.
- *
- * 무엇을 어떻게 부르는지는 [EmbeddingInvoker] 구현이 알고, 이 서비스는 권한과 집계만 본다.
- * 호출이 비동기라는 사실은 응답에도 드러난다 — 돌려주는 것은 결과가 아니라 대상 장수뿐이고,
- * 진행 상황은 `GET /photos/summary`의 embedded 수로 확인한다.
  */
-// 클래스 단위 @Transactional을 걸지 않는다. 걸면 외부 호출이 트랜잭션 안에서 일어나
-// 그동안 커넥션 하나를 붙잡고 있게 된다. 여기서 DB를 쓰는 것은 count 하나뿐이라
-// 리포지토리 호출 자체의 트랜잭션으로 충분하다.
 @Service
 class EmbeddingService(
     private val galleryAccessPolicy: GalleryAccessPolicy,

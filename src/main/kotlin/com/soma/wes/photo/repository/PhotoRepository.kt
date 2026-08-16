@@ -73,9 +73,6 @@ interface PhotoRepository : JpaRepository<Photo, Long> {
 
     /**
      * 다음 사진이 받을 노출 순서. 업로드 URL 발급이 쓴다.
-     *
-     * 휴지통 사진까지 세도록 네이티브로 둔다(`@SQLRestriction` 우회). 살아 있는 사진만 세면
-     * 휴지통에 있던 사진이 복원되는 순간 새로 올라온 사진과 순서가 겹친다.
      */
     @Query(
         value = "select coalesce(max(display_order) + 1, 0) from photos where gallery_id = :galleryId",
