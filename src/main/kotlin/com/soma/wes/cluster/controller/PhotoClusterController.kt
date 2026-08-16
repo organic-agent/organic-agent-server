@@ -23,9 +23,9 @@ class PhotoClusterController(
     override fun cluster(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
-        @RequestParam(required = false) threshold: Double?,
+        @RequestParam(required = false) level: Int?,
     ): ResponseEntity<PhotoClustersResponse> {
-        val result = photoClusterService.cluster(galleryId, loginUser.id, threshold)
+        val result = photoClusterService.cluster(galleryId, loginUser.id, level)
 
         return ResponseEntity.ok(result)
     }

@@ -72,9 +72,19 @@ app:
     template-gallery-id: 0
 
   cluster:
-    # 프론트가 threshold를 넘기지 않았을 때 쓰는 유사도. 첫 화면의 묶음 입도를 정하는 값이라
-    # 바꾸면 사용자가 처음 보는 결과가 통째로 달라진다. 올리면 잘게, 내리면 크게 묶인다.
-    default-threshold: 0.9
+    # 프론트가 level을 넘기지 않았을 때 쓰는 레벨. 첫 화면의 묶음 입도를 정하는 값이라
+    # 바꾸면 사용자가 처음 보는 결과가 통째로 달라진다.
+    default-level: 3
+    # 레벨(1 = 크게 묶기 … 5 = 잘게 묶기)별 파라미터 번들. strict는 시간 무관 유사도 하한,
+    # lenient는 촬영 시각이 window-seconds 안인 쌍에만 허용하는 느슨한 하한이다.
+    # 값은 평가 하네스(PhotoClusterEvalTest) 그리드 스윕의 운영점 — docs/notes/clustering-eval-phase2.md.
+    # 레벨이 오르면 strict·lenient는 오르고 window는 줄어야 한다(간선 중첩으로 "올리면 더 잘게" 보장).
+    levels:
+      1: { strict-threshold: 0.86, lenient-threshold: 0.78, window-seconds: 150 }
+      2: { strict-threshold: 0.90, lenient-threshold: 0.80, window-seconds: 150 }
+      3: { strict-threshold: 0.92, lenient-threshold: 0.82, window-seconds: 90 }
+      4: { strict-threshold: 0.94, lenient-threshold: 0.82, window-seconds: 90 }
+      5: { strict-threshold: 0.96, lenient-threshold: 0.84, window-seconds: 45 }
 
   invite:
     # 초대 링크의 앞부분. 뒤에 토큰이 붙어 완성된 링크가 된다.

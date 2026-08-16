@@ -3,12 +3,30 @@ package com.soma.wes.cluster.config
 import org.springframework.boot.context.properties.ConfigurationProperties
 
 /**
- * 클러스터링 기본값.
+ * 클러스터링 레벨 프리셋.
  *
- * 임계값은 사용자가 매 요청에 넘기는 손잡이라, 여기 값은 "아직 아무것도 안 만졌을 때 보여줄
- * 입도"에 해당한다. 바뀌면 첫 화면이 통째로 달라지는 정책 값이므로 저장소에 둔다.
+ * 사용자 손잡이는 연속 임계값이 아니라 레벨(1 = 크게 묶기 … 5 = 잘게 묶기)이고, 각 레벨은
+ * 서버가 소유한 파라미터 번들이다. 수치를 API에 노출하지 않으므로 알고리즘·임베딩이 바뀌어도
+ * 레벨의 의미는 유지되고, 번들 값만 재선정하면 된다. 값은 감이 아니라 평가 하네스
+ * (PhotoClusterEvalTest)의 그리드 스윕에서 고른 운영점이다 — 근거는
+ * `docs/notes/clustering-eval-phase2.md`.
+ *
+ * 레벨이 오를수록 strict·lenient는 오르고 window는 줄어야 한다. 그래야 상위 레벨의 간선이
+ * 하위 레벨의 부분집합이 되어 "레벨을 올리면 반드시 더 잘게"가 보장된다 — 이 단조성은
+ * 평가 하네스가 검증한다.
  */
 @ConfigurationProperties(prefix = "app.cluster")
 data class ClusterProperties(
-    val defaultThreshold: Double,
-)
+    val defaultLevel: Int,
+    val levels: Map<Int, ClusterLevel>,
+) {
+
+    data class ClusterLevel(
+        /** 시간 무관하게 모든 쌍에 적용하는 코사인 유사도 하한. 묶음 입도의 주 손잡이다. */
+        val strictThreshold: Double,
+        /** 촬영 시각이 [windowSeconds] 안인 쌍에만 허용하는 느슨한 유사도 하한. */
+        val lenientThreshold: Double,
+        /** 두 사진을 같은 시간대로 보는 촬영 시각 차이 상한. */
+        val windowSeconds: Long,
+    )
+}

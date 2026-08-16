@@ -9,6 +9,6 @@ enum class ClusterErrorCode(
     override val message: String,
 ) : ErrorCode {
 
-    /** 코사인 유사도는 정의상 0.0~1.0이다. 범위를 벗어난 값은 거리로 환산하면 의미가 없다. */
-    INVALID_THRESHOLD(HttpStatus.BAD_REQUEST, "CLUSTER_400_1", "유사도는 0.0 이상 1.0 이하여야 합니다."),
+    /** 레벨은 서버 설정에 정의된 프리셋(1~5)만 유효하다. 임의 숫자는 대응하는 번들이 없다. */
+    INVALID_LEVEL(HttpStatus.BAD_REQUEST, "CLUSTER_400_1", "지원하지 않는 묶음 레벨입니다."),
 }
