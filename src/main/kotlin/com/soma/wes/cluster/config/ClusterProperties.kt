@@ -12,8 +12,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties
  * `docs/notes/clustering-eval-phase2.md`.
  *
  * 레벨이 오를수록 strict·lenient는 오르고 window는 줄어야 한다. 그래야 상위 레벨의 간선이
- * 하위 레벨의 부분집합이 되어 "레벨을 올리면 반드시 더 잘게"가 보장된다 — 이 단조성은
- * 평가 하네스가 검증한다.
+ * 하위 레벨의 부분집합이 되어 "레벨을 올리면 반드시 더 잘게"가 성립한다. 상호 kNN 필터
+ * ([knnK][ClusterLevel.knnK])가 끼면 이웃 순위가 레벨마다 달라져 부분집합이 엄밀히 보장되지는
+ * 않으므로, 단조성은 평가 하네스가 실측으로 검증한다.
  */
 @ConfigurationProperties(prefix = "app.cluster")
 data class ClusterProperties(
@@ -28,5 +29,10 @@ data class ClusterProperties(
         val lenientThreshold: Double,
         /** 두 사진을 같은 시간대로 보는 촬영 시각 차이 상한. */
         val windowSeconds: Long,
+        /**
+         * 촬영 시각이 실측으로 창 밖인 간선에 요구하는 상호 kNN의 k
+         * ([com.soma.wes.cluster.support.MutualKnnEdgeFilter]). 0이면 필터를 끈다.
+         */
+        val knnK: Int,
     )
 }

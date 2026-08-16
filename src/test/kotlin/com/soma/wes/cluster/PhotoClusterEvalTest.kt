@@ -1,7 +1,9 @@
 package com.soma.wes.cluster
 
 import com.soma.wes.cluster.config.ClusterProperties
+import com.soma.wes.cluster.dto.SimilarPairDto
 import com.soma.wes.cluster.repository.PhotoSimilarityRepository
+import com.soma.wes.cluster.support.MutualKnnEdgeFilter
 import com.soma.wes.cluster.support.UnionFind
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.repository.GalleryRepository
@@ -97,6 +99,7 @@ class PhotoClusterEvalTest @Autowired constructor(
 
     /**
      * 운영 레벨 번들 5개를 설정 그대로 측정한다 — 이 표가 배포되는 프리셋의 품질이다.
+     * 시간 창 밖 상호 kNN 필터([MutualKnnEdgeFilter])까지 운영 경로 그대로 태운다.
      * 번들 재선정이 필요하면(임베딩 교체 등) 이 메서드를 임시로 그리드 스윕으로 바꿔 돌린다
      * (`docs/notes/clustering-eval-phase2.md`의 절차 참조).
      */
@@ -112,7 +115,8 @@ class PhotoClusterEvalTest @Autowired constructor(
                 lenientDistance = 1.0 - bundle.lenientThreshold,
                 windowSeconds = bundle.windowSeconds,
             )
-            level to score(connectedPairs(photoIds, edges), truePairs)
+            val filtered = MutualKnnEdgeFilter.filter(edges = edges, k = bundle.knnK)
+            level to score(connectedPairs(photoIds, filtered), truePairs)
         }
 
         results.forEach { (level, metrics) ->
@@ -120,7 +124,8 @@ class PhotoClusterEvalTest @Autowired constructor(
         }
 
         // 레벨 번들은 중첩(strict·lenient 상승, window 하강)이어야 한다 — 그래야 "레벨을
-        // 올리면 반드시 더 잘게"가 성립한다. 설정이 그 규칙을 어기면 여기서 걸린다.
+        // 올리면 반드시 더 잘게"가 성립한다. kNN 필터는 이웃 순위가 레벨마다 달라 중첩을
+        // 엄밀히 보장하지 못하므로, 설정이든 필터든 단조성을 깨면 여기서 걸린다.
         val predictedCounts = results.map { (_, metrics) -> metrics.predictedCount }
         assertThat(predictedCounts)
             .describedAs("레벨이 오르면 예측 쌍은 줄거나 같아야 한다")
@@ -162,11 +167,11 @@ class PhotoClusterEvalTest @Autowired constructor(
             .flatMapTo(mutableSetOf()) { group -> allPairs(group) }
 
     /** 간선의 연결 요소를 구해, 같은 묶음에 든 사진들의 모든 쌍으로 펼친다. */
-    private fun connectedPairs(photoIds: List<Long>, edges: List<Pair<Long, Long>>): Set<Pair<Long, Long>> {
+    private fun connectedPairs(photoIds: List<Long>, edges: List<SimilarPairDto>): Set<Pair<Long, Long>> {
         val indexById = photoIds.withIndex().associate { (index, id) -> id to index }
         val unionFind = UnionFind(photoIds.size)
-        edges.forEach { (left, right) ->
-            unionFind.union(indexById.getValue(left), indexById.getValue(right))
+        edges.forEach { edge ->
+            unionFind.union(indexById.getValue(edge.leftId), indexById.getValue(edge.rightId))
         }
 
         return photoIds.groupBy { unionFind.find(indexById.getValue(it)) }

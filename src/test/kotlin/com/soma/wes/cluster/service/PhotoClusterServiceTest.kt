@@ -34,7 +34,8 @@ import org.springframework.beans.factory.annotation.Autowired
  *
  * 레벨의 실제 번들 값은 `src/test/resources/application.yml`이 정의한다(운영과 동일).
  * 여기 테스트가 쓰는 유사도들은 그 번들의 경계에 기대므로, 번들을 재선정하면 이 파일의
- * 각도도 함께 손봐야 한다 — 레벨 3 strict 0.92 · lenient 0.82 · window 90초, 레벨 5 strict 0.96.
+ * 각도도 함께 손봐야 한다 — 레벨 3 strict 0.92 · lenient 0.82 · window 90초 · knn-k 1,
+ * 레벨 5 strict 0.96.
  */
 @IntegrationTest
 class PhotoClusterServiceTest @Autowired constructor(
@@ -188,6 +189,82 @@ class PhotoClusterServiceTest @Autowired constructor(
 
             // then
             assertThat(result.clusters).hasSize(2)
+        }
+    }
+
+    @Nested
+    @DisplayName("체이닝을 제어할 때")
+    inner class ChainControl {
+
+        /**
+         * 촘촘한 12장짜리 장면 하나와, 그 끝 사진에 strict 이상(0.94)으로 닮은 다리 사진 하나.
+         * 장면 사진마다 다리보다 가까운 이웃이 11개 있으므로, 번들의 k를 어느 후보로
+         * 재선정해도(k ≤ 11) 다리는 누구의 상호 이웃도 되지 못한다.
+         *
+         * @return 다리 사진의 id. 장면은 같은 시각, 다리는 그로부터 [bridgeOffsetSeconds] 뒤에
+         *   찍혔다 (null이면 EXIF 없음).
+         */
+        private fun 장면과_다리(bridgeOffsetSeconds: Long?): Long {
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 13)
+
+            // 이웃 간격을 좁혀 장면에서 가장 먼 쌍도 0.96으로 다리(0.94)보다 가깝게 만든다.
+            val step = acos(0.96) / 11
+            val sceneTakenAt = LocalDateTime.of(2026, 5, 1, 13, 0, 0)
+            photoIds.take(12).forEachIndexed { index, photoId ->
+                embed(photoId, vectorAt(index * step), sceneTakenAt)
+            }
+            val bridgeTakenAt = bridgeOffsetSeconds?.let { sceneTakenAt.plusSeconds(it) }
+            embed(photoIds[12], vectorAt(11 * step + acos(0.94)), bridgeTakenAt)
+
+            return photoIds[12]
+        }
+
+        @Test
+        fun `시간이 먼 다리 사진은 상호 이웃이 아니면 묶이지 못한다`() {
+            // 과병합의 주범이 잘리는 자리다. 다리는 장면 끝 사진과 strict를 넘게 닮았지만,
+            // 그 사진에게는 자기 장면의 이웃들이 더 가까워 다리를 되받지 않는다.
+            // given
+            val bridgeId = 장면과_다리(bridgeOffsetSeconds = 600)
+
+            // when
+            val result = photoClusterService.cluster(fixture.galleryId, fixture.photographer.id!!, 3)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(result.clusters).hasSize(2)
+                softly.assertThat(result.clusters[0].size).isEqualTo(12)
+                softly.assertThat(result.clusters[1].photos[0].photoId).isEqualTo(bridgeId)
+            }
+        }
+
+        @Test
+        fun `시간이 가까우면 같은 다리도 체이닝으로 묶인다`() {
+            // 비대칭 제어의 반대쪽 절반이다. 같은 기하 구조라도 시간 창 안이면 체이닝이
+            // recall의 동력이므로 상호 이웃 조건 없이 이어진다.
+            // given
+            장면과_다리(bridgeOffsetSeconds = 30)
+
+            // when
+            val result = photoClusterService.cluster(fixture.galleryId, fixture.photographer.id!!, 3)
+
+            // then
+            assertThat(result.clusters).hasSize(1)
+            assertThat(result.clusters[0].size).isEqualTo(13)
+        }
+
+        @Test
+        fun `촬영 시각을 모르는 다리는 자르지 않는다`() {
+            // 필터는 창 밖이 "실측된" 간선만 의심한다. EXIF가 없으면 멀다고 단정할 근거가
+            // 없으므로 strict를 넘게 닮은 간선은 그대로 이어진다.
+            // given
+            장면과_다리(bridgeOffsetSeconds = null)
+
+            // when
+            val result = photoClusterService.cluster(fixture.galleryId, fixture.photographer.id!!, 3)
+
+            // then
+            assertThat(result.clusters).hasSize(1)
+            assertThat(result.clusters[0].size).isEqualTo(13)
         }
     }
 
