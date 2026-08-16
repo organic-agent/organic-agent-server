@@ -1,13 +1,11 @@
 package com.soma.wes.cluster.repository
 
+import com.soma.wes.cluster.dto.SimilarPairDto
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Repository
 
 /**
  * 임계값 이상으로 닮은 사진 쌍을 찾는다.
- *
- * JPA가 아니라 [JdbcClient]를 쓰는 이유는 pgvector의 `<=>` 연산자 때문이다. JPQL에는 이 연산자가
- * 없고, 있다 해도 결과가 엔티티가 아니라 id 쌍이라 영속성 컨텍스트에 올릴 것이 없다.
  */
 @Repository
 class PhotoSimilarityRepository(
@@ -28,6 +26,10 @@ class PhotoSimilarityRepository(
      *
      * `b.id > a.id`로 한쪽 방향만 본다. 쌍을 두 번 세도 union 결과는 같지만 간선 수가 두 배가 된다.
      *
+     * 간선에는 거리와 시간 관계(창 안 / 창 밖 / 측정 불가)가 함께 실린다 — 창 밖이 실측된
+     * 간선에만 상호 kNN 필터를 거는 후처리([com.soma.wes.cluster.support.MutualKnnEdgeFilter])가
+     * 이 둘을 쓴다.
+     *
      * 네이티브 SQL은 `Photo`의 `@SQLRestriction`을 타지 않으므로 휴지통 사진(`deleted_at`)을
      * 여기서 직접 걸러야 한다. 빼먹으면 지운 사진이 묶음의 대표로 되살아난다.
      *
@@ -43,10 +45,18 @@ class PhotoSimilarityRepository(
         strictDistance: Double,
         lenientDistance: Double = strictDistance,
         windowSeconds: Long = 0,
-    ): List<Pair<Long, Long>> =
+    ): List<SimilarPairDto> =
         jdbcClient.sql(
             """
-            SELECT a.id AS left_id, b.id AS right_id
+            SELECT a.id AS left_id,
+                   b.id AS right_id,
+                   (a.embedding <=> b.embedding) AS distance,
+                   CASE
+                       WHEN a.taken_at IS NULL OR b.taken_at IS NULL THEN 'UNKNOWN'
+                       WHEN abs(extract(epoch FROM (a.taken_at - b.taken_at))) <= :windowSeconds
+                           THEN 'WITHIN_WINDOW'
+                       ELSE 'OUT_OF_WINDOW'
+                   END AS time_relation
             FROM photos a
                      JOIN photos b
                           ON b.gallery_id = a.gallery_id
@@ -66,6 +76,13 @@ class PhotoSimilarityRepository(
             .param("strictDistance", strictDistance)
             .param("lenientDistance", lenientDistance)
             .param("windowSeconds", windowSeconds)
-            .query { rs, _ -> rs.getLong("left_id") to rs.getLong("right_id") }
+            .query { rs, _ ->
+                SimilarPairDto(
+                    leftId = rs.getLong("left_id"),
+                    rightId = rs.getLong("right_id"),
+                    distance = rs.getDouble("distance"),
+                    timeRelation = SimilarPairDto.TimeRelation.valueOf(rs.getString("time_relation")),
+                )
+            }
             .list()
 }
