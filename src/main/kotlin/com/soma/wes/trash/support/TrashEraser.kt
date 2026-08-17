@@ -31,22 +31,27 @@ class TrashEraser(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    /** 갤러리 하나를 사진 원본·미리보기와 함께 물리 삭제한다. 휴지통 여부 검증은 호출자의 몫이다. */
+    /** 갤러리 하나를 사진 원본·미리보기·보정 파일과 함께 물리 삭제한다. 휴지통 여부 검증은 호출자의 몫이다. */
     fun eraseGallery(galleryId: Long) {
         val targets = trashRepository.findAllPhotoTargets(galleryId)
-        photoStorage.deleteAll(objectKeysOf(targets))
+        val retouchKeys = trashRepository.findRetouchObjectKeys(galleryId)
+        photoStorage.deleteAll(objectKeysOf(targets) + retouchKeys)
         trashRepository.deleteGallery(galleryId)
-        log.info("갤러리 물리 삭제: galleryId={}, photos={}", galleryId, targets.size)
+        log.info(
+            "갤러리 물리 삭제: galleryId={}, photos={}, retouchFiles={}",
+            galleryId, targets.size, retouchKeys.size,
+        )
     }
 
-    /** 사진들을 원본·미리보기와 함께 물리 삭제한다. 휴지통 여부 검증은 호출자의 몫이다. */
+    /** 사진들을 원본·미리보기·보정 파일과 함께 물리 삭제한다. 휴지통 여부 검증은 호출자의 몫이다. */
     fun erasePhotos(targets: List<TrashedPhotoTarget>) {
         if (targets.isEmpty()) {
             return
         }
-        photoStorage.deleteAll(objectKeysOf(targets))
+        val retouchKeys = trashRepository.findRetouchObjectKeysByPhotoIds(targets.map { it.photoId })
+        photoStorage.deleteAll(objectKeysOf(targets) + retouchKeys)
         trashRepository.deletePhotos(targets.map { it.photoId })
-        log.info("사진 물리 삭제: photos={}", targets.size)
+        log.info("사진 물리 삭제: photos={}, retouchFiles={}", targets.size, retouchKeys.size)
     }
 
     /**
