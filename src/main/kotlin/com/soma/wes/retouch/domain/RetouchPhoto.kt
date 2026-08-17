@@ -76,6 +76,15 @@ class RetouchPhoto(
         this.annotationKey = annotationKey
     }
 
+    /**
+     * 작가의 결과를 기록한다. 회차가 끝나기 전에는 다시 올린 key로 덮어쓴다 — 결과도 주석처럼
+     * 파일 통째 교체라 부분 수정이 없다. key의 소속 검사는 서비스가 한다.
+     */
+    fun writeResult(resultKey: String, resultContentType: String) {
+        this.resultKey = resultKey
+        this.resultContentType = resultContentType
+    }
+
     companion object {
 
         /**

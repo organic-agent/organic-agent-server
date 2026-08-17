@@ -7,6 +7,8 @@ import com.soma.wes.gallery.fixture.OpenGallery
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.retouch.domain.RetouchRoundStatus
 import com.soma.wes.retouch.dto.request.AddRetouchPhotosRequest
+import com.soma.wes.retouch.dto.request.CompleteResultsRequest
+import com.soma.wes.retouch.dto.request.IssueResultUploadUrlsRequest
 import com.soma.wes.retouch.dto.request.UpdateRetouchPhotoRequest
 import com.soma.wes.retouch.exception.RetouchErrorCode
 import com.soma.wes.retouch.exception.RetouchException
@@ -25,8 +27,8 @@ import org.springframework.beans.factory.annotation.Autowired
 /**
  * 보정 요청 흐름을 서비스 경계에서 확인한다.
  *
- * 보는 것은 셋이다: 회차가 갤러리당 하나씩만 진행되는지, 계약 횟수가 실제로 상한으로
- * 작동하는지, 그리고 제출이 요청 목록을 잠그는지.
+ * 보는 것은 넷이다: 회차가 갤러리당 하나씩만 진행되는지, 계약 횟수가 실제로 상한으로
+ * 작동하는지, 제출이 요청 목록을 잠그는지, 그리고 전 항목의 결과가 회차를 끝내는 관문인지.
  */
 @IntegrationTest
 class RetouchServiceTest @Autowired constructor(
@@ -452,6 +454,345 @@ class RetouchServiceTest @Autowired constructor(
         }
     }
 
+    @Nested
+    @DisplayName("회차 상세를 조회할 때")
+    inner class GetRound {
+
+        @Test
+        fun `원본과 요청·결과 URL이 나란히 온다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 2)
+            add(fixture, photoIds)
+            retouchService.updatePhoto(
+                fixture.galleryId, photoIds[0], fixture.member.id!!,
+                UpdateRetouchPhotoRequest(requestText = "밝게 해주세요"),
+            )
+            retouchService.submitRound(fixture.galleryId, fixture.member.id!!)
+            결과_확정(fixture, roundNo = 1, photoIds = photoIds.take(1))
+
+            // when
+            val result = retouchService.getRound(fixture.galleryId, 1, fixture.member.id!!)
+
+            // then
+            val byPhotoId = result.photos.associateBy { it.photo.photoId }
+            assertSoftly { softly ->
+                softly.assertThat(result.roundNo).isEqualTo(1)
+                softly.assertThat(result.status).isEqualTo(RetouchRoundStatus.REQUESTED)
+                softly.assertThat(result.photos).hasSize(2)
+                softly.assertThat(byPhotoId.getValue(photoIds[0]).requestText).isEqualTo("밝게 해주세요")
+                softly.assertThat(byPhotoId.getValue(photoIds[0]).photo.viewUrl).contains("X-Amz-Signature")
+                softly.assertThat(byPhotoId.getValue(photoIds[0]).resultUrl).contains("X-Amz-Signature")
+                softly.assertThat(byPhotoId.getValue(photoIds[1]).resultUrl).isNull()
+            }
+        }
+
+        @Test
+        fun `없는 회차면 404다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+
+            // when & then
+            assertThatThrownBy { retouchService.getRound(fixture.galleryId, 1, fixture.member.id!!) }
+                .isInstanceOf(RetouchException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(RetouchErrorCode.ROUND_NOT_FOUND)
+        }
+    }
+
+    @Nested
+    @DisplayName("결과 업로드 URL을 발급할 때")
+    inner class IssueResultUploadUrls {
+
+        @Test
+        fun `회차 결과 경로의 key와 서명 URL이 항목별로 온다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 2)
+            제출까지(fixture, photoIds)
+
+            // when
+            val result = retouchService.issueResultUploadUrls(
+                fixture.galleryId, 1, fixture.photographer.id!!, 발급_요청(photoIds),
+            )
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(result.uploads).hasSize(2)
+                softly.assertThat(result.uploads.map { it.photoId }).isEqualTo(photoIds)
+                result.uploads.forEach {
+                    softly.assertThat(it.resultKey)
+                        .startsWith("galleries/${fixture.galleryId}/retouch/results/1/")
+                    softly.assertThat(it.uploadUrl).contains("X-Amz-Signature")
+                }
+                softly.assertThat(result.uploadUrlTtlSeconds).isGreaterThan(0L)
+            }
+        }
+
+        @Test
+        fun `부부는 발급할 수 없다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
+            제출까지(fixture, photoIds)
+
+            // when & then
+            assertThatThrownBy {
+                retouchService.issueResultUploadUrls(
+                    fixture.galleryId, 1, fixture.member.id!!, 발급_요청(photoIds),
+                )
+            }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        }
+
+        @Test
+        fun `제출 전 회차에는 발급할 수 없다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
+            add(fixture, photoIds)
+
+            // when & then
+            assertThatThrownBy {
+                retouchService.issueResultUploadUrls(
+                    fixture.galleryId, 1, fixture.photographer.id!!, 발급_요청(photoIds),
+                )
+            }
+                .isInstanceOf(RetouchException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(RetouchErrorCode.INVALID_ROUND_STATUS)
+        }
+
+        @Test
+        fun `회차에 없는 사진이 섞이면 통째로 거절된다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 2)
+            제출까지(fixture, photoIds.take(1))
+
+            // when & then
+            assertThatThrownBy {
+                retouchService.issueResultUploadUrls(
+                    fixture.galleryId, 1, fixture.photographer.id!!, 발급_요청(photoIds),
+                )
+            }
+                .isInstanceOf(RetouchException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(RetouchErrorCode.PHOTO_NOT_IN_ROUND)
+        }
+
+        @Test
+        fun `지원하지 않는 형식은 거절된다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
+            제출까지(fixture, photoIds)
+
+            // when & then
+            assertThatThrownBy {
+                retouchService.issueResultUploadUrls(
+                    fixture.galleryId, 1, fixture.photographer.id!!,
+                    발급_요청(photoIds, contentType = "application/pdf"),
+                )
+            }
+                .isInstanceOf(RetouchException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(RetouchErrorCode.UNSUPPORTED_CONTENT_TYPE)
+        }
+    }
+
+    @Nested
+    @DisplayName("결과 업로드를 확정할 때")
+    inner class CompleteResults {
+
+        @Test
+        fun `항목에 결과가 기록되고 다시 확정하면 덮어쓴다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
+            제출까지(fixture, photoIds)
+            결과_확정(fixture, roundNo = 1, photoIds = photoIds)
+
+            // when
+            val newKey = "galleries/${fixture.galleryId}/retouch/results/1/retry.png"
+            val result = retouchService.completeResults(
+                fixture.galleryId, 1, fixture.photographer.id!!,
+                CompleteResultsRequest(
+                    listOf(
+                        CompleteResultsRequest.ResultRequest(
+                            photoId = photoIds[0],
+                            resultKey = newKey,
+                            contentType = "image/png",
+                        ),
+                    ),
+                ),
+            )
+
+            // then
+            val round = retouchRoundRepository.findByGalleryIdAndRoundNo(fixture.galleryId, 1)!!
+            val item = retouchPhotoRepository.findAllByRoundId(round.requiredId).single()
+            assertSoftly { softly ->
+                softly.assertThat(result.photos.single().resultUrl).contains("X-Amz-Signature")
+                softly.assertThat(item.resultKey).isEqualTo(newKey)
+                softly.assertThat(item.resultContentType).isEqualTo("image/png")
+            }
+        }
+
+        @Test
+        fun `이 회차의 결과 경로가 아닌 key는 거절된다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
+            제출까지(fixture, photoIds)
+
+            // when & then
+            assertThatThrownBy {
+                retouchService.completeResults(
+                    fixture.galleryId, 1, fixture.photographer.id!!,
+                    CompleteResultsRequest(
+                        listOf(
+                            CompleteResultsRequest.ResultRequest(
+                                photoId = photoIds[0],
+                                resultKey = "galleries/${fixture.galleryId}/retouch/results/2/other.jpg",
+                                contentType = "image/jpeg",
+                            ),
+                        ),
+                    ),
+                )
+            }
+                .isInstanceOf(RetouchException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(RetouchErrorCode.INVALID_RESULT_KEY)
+        }
+
+        @Test
+        fun `끝난 회차에는 확정할 수 없다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
+            retouchFixture.완료된_회차(fixture.galleryId, photoIds = photoIds)
+
+            // when & then
+            assertThatThrownBy {
+                retouchService.completeResults(
+                    fixture.galleryId, 1, fixture.photographer.id!!,
+                    CompleteResultsRequest(
+                        listOf(
+                            CompleteResultsRequest.ResultRequest(
+                                photoId = photoIds[0],
+                                resultKey = "galleries/${fixture.galleryId}/retouch/results/1/late.jpg",
+                                contentType = "image/jpeg",
+                            ),
+                        ),
+                    ),
+                )
+            }
+                .isInstanceOf(RetouchException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(RetouchErrorCode.INVALID_ROUND_STATUS)
+        }
+    }
+
+    @Nested
+    @DisplayName("회차를 완료할 때")
+    inner class CompleteRound {
+
+        @Test
+        fun `전 항목에 결과가 있으면 회차가 끝난다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 2)
+            제출까지(fixture, photoIds)
+            결과_확정(fixture, roundNo = 1, photoIds = photoIds)
+
+            // when
+            val result = retouchService.completeRound(fixture.galleryId, 1, fixture.photographer.id!!)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(result.rounds.single().status).isEqualTo(RetouchRoundStatus.COMPLETED)
+                softly.assertThat(result.rounds.single().completedAt).isNotNull()
+                softly.assertThat(result.currentRound).isNull()
+            }
+        }
+
+        @Test
+        fun `결과가 없는 항목이 있으면 끝낼 수 없다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 2)
+            제출까지(fixture, photoIds)
+            결과_확정(fixture, roundNo = 1, photoIds = photoIds.take(1))
+
+            // when & then
+            assertThatThrownBy { retouchService.completeRound(fixture.galleryId, 1, fixture.photographer.id!!) }
+                .isInstanceOf(RetouchException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(RetouchErrorCode.MISSING_RESULT)
+        }
+
+        @Test
+        fun `부부는 완료할 수 없다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
+            제출까지(fixture, photoIds)
+            결과_확정(fixture, roundNo = 1, photoIds = photoIds)
+
+            // when & then
+            assertThatThrownBy { retouchService.completeRound(fixture.galleryId, 1, fixture.member.id!!) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        }
+
+        @Test
+        fun `끝난 회차를 다시 완료하면 거절된다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
+            retouchFixture.완료된_회차(fixture.galleryId, photoIds = photoIds)
+
+            // when & then
+            assertThatThrownBy { retouchService.completeRound(fixture.galleryId, 1, fixture.photographer.id!!) }
+                .isInstanceOf(RetouchException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(RetouchErrorCode.INVALID_ROUND_STATUS)
+        }
+    }
+
     private fun add(fixture: OpenGallery, photoIds: List<Long>) =
         retouchService.addPhotos(fixture.galleryId, fixture.member.id!!, AddRetouchPhotosRequest(photoIds))
+
+    /** 담기부터 제출까지 — 작가 차례(REQUESTED)의 회차를 서비스 흐름으로 만든다. */
+    private fun 제출까지(fixture: OpenGallery, photoIds: List<Long>) {
+        add(fixture, photoIds)
+        retouchService.submitRound(fixture.galleryId, fixture.member.id!!)
+    }
+
+    private fun 발급_요청(photoIds: List<Long>, contentType: String = "image/jpeg") =
+        IssueResultUploadUrlsRequest(
+            photoIds.map { IssueResultUploadUrlsRequest.FileRequest(photoId = it, contentType = contentType) },
+        )
+
+    /** 발급→확정을 한 번에. 결과가 있는 항목을 배경으로 만들 때 쓴다. */
+    private fun 결과_확정(fixture: OpenGallery, roundNo: Int, photoIds: List<Long>) {
+        val issued = retouchService.issueResultUploadUrls(
+            fixture.galleryId, roundNo, fixture.photographer.id!!, 발급_요청(photoIds),
+        )
+        retouchService.completeResults(
+            fixture.galleryId, roundNo, fixture.photographer.id!!,
+            CompleteResultsRequest(
+                issued.uploads.map {
+                    CompleteResultsRequest.ResultRequest(
+                        photoId = it.photoId,
+                        resultKey = it.resultKey,
+                        contentType = "image/jpeg",
+                    )
+                },
+            ),
+        )
+    }
 }
