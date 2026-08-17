@@ -74,6 +74,20 @@ enum class RetouchErrorCode(
      */
     MISSING_RESULT(HttpStatus.BAD_REQUEST, "RETOUCH_400_11", "아직 결과가 없는 사진이 있어 회차를 끝낼 수 없습니다."),
 
+    /** 선택 앨범에 담으려는 retouchPhotoId가 이 갤러리의 보정 항목이 아닌 경우. */
+    RETOUCH_PHOTO_NOT_IN_GALLERY(HttpStatus.BAD_REQUEST, "RETOUCH_400_12", "이 갤러리의 보정 항목이 아닙니다."),
+
+    /**
+     * retouchPhotoId가 가리키는 보정 항목의 원본이 요청의 photoId와 다른 경우.
+     *
+     * 항목의 photoId는 항상 원본이어야 중복·정원 규칙이 산다 — 짝이 어긋난 채 저장되면
+     * 앨범에는 A컷이 담겼는데 화면에는 B컷의 보정본이 걸린다.
+     */
+    RETOUCH_PHOTO_MISMATCH(HttpStatus.BAD_REQUEST, "RETOUCH_400_13", "보정 항목의 원본 사진이 요청과 다릅니다."),
+
+    /** 아직 작가의 결과가 없는 보정 항목을 선택 앨범에 담으려는 경우. */
+    RESULT_NOT_UPLOADED(HttpStatus.BAD_REQUEST, "RETOUCH_400_14", "아직 결과가 없는 보정 항목은 담을 수 없습니다."),
+
     /** 진행 중인 DRAFTING 회차에 없는 사진을 빼거나 요청을 적으려는 경우. */
     PHOTO_NOT_IN_ROUND(HttpStatus.NOT_FOUND, "RETOUCH_404_1", "보정 요청 목록에 없는 사진입니다."),
 

@@ -1,6 +1,5 @@
 package com.soma.wes.selection.dto.response
 
-import com.soma.wes.photo.dto.response.PhotoResponse
 import com.soma.wes.selection.domain.PhotoSelection
 import com.soma.wes.selection.domain.PhotoSelectionStatus
 import io.swagger.v3.oas.annotations.media.Schema
@@ -25,8 +24,8 @@ data class PhotoSelectionResponse(
 
     val submittedAt: ZonedDateTime?,
 
-    @field:Schema(description = "고른 사진. 갤러리에서 정한 노출 순서를 따른다")
-    val photos: List<PhotoResponse>,
+    @field:Schema(description = "고른 항목. 갤러리에서 정한 노출 순서를 따르고, 보정본으로 담은 항목은 결과 URL을 함께 든다")
+    val photos: List<SelectedPhotoResponse>,
 
     @field:Schema(description = "서명된 조회 URL의 남은 수명. 지나기 전에 다시 부르면 새 URL이 온다")
     val viewUrlTtlSeconds: Long,
@@ -44,7 +43,7 @@ data class PhotoSelectionResponse(
         fun of(
             selection: PhotoSelection?,
             maxSelectablePhotoCount: Int?,
-            photos: List<PhotoResponse>,
+            photos: List<SelectedPhotoResponse>,
             viewUrlTtlSeconds: Long,
         ) = PhotoSelectionResponse(
             status = selection?.status ?: PhotoSelectionStatus.SELECTING,

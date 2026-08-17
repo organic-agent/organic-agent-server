@@ -6,6 +6,9 @@ import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.repository.PhotoRepository
+import com.soma.wes.retouch.exception.RetouchErrorCode
+import com.soma.wes.retouch.exception.RetouchException
+import com.soma.wes.retouch.fixture.RetouchFixture
 import com.soma.wes.selection.domain.PhotoSelectionStatus
 import com.soma.wes.selection.dto.request.DeselectPhotosRequest
 import com.soma.wes.selection.dto.request.SelectPhotosRequest
@@ -33,6 +36,7 @@ class PhotoSelectionServiceTest @Autowired constructor(
     private val photoSelectionService: PhotoSelectionService,
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
+    private val retouchFixture: RetouchFixture,
     private val photoRepository: PhotoRepository,
     private val photoSelectionRepository: PhotoSelectionRepository,
     private val photoSelectionItemRepository: PhotoSelectionItemRepository,
@@ -59,7 +63,8 @@ class PhotoSelectionServiceTest @Autowired constructor(
                 softly.assertThat(result.selectedCount).isEqualTo(2)
                 softly.assertThat(result.remainingCount).isEqualTo(1)
                 softly.assertThat(result.photos).hasSize(2)
-                softly.assertThat(result.photos[0].viewUrl).contains("X-Amz-Signature")
+                softly.assertThat(result.photos[0].photo.viewUrl).contains("X-Amz-Signature")
+                softly.assertThat(result.photos[0].retouchPhotoId).isNull()
             }
         }
 
@@ -398,9 +403,157 @@ class PhotoSelectionServiceTest @Autowired constructor(
         }
     }
 
+    @Nested
+    @DisplayName("보정본을 담을 때")
+    inner class SelectRetouched {
+
+        @Test
+        fun `항목은 원본을 가리키고 결과 URL이 함께 온다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리(maxSelectablePhotoCount = 3)
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 2)
+            val retouched = retouchFixture.결과와_함께_완료된_회차(fixture.galleryId, photoIds = photoIds.take(1))
+
+            // when — 원본 한 장과 보정본 한 장을 함께 담는다
+            val result = photoSelectionService.select(
+                fixture.galleryId, fixture.member.id!!,
+                SelectPhotosRequest(
+                    photoIds = photoIds.drop(1),
+                    retouchPhotos = listOf(
+                        SelectPhotosRequest.RetouchPhotoRequest(
+                            photoId = photoIds[0],
+                            retouchPhotoId = retouched.single().requiredId,
+                        ),
+                    ),
+                ),
+            )
+
+            // then
+            val byPhotoId = result.photos.associateBy { it.photo.photoId }
+            assertSoftly { softly ->
+                softly.assertThat(result.selectedCount).isEqualTo(2)
+                softly.assertThat(byPhotoId.getValue(photoIds[0]).retouchPhotoId)
+                    .isEqualTo(retouched.single().requiredId)
+                softly.assertThat(byPhotoId.getValue(photoIds[0]).resultUrl).contains("X-Amz-Signature")
+                softly.assertThat(byPhotoId.getValue(photoIds[1]).retouchPhotoId).isNull()
+                softly.assertThat(byPhotoId.getValue(photoIds[1]).resultUrl).isNull()
+            }
+            assertThat(photoSelectionItemRepository.findAll().single { it.photoId == photoIds[0] }.retouchPhotoId)
+                .isEqualTo(retouched.single().requiredId)
+        }
+
+        @Test
+        fun `같은 컷을 원본과 보정본으로 함께 담을 수 없다`() {
+            // 항목의 photoId는 항상 원본이라, 둘은 같은 한 자리를 두고 겹친다.
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리(maxSelectablePhotoCount = 3)
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
+            val retouched = retouchFixture.결과와_함께_완료된_회차(fixture.galleryId, photoIds = photoIds)
+
+            // when & then
+            assertThatThrownBy {
+                photoSelectionService.select(
+                    fixture.galleryId, fixture.member.id!!,
+                    SelectPhotosRequest(
+                        photoIds = photoIds,
+                        retouchPhotos = listOf(
+                            SelectPhotosRequest.RetouchPhotoRequest(
+                                photoId = photoIds[0],
+                                retouchPhotoId = retouched.single().requiredId,
+                            ),
+                        ),
+                    ),
+                )
+            }
+                .isInstanceOf(SelectionException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(SelectionErrorCode.PHOTO_ALREADY_SELECTED)
+        }
+
+        @Test
+        fun `이미 원본으로 담긴 컷은 보정본으로도 담을 수 없다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리(maxSelectablePhotoCount = 3)
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
+            val retouched = retouchFixture.결과와_함께_완료된_회차(fixture.galleryId, photoIds = photoIds)
+            select(fixture, photoIds)
+
+            // when & then
+            assertThatThrownBy {
+                selectRetouched(fixture, photoIds[0], retouched.single().requiredId)
+            }
+                .isInstanceOf(SelectionException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(SelectionErrorCode.PHOTO_ALREADY_SELECTED)
+        }
+
+        @Test
+        fun `원본이 다른 보정 항목은 담을 수 없다`() {
+            // 짝이 어긋난 채 저장되면 앨범에는 A컷이 담겼는데 화면에는 B컷의 보정본이 걸린다.
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리(maxSelectablePhotoCount = 3)
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 2)
+            val retouched = retouchFixture.결과와_함께_완료된_회차(fixture.galleryId, photoIds = photoIds.take(1))
+
+            // when & then
+            assertThatThrownBy {
+                selectRetouched(fixture, photoIds[1], retouched.single().requiredId)
+            }
+                .isInstanceOf(RetouchException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(RetouchErrorCode.RETOUCH_PHOTO_MISMATCH)
+        }
+
+        @Test
+        fun `아직 결과가 없는 보정 항목은 담을 수 없다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리(maxSelectablePhotoCount = 3)
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
+            val requested = retouchFixture.결과_없는_제출된_회차(fixture.galleryId, photoIds = photoIds)
+
+            // when & then
+            assertThatThrownBy {
+                selectRetouched(fixture, photoIds[0], requested.single().requiredId)
+            }
+                .isInstanceOf(RetouchException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(RetouchErrorCode.RESULT_NOT_UPLOADED)
+        }
+
+        @Test
+        fun `다른 갤러리의 보정 항목은 담을 수 없다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리(maxSelectablePhotoCount = 3)
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
+            val otherFixture = galleryFixture.멤버와_열린_갤러리()
+            val otherPhotoIds = photoFixture.업로드된_사진(otherFixture.galleryId, count = 1)
+            val otherRetouched =
+                retouchFixture.결과와_함께_완료된_회차(otherFixture.galleryId, photoIds = otherPhotoIds)
+
+            // when & then
+            assertThatThrownBy {
+                selectRetouched(fixture, photoIds[0], otherRetouched.single().requiredId)
+            }
+                .isInstanceOf(RetouchException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(RetouchErrorCode.RETOUCH_PHOTO_NOT_IN_GALLERY)
+        }
+    }
+
     // --- helpers ---
 
     private fun select(fixture: OpenGallery, photoIds: List<Long>) {
         photoSelectionService.select(fixture.galleryId, fixture.member.id!!, SelectPhotosRequest(photoIds))
+    }
+
+    private fun selectRetouched(fixture: OpenGallery, photoId: Long, retouchPhotoId: Long) {
+        photoSelectionService.select(
+            fixture.galleryId, fixture.member.id!!,
+            SelectPhotosRequest(
+                retouchPhotos = listOf(
+                    SelectPhotosRequest.RetouchPhotoRequest(photoId = photoId, retouchPhotoId = retouchPhotoId),
+                ),
+            ),
+        )
     }
 }
