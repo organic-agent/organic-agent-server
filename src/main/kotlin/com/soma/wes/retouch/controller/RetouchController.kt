@@ -3,10 +3,14 @@ package com.soma.wes.retouch.controller
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.retouch.controller.docs.RetouchControllerDocs
 import com.soma.wes.retouch.dto.request.AddRetouchPhotosRequest
+import com.soma.wes.retouch.dto.request.CompleteResultsRequest
+import com.soma.wes.retouch.dto.request.IssueResultUploadUrlsRequest
 import com.soma.wes.retouch.dto.request.UpdateRetouchPhotoRequest
 import com.soma.wes.retouch.dto.response.IssueAnnotationUploadUrlResponse
+import com.soma.wes.retouch.dto.response.IssueResultUploadUrlsResponse
 import com.soma.wes.retouch.dto.response.RetouchOverviewResponse
 import com.soma.wes.retouch.dto.response.RetouchPhotoResponse
+import com.soma.wes.retouch.dto.response.RetouchRoundDetailResponse
 import com.soma.wes.retouch.service.RetouchService
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
@@ -89,6 +93,52 @@ class RetouchController(
         @PathVariable galleryId: Long,
     ): ResponseEntity<RetouchOverviewResponse> {
         val result = retouchService.submitRound(galleryId, loginUser.id)
+
+        return ResponseEntity.ok(result)
+    }
+
+    @GetMapping("/rounds/{roundNo}")
+    override fun getRound(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @PathVariable roundNo: Int,
+    ): ResponseEntity<RetouchRoundDetailResponse> {
+        val result = retouchService.getRound(galleryId, roundNo, loginUser.id)
+
+        return ResponseEntity.ok(result)
+    }
+
+    @PostMapping("/rounds/{roundNo}/results/upload-urls")
+    override fun issueResultUploadUrls(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @PathVariable roundNo: Int,
+        @Valid @RequestBody request: IssueResultUploadUrlsRequest,
+    ): ResponseEntity<IssueResultUploadUrlsResponse> {
+        val result = retouchService.issueResultUploadUrls(galleryId, roundNo, loginUser.id, request)
+
+        return ResponseEntity.ok(result)
+    }
+
+    @PostMapping("/rounds/{roundNo}/results/complete")
+    override fun completeResults(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @PathVariable roundNo: Int,
+        @Valid @RequestBody request: CompleteResultsRequest,
+    ): ResponseEntity<RetouchRoundDetailResponse> {
+        val result = retouchService.completeResults(galleryId, roundNo, loginUser.id, request)
+
+        return ResponseEntity.ok(result)
+    }
+
+    @PostMapping("/rounds/{roundNo}/complete")
+    override fun completeRound(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @PathVariable roundNo: Int,
+    ): ResponseEntity<RetouchOverviewResponse> {
+        val result = retouchService.completeRound(galleryId, roundNo, loginUser.id)
 
         return ResponseEntity.ok(result)
     }

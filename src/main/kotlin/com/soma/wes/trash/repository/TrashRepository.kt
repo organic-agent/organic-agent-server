@@ -173,6 +173,40 @@ class TrashRepository(
             .param("photoIds", photoIds)
             .update()
 
+    // --- 보정 파일 ---
+
+    /**
+     * 갤러리 물리 삭제 전에 걷는 보정 파일(주석·결과)의 key. `retouch_photos` 행은 FK
+     * cascade로 함께 지워지므로, 행이 사라지기 전에 key를 걷지 않으면 아무도 그 객체를
+     * 지울 수 없다.
+     */
+    fun findRetouchObjectKeys(galleryId: Long): List<String> =
+        jdbcClient.sql(
+            """
+            SELECT annotation_key, result_key
+            FROM retouch_photos
+            WHERE gallery_id = :galleryId
+            """.trimIndent(),
+        )
+            .param("galleryId", galleryId)
+            .query { rs, _ -> listOfNotNull(rs.getString("annotation_key"), rs.getString("result_key")) }
+            .list()
+            .flatten()
+
+    /** 사진 물리 삭제용 — 지워질 사진들에 딸린 보정 파일의 key. */
+    fun findRetouchObjectKeysByPhotoIds(photoIds: Collection<Long>): List<String> =
+        jdbcClient.sql(
+            """
+            SELECT annotation_key, result_key
+            FROM retouch_photos
+            WHERE photo_id IN (:photoIds)
+            """.trimIndent(),
+        )
+            .param("photoIds", photoIds)
+            .query { rs, _ -> listOfNotNull(rs.getString("annotation_key"), rs.getString("result_key")) }
+            .list()
+            .flatten()
+
     private fun photoTarget(rs: ResultSet): TrashedPhotoTarget =
         TrashedPhotoTarget(
             photoId = rs.getLong("id"),

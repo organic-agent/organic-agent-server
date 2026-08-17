@@ -23,6 +23,9 @@ interface PhotoSelectionControllerDocs {
             부부는 자기가 제출한 것을 계속 확인할 수 있어야 한다.
 
             아직 한 장도 고르지 않았다면 status는 SELECTING이고 photos는 비어 있다.
+
+            보정본으로 담은 항목은 retouchPhotoId와 결과의 서명 URL(resultUrl)을 함께 든다 —
+            화면은 resultUrl이 있으면 그것을, 없으면 photo.viewUrl을 그린다.
         """,
     )
     @ApiResponses(
@@ -46,6 +49,10 @@ interface PhotoSelectionControllerDocs {
 
             아직 업로드가 끝나지 않은(PENDING) 사진은 담을 수 없다. 앨범은 작가가 받아 보정에
             들어가는 납품 목록이라 실체가 없는 사진이 섞이면 안 된다.
+
+            보정본은 retouchPhotos로 담는다. 항목은 어느 쪽으로 담아도 원본을 가리키므로
+            같은 컷을 원본과 보정본으로 두 번 담을 수 없고, 보정본의 원본이 photoId와 다르거나
+            아직 결과가 없으면 400으로 통째로 거절된다.
         """,
     )
     @ApiResponses(
@@ -53,7 +60,8 @@ interface PhotoSelectionControllerDocs {
         ApiResponse(
             responseCode = "400",
             description = "계약 장수 초과(SELECTION_400_1), 다른 갤러리의 사진(SELECTION_400_2), " +
-                "개수 상한 초과(SELECTION_400_3), 빈 목록(SELECTION_400_4), 업로드 전 사진(SELECTION_400_5)",
+                "개수 상한 초과(SELECTION_400_3), 빈 목록(SELECTION_400_4), 업로드 전 사진(SELECTION_400_5), " +
+                "잘못된 보정 항목(RETOUCH_400_12·13), 결과 없는 보정 항목(RETOUCH_400_14)",
             content = [],
         ),
         ApiResponse(responseCode = "403", description = "부부가 아니거나, 마감/미공개 갤러리", content = []),
