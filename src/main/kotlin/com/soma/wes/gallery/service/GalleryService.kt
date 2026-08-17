@@ -1,6 +1,7 @@
 package com.soma.wes.gallery.service
 
 import com.soma.wes.gallery.domain.Gallery
+import com.soma.wes.gallery.dto.request.ChangeMaxRetouchRoundCountRequest
 import com.soma.wes.gallery.dto.request.ChangeMaxSelectablePhotoCountRequest
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
@@ -73,6 +74,18 @@ class GalleryService(
         val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
 
         gallery.changeMaxSelectablePhotoCount(request.maxSelectablePhotoCount)
+        return GalleryResponse.from(gallery)
+    }
+
+    @Transactional
+    fun changeMaxRetouchRoundCount(
+        galleryId: Long,
+        userId: Long,
+        request: ChangeMaxRetouchRoundCountRequest,
+    ): GalleryResponse {
+        val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
+
+        gallery.changeMaxRetouchRoundCount(request.maxRetouchRoundCount)
         return GalleryResponse.from(gallery)
     }
 

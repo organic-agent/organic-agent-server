@@ -12,9 +12,8 @@ import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Index
 import jakarta.persistence.Table
-import java.time.ZonedDateTime
 import org.hibernate.annotations.SQLRestriction
-
+import java.time.ZonedDateTime
 
 /**
  * 휴지통에 든 갤러리([moveToTrash])는 `@SQLRestriction`이 모든 JPA 조회에서 걸러낸다.
@@ -49,6 +48,10 @@ class Gallery(
     @Column(name = "max_selectable_photo_count")
     var maxSelectablePhotoCount: Int? = null,
 
+    /** 계약상 보정 요청 가능 횟수. [maxSelectablePhotoCount]와 같은 이유로 갤러리에 산다. */
+    @Column(name = "max_retouch_round_count")
+    var maxRetouchRoundCount: Int? = null,
+
 ) : BaseEntity() {
 
     @Id
@@ -81,6 +84,14 @@ class Gallery(
         validateMaxSelectablePhotoCount(maxSelectablePhotoCount)
 
         this.maxSelectablePhotoCount = maxSelectablePhotoCount
+    }
+
+    fun changeMaxRetouchRoundCount(maxRetouchRoundCount: Int?) {
+        if (maxRetouchRoundCount != null && maxRetouchRoundCount < MIN_RETOUCH_ROUND_COUNT) {
+            throw GalleryException(GalleryErrorCode.INVALID_MAX_RETOUCH_ROUND_COUNT)
+        }
+
+        this.maxRetouchRoundCount = maxRetouchRoundCount
     }
 
     fun changeSelectionDeadline(selectionDeadline: ZonedDateTime?, at: ZonedDateTime) {
@@ -117,6 +128,9 @@ class Gallery(
 
         /** 0장짜리 계약은 없다. 장수를 정하지 않는 계약은 null로 둔다. */
         const val MIN_SELECTABLE_PHOTO_COUNT = 1
+
+        /** 0회짜리 보정 계약은 없다. 횟수를 정하지 않는 계약은 null(무제한)로 둔다. */
+        const val MIN_RETOUCH_ROUND_COUNT = 1
         const val MAX_TITLE_LENGTH = 100
 
         fun create(
