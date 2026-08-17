@@ -34,8 +34,16 @@ class PhotoSelectionItem(
     @Column(name = "selection_id", nullable = false, updatable = false)
     val selectionId: Long,
 
+    /** 항상 원본 사진이다. 보정본으로 담아도 이 값이 원본을 가리켜야 중복·정원 규칙이 산다. */
     @Column(name = "photo_id", nullable = false, updatable = false)
     val photoId: Long,
+
+    /**
+     * 보정본으로 담았으면 그 보정 항목([com.soma.wes.retouch.domain.RetouchPhoto])의 id.
+     * 원본으로 담았으면 null이고, 납품 조회는 이 값이 있는 항목을 결과 key로 서명한다.
+     */
+    @Column(name = "retouch_photo_id", updatable = false)
+    val retouchPhotoId: Long? = null,
 
 ) : BaseEntity() {
 
