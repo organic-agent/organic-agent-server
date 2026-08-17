@@ -14,6 +14,8 @@ interface RetouchPhotoRepository : JpaRepository<RetouchPhoto, Long> {
 
     fun findAllByRoundIdAndPhotoIdIn(roundId: Long, photoIds: Collection<Long>): List<RetouchPhoto>
 
+    fun findAllByGalleryIdAndIdIn(galleryId: Long, ids: Collection<Long>): List<RetouchPhoto>
+
     fun countByRoundId(roundId: Long): Long
 
     /** 0을 돌려주면 회차에 없는 사진이다 — 호출자가 404로 번역한다. */
