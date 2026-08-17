@@ -4,6 +4,7 @@ import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.repository.PhotoRepository
+import com.soma.wes.retouch.fixture.RetouchFixture
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.IntegrationTest
@@ -36,6 +37,7 @@ class TrashEraserTest @Autowired constructor(
     private val studioRepository: StudioRepository,
     private val galleryRepository: GalleryRepository,
     private val photoRepository: PhotoRepository,
+    private val retouchFixture: RetouchFixture,
     private val jdbcTemplate: JdbcTemplate,
     private val photoStorage: RecordingTrashPhotoStorage,
 ) {
@@ -92,6 +94,32 @@ class TrashEraserTest @Autowired constructor(
             softly.assertThat(deleted)
                 .describedAs("살아 있던 사진의 원본이 지워지지 않았다")
                 .contains(alive.storageKey)
+            softly.assertThat(countGalleryRows(galleryId)).isEqualTo(0L)
+        }
+    }
+
+    @Test
+    fun `갤러리 purge는 보정 파일까지 걷는다`() {
+        // given
+        val galleryId = createGallery()
+        val photo = savePhoto(galleryId)
+        val retouched = retouchFixture.주석_추가(
+            retouchFixture.결과와_함께_완료된_회차(galleryId, photoIds = listOf(photo.requiredId)),
+        )
+        trashGallery(galleryId, ZonedDateTime.now().minusDays(4))
+
+        // when
+        trashEraser.purgeExpired()
+
+        // then
+        val deleted = photoStorage.deletedKeys()
+        assertSoftly { softly ->
+            softly.assertThat(deleted)
+                .describedAs("보정 결과가 지워지지 않았다")
+                .contains(retouched.single().resultKey)
+            softly.assertThat(deleted)
+                .describedAs("주석 이미지가 지워지지 않았다")
+                .contains(retouched.single().annotationKey)
             softly.assertThat(countGalleryRows(galleryId)).isEqualTo(0L)
         }
     }

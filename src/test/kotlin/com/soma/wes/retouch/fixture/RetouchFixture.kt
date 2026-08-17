@@ -55,6 +55,17 @@ class RetouchFixture(
         return retouchPhotoRepository.findAllByRoundId(round.requiredId)
     }
 
+    /** 항목들에 주석 key를 채운다. 삭제 경로가 주석 파일까지 걷는지 볼 때 쓴다. */
+    fun 주석_추가(items: List<RetouchPhoto>): List<RetouchPhoto> {
+        items.forEach {
+            it.writeRequest(
+                requestText = null,
+                annotationKey = "galleries/${it.galleryId}/retouch/annotations/${it.photoId}.png",
+            )
+        }
+        return retouchPhotoRepository.saveAllAndFlush(items)
+    }
+
     private fun 담기(round: RetouchRound, photoIds: List<Long>) {
         retouchPhotoRepository.saveAll(
             photoIds.map {

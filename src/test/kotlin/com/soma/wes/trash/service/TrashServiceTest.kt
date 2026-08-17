@@ -16,6 +16,7 @@ import com.soma.wes.photo.exception.PhotoException
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.service.PhotoService
+import com.soma.wes.retouch.fixture.RetouchFixture
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.support.TestSequence
 import com.soma.wes.trash.RecordingTrashPhotoStorage
@@ -58,6 +59,7 @@ class TrashServiceTest @Autowired constructor(
     private val collabGuestQueryService: CollabGuestQueryService,
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
+    private val retouchFixture: RetouchFixture,
     private val photoRepository: PhotoRepository,
     private val trashRepository: TrashRepository,
     private val jdbcTemplate: JdbcTemplate,
@@ -203,6 +205,34 @@ class TrashServiceTest @Autowired constructor(
             assertThat(photoStorage.deletedKeys())
                 .isEqualTo(setOf(storageKey, "previews/${storageKey.substringBeforeLast('.')}.jpg"))
             assertThat(countPhotoRows(photoIds.single())).isEqualTo(0)
+        }
+
+        @Test
+        fun `사진 즉시 삭제는 보정 파일까지 걷는다`() {
+            // retouch_photos 행은 FK cascade로 함께 지워지므로, 행이 사라지기 전에
+            // 주석·결과 key를 걷지 않으면 그 객체는 영영 고아가 된다.
+            // given
+            val photoIds = uploadPhotos(count = 1)
+            val retouched = retouchFixture.주석_추가(
+                retouchFixture.결과와_함께_완료된_회차(fixture.galleryId, photoIds = photoIds),
+            )
+            expireUploadUrls(photoIds)
+            moveToTrash(photoIds)
+
+            // when
+            trashService.erasePhotos(fixture.galleryId, fixture.photographer.id!!, EraseTrashedPhotosRequest(photoIds))
+
+            // then
+            val deleted = photoStorage.deletedKeys()
+            assertSoftly { softly ->
+                softly.assertThat(deleted).contains(retouched.single().resultKey)
+                softly.assertThat(deleted).contains(retouched.single().annotationKey)
+                softly.assertThat(
+                    jdbcTemplate.queryForObject(
+                        "SELECT count(*) FROM retouch_photos WHERE gallery_id = ?", Long::class.java, fixture.galleryId,
+                    ),
+                ).isEqualTo(0L)
+            }
         }
     }
 
