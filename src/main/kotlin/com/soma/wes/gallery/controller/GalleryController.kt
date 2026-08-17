@@ -2,6 +2,7 @@ package com.soma.wes.gallery.controller
 
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.gallery.controller.docs.GalleryControllerDocs
+import com.soma.wes.gallery.dto.request.ChangeMaxRetouchRoundCountRequest
 import com.soma.wes.gallery.dto.request.ChangeMaxSelectablePhotoCountRequest
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
@@ -77,6 +78,17 @@ class GalleryController(
         @Valid @RequestBody request: ChangeMaxSelectablePhotoCountRequest,
     ): ResponseEntity<GalleryResponse> {
         val result = galleryService.changeMaxSelectablePhotoCount(galleryId, loginUser.id, request)
+
+        return ResponseEntity.ok(result)
+    }
+
+    @PatchMapping("/{galleryId}/max-retouch-round-count")
+    override fun changeMaxRetouchRoundCount(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @Valid @RequestBody request: ChangeMaxRetouchRoundCountRequest,
+    ): ResponseEntity<GalleryResponse> {
+        val result = galleryService.changeMaxRetouchRoundCount(galleryId, loginUser.id, request)
 
         return ResponseEntity.ok(result)
     }

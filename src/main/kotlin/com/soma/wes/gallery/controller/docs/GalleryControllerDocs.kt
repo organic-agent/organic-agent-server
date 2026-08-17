@@ -1,6 +1,7 @@
 package com.soma.wes.gallery.controller.docs
 
 import com.soma.wes.auth.domain.LoginUser
+import com.soma.wes.gallery.dto.request.ChangeMaxRetouchRoundCountRequest
 import com.soma.wes.gallery.dto.request.ChangeMaxSelectablePhotoCountRequest
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
@@ -222,6 +223,58 @@ interface GalleryControllerDocs {
         loginUser: LoginUser,
         galleryId: Long,
         request: ChangeMaxSelectablePhotoCountRequest,
+    ): ResponseEntity<GalleryResponse>
+
+    @Operation(
+        summary = "계약 보정 횟수 변경",
+        description = """
+            부부가 보정을 요청할 수 있는 회차 수를 정하거나 바꾼다. 담당 작가만 할 수 있다 —
+            계약에서 나오는 값이라 부부가 바꿀 수 있으면 안 된다.
+
+            null을 보내면 제한이 없어진다. 이미 쓴 횟수보다 작은 값도 받는다: 계약이 줄어드는
+            일은 실제로 있고, 넘긴 상태의 새 요청은 보정 API가 막는다.
+        """,
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "변경 성공"),
+        ApiResponse(
+            responseCode = "400",
+            description = "0 이하의 횟수를 보냄",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "0회짜리 계약",
+                            value = """{"code": "GALLERY_400_4", "message": "보정 횟수는 1 이상이어야 합니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(
+            responseCode = "403",
+            description = "담당 작가가 아님",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "권한 없음",
+                            value = """{"code": "GALLERY_403_1", "message": "갤러리에 접근할 권한이 없습니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(responseCode = "404", description = "존재하지 않는 갤러리", content = []),
+    )
+    fun changeMaxRetouchRoundCount(
+        loginUser: LoginUser,
+        galleryId: Long,
+        request: ChangeMaxRetouchRoundCountRequest,
     ): ResponseEntity<GalleryResponse>
 
     @Operation(

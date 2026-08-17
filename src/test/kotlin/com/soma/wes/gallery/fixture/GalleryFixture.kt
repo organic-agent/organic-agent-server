@@ -22,7 +22,10 @@ class GalleryFixture(
 ) {
 
     /** 열린 갤러리와 양쪽 사람. 부부의 쓰기가 도는 상태가 대부분 테스트의 출발점이다. */
-    fun 멤버와_열린_갤러리(maxSelectablePhotoCount: Int? = null): OpenGallery {
+    fun 멤버와_열린_갤러리(
+        maxSelectablePhotoCount: Int? = null,
+        maxRetouchRoundCount: Int? = null,
+    ): OpenGallery {
         val photographer = studioFixture.작가()
         val studio = studioRepository.findByUserId(photographer.id!!)!!
         val gallery = galleryRepository.save(
@@ -31,6 +34,7 @@ class GalleryFixture(
                 title = "본식",
                 status = GalleryStatus.OPEN,
                 maxSelectablePhotoCount = maxSelectablePhotoCount,
+                maxRetouchRoundCount = maxRetouchRoundCount,
             ),
         )
 
@@ -50,6 +54,13 @@ class GalleryFixture(
     fun 열기(galleryId: Long) {
         val gallery = galleryRepository.findById(galleryId).orElseThrow()
         gallery.open()
+        galleryRepository.saveAndFlush(gallery)
+    }
+
+    /** 계약 보정 횟수를 나중에 바꾼다. 회차를 만든 뒤 계약이 줄어드는 상황을 만들 때 쓴다. */
+    fun 보정_횟수_변경(galleryId: Long, maxRetouchRoundCount: Int?) {
+        val gallery = galleryRepository.findById(galleryId).orElseThrow()
+        gallery.changeMaxRetouchRoundCount(maxRetouchRoundCount)
         galleryRepository.saveAndFlush(gallery)
     }
 

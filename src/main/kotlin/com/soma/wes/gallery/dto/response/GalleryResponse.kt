@@ -16,6 +16,9 @@ data class GalleryResponse(
     @field:Schema(description = "부부가 최종적으로 고를 사진 장수. null이면 제한이 없다")
     val maxSelectablePhotoCount: Int?,
 
+    @field:Schema(description = "계약한 보정 요청 횟수. null이면 제한이 없다")
+    val maxRetouchRoundCount: Int?,
+
     val createdAt: ZonedDateTime?,
 ) {
 
@@ -27,6 +30,7 @@ data class GalleryResponse(
             status = gallery.status,
             selectionDeadline = gallery.selectionDeadline,
             maxSelectablePhotoCount = gallery.maxSelectablePhotoCount,
+            maxRetouchRoundCount = gallery.maxRetouchRoundCount,
             createdAt = gallery.createdAt,
         )
     }

@@ -2,6 +2,7 @@ package com.soma.wes.gallery.service
 
 import com.soma.wes.gallery.domain.GalleryMember
 import com.soma.wes.gallery.domain.GalleryStatus
+import com.soma.wes.gallery.dto.request.ChangeMaxRetouchRoundCountRequest
 import com.soma.wes.gallery.dto.request.ChangeMaxSelectablePhotoCountRequest
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
@@ -382,6 +383,50 @@ class GalleryServiceTest @Autowired constructor(
                 softly.assertThat(album.selectedCount).isEqualTo(3)
                 softly.assertThat(album.remainingCount).isEqualTo(0)
             }
+        }
+    }
+
+    @Nested
+    @DisplayName("계약 보정 횟수를 바꿀 때")
+    inner class ChangeMaxRetouchRoundCount {
+
+        @Test
+        fun `보정 횟수는 작가만 정한다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+
+            // when & then
+            assertThatThrownBy {
+                galleryService.changeMaxRetouchRoundCount(
+                    fixture.galleryId, fixture.member.id!!, ChangeMaxRetouchRoundCountRequest(3),
+                )
+            }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+
+            val result = galleryService.changeMaxRetouchRoundCount(
+                fixture.galleryId, fixture.photographer.id!!, ChangeMaxRetouchRoundCountRequest(3),
+            )
+            assertThat(result.maxRetouchRoundCount).isEqualTo(3)
+        }
+
+        @Test
+        fun `보정 횟수를 0으로 정할 수 없다`() {
+            // 컨트롤러의 @Min은 GLOBAL 코드를 내지만, 서비스 직접 호출은 도메인의
+            // 두 번째 방어선(GALLERY_400_4)에 걸린다. 제한을 없애려면 null을 보낸다.
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+
+            // when & then
+            assertThatThrownBy {
+                galleryService.changeMaxRetouchRoundCount(
+                    fixture.galleryId, fixture.photographer.id!!, ChangeMaxRetouchRoundCountRequest(0),
+                )
+            }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.INVALID_MAX_RETOUCH_ROUND_COUNT)
         }
     }
 
