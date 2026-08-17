@@ -10,10 +10,15 @@ import com.soma.wes.retouch.domain.RetouchPhoto
 import com.soma.wes.retouch.domain.RetouchRound
 import com.soma.wes.retouch.domain.RetouchRoundStatus
 import com.soma.wes.retouch.dto.request.AddRetouchPhotosRequest
+import com.soma.wes.retouch.dto.request.CompleteResultsRequest
+import com.soma.wes.retouch.dto.request.IssueResultUploadUrlsRequest
 import com.soma.wes.retouch.dto.request.UpdateRetouchPhotoRequest
 import com.soma.wes.retouch.dto.response.IssueAnnotationUploadUrlResponse
+import com.soma.wes.retouch.dto.response.IssueResultUploadUrlsResponse
+import com.soma.wes.retouch.dto.response.IssuedResultUploadResponse
 import com.soma.wes.retouch.dto.response.RetouchOverviewResponse
 import com.soma.wes.retouch.dto.response.RetouchPhotoResponse
+import com.soma.wes.retouch.dto.response.RetouchRoundDetailResponse
 import com.soma.wes.retouch.dto.response.RetouchRoundResponse
 import com.soma.wes.retouch.dto.response.RetouchRoundSummaryResponse
 import com.soma.wes.retouch.exception.RetouchErrorCode
@@ -49,8 +54,24 @@ class RetouchService(
         /** 주석은 프론트 캔버스가 내보내는 투명 배경 레이어라 형식이 PNG 하나로 고정된다. */
         private const val ANNOTATION_CONTENT_TYPE = "image/png"
 
+        /**
+         * 결과로 받아줄 이미지 형식과 key에 붙일 확장자. 원본 업로드가 받는 형식과 같은
+         * 집합인데, 원본은 파일명에서 확장자를 얻지만 결과는 파일명을 저장하지 않아
+         * Content-Type에서 얻는다 — 그래서 목록이 아니라 매핑이다.
+         */
+        private val RESULT_EXTENSIONS_BY_CONTENT_TYPE = mapOf(
+            "image/jpeg" to "jpg",
+            "image/png" to "png",
+            "image/webp" to "webp",
+            "image/heic" to "heic",
+            "image/heif" to "heif",
+        )
+
         private fun annotationKeyPrefix(galleryId: Long): String =
             "galleries/$galleryId/retouch/annotations/"
+
+        private fun resultKeyPrefix(galleryId: Long, roundNo: Int): String =
+            "galleries/$galleryId/retouch/results/$roundNo/"
     }
 
     /**
@@ -208,6 +229,158 @@ class RetouchService(
     private fun requireDraftingRound(galleryId: Long, errorCode: RetouchErrorCode): RetouchRound =
         retouchRoundRepository.findByGalleryIdAndStatus(galleryId, RetouchRoundStatus.DRAFTING)
             ?: throw RetouchException(errorCode)
+
+    /**
+     * 회차 상세를 연다. 항목마다 원본과 결과 URL을 나란히 줘 전/후 비교가 된다.
+     * 부부는 마감 뒤에도 결과를 봐야 하므로 조회는 Viewer 문이다.
+     */
+    @Transactional(readOnly = true)
+    fun getRound(galleryId: Long, roundNo: Int, userId: Long): RetouchRoundDetailResponse {
+        galleryAccessPolicy.requireViewer(galleryId, userId)
+
+        val round = retouchRoundRepository.findByGalleryIdAndRoundNo(galleryId, roundNo)
+            ?: throw RetouchException(RetouchErrorCode.ROUND_NOT_FOUND)
+        val items = retouchPhotoRepository.findAllByRoundId(round.requiredId)
+
+        return RetouchRoundDetailResponse.of(
+            round = round,
+            photos = retouchViewAssembler.toDetailResponses(galleryId, items),
+            viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
+        )
+    }
+
+    /**
+     * 결과 파일들이 올라갈 자리의 서명 URL을 발급한다. 주석과 같은 방식이라 발급은 아무 행도
+     * 만들지 않는다 — 항목과의 연결은 결과 확정([completeResults])이 만든다.
+     */
+    @Transactional(readOnly = true)
+    fun issueResultUploadUrls(
+        galleryId: Long,
+        roundNo: Int,
+        userId: Long,
+        request: IssueResultUploadUrlsRequest,
+    ): IssueResultUploadUrlsResponse {
+        galleryAccessPolicy.requirePhotographer(galleryId, userId)
+
+        val round = findRequestedRound(galleryId, roundNo)
+        loadItemsInRound(round.requiredId, request.files.map { it.photoId })
+
+        val uploads = request.files.map { file ->
+            val key = "${resultKeyPrefix(galleryId, roundNo)}${UUID.randomUUID()}.${resultExtensionOf(file.contentType)}"
+            IssuedResultUploadResponse(
+                photoId = file.photoId,
+                resultKey = key,
+                uploadUrl = photoStorage.presignUpload(key, file.contentType).url,
+            )
+        }
+
+        return IssueResultUploadUrlsResponse(
+            uploads = uploads,
+            uploadUrlTtlSeconds = properties.uploadUrlTtl.seconds,
+        )
+    }
+
+    private fun resultExtensionOf(contentType: String): String =
+        RESULT_EXTENSIONS_BY_CONTENT_TYPE[contentType.lowercase()]
+            ?: throw RetouchException(RetouchErrorCode.UNSUPPORTED_CONTENT_TYPE)
+
+    /**
+     * S3 PUT을 마친 결과들을 항목에 기록한다. 회차가 끝나기 전에는 다시 올린 key로 덮어쓴다.
+     */
+    @Transactional
+    fun completeResults(
+        galleryId: Long,
+        roundNo: Int,
+        userId: Long,
+        request: CompleteResultsRequest,
+    ): RetouchRoundDetailResponse {
+        galleryAccessPolicy.requirePhotographer(galleryId, userId)
+
+        val round = lockRequestedRound(galleryId, roundNo)
+        val items = loadItemsInRound(round.requiredId, request.results.map { it.photoId })
+        request.results.forEach { result ->
+            validateResultKey(galleryId, roundNo, result.resultKey)
+            resultExtensionOf(result.contentType)
+        }
+
+        val itemsByPhotoId = items.associateBy { it.photoId }
+        request.results.forEach { result ->
+            itemsByPhotoId.getValue(result.photoId)
+                .writeResult(result.resultKey, result.contentType.lowercase())
+        }
+
+        return RetouchRoundDetailResponse.of(
+            round = round,
+            photos = retouchViewAssembler.toDetailResponses(
+                galleryId,
+                retouchPhotoRepository.findAllByRoundId(round.requiredId),
+            ),
+            viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
+        )
+    }
+
+    private fun validateResultKey(galleryId: Long, roundNo: Int, resultKey: String) {
+        if (!resultKey.startsWith(resultKeyPrefix(galleryId, roundNo))) {
+            throw RetouchException(RetouchErrorCode.INVALID_RESULT_KEY)
+        }
+    }
+
+    /** 요청 목록에 이 회차에 없는 사진이 섞이면 전체를 거절하고, 있으면 그 항목들을 돌려준다. */
+    private fun loadItemsInRound(roundId: Long, photoIds: List<Long>): List<RetouchPhoto> {
+        if (photoIds.isEmpty()) {
+            throw RetouchException(RetouchErrorCode.EMPTY_PHOTO_IDS)
+        }
+        if (photoIds.size > properties.maxBatchSize) {
+            throw RetouchException(RetouchErrorCode.TOO_MANY_PHOTOS)
+        }
+
+        val cleanPhotoIds = photoIds.toSet()
+        val found = retouchPhotoRepository.findAllByRoundIdAndPhotoIdIn(roundId, cleanPhotoIds)
+        if (found.size != cleanPhotoIds.size) {
+            throw RetouchException(RetouchErrorCode.PHOTO_NOT_IN_ROUND)
+        }
+        return found
+    }
+
+    /**
+     * 회차를 끝낸다. 요청 전부에 응답했을 때만 끝낼 수 있고, 이때부터 부부가 다음 회차를
+     * 시작할 수 있다.
+     */
+    @Transactional
+    fun completeRound(galleryId: Long, roundNo: Int, userId: Long): RetouchOverviewResponse {
+        val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
+
+        val round = lockRequestedRound(galleryId, roundNo)
+        val items = retouchPhotoRepository.findAllByRoundId(round.requiredId)
+        if (items.any { !it.hasResult }) {
+            throw RetouchException(RetouchErrorCode.MISSING_RESULT)
+        }
+
+        round.complete(ZonedDateTime.now(clock))
+        return overviewOf(gallery)
+    }
+
+    /**
+     * 결과를 쓰는 경로는 회차 행을 잠근다 — 확정과 완료가 겹치면 끝난 회차에 결과가 적힌다.
+     * 작가의 차례(REQUESTED)가 아닌 회차에는 결과를 쓸 수 없다.
+     */
+    private fun lockRequestedRound(galleryId: Long, roundNo: Int): RetouchRound {
+        val round = retouchRoundRepository.findWithLockByGalleryIdAndRoundNo(galleryId, roundNo)
+            ?: throw RetouchException(RetouchErrorCode.ROUND_NOT_FOUND)
+        return round.also { validateRequested(it) }
+    }
+
+    private fun findRequestedRound(galleryId: Long, roundNo: Int): RetouchRound {
+        val round = retouchRoundRepository.findByGalleryIdAndRoundNo(galleryId, roundNo)
+            ?: throw RetouchException(RetouchErrorCode.ROUND_NOT_FOUND)
+        return round.also { validateRequested(it) }
+    }
+
+    private fun validateRequested(round: RetouchRound) {
+        if (round.status != RetouchRoundStatus.REQUESTED) {
+            throw RetouchException(RetouchErrorCode.INVALID_ROUND_STATUS)
+        }
+    }
 
     private fun overviewOf(gallery: Gallery): RetouchOverviewResponse {
         val galleryId = gallery.requiredId

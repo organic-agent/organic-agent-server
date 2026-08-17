@@ -55,8 +55,30 @@ enum class RetouchErrorCode(
      */
     INVALID_ANNOTATION_KEY(HttpStatus.BAD_REQUEST, "RETOUCH_400_8", "이 갤러리의 주석 이미지가 아닙니다."),
 
+    /** 결과 업로드 URL 발급에 허용 목록 밖의 Content-Type을 보낸 경우. */
+    UNSUPPORTED_CONTENT_TYPE(HttpStatus.BAD_REQUEST, "RETOUCH_400_9", "지원하지 않는 이미지 형식입니다."),
+
+    /**
+     * 이 회차의 결과 업로드 경로가 아닌 storage key를 확정하려는 경우.
+     *
+     * [INVALID_ANNOTATION_KEY]와 같은 이유다 — 서버는 발급한 key를 기억하지 않으므로 접두
+     * 검사가 유일한 방어고, 회차 번호까지 접두에 들어 있어 다른 회차의 결과를 섞을 수도 없다.
+     */
+    INVALID_RESULT_KEY(HttpStatus.BAD_REQUEST, "RETOUCH_400_10", "이 회차의 보정 결과가 아닙니다."),
+
+    /**
+     * 결과가 없는 항목이 남았는데 회차를 끝내려는 경우.
+     *
+     * 회차 완료는 "요청 전부에 응답했다"는 선언이다 — 일부만 응답한 채 끝내면 부부는 어떤
+     * 사진이 누락됐는지 알 수 없고, 다음 회차에서 계약 횟수만 더 쓰게 된다.
+     */
+    MISSING_RESULT(HttpStatus.BAD_REQUEST, "RETOUCH_400_11", "아직 결과가 없는 사진이 있어 회차를 끝낼 수 없습니다."),
+
     /** 진행 중인 DRAFTING 회차에 없는 사진을 빼거나 요청을 적으려는 경우. */
     PHOTO_NOT_IN_ROUND(HttpStatus.NOT_FOUND, "RETOUCH_404_1", "보정 요청 목록에 없는 사진입니다."),
+
+    /** 이 갤러리에 없는 회차 번호로 조회·결과 업로드를 시도한 경우. */
+    ROUND_NOT_FOUND(HttpStatus.NOT_FOUND, "RETOUCH_404_2", "존재하지 않는 보정 회차입니다."),
 
     /**
      * 이전 회차의 결과를 기다리는 중에 새로 담으려는 경우.
