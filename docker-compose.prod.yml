@@ -11,6 +11,9 @@ services:
       - JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75
     ports:
       - "8080:8080"
+    volumes:
+      # logback-spring.xml(prod)의 LOG_PATH. 호스트에 남겨 alloy와 공유하고, 재배포에도 유지된다.
+      - ./logs:/var/log/spring
     deploy:
       resources:
         limits:
@@ -18,3 +21,27 @@ services:
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
+
+  # 로그 전송 사이드카. ./logs를 tail 해 모니터링 서버의 Loki로 민다(monitoring/config.alloy).
+  # 앱과 독립이라 Loki가 죽어도 앱은 영향이 없다 — 파일은 쌓이고 alloy가 복구 후 이어서 보낸다.
+  alloy:
+    image: grafana/alloy:latest
+    container_name: wes-alloy
+    restart: always
+    environment:
+      # CD의 배포 스크립트가 Parameter Store(/wes/prod/monitoring.loki-url)에서 읽어 넘긴다.
+      - LOKI_URL=${LOKI_URL}
+    volumes:
+      - ./logs:/var/log/spring:ro
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+      # 파일별 읽은 위치(positions). 없으면 재시작마다 파일을 처음부터 다시 보낸다.
+      - ./alloy-data:/var/lib/alloy/data
+    command: ["run", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
+    deploy:
+      resources:
+        limits:
+          # t4g.micro(1GiB)에서 앱 1g 한도와 같이 산다. 부족분은 스왑 2GB가 받는다.
+          memory: 256m
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "2" }
