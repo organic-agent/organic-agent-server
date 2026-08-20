@@ -67,17 +67,13 @@ WHERE gallery_id = ? AND status <> 'PENDING' AND embedding IS NULL
 CREATE USER embedder;
 GRANT rds_iam TO embedder;
 GRANT SELECT, UPDATE ON photos TO embedder;
-GRANT SELECT ON galleries, studio_deletion_claims TO embedder;
+GRANT SELECT ON galleries TO embedder;
 ```
 
-마지막 GRANT는 hard delete와 Embedding job의 admission fence에 필요하다. 새 embedder 이미지와
-이 권한이 함께 적용되기 전에는 운영자 hard delete를 실행하지 않는다. Lambda는 studio 단위
-session advisory shared lock을 작업 전체에 잡고 삭제 claim을 확인하며, 앱 삭제 준비는 같은
-키의 exclusive lock을 얻은 경우에만 S3 삭제로 넘어간다.
-
+`galleries` 읽기는 대상 선별(`fetch_targets`)이 휴지통에 들어간 갤러리를 거르는 데 쓴다.
 빠뜨리면 임베딩이 `InsufficientPrivilege: permission denied for table galleries`로
 전량 실패한다 (2026-08-14 운영에서 실제로 겪었다 — CREATE USER 때 GRANT를 같이 안 하면
-admission 코드가 배포되는 날 터진다).
+그 테이블을 읽는 코드가 배포되는 날 터진다).
 
 ### 위 SQL을 실행할 관리자 접속
 
