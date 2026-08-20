@@ -4,7 +4,9 @@ import com.soma.wes.gallery.domain.GalleryMember
 import com.soma.wes.gallery.domain.GalleryStatus
 import com.soma.wes.gallery.dto.request.ChangeMaxRetouchRoundCountRequest
 import com.soma.wes.gallery.dto.request.ChangeMaxSelectablePhotoCountRequest
+import com.soma.wes.gallery.dto.request.ChangeSelectionDeadlineRequest
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
+import com.soma.wes.gallery.dto.request.RenameGalleryRequest
 import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
@@ -427,6 +429,140 @@ class GalleryServiceTest @Autowired constructor(
                 .isInstanceOf(GalleryException::class.java)
                 .extracting("errorCode")
                 .isEqualTo(GalleryErrorCode.INVALID_MAX_RETOUCH_ROUND_COUNT)
+        }
+    }
+
+    @Nested
+    @DisplayName("갤러리 이름을 바꿀 때")
+    inner class Rename {
+
+        @Test
+        fun `이름은 작가만 바꾼다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+
+            // when & then
+            assertThatThrownBy {
+                galleryService.rename(fixture.galleryId, fixture.member.id!!, RenameGalleryRequest("바뀐 이름"))
+            }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+
+            val result = galleryService.rename(
+                fixture.galleryId, fixture.photographer.id!!, RenameGalleryRequest("바뀐 이름"),
+            )
+            assertThat(result.title).isEqualTo("바뀐 이름")
+        }
+
+        @Test
+        fun `빈 이름으로는 바꿀 수 없다`() {
+            // 컨트롤러의 @Valid(GLOBAL_400_2)는 서비스 직접 호출에서는 돌지 않는다.
+            // 이 경로의 유일한 검증은 도메인 관문(Gallery.rename의 require)이다.
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+
+            // when & then
+            assertThatThrownBy {
+                galleryService.rename(fixture.galleryId, fixture.photographer.id!!, RenameGalleryRequest("  "))
+            }
+                .isInstanceOf(IllegalArgumentException::class.java)
+        }
+
+        @Test
+        fun `마감된 갤러리의 이름도 바꿀 수 있다`() {
+            // 이름은 상태와 무관한 표시 정보다. 마감이 이름 오타까지 잠글 이유가 없다.
+            // given
+            val photographer = studioFixture.작가()
+            val galleryId = closedGallery(photographer)
+
+            // when
+            val result = galleryService.rename(galleryId, photographer.id!!, RenameGalleryRequest("오타 수정"))
+
+            // then
+            assertThat(result.title).isEqualTo("오타 수정")
+            assertThat(result.status).isEqualTo(GalleryStatus.CLOSED)
+        }
+    }
+
+    @Nested
+    @DisplayName("선택 마감 기한을 바꿀 때")
+    inner class ChangeSelectionDeadline {
+
+        @Test
+        fun `마감 기한은 작가만 바꾼다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val newDeadline = ZonedDateTime.now().plusDays(30)
+
+            // when & then
+            assertThatThrownBy {
+                galleryService.changeSelectionDeadline(
+                    fixture.galleryId, fixture.member.id!!, ChangeSelectionDeadlineRequest(newDeadline),
+                )
+            }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+
+            val result = galleryService.changeSelectionDeadline(
+                fixture.galleryId, fixture.photographer.id!!, ChangeSelectionDeadlineRequest(newDeadline),
+            )
+            assertThat(result.selectionDeadline).isNotNull()
+        }
+
+        @Test
+        fun `이미 지난 기한으로는 바꿀 수 없다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+
+            // when & then
+            assertThatThrownBy {
+                galleryService.changeSelectionDeadline(
+                    fixture.galleryId,
+                    fixture.photographer.id!!,
+                    ChangeSelectionDeadlineRequest(ZonedDateTime.now().minusDays(1)),
+                )
+            }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.INVALID_SELECTION_DEADLINE)
+        }
+
+        @Test
+        fun `null을 보내면 기한이 없어진다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            galleryService.changeSelectionDeadline(
+                fixture.galleryId,
+                fixture.photographer.id!!,
+                ChangeSelectionDeadlineRequest(ZonedDateTime.now().plusDays(30)),
+            )
+
+            // when
+            val result = galleryService.changeSelectionDeadline(
+                fixture.galleryId, fixture.photographer.id!!, ChangeSelectionDeadlineRequest(),
+            )
+
+            // then
+            assertThat(result.selectionDeadline).isNull()
+        }
+
+        @Test
+        fun `마감된 갤러리의 기한을 바꿔도 상태는 그대로다`() {
+            // 기한 변경은 기한만 바꾼다. 마감된 갤러리를 다시 여는 것은 재오픈의 일이다.
+            // given
+            val photographer = studioFixture.작가()
+            val galleryId = closedGallery(photographer)
+
+            // when
+            val result = galleryService.changeSelectionDeadline(
+                galleryId, photographer.id!!, ChangeSelectionDeadlineRequest(ZonedDateTime.now().plusDays(30)),
+            )
+
+            // then
+            assertThat(result.selectionDeadline).isNotNull()
+            assertThat(result.status).isEqualTo(GalleryStatus.CLOSED)
         }
     }
 

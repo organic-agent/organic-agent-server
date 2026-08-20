@@ -77,6 +77,8 @@ class Gallery(
         selectionDeadline?.isBefore(at) ?: false
 
     fun rename(title: String) {
+        validateTitle(title)
+
         this.title = title
     }
 
