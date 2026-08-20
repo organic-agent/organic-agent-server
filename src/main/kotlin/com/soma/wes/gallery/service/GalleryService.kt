@@ -3,7 +3,9 @@ package com.soma.wes.gallery.service
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.dto.request.ChangeMaxRetouchRoundCountRequest
 import com.soma.wes.gallery.dto.request.ChangeMaxSelectablePhotoCountRequest
+import com.soma.wes.gallery.dto.request.ChangeSelectionDeadlineRequest
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
+import com.soma.wes.gallery.dto.request.RenameGalleryRequest
 import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
 import com.soma.wes.gallery.dto.response.GalleryResponse
 import com.soma.wes.gallery.repository.GalleryMemberRepository
@@ -86,6 +88,30 @@ class GalleryService(
         val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
 
         gallery.changeMaxRetouchRoundCount(request.maxRetouchRoundCount)
+        return GalleryResponse.from(gallery)
+    }
+
+    @Transactional
+    fun rename(galleryId: Long, userId: Long, request: RenameGalleryRequest): GalleryResponse {
+        val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
+
+        gallery.rename(request.title)
+        return GalleryResponse.from(gallery)
+    }
+
+    /**
+     * 마감 기한만 바꾼다. 상태는 건드리지 않는다 — CLOSED 갤러리의 기한을 바꿔도 다시
+     * 열리지 않으며, 다시 여는 것은 재오픈([reopen])의 일이다.
+     */
+    @Transactional
+    fun changeSelectionDeadline(
+        galleryId: Long,
+        userId: Long,
+        request: ChangeSelectionDeadlineRequest,
+    ): GalleryResponse {
+        val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
+
+        gallery.changeSelectionDeadline(request.selectionDeadline, ZonedDateTime.now(clock))
         return GalleryResponse.from(gallery)
     }
 

@@ -3,7 +3,9 @@ package com.soma.wes.gallery.controller.docs
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.gallery.dto.request.ChangeMaxRetouchRoundCountRequest
 import com.soma.wes.gallery.dto.request.ChangeMaxSelectablePhotoCountRequest
+import com.soma.wes.gallery.dto.request.ChangeSelectionDeadlineRequest
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
+import com.soma.wes.gallery.dto.request.RenameGalleryRequest
 import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
 import com.soma.wes.gallery.dto.response.GalleryResponse
 import com.soma.wes.global.exception.ErrorResponse
@@ -275,6 +277,93 @@ interface GalleryControllerDocs {
         loginUser: LoginUser,
         galleryId: Long,
         request: ChangeMaxRetouchRoundCountRequest,
+    ): ResponseEntity<GalleryResponse>
+
+    @Operation(
+        summary = "갤러리 이름 변경",
+        description = "갤러리 이름을 바꾼다. 담당 작가만 할 수 있다. " +
+            "이름은 상태와 무관한 표시 정보라 DRAFT·OPEN·CLOSED 어느 상태에서든 바꿀 수 있다.",
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "변경 성공"),
+        ApiResponse(
+            responseCode = "400",
+            description = "빈 이름 또는 100자 초과",
+            content = [Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = Schema(implementation = ErrorResponse::class))],
+        ),
+        ApiResponse(
+            responseCode = "403",
+            description = "담당 작가가 아님",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "권한 없음",
+                            value = """{"code": "GALLERY_403_1", "message": "갤러리에 접근할 권한이 없습니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(responseCode = "404", description = "존재하지 않는 갤러리", content = []),
+    )
+    fun rename(
+        loginUser: LoginUser,
+        galleryId: Long,
+        request: RenameGalleryRequest,
+    ): ResponseEntity<GalleryResponse>
+
+    @Operation(
+        summary = "선택 마감 기한 변경",
+        description = """
+            사진 선택 마감 기한을 바꾼다. 담당 작가만 할 수 있다. null을 보내면 기한이 없어진다.
+
+            상태는 건드리지 않는다 — CLOSED 갤러리의 기한도 바꿀 수 있지만 그것만으로 다시
+            열리지는 않으며, 다시 여는 것은 재오픈 API의 일이다.
+        """,
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "변경 성공"),
+        ApiResponse(
+            responseCode = "400",
+            description = "이미 지난 기한을 보냄",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "지난 기한",
+                            value = """{"code": "GALLERY_400_2", "message": "사진 선택 마감 기한은 현재 시각보다 뒤여야 합니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(
+            responseCode = "403",
+            description = "담당 작가가 아님",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "권한 없음",
+                            value = """{"code": "GALLERY_403_1", "message": "갤러리에 접근할 권한이 없습니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(responseCode = "404", description = "존재하지 않는 갤러리", content = []),
+    )
+    fun changeSelectionDeadline(
+        loginUser: LoginUser,
+        galleryId: Long,
+        request: ChangeSelectionDeadlineRequest,
     ): ResponseEntity<GalleryResponse>
 
     @Operation(

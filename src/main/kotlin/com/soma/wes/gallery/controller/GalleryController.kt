@@ -4,7 +4,9 @@ import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.gallery.controller.docs.GalleryControllerDocs
 import com.soma.wes.gallery.dto.request.ChangeMaxRetouchRoundCountRequest
 import com.soma.wes.gallery.dto.request.ChangeMaxSelectablePhotoCountRequest
+import com.soma.wes.gallery.dto.request.ChangeSelectionDeadlineRequest
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
+import com.soma.wes.gallery.dto.request.RenameGalleryRequest
 import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
 import com.soma.wes.gallery.dto.response.GalleryResponse
 import com.soma.wes.gallery.service.GalleryService
@@ -89,6 +91,28 @@ class GalleryController(
         @Valid @RequestBody request: ChangeMaxRetouchRoundCountRequest,
     ): ResponseEntity<GalleryResponse> {
         val result = galleryService.changeMaxRetouchRoundCount(galleryId, loginUser.id, request)
+
+        return ResponseEntity.ok(result)
+    }
+
+    @PatchMapping("/{galleryId}/title")
+    override fun rename(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @Valid @RequestBody request: RenameGalleryRequest,
+    ): ResponseEntity<GalleryResponse> {
+        val result = galleryService.rename(galleryId, loginUser.id, request)
+
+        return ResponseEntity.ok(result)
+    }
+
+    @PatchMapping("/{galleryId}/selection-deadline")
+    override fun changeSelectionDeadline(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @Valid @RequestBody request: ChangeSelectionDeadlineRequest,
+    ): ResponseEntity<GalleryResponse> {
+        val result = galleryService.changeSelectionDeadline(galleryId, loginUser.id, request)
 
         return ResponseEntity.ok(result)
     }
