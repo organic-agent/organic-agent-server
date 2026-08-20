@@ -60,60 +60,55 @@ def run(gallery_id: int, force: bool = False, settings: Settings | None = None) 
     embedder = model.load_from(settings)
 
     with db.connect(settings) as connection:
-        with db.studio_write_admission(connection, gallery_id) as admitted:
-            if not admitted:
-                log.info("갤러리 %s: 삭제 중이거나 존재하지 않아 임베딩을 시작하지 않음", gallery_id)
-                return result.to_dict()
+        targets = db.fetch_targets(connection, gallery_id, force)
+        result.targets = len(targets)
+        log.info("갤러리 %s: 대상 %s장 (force=%s)", gallery_id, len(targets), force)
 
-            targets = db.fetch_targets(connection, gallery_id, force)
-            result.targets = len(targets)
-            log.info("갤러리 %s: 대상 %s장 (force=%s)", gallery_id, len(targets), force)
+        for batch in _chunked(targets, settings.batch_size):
+            loaded_refs = []
+            loaded_images = []
+            loaded_metadata = []
 
-            for batch in _chunked(targets, settings.batch_size):
-                loaded_refs = []
-                loaded_images = []
-                loaded_metadata = []
+            for ref in batch:
+                try:
+                    data = storage.read(ref.storage_key)
+                    original = images.open_original(data)
+                    prepared = images.prepare(original, settings.resize_long_edge)
 
-                for ref in batch:
-                    try:
-                        data = storage.read(ref.storage_key)
-                        original = images.open_original(data)
-                        prepared = images.prepare(original, settings.resize_long_edge)
+                    # 세 리스트를 여기서 함께 늘린다. 위 두 줄 중 하나라도 실패하면 이 사진은
+                    # 어느 리스트에도 들어가지 않아, 아래에서 벡터와 짝이 어긋날 일이 없다.
+                    loaded_refs.append(ref)
+                    loaded_images.append(prepared)
+                    loaded_metadata.append(_read_metadata(ref, original, len(data), result))
+                except Exception:
+                    # 한 장이 잡 전체를 죽이지 않게 한다. 실패한 사진은 embedding이 NULL로
+                    # 남으므로, 다시 호출하면 fetch_targets가 자연히 다시 집어 온다.
+                    log.exception("사진을 읽지 못했습니다: %s", ref.storage_key)
+                    result.failed.append(ref.storage_key)
 
-                        # 세 리스트를 여기서 함께 늘린다. 위 두 줄 중 하나라도 실패하면 이 사진은
-                        # 어느 리스트에도 들어가지 않아, 아래에서 벡터와 짝이 어긋날 일이 없다.
-                        loaded_refs.append(ref)
-                        loaded_images.append(prepared)
-                        loaded_metadata.append(_read_metadata(ref, original, len(data), result))
-                    except Exception:
-                        # 한 장이 잡 전체를 죽이지 않게 한다. 실패한 사진은 embedding이 NULL로
-                        # 남으므로, 다시 호출하면 fetch_targets가 자연히 다시 집어 온다.
-                        log.exception("사진을 읽지 못했습니다: %s", ref.storage_key)
-                        result.failed.append(ref.storage_key)
+            if not loaded_images:
+                continue
 
-                if not loaded_images:
-                    continue
+            batch_started = time.monotonic()
+            vectors = embedder.encode(loaded_images)
 
-                batch_started = time.monotonic()
-                vectors = embedder.encode(loaded_images)
+            preview_keys = [
+                _upload_preview(storage, ref, image, settings, result)
+                for ref, image in zip(loaded_refs, loaded_images)
+            ]
 
-                preview_keys = [
-                    _upload_preview(storage, ref, image, settings, result)
-                    for ref, image in zip(loaded_refs, loaded_images)
-                ]
+            stored = db.store_embeddings(
+                connection,
+                zip(loaded_refs, vectors, preview_keys, loaded_metadata),
+            )
 
-                stored = db.store_embeddings(
-                    connection,
-                    zip(loaded_refs, vectors, preview_keys, loaded_metadata),
-                )
+            # 배치 단위로 커밋한다. 중간에 죽어도 그때까지의 벡터는 남고, 다시 부르면
+            # fetch_targets가 나머지만 집어 온다.
+            connection.commit()
+            result.processed += stored
 
-                # 배치 단위로 커밋한다. session advisory lock은 commit 뒤에도 유지되므로 삭제가
-                # 다음 배치 사이에 들어와 이미 읽은 원본의 preview를 뒤늦게 쓰지 못한다.
-                connection.commit()
-                result.processed += stored
-
-                per_photo = (time.monotonic() - batch_started) / len(loaded_images)
-                log.info("진행 %s/%s (장당 %.2fs)", result.processed, result.targets, per_photo)
+            per_photo = (time.monotonic() - batch_started) / len(loaded_images)
+            log.info("진행 %s/%s (장당 %.2fs)", result.processed, result.targets, per_photo)
 
     result.elapsed_seconds = time.monotonic() - started
     log.info("완료: %s", result.to_dict())
