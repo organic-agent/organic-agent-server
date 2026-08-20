@@ -35,7 +35,7 @@ loki.process "spring" {
 
 loki.write "loki" {
 	endpoint {
-		// 모니터링 EC2의 VPC 내부 주소. compose가 Parameter Store(/wes/prod/monitoring.loki-url)에서 받아 넘긴다.
+		// 모니터링 EC2의 VPC 내부 주소. compose가 Parameter Store(/wes/prod/app.logging.loki-url)에서 받아 넘긴다.
 		url        = sys.env("LOKI_URL")
 		batch_wait = "1s"
 		batch_size = "1MiB"

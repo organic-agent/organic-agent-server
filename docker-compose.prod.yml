@@ -29,7 +29,7 @@ services:
     container_name: wes-alloy
     restart: always
     environment:
-      # CD의 배포 스크립트가 Parameter Store(/wes/prod/monitoring.loki-url)에서 읽어 넘긴다.
+      # CD의 배포 스크립트가 Parameter Store(/wes/prod/app.logging.loki-url)에서 읽어 넘긴다.
       - LOKI_URL=${LOKI_URL}
     volumes:
       - ./logs:/var/log/spring:ro

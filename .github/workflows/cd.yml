@@ -154,8 +154,8 @@ jobs:
           # 인스턴스 롤은 /wes/prod/* 읽기 권한이 있고 aws-cli는 user_data가 깔아 둔다.
           # 아직 없으면 alloy는 뜨되 전송만 실패하고, 앱 배포는 그대로 진행된다.
           export LOKI_URL=\$(aws ssm get-parameter --region ${AWS_REGION} \
-            --name /wes/prod/monitoring.loki-url --query Parameter.Value --output text 2>/dev/null || true)
-          [ -n "\$LOKI_URL" ] || echo "경고: /wes/prod/monitoring.loki-url 파라미터가 없어 로그가 Loki로 전송되지 않습니다" >&2
+            --name /wes/prod/app.logging.loki-url --query Parameter.Value --output text 2>/dev/null || true)
+          [ -n "\$LOKI_URL" ] || echo "경고: /wes/prod/app.logging.loki-url 파라미터가 없어 로그가 Loki로 전송되지 않습니다" >&2
 
           echo "${{ secrets.GITHUB_TOKEN }}" \
             | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
