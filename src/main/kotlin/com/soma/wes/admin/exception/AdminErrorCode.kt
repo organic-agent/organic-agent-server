@@ -15,16 +15,19 @@ enum class AdminErrorCode(
     INVALID_AUDIT_RANGE(HttpStatus.BAD_REQUEST, "ADMIN_400_5", "감사 로그 조회 기간이 올바르지 않습니다."),
     INVALID_RESOURCE_FIELDS(HttpStatus.BAD_REQUEST, "ADMIN_400_6", "관리자 리소스 필드가 올바르지 않습니다."),
     INVALID_IDEMPOTENCY_KEY(HttpStatus.BAD_REQUEST, "ADMIN_400_7", "멱등성 키 형식이 올바르지 않습니다."),
+    INVALID_IMPERSONATION_TARGET(HttpStatus.BAD_REQUEST, "ADMIN_400_8", "대리보기는 사용자·스튜디오·갤러리만 지원합니다."),
 
     INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "ADMIN_401_1", "아이디 또는 비밀번호가 올바르지 않습니다."),
     SESSION_INVALID(HttpStatus.UNAUTHORIZED, "ADMIN_401_2", "관리자 세션이 만료되었거나 유효하지 않습니다."),
 
     ACCOUNT_SUSPENDED(HttpStatus.FORBIDDEN, "ADMIN_403_1", "정지된 관리자 계정입니다."),
+    IMPERSONATION_READ_ONLY(HttpStatus.FORBIDDEN, "ADMIN_403_2", "읽기 전용 대리보기에서는 쓰기 요청을 실행할 수 없습니다."),
 
     ACCOUNT_NOT_FOUND(HttpStatus.NOT_FOUND, "ADMIN_404_1", "관리자 계정을 찾을 수 없습니다."),
     AUDIT_LOG_NOT_FOUND(HttpStatus.NOT_FOUND, "ADMIN_404_2", "감사 로그를 찾을 수 없습니다."),
     REVISION_NOT_FOUND(HttpStatus.NOT_FOUND, "ADMIN_404_3", "데이터 리비전을 찾을 수 없습니다."),
     RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "ADMIN_404_4", "관리할 데이터를 찾을 수 없습니다."),
+    IMPERSONATION_NOT_FOUND(HttpStatus.NOT_FOUND, "ADMIN_404_5", "활성 대리보기 세션을 찾을 수 없습니다."),
 
     USERNAME_ALREADY_EXISTS(HttpStatus.CONFLICT, "ADMIN_409_1", "이미 사용 중인 관리자 아이디입니다."),
     PASSWORD_REUSE(HttpStatus.CONFLICT, "ADMIN_409_2", "현재 비밀번호와 다른 비밀번호를 사용해 주세요."),

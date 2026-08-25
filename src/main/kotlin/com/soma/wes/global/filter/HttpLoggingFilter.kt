@@ -24,6 +24,9 @@ class HttpLoggingFilter : OncePerRequestFilter() {
         /** logback 패턴의 `%X{traceId}`와 같아야 한다. */
         const val TRACE_ID_KEY = "traceId"
 
+        /** CS 문의와 관측 화면에서 동일 요청을 찾기 위한 공개 응답 헤더. */
+        const val CORRELATION_ID_HEADER = "X-Correlation-ID"
+
         /** 인증 필터가 로그인 사용자 id(Long)를 실어 보내는 request attribute 이름. */
         const val USER_ID_ATTRIBUTE = "userId"
 
@@ -52,7 +55,9 @@ class HttpLoggingFilter : OncePerRequestFilter() {
         response: HttpServletResponse,
         filterChain: FilterChain,
     ) {
-        MDC.put(TRACE_ID_KEY, generateTraceId())
+        val traceId = generateTraceId()
+        MDC.put(TRACE_ID_KEY, traceId)
+        response.setHeader(CORRELATION_ID_HEADER, traceId)
 
         if (isExcluded(request)) {
             try {

@@ -75,6 +75,7 @@ class HttpLoggingFilterTest @Autowired constructor(
         val traceId = request.mdcPropertyMap[HttpLoggingFilter.TRACE_ID_KEY]
         assertThat(traceId).hasSize(16)
         assertThat(result.mdcPropertyMap[HttpLoggingFilter.TRACE_ID_KEY]).isEqualTo(traceId)
+        assertThat(response.headers().firstValue(HttpLoggingFilter.CORRELATION_ID_HEADER)).hasValue(traceId)
     }
 
     @Test
@@ -95,6 +96,7 @@ class HttpLoggingFilterTest @Autowired constructor(
 
         // then
         assertThat(response.statusCode()).isEqualTo(401)
+        assertThat(response.body()).contains("\"correlationId\":\"")
         assertThat(appender.list.map { it.formattedMessage })
             .contains("[RESPONSE] /api/v1/users/me userId=null (401 UNAUTHORIZED)")
     }
@@ -102,10 +104,11 @@ class HttpLoggingFilterTest @Autowired constructor(
     @Test
     fun `헬스체크는 기록하지 않는다`() {
         // when
-        send("/actuator/health", accessToken = null)
+        val response = send("/actuator/health", accessToken = null)
 
         // then
         assertThat(appender.list).isEmpty()
+        assertThat(response.headers().firstValue(HttpLoggingFilter.CORRELATION_ID_HEADER)).isPresent
     }
 
     private fun send(path: String, accessToken: String?): HttpResponse<String> {
