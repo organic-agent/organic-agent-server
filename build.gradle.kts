@@ -37,6 +37,7 @@ dependencies {
     // Security & OAuth
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-oauth2-client")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.85")
 
     // JWT
     implementation("io.jsonwebtoken:jjwt-api:0.13.0")

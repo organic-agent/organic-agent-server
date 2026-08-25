@@ -1,0 +1,15 @@
+package com.soma.wes.admin.domain
+
+enum class AdminEventType {
+    LOGIN_SUCCEEDED,
+    LOGIN_FAILED,
+    ACCOUNT_LOCKED,
+    LOGOUT,
+    PASSWORD_CHANGED,
+    ACCOUNT_CREATED,
+    ACCOUNT_SUSPENDED,
+    ACCOUNT_ACTIVATED,
+    ACCOUNT_UNLOCKED,
+    TEMPORARY_PASSWORD_ISSUED,
+    CLI_RECOVERY,
+}

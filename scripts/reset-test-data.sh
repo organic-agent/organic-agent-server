@@ -120,6 +120,7 @@ TABLES="$TABLES, retouch_photos, retouch_rounds"
 TABLES="$TABLES, photo_folder_items, photo_folders, photo_folder_groups, photos"
 TABLES="$TABLES, gallery_invites, gallery_members, galleries"
 if [ "$SCOPE" = "all" ]; then
+  TABLES="$TABLES, admin_auth_events, admin_sessions, admin_accounts"
   TABLES="$TABLES, studios"
   TABLES="$TABLES, refresh_tokens, oauth_states, users"
 fi
