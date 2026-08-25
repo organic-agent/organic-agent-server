@@ -9,6 +9,7 @@ import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.trash.RecordingTrashPhotoStorage
+import com.soma.wes.trash.config.TrashProperties
 import com.soma.wes.trash.repository.TrashRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.SoftAssertions.assertSoftly
@@ -26,8 +27,8 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * 보관 기간 만료 purge의 규칙을 확인한다 — 무엇을 걷고, 무엇을 남기고, 실패하면 어떻게 되는가.
  *
- * 시계를 고정하는 대신 `deleted_at`을 상대 시각으로 심는다. [Photo.moveToTrash]가 시각을
- * 받으므로 "4일 전에 지웠다"는 상태를 그대로 만들 수 있다.
+ * 시계를 고정하는 대신 실제 보관 정책보다 한 시간 전인 시각을 `deleted_at`에 심는다.
+ * 정책 일수가 바뀌어도 만료 경계 테스트가 같은 의미를 유지한다.
  */
 @IntegrationTest
 @Import(TrashEraserTest.RecordingStorageConfig::class)
@@ -40,6 +41,7 @@ class TrashEraserTest @Autowired constructor(
     private val retouchFixture: RetouchFixture,
     private val jdbcTemplate: JdbcTemplate,
     private val photoStorage: RecordingTrashPhotoStorage,
+    private val trashProperties: TrashProperties,
 ) {
 
     private val sequence = AtomicLong(System.nanoTime())
@@ -55,7 +57,7 @@ class TrashEraserTest @Autowired constructor(
         // given
         val expiredGalleryId = createGallery()
         savePhoto(expiredGalleryId)
-        trashGallery(expiredGalleryId, ZonedDateTime.now().minusDays(4))
+        trashGallery(expiredGalleryId, expiredAt())
 
         val freshGalleryId = createGallery()
         val freshPhoto = savePhoto(freshGalleryId)
@@ -77,10 +79,10 @@ class TrashEraserTest @Autowired constructor(
         // given
         val galleryId = createGallery()
         val hidden = savePhoto(galleryId)
-        hidden.moveToTrash(ZonedDateTime.now().minusDays(5))
+        hidden.moveToTrash(expiredAt())
         photoRepository.saveAndFlush(hidden)
         val alive = savePhoto(galleryId)
-        trashGallery(galleryId, ZonedDateTime.now().minusDays(4))
+        trashGallery(galleryId, expiredAt())
 
         // when
         trashEraser.purgeExpired()
@@ -106,7 +108,7 @@ class TrashEraserTest @Autowired constructor(
         val retouched = retouchFixture.주석_추가(
             retouchFixture.결과와_함께_완료된_회차(galleryId, photoIds = listOf(photo.requiredId)),
         )
-        trashGallery(galleryId, ZonedDateTime.now().minusDays(4))
+        trashGallery(galleryId, expiredAt())
 
         // when
         trashEraser.purgeExpired()
@@ -129,7 +131,7 @@ class TrashEraserTest @Autowired constructor(
         // given
         val galleryId = createGallery()
         savePhoto(galleryId)
-        trashGallery(galleryId, ZonedDateTime.now().minusDays(4))
+        trashGallery(galleryId, expiredAt())
         photoStorage.failDelete = true
 
         // when
@@ -179,6 +181,9 @@ class TrashEraserTest @Autowired constructor(
 
     private fun countGalleryRows(galleryId: Long): Long =
         checkNotNull(jdbcTemplate.queryForObject("SELECT count(*) FROM galleries WHERE id = ?", Long::class.java, galleryId))
+
+    private fun expiredAt(): ZonedDateTime =
+        ZonedDateTime.now().minus(trashProperties.retention).minusHours(1)
 
     @TestConfiguration(proxyBeanMethods = false)
     class RecordingStorageConfig {
