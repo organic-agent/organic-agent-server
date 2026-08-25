@@ -42,11 +42,11 @@ class RetouchFixture(
                 resultContentType = "image/jpeg",
             )
         }
-        retouchPhotoRepository.saveAllAndFlush(items)
+        val persistedItems = retouchPhotoRepository.saveAllAndFlush(items)
 
         round.complete(ZonedDateTime.now())
         retouchRoundRepository.saveAndFlush(round)
-        return items
+        return persistedItems
     }
 
     /** 부부가 제출했지만 아직 아무 결과도 없는 회차의 항목들. */

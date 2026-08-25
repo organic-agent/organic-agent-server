@@ -3,6 +3,7 @@ package com.soma.wes.global
 import jakarta.persistence.Column
 import jakarta.persistence.EntityListeners
 import jakarta.persistence.MappedSuperclass
+import jakarta.persistence.Version
 import org.springframework.data.annotation.CreatedDate
 import org.springframework.data.annotation.LastModifiedDate
 import org.springframework.data.jpa.domain.support.AuditingEntityListener
@@ -17,6 +18,15 @@ import java.time.ZonedDateTime
 @MappedSuperclass
 @EntityListeners(AuditingEntityListener::class)
 abstract class BaseEntity {
+
+    /**
+     * 관리자 API가 오래된 화면의 값으로 최신 변경을 덮어쓰지 않도록 하는 낙관적 잠금 버전이다.
+     * 일반 사용자 경로에서 일어난 변경도 함께 증가해야 `expectedVersion` 검사가 의미를 갖는다.
+     */
+    @Version
+    @Column(nullable = false)
+    var version: Long = 0
+        protected set
 
     @CreatedDate
     @Column(name = "created_at", updatable = false)

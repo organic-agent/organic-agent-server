@@ -64,7 +64,8 @@ class TrashRepository(
         jdbcClient.sql(
             """
             UPDATE galleries
-            SET deleted_at = NULL
+            SET deleted_at = NULL,
+                version = version + 1
             WHERE id = :galleryId
               AND studio_id = :studioId
               AND deleted_at IS NOT NULL
@@ -157,7 +158,8 @@ class TrashRepository(
         jdbcClient.sql(
             """
             UPDATE photos
-            SET deleted_at = NULL
+            SET deleted_at = NULL,
+                version = version + 1
             WHERE gallery_id = :galleryId
               AND id IN (:photoIds)
               AND deleted_at IS NOT NULL
