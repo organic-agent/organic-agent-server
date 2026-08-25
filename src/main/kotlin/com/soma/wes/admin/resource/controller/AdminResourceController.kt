@@ -6,6 +6,7 @@ import com.soma.wes.admin.resource.dto.AdminReprocessRequest
 import com.soma.wes.admin.resource.dto.AdminReprocessResponse
 import com.soma.wes.admin.resource.dto.AdminOperationsOverviewResponse
 import com.soma.wes.admin.resource.dto.AdminResourcePageResponse
+import com.soma.wes.admin.resource.dto.AdminResourceContextResponse
 import com.soma.wes.admin.resource.dto.AdminResourceResponse
 import com.soma.wes.admin.resource.dto.AdminSystemSettingsResponse
 import com.soma.wes.admin.resource.dto.ChangeAdminResourceStateRequest
@@ -14,6 +15,7 @@ import com.soma.wes.admin.resource.dto.UpdateAdminResourceRequest
 import com.soma.wes.admin.resource.service.AdminReprocessService
 import com.soma.wes.admin.resource.service.AdminOperationsOverviewService
 import com.soma.wes.admin.resource.service.AdminResourceService
+import com.soma.wes.admin.resource.service.AdminResourceContextService
 import com.soma.wes.admin.resource.service.AdminSystemSettingsService
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
@@ -37,6 +39,7 @@ class AdminResourceController(
     private val reprocessService: AdminReprocessService,
     private val systemSettingsService: AdminSystemSettingsService,
     private val operationsOverviewService: AdminOperationsOverviewService,
+    private val resourceContextService: AdminResourceContextService,
 ) {
 
     @GetMapping("/operations/overview")
@@ -60,6 +63,13 @@ class AdminResourceController(
         @PathVariable type: AdminResourceType,
         @PathVariable id: Long,
     ): ResponseEntity<AdminResourceResponse> = ResponseEntity.ok(resourceService.get(type, id))
+
+    @GetMapping("/resources/{type}/{id}/context")
+    fun getContext(
+        @AuthenticationPrincipal loginUser: AdminLoginUser,
+        @PathVariable type: AdminResourceType,
+        @PathVariable id: Long,
+    ): ResponseEntity<AdminResourceContextResponse> = ResponseEntity.ok(resourceContextService.get(type, id))
 
     @PostMapping("/resources/{type}")
     fun create(

@@ -27,6 +27,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
         mockMvc.get("/internal/admin/v1/resources").andExpect { status { isUnauthorized() } }
         mockMvc.get("/internal/admin/v1/system-settings").andExpect { status { isUnauthorized() } }
         mockMvc.get("/internal/admin/v1/operations/overview").andExpect { status { isUnauthorized() } }
+        mockMvc.get("/internal/admin/v1/resources/USER/1/context").andExpect { status { isUnauthorized() } }
     }
 
     @Test
@@ -63,6 +64,8 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             jsonPath("$.version") { value(0) }
         }.andReturn().response
         assertThat(created.contentAsString).doesNotContain("controller-provider-secret")
+        val createdId = tools.jackson.databind.json.JsonMapper.builder().build()
+            .readTree(created.contentAsString).path("id").asLong()
 
         mockMvc.get("/internal/admin/v1/resources") {
             cookie(cookie)
@@ -81,6 +84,15 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             status { isOk() }
             jsonPath("$.secretsMasked") { value(true) }
             jsonPath("$.mutable") { value(false) }
+        }
+
+        mockMvc.get("/internal/admin/v1/resources/USER/$createdId/context") {
+            cookie(cookie)
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.resource.id") { value(createdId) }
+            jsonPath("$.facts.activeSessions") { value(0) }
+            jsonPath("$.relations") { isArray() }
         }
 
         mockMvc.get("/internal/admin/v1/operations/overview") {

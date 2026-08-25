@@ -36,6 +36,12 @@ data class AdminResourceResponse(
     val updatedAt: ZonedDateTime?,
 )
 
+data class AdminResourceContextResponse(
+    val resource: AdminResourceResponse,
+    val relations: List<AdminResourceSummaryResponse>,
+    val facts: Map<String, Any?>,
+)
+
 data class CreateAdminResourceRequest(
     @field:NotBlank
     @field:Size(max = 500)
