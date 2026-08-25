@@ -37,6 +37,7 @@ enum class AdminErrorCode(
     RESOURCE_RESTORE_UNSUPPORTED(HttpStatus.CONFLICT, "ADMIN_409_6", "이 데이터는 현재 복원할 수 없습니다."),
     IDEMPOTENCY_KEY_REUSED(HttpStatus.CONFLICT, "ADMIN_409_7", "같은 멱등성 키가 다른 요청에 사용되었습니다."),
     REPROCESS_ALREADY_REQUESTED(HttpStatus.CONFLICT, "ADMIN_409_8", "같은 재처리 요청이 이미 접수되었습니다."),
+    RESOURCE_DELETE_UNSUPPORTED(HttpStatus.CONFLICT, "ADMIN_409_9", "이 데이터는 휴지통 삭제를 지원하지 않습니다."),
 
     REVISION_EXPIRED(HttpStatus.GONE, "ADMIN_410_1", "7일 복구 기간이 지난 리비전입니다."),
 

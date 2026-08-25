@@ -252,20 +252,19 @@ class AdminResourceRepository(
 
     fun delete(type: AdminResourceType, id: Long, expectedVersion: Long): Int {
         val definition = definition(type)
-        val sql = if (definition.softDeleteColumn == null) {
-            "DELETE FROM ${definition.table} WHERE id = :id AND version = :expectedVersion"
-        } else {
+        val deletedColumn = definition.softDeleteColumn
+            ?: throw AdminException(AdminErrorCode.RESOURCE_DELETE_UNSUPPORTED)
+        return jdbcClient.sql(
             """
                 UPDATE ${definition.table}
-                SET ${definition.softDeleteColumn} = CURRENT_TIMESTAMP,
+                SET $deletedColumn = CURRENT_TIMESTAMP,
                     version = version + 1,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = :id
                   AND version = :expectedVersion
-                  AND ${definition.softDeleteColumn} IS NULL
-            """.trimIndent()
-        }
-        return jdbcClient.sql(sql)
+                  AND $deletedColumn IS NULL
+            """.trimIndent(),
+        )
             .param("id", id)
             .param("expectedVersion", expectedVersion)
             .update()
