@@ -37,6 +37,7 @@ class AdminResourceContextService(
             resource = resource,
             relations = relations,
             facts = contextRepository.findFacts(type, id),
+            sections = contextRepository.findSections(type, id),
         )
     }
 }

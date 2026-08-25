@@ -40,6 +40,7 @@ data class AdminResourceContextResponse(
     val resource: AdminResourceResponse,
     val relations: List<AdminResourceSummaryResponse>,
     val facts: Map<String, Any?>,
+    val sections: Map<String, List<Map<String, Any?>>>,
 )
 
 enum class AdminPhotoAccessMode { VIEW, DOWNLOAD }

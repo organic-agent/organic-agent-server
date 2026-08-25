@@ -157,6 +157,260 @@ class AdminResourceContextRepository(
         ) }
     }
 
+    fun findSections(type: AdminResourceType, id: Long): Map<String, List<Map<String, Any?>>> = when (type) {
+        AdminResourceType.USER -> linkedMapOf(
+            "sessions" to rows(
+                """SELECT user_id, expires_at, created_at, updated_at FROM refresh_tokens WHERE user_id = :id""",
+                id,
+            ) { rs -> linkedMapOf(
+                "userId" to rs.getLong("user_id"),
+                "expiresAt" to rs.getObject("expires_at"),
+                "createdAt" to rs.getObject("created_at"),
+                "updatedAt" to rs.getObject("updated_at"),
+            ) },
+            "galleryMemberships" to rows(
+                """
+                    SELECT m.id AS member_id, m.gallery_id, g.title, g.status, m.created_at
+                    FROM gallery_members m JOIN galleries g ON g.id = m.gallery_id
+                    WHERE m.user_id = :id ORDER BY m.id DESC LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "memberId" to rs.getLong("member_id"),
+                "galleryId" to rs.getLong("gallery_id"),
+                "galleryTitle" to rs.getString("title"),
+                "galleryStatus" to rs.getString("status"),
+                "joinedAt" to rs.getObject("created_at"),
+            ) },
+        )
+        AdminResourceType.STUDIO -> linkedMapOf(
+            "galleries" to rows(
+                """
+                    SELECT id, title, status, selection_deadline, deleted_at, created_at
+                    FROM galleries WHERE studio_id = :id ORDER BY id DESC LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("id"),
+                "title" to rs.getString("title"),
+                "status" to rs.getString("status"),
+                "selectionDeadline" to rs.getObject("selection_deadline"),
+                "deleted" to (rs.getObject("deleted_at") != null),
+                "createdAt" to rs.getObject("created_at"),
+            ) },
+        )
+        AdminResourceType.GALLERY -> linkedMapOf(
+            "members" to rows(
+                """
+                    SELECT m.id AS member_id, u.id AS user_id, u.nickname, u.email, m.created_at
+                    FROM gallery_members m JOIN users u ON u.id = m.user_id
+                    WHERE m.gallery_id = :id ORDER BY m.id
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "memberId" to rs.getLong("member_id"),
+                "userId" to rs.getLong("user_id"),
+                "nickname" to rs.getString("nickname"),
+                "email" to rs.getString("email"),
+                "joinedAt" to rs.getObject("created_at"),
+            ) },
+            "invites" to rows(
+                """
+                    SELECT id, expires_at, revoked_at, created_at,
+                           CASE WHEN revoked_at IS NOT NULL THEN 'REVOKED'
+                                WHEN expires_at < CURRENT_TIMESTAMP THEN 'EXPIRED' ELSE 'ACTIVE' END AS status
+                    FROM gallery_invites WHERE gallery_id = :id ORDER BY id DESC LIMIT 20
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("id"),
+                "status" to rs.getString("status"),
+                "expiresAt" to rs.getObject("expires_at"),
+                "revokedAt" to rs.getObject("revoked_at"),
+                "createdAt" to rs.getObject("created_at"),
+                "token" to "[MASKED]",
+            ) },
+            "selections" to rows(
+                "SELECT id, status, submitted_at, created_at FROM photo_selections WHERE gallery_id = :id ORDER BY id DESC",
+                id,
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("id"),
+                "status" to rs.getString("status"),
+                "submittedAt" to rs.getObject("submitted_at"),
+                "createdAt" to rs.getObject("created_at"),
+            ) },
+            "collaborationLinks" to rows(
+                """
+                    SELECT id, name, revoked_at, created_at FROM collab_sessions
+                    WHERE gallery_id = :id ORDER BY id DESC LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("id"),
+                "name" to rs.getString("name"),
+                "status" to if (rs.getObject("revoked_at") == null) "ACTIVE" else "REVOKED",
+                "token" to "[MASKED]",
+                "createdAt" to rs.getObject("created_at"),
+            ) },
+            "albums" to rows(
+                "SELECT id, name, created_at FROM photo_folder_groups WHERE gallery_id = :id ORDER BY id DESC LIMIT 100",
+                id,
+            ) { rs -> linkedMapOf("id" to rs.getLong("id"), "name" to rs.getString("name"), "createdAt" to rs.getObject("created_at")) },
+            "retouchRounds" to rows(
+                """
+                    SELECT id, round_no, status, requested_at, completed_at
+                    FROM retouch_rounds WHERE gallery_id = :id ORDER BY round_no DESC LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("id"),
+                "roundNo" to rs.getInt("round_no"),
+                "status" to rs.getString("status"),
+                "requestedAt" to rs.getObject("requested_at"),
+                "completedAt" to rs.getObject("completed_at"),
+            ) },
+        )
+        AdminResourceType.PHOTO -> linkedMapOf(
+            "selectionReferences" to rows(
+                """
+                    SELECT i.id AS item_id, i.selection_id, s.status, i.retouch_photo_id
+                    FROM photo_selection_items i JOIN photo_selections s ON s.id = i.selection_id
+                    WHERE i.photo_id = :id ORDER BY i.id DESC LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "itemId" to rs.getLong("item_id"),
+                "selectionId" to rs.getLong("selection_id"),
+                "selectionStatus" to rs.getString("status"),
+                "retouchPhotoId" to rs.getObject("retouch_photo_id"),
+            ) },
+            "albumReferences" to rows(
+                """
+                    SELECT i.id AS item_id, i.group_id, i.folder_id, f.name AS folder_name
+                    FROM photo_folder_items i JOIN photo_folders f ON f.id = i.folder_id
+                    WHERE i.photo_id = :id ORDER BY i.id DESC LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "itemId" to rs.getLong("item_id"),
+                "albumId" to rs.getLong("group_id"),
+                "folderId" to rs.getLong("folder_id"),
+                "folderName" to rs.getString("folder_name"),
+            ) },
+            "retouchReferences" to rows(
+                """
+                    SELECT id, round_id, request_text, annotation_key IS NOT NULL AS annotated,
+                           result_key IS NOT NULL AS result_ready
+                    FROM retouch_photos WHERE photo_id = :id ORDER BY id DESC LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("id"),
+                "roundId" to rs.getLong("round_id"),
+                "requestText" to rs.getString("request_text"),
+                "annotated" to rs.getBoolean("annotated"),
+                "resultReady" to rs.getBoolean("result_ready"),
+            ) },
+        )
+        AdminResourceType.SELECTION -> linkedMapOf(
+            "items" to rows(
+                """
+                    SELECT i.id, i.photo_id, p.original_file_name, i.retouch_photo_id, i.created_at
+                    FROM photo_selection_items i JOIN photos p ON p.id = i.photo_id
+                    WHERE i.selection_id = :id ORDER BY i.id LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("id"),
+                "photoId" to rs.getLong("photo_id"),
+                "fileName" to rs.getString("original_file_name"),
+                "retouchPhotoId" to rs.getObject("retouch_photo_id"),
+                "selectedAt" to rs.getObject("created_at"),
+            ) },
+        )
+        AdminResourceType.COLLABORATION -> linkedMapOf(
+            "guests" to rows(
+                "SELECT id, nickname, created_at FROM collab_guests WHERE collab_session_id = :id ORDER BY id LIMIT 100",
+                id,
+            ) { rs -> linkedMapOf("id" to rs.getLong("id"), "nickname" to rs.getString("nickname"), "createdAt" to rs.getObject("created_at")) },
+            "comments" to rows(
+                """
+                    SELECT c.id, p.photo_id, g.id AS guest_id, g.nickname, c.content, c.created_at
+                    FROM collab_photo_comments c
+                    JOIN collab_photos p ON p.id = c.collab_photo_id
+                    JOIN collab_guests g ON g.id = c.collab_guest_id
+                    WHERE p.collab_session_id = :id ORDER BY c.id DESC LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("id"),
+                "photoId" to rs.getLong("photo_id"),
+                "guestId" to rs.getLong("guest_id"),
+                "nickname" to rs.getString("nickname"),
+                "content" to rs.getString("content"),
+                "createdAt" to rs.getObject("created_at"),
+            ) },
+            "likes" to rows(
+                """
+                    SELECT l.id, p.photo_id, g.id AS guest_id, g.nickname, l.created_at
+                    FROM collab_photo_likes l
+                    JOIN collab_photos p ON p.id = l.collab_photo_id
+                    JOIN collab_guests g ON g.id = l.collab_guest_id
+                    WHERE p.collab_session_id = :id ORDER BY l.id DESC LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("id"),
+                "photoId" to rs.getLong("photo_id"),
+                "guestId" to rs.getLong("guest_id"),
+                "nickname" to rs.getString("nickname"),
+                "createdAt" to rs.getObject("created_at"),
+            ) },
+        )
+        AdminResourceType.ALBUM -> linkedMapOf(
+            "folders" to rows(
+                "SELECT id, name, created_at FROM photo_folders WHERE group_id = :id ORDER BY id LIMIT 100",
+                id,
+            ) { rs -> linkedMapOf("id" to rs.getLong("id"), "name" to rs.getString("name"), "createdAt" to rs.getObject("created_at")) },
+            "items" to rows(
+                """
+                    SELECT i.id, i.folder_id, f.name AS folder_name, i.photo_id, p.original_file_name
+                    FROM photo_folder_items i
+                    JOIN photo_folders f ON f.id = i.folder_id
+                    JOIN photos p ON p.id = i.photo_id
+                    WHERE i.group_id = :id ORDER BY i.id LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("id"),
+                "folderId" to rs.getLong("folder_id"),
+                "folderName" to rs.getString("folder_name"),
+                "photoId" to rs.getLong("photo_id"),
+                "fileName" to rs.getString("original_file_name"),
+            ) },
+        )
+        AdminResourceType.RETOUCH_REQUEST -> linkedMapOf(
+            "items" to rows(
+                """
+                    SELECT r.id, r.photo_id, p.original_file_name, r.request_text,
+                           r.annotation_key IS NOT NULL AS annotated,
+                           r.result_key IS NOT NULL AS result_ready, r.result_content_type
+                    FROM retouch_photos r JOIN photos p ON p.id = r.photo_id
+                    WHERE r.round_id = :id ORDER BY r.id LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("id"),
+                "photoId" to rs.getLong("photo_id"),
+                "fileName" to rs.getString("original_file_name"),
+                "requestText" to rs.getString("request_text"),
+                "annotated" to rs.getBoolean("annotated"),
+                "resultReady" to rs.getBoolean("result_ready"),
+                "resultContentType" to rs.getString("result_content_type"),
+            ) },
+        )
+    }.filterValues { it.isNotEmpty() }
+
     private fun references(type: AdminResourceType, sql: String, id: Long): List<ResourceReference> =
         jdbcClient.sql(sql)
             .param("id", id)
@@ -172,6 +426,15 @@ class AdminResourceContextRepository(
         .query { rs, _ -> mapper(rs) }
         .optional()
         .orElse(emptyMap())
+
+    private fun rows(
+        sql: String,
+        id: Long,
+        mapper: (ResultSet) -> Map<String, Any?>,
+    ): List<Map<String, Any?>> = jdbcClient.sql(sql)
+        .param("id", id)
+        .query { rs, _ -> mapper(rs) }
+        .list()
 
     data class ResourceReference(val type: AdminResourceType, val id: Long)
 }
