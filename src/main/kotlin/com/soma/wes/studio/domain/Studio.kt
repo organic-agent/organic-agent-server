@@ -10,10 +10,13 @@ import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
+import org.hibernate.annotations.SQLRestriction
+import java.time.ZonedDateTime
 import java.util.Locale
 
 
 @Entity
+@SQLRestriction("deleted_at is null")
 @Table(
     name = "studios",
     uniqueConstraints = [
@@ -36,6 +39,9 @@ class Studio(
     var inflowChannel: String? = null,
 
 ) : BaseEntity() {
+
+    @Column(name = "deleted_at")
+    var deletedAt: ZonedDateTime? = null
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

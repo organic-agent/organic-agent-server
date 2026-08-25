@@ -49,7 +49,7 @@ app:
   trash:
     # 휴지통 보관 기간. 지난 사진·갤러리는 purge 스케줄러가 S3 객체와 함께 물리 삭제한다.
     # 비밀이 아니라 제품 정책이라 저장소에 둔다 — 3일을 30일로 바꾸는 건 PR에 남아야 한다.
-    retention: 3d
+    retention: 7d
 
   storage:
     # 버킷 이름만 인프라에 종속된다. prod는 Parameter Store(app.storage.bucket)가 덮어쓰고,

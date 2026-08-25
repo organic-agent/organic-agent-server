@@ -13,6 +13,7 @@ import jakarta.persistence.Id
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
 import java.time.ZonedDateTime
+import org.hibernate.annotations.SQLRestriction
 
 /**
  * 보정 회차. 부부가 보정사진을 모아 일괄 제출하는 단위이자, 계약의 "보정 N회"를 세는 단위다.
@@ -22,6 +23,7 @@ import java.time.ZonedDateTime
  * (gallery_id, round_no) 유니크가 마지막으로 막는다.
  */
 @Entity
+@SQLRestriction("deleted_at is null")
 @Table(
     name = "retouch_rounds",
     uniqueConstraints = [
@@ -38,6 +40,9 @@ class RetouchRound(
     val roundNo: Int,
 
 ) : BaseEntity() {
+
+    @Column(name = "deleted_at")
+    var deletedAt: ZonedDateTime? = null
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

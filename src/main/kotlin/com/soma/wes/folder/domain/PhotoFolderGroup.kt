@@ -9,11 +9,14 @@ import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Index
 import jakarta.persistence.Table
+import org.hibernate.annotations.SQLRestriction
+import java.time.ZonedDateTime
 
 /**
  * 자식폴더들을 품는 부모폴더.
  */
 @Entity
+@SQLRestriction("deleted_at is null")
 @Table(
     name = "photo_folder_groups",
     indexes = [
@@ -29,6 +32,9 @@ class PhotoFolderGroup(
     var name: FolderName,
 
 ) : BaseEntity() {
+
+    @Column(name = "deleted_at")
+    var deletedAt: ZonedDateTime? = null
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

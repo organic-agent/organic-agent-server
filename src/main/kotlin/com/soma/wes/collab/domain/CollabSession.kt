@@ -12,9 +12,11 @@ import jakarta.persistence.Index
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
 import java.time.ZonedDateTime
+import org.hibernate.annotations.SQLRestriction
 
 
 @Entity
+@SQLRestriction("deleted_at is null")
 @Table(
     name = "collab_sessions",
     uniqueConstraints = [
@@ -42,6 +44,9 @@ class CollabSession(
     var revokedAt: ZonedDateTime? = null,
 
 ) : BaseEntity() {
+
+    @Column(name = "deleted_at")
+    var deletedAt: ZonedDateTime? = null
 
     companion object {
         const val MAX_NAME_LENGTH = 100

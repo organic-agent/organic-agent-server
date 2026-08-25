@@ -13,5 +13,5 @@ import java.time.Duration
 data class TrashProperties(
 
     /** 휴지통에 머무는 기간. 지나면 purge가 S3 객체와 함께 물리 삭제한다. */
-    val retention: Duration = Duration.ofDays(3),
+    val retention: Duration = Duration.ofDays(7),
 )
