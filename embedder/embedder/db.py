@@ -142,6 +142,7 @@ def store_embeddings(
                 height = COALESCE(%s, height),
                 byte_size = COALESCE(%s, byte_size),
                 status = 'EMBEDDED',
+                version = version + 1,
                 updated_at = now()
             WHERE id = %s
             """,

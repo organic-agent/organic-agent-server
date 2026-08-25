@@ -52,6 +52,17 @@ class AdminAuditSnapshotCodec(
             "authorization",
             "cookie",
             "oauth",
+            "providerid",
+            "provider_id",
+            "storagekey",
+            "storage_key",
+            "previewkey",
+            "preview_key",
+            "annotationkey",
+            "annotation_key",
+            "resultkey",
+            "result_key",
+            "email",
         )
     }
 }

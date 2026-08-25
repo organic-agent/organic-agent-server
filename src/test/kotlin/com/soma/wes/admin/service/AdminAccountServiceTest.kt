@@ -121,8 +121,10 @@ class AdminAccountServiceTest @Autowired constructor(
             ),
             "127.0.0.1",
         )
-        account.suspend()
-        adminAccountRepository.save(account)
+        // 로그인 성공이 계정의 lastLoginAt과 version을 올렸으므로 최신 행을 다시 읽는다.
+        val latestAccount = adminAccountRepository.findById(account.requiredId).orElseThrow()
+        latestAccount.suspend()
+        adminAccountRepository.save(latestAccount)
 
         // when
         val recovered = adminAccountService.recoverFromCli(

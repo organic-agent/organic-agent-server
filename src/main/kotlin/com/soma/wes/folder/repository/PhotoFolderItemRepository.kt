@@ -37,7 +37,7 @@ interface PhotoFolderItemRepository : JpaRepository<PhotoFolderItem, Long> {
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(
-        "UPDATE PhotoFolderItem i SET i.folderId = :targetFolderId " +
+        "UPDATE PhotoFolderItem i SET i.folderId = :targetFolderId, i.version = i.version + 1 " +
             "WHERE i.folderId = :sourceFolderId AND i.photoId IN :photoIds",
     )
     fun moveAll(
