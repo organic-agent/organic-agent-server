@@ -1,6 +1,10 @@
 package com.soma.wes.admin.service
 
 import com.soma.wes.admin.config.AdminAuthProperties
+import com.soma.wes.admin.audit.domain.AdminAuditAction
+import com.soma.wes.admin.audit.domain.AdminAuditOutcome
+import com.soma.wes.admin.audit.domain.AdminAuditTargetType
+import com.soma.wes.admin.audit.service.AdminAuditService
 import com.soma.wes.admin.domain.AdminAccount
 import com.soma.wes.admin.domain.AdminAuthEvent
 import com.soma.wes.admin.domain.AdminEventType
@@ -22,6 +26,7 @@ import java.time.ZonedDateTime
 class AdminAuthService(
     private val adminAccountRepository: AdminAccountRepository,
     private val adminAuthEventRepository: AdminAuthEventRepository,
+    private val adminAuditService: AdminAuditService,
     private val adminSessionService: AdminSessionService,
     private val passwordHasher: AdminPasswordHasher,
     private val properties: AdminAuthProperties,
@@ -179,6 +184,27 @@ class AdminAuthService(
                 reason = null,
                 successful = successful,
             ),
+        )
+        adminAuditService.recordEvent(
+            action = AdminAuditAction.valueOf(eventType.name),
+            outcome = if (successful) AdminAuditOutcome.SUCCESS else AdminAuditOutcome.FAILURE,
+            actorAdminId = actorAdminId,
+            actorUsername = username,
+            targetType = if (targetAdminId == null) {
+                AdminAuditTargetType.AUTHENTICATION
+            } else {
+                AdminAuditTargetType.ADMIN_ACCOUNT
+            },
+            targetId = targetAdminId?.toString() ?: username,
+            targetLabel = username,
+            reason = null,
+            sourceAddress = sourceAddress,
+            changedFields = when (eventType) {
+                AdminEventType.LOGIN_SUCCEEDED -> listOf("failedLoginAttempts", "lockedUntil", "lastLoginAt")
+                AdminEventType.ACCOUNT_LOCKED -> listOf("failedLoginAttempts", "lockedUntil")
+                AdminEventType.PASSWORD_CHANGED -> listOf("password", "mustChangePassword", "failedLoginAttempts", "lockedUntil")
+                else -> emptyList()
+            },
         )
     }
 }

@@ -4,6 +4,11 @@ import com.soma.wes.admin.domain.AdminAccount
 import com.soma.wes.admin.domain.AdminAccountStatus
 import com.soma.wes.admin.domain.AdminAuthEvent
 import com.soma.wes.admin.domain.AdminEventType
+import com.soma.wes.admin.audit.domain.AdminAuditAction
+import com.soma.wes.admin.audit.domain.AdminAuditOutcome
+import com.soma.wes.admin.audit.domain.AdminAuditTargetType
+import com.soma.wes.admin.audit.service.AdminAuditService
+import com.soma.wes.admin.audit.support.AdminAccountAuditSnapshot
 import com.soma.wes.admin.dto.request.AdminReasonRequest
 import com.soma.wes.admin.dto.request.ChangeAdminStatusRequest
 import com.soma.wes.admin.dto.request.CreateAdminAccountRequest
@@ -26,6 +31,7 @@ import java.time.ZonedDateTime
 class AdminAccountService(
     private val adminAccountRepository: AdminAccountRepository,
     private val adminAuthEventRepository: AdminAuthEventRepository,
+    private val adminAuditService: AdminAuditService,
     private val adminSessionService: AdminSessionService,
     private val passwordHasher: AdminPasswordHasher,
     private val secretGenerator: AdminSecretGenerator,
@@ -66,7 +72,18 @@ class AdminAccountService(
             throw AdminException(AdminErrorCode.USERNAME_ALREADY_EXISTS)
         }
 
-        recordEvent(AdminEventType.ACCOUNT_CREATED, actorAdminId, account, request.reason, sourceAddress)
+        recordLegacyEvent(AdminEventType.ACCOUNT_CREATED, actorAdminId, account, request.reason, sourceAddress)
+        adminAuditService.recordMutation(
+            action = AdminAuditAction.ACCOUNT_CREATED,
+            actorAdminId = actorAdminId,
+            targetType = AdminAuditTargetType.ADMIN_ACCOUNT,
+            targetId = account.requiredId.toString(),
+            targetLabel = account.username,
+            reason = request.reason,
+            sourceAddress = sourceAddress,
+            before = null,
+            after = AdminAccountAuditSnapshot.from(account).toMap(),
+        )
         return AdminTemporaryPasswordResponse(
             account = AdminAccountResponse.from(account),
             temporaryPassword = temporaryPassword,
@@ -82,6 +99,7 @@ class AdminAccountService(
     ): AdminAccountResponse {
         validateReason(request.reason)
         val account = requireWithLock(targetAdminId)
+        val before = AdminAccountAuditSnapshot.from(account).toMap()
 
         val eventType = when (request.status) {
             AdminAccountStatus.ACTIVE -> {
@@ -94,7 +112,18 @@ class AdminAccountService(
                 AdminEventType.ACCOUNT_SUSPENDED
             }
         }
-        recordEvent(eventType, actorAdminId, account, request.reason, sourceAddress)
+        recordLegacyEvent(eventType, actorAdminId, account, request.reason, sourceAddress)
+        adminAuditService.recordMutation(
+            action = AdminAuditAction.valueOf(eventType.name),
+            actorAdminId = actorAdminId,
+            targetType = AdminAuditTargetType.ADMIN_ACCOUNT,
+            targetId = account.requiredId.toString(),
+            targetLabel = account.username,
+            reason = request.reason,
+            sourceAddress = sourceAddress,
+            before = before,
+            after = AdminAccountAuditSnapshot.from(account).toMap(),
+        )
         return AdminAccountResponse.from(account)
     }
 
@@ -107,9 +136,21 @@ class AdminAccountService(
     ): AdminAccountResponse {
         validateReason(request.reason)
         val account = requireWithLock(targetAdminId)
+        val before = AdminAccountAuditSnapshot.from(account).toMap()
 
         account.unlock()
-        recordEvent(AdminEventType.ACCOUNT_UNLOCKED, actorAdminId, account, request.reason, sourceAddress)
+        recordLegacyEvent(AdminEventType.ACCOUNT_UNLOCKED, actorAdminId, account, request.reason, sourceAddress)
+        adminAuditService.recordMutation(
+            action = AdminAuditAction.ACCOUNT_UNLOCKED,
+            actorAdminId = actorAdminId,
+            targetType = AdminAuditTargetType.ADMIN_ACCOUNT,
+            targetId = account.requiredId.toString(),
+            targetLabel = account.username,
+            reason = request.reason,
+            sourceAddress = sourceAddress,
+            before = before,
+            after = AdminAccountAuditSnapshot.from(account).toMap(),
+        )
         return AdminAccountResponse.from(account)
     }
 
@@ -184,7 +225,7 @@ class AdminAccountService(
         }
     }
 
-    private fun recordEvent(
+    private fun recordLegacyEvent(
         eventType: AdminEventType,
         actorAdminId: Long?,
         account: AdminAccount,
@@ -201,6 +242,32 @@ class AdminAccountService(
                 reason = reason,
                 successful = true,
             ),
+        )
+    }
+
+    private fun recordEvent(
+        eventType: AdminEventType,
+        actorAdminId: Long?,
+        account: AdminAccount,
+        reason: String,
+        sourceAddress: String?,
+    ) {
+        recordLegacyEvent(eventType, actorAdminId, account, reason, sourceAddress)
+        adminAuditService.recordEvent(
+            action = AdminAuditAction.valueOf(eventType.name),
+            outcome = AdminAuditOutcome.SUCCESS,
+            actorAdminId = actorAdminId,
+            targetType = AdminAuditTargetType.ADMIN_ACCOUNT,
+            targetId = account.requiredId.toString(),
+            targetLabel = account.username,
+            reason = reason,
+            sourceAddress = sourceAddress,
+            changedFields = when (eventType) {
+                AdminEventType.TEMPORARY_PASSWORD_ISSUED,
+                AdminEventType.CLI_RECOVERY,
+                -> listOf("password", "mustChangePassword", "failedLoginAttempts", "lockedUntil", "status")
+                else -> emptyList()
+            },
         )
     }
 }

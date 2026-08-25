@@ -125,6 +125,22 @@ class AdminAccount private constructor(
         issueTemporaryPassword(temporaryPasswordHash, now)
     }
 
+    fun restoreAuditableState(
+        displayName: String,
+        status: AdminAccountStatus,
+        failedLoginAttempts: Int,
+        lockedUntil: ZonedDateTime?,
+    ) {
+        validateDisplayName(displayName)
+        if (failedLoginAttempts < 0) {
+            throw AdminException(AdminErrorCode.REVISION_RESTORE_UNSUPPORTED)
+        }
+        this.displayName = displayName.trim()
+        this.status = status
+        this.failedLoginAttempts = failedLoginAttempts
+        this.lockedUntil = lockedUntil
+    }
+
     companion object {
         const val USERNAME_MIN_LENGTH = 3
         const val USERNAME_MAX_LENGTH = 64
