@@ -1,0 +1,30 @@
+package com.soma.wes.admin.exception
+
+import com.soma.wes.global.exception.ErrorCode
+import org.springframework.http.HttpStatus
+
+enum class AdminErrorCode(
+    override val httpStatus: HttpStatus,
+    override val code: String,
+    override val message: String,
+) : ErrorCode {
+    INVALID_USERNAME(HttpStatus.BAD_REQUEST, "ADMIN_400_1", "관리자 아이디 형식이 올바르지 않습니다."),
+    INVALID_DISPLAY_NAME(HttpStatus.BAD_REQUEST, "ADMIN_400_2", "관리자 이름 형식이 올바르지 않습니다."),
+    PASSWORD_POLICY_VIOLATION(HttpStatus.BAD_REQUEST, "ADMIN_400_3", "비밀번호는 12자 이상 128자 이하여야 합니다."),
+    INVALID_REASON(HttpStatus.BAD_REQUEST, "ADMIN_400_4", "변경 사유를 입력해 주세요."),
+
+    INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "ADMIN_401_1", "아이디 또는 비밀번호가 올바르지 않습니다."),
+    SESSION_INVALID(HttpStatus.UNAUTHORIZED, "ADMIN_401_2", "관리자 세션이 만료되었거나 유효하지 않습니다."),
+
+    ACCOUNT_SUSPENDED(HttpStatus.FORBIDDEN, "ADMIN_403_1", "정지된 관리자 계정입니다."),
+
+    ACCOUNT_NOT_FOUND(HttpStatus.NOT_FOUND, "ADMIN_404_1", "관리자 계정을 찾을 수 없습니다."),
+
+    USERNAME_ALREADY_EXISTS(HttpStatus.CONFLICT, "ADMIN_409_1", "이미 사용 중인 관리자 아이디입니다."),
+    PASSWORD_REUSE(HttpStatus.CONFLICT, "ADMIN_409_2", "현재 비밀번호와 다른 비밀번호를 사용해 주세요."),
+    SELF_TEMPORARY_PASSWORD_FORBIDDEN(HttpStatus.CONFLICT, "ADMIN_409_3", "본인의 비밀번호는 비밀번호 변경 화면에서 변경해 주세요."),
+
+    ACCOUNT_LOCKED(HttpStatus.LOCKED, "ADMIN_423_1", "로그인 실패 횟수를 초과해 계정이 잠겼습니다."),
+
+    PASSWORD_HASH_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "ADMIN_500_1", "관리자 비밀번호를 안전하게 처리하지 못했습니다."),
+}

@@ -38,6 +38,14 @@ jwt:
   refresh-token-expiration: 14d
 
 app:
+  admin:
+    session:
+      absolute-ttl: 8h
+      idle-ttl: 30m
+    lockout:
+      max-failed-attempts: 5
+      duration: 30m
+
   trash:
     # 휴지통 보관 기간. 지난 사진·갤러리는 purge 스케줄러가 S3 객체와 함께 물리 삭제한다.
     # 비밀이 아니라 제품 정책이라 저장소에 둔다 — 3일을 30일로 바꾸는 건 PR에 남아야 한다.
