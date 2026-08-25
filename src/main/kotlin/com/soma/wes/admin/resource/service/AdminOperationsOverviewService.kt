@@ -19,6 +19,7 @@ class AdminOperationsOverviewService(
     fun get(): AdminOperationsOverviewResponse = AdminOperationsOverviewResponse(
         resourceCounts = resourceRepository.countAll(),
         operationalIssues = resourceRepository.findOperationalIssues(),
+        recentFailedOperations = resourceRepository.findRecentFailedOperations(),
         trashPendingCount = resourceRepository.countTrashPending(),
         recentAudits = auditQueryService.search(
             actorAdminId = null,

@@ -6,17 +6,21 @@ import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.fixture.AdminAccountFixture
 import com.soma.wes.admin.resource.repository.AdminIdempotencyStore
+import com.soma.wes.global.filter.HttpLoggingFilter
 import com.soma.wes.support.IntegrationTest
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import org.slf4j.MDC
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.jdbc.core.simple.JdbcClient
 
 @IntegrationTest
 class AdminIdempotencyStoreTest @Autowired constructor(
     private val store: AdminIdempotencyStore,
     private val adminAccountFixture: AdminAccountFixture,
     private val auditLogRepository: AdminAuditLogRepository,
+    private val jdbcClient: JdbcClient,
 ) {
 
     @Test
@@ -30,6 +34,32 @@ class AdminIdempotencyStoreTest @Autowired constructor(
         assertThat(duplicate.existing?.status).isEqualTo("COMPLETED")
         assertThat(duplicate.existing?.resultPayload).isEqualTo("17")
         assertThat(auditLogRepository.count()).isEqualTo(1)
+    }
+
+    @Test
+    fun `재처리 선점 시 대상과 요청 추적 ID를 함께 저장한다`() {
+        val actor = adminAccountFixture.관리자("idempotency-tracking")
+        MDC.put(HttpLoggingFilter.TRACE_ID_KEY, "0123456789abcdef")
+        try {
+            reserve(actor.requiredId, "tracking-hash")
+        } finally {
+            MDC.remove(HttpLoggingFilter.TRACE_ID_KEY)
+        }
+
+        val row = jdbcClient.sql(
+            """
+                SELECT target_type, target_id, correlation_id, attempt_count
+                FROM admin_idempotency_keys
+                WHERE action = 'GALLERY_EMBEDDING' AND idempotency_key = 'reprocess-key-001'
+            """.trimIndent(),
+        ).query { rs, _ -> listOf(
+            rs.getString("target_type"),
+            rs.getString("target_id"),
+            rs.getString("correlation_id"),
+            rs.getInt("attempt_count").toString(),
+        ) }.single()
+
+        assertThat(row).containsExactly("GALLERY", "1", "0123456789abcdef", "1")
     }
 
     @Test

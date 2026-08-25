@@ -103,6 +103,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             status { isOk() }
             jsonPath("$.resourceCounts.USER.total") { value(1) }
             jsonPath("$.operationalIssues") { isArray() }
+            jsonPath("$.recentFailedOperations") { isArray() }
             jsonPath("$.trashPendingCount") { isNumber() }
             jsonPath("$.recentAudits") { isArray() }
         }

@@ -1,7 +1,7 @@
 package com.soma.wes.admin.resource.dto
 
-import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.audit.dto.response.AdminAuditLogResponse
+import com.soma.wes.admin.resource.domain.AdminResourceType
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.PositiveOrZero
 import jakarta.validation.constraints.Size
@@ -138,9 +138,23 @@ data class AdminOperationalIssueResponse(
     val resourceType: AdminResourceType?,
 )
 
+data class AdminOperationRecordResponse(
+    val id: Long,
+    val action: String,
+    val status: String,
+    val targetType: AdminResourceType?,
+    val targetId: String?,
+    val failureCode: String?,
+    val correlationId: String?,
+    val attemptCount: Int,
+    val createdAt: ZonedDateTime?,
+    val updatedAt: ZonedDateTime?,
+)
+
 data class AdminOperationsOverviewResponse(
     val resourceCounts: Map<AdminResourceType, AdminResourceCountResponse>,
     val operationalIssues: List<AdminOperationalIssueResponse>,
+    val recentFailedOperations: List<AdminOperationRecordResponse>,
     val trashPendingCount: Long,
     val recentAudits: List<AdminAuditLogResponse>,
     val generatedAt: ZonedDateTime,

@@ -269,6 +269,26 @@ class AdminResourceContextRepository(
                 "requestedAt" to rs.getObject("requested_at"),
                 "completedAt" to rs.getObject("completed_at"),
             ) },
+            "processingJobs" to rows(
+                """
+                    SELECT id, action, status, failure_code, result_payload, correlation_id,
+                           attempt_count, created_at, updated_at
+                    FROM admin_idempotency_keys
+                    WHERE target_type = 'GALLERY' AND target_id = CAST(:id AS TEXT)
+                    ORDER BY id DESC LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("id"),
+                "action" to rs.getString("action"),
+                "status" to rs.getString("status"),
+                "failureCode" to rs.getString("failure_code"),
+                "result" to rs.getString("result_payload"),
+                "correlationId" to rs.getString("correlation_id"),
+                "attemptCount" to rs.getInt("attempt_count"),
+                "createdAt" to rs.getObject("created_at"),
+                "lastRunAt" to rs.getObject("updated_at"),
+            ) },
         )
         AdminResourceType.PHOTO -> linkedMapOf(
             "selectionReferences" to rows(

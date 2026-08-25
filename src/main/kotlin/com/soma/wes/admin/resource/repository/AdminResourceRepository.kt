@@ -3,9 +3,10 @@ package com.soma.wes.admin.resource.repository
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.domain.AdminResourceType
-import com.soma.wes.admin.resource.dto.AdminResourcePageResponse
+import com.soma.wes.admin.resource.dto.AdminOperationRecordResponse
 import com.soma.wes.admin.resource.dto.AdminOperationalIssueResponse
 import com.soma.wes.admin.resource.dto.AdminResourceCountResponse
+import com.soma.wes.admin.resource.dto.AdminResourcePageResponse
 import com.soma.wes.admin.resource.dto.AdminResourceResponse
 import com.soma.wes.admin.resource.dto.AdminResourceSummaryResponse
 import com.soma.wes.global.SecureTokenGenerator
@@ -105,6 +106,31 @@ class AdminResourceRepository(
             sql = "SELECT COUNT(*) FROM admin_idempotency_keys WHERE status = 'FAILED'",
         ),
     )
+
+    fun findRecentFailedOperations(): List<AdminOperationRecordResponse> = jdbcClient.sql(
+        """
+            SELECT id, action, status, target_type, target_id, failure_code, correlation_id,
+                   attempt_count, created_at, updated_at
+            FROM admin_idempotency_keys
+            WHERE status = 'FAILED'
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 8
+        """.trimIndent(),
+    ).query { rs, _ ->
+        AdminOperationRecordResponse(
+            id = rs.getLong("id"),
+            action = rs.getString("action"),
+            status = rs.getString("status"),
+            targetType = rs.getString("target_type")
+                ?.let { runCatching { AdminResourceType.valueOf(it) }.getOrNull() },
+            targetId = rs.getString("target_id"),
+            failureCode = rs.getString("failure_code"),
+            correlationId = rs.getString("correlation_id"),
+            attemptCount = rs.getInt("attempt_count"),
+            createdAt = zonedDateTime(rs, "created_at"),
+            updatedAt = zonedDateTime(rs, "updated_at"),
+        )
+    }.list()
 
     fun countTrashPending(): Long = jdbcClient.sql(
         """
