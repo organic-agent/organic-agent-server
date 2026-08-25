@@ -42,6 +42,23 @@ data class AdminResourceContextResponse(
     val facts: Map<String, Any?>,
 )
 
+enum class AdminPhotoAccessMode { VIEW, DOWNLOAD }
+
+data class AdminPhotoAccessRequest(
+    @field:NotBlank
+    @field:Size(max = 500)
+    val reason: String,
+    val mode: AdminPhotoAccessMode,
+)
+
+data class AdminPhotoAccessResponse(
+    val photoId: Long,
+    val mode: AdminPhotoAccessMode,
+    val originalFileName: String,
+    val url: String,
+    val expiresAt: ZonedDateTime,
+)
+
 data class CreateAdminResourceRequest(
     @field:NotBlank
     @field:Size(max = 500)

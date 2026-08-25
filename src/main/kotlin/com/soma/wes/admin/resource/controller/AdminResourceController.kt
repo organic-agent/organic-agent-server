@@ -5,6 +5,8 @@ import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.dto.AdminReprocessRequest
 import com.soma.wes.admin.resource.dto.AdminReprocessResponse
 import com.soma.wes.admin.resource.dto.AdminOperationsOverviewResponse
+import com.soma.wes.admin.resource.dto.AdminPhotoAccessRequest
+import com.soma.wes.admin.resource.dto.AdminPhotoAccessResponse
 import com.soma.wes.admin.resource.dto.AdminResourcePageResponse
 import com.soma.wes.admin.resource.dto.AdminResourceContextResponse
 import com.soma.wes.admin.resource.dto.AdminResourceResponse
@@ -14,6 +16,7 @@ import com.soma.wes.admin.resource.dto.CreateAdminResourceRequest
 import com.soma.wes.admin.resource.dto.UpdateAdminResourceRequest
 import com.soma.wes.admin.resource.service.AdminReprocessService
 import com.soma.wes.admin.resource.service.AdminOperationsOverviewService
+import com.soma.wes.admin.resource.service.AdminPhotoAccessService
 import com.soma.wes.admin.resource.service.AdminResourceService
 import com.soma.wes.admin.resource.service.AdminResourceContextService
 import com.soma.wes.admin.resource.service.AdminSystemSettingsService
@@ -40,6 +43,7 @@ class AdminResourceController(
     private val systemSettingsService: AdminSystemSettingsService,
     private val operationsOverviewService: AdminOperationsOverviewService,
     private val resourceContextService: AdminResourceContextService,
+    private val photoAccessService: AdminPhotoAccessService,
 ) {
 
     @GetMapping("/operations/overview")
@@ -70,6 +74,16 @@ class AdminResourceController(
         @PathVariable type: AdminResourceType,
         @PathVariable id: Long,
     ): ResponseEntity<AdminResourceContextResponse> = ResponseEntity.ok(resourceContextService.get(type, id))
+
+    @PostMapping("/resources/PHOTO/{id}/original-access")
+    fun accessOriginalPhoto(
+        @AuthenticationPrincipal loginUser: AdminLoginUser,
+        @PathVariable id: Long,
+        @Valid @RequestBody request: AdminPhotoAccessRequest,
+        servletRequest: HttpServletRequest,
+    ): ResponseEntity<AdminPhotoAccessResponse> = ResponseEntity.ok(
+        photoAccessService.access(loginUser.id, id, request, servletRequest.remoteAddr),
+    )
 
     @PostMapping("/resources/{type}")
     fun create(

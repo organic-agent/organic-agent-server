@@ -23,6 +23,24 @@ class AdminResourceRepository(
     private val secureTokenGenerator: SecureTokenGenerator,
 ) {
 
+    fun findPhotoOriginal(photoId: Long): PhotoOriginal? = jdbcClient.sql(
+        """
+            SELECT id, original_file_name, storage_key
+            FROM photos
+            WHERE id = :photoId AND deleted_at IS NULL
+        """.trimIndent(),
+    )
+        .param("photoId", photoId)
+        .query { rs, _ ->
+            PhotoOriginal(
+                id = rs.getLong("id"),
+                originalFileName = rs.getString("original_file_name"),
+                storageKey = rs.getString("storage_key"),
+            )
+        }
+        .optional()
+        .orElse(null)
+
     fun countAll(): Map<AdminResourceType, AdminResourceCountResponse> =
         AdminResourceType.entries.associateWith { type ->
             val definition = definition(type)
@@ -521,4 +539,10 @@ class AdminResourceRepository(
             ),
         ).associateBy(ResourceDefinition::type)
     }
+
+    data class PhotoOriginal(
+        val id: Long,
+        val originalFileName: String,
+        val storageKey: String,
+    )
 }
