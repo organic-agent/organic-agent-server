@@ -111,8 +111,16 @@ data class AdminSystemSettingsResponse(
     val revisionRetentionDays: Long,
     val trashRetentionDays: Long,
     val embeddingConfigured: Boolean,
+    val grafanaConfigured: Boolean,
+    val lokiConfigured: Boolean,
     val secretsMasked: Boolean = true,
     val mutable: Boolean = false,
+)
+
+data class AdminObservabilityLinksResponse(
+    val correlationId: String,
+    val grafanaUrl: String?,
+    val lokiUrl: String?,
 )
 
 data class AdminResourceCountResponse(

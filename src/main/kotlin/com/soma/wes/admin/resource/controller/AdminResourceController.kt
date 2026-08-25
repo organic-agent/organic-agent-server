@@ -5,6 +5,7 @@ import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.dto.AdminReprocessRequest
 import com.soma.wes.admin.resource.dto.AdminReprocessResponse
 import com.soma.wes.admin.resource.dto.AdminOperationsOverviewResponse
+import com.soma.wes.admin.resource.dto.AdminObservabilityLinksResponse
 import com.soma.wes.admin.resource.dto.AdminPhotoAccessRequest
 import com.soma.wes.admin.resource.dto.AdminPhotoAccessResponse
 import com.soma.wes.admin.resource.dto.AdminResourcePageResponse
@@ -16,6 +17,7 @@ import com.soma.wes.admin.resource.dto.CreateAdminResourceRequest
 import com.soma.wes.admin.resource.dto.UpdateAdminResourceRequest
 import com.soma.wes.admin.resource.service.AdminReprocessService
 import com.soma.wes.admin.resource.service.AdminOperationsOverviewService
+import com.soma.wes.admin.resource.service.AdminObservabilityLinkService
 import com.soma.wes.admin.resource.service.AdminPhotoAccessService
 import com.soma.wes.admin.resource.service.AdminResourceService
 import com.soma.wes.admin.resource.service.AdminResourceContextService
@@ -44,12 +46,21 @@ class AdminResourceController(
     private val operationsOverviewService: AdminOperationsOverviewService,
     private val resourceContextService: AdminResourceContextService,
     private val photoAccessService: AdminPhotoAccessService,
+    private val observabilityLinkService: AdminObservabilityLinkService,
 ) {
 
     @GetMapping("/operations/overview")
     fun getOperationsOverview(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
     ): ResponseEntity<AdminOperationsOverviewResponse> = ResponseEntity.ok(operationsOverviewService.get())
+
+    @GetMapping("/operations/observability-links")
+    fun observabilityLinks(
+        @AuthenticationPrincipal loginUser: AdminLoginUser,
+        @RequestParam correlationId: String,
+    ): ResponseEntity<AdminObservabilityLinksResponse> = ResponseEntity.ok(
+        observabilityLinkService.links(correlationId),
+    )
 
     @GetMapping("/resources")
     fun search(
