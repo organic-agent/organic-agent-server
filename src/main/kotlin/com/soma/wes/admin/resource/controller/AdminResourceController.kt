@@ -4,6 +4,7 @@ import com.soma.wes.admin.domain.AdminLoginUser
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.dto.AdminReprocessRequest
 import com.soma.wes.admin.resource.dto.AdminReprocessResponse
+import com.soma.wes.admin.resource.dto.AdminOperationsOverviewResponse
 import com.soma.wes.admin.resource.dto.AdminResourcePageResponse
 import com.soma.wes.admin.resource.dto.AdminResourceResponse
 import com.soma.wes.admin.resource.dto.AdminSystemSettingsResponse
@@ -11,6 +12,7 @@ import com.soma.wes.admin.resource.dto.ChangeAdminResourceStateRequest
 import com.soma.wes.admin.resource.dto.CreateAdminResourceRequest
 import com.soma.wes.admin.resource.dto.UpdateAdminResourceRequest
 import com.soma.wes.admin.resource.service.AdminReprocessService
+import com.soma.wes.admin.resource.service.AdminOperationsOverviewService
 import com.soma.wes.admin.resource.service.AdminResourceService
 import com.soma.wes.admin.resource.service.AdminSystemSettingsService
 import jakarta.servlet.http.HttpServletRequest
@@ -34,7 +36,13 @@ class AdminResourceController(
     private val resourceService: AdminResourceService,
     private val reprocessService: AdminReprocessService,
     private val systemSettingsService: AdminSystemSettingsService,
+    private val operationsOverviewService: AdminOperationsOverviewService,
 ) {
+
+    @GetMapping("/operations/overview")
+    fun getOperationsOverview(
+        @AuthenticationPrincipal loginUser: AdminLoginUser,
+    ): ResponseEntity<AdminOperationsOverviewResponse> = ResponseEntity.ok(operationsOverviewService.get())
 
     @GetMapping("/resources")
     fun search(

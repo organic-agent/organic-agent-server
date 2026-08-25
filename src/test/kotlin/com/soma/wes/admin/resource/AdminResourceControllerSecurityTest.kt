@@ -26,6 +26,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
     fun `관리자 세션 없는 요청은 리소스와 설정 API에 접근할 수 없다`() {
         mockMvc.get("/internal/admin/v1/resources").andExpect { status { isUnauthorized() } }
         mockMvc.get("/internal/admin/v1/system-settings").andExpect { status { isUnauthorized() } }
+        mockMvc.get("/internal/admin/v1/operations/overview").andExpect { status { isUnauthorized() } }
     }
 
     @Test
@@ -80,6 +81,16 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             status { isOk() }
             jsonPath("$.secretsMasked") { value(true) }
             jsonPath("$.mutable") { value(false) }
+        }
+
+        mockMvc.get("/internal/admin/v1/operations/overview") {
+            cookie(cookie)
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.resourceCounts.USER.total") { value(1) }
+            jsonPath("$.operationalIssues") { isArray() }
+            jsonPath("$.trashPendingCount") { isNumber() }
+            jsonPath("$.recentAudits") { isArray() }
         }
     }
 }

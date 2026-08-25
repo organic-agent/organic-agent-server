@@ -4,6 +4,8 @@ import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.dto.AdminResourcePageResponse
+import com.soma.wes.admin.resource.dto.AdminOperationalIssueResponse
+import com.soma.wes.admin.resource.dto.AdminResourceCountResponse
 import com.soma.wes.admin.resource.dto.AdminResourceResponse
 import com.soma.wes.admin.resource.dto.AdminResourceSummaryResponse
 import com.soma.wes.global.SecureTokenGenerator
@@ -20,6 +22,93 @@ class AdminResourceRepository(
     private val jdbcClient: JdbcClient,
     private val secureTokenGenerator: SecureTokenGenerator,
 ) {
+
+    fun countAll(): Map<AdminResourceType, AdminResourceCountResponse> =
+        AdminResourceType.entries.associateWith { type ->
+            val definition = definition(type)
+            val deletedExpression = definition.softDeleteColumn?.let { "$it IS NOT NULL" } ?: "FALSE"
+            jdbcClient.sql(
+                """
+                    SELECT COUNT(*) FILTER (WHERE NOT ($deletedExpression)) AS active_count,
+                           COUNT(*) FILTER (WHERE $deletedExpression) AS deleted_count,
+                           COUNT(*) AS total_count
+                    FROM ${definition.table}
+                """.trimIndent(),
+            ).query { rs, _ ->
+                AdminResourceCountResponse(
+                    active = rs.getLong("active_count"),
+                    deleted = rs.getLong("deleted_count"),
+                    total = rs.getLong("total_count"),
+                )
+            }.single()
+        }
+
+    fun findOperationalIssues(): List<AdminOperationalIssueResponse> = listOf(
+        issue(
+            code = "PHOTO_UPLOAD_STALLED",
+            label = "30분 넘게 업로드 대기 중인 사진",
+            severity = "ERROR",
+            resourceType = AdminResourceType.PHOTO,
+            sql = """
+                SELECT COUNT(*) FROM photos
+                WHERE deleted_at IS NULL
+                  AND status = 'PENDING'
+                  AND created_at < CURRENT_TIMESTAMP - INTERVAL '30 minutes'
+            """.trimIndent(),
+        ),
+        issue(
+            code = "PHOTO_EMBEDDING_MISSING",
+            label = "AI 분석 결과가 없는 업로드 사진",
+            severity = "WARNING",
+            resourceType = AdminResourceType.PHOTO,
+            sql = """
+                SELECT COUNT(*) FROM photos
+                WHERE deleted_at IS NULL
+                  AND status = 'UPLOADED'
+                  AND embedding IS NULL
+            """.trimIndent(),
+        ),
+        issue(
+            code = "GALLERY_INVITE_EXPIRED",
+            label = "폐기되지 않은 만료 초대",
+            severity = "WARNING",
+            resourceType = AdminResourceType.GALLERY,
+            sql = """
+                SELECT COUNT(*) FROM gallery_invites
+                WHERE revoked_at IS NULL
+                  AND expires_at < CURRENT_TIMESTAMP
+            """.trimIndent(),
+        ),
+        issue(
+            code = "ADMIN_REPROCESS_FAILED",
+            label = "실패한 관리자 재처리 요청",
+            severity = "ERROR",
+            resourceType = AdminResourceType.GALLERY,
+            sql = "SELECT COUNT(*) FROM admin_idempotency_keys WHERE status = 'FAILED'",
+        ),
+    )
+
+    fun countTrashPending(): Long = jdbcClient.sql(
+        """
+            SELECT
+                (SELECT COUNT(*) FROM galleries WHERE deleted_at IS NOT NULL) +
+                (SELECT COUNT(*) FROM photos WHERE deleted_at IS NOT NULL)
+        """.trimIndent(),
+    ).query { rs, _ -> rs.getLong(1) }.single()
+
+    private fun issue(
+        code: String,
+        label: String,
+        severity: String,
+        resourceType: AdminResourceType?,
+        sql: String,
+    ): AdminOperationalIssueResponse = AdminOperationalIssueResponse(
+        code = code,
+        label = label,
+        count = jdbcClient.sql(sql).query { rs, _ -> rs.getLong(1) }.single(),
+        severity = severity,
+        resourceType = resourceType,
+    )
 
     fun search(
         query: String?,

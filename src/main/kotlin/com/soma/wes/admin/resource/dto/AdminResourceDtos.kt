@@ -1,6 +1,7 @@
 package com.soma.wes.admin.resource.dto
 
 import com.soma.wes.admin.resource.domain.AdminResourceType
+import com.soma.wes.admin.audit.dto.response.AdminAuditLogResponse
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.PositiveOrZero
 import jakarta.validation.constraints.Size
@@ -89,4 +90,26 @@ data class AdminSystemSettingsResponse(
     val embeddingConfigured: Boolean,
     val secretsMasked: Boolean = true,
     val mutable: Boolean = false,
+)
+
+data class AdminResourceCountResponse(
+    val active: Long,
+    val deleted: Long,
+    val total: Long,
+)
+
+data class AdminOperationalIssueResponse(
+    val code: String,
+    val label: String,
+    val count: Long,
+    val severity: String,
+    val resourceType: AdminResourceType?,
+)
+
+data class AdminOperationsOverviewResponse(
+    val resourceCounts: Map<AdminResourceType, AdminResourceCountResponse>,
+    val operationalIssues: List<AdminOperationalIssueResponse>,
+    val trashPendingCount: Long,
+    val recentAudits: List<AdminAuditLogResponse>,
+    val generatedAt: ZonedDateTime,
 )
