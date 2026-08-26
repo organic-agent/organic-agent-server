@@ -36,6 +36,9 @@ enum class AuthErrorCode(
     // 401 — provider가 발급한 토큰이 거부된 경우
     OAUTH_ACCESS_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "AUTH_401_8", "소셜 로그인 토큰이 유효하지 않습니다."),
 
+    USER_SUSPENDED(HttpStatus.FORBIDDEN, "AUTH_403_1", "정지된 사용자 계정입니다."),
+    STUDIO_SUSPENDED(HttpStatus.FORBIDDEN, "AUTH_403_2", "정지된 스튜디오 계정입니다."),
+
     // 클라이언트 잘못이 아니라 우리 설정이 잘못된 것이다. 배포 설정을 확인해야 한다.
     OAUTH_MISCONFIGURED(HttpStatus.INTERNAL_SERVER_ERROR, "AUTH_500_1", "소셜 로그인 설정이 올바르지 않습니다."),
 

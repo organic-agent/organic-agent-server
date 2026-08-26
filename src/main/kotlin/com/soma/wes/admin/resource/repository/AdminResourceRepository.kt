@@ -135,8 +135,22 @@ class AdminResourceRepository(
     fun countTrashPending(): Long = jdbcClient.sql(
         """
             SELECT
-                (SELECT COUNT(*) FROM galleries WHERE deleted_at IS NOT NULL) +
-                (SELECT COUNT(*) FROM photos WHERE deleted_at IS NOT NULL)
+                (SELECT COUNT(*) FROM admin_trash_batches WHERE status IN ('ACTIVE', 'PURGING')) +
+                (SELECT COUNT(*) FROM galleries g
+                 WHERE g.deleted_at IS NOT NULL
+                   AND NOT EXISTS (
+                       SELECT 1 FROM admin_trash_entries e
+                       JOIN admin_trash_batches b ON b.id = e.batch_id AND b.status IN ('ACTIVE', 'PURGING')
+                       WHERE e.resource_type = 'GALLERY' AND e.resource_id = g.id
+                   )) +
+                (SELECT COUNT(*) FROM photos p
+                 WHERE p.deleted_at IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM galleries g WHERE g.id = p.gallery_id AND g.deleted_at IS NOT NULL)
+                   AND NOT EXISTS (
+                       SELECT 1 FROM admin_trash_entries e
+                       JOIN admin_trash_batches b ON b.id = e.batch_id AND b.status IN ('ACTIVE', 'PURGING')
+                       WHERE e.resource_type = 'PHOTO' AND e.resource_id = p.id
+                   ))
         """.trimIndent(),
     ).query { rs, _ -> rs.getLong(1) }.single()
 
@@ -251,6 +265,9 @@ class AdminResourceRepository(
     }
 
     fun delete(type: AdminResourceType, id: Long, expectedVersion: Long): Int {
+        if (type !in LEGACY_DIRECT_TRASH_TYPES) {
+            throw AdminException(AdminErrorCode.RESOURCE_DELETE_UNSUPPORTED)
+        }
         val definition = definition(type)
         val deletedColumn = definition.softDeleteColumn
             ?: throw AdminException(AdminErrorCode.RESOURCE_DELETE_UNSUPPORTED)
@@ -271,6 +288,9 @@ class AdminResourceRepository(
     }
 
     fun restore(type: AdminResourceType, id: Long, expectedVersion: Long): Int {
+        if (type !in LEGACY_DIRECT_TRASH_TYPES) {
+            throw AdminException(AdminErrorCode.RESOURCE_RESTORE_UNSUPPORTED)
+        }
         val definition = definition(type)
         val deletedColumn = definition.softDeleteColumn
             ?: throw AdminException(AdminErrorCode.RESOURCE_RESTORE_UNSUPPORTED)
@@ -287,6 +307,45 @@ class AdminResourceRepository(
         )
             .param("id", id)
             .param("expectedVersion", expectedVersion)
+            .update()
+    }
+
+    fun setSuspended(type: AdminResourceType, id: Long, expectedVersion: Long, suspended: Boolean): Int {
+        val table = when (type) {
+            AdminResourceType.USER -> "users"
+            AdminResourceType.STUDIO -> "studios"
+            else -> throw AdminException(AdminErrorCode.RESOURCE_SUSPENSION_UNSUPPORTED)
+        }
+        val currentPredicate = if (suspended) "suspended_at IS NULL" else "suspended_at IS NOT NULL"
+        val value = if (suspended) "CURRENT_TIMESTAMP" else "NULL"
+        return jdbcClient.sql(
+            """
+            UPDATE $table
+            SET suspended_at = $value,
+                version = version + 1,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :id AND version = :expectedVersion
+              AND deleted_at IS NULL AND $currentPredicate
+            """.trimIndent(),
+        )
+            .param("id", id)
+            .param("expectedVersion", expectedVersion)
+            .update()
+    }
+
+    fun ownerUserId(type: AdminResourceType, id: Long): Long = when (type) {
+        AdminResourceType.USER -> id
+        AdminResourceType.STUDIO -> jdbcClient.sql("SELECT user_id FROM studios WHERE id = :id")
+            .param("id", id)
+            .query { rs, _ -> rs.getLong("user_id") }
+            .optional()
+            .orElseThrow { AdminException(AdminErrorCode.RESOURCE_NOT_FOUND) }
+        else -> throw AdminException(AdminErrorCode.RESOURCE_SUSPENSION_UNSUPPORTED)
+    }
+
+    fun revokeRefreshToken(userId: Long) {
+        jdbcClient.sql("DELETE FROM refresh_tokens WHERE user_id = :userId")
+            .param("userId", userId)
             .update()
     }
 
@@ -442,6 +501,7 @@ class AdminResourceRepository(
     companion object {
         private const val MASKED = "[MASKED]"
         private val EMAIL = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
+        private val LEGACY_DIRECT_TRASH_TYPES = setOf(AdminResourceType.GALLERY, AdminResourceType.PHOTO)
 
         private val DEFINITIONS = listOf(
             ResourceDefinition(
@@ -456,7 +516,10 @@ class AdminResourceRepository(
                     FieldDefinition("email", "email", FieldKind.EMAIL, nullable = true, maxLength = 255),
                     FieldDefinition("role", "role", FieldKind.ENUM, allowedValues = setOf("USER", "ADMIN")),
                     FieldDefinition("userType", "user_type", FieldKind.ENUM, nullable = true, allowedValues = setOf("PHOTOGRAPHER", "CLIENT")),
+                    FieldDefinition("suspendedAt", "suspended_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
+                    FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                 ),
+                softDeleteColumn = "deleted_at",
                 defaults = mapOf("role" to "USER", "userType" to null),
             ),
             ResourceDefinition(
@@ -469,7 +532,10 @@ class AdminResourceRepository(
                     FieldDefinition("name", "name", FieldKind.STRING, requiredOnCreate = true, maxLength = 255),
                     FieldDefinition("galleryUrl", "gallery_url", FieldKind.GALLERY_URL, requiredOnCreate = true, maxLength = 255),
                     FieldDefinition("inflowChannel", "inflow_channel", FieldKind.STRING, nullable = true, maxLength = 255),
+                    FieldDefinition("suspendedAt", "suspended_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
+                    FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                 ),
+                softDeleteColumn = "deleted_at",
                 defaults = mapOf("inflowChannel" to null),
             ),
             ResourceDefinition(
@@ -522,7 +588,9 @@ class AdminResourceRepository(
                     FieldDefinition("galleryId", "gallery_id", FieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
                     FieldDefinition("status", "status", FieldKind.ENUM, allowedValues = setOf("SELECTING", "SUBMITTED")),
                     FieldDefinition("submittedAt", "submitted_at", FieldKind.DATE_TIME, nullable = true),
+                    FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                 ),
+                softDeleteColumn = "deleted_at",
                 defaults = mapOf("status" to "SELECTING", "submittedAt" to null),
             ),
             ResourceDefinition(
@@ -535,7 +603,9 @@ class AdminResourceRepository(
                     FieldDefinition("name", "name", FieldKind.STRING, requiredOnCreate = true, maxLength = 100),
                     FieldDefinition("collabToken", "collab_token", FieldKind.STRING, createAllowed = false, updateAllowed = false, maxLength = 255, masked = true),
                     FieldDefinition("revoked", "revoked_at", FieldKind.REVOKED, createAllowed = false, nullable = true),
+                    FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                 ),
+                softDeleteColumn = "deleted_at",
                 generatedSecretField = "collabToken",
             ),
             ResourceDefinition(
@@ -546,7 +616,9 @@ class AdminResourceRepository(
                 fields = listOf(
                     FieldDefinition("galleryId", "gallery_id", FieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
                     FieldDefinition("name", "name", FieldKind.STRING, requiredOnCreate = true, maxLength = 100),
+                    FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                 ),
+                softDeleteColumn = "deleted_at",
             ),
             ResourceDefinition(
                 type = AdminResourceType.RETOUCH_REQUEST,
@@ -559,7 +631,9 @@ class AdminResourceRepository(
                     FieldDefinition("status", "status", FieldKind.ENUM, allowedValues = setOf("DRAFTING", "REQUESTED", "COMPLETED")),
                     FieldDefinition("requestedAt", "requested_at", FieldKind.DATE_TIME, nullable = true),
                     FieldDefinition("completedAt", "completed_at", FieldKind.DATE_TIME, nullable = true),
+                    FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                 ),
+                softDeleteColumn = "deleted_at",
                 defaults = mapOf("status" to "DRAFTING", "requestedAt" to null, "completedAt" to null),
             ),
         ).associateBy(ResourceDefinition::type)

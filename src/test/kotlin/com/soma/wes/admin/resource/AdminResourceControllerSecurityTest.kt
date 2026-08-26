@@ -29,6 +29,10 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
         mockMvc.get("/internal/admin/v1/resources").andExpect { status { isUnauthorized() } }
         mockMvc.get("/internal/admin/v1/system-settings").andExpect { status { isUnauthorized() } }
         mockMvc.get("/internal/admin/v1/operations/overview").andExpect { status { isUnauthorized() } }
+        mockMvc.get("/internal/admin/v1/operations/trash").andExpect { status { isUnauthorized() } }
+        mockMvc.post("/internal/admin/v1/operations/trash/1/restore") {
+            header(AdminMutationHeaderFilter.HEADER_NAME, AdminMutationHeaderFilter.HEADER_VALUE)
+        }.andExpect { status { isUnauthorized() } }
         mockMvc.get("/internal/admin/v1/resources/USER/1/context").andExpect { status { isUnauthorized() } }
     }
 

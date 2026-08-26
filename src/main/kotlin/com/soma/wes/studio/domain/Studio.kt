@@ -43,6 +43,9 @@ class Studio(
     @Column(name = "deleted_at")
     var deletedAt: ZonedDateTime? = null
 
+    @Column(name = "suspended_at")
+    var suspendedAt: ZonedDateTime? = null
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null

@@ -84,6 +84,12 @@ data class ChangeAdminResourceStateRequest(
     val expectedVersion: Long,
 )
 
+data class AdminReasonRequest(
+    @field:NotBlank
+    @field:Size(max = 500)
+    val reason: String,
+)
+
 data class AdminReprocessRequest(
     @field:NotBlank
     @field:Size(max = 500)
@@ -158,4 +164,21 @@ data class AdminOperationsOverviewResponse(
     val trashPendingCount: Long,
     val recentAudits: List<AdminAuditLogResponse>,
     val generatedAt: ZonedDateTime,
+)
+
+data class AdminTrashBatchResponse(
+    val id: Long,
+    val rootType: AdminResourceType,
+    val rootId: Long,
+    val rootLabel: String,
+    val status: String,
+    val actorUsername: String?,
+    val reason: String,
+    val deletedAt: ZonedDateTime,
+    val restoreUntil: ZonedDateTime,
+    val restoredAt: ZonedDateTime?,
+    val purgedAt: ZonedDateTime?,
+    val purgeAttemptCount: Int,
+    val failureCode: String?,
+    val affectedCounts: Map<String, Long>,
 )

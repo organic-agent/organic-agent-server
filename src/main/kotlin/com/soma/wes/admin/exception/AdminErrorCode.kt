@@ -28,6 +28,7 @@ enum class AdminErrorCode(
     REVISION_NOT_FOUND(HttpStatus.NOT_FOUND, "ADMIN_404_3", "데이터 리비전을 찾을 수 없습니다."),
     RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "ADMIN_404_4", "관리할 데이터를 찾을 수 없습니다."),
     IMPERSONATION_NOT_FOUND(HttpStatus.NOT_FOUND, "ADMIN_404_5", "활성 대리보기 세션을 찾을 수 없습니다."),
+    TRASH_BATCH_NOT_FOUND(HttpStatus.NOT_FOUND, "ADMIN_404_6", "연쇄 삭제 배치를 찾을 수 없습니다."),
 
     USERNAME_ALREADY_EXISTS(HttpStatus.CONFLICT, "ADMIN_409_1", "이미 사용 중인 관리자 아이디입니다."),
     PASSWORD_REUSE(HttpStatus.CONFLICT, "ADMIN_409_2", "현재 비밀번호와 다른 비밀번호를 사용해 주세요."),
@@ -38,8 +39,12 @@ enum class AdminErrorCode(
     IDEMPOTENCY_KEY_REUSED(HttpStatus.CONFLICT, "ADMIN_409_7", "같은 멱등성 키가 다른 요청에 사용되었습니다."),
     REPROCESS_ALREADY_REQUESTED(HttpStatus.CONFLICT, "ADMIN_409_8", "같은 재처리 요청이 이미 접수되었습니다."),
     RESOURCE_DELETE_UNSUPPORTED(HttpStatus.CONFLICT, "ADMIN_409_9", "이 데이터는 휴지통 삭제를 지원하지 않습니다."),
+    TRASH_BATCH_CONFLICT(HttpStatus.CONFLICT, "ADMIN_409_10", "이 데이터의 연쇄 삭제 상태가 이미 변경되었습니다."),
+    RESOURCE_SUSPENSION_UNSUPPORTED(HttpStatus.CONFLICT, "ADMIN_409_11", "사용자와 스튜디오만 정지할 수 있습니다."),
+    RESOURCE_SUSPENSION_CONFLICT(HttpStatus.CONFLICT, "ADMIN_409_12", "요청한 정지 상태와 현재 상태가 같습니다."),
 
     REVISION_EXPIRED(HttpStatus.GONE, "ADMIN_410_1", "7일 복구 기간이 지난 리비전입니다."),
+    TRASH_BATCH_EXPIRED(HttpStatus.GONE, "ADMIN_410_2", "7일 복구 기간이 지나 영구 삭제가 시작된 데이터입니다."),
 
     ACCOUNT_LOCKED(HttpStatus.LOCKED, "ADMIN_423_1", "로그인 실패 횟수를 초과해 계정이 잠겼습니다."),
 

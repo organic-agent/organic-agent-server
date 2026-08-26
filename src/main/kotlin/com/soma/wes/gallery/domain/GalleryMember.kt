@@ -9,6 +9,8 @@ import jakarta.persistence.Id
 import jakarta.persistence.Index
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
+import org.hibernate.annotations.SQLRestriction
+import java.time.ZonedDateTime
 
 /**
  * 갤러리에 들어온 당사자. 예비 부부가 갤러리에서 무엇을 할 수 있는지는 전부 이 행이 답한다.
@@ -20,6 +22,7 @@ import jakarta.persistence.UniqueConstraint
  * 사진 선택은 부부가 함께 채우는 앨범 하나로 다룰 예정이라 누가 넣었는지도 남기지 않는다.
  */
 @Entity
+@SQLRestriction("deleted_at is null")
 @Table(
     name = "gallery_members",
     uniqueConstraints = [
@@ -41,6 +44,9 @@ class GalleryMember(
     val userId: Long,
 
 ) : BaseEntity() {
+
+    @Column(name = "deleted_at")
+    var deletedAt: ZonedDateTime? = null
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

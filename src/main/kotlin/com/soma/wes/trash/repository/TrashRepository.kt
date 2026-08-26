@@ -53,7 +53,22 @@ class TrashRepository(
     /** 스튜디오 조건이 곧 인가다 — 갤러리가 숨어 있어 GalleryAccessPolicy를 지날 수 없다. */
     fun isTrashedGalleryOf(galleryId: Long, studioId: Long): Boolean =
         jdbcClient.sql(
-            "SELECT count(*) FROM galleries WHERE id = :galleryId AND studio_id = :studioId AND deleted_at IS NOT NULL",
+            """
+            SELECT count(*)
+            FROM galleries g
+            WHERE g.id = :galleryId
+              AND g.studio_id = :studioId
+              AND g.deleted_at IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM gallery_members gm
+                  JOIN admin_trash_entries e
+                    ON e.resource_type = 'GALLERY_MEMBER' AND e.resource_id = gm.id
+                  JOIN admin_trash_batches b ON b.id = e.batch_id
+                  WHERE gm.gallery_id = g.id
+                    AND b.status IN ('ACTIVE', 'PURGING')
+              )
+            """.trimIndent(),
         )
             .param("galleryId", galleryId)
             .param("studioId", studioId)
@@ -82,7 +97,32 @@ class TrashRepository(
             .update()
 
     fun findExpiredGalleryIds(cutoff: ZonedDateTime): List<Long> =
-        jdbcClient.sql("SELECT id FROM galleries WHERE deleted_at IS NOT NULL AND deleted_at < :cutoff ORDER BY id")
+        jdbcClient.sql(
+            """
+            SELECT g.id
+            FROM galleries g
+            WHERE g.deleted_at IS NOT NULL
+              AND g.deleted_at < :cutoff
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM admin_trash_entries e
+                  JOIN admin_trash_batches b ON b.id = e.batch_id
+                  WHERE e.resource_type = 'GALLERY'
+                    AND e.resource_id = g.id
+                    AND b.status IN ('ACTIVE', 'PURGING')
+              )
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM gallery_members gm
+                  JOIN admin_trash_entries e
+                    ON e.resource_type = 'GALLERY_MEMBER' AND e.resource_id = gm.id
+                  JOIN admin_trash_batches b ON b.id = e.batch_id
+                  WHERE gm.gallery_id = g.id
+                    AND b.status IN ('ACTIVE', 'PURGING')
+              )
+            ORDER BY g.id
+            """.trimIndent(),
+        )
             .param("cutoff", cutoff.toOffsetDateTime())
             .query { rs, _ -> rs.getLong("id") }
             .list()
@@ -145,9 +185,17 @@ class TrashRepository(
             """
             SELECT id, storage_key, preview_key, upload_url_expires_at
             FROM photos
-            WHERE deleted_at IS NOT NULL
-              AND deleted_at < :cutoff
-            ORDER BY id
+            WHERE photos.deleted_at IS NOT NULL
+              AND photos.deleted_at < :cutoff
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM admin_trash_entries e
+                  JOIN admin_trash_batches b ON b.id = e.batch_id
+                  WHERE e.resource_type = 'PHOTO'
+                    AND e.resource_id = photos.id
+                    AND b.status IN ('ACTIVE', 'PURGING')
+              )
+            ORDER BY photos.id
             """.trimIndent(),
         )
             .param("cutoff", cutoff.toOffsetDateTime())
