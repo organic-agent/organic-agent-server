@@ -106,6 +106,28 @@ class AdminResourceServiceTest @Autowired constructor(
     }
 
     @Test
+    fun `휴지통을 지원하지 않는 리소스는 물리 삭제하지 않는다`() {
+        val actor = adminAccountFixture.관리자("delete-guard-owner")
+        val user = createUser(actor.requiredId, "delete-guard-user")
+        val auditCount = auditLogRepository.count()
+
+        assertThatThrownBy {
+            service.delete(
+                actor.requiredId,
+                AdminResourceType.USER,
+                user.id,
+                ChangeAdminResourceStateRequest("지원 요청 종료", user.version),
+                "127.0.0.1",
+            )
+        }.isInstanceOfSatisfying(AdminException::class.java) {
+            assertThat(it.errorCode).isEqualTo(AdminErrorCode.RESOURCE_DELETE_UNSUPPORTED)
+        }
+
+        assertThat(service.get(AdminResourceType.USER, user.id).id).isEqualTo(user.id)
+        assertThat(auditLogRepository.count()).isEqualTo(auditCount)
+    }
+
+    @Test
     fun `갤러리 삭제는 휴지통으로 보내고 새 버전으로 복원한다`() {
         val actor = adminAccountFixture.관리자("restore-owner")
         val user = createUser(actor.requiredId, "restore-user")

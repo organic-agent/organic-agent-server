@@ -13,11 +13,13 @@ import jakarta.persistence.Id
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
 import java.time.ZonedDateTime
+import org.hibernate.annotations.SQLRestriction
 
 /**
  * 예비 부부가 최종적으로 고른 사진을 담는 앨범. 갤러리당 하나다.
  */
 @Entity
+@SQLRestriction("deleted_at is null")
 @Table(
     name = "photo_selections",
     uniqueConstraints = [
@@ -30,6 +32,9 @@ class PhotoSelection(
     val galleryId: Long,
 
 ) : BaseEntity() {
+
+    @Column(name = "deleted_at")
+    var deletedAt: ZonedDateTime? = null
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

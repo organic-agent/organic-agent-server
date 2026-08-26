@@ -13,11 +13,14 @@ import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
+import org.hibernate.annotations.SQLRestriction
+import java.time.ZonedDateTime
 
 /**
  * 서비스의 단일 신원. 사진작가든 예비 부부든 계정은 이 테이블 하나다.
  */
 @Entity
+@SQLRestriction("deleted_at is null")
 @Table(
     name = "users",
     uniqueConstraints = [
@@ -48,6 +51,12 @@ class User(
     var userType: UserType? = null,
 
 ) : BaseEntity() {
+
+    @Column(name = "deleted_at")
+    var deletedAt: ZonedDateTime? = null
+
+    @Column(name = "suspended_at")
+    var suspendedAt: ZonedDateTime? = null
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

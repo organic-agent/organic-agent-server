@@ -8,6 +8,7 @@ import com.soma.wes.auth.domain.Subject
 import com.soma.wes.auth.domain.Token
 import com.soma.wes.auth.exception.AuthErrorCode
 import com.soma.wes.auth.exception.TokenException
+import com.soma.wes.auth.repository.AuthAccessStatusRepository
 import com.soma.wes.auth.token.JwtProvider
 import com.soma.wes.auth.token.TokenStorage
 import com.soma.wes.auth.token.TokenType
@@ -33,6 +34,7 @@ class AuthTokenProvider(
     private val jwtProperties: JwtProperties,
     private val tokenStorage: TokenStorage,
     private val userRepository: UserRepository,
+    private val accessStatusRepository: AuthAccessStatusRepository,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -43,25 +45,28 @@ class AuthTokenProvider(
         private const val ROLE_CLAIM = "role"
     }
 
-    fun generateAccessToken(user: User): AccessToken =
-        AccessToken(
+    fun generateAccessToken(user: User): AccessToken {
+        accessStatusRepository.requireActive(user.requiredId)
+        return AccessToken(
             jwtProvider.generateToken(
                 subject = Subject.from(user.requiredId),
                 expiresIn = jwtProperties.accessTokenExpiration,
                 claims = mapOf(
                     TOKEN_TYPE_CLAIM to TokenType.ACCESS.name,
-                    // 인증 주체를 복원할 때 DB를 조회하지 않으려고 토큰에 함께 담는다.
+                    // 인증 주체 정보는 토큰에서 복원하고, 계정 활성 상태만 DB에서 확인한다.
                     PROVIDER_ID_CLAIM to user.providerId,
                     ROLE_CLAIM to user.role.name,
                 ),
             ),
         )
+    }
 
     /**
      * refresh token은 발급과 동시에 저장소에 기록한다.
      * 같은 사용자가 다시 발급받으면 이전 토큰은 덮어써져 무효가 된다.
      */
     fun generateRefreshToken(user: User): RefreshToken {
+        accessStatusRepository.requireActive(user.requiredId)
         val subject = Subject.from(user.requiredId)
         val refreshToken = RefreshToken(
             jwtProvider.generateToken(
@@ -88,10 +93,11 @@ class AuthTokenProvider(
     }
 
     /**
-     * access token에서 인증 주체를 복원한다. DB를 조회하지 않으므로 요청마다 추가 비용이 없다.
+     * access token에서 인증 주체를 복원하고, 계정·스튜디오가 현재 활성 상태인지 확인한다.
      */
     fun getAuthUser(accessToken: AccessToken): Authentication {
         val claims = verifiedClaims(accessToken)
+        accessStatusRepository.requireActive(Subject(claims.subject).toUserId())
 
         val role = runCatching { Role.valueOf(claims.requireString(ROLE_CLAIM)) }
             .getOrElse { throw TokenException(AuthErrorCode.TOKEN_INVALID) }
@@ -114,9 +120,12 @@ class AuthTokenProvider(
 
     // UserRepository.requireById를 쓰지 않는다. 토큰은 유효한데 주인이 사라진 것이라,
     // 클라이언트가 할 일은 "없는 리소스"(404)가 아니라 "다시 로그인"(401)이다.
-    fun parseUser(token: Token): User =
-        userRepository.findById(parseSubject(token).toUserId())
+    fun parseUser(token: Token): User {
+        val userId = parseSubject(token).toUserId()
+        accessStatusRepository.requireActive(userId)
+        return userRepository.findById(userId)
             .orElseThrow { TokenException(AuthErrorCode.TOKEN_OWNER_NOT_FOUND) }
+    }
 
     fun parseSubject(token: Token): Subject = Subject(verifiedClaims(token).subject)
 

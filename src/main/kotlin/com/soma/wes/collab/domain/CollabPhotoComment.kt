@@ -10,9 +10,12 @@ import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Index
 import jakarta.persistence.Table
+import org.hibernate.annotations.SQLRestriction
+import java.time.ZonedDateTime
 
 
 @Entity
+@SQLRestriction("deleted_at is null")
 @Table(
     name = "collab_photo_comments",
     indexes = [
@@ -31,6 +34,9 @@ class CollabPhotoComment(
     val content: String,
 
 ) : BaseEntity() {
+
+    @Column(name = "deleted_at")
+    var deletedAt: ZonedDateTime? = null
 
     companion object {
 

@@ -8,6 +8,7 @@ import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.trash.RecordingTrashPhotoStorage
+import com.soma.wes.trash.config.TrashProperties
 import com.soma.wes.trash.repository.TrashRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
@@ -36,6 +37,7 @@ class TrashPurgeSchedulerTest @Autowired constructor(
     private val photoRepository: PhotoRepository,
     private val jdbcTemplate: JdbcTemplate,
     private val photoStorage: RecordingTrashPhotoStorage,
+    private val trashProperties: TrashProperties,
 ) {
 
     private val sequence = AtomicLong(System.nanoTime())
@@ -51,7 +53,7 @@ class TrashPurgeSchedulerTest @Autowired constructor(
         // given
         val expiredGalleryId = createGallery()
         savePhoto(expiredGalleryId)
-        trashGallery(expiredGalleryId, ZonedDateTime.now().minusDays(4))
+        trashGallery(expiredGalleryId, expiredAt())
 
         val freshGalleryId = createGallery()
         val freshPhoto = savePhoto(freshGalleryId)
@@ -99,6 +101,9 @@ class TrashPurgeSchedulerTest @Autowired constructor(
 
     private fun countGalleryRows(galleryId: Long): Long =
         checkNotNull(jdbcTemplate.queryForObject("SELECT count(*) FROM galleries WHERE id = ?", Long::class.java, galleryId))
+
+    private fun expiredAt(): ZonedDateTime =
+        ZonedDateTime.now().minus(trashProperties.retention).minusHours(1)
 
     @TestConfiguration(proxyBeanMethods = false)
     class RecordingStorageConfig {

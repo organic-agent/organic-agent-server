@@ -5,6 +5,8 @@ import com.soma.wes.admin.audit.domain.AdminAuditTargetType
 import com.soma.wes.admin.audit.service.AdminAuditService
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
+import com.soma.wes.global.filter.HttpLoggingFilter
+import org.slf4j.MDC
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Propagation
@@ -32,15 +34,20 @@ class AdminIdempotencyStore(
         val inserted = jdbcClient.sql(
             """
                 INSERT INTO admin_idempotency_keys
-                    (action, idempotency_key, request_hash, status, created_at, updated_at)
+                    (action, idempotency_key, request_hash, status, target_type, target_id,
+                     correlation_id, created_at, updated_at)
                 VALUES
-                    (:action, :idempotencyKey, :requestHash, 'PENDING', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    (:action, :idempotencyKey, :requestHash, 'PENDING', :targetType, :targetId,
+                     :correlationId, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 ON CONFLICT (action, idempotency_key) DO NOTHING
             """.trimIndent(),
         )
             .param("action", action)
             .param("idempotencyKey", idempotencyKey)
             .param("requestHash", requestHash)
+            .param("targetType", targetType.name)
+            .param("targetId", targetId)
+            .param("correlationId", MDC.get(HttpLoggingFilter.TRACE_ID_KEY) ?: "untracked")
             .update()
 
         if (inserted == 0) {

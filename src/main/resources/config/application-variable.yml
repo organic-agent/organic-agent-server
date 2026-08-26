@@ -45,11 +45,16 @@ app:
     lockout:
       max-failed-attempts: 5
       duration: 30m
+    observability:
+      # 운영 환경은 Parameter Store에서 내부 Grafana·Loki 조회 주소를 덮어쓴다.
+      # 비어 있으면 백오피스가 임의의 외부 주소를 만들지 않고 미구성 상태를 명시한다.
+      grafana-base-url: ""
+      loki-base-url: ""
 
   trash:
     # 휴지통 보관 기간. 지난 사진·갤러리는 purge 스케줄러가 S3 객체와 함께 물리 삭제한다.
     # 비밀이 아니라 제품 정책이라 저장소에 둔다 — 3일을 30일로 바꾸는 건 PR에 남아야 한다.
-    retention: 3d
+    retention: 7d
 
   storage:
     # 버킷 이름만 인프라에 종속된다. prod는 Parameter Store(app.storage.bucket)가 덮어쓰고,

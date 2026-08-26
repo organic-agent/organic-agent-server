@@ -1,5 +1,6 @@
 package com.soma.wes.admin.resource.dto
 
+import com.soma.wes.admin.audit.dto.response.AdminAuditLogResponse
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.PositiveOrZero
@@ -35,6 +36,30 @@ data class AdminResourceResponse(
     val updatedAt: ZonedDateTime?,
 )
 
+data class AdminResourceContextResponse(
+    val resource: AdminResourceResponse,
+    val relations: List<AdminResourceSummaryResponse>,
+    val facts: Map<String, Any?>,
+    val sections: Map<String, List<Map<String, Any?>>>,
+)
+
+enum class AdminPhotoAccessMode { VIEW, DOWNLOAD }
+
+data class AdminPhotoAccessRequest(
+    @field:NotBlank
+    @field:Size(max = 500)
+    val reason: String,
+    val mode: AdminPhotoAccessMode,
+)
+
+data class AdminPhotoAccessResponse(
+    val photoId: Long,
+    val mode: AdminPhotoAccessMode,
+    val originalFileName: String,
+    val url: String,
+    val expiresAt: ZonedDateTime,
+)
+
 data class CreateAdminResourceRequest(
     @field:NotBlank
     @field:Size(max = 500)
@@ -57,6 +82,12 @@ data class ChangeAdminResourceStateRequest(
     val reason: String,
     @field:PositiveOrZero
     val expectedVersion: Long,
+)
+
+data class AdminReasonRequest(
+    @field:NotBlank
+    @field:Size(max = 500)
+    val reason: String,
 )
 
 data class AdminReprocessRequest(
@@ -87,6 +118,67 @@ data class AdminSystemSettingsResponse(
     val revisionRetentionDays: Long,
     val trashRetentionDays: Long,
     val embeddingConfigured: Boolean,
+    val grafanaConfigured: Boolean,
+    val lokiConfigured: Boolean,
     val secretsMasked: Boolean = true,
     val mutable: Boolean = false,
+)
+
+data class AdminObservabilityLinksResponse(
+    val correlationId: String,
+    val grafanaUrl: String?,
+    val lokiUrl: String?,
+)
+
+data class AdminResourceCountResponse(
+    val active: Long,
+    val deleted: Long,
+    val total: Long,
+)
+
+data class AdminOperationalIssueResponse(
+    val code: String,
+    val label: String,
+    val count: Long,
+    val severity: String,
+    val resourceType: AdminResourceType?,
+)
+
+data class AdminOperationRecordResponse(
+    val id: Long,
+    val action: String,
+    val status: String,
+    val targetType: AdminResourceType?,
+    val targetId: String?,
+    val failureCode: String?,
+    val correlationId: String?,
+    val attemptCount: Int,
+    val createdAt: ZonedDateTime?,
+    val updatedAt: ZonedDateTime?,
+)
+
+data class AdminOperationsOverviewResponse(
+    val resourceCounts: Map<AdminResourceType, AdminResourceCountResponse>,
+    val operationalIssues: List<AdminOperationalIssueResponse>,
+    val recentFailedOperations: List<AdminOperationRecordResponse>,
+    val trashPendingCount: Long,
+    val recentAudits: List<AdminAuditLogResponse>,
+    val generatedAt: ZonedDateTime,
+)
+
+data class AdminTrashBatchResponse(
+    val id: Long,
+    val rootType: AdminResourceType,
+    val rootId: Long,
+    val rootLabel: String,
+    val status: String,
+    val actorUsername: String?,
+    val reason: String,
+    val deletedAt: ZonedDateTime,
+    val restoreUntil: ZonedDateTime,
+    val restoredAt: ZonedDateTime?,
+    val purgedAt: ZonedDateTime?,
+    val purgeAttemptCount: Int,
+    val failureCode: String?,
+    val affectedCounts: Map<String, Long>,
 )

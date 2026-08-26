@@ -2,11 +2,13 @@ package com.soma.wes.security.config
 
 import com.soma.wes.admin.config.AdminAuthProperties
 import com.soma.wes.admin.service.AdminSessionService
+import com.soma.wes.admin.impersonation.service.AdminImpersonationService
 import com.soma.wes.auth.service.AuthTokenProvider
 import com.soma.wes.security.PublicPaths
 import com.soma.wes.security.exception.CustomAccessDeniedHandler
 import com.soma.wes.security.exception.CustomAuthenticationEntryPoint
 import com.soma.wes.security.filter.AdminMutationHeaderFilter
+import com.soma.wes.security.filter.AdminImpersonationReadOnlyFilter
 import com.soma.wes.security.filter.AdminSessionAuthFilter
 import com.soma.wes.security.filter.JwtAuthFilter
 import org.springframework.beans.factory.annotation.Value
@@ -30,6 +32,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 class SecurityConfig(
     private val authTokenProvider: AuthTokenProvider,
     private val adminSessionService: AdminSessionService,
+    private val adminImpersonationService: AdminImpersonationService,
     private val authenticationEntryPoint: CustomAuthenticationEntryPoint,
     private val accessDeniedHandler: CustomAccessDeniedHandler,
 
@@ -66,6 +69,9 @@ class SecurityConfig(
             )
             addFilterAfter<AdminMutationHeaderFilter>(
                 AdminSessionAuthFilter(adminSessionService, authenticationEntryPoint),
+            )
+            addFilterAfter<AdminSessionAuthFilter>(
+                AdminImpersonationReadOnlyFilter(adminImpersonationService, accessDeniedHandler),
             )
         }
         return http.build()
