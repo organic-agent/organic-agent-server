@@ -109,6 +109,11 @@ grep -Fq "'[\"127.0.0.1\"]'" "$admin_deploy_script"
 grep -Fq 'rollback_admin_api_release()' "$admin_deploy_script"
 grep -Fq 'recover_admin_alloy_state()' "$admin_deploy_script"
 grep -Fq 'restore_admin_host_artifacts()' "$admin_deploy_script"
+grep -Fq 'require_compose_capabilities()' "$admin_deploy_script"
+grep -Fq 'docker compose version >/dev/null' "$admin_deploy_script"
+grep -Fq -- "'--project-directory'" "$admin_deploy_script"
+grep -Fq -- "'--format'" "$admin_deploy_script"
+grep -Fq -- "'--pull'" "$admin_deploy_script"
 grep -Fq 'trap on_admin_deploy_exit EXIT' "$admin_deploy_script"
 grep -Fq 'CANDIDATE_DIR="$WORK_DIR/.admin-candidate"' "$admin_deploy_script"
 grep -Fq 'bash -n "$CANDIDATE_DIR/configure-admin-alloy-egress.sh"' "$admin_deploy_script"
@@ -189,11 +194,14 @@ if printf '%s\n' "$admin_alloy_recovery_block" | grep -Fq '$CANDIDATE_DIR'; then
 fi
 
 candidate_validation_line="$(grep -nF 'bash -n "$CANDIDATE_DIR/configure-admin-alloy-egress.sh"' "$admin_deploy_script" | head -n 1 | cut -d: -f1)"
+compose_capability_gate_line="$(grep -nFx 'require_compose_capabilities' "$admin_deploy_script" | head -n 1 | cut -d: -f1)"
+first_host_mutation_line="$(grep -nF 'mkdir -p "$WORK_DIR"' "$admin_deploy_script" | head -n 1 | cut -d: -f1)"
 rollback_arm_line="$(grep -nF 'ROLLBACK_ARMED=true' "$admin_deploy_script" | tail -n 1 | cut -d: -f1)"
 live_swap_line="$(grep -nF 'mv -f "$WORK_DIR/.docker-compose.admin-api.prod.yml.next"' "$admin_deploy_script" | head -n 1 | cut -d: -f1)"
 admin_candidate_pull_line="$(grep -nF 'docker-compose.admin-api.prod.yml" pull' "$admin_deploy_script" | tail -n 1 | cut -d: -f1)"
 admin_live_firewall_line="$(grep -nF '  /usr/local/sbin/configure-admin-alloy-egress' "$admin_deploy_script" | tail -n 1 | cut -d: -f1)"
-if [ "$candidate_validation_line" -ge "$admin_candidate_pull_line" ] || \
+if [ "$compose_capability_gate_line" -ge "$first_host_mutation_line" ] || \
+  [ "$candidate_validation_line" -ge "$admin_candidate_pull_line" ] || \
   [ "$admin_candidate_pull_line" -ge "$rollback_arm_line" ] || \
   [ "$rollback_arm_line" -ge "$live_swap_line" ] || \
   [ "$live_swap_line" -ge "$admin_live_firewall_line" ]; then

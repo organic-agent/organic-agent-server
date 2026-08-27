@@ -6,6 +6,35 @@ set -eu
 exec 9>/var/lock/wes-admin-deploy.lock
 flock -w 600 9
 
+require_compose_capabilities() {
+  docker compose version >/dev/null 2>&1 || {
+    echo "Docker Compose v2가 없어 관리자 API를 안전하게 배포할 수 없습니다" >&2
+    exit 1
+  }
+
+  COMPOSE_HELP=$(LC_ALL=C docker compose --help 2>&1) || {
+    echo "Docker Compose 전역 옵션을 확인할 수 없습니다" >&2
+    exit 1
+  }
+  CONFIG_HELP=$(LC_ALL=C docker compose config --help 2>&1) || {
+    echo "Docker Compose config 기능을 확인할 수 없습니다" >&2
+    exit 1
+  }
+  UP_HELP=$(LC_ALL=C docker compose up --help 2>&1) || {
+    echo "Docker Compose up 기능을 확인할 수 없습니다" >&2
+    exit 1
+  }
+  printf '%s\n' "$COMPOSE_HELP" | grep -Fq -- '--project-directory' &&
+    printf '%s\n' "$CONFIG_HELP" | grep -Fq -- '--format' &&
+    printf '%s\n' "$UP_HELP" | grep -Fq -- '--pull' || {
+      echo "Docker Compose가 관리자 API의 검증·불변 롤백 기능을 지원하지 않습니다" >&2
+      exit 1
+    }
+}
+
+# 호스트 상태나 파일을 변경하기 전에 v2 전용 검증·롤백 계약을 확인한다.
+require_compose_capabilities
+
 export OWNER_LOWERCASE="${OWNER_LOWERCASE}"
 export IMAGE_TAG="${IMAGE_TAG}"
 TARGET_IMAGE_TAG="$IMAGE_TAG"
