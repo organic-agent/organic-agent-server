@@ -1,12 +1,10 @@
 package com.soma.wes
 
-import com.soma.wes.transition.PublicAdminTransitionBridge
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan
 import org.springframework.boot.runApplication
 import java.util.TimeZone
 
-@PublicAdminTransitionBridge
 @SpringBootApplication
 @ConfigurationPropertiesScan
 class WesApplication

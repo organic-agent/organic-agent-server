@@ -147,7 +147,7 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
                 before_restore_payload, after_restore_payload, created_at, updated_at
             )
             SELECT target_type, target_id, revision_number + 1000, operation, before_snapshot, after_snapshot,
-                   restore_expires_at, 999, target_version,
+                   CURRENT_TIMESTAMP + INTERVAL '1 day', 999, target_version,
                    before_restore_payload, after_restore_payload, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             FROM admin_entity_revisions WHERE id = ?
             RETURNING id
@@ -166,7 +166,7 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
                 before_restore_payload, after_restore_payload, created_at, updated_at
             )
             SELECT target_type, target_id, revision_number + 1001, operation, before_snapshot, after_snapshot,
-                   restore_expires_at, ${AdminAuditService.CURRENT_SNAPSHOT_SCHEMA_VERSION}, target_version,
+                   CURRENT_TIMESTAMP + INTERVAL '1 day', ${AdminAuditService.CURRENT_SNAPSHOT_SCHEMA_VERSION}, target_version,
                    before_restore_payload, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             FROM admin_entity_revisions WHERE id = ?
             RETURNING id
@@ -184,7 +184,7 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
                 before_restore_payload, after_restore_payload, created_at, updated_at
             )
             SELECT target_type, target_id, revision_number + 1003, operation, before_snapshot, after_snapshot,
-                   restore_expires_at, snapshot_schema_version, NULL,
+                   CURRENT_TIMESTAMP + INTERVAL '1 day', snapshot_schema_version, NULL,
                    before_restore_payload, after_restore_payload, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             FROM admin_entity_revisions WHERE id = ?
             RETURNING id
@@ -203,7 +203,7 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
                 before_restore_payload, after_restore_payload, created_at, updated_at
             )
             SELECT target_type, target_id, revision_number + 1002, operation, before_snapshot, after_snapshot,
-                   restore_expires_at, snapshot_schema_version, target_version,
+                   CURRENT_TIMESTAMP + INTERVAL '1 day', snapshot_schema_version, target_version,
                    before_restore_payload,
                    jsonb_set(
                     CAST(after_restore_payload AS JSONB),
