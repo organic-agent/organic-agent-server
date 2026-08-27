@@ -122,7 +122,7 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-mkdir -p "$WORK_DIR" "$WORK_DIR/logs" "$ROLLBACK_DIR"
+mkdir -p "$WORK_DIR" "$ROLLBACK_DIR"
 install -d -m 0700 "$CANDIDATE_DIR"
 
 if docker inspect wes-app >/dev/null 2>&1; then
@@ -239,7 +239,18 @@ if [ "$PREVIOUS_RELEASE_AVAILABLE" = "true" ] && [ "$PREVIOUS_SERVICE" = "wes-se
   install -d -m 0755 -o 10001 -g 10001 \
     "$WORK_DIR/logs/info" "$WORK_DIR/logs/warn" "$WORK_DIR/logs/error"
 elif [ "$PREVIOUS_RELEASE_AVAILABLE" = "false" ]; then
-  # A true first release has no writer and no legacy files to recurse over.
+  # No live writer exists, but a failed/removed release may have left hostile links.
+  if [ -e "$WORK_DIR/logs" ] || [ -L "$WORK_DIR/logs" ]; then
+    [ -d "$WORK_DIR/logs" ] && [ ! -L "$WORK_DIR/logs" ] || {
+      echo "첫 공개 API 로그 루트가 실제 디렉터리가 아닙니다" >&2
+      exit 1
+    }
+    FIRST_RELEASE_LOG_SYMLINK=$(find "$WORK_DIR/logs" -xdev -type l -print -quit)
+    [ -z "$FIRST_RELEASE_LOG_SYMLINK" ] || {
+      echo "첫 공개 API 로그 트리에 허용되지 않은 심볼릭 링크가 있습니다: $FIRST_RELEASE_LOG_SYMLINK" >&2
+      exit 1
+    }
+  fi
   install -d -m 0755 -o 10001 -g 10001 \
     "$WORK_DIR/logs" "$WORK_DIR/logs/info" "$WORK_DIR/logs/warn" "$WORK_DIR/logs/error"
 fi

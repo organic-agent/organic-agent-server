@@ -156,6 +156,12 @@ grep -Fq 'find "$WORK_DIR/logs" -xdev -type l -print -quit' "$public_deploy_scri
 grep -Fq 'find "$WORK_DIR/logs" -xdev \( -type d -o -type f \)' "$public_deploy_script"
 grep -Fq -- '-exec chown -h 10001:10001 {} +' "$public_deploy_script"
 grep -Fq 'elif [ "$PREVIOUS_RELEASE_AVAILABLE" = "false" ]; then' "$public_deploy_script"
+grep -Fq '첫 공개 API 로그 루트가 실제 디렉터리가 아닙니다' "$public_deploy_script"
+grep -Fq 'FIRST_RELEASE_LOG_SYMLINK=$(find "$WORK_DIR/logs" -xdev -type l -print -quit)' "$public_deploy_script"
+if grep -Fq 'mkdir -p "$WORK_DIR" "$WORK_DIR/logs"' "$public_deploy_script"; then
+  echo "공개 API 로그 경로를 검증 전에 mkdir -p로 따라가면 안 됩니다." >&2
+  exit 1
+fi
 grep -Fq -- '--timeout-seconds 1800' "$cd_workflow"
 grep -Fq 'for i in $(seq 1 180); do' "$cd_workflow"
 grep -Fq 'Loki URL must contain a host and no inline credentials' "$alloy_egress_script"
