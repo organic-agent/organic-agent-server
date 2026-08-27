@@ -169,8 +169,7 @@ class AdminAuditServiceTest @Autowired constructor(
         jdbcTemplate.update(
             """
             UPDATE admin_entity_revisions
-            SET expires_at = NOW() - INTERVAL '1 second',
-                restore_expires_at = NOW() - INTERVAL '1 second'
+            SET restore_expires_at = NOW() - INTERVAL '1 second'
             """.trimIndent(),
         )
 
@@ -608,8 +607,7 @@ class AdminAuditServiceTest @Autowired constructor(
             jdbcTemplate.update(
                 """
                 UPDATE admin_entity_revisions
-                SET expires_at = expires_at - INTERVAL '1 minute',
-                    restore_expires_at = restore_expires_at - INTERVAL '1 minute',
+                SET restore_expires_at = restore_expires_at - INTERVAL '1 minute',
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                 """.trimIndent(),
@@ -652,7 +650,7 @@ class AdminAuditServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `전환기 구형과 신형 INSERT는 두 expiry 컬럼을 같은 값으로 채운다`() {
+    fun `V43 롤링 호환 trigger는 구형과 신형 expiry 쓰기를 양방향 동기화한다`() {
         jdbcTemplate.update(
             """
             INSERT INTO admin_entity_revisions
@@ -674,6 +672,21 @@ class AdminAuditServiceTest @Autowired constructor(
             """.trimIndent(),
         )
 
+        jdbcTemplate.update(
+            """
+            UPDATE admin_entity_revisions
+            SET expires_at = expires_at - INTERVAL '1 minute'
+            WHERE target_id = '99002'
+            """.trimIndent(),
+        )
+        jdbcTemplate.update(
+            """
+            UPDATE admin_entity_revisions
+            SET restore_expires_at = restore_expires_at - INTERVAL '1 minute'
+            WHERE target_id = '99003'
+            """.trimIndent(),
+        )
+
         assertThat(
             jdbcTemplate.queryForObject(
                 """
@@ -686,18 +699,17 @@ class AdminAuditServiceTest @Autowired constructor(
             ),
         ).isEqualTo(2L)
 
-        assertThatThrownBy {
-            jdbcTemplate.update(
+        assertThat(
+            jdbcTemplate.queryForObject(
                 """
-                INSERT INTO admin_entity_revisions
-                    (target_type, target_id, revision_number, operation, expires_at,
-                     restore_expires_at, snapshot_schema_version, created_at)
-                VALUES
-                    ('USER', '99004', 1, 'RESOURCE_UPDATED', CURRENT_TIMESTAMP + INTERVAL '1 day',
-                     CURRENT_TIMESTAMP + INTERVAL '2 days', 3, CURRENT_TIMESTAMP)
+                SELECT COUNT(*)
+                FROM pg_trigger
+                WHERE tgrelid = 'admin_entity_revisions'::regclass
+                  AND tgname = 'trg_admin_entity_revisions_00_sync_expiry'
                 """.trimIndent(),
-            )
-        }.hasMessageContaining("ck_admin_entity_revisions_expiry_columns_match")
+                Long::class.java,
+            ),
+        ).isOne()
     }
 
     @Test

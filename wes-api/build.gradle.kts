@@ -1,8 +1,6 @@
 plugins {
     kotlin("jvm")
     kotlin("plugin.spring")
-    // 1차 전환 릴리스에서 admin entity도 공개 artifact에 임시 포함한다.
-    kotlin("plugin.jpa")
     id("org.springframework.boot")
     id("io.spring.dependency-management")
 }
@@ -44,14 +42,11 @@ sourceSets {
         kotlin.srcDir("../src/main/kotlin")
         kotlin.include(
             "com/soma/wes/WesApplication.kt",
-            "com/soma/wes/transition/**",
-            // WES_PUBLIC_ADMIN_TRANSITION_BRIDGE_REMOVE_AFTER_BACKOFFICE_CUTOVER:
-            // 별도 admin API와 BackOffice upstream 전환이 검증될 때까지만 구 endpoint를 유지한다.
-            "com/soma/wes/admin/**",
             "com/soma/wes/**/controller/**",
             "com/soma/wes/security/config/SecurityConfig.kt",
-            "com/soma/wes/security/filter/Admin*.kt",
         )
+        // controller glob이 admin 하위 controller까지 다시 포함하지 못하게 명시적으로 막는다.
+        kotlin.exclude("com/soma/wes/admin/**")
 
         resources.srcDir("../src/main/resources")
         resources.include("application.yml", "db/migration/**")
@@ -72,12 +67,6 @@ kotlin {
     compilerOptions {
         freeCompilerArgs.addAll("-Xjsr305=strict", "-Xannotation-default-target=param-property")
     }
-}
-
-allOpen {
-    annotation("jakarta.persistence.Entity")
-    annotation("jakarta.persistence.MappedSuperclass")
-    annotation("jakarta.persistence.Embeddable")
 }
 
 tasks.jar {

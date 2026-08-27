@@ -10,7 +10,6 @@ class AdminRuntimeBoundaryTest {
         assertClassIsAbsent("com.soma.wes.photo.controller.PhotoController")
         assertClassIsAbsent("com.soma.wes.security.config.SecurityConfig")
         assertClassIsAbsent("com.soma.wes.WesApplication")
-        assertClassIsAbsent("com.soma.wes.transition.PublicAdminTransitionBridge")
     }
 
     private fun assertClassIsAbsent(className: String) {

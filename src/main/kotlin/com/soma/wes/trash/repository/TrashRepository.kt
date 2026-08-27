@@ -594,7 +594,6 @@ class TrashRepository(
             UPDATE admin_entity_revisions r
             SET before_restore_payload = NULL,
                 after_restore_payload = NULL,
-                expires_at = LEAST(r.restore_expires_at, CURRENT_TIMESTAMP),
                 restore_expires_at = LEAST(r.restore_expires_at, CURRENT_TIMESTAMP),
                 updated_at = CURRENT_TIMESTAMP
             FROM targets t
@@ -649,7 +648,6 @@ class TrashRepository(
             UPDATE admin_entity_revisions r
             SET before_restore_payload = NULL,
                 after_restore_payload = NULL,
-                expires_at = LEAST(r.restore_expires_at, CURRENT_TIMESTAMP),
                 restore_expires_at = LEAST(r.restore_expires_at, CURRENT_TIMESTAMP),
                 updated_at = CURRENT_TIMESTAMP
             FROM targets t
