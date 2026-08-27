@@ -14,16 +14,15 @@ import org.springframework.context.annotation.Import
  * 새 컨텍스트를 띄워 전체 실행이 그만큼 느려진다. 공용 페이크가 필요하면 여기 `@Import`
  * 목록에 추가해 전원이 공유하게 하라.
  *
- * [DatabaseCleaner]와 도메인별 Fixture(`{domain}/fixture`)는 `@Import`에 없다 —
- * `com.soma.wes` 아래의 `@Component`라 스캔으로 이미 모든 컨텍스트에 등록되고, 여기 다시
- * 적으면 아직 이 애노테이션을 쓰지 않는 `@SpringBootTest` + `@Import(TestcontainersConfiguration)`
- * 테스트들과 설정이 달라져 컨텍스트가 둘로 갈라진다. 같은 이유로 픽스처에 `@TestComponent`를
- * 쓰지 않는다 — 스캔에서 제외되어 결국 이 `@Import` 목록으로 돌아오게 된다.
+ * [DatabaseCleaner]는 공개 API와 달리 선택적 component scan을 쓰는 관리자 API에서도
+ * 반드시 필요하므로 명시적으로 import한다. 같은 클래스가 공개 API scan에도 잡히지만 Spring은
+ * 동일 configuration class를 한 번만 등록한다. 도메인별 Fixture는 각 애플리케이션 scan 또는
+ * 필요한 테스트의 별도 import에 맡긴다.
  */
 @Target(AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.RUNTIME)
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(TestcontainersConfiguration::class)
+@Import(TestcontainersConfiguration::class, DatabaseCleaner::class)
 @ExtendWith(DatabaseClearExtension::class)
 annotation class IntegrationTest

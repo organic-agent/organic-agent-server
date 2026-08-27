@@ -7,6 +7,7 @@ import jakarta.persistence.Id
 import jakarta.persistence.Table
 import java.time.Duration
 import java.time.ZonedDateTime
+import java.util.UUID
 
 @Entity
 @Table(name = "admin_sessions")
@@ -15,6 +16,9 @@ class AdminSession private constructor(
     @Id
     @Column(name = "token_hash", nullable = false, updatable = false, length = 64)
     val tokenHash: String,
+
+    @Column(name = "session_id", nullable = false, updatable = false, unique = true)
+    val sessionId: UUID,
 
     @Column(name = "admin_id", nullable = false, updatable = false)
     val adminId: Long,
@@ -55,6 +59,7 @@ class AdminSession private constructor(
         ): AdminSession =
             AdminSession(
                 tokenHash = tokenHash,
+                sessionId = UUID.randomUUID(),
                 adminId = adminId,
                 lastActiveAt = now,
                 absoluteExpiresAt = now.plus(absoluteTtl),

@@ -91,6 +91,7 @@ class AdminAuthControllerTest @Autowired constructor(
         }.andExpect {
             status { isOk() }
             jsonPath("$.accounts[0].username") { value("web-owner") }
+            jsonPath("$.accounts[0].version") { isNumber() }
         }
     }
 

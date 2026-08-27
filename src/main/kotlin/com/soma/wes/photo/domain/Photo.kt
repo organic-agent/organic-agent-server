@@ -78,6 +78,19 @@ class Photo(
     @Column(name = "preview_key", length = 500)
     var previewKey: String? = null
 
+    @Column(name = "technical_quality_score")
+    var technicalQualityScore: Double? = null
+        protected set
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "technical_quality_signals", columnDefinition = "jsonb")
+    var technicalQualitySignals: Map<String, Any?>? = null
+        protected set
+
+    @Column(name = "quality_analyzed_at")
+    var qualityAnalyzedAt: ZonedDateTime? = null
+        protected set
+
     /**
      * 이 사진 행을 만들 때 발급한 PUT URL의 실제 만료 시각. null은 URL을 발급하지 않는
      * 복제 사진이다.
@@ -141,6 +154,13 @@ class Photo(
         status = PhotoStatus.EMBEDDED
     }
 
+    fun applyTechnicalQuality(score: Double, signals: Map<String, Any?>, analyzedAt: ZonedDateTime) {
+        require(score in 0.0..100.0) { "technical quality score must be between 0 and 100" }
+        technicalQualityScore = score
+        technicalQualitySignals = signals.toMap()
+        qualityAnalyzedAt = analyzedAt
+    }
+
     companion object {
 
         const val EMBEDDING_DIMENSION = 768
@@ -189,6 +209,12 @@ class Photo(
                         byteSize = metadata.byteSize,
                     ),
                 )
+            }
+            val qualityScore = source.technicalQualityScore
+            val qualitySignals = source.technicalQualitySignals
+            val qualityAnalyzedAt = source.qualityAnalyzedAt
+            if (qualityScore != null && qualitySignals != null && qualityAnalyzedAt != null) {
+                copy.applyTechnicalQuality(qualityScore, qualitySignals, qualityAnalyzedAt)
             }
             copy.applyEmbedding(
                 checkNotNull(source.embedding) { "임베딩이 없는 사진은 복제할 수 없습니다." }.copyOf(),

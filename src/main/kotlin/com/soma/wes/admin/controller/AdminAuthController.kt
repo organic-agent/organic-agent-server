@@ -60,7 +60,7 @@ class AdminAuthController(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         servletRequest: HttpServletRequest,
     ): ResponseEntity<Unit> {
-        adminAuthService.logout(loginUser.id, requireSessionToken(servletRequest), servletRequest.remoteAddr)
+        adminAuthService.logout(loginUser, requireSessionToken(servletRequest), servletRequest.remoteAddr)
 
         return ResponseEntity.noContent()
             .header(HttpHeaders.SET_COOKIE, AdminSessionCookie.delete().toString())

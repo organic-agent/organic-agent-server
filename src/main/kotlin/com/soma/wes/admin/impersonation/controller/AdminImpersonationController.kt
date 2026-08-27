@@ -33,6 +33,23 @@ class AdminImpersonationController(
         .status(HttpStatus.CREATED)
         .body(service.start(loginUser, request, servletRequest.remoteAddr))
 
+    @GetMapping("/current")
+    fun current(
+        @AuthenticationPrincipal loginUser: AdminLoginUser,
+        servletRequest: HttpServletRequest,
+    ): ResponseEntity<AdminImpersonationResponse> = ResponseEntity.ok(
+        service.current(loginUser, servletRequest.remoteAddr),
+    )
+
+    @DeleteMapping("/current")
+    fun endCurrent(
+        @AuthenticationPrincipal loginUser: AdminLoginUser,
+        servletRequest: HttpServletRequest,
+    ): ResponseEntity<Void> {
+        service.endCurrent(loginUser, servletRequest.remoteAddr)
+        return ResponseEntity.noContent().build()
+    }
+
     @GetMapping("/{id}")
     fun view(
         @AuthenticationPrincipal loginUser: AdminLoginUser,

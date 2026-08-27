@@ -45,6 +45,9 @@ enum class PhotoErrorCode(
     /** Mock 갤러리 생성에서 템플릿 객체의 S3 복사가 실패한 경우. 재시도하면 처음부터 다시 만든다. */
     STORAGE_COPY_FAILED(HttpStatus.BAD_GATEWAY, "PHOTO_502_3", "샘플 사진 복제를 완료하지 못했습니다."),
 
+    /** 원본 교체 완료 검증에서 S3 메타데이터 조회 자체가 실패한 경우. */
+    STORAGE_METADATA_FAILED(HttpStatus.BAD_GATEWAY, "PHOTO_502_4", "사진 원본의 업로드 상태를 확인하지 못했습니다."),
+
     /**
      * 임베딩 함수 이름이 설정되지 않은 경우.
      *

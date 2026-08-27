@@ -7,6 +7,7 @@ import com.soma.wes.collab.exception.CollabErrorCode
 import com.soma.wes.collab.exception.CollabException
 import com.soma.wes.collab.service.CollabGuestService
 import com.soma.wes.collab.service.CollabSessionService
+import com.soma.wes.collab.repository.CollabSessionRepository
 import com.soma.wes.gallery.domain.GalleryStatus
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
@@ -20,6 +21,8 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import java.time.Clock
+import java.time.ZonedDateTime
 
 /**
  * 계정 없는 요청의 세 문을 확인한다 — 토큰이 곧 자격이다.
@@ -35,6 +38,8 @@ class CollabSessionAccessTest @Autowired constructor(
     private val collabGuestService: CollabGuestService,
     private val galleryFixture: GalleryFixture,
     private val galleryRepository: GalleryRepository,
+    private val collabSessionRepository: CollabSessionRepository,
+    private val clock: Clock,
 ) {
 
     private lateinit var fixture: OpenGallery
@@ -87,6 +92,38 @@ class CollabSessionAccessTest @Autowired constructor(
                 .isInstanceOf(CollabException::class.java)
                 .extracting("errorCode")
                 .isEqualTo(CollabErrorCode.SESSION_REVOKED)
+        }
+
+        @Test
+        fun `재발급 링크의 만료 시각이 지나면 읽기와 쓰기가 모두 막힌다`() {
+            // given
+            val session = openSession()
+            val entity = collabSessionRepository.findById(session.sessionId).orElseThrow()
+            entity.expiresAt = ZonedDateTime.now(clock).minusSeconds(1)
+            collabSessionRepository.saveAndFlush(entity)
+
+            // when & then
+            assertThatThrownBy { collabSessionAccess.requireReadable(session.collabToken) }
+                .isInstanceOf(CollabException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(CollabErrorCode.SESSION_EXPIRED)
+            assertThatThrownBy { collabSessionAccess.requireWritable(session.collabToken) }
+                .isInstanceOf(CollabException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(CollabErrorCode.SESSION_EXPIRED)
+        }
+
+        @Test
+        fun `재발급 링크의 만료 시각이 남아 있으면 열린다`() {
+            // given
+            val session = openSession()
+            val entity = collabSessionRepository.findById(session.sessionId).orElseThrow()
+            entity.expiresAt = ZonedDateTime.now(clock).plusMinutes(5)
+            collabSessionRepository.saveAndFlush(entity)
+
+            // when & then
+            assertThat(collabSessionAccess.requireReadable(session.collabToken).sessionId)
+                .isEqualTo(session.sessionId)
         }
 
         @Test

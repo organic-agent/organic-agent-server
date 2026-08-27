@@ -6,8 +6,11 @@ import com.soma.wes.trash.repository.TrashRepository
 import com.soma.wes.trash.repository.projection.TrashedPhotoTarget
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import org.springframework.transaction.support.TransactionTemplate
 import java.time.Clock
+import java.time.Duration
 import java.time.ZonedDateTime
+import java.util.UUID
 
 /**
  * 물리 삭제의 실행부. 휴지통의 즉시 삭제([com.soma.wes.trash.service.TrashService])와
@@ -17,41 +20,129 @@ import java.time.ZonedDateTime
  * 가리키는 행이 없어 영영 지울 수 없다. 반대는 재시도로 수습된다 — S3 삭제는 없는 키를
  * 다시 지워도 성공하고, 행이 남아 있으면 다음 purge가 같은 대상을 다시 집는다.
  *
- * `@Transactional`이 없는 것은 의도다. S3 호출을 트랜잭션에 넣으면 네트워크를 기다리는
- * 동안 커넥션을 점유하고, 롤백해도 지운 객체는 돌아오지 않는다. DB 삭제는 문장 하나라
- * (갤러리는 FK cascade가 한 문장 안에서 하위를 걷는다) 그 자체로 원자적이다.
+ * S3 호출 앞뒤로 짧은 DB 트랜잭션을 둔다. 첫 트랜잭션은 관련 행을 잠그고 관리자 휴지통을
+ * 재검사한 뒤 lease claim을 남긴다. 잠금을 해제하고 S3를 지운 다음, 두 번째 트랜잭션이 같은
+ * claim token과 범위를 다시 확인하고 DB를 지운다. S3 일부 삭제나 worker crash에서는 claim을
+ * 남겨 복원/admin mutation을 막고, lease 만료 뒤 idempotent S3 삭제부터 재시도한다.
  */
 @Service
 class TrashEraser(
     private val trashRepository: TrashRepository,
     private val photoStorage: PhotoStorage,
     private val properties: TrashProperties,
+    private val transactionTemplate: TransactionTemplate,
     private val clock: Clock,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    /** 갤러리 하나를 사진 원본·미리보기·보정 파일과 함께 물리 삭제한다. 휴지통 여부 검증은 호출자의 몫이다. */
-    fun eraseGallery(galleryId: Long) {
-        val targets = trashRepository.findAllPhotoTargets(galleryId)
-        val retouchKeys = trashRepository.findRetouchObjectKeys(galleryId)
-        photoStorage.deleteAll(objectKeysOf(targets) + retouchKeys)
-        trashRepository.deleteGallery(galleryId)
+    /**
+     * 갤러리 하나를 사진 원본·미리보기·보정 파일과 함께 물리 삭제한다.
+     *
+     * false는 대상이 이미 복원됐거나 관리자 batch/child/다른 product claim이 먼저 소유권을
+     * 얻었다는 뜻이다. S3 예외는 그대로 전파하되 claim은 lease까지 남긴다.
+     */
+    fun eraseGallery(galleryId: Long): Boolean {
+        val token = UUID.randomUUID()
+        val claimed = transactionTemplate.execute {
+            trashRepository.lockPurgeCoordinationForGallery(galleryId)
+            if (!trashRepository.lockGalleryPurgeScope(galleryId)) return@execute false
+            if (trashRepository.isGalleryProtectedByAdmin(galleryId)) return@execute false
+            if (trashRepository.hasPhotoClaimInGallery(galleryId)) return@execute false
+            val now = ZonedDateTime.now(clock)
+            trashRepository.tryAcquirePurgeClaim(
+                resourceType = GALLERY,
+                resourceId = galleryId,
+                token = token,
+                now = now,
+                leaseUntil = now.plus(CLAIM_LEASE),
+            )
+        } == true
+        if (!claimed) return false
+
+        val photoCount = trashRepository.findAllPhotoTargets(galleryId).size
+        val objectKeys = trashRepository.findPurgeObjectKeys(galleryId)
+        photoStorage.deleteAll(objectKeys)
+
+        val finalized = transactionTemplate.execute {
+            // claim tx와 같은 domain -> claim 순서로 잠가 takeover/finalize 교착을 피한다.
+            trashRepository.lockPurgeCoordinationForGallery(galleryId)
+            if (!trashRepository.lockGalleryPurgeScope(galleryId)) return@execute false
+            if (trashRepository.isGalleryProtectedByAdmin(galleryId)) return@execute false
+            if (trashRepository.hasPhotoClaimInGallery(galleryId)) return@execute false
+            if (!trashRepository.ownsPurgeClaimsForUpdate(GALLERY, listOf(galleryId), token)) {
+                return@execute false
+            }
+            if (trashRepository.deleteGallery(galleryId) != 1) return@execute false
+            check(trashRepository.deleteOwnedPurgeClaims(GALLERY, listOf(galleryId), token) == 1) {
+                "갤러리 purge claim 정리에 실패했습니다: $galleryId"
+            }
+            true
+        } == true
+        if (!finalized) return false
+
         log.info(
-            "갤러리 물리 삭제: galleryId={}, photos={}, retouchFiles={}",
-            galleryId, targets.size, retouchKeys.size,
+            "갤러리 물리 삭제: galleryId={}, photos={}, objects={}",
+            galleryId, photoCount, objectKeys.size,
         )
+        return true
     }
 
     /** 사진들을 원본·미리보기·보정 파일과 함께 물리 삭제한다. 휴지통 여부 검증은 호출자의 몫이다. */
-    fun erasePhotos(targets: List<TrashedPhotoTarget>) {
+    fun erasePhotos(targets: List<TrashedPhotoTarget>): Boolean {
         if (targets.isEmpty()) {
-            return
+            return true
         }
-        val retouchKeys = trashRepository.findRetouchObjectKeysByPhotoIds(targets.map { it.photoId })
-        photoStorage.deleteAll(objectKeysOf(targets) + retouchKeys)
-        trashRepository.deletePhotos(targets.map { it.photoId })
-        log.info("사진 물리 삭제: photos={}, retouchFiles={}", targets.size, retouchKeys.size)
+        val photoIds = targets.map { it.photoId }.distinct().sorted()
+        val token = UUID.randomUUID()
+        val claimedTargets = try {
+            transactionTemplate.execute {
+                trashRepository.lockPurgeCoordinationForPhotos(photoIds)
+                val locked = trashRepository.lockPhotoPurgeScope(photoIds)
+                if (locked.map { it.photoId }.toSet() != photoIds.toSet()) throw PurgeClaimRejected()
+                if (trashRepository.protectedPhotoIds(photoIds).isNotEmpty()) throw PurgeClaimRejected()
+                if (trashRepository.hasGalleryClaimForPhotos(photoIds)) throw PurgeClaimRejected()
+                val now = ZonedDateTime.now(clock)
+                photoIds.forEach { photoId ->
+                    if (
+                        !trashRepository.tryAcquirePurgeClaim(
+                            resourceType = PHOTO,
+                            resourceId = photoId,
+                            token = token,
+                            now = now,
+                            leaseUntil = now.plus(CLAIM_LEASE),
+                        )
+                    ) {
+                        // 앞선 사진 claim도 같은 transaction과 함께 rollback한다.
+                        throw PurgeClaimRejected()
+                    }
+                }
+                locked
+            }
+        } catch (_: PurgeClaimRejected) {
+            null
+        } ?: return false
+
+        val objectKeys = trashRepository.findPurgeObjectKeysByPhotoIds(photoIds)
+        photoStorage.deleteAll(objectKeys)
+
+        val finalized = transactionTemplate.execute {
+            trashRepository.lockPurgeCoordinationForPhotos(photoIds)
+            val locked = trashRepository.lockPhotoPurgeScope(photoIds)
+            if (locked.map { it.photoId }.toSet() != photoIds.toSet()) return@execute false
+            if (trashRepository.protectedPhotoIds(photoIds).isNotEmpty()) return@execute false
+            if (trashRepository.hasGalleryClaimForPhotos(photoIds)) return@execute false
+            if (!trashRepository.ownsPurgeClaimsForUpdate(PHOTO, photoIds, token)) return@execute false
+            if (trashRepository.deletePhotos(photoIds) != photoIds.size) return@execute false
+            check(trashRepository.deleteOwnedPurgeClaims(PHOTO, photoIds, token) == photoIds.size) {
+                "사진 purge claim 정리에 실패했습니다: $photoIds"
+            }
+            true
+        } == true
+        if (!finalized) return false
+
+        log.info("사진 물리 삭제: photos={}, objects={}", claimedTargets.size, objectKeys.size)
+        return true
     }
 
     /**
@@ -72,17 +163,17 @@ class TrashEraser(
                 .onFailure { log.error("갤러리 purge 실패, 다음 시각에 재시도한다: galleryId={}", galleryId, it) }
         }
 
-        val expiredPhotos = trashRepository.findExpiredPhotoTargets(cutoff)
-        runCatching { erasePhotos(expiredPhotos) }
-            .onFailure { log.error("사진 purge 실패, 다음 시각에 재시도한다: photos={}", expiredPhotos.size, it) }
+        trashRepository.findExpiredPhotoTargets(cutoff).forEach { target ->
+            runCatching { erasePhotos(listOf(target)) }
+                .onFailure { log.error("사진 purge 실패, 다음 시각에 재시도한다: photoId={}", target.photoId, it) }
+        }
     }
 
-    private fun objectKeysOf(targets: List<TrashedPhotoTarget>): Set<String> =
-        targets.flatMapTo(mutableSetOf()) { target ->
-            listOfNotNull(target.storageKey, target.previewKey, expectedPreviewKeyOf(target.storageKey))
-        }
-
     companion object {
+
+        private const val GALLERY = "GALLERY"
+        private const val PHOTO = "PHOTO"
+        private val CLAIM_LEASE: Duration = Duration.ofMinutes(15)
 
         /**
          * 원본 키에서 파생되는 미리보기의 고정 위치. 임베딩 Lambda의 `preview_key_for`,
@@ -94,4 +185,6 @@ class TrashEraser(
         fun expectedPreviewKeyOf(storageKey: String): String =
             "previews/${storageKey.substringBeforeLast('.', storageKey)}.jpg"
     }
+
+    private class PurgeClaimRejected : RuntimeException(null, null, false, false)
 }

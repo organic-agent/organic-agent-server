@@ -16,5 +16,5 @@ class AdminRevisionPurgeScheduler(
     @Scheduled(cron = "0 15 * * * *")
     @Transactional
     fun purgeExpiredRevisions(): Long =
-        revisionRepository.deleteAllByExpiresAtLessThanEqual(ZonedDateTime.now(clock))
+        revisionRepository.clearExpiredRestorePayloads(ZonedDateTime.now(clock)).toLong()
 }

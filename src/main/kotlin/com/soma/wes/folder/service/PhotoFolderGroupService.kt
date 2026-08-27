@@ -45,11 +45,12 @@ class PhotoFolderGroupService(
         request.folders.forEachIndexed { index, folderRequest ->
             val folder = photoFolderRepository.save(PhotoFolder.of(group, folderRequest.name))
             photoFolderItemRepository.saveAll(
-                photosByFolder[index].map {
+                photosByFolder[index].mapIndexed { sortOrder, photo ->
                     PhotoFolderItem(
                         groupId = group.requiredId,
                         folderId = folder.requiredId,
-                        photoId = it.requiredId,
+                        photoId = photo.requiredId,
+                        sortOrder = sortOrder,
                     )
                 },
             )
@@ -88,7 +89,7 @@ class PhotoFolderGroupService(
     ): PhotoFolderGroupResponse {
         galleryAccessPolicy.requirePhotographerOrCouple(galleryId, userId)
 
-        val group = findGroup(galleryId, groupId)
+        val group = lockGroup(galleryId, groupId)
         group.rename(request.name)
 
         return responseOf(group)
@@ -135,14 +136,19 @@ class PhotoFolderGroupService(
     fun delete(galleryId: Long, groupId: Long, userId: Long) {
         galleryAccessPolicy.requirePhotographerOrCouple(galleryId, userId)
 
-        val group = findGroup(galleryId, groupId)
+        val group = lockGroup(galleryId, groupId)
         photoFolderItemRepository.deleteAllByGroupId(group.requiredId)
         photoFolderRepository.deleteAllByGroupId(group.requiredId)
         photoFolderGroupRepository.delete(group)
     }
 
-    /** [get]·[rename]·[delete]가 쓴다. */
+    /** 잠금이 필요 없는 [get] 읽기 경로다. */
     private fun findGroup(galleryId: Long, groupId: Long): PhotoFolderGroup =
         photoFolderGroupRepository.findByIdAndGalleryId(groupId, galleryId)
+            ?: throw FolderException(FolderErrorCode.GROUP_NOT_FOUND)
+
+    /** 관리자 목업 재계산과 같은 부모 행 잠금으로 수동 구조 변경을 직렬화한다. */
+    private fun lockGroup(galleryId: Long, groupId: Long): PhotoFolderGroup =
+        photoFolderGroupRepository.findWithLockByIdAndGalleryId(groupId, galleryId)
             ?: throw FolderException(FolderErrorCode.GROUP_NOT_FOUND)
 }

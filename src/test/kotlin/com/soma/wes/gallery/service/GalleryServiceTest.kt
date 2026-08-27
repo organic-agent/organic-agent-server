@@ -18,6 +18,10 @@ import com.soma.wes.selection.service.PhotoSelectionService
 import com.soma.wes.studio.exception.StudioErrorCode
 import com.soma.wes.studio.exception.StudioException
 import com.soma.wes.studio.fixture.StudioFixture
+import com.soma.wes.studio.domain.StudioMember
+import com.soma.wes.studio.domain.StudioMemberRole
+import com.soma.wes.studio.repository.StudioMemberRepository
+import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.fixture.UserFixture
@@ -46,6 +50,8 @@ class GalleryServiceTest @Autowired constructor(
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
     private val galleryMemberRepository: GalleryMemberRepository,
+    private val studioRepository: StudioRepository,
+    private val studioMemberRepository: StudioMemberRepository,
 ) {
 
     @Nested
@@ -118,6 +124,147 @@ class GalleryServiceTest @Autowired constructor(
                 .isInstanceOf(GalleryException::class.java)
                 .extracting("errorCode")
                 .isEqualTo(GalleryErrorCode.INVALID_SELECTION_DEADLINE)
+        }
+
+        @Test
+        fun `활성 스튜디오 MEMBER는 기존 갤러리를 읽고 바꾸며 같은 스튜디오에 새 갤러리를 만든다`() {
+            val owner = studioFixture.작가()
+            val studio = requireNotNull(studioRepository.findByUserId(owner.id!!))
+            val existingGalleryId = createGallery(owner, "공유 전 갤러리")
+            val member = userFixture.사용자()
+            studioMemberRepository.saveAndFlush(
+                StudioMember(studio.requiredId, member.id!!, StudioMemberRole.MEMBER),
+            )
+
+            assertThat(galleryService.get(existingGalleryId, member.id!!).title).isEqualTo("공유 전 갤러리")
+            assertThat(
+                galleryService.rename(existingGalleryId, member.id!!, RenameGalleryRequest("멤버가 수정")),
+            ).extracting("title").isEqualTo("멤버가 수정")
+
+            val created = galleryService.create(
+                member.id!!,
+                CreateGalleryRequest(title = "멤버가 생성"),
+            )
+            assertThat(created.studioId).isEqualTo(studio.requiredId)
+            assertThat(galleryService.findAllVisibleTo(member.id!!).map { it.id })
+                .containsExactlyInAnyOrder(existingGalleryId, created.id)
+        }
+
+        @Test
+        fun `삭제된 스튜디오 MEMBER 권한은 즉시 회수된다`() {
+            val owner = studioFixture.작가()
+            val studio = requireNotNull(studioRepository.findByUserId(owner.id!!))
+            val galleryId = createGallery(owner, "권한 회수 갤러리")
+            val member = userFixture.사용자()
+            val membership = studioMemberRepository.saveAndFlush(
+                StudioMember(studio.requiredId, member.id!!, StudioMemberRole.MEMBER),
+            )
+            membership.deletedAt = ZonedDateTime.now()
+            studioMemberRepository.saveAndFlush(membership)
+
+            assertThatThrownBy { galleryService.get(galleryId, member.id!!) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+            assertThat(galleryService.findAllVisibleTo(member.id!!)).isEmpty()
+            assertThatThrownBy {
+                galleryService.create(
+                    member.id!!,
+                    CreateGalleryRequest(title = "회수 뒤 생성"),
+                )
+            }
+                .isInstanceOf(StudioException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(StudioErrorCode.STUDIO_NOT_FOUND)
+        }
+
+        @Test
+        fun `정지된 스튜디오는 MEMBER의 조회 수정 목록 생성 권한을 모두 차단한다`() {
+            val owner = studioFixture.작가()
+            val studio = requireNotNull(studioRepository.findByUserId(owner.id!!))
+            val galleryId = createGallery(owner, "정지 전 갤러리")
+            val member = userFixture.사용자()
+            studioMemberRepository.saveAndFlush(
+                StudioMember(studio.requiredId, member.id!!, StudioMemberRole.MEMBER),
+            )
+            studio.suspendedAt = ZonedDateTime.now()
+            studioRepository.saveAndFlush(studio)
+
+            assertThatThrownBy { galleryService.get(galleryId, member.id!!) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+            assertThatThrownBy {
+                galleryService.rename(galleryId, member.id!!, RenameGalleryRequest("정지 우회 수정"))
+            }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+            assertThat(galleryService.findAllVisibleTo(member.id!!)).isEmpty()
+            assertThatThrownBy {
+                galleryService.create(
+                    member.id!!,
+                    CreateGalleryRequest(title = "정지 우회 생성"),
+                )
+            }
+                .isInstanceOf(StudioException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(StudioErrorCode.STUDIO_NOT_FOUND)
+        }
+
+        @Test
+        fun `스튜디오 OWNER는 멤버 관계가 없어도 기존 권한을 유지한다`() {
+            val owner = studioFixture.작가()
+            val studio = requireNotNull(studioRepository.findByUserId(owner.id!!))
+            val galleryId = createGallery(owner, "소유자 갤러리")
+
+            assertThat(galleryService.get(galleryId, owner.id!!).id).isEqualTo(galleryId)
+            assertThat(galleryService.rename(galleryId, owner.id!!, RenameGalleryRequest("소유자 수정")).title)
+                .isEqualTo("소유자 수정")
+            assertThat(
+                galleryService.create(
+                    owner.id!!,
+                    CreateGalleryRequest(title = "소유자 추가 생성"),
+                ).studioId,
+            ).isEqualTo(studio.requiredId)
+        }
+
+        @Test
+        fun `여러 스튜디오의 MEMBER는 공개 생성 요청에서 대상을 선택할 수 없어 거절된다`() {
+            val firstOwner = studioFixture.작가()
+            val secondOwner = studioFixture.작가()
+            val firstStudio = requireNotNull(studioRepository.findByUserId(firstOwner.id!!))
+            val secondStudio = requireNotNull(studioRepository.findByUserId(secondOwner.id!!))
+            val member = userFixture.사용자()
+            listOf(firstStudio.requiredId, secondStudio.requiredId).forEach { studioId ->
+                studioMemberRepository.saveAndFlush(
+                    StudioMember(studioId, member.id!!, StudioMemberRole.MEMBER),
+                )
+            }
+
+            assertThatThrownBy {
+                galleryService.create(member.id!!, CreateGalleryRequest(title = "소속 미지정"))
+            }
+                .isInstanceOf(StudioException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(StudioErrorCode.STUDIO_SELECTION_REQUIRED)
+        }
+
+        @Test
+        fun `스튜디오 소유자라도 다른 활성 스튜디오 소속이면 공개 생성 대상을 추측하지 않는다`() {
+            val owner = studioFixture.작가()
+            val otherOwner = studioFixture.작가()
+            val otherStudio = requireNotNull(studioRepository.findByUserId(otherOwner.id!!))
+            studioMemberRepository.saveAndFlush(
+                StudioMember(otherStudio.requiredId, owner.id!!, StudioMemberRole.MEMBER),
+            )
+
+            assertThatThrownBy {
+                galleryService.create(owner.id!!, CreateGalleryRequest(title = "소유와 소속이 겹친 생성"))
+            }
+                .isInstanceOf(StudioException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(StudioErrorCode.STUDIO_SELECTION_REQUIRED)
         }
     }
 

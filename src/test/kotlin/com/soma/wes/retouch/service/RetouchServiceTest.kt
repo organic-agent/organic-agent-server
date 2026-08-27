@@ -23,6 +23,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.jdbc.core.simple.JdbcClient
 
 /**
  * 보정 요청 흐름을 서비스 경계에서 확인한다.
@@ -38,6 +39,7 @@ class RetouchServiceTest @Autowired constructor(
     private val retouchFixture: RetouchFixture,
     private val retouchRoundRepository: RetouchRoundRepository,
     private val retouchPhotoRepository: RetouchPhotoRepository,
+    private val jdbcClient: JdbcClient,
 ) {
 
     @Nested
@@ -95,6 +97,68 @@ class RetouchServiceTest @Autowired constructor(
 
             // then
             assertThat(result.currentRound!!.photos).hasSize(1)
+        }
+
+        @Test
+        fun `관리자가 소프트 삭제한 항목은 사용자 조회와 수정 경로에서 사라진다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val photoId = photoFixture.업로드된_사진(fixture.galleryId, count = 1).single()
+            add(fixture, listOf(photoId))
+            val round = retouchRoundRepository.findByGalleryIdAndStatus(
+                fixture.galleryId,
+                RetouchRoundStatus.DRAFTING,
+            )!!
+
+            val deletedCount = jdbcClient.sql(
+                """
+                UPDATE retouch_photos
+                SET deleted_at = CURRENT_TIMESTAMP,
+                    version = version + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE round_id = :roundId
+                  AND photo_id = :photoId
+                """.trimIndent(),
+            )
+                .param("roundId", round.requiredId)
+                .param("photoId", photoId)
+                .update()
+            assertThat(deletedCount).isEqualTo(1)
+
+            // when
+            val result = retouchService.get(fixture.galleryId, fixture.member.id!!)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(result.rounds.single().photoCount).isZero()
+                softly.assertThat(result.currentRound!!.photos).isEmpty()
+                softly.assertThat(retouchPhotoRepository.findByRoundIdAndPhotoId(round.requiredId, photoId)).isNull()
+            }
+            assertThatThrownBy {
+                retouchService.updatePhoto(
+                    fixture.galleryId,
+                    photoId,
+                    fixture.member.id!!,
+                    UpdateRetouchPhotoRequest(requestText = "삭제 뒤 수정 시도"),
+                )
+            }
+                .isInstanceOf(RetouchException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(RetouchErrorCode.PHOTO_NOT_IN_ROUND)
+
+            val rawRowStillRestorable = jdbcClient.sql(
+                """
+                SELECT deleted_at IS NOT NULL
+                FROM retouch_photos
+                WHERE round_id = :roundId
+                  AND photo_id = :photoId
+                """.trimIndent(),
+            )
+                .param("roundId", round.requiredId)
+                .param("photoId", photoId)
+                .query(Boolean::class.java)
+                .single()
+            assertThat(rawRowStillRestorable).isTrue()
         }
     }
 
@@ -253,12 +317,89 @@ class RetouchServiceTest @Autowired constructor(
             val fixture = galleryFixture.멤버와_열린_갤러리()
             val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 2)
             add(fixture, photoIds)
+            val round = retouchRoundRepository.findByGalleryIdAndStatus(
+                fixture.galleryId,
+                RetouchRoundStatus.DRAFTING,
+            )!!
+            val removedItemId = jdbcClient.sql(
+                "SELECT id FROM retouch_photos WHERE round_id = :roundId AND photo_id = :photoId",
+            )
+                .param("roundId", round.requiredId)
+                .param("photoId", photoIds[0])
+                .query { rs, _ -> rs.getLong("id") }
+                .single()
+            val parentVersionBefore = jdbcClient.sql("SELECT version FROM retouch_rounds WHERE id = :roundId")
+                .param("roundId", round.requiredId)
+                .query { rs, _ -> rs.getLong("version") }
+                .single()
 
             // when
             retouchService.removePhoto(fixture.galleryId, photoIds[0], fixture.member.id!!)
 
             // then
             assertThat(retouchPhotoRepository.count()).isEqualTo(1L)
+            val productTrash = jdbcClient.sql(
+                """
+                SELECT item.deleted_at IS NOT NULL AS deleted,
+                       item.version,
+                       trash.parent_id,
+                       trash.actor_admin_id IS NULL AS actor_admin_id_null,
+                       trash.actor_username,
+                       trash.reason,
+                       trash.status,
+                       trash.restore_until = trash.deleted_at + INTERVAL '7 days' AS has_seven_day_window
+                FROM retouch_photos item
+                JOIN admin_child_trash_records trash
+                  ON trash.resource_type = 'RETOUCH_ITEM' AND trash.resource_id = item.id
+                WHERE item.id = :itemId AND trash.status = 'ACTIVE'
+                """.trimIndent(),
+            )
+                .param("itemId", removedItemId)
+                .query { rs, _ ->
+                    listOf(
+                        rs.getBoolean("deleted"),
+                        rs.getLong("version"),
+                        rs.getLong("parent_id"),
+                        rs.getBoolean("actor_admin_id_null"),
+                        rs.getString("actor_username"),
+                        rs.getString("reason"),
+                        rs.getString("status"),
+                        rs.getBoolean("has_seven_day_window"),
+                    )
+                }
+                .single()
+            assertThat(productTrash).containsExactly(
+                true,
+                1L,
+                round.requiredId,
+                true,
+                "PRODUCT_USER",
+                "PRODUCT_USER_RETOUCH_REMOVE",
+                "ACTIVE",
+                true,
+            )
+            assertThat(
+                jdbcClient.sql("SELECT version FROM retouch_rounds WHERE id = :roundId")
+                    .param("roundId", round.requiredId)
+                    .query { rs, _ -> rs.getLong("version") }
+                    .single(),
+            ).isEqualTo(parentVersionBefore + 1)
+            assertThat(
+                jdbcClient.sql("SELECT COUNT(*) FROM retouch_photos WHERE round_id = :roundId")
+                    .param("roundId", round.requiredId)
+                    .query { rs, _ -> rs.getLong(1) }
+                    .single(),
+            ).isEqualTo(2L)
+
+            // 복원 창이 열려 있는 동안에도 사용자는 같은 원본을 다시 담을 수 있다.
+            add(fixture, listOf(photoIds[0]))
+            assertThat(retouchPhotoRepository.count()).isEqualTo(2L)
+            assertThat(
+                jdbcClient.sql("SELECT COUNT(*) FROM retouch_photos WHERE round_id = :roundId")
+                    .param("roundId", round.requiredId)
+                    .query { rs, _ -> rs.getLong(1) }
+                    .single(),
+            ).isEqualTo(3L)
         }
 
         @Test

@@ -24,6 +24,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.jdbc.core.simple.JdbcClient
 
 /**
  * 하객 쪽 입장·댓글·좋아요를 서비스 경계에서 확인한다.
@@ -44,6 +45,7 @@ class CollabGuestServiceTest @Autowired constructor(
     private val collabPhotoRepository: CollabPhotoRepository,
     private val collabPhotoCommentRepository: CollabPhotoCommentRepository,
     private val collabPhotoLikeRepository: CollabPhotoLikeRepository,
+    private val jdbcClient: JdbcClient,
 ) {
 
     private lateinit var fixture: OpenGallery
@@ -216,6 +218,18 @@ class CollabGuestServiceTest @Autowired constructor(
 
             collabGuestService.deleteComment(session.collabToken, commentId, mine)
             assertThat(collabPhotoCommentRepository.count()).isEqualTo(0L)
+
+            val trash = childTrash("COLLAB_COMMENT", commentId)
+            assertSoftly { softly ->
+                softly.assertThat(rawDeleted("collab_photo_comments", commentId)).isTrue()
+                softly.assertThat(rawVersion("collab_photo_comments", commentId)).isEqualTo(1L)
+                softly.assertThat(trash.parentId).isEqualTo(session.sessionId)
+                softly.assertThat(trash.actorAdminIdNull).isTrue()
+                softly.assertThat(trash.actorLabel).isEqualTo("PRODUCT_GUEST")
+                softly.assertThat(trash.reason).isEqualTo("PRODUCT_GUEST_SELF_DELETE")
+                softly.assertThat(trash.status).isEqualTo("ACTIVE")
+                softly.assertThat(trash.hasSevenDayWindow).isTrue()
+            }
         }
     }
 
@@ -275,9 +289,65 @@ class CollabGuestServiceTest @Autowired constructor(
             collabGuestService.cancelLike(session.collabToken, collabPhotoId, guestToken)
 
             collabGuestService.like(session.collabToken, collabPhotoId, guestToken)
+            val likeId = jdbcClient.sql(
+                "SELECT id FROM collab_photo_likes WHERE collab_photo_id = :photoId AND deleted_at IS NULL",
+            ).param("photoId", collabPhotoId).query { rs, _ -> rs.getLong("id") }.single()
             collabGuestService.cancelLike(session.collabToken, collabPhotoId, guestToken)
 
             assertThat(collabPhotoLikeRepository.count()).isEqualTo(0L)
+            val trash = childTrash("COLLAB_LIKE", likeId)
+            assertSoftly { softly ->
+                softly.assertThat(rawDeleted("collab_photo_likes", likeId)).isTrue()
+                softly.assertThat(rawVersion("collab_photo_likes", likeId)).isEqualTo(1L)
+                softly.assertThat(trash.parentId).isEqualTo(session.sessionId)
+                softly.assertThat(trash.actorAdminIdNull).isTrue()
+                softly.assertThat(trash.actorLabel).isEqualTo("PRODUCT_GUEST")
+                softly.assertThat(trash.reason).isEqualTo("PRODUCT_GUEST_LIKE_CANCEL")
+                softly.assertThat(trash.status).isEqualTo("ACTIVE")
+                softly.assertThat(trash.hasSevenDayWindow).isTrue()
+            }
+
+            // 취소된 행은 7일 복원을 위해 남아 있지만 활성 유니크 계약은 재좋아요를 허용한다.
+            collabGuestService.like(session.collabToken, collabPhotoId, guestToken)
+            assertThat(collabPhotoLikeRepository.count()).isEqualTo(1L)
+            assertThat(
+                jdbcClient.sql("SELECT COUNT(*) FROM collab_photo_likes WHERE collab_photo_id = :photoId")
+                    .param("photoId", collabPhotoId).query { rs, _ -> rs.getLong(1) }.single(),
+            ).isEqualTo(2L)
+        }
+
+        @Test
+        fun `관리자 휴지통 좋아요는 사용자 집계에서 숨고 하객은 다시 누를 수 있다`() {
+            val session = openSession(fixture)
+            val collabPhotoId =
+                addPhotos(fixture, session.sessionId, photoFixture.업로드된_사진(fixture.galleryId, count = 1)).single()
+            val guestToken = enter(session.collabToken, "친구")
+            collabGuestService.like(session.collabToken, collabPhotoId, guestToken)
+            val likeId = jdbcClient.sql(
+                "SELECT id FROM collab_photo_likes WHERE collab_photo_id = :photoId",
+            ).param("photoId", collabPhotoId).query { rs, _ -> rs.getLong(1) }.single()
+            jdbcClient.sql(
+                "UPDATE collab_photo_likes SET deleted_at = CURRENT_TIMESTAMP, version = version + 1 WHERE id = :id",
+            ).param("id", likeId).update()
+
+            val hidden = collabGuestQueryService.listPhotos(
+                session.collabToken, guestToken, page = 0, size = 20,
+            ).contents.single()
+            assertThat(hidden.likeCount).isZero()
+            assertThat(hidden.liked).isFalse()
+            assertThat(collabPhotoLikeRepository.count()).isZero()
+
+            collabGuestService.like(session.collabToken, collabPhotoId, guestToken)
+
+            val reliked = collabGuestQueryService.listPhotos(
+                session.collabToken, guestToken, page = 0, size = 20,
+            ).contents.single()
+            assertThat(reliked.likeCount).isOne()
+            assertThat(reliked.liked).isTrue()
+            assertThat(
+                jdbcClient.sql("SELECT COUNT(*) FROM collab_photo_likes WHERE collab_photo_id = :photoId")
+                    .param("photoId", collabPhotoId).query { rs, _ -> rs.getLong(1) }.single(),
+            ).isEqualTo(2L)
         }
 
         @Test
@@ -362,4 +432,43 @@ class CollabGuestServiceTest @Autowired constructor(
         collabGuestService.writeComment(
             collabToken, collabPhotoId, guestToken, WriteCollabCommentRequest(content),
         ).commentId
+
+    private fun rawDeleted(table: String, id: Long): Boolean = jdbcClient.sql(
+        "SELECT deleted_at IS NOT NULL FROM $table WHERE id = :id",
+    ).param("id", id).query { rs, _ -> rs.getBoolean(1) }.single()
+
+    private fun rawVersion(table: String, id: Long): Long = jdbcClient.sql(
+        "SELECT version FROM $table WHERE id = :id",
+    ).param("id", id).query { rs, _ -> rs.getLong(1) }.single()
+
+    private fun childTrash(resourceType: String, resourceId: Long): ProductTrashSnapshot = jdbcClient.sql(
+        """
+        SELECT parent_id, actor_admin_id IS NULL AS actor_admin_id_null, actor_username, reason, status,
+               restore_until = deleted_at + INTERVAL '7 days' AS has_seven_day_window
+        FROM admin_child_trash_records
+        WHERE resource_type = :resourceType AND resource_id = :resourceId AND status = 'ACTIVE'
+        """.trimIndent(),
+    )
+        .param("resourceType", resourceType)
+        .param("resourceId", resourceId)
+        .query { rs, _ ->
+            ProductTrashSnapshot(
+                parentId = rs.getLong("parent_id"),
+                actorAdminIdNull = rs.getBoolean("actor_admin_id_null"),
+                actorLabel = rs.getString("actor_username"),
+                reason = rs.getString("reason"),
+                status = rs.getString("status"),
+                hasSevenDayWindow = rs.getBoolean("has_seven_day_window"),
+            )
+        }
+        .single()
+
+    private data class ProductTrashSnapshot(
+        val parentId: Long,
+        val actorAdminIdNull: Boolean,
+        val actorLabel: String,
+        val reason: String,
+        val status: String,
+        val hasSevenDayWindow: Boolean,
+    )
 }

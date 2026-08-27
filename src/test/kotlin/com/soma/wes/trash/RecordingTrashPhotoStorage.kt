@@ -38,6 +38,8 @@ class RecordingTrashPhotoStorage : PhotoStorage {
 
     override fun presignOriginal(key: String): String = "https://storage.test/original/$key"
 
+    override fun exists(key: String): Boolean = true
+
     override fun deleteAll(keys: Collection<String>) {
         if (failDelete) {
             throw PhotoException(PhotoErrorCode.STORAGE_DELETE_FAILED)

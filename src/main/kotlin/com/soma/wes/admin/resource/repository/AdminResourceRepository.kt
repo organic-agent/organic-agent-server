@@ -11,22 +11,26 @@ import com.soma.wes.admin.resource.dto.AdminResourceResponse
 import com.soma.wes.admin.resource.dto.AdminResourceSummaryResponse
 import com.soma.wes.global.SecureTokenGenerator
 import com.soma.wes.studio.domain.Studio
+import com.soma.wes.user.domain.UserType
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Repository
 import java.sql.ResultSet
 import java.time.OffsetDateTime
 import java.time.ZonedDateTime
 import java.util.Locale
+import tools.jackson.databind.JsonNode
+import tools.jackson.databind.ObjectMapper
 
 @Repository
 class AdminResourceRepository(
     private val jdbcClient: JdbcClient,
     private val secureTokenGenerator: SecureTokenGenerator,
+    private val objectMapper: ObjectMapper,
 ) {
 
     fun findPhotoOriginal(photoId: Long): PhotoOriginal? = jdbcClient.sql(
         """
-            SELECT id, original_file_name, storage_key
+            SELECT id, original_file_name, storage_key, preview_key
             FROM photos
             WHERE id = :photoId AND deleted_at IS NULL
         """.trimIndent(),
@@ -37,6 +41,7 @@ class AdminResourceRepository(
                 id = rs.getLong("id"),
                 originalFileName = rs.getString("original_file_name"),
                 storageKey = rs.getString("storage_key"),
+                previewKey = rs.getString("preview_key"),
             )
         }
         .optional()
@@ -136,6 +141,7 @@ class AdminResourceRepository(
         """
             SELECT
                 (SELECT COUNT(*) FROM admin_trash_batches WHERE status IN ('ACTIVE', 'PURGING')) +
+                (SELECT COUNT(*) FROM admin_child_trash_records WHERE status IN ('ACTIVE', 'PURGING')) +
                 (SELECT COUNT(*) FROM galleries g
                  WHERE g.deleted_at IS NOT NULL
                    AND NOT EXISTS (
@@ -216,11 +222,14 @@ class AdminResourceRepository(
             .orElse(null)
     }
 
-    fun create(type: AdminResourceType, fields: Map<String, Any?>): Long {
+    fun create(type: AdminResourceType, fields: Map<String, Any?>): ResourceCreateResult {
         val definition = definition(type)
         val normalized = normalizeFields(definition, fields, creating = true).toMutableMap()
         definition.defaults.forEach { (name, value) -> normalized.putIfAbsent(name, value) }
         definition.generatedSecretField?.let { normalized[it] = secureTokenGenerator.generate() }
+        val userTypeChange = if (type == AdminResourceType.STUDIO) {
+            confirmUserType((normalized.getValue("userId") as Number).toLong(), UserType.PHOTOGRAPHER)
+        } else null
 
         val columns = normalized.keys.map { definition.field(it).column }
         val parameters = normalized.keys.map { ":$it" }
@@ -231,7 +240,8 @@ class AdminResourceRepository(
         """.trimIndent()
         var statement = jdbcClient.sql(sql)
         normalized.forEach { (name, value) -> statement = statement.param(name, value) }
-        return statement.query { rs, _ -> rs.getLong("id") }.single()
+        val id = statement.query { rs, _ -> rs.getLong("id") }.single()
+        return ResourceCreateResult(id, userTypeChange)
     }
 
     fun update(
@@ -248,6 +258,9 @@ class AdminResourceRepository(
         if (normalized.isEmpty()) {
             throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         }
+        if (type == AdminResourceType.RETOUCH_REQUEST && normalized.keys == setOf("status")) {
+            return transitionRetouchRound(id, expectedVersion, normalized.getValue("status").toString())
+        }
 
         val assignments = normalized.keys.joinToString { name -> "${definition.field(name).column} = :$name" }
         val sql = """
@@ -262,6 +275,109 @@ class AdminResourceRepository(
             .param("expectedVersion", expectedVersion)
         normalized.forEach { (name, value) -> statement = statement.param(name, value) }
         return statement.update()
+    }
+
+    /** 제품 도메인의 DRAFTING -> REQUESTED -> COMPLETED 전이와 시각 불변식을 그대로 지킨다. */
+    private fun transitionRetouchRound(id: Long, expectedVersion: Long, targetStatus: String): Int {
+        if (targetStatus !in setOf("REQUESTED", "COMPLETED")) {
+            throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
+        }
+        val updated = jdbcClient.sql(
+            """
+                UPDATE retouch_rounds
+                SET status = :targetStatus,
+                    requested_at = CASE
+                        WHEN :targetStatus = 'REQUESTED' THEN CURRENT_TIMESTAMP
+                        ELSE requested_at
+                    END,
+                    completed_at = CASE
+                        WHEN :targetStatus = 'COMPLETED' THEN CURRENT_TIMESTAMP
+                        ELSE NULL
+                    END,
+                    version = version + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :id
+                  AND version = :expectedVersion
+                  AND deleted_at IS NULL
+                  AND (
+                    (status = 'DRAFTING' AND :targetStatus = 'REQUESTED') OR
+                    (status = 'REQUESTED' AND :targetStatus = 'COMPLETED')
+                  )
+            """.trimIndent(),
+        )
+            .param("targetStatus", targetStatus)
+            .param("id", id)
+            .param("expectedVersion", expectedVersion)
+            .update()
+        if (updated == 0) {
+            val currentVersion = jdbcClient.sql(
+                "SELECT version FROM retouch_rounds WHERE id = :id AND deleted_at IS NULL",
+            )
+                .param("id", id)
+                .query { rs, _ -> rs.getLong("version") }
+                .optional()
+                .orElse(null)
+            if (currentVersion == expectedVersion) {
+                throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
+            }
+        }
+        return updated
+    }
+
+    /**
+     * 감사 스냅샷에서 수정 허용 필드만 복원한다. 식별자·소유 관계·삭제 상태·secret은
+     * 스냅샷이 변조되어도 이 경로로 바뀌지 않는다.
+     */
+    fun restoreRevision(
+        type: AdminResourceType,
+        id: Long,
+        expectedVersion: Long,
+        snapshot: JsonNode,
+    ): RevisionRestoreResult {
+        val definition = definition(type)
+        val before = find(type, id) ?: throw AdminException(AdminErrorCode.RESOURCE_NOT_FOUND)
+        if (before.version != expectedVersion) throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
+        if (
+            snapshot.path("type").asText() != type.name ||
+            !snapshot.path("id").isIntegralNumber ||
+            snapshot.path("id").asLong() != id ||
+            !snapshot.path("version").isIntegralNumber ||
+            !snapshot.path("deleted").isBoolean ||
+            snapshot.path("deleted").asBoolean() != before.deleted ||
+            before.deleted
+        ) {
+            throw AdminException(AdminErrorCode.REVISION_RESTORE_UNSUPPORTED)
+        }
+
+        RELATION_FIELDS.getValue(type).forEach { relation ->
+            val selected = snapshot.get(relation)
+                ?: throw AdminException(AdminErrorCode.REVISION_RESTORE_UNSUPPORTED)
+            if (!sameValue(before.fields[relation], jsonValue(selected))) {
+                throw AdminException(AdminErrorCode.REVISION_RESTORE_UNSUPPORTED)
+            }
+        }
+
+        val restoredFields = definition.fields
+            .asSequence()
+            .filter { it.updateAllowed && !it.masked }
+            .mapNotNull { field ->
+                val node = snapshot.get(field.name) ?: return@mapNotNull null
+                val value = jsonValue(node)
+                if (value == REDACTED || value == MASKED) null else field.name to value
+            }
+            .filterNot { (name, value) -> sameValue(before.fields[name], value) }
+            .toMap()
+        if (restoredFields.isEmpty()) throw AdminException(AdminErrorCode.REVISION_RESTORE_UNSUPPORTED)
+
+        val updated = try {
+            update(type, id, expectedVersion, restoredFields)
+        } catch (error: AdminException) {
+            if (error.errorCode == AdminErrorCode.RESOURCE_VERSION_CONFLICT) throw error
+            throw AdminException(AdminErrorCode.REVISION_RESTORE_UNSUPPORTED)
+        }
+        if (updated != 1) throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
+        val after = find(type, id) ?: throw AdminException(AdminErrorCode.RESOURCE_NOT_FOUND)
+        return RevisionRestoreResult(before, after)
     }
 
     fun delete(type: AdminResourceType, id: Long, expectedVersion: Long): Int {
@@ -366,6 +482,55 @@ class AdminResourceRepository(
         return fields.mapValues { (name, value) -> definition.field(name).normalize(value) }
     }
 
+    /** 제품의 User.selectPhotographerType와 같은 불변식을 관리자 생성 경로에도 적용한다. */
+    private fun confirmUserType(userId: Long, requiredType: UserType): AdminUserTypeChange? {
+        val user = jdbcClient.sql(
+            "SELECT user_type, version FROM users WHERE id = :userId AND deleted_at IS NULL FOR UPDATE",
+        )
+            .param("userId", userId)
+            .query { rs, _ -> UserTypeRow(rs.getString("user_type"), rs.getLong("version")) }
+            .optional()
+            .orElseThrow { AdminException(AdminErrorCode.RESOURCE_NOT_FOUND) }
+        if (user.type != null && user.type != requiredType.name) {
+            throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
+        }
+        if (user.type != null) return null
+
+        val before = find(AdminResourceType.USER, userId)
+            ?: throw AdminException(AdminErrorCode.RESOURCE_NOT_FOUND)
+        val updated = jdbcClient.sql(
+            """
+            UPDATE users
+            SET user_type = :requiredType, version = version + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = :userId AND version = :expectedVersion
+              AND user_type IS NULL AND deleted_at IS NULL
+            """.trimIndent(),
+        )
+            .param("requiredType", requiredType.name)
+            .param("userId", userId)
+            .param("expectedVersion", user.version)
+            .update()
+        if (updated != 1) throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
+        val after = find(AdminResourceType.USER, userId)
+            ?: throw AdminException(AdminErrorCode.RESOURCE_NOT_FOUND)
+        return AdminUserTypeChange(before, after)
+    }
+
+    private fun jsonValue(node: JsonNode): Any? = when {
+        node.isNull -> null
+        node.isBoolean -> node.asBoolean()
+        node.isIntegralNumber -> node.asLong()
+        node.isFloatingPointNumber -> node.asDouble()
+        node.isTextual -> node.asText()
+        else -> throw AdminException(AdminErrorCode.REVISION_RESTORE_UNSUPPORTED)
+    }
+
+    private fun sameValue(left: Any?, right: Any?): Boolean = when {
+        left is Number && right is Number -> left.toLong() == right.toLong()
+        left is OffsetDateTime && right is String -> left.toString() == right
+        else -> left == right
+    }
+
     private fun summary(rs: ResultSet): AdminResourceSummaryResponse =
         AdminResourceSummaryResponse(
             type = AdminResourceType.valueOf(rs.getString("resource_type")),
@@ -384,7 +549,7 @@ class AdminResourceRepository(
             version = rs.getLong("version"),
             label = rs.getString("label"),
             deleted = rs.getBoolean("deleted"),
-            fields = definition.fields.associate { field -> field.name to field.read(rs) },
+            fields = definition.fields.associate { field -> field.name to field.read(rs, objectMapper) },
             createdAt = zonedDateTime(rs, "created_at"),
             updatedAt = zonedDateTime(rs, "updated_at"),
         )
@@ -445,12 +610,16 @@ class AdminResourceRepository(
         val allowedValues: Set<String> = emptySet(),
         val masked: Boolean = false,
     ) {
-        fun read(rs: ResultSet): Any? {
+        fun read(rs: ResultSet, objectMapper: ObjectMapper): Any? {
             val raw = rs.getObject(column)
             if (masked && raw != null) return MASKED
             return when (kind) {
                 FieldKind.REVOKED -> raw != null
                 FieldKind.DATE_TIME -> raw?.let { rs.getObject(column, OffsetDateTime::class.java) }
+                FieldKind.JSON -> raw?.let {
+                    objectMapper.readValue(rs.getString(column), Map::class.java).entries
+                        .associate { (key, value) -> key.toString() to value }
+                }
                 else -> raw
             }
         }
@@ -474,12 +643,14 @@ class AdminResourceRepository(
                     }
                     FieldKind.LONG -> number(value).toLong().also { if (minNumber != null && it < minNumber) invalid() }
                     FieldKind.INT -> number(value).toInt().also { if (minNumber != null && it < minNumber) invalid() }
+                    FieldKind.DECIMAL -> invalid()
                     FieldKind.BOOLEAN -> when (value) {
                         is Boolean -> value
                         is String -> value.toBooleanStrict()
                         else -> invalid()
                     }
                     FieldKind.DATE_TIME -> OffsetDateTime.parse(value.toString())
+                    FieldKind.JSON -> invalid()
                     FieldKind.REVOKED -> when (value) {
                         is Boolean -> if (value) OffsetDateTime.now() else null
                         is String -> if (value.toBooleanStrict()) OffsetDateTime.now() else null
@@ -496,12 +667,30 @@ class AdminResourceRepository(
         private fun invalid(): Nothing = throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
     }
 
-    private enum class FieldKind { STRING, EMAIL, GALLERY_URL, ENUM, LONG, INT, BOOLEAN, DATE_TIME, REVOKED }
+    private enum class FieldKind { STRING, EMAIL, GALLERY_URL, ENUM, LONG, INT, DECIMAL, BOOLEAN, DATE_TIME, JSON, REVOKED }
+
+    private data class UserTypeRow(val type: String?, val version: Long)
+
+    data class ResourceCreateResult(
+        val id: Long,
+        val userTypeChange: AdminUserTypeChange?,
+    )
 
     companion object {
         private const val MASKED = "[MASKED]"
+        private const val REDACTED = "[REDACTED]"
         private val EMAIL = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
         private val LEGACY_DIRECT_TRASH_TYPES = setOf(AdminResourceType.GALLERY, AdminResourceType.PHOTO)
+        private val RELATION_FIELDS = mapOf(
+            AdminResourceType.USER to emptySet(),
+            AdminResourceType.STUDIO to setOf("userId"),
+            AdminResourceType.GALLERY to setOf("studioId"),
+            AdminResourceType.PHOTO to setOf("galleryId"),
+            AdminResourceType.SELECTION to setOf("galleryId"),
+            AdminResourceType.COLLABORATION to setOf("galleryId"),
+            AdminResourceType.ALBUM to setOf("galleryId"),
+            AdminResourceType.RETOUCH_REQUEST to setOf("galleryId"),
+        )
 
         private val DEFINITIONS = listOf(
             ResourceDefinition(
@@ -515,7 +704,16 @@ class AdminResourceRepository(
                     FieldDefinition("nickname", "nickname", FieldKind.STRING, requiredOnCreate = true, maxLength = 50),
                     FieldDefinition("email", "email", FieldKind.EMAIL, nullable = true, maxLength = 255),
                     FieldDefinition("role", "role", FieldKind.ENUM, allowedValues = setOf("USER", "ADMIN")),
-                    FieldDefinition("userType", "user_type", FieldKind.ENUM, nullable = true, allowedValues = setOf("PHOTOGRAPHER", "CLIENT")),
+                    // 제품 도메인과 같이 종류 선택은 일회성이다. 관계 workflow가 null만 확정하며,
+                    // 일반 CRUD나 리비전 복원이 이미 정해진 종류를 되돌리거나 바꾸지 못한다.
+                    FieldDefinition(
+                        "userType",
+                        "user_type",
+                        FieldKind.ENUM,
+                        updateAllowed = false,
+                        nullable = true,
+                        allowedValues = setOf("PHOTOGRAPHER", "CLIENT"),
+                    ),
                     FieldDefinition("suspendedAt", "suspended_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                     FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                 ),
@@ -542,12 +740,35 @@ class AdminResourceRepository(
                 type = AdminResourceType.GALLERY,
                 table = "galleries",
                 labelExpression = "title",
-                searchExpression = "CONCAT_WS(' ', title, status, studio_id)",
+                searchExpression = "CONCAT_WS(' ', title, status, workflow_status, studio_id)",
                 fields = listOf(
                     FieldDefinition("studioId", "studio_id", FieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
                     FieldDefinition("title", "title", FieldKind.STRING, requiredOnCreate = true, maxLength = 100),
-                    FieldDefinition("status", "status", FieldKind.ENUM, allowedValues = setOf("DRAFT", "OPEN", "CLOSED")),
-                    FieldDefinition("selectionDeadline", "selection_deadline", FieldKind.DATE_TIME, nullable = true),
+                    // 기존 status는 외부 공개 상태다. 운영 workflowStatus와 의도적으로 분리한다.
+                    FieldDefinition(
+                        "status",
+                        "status",
+                        FieldKind.ENUM,
+                        createAllowed = false,
+                        updateAllowed = false,
+                        allowedValues = setOf("DRAFT", "OPEN", "CLOSED"),
+                    ),
+                    FieldDefinition(
+                        "workflowStatus",
+                        "workflow_status",
+                        FieldKind.ENUM,
+                        createAllowed = false,
+                        updateAllowed = false,
+                        allowedValues = setOf("DRAFT", "IN_PROGRESS", "COMPLETED", "ARCHIVED"),
+                    ),
+                    FieldDefinition(
+                        "selectionDeadline",
+                        "selection_deadline",
+                        FieldKind.DATE_TIME,
+                        createAllowed = false,
+                        updateAllowed = false,
+                        nullable = true,
+                    ),
                     FieldDefinition("maxSelectablePhotoCount", "max_selectable_photo_count", FieldKind.INT, nullable = true, minNumber = 1),
                     FieldDefinition("maxRetouchRoundCount", "max_retouch_round_count", FieldKind.INT, nullable = true, minNumber = 1),
                     FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
@@ -555,6 +776,7 @@ class AdminResourceRepository(
                 softDeleteColumn = "deleted_at",
                 defaults = mapOf(
                     "status" to "DRAFT",
+                    "workflowStatus" to "DRAFT",
                     "selectionDeadline" to null,
                     "maxSelectablePhotoCount" to null,
                     "maxRetouchRoundCount" to null,
@@ -573,6 +795,9 @@ class AdminResourceRepository(
                     FieldDefinition("displayOrder", "display_order", FieldKind.INT, minNumber = 0),
                     FieldDefinition("status", "status", FieldKind.ENUM, allowedValues = setOf("PENDING", "UPLOADED")),
                     FieldDefinition("previewKey", "preview_key", FieldKind.STRING, createAllowed = false, updateAllowed = false, nullable = true, masked = true),
+                    FieldDefinition("technicalQualityScore", "technical_quality_score", FieldKind.DECIMAL, createAllowed = false, updateAllowed = false, nullable = true),
+                    FieldDefinition("technicalQualitySignals", "technical_quality_signals", FieldKind.JSON, createAllowed = false, updateAllowed = false, nullable = true),
+                    FieldDefinition("technicalQualityAnalyzedAt", "quality_analyzed_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                     FieldDefinition("uploadUrlExpiresAt", "upload_url_expires_at", FieldKind.DATE_TIME, nullable = true),
                     FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                 ),
@@ -586,8 +811,22 @@ class AdminResourceRepository(
                 searchExpression = "CONCAT_WS(' ', gallery_id, status)",
                 fields = listOf(
                     FieldDefinition("galleryId", "gallery_id", FieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
-                    FieldDefinition("status", "status", FieldKind.ENUM, allowedValues = setOf("SELECTING", "SUBMITTED")),
-                    FieldDefinition("submittedAt", "submitted_at", FieldKind.DATE_TIME, nullable = true),
+                    FieldDefinition(
+                        "status",
+                        "status",
+                        FieldKind.ENUM,
+                        createAllowed = false,
+                        updateAllowed = false,
+                        allowedValues = setOf("SELECTING", "SUBMITTED"),
+                    ),
+                    FieldDefinition(
+                        "submittedAt",
+                        "submitted_at",
+                        FieldKind.DATE_TIME,
+                        createAllowed = false,
+                        updateAllowed = false,
+                        nullable = true,
+                    ),
                     FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                 ),
                 softDeleteColumn = "deleted_at",
@@ -602,7 +841,22 @@ class AdminResourceRepository(
                     FieldDefinition("galleryId", "gallery_id", FieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
                     FieldDefinition("name", "name", FieldKind.STRING, requiredOnCreate = true, maxLength = 100),
                     FieldDefinition("collabToken", "collab_token", FieldKind.STRING, createAllowed = false, updateAllowed = false, maxLength = 255, masked = true),
-                    FieldDefinition("revoked", "revoked_at", FieldKind.REVOKED, createAllowed = false, nullable = true),
+                    FieldDefinition(
+                        "revoked",
+                        "revoked_at",
+                        FieldKind.REVOKED,
+                        createAllowed = false,
+                        updateAllowed = false,
+                        nullable = true,
+                    ),
+                    FieldDefinition(
+                        "expiresAt",
+                        "expires_at",
+                        FieldKind.DATE_TIME,
+                        createAllowed = false,
+                        updateAllowed = false,
+                        nullable = true,
+                    ),
                     FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                 ),
                 softDeleteColumn = "deleted_at",
@@ -628,9 +882,29 @@ class AdminResourceRepository(
                 fields = listOf(
                     FieldDefinition("galleryId", "gallery_id", FieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
                     FieldDefinition("roundNo", "round_no", FieldKind.INT, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
-                    FieldDefinition("status", "status", FieldKind.ENUM, allowedValues = setOf("DRAFTING", "REQUESTED", "COMPLETED")),
-                    FieldDefinition("requestedAt", "requested_at", FieldKind.DATE_TIME, nullable = true),
-                    FieldDefinition("completedAt", "completed_at", FieldKind.DATE_TIME, nullable = true),
+                    FieldDefinition(
+                        "status",
+                        "status",
+                        FieldKind.ENUM,
+                        createAllowed = false,
+                        allowedValues = setOf("DRAFTING", "REQUESTED", "COMPLETED"),
+                    ),
+                    FieldDefinition(
+                        "requestedAt",
+                        "requested_at",
+                        FieldKind.DATE_TIME,
+                        createAllowed = false,
+                        updateAllowed = false,
+                        nullable = true,
+                    ),
+                    FieldDefinition(
+                        "completedAt",
+                        "completed_at",
+                        FieldKind.DATE_TIME,
+                        createAllowed = false,
+                        updateAllowed = false,
+                        nullable = true,
+                    ),
                     FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                 ),
                 softDeleteColumn = "deleted_at",
@@ -643,5 +917,11 @@ class AdminResourceRepository(
         val id: Long,
         val originalFileName: String,
         val storageKey: String,
+        val previewKey: String? = null,
+    )
+
+    data class RevisionRestoreResult(
+        val before: AdminResourceResponse,
+        val after: AdminResourceResponse,
     )
 }

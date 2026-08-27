@@ -18,13 +18,17 @@ import org.mockito.kotlin.whenever
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse
 import software.amazon.awssdk.services.s3.model.S3Error
+import software.amazon.awssdk.services.s3.model.S3Exception
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest
 import java.net.URI
 import java.time.Duration
 import java.time.Instant
+import java.util.function.Consumer
 
 class S3PhotoStorageTest {
 
@@ -61,6 +65,40 @@ class S3PhotoStorageTest {
             // then
             assertThat(result.url).isEqualTo("https://example.test/upload?X-Amz-Signature=test")
             assertThat(result.expiresAt).isEqualTo(expiresAt)
+        }
+    }
+
+    @Nested
+    @DisplayName("객체 존재 여부를 확인할 때")
+    inner class Exists {
+
+        @Test
+        fun `HEAD가 성공하면 업로드된 객체로 판단한다`() {
+            whenever(s3Client.headObject(any<Consumer<HeadObjectRequest.Builder>>()))
+                .thenReturn(HeadObjectResponse.builder().build())
+
+            assertThat(storage.exists("galleries/1/replacement.jpg")).isTrue()
+
+            verify(s3Client).headObject(any<Consumer<HeadObjectRequest.Builder>>())
+        }
+
+        @Test
+        fun `HEAD 404는 미완료 업로드로 판단한다`() {
+            whenever(s3Client.headObject(any<Consumer<HeadObjectRequest.Builder>>()))
+                .thenThrow(S3Exception.builder().statusCode(404).message("not found").build())
+
+            assertThat(storage.exists("galleries/1/missing.jpg")).isFalse()
+        }
+
+        @Test
+        fun `HEAD 권한 또는 서비스 실패를 객체 없음으로 숨기지 않는다`() {
+            whenever(s3Client.headObject(any<Consumer<HeadObjectRequest.Builder>>()))
+                .thenThrow(S3Exception.builder().statusCode(403).message("denied").build())
+
+            assertThatThrownBy { storage.exists("galleries/1/denied.jpg") }
+                .isInstanceOf(PhotoException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(PhotoErrorCode.STORAGE_METADATA_FAILED)
         }
     }
 

@@ -66,14 +66,27 @@ WHERE gallery_id = ? AND status <> 'PENDING' AND embedding IS NULL
 ```sql
 CREATE USER embedder;
 GRANT rds_iam TO embedder;
-GRANT SELECT, UPDATE ON photos TO embedder;
-GRANT SELECT ON galleries TO embedder;
+GRANT SELECT (id, deleted_at) ON galleries TO embedder;
+GRANT SELECT (id, gallery_id, storage_key, status, deleted_at, embedding, preview_key,
+    taken_at, camera_make, camera_model, exposure_time, f_number, iso, width, height,
+    byte_size, version) ON photos TO embedder;
+GRANT UPDATE (embedding, status, preview_key, taken_at, camera_make, camera_model,
+    exposure_time, f_number, iso, width, height, byte_size, technical_quality_score,
+    technical_quality_signals, quality_analyzed_at, version, updated_at) ON photos TO embedder;
+GRANT SELECT (id, attempt_count, job_type, target_type, target_id, revision_id, status, payload)
+    ON admin_processing_jobs TO embedder;
+GRANT UPDATE (status, failure_code, last_run_at, updated_at)
+    ON admin_processing_jobs TO embedder;
+GRANT SELECT (id, photo_id, storage_key) ON admin_photo_revisions TO embedder;
 ```
 
 `galleries` 읽기는 대상 선별(`fetch_targets`)이 휴지통에 들어간 갤러리를 거르는 데 쓴다.
 빠뜨리면 임베딩이 `InsufficientPrivilege: permission denied for table galleries`로
 전량 실패한다 (2026-08-14 운영에서 실제로 겪었다 — CREATE USER 때 GRANT를 같이 안 하면
 그 테이블을 읽는 코드가 배포되는 날 터진다).
+
+V42 migration은 기존 `embedder` role이 있으면 exact-photo job용 권한을 위와 같이 자동
+추가한다. migration 뒤에 role을 새로 만드는 환경만 이 SQL을 직접 실행하면 된다.
 
 ### 위 SQL을 실행할 관리자 접속
 

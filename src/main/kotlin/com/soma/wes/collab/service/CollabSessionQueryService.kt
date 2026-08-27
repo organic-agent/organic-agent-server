@@ -3,6 +3,8 @@ package com.soma.wes.collab.service
 import com.soma.wes.collab.domain.CollabSession
 import com.soma.wes.collab.dto.response.CollabPhotoPageResponse
 import com.soma.wes.collab.dto.response.CollabSessionResponse
+import com.soma.wes.collab.dto.response.CollabViewerCommentResponse
+import com.soma.wes.collab.repository.CollabPhotoCommentRepository
 import com.soma.wes.collab.repository.CollabPhotoRepository
 import com.soma.wes.collab.repository.CollabSessionRepository
 import com.soma.wes.collab.repository.requireByIdAndGalleryId
@@ -11,6 +13,7 @@ import com.soma.wes.collab.support.CollabLinkResolver
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.data.domain.PageRequest
 
 /**
  * 부부와 담당 작가가 협업 세션을 읽는다. 쓰는 쪽은 [CollabSessionService]다.
@@ -21,6 +24,7 @@ class CollabSessionQueryService(
     private val galleryAccessPolicy: GalleryAccessPolicy,
     private val collabSessionRepository: CollabSessionRepository,
     private val collabPhotoRepository: CollabPhotoRepository,
+    private val collabPhotoCommentRepository: CollabPhotoCommentRepository,
     private val photoViewAssembler: CollabPhotoViewAssembler,
     private val urlResolver: CollabLinkResolver,
 ) {
@@ -74,5 +78,35 @@ class CollabSessionQueryService(
         collabSessionRepository.requireByIdAndGalleryId(sessionId, galleryId)
 
         return photoViewAssembler.toPage(sessionId, page, size)
+    }
+
+    /**
+     * 로그인 사용자 결과 화면용 댓글. guest token/식별정보는 반환하지 않고 갤러리 viewer 정책을
+     * 먼저 통과한다. 관리자 대리보기도 이 경로만 재사용한다.
+     */
+    @Transactional(readOnly = true)
+    fun listViewerComments(
+        galleryId: Long,
+        userId: Long,
+        limit: Int = 200,
+    ): List<CollabViewerCommentResponse> {
+        galleryAccessPolicy.requireViewer(galleryId, userId)
+        val sessions = collabSessionRepository.findAllByGalleryIdOrderByCreatedAtDesc(galleryId)
+        val photos = sessions.flatMap { collabPhotoRepository.findAllByCollabSessionId(it.requiredId) }
+        if (photos.isEmpty()) return emptyList()
+        val photoById = photos.associateBy { it.requiredId }
+        return collabPhotoCommentRepository.findAllByCollabPhotoIdInOrderByIdDesc(
+            photoById.keys,
+            PageRequest.of(0, limit.coerceIn(1, 200)),
+        ).content.mapNotNull { comment ->
+            val photo = photoById[comment.collabPhotoId] ?: return@mapNotNull null
+            CollabViewerCommentResponse(
+                commentId = comment.requiredId,
+                sessionId = photo.collabSessionId,
+                photoId = photo.photoId,
+                content = comment.content,
+                createdAt = comment.createdAt,
+            )
+        }
     }
 }

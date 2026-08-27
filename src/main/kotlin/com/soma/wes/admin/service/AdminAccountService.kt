@@ -9,6 +9,7 @@ import com.soma.wes.admin.audit.domain.AdminAuditOutcome
 import com.soma.wes.admin.audit.domain.AdminAuditTargetType
 import com.soma.wes.admin.audit.service.AdminAuditService
 import com.soma.wes.admin.audit.support.AdminAccountAuditSnapshot
+import com.soma.wes.admin.audit.support.AdminAuditSanitizer
 import com.soma.wes.admin.dto.request.AdminReasonRequest
 import com.soma.wes.admin.dto.request.ChangeAdminStatusRequest
 import com.soma.wes.admin.dto.request.CreateAdminAccountRequest
@@ -32,6 +33,7 @@ class AdminAccountService(
     private val adminAccountRepository: AdminAccountRepository,
     private val adminAuthEventRepository: AdminAuthEventRepository,
     private val adminAuditService: AdminAuditService,
+    private val auditSanitizer: AdminAuditSanitizer,
     private val adminSessionService: AdminSessionService,
     private val passwordHasher: AdminPasswordHasher,
     private val secretGenerator: AdminSecretGenerator,
@@ -239,7 +241,7 @@ class AdminAccountService(
                 targetAdminId = account.requiredId,
                 usernameSnapshot = account.username,
                 sourceAddress = sourceAddress,
-                reason = reason,
+                reason = auditSanitizer.operatorReason(AdminAuditAction.valueOf(eventType.name), reason),
                 successful = true,
             ),
         )

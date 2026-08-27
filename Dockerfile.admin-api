@@ -1,0 +1,20 @@
+FROM eclipse-temurin:21-jre
+
+ENV TZ=Asia/Seoul
+
+ARG JAR_FILE=wes-admin-api/build/libs/wes-admin-api-0.0.1-SNAPSHOT.jar
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 wes \
+    && useradd --system --uid 10001 --gid wes --no-create-home --home-dir /nonexistent wes
+
+COPY --chown=wes:wes ${JAR_FILE} app.jar
+
+USER wes
+EXPOSE 8081
+HEALTHCHECK --interval=15s --timeout=3s --start-period=30s --retries=4 \
+  CMD curl --fail --silent --show-error http://127.0.0.1:8081/actuator/health >/dev/null || exit 1
+
+ENTRYPOINT ["java", "-jar", "/app.jar"]

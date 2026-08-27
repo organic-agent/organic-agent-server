@@ -9,6 +9,8 @@ import jakarta.persistence.Id
 import jakarta.persistence.Index
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
+import org.hibernate.annotations.JdbcTypeCode
+import org.hibernate.type.SqlTypes
 
 /**
  * 자식폴더에 담긴 사진 한 장.
@@ -41,6 +43,15 @@ class PhotoFolderItem(
 
     @Column(name = "photo_id", nullable = false, updatable = false)
     val photoId: Long,
+
+    /** 앨범 목업과 일반 폴더의 명시 순서. 새 사진은 현재 폴더의 마지막 순서 뒤에 붙는다. */
+    @Column(name = "sort_order", nullable = false)
+    val sortOrder: Int = 0,
+
+    /** 프레임 안에서 사용할 정규화 크롭 영역(x/y/width/height 등). */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "crop_json", columnDefinition = "jsonb")
+    val crop: Map<String, Any?>? = null,
 
 ) : BaseEntity() {
 

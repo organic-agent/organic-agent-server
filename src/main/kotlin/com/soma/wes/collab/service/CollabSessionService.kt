@@ -21,6 +21,7 @@ import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.repository.requireWithLockById
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.global.SecureTokenGenerator
+import com.soma.wes.trash.service.ProductChildTrashService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -37,6 +38,7 @@ class CollabSessionService(
     private val collabSessionRepository: CollabSessionRepository,
     private val collabPhotoRepository: CollabPhotoRepository,
     private val collabPhotoCommentRepository: CollabPhotoCommentRepository,
+    private val productChildTrashService: ProductChildTrashService,
     private val photoLoader: CollabPhotoLoader,
     private val photoViewAssembler: CollabPhotoViewAssembler,
     private val urlResolver: CollabLinkResolver,
@@ -170,6 +172,8 @@ class CollabSessionService(
         collabPhotoRepository.findByIdAndCollabSessionId(comment.collabPhotoId, sessionId)
             ?: throw CollabException(CollabErrorCode.COMMENT_NOT_FOUND)
 
-        collabPhotoCommentRepository.delete(comment)
+        if (!productChildTrashService.deleteUserComment(sessionId, commentId)) {
+            throw CollabException(CollabErrorCode.COMMENT_NOT_FOUND)
+        }
     }
 }

@@ -14,6 +14,8 @@ import com.soma.wes.admin.dto.request.ChangeAdminPasswordRequest
 import com.soma.wes.admin.exception.AdminAuthenticationException
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
+import com.soma.wes.admin.domain.AdminLoginUser
+import com.soma.wes.admin.impersonation.service.AdminImpersonationService
 import com.soma.wes.admin.repository.AdminAccountRepository
 import com.soma.wes.admin.repository.AdminAuthEventRepository
 import com.soma.wes.admin.support.AdminPasswordHasher
@@ -28,6 +30,7 @@ class AdminAuthService(
     private val adminAuthEventRepository: AdminAuthEventRepository,
     private val adminAuditService: AdminAuditService,
     private val adminSessionService: AdminSessionService,
+    private val adminImpersonationService: AdminImpersonationService,
     private val passwordHasher: AdminPasswordHasher,
     private val properties: AdminAuthProperties,
     private val clock: Clock,
@@ -121,16 +124,17 @@ class AdminAuthService(
 
     @Transactional
     fun logout(
-        adminId: Long,
+        actor: AdminLoginUser,
         rawSessionToken: String,
         sourceAddress: String?,
     ) {
-        val account = adminAccountRepository.findById(adminId).orElse(null)
+        val account = adminAccountRepository.findById(actor.id).orElse(null)
+        adminImpersonationService.endCurrentIfPresent(actor, sourceAddress)
         adminSessionService.revoke(rawSessionToken)
         recordEvent(
             eventType = AdminEventType.LOGOUT,
-            actorAdminId = adminId,
-            targetAdminId = adminId,
+            actorAdminId = actor.id,
+            targetAdminId = actor.id,
             username = account?.username,
             sourceAddress = sourceAddress,
             successful = true,

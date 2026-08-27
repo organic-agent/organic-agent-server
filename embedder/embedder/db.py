@@ -15,9 +15,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
-from typing import Iterable, Sequence
+from typing import TYPE_CHECKING, Iterable, Sequence
 
 import numpy as np
 import psycopg
@@ -26,6 +27,10 @@ from pgvector.psycopg import register_vector
 from embedder.config import Settings
 from embedder.metadata import PhotoMetadata
 
+if TYPE_CHECKING:
+    from embedder.admin_event import AdminPhotoEvent
+    from embedder.quality import TechnicalQuality
+
 log = logging.getLogger(__name__)
 
 
@@ -33,6 +38,10 @@ log = logging.getLogger(__name__)
 class PhotoRef:
     photo_id: int
     storage_key: str
+
+
+class AdminJobClaimLost(RuntimeError):
+    """이 이벤트가 가리키던 attempt/revision이 더는 현재 작업이 아닐 때."""
 
 
 def connect(settings: Settings) -> psycopg.Connection:
@@ -113,6 +122,10 @@ def store_embeddings(
     COALESCE인 이유: 이번 실행에서 파생본 업로드나 EXIF 추출만 실패하면 그 자리에 None이
     오는데, 그때 이전 실행이 남긴 멀쩡한 값을 지우면 안 된다. 값이 원래 없던 사진에는
     NULL이 NULL로 덮이는 것이라 달라지는 것이 없다.
+
+    대상 선별 뒤 운영자가 사진을 교체할 수 있으므로 id만으로 갱신하면 안 된다. 선별 당시
+    storage_key와 활성 사진·갤러리 조건을 함께 CAS해, 구 원본의 늦은 결과는 0행 갱신으로
+    무시한다.
     """
     rows: Sequence[tuple] = [
         (
@@ -120,6 +133,7 @@ def store_embeddings(
             preview_key,
             *_metadata_params(meta),
             ref.photo_id,
+            ref.storage_key,
         )
         for ref, vector, preview_key, meta in results
     ]
@@ -144,11 +158,204 @@ def store_embeddings(
                 status = 'EMBEDDED',
                 version = version + 1,
                 updated_at = now()
-            WHERE id = %s
+            WHERE id = %s AND storage_key = %s AND deleted_at IS NULL
+              AND EXISTS (
+                  SELECT 1 FROM galleries g
+                  WHERE g.id = photos.gallery_id AND g.deleted_at IS NULL
+              )
             """,
             rows,
         )
-    return len(rows)
+        # fetch 뒤 사진 교체·휴지통 이동이 먼저 끝났다면 id는 같아도 old storage_key의
+        # 결과를 새 사진에 쓰지 않는다. executemany rowcount는 실제 갱신 합계이므로 stale
+        # 행은 processed에서 빠지고, 다음 현재 작업이 새 storage_key를 처리한다.
+        return max(cursor.rowcount, 0)
+
+
+def verify_admin_photo_event(connection: psycopg.Connection, event: "AdminPhotoEvent") -> bool:
+    """job·attempt·현재 사진·보존 리비전이 이벤트의 exact target과 모두 같은지 확인한다."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT 1
+            FROM admin_processing_jobs j
+            JOIN photos p ON p.id = j.target_id
+            JOIN galleries g ON g.id = p.gallery_id
+            JOIN admin_photo_revisions r ON r.id = j.revision_id AND r.photo_id = p.id
+            WHERE j.id = %s AND j.attempt_count = %s AND j.job_type = %s
+              AND j.target_type = 'PHOTO' AND j.target_id = %s AND j.revision_id = %s
+              AND j.status IN ('DISPATCHING', 'DISPATCHED')
+              AND p.id = %s AND p.gallery_id = %s AND p.storage_key = %s
+              AND p.status <> 'PENDING' AND p.deleted_at IS NULL AND g.deleted_at IS NULL
+              AND r.storage_key = %s
+              AND j.payload ->> 'galleryId' = %s
+              AND j.payload ->> 'storageKey' = %s
+            """,
+            (
+                event.job_id,
+                event.attempt_count,
+                event.job_type,
+                event.photo_id,
+                event.revision_id,
+                event.photo_id,
+                event.gallery_id,
+                event.storage_key,
+                event.storage_key,
+                str(event.gallery_id),
+                event.storage_key,
+            ),
+        )
+        return cursor.fetchone() is not None
+
+
+def complete_admin_derivative(
+    connection: psycopg.Connection,
+    event: "AdminPhotoEvent",
+    preview_key: str,
+    meta: PhotoMetadata | None,
+) -> None:
+    params = (preview_key, *_metadata_params(meta), *_photo_identity_params(event))
+    _complete_admin_photo_job(
+        connection,
+        event,
+        """
+        UPDATE photos p
+        SET preview_key = %s,
+            taken_at = COALESCE(%s, taken_at),
+            camera_make = COALESCE(%s, camera_make),
+            camera_model = COALESCE(%s, camera_model),
+            exposure_time = COALESCE(%s, exposure_time),
+            f_number = COALESCE(%s, f_number),
+            iso = COALESCE(%s, iso),
+            width = COALESCE(%s, width),
+            height = COALESCE(%s, height),
+            byte_size = COALESCE(%s, byte_size),
+            version = version + 1,
+            updated_at = now()
+        WHERE p.id = %s AND p.gallery_id = %s AND p.storage_key = %s AND p.deleted_at IS NULL
+          AND EXISTS (
+              SELECT 1 FROM admin_photo_revisions r
+              WHERE r.id = %s AND r.photo_id = p.id AND r.storage_key = p.storage_key
+          )
+        """,
+        params,
+    )
+
+
+def complete_admin_embedding(
+    connection: psycopg.Connection,
+    event: "AdminPhotoEvent",
+    vector: np.ndarray,
+) -> None:
+    _complete_admin_photo_job(
+        connection,
+        event,
+        """
+        UPDATE photos p
+        SET embedding = %s, status = 'EMBEDDED', version = version + 1, updated_at = now()
+        WHERE p.id = %s AND p.gallery_id = %s AND p.storage_key = %s AND p.deleted_at IS NULL
+          AND EXISTS (
+              SELECT 1 FROM admin_photo_revisions r
+              WHERE r.id = %s AND r.photo_id = p.id AND r.storage_key = p.storage_key
+          )
+        """,
+        (vector, *_photo_identity_params(event)),
+    )
+
+
+def complete_admin_quality(
+    connection: psycopg.Connection,
+    event: "AdminPhotoEvent",
+    result: "TechnicalQuality",
+) -> None:
+    _complete_admin_photo_job(
+        connection,
+        event,
+        """
+        UPDATE photos p
+        SET technical_quality_score = %s,
+            technical_quality_signals = CAST(%s AS JSONB),
+            quality_analyzed_at = now(),
+            version = version + 1,
+            updated_at = now()
+        WHERE p.id = %s AND p.gallery_id = %s AND p.storage_key = %s AND p.deleted_at IS NULL
+          AND EXISTS (
+              SELECT 1 FROM admin_photo_revisions r
+              WHERE r.id = %s AND r.photo_id = p.id AND r.storage_key = p.storage_key
+          )
+        """,
+        (result.score, json.dumps(result.signals, separators=(",", ":")), *_photo_identity_params(event)),
+    )
+
+
+def fail_admin_photo_job(
+    connection: psycopg.Connection,
+    event: "AdminPhotoEvent",
+    failure_code: str,
+) -> int:
+    """현재 exact attempt만 명시 실패로 바꾼다. 취소·완료된 행은 덮어쓰지 않는다."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE admin_processing_jobs
+            SET status = 'FAILED', failure_code = %s, last_run_at = now(), updated_at = now()
+            WHERE id = %s AND attempt_count = %s AND job_type = %s
+              AND target_type = 'PHOTO' AND target_id = %s AND revision_id = %s
+              AND status IN ('DISPATCHING', 'DISPATCHED')
+              AND payload ->> 'galleryId' = %s
+              AND payload ->> 'storageKey' = %s
+            """,
+            (
+                failure_code[:80],
+                event.job_id,
+                event.attempt_count,
+                event.job_type,
+                event.photo_id,
+                event.revision_id,
+                str(event.gallery_id),
+                event.storage_key,
+            ),
+        )
+        return cursor.rowcount
+
+
+def _complete_admin_photo_job(
+    connection: psycopg.Connection,
+    event: "AdminPhotoEvent",
+    photo_sql: str,
+    photo_params: tuple,
+) -> None:
+    """사진 결과와 job SUCCEEDED를 호출자의 한 DB transaction 안에서 CAS한다."""
+    with connection.cursor() as cursor:
+        cursor.execute(photo_sql, photo_params)
+        if cursor.rowcount != 1:
+            raise AdminJobClaimLost("PHOTO_REVISION_MISMATCH")
+        cursor.execute(
+            """
+            UPDATE admin_processing_jobs
+            SET status = 'SUCCEEDED', failure_code = NULL, updated_at = now()
+            WHERE id = %s AND attempt_count = %s AND job_type = %s
+              AND target_type = 'PHOTO' AND target_id = %s AND revision_id = %s
+              AND status IN ('DISPATCHING', 'DISPATCHED')
+              AND payload ->> 'galleryId' = %s
+              AND payload ->> 'storageKey' = %s
+            """,
+            (
+                event.job_id,
+                event.attempt_count,
+                event.job_type,
+                event.photo_id,
+                event.revision_id,
+                str(event.gallery_id),
+                event.storage_key,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise AdminJobClaimLost("JOB_ATTEMPT_MISMATCH")
+
+
+def _photo_identity_params(event: "AdminPhotoEvent") -> tuple:
+    return (event.photo_id, event.gallery_id, event.storage_key, event.revision_id)
 
 
 def _metadata_params(meta: PhotoMetadata | None) -> tuple:

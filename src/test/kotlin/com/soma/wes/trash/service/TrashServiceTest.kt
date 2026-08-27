@@ -148,6 +148,36 @@ class TrashServiceTest @Autowired constructor(
         }
 
         @Test
+        fun `관리자 배치가 소유한 사진은 제품 휴지통에서 보거나 복원 즉시삭제할 수 없다`() {
+            val photoId = photoFixture.업로드된_사진(fixture.galleryId, count = 1).single()
+            moveToTrash(listOf(photoId))
+            lockWithAdminBatch("PHOTO", photoId, "ACTIVE")
+
+            assertThat(trashService.listPhotos(fixture.galleryId, fixture.photographer.id!!).photos).isEmpty()
+            assertThatThrownBy {
+                trashService.restorePhotos(
+                    fixture.galleryId,
+                    fixture.photographer.id!!,
+                    RestorePhotosRequest(listOf(photoId)),
+                )
+            }
+                .isInstanceOf(TrashException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(TrashErrorCode.PHOTO_NOT_IN_TRASH)
+            assertThatThrownBy {
+                trashService.erasePhotos(
+                    fixture.galleryId,
+                    fixture.photographer.id!!,
+                    EraseTrashedPhotosRequest(listOf(photoId)),
+                )
+            }
+                .isInstanceOf(TrashException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(TrashErrorCode.PHOTO_NOT_IN_TRASH)
+            assertThat(countPhotoRows(photoId)).isOne()
+        }
+
+        @Test
         fun `부부는 사진을 지우지도 되살리지도 못한다`() {
             // given
             val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
@@ -330,6 +360,55 @@ class TrashServiceTest @Autowired constructor(
                 .extracting("errorCode")
                 .isEqualTo(TrashErrorCode.GALLERY_NOT_IN_TRASH)
         }
+
+        @Test
+        fun `관리자 배치가 소유한 갤러리는 제품 휴지통에서 보거나 복원 즉시삭제할 수 없다`() {
+            galleryService.moveToTrash(fixture.galleryId, fixture.photographer.id!!)
+            lockWithAdminBatch("GALLERY", fixture.galleryId, "ACTIVE")
+
+            assertThat(trashService.listGalleries(fixture.photographer.id!!)).isEmpty()
+            assertThatThrownBy { trashService.restoreGallery(fixture.galleryId, fixture.photographer.id!!) }
+                .isInstanceOf(TrashException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(TrashErrorCode.GALLERY_NOT_IN_TRASH)
+            assertThatThrownBy { trashService.eraseGallery(fixture.galleryId, fixture.photographer.id!!) }
+                .isInstanceOf(TrashException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(TrashErrorCode.GALLERY_NOT_IN_TRASH)
+            assertThat(
+                jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM galleries WHERE id = ?",
+                    Long::class.java,
+                    fixture.galleryId,
+                ),
+            ).isOne()
+        }
+
+        @Test
+        fun `관리자 배치가 소유한 하위 사진이 있으면 갤러리도 제품 휴지통에서 숨긴다`() {
+            val photoId = uploadPhotos(count = 1).single()
+            val storageKey = photoRepository.findById(photoId).orElseThrow().storageKey
+            galleryService.moveToTrash(fixture.galleryId, fixture.photographer.id!!)
+            lockWithAdminBatch("PHOTO", photoId, "ACTIVE")
+
+            assertThat(trashService.listGalleries(fixture.photographer.id!!)).isEmpty()
+            assertThatThrownBy { trashService.restoreGallery(fixture.galleryId, fixture.photographer.id!!) }
+                .isInstanceOf(TrashException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(TrashErrorCode.GALLERY_NOT_IN_TRASH)
+            assertThatThrownBy { trashService.eraseGallery(fixture.galleryId, fixture.photographer.id!!) }
+                .isInstanceOf(TrashException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(TrashErrorCode.GALLERY_NOT_IN_TRASH)
+            assertThat(photoStorage.deletedKeys()).doesNotContain(storageKey)
+            assertThat(
+                jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM galleries WHERE id = ?",
+                    Long::class.java,
+                    fixture.galleryId,
+                ),
+            ).isOne()
+        }
     }
 
     // --- helpers ---
@@ -353,6 +432,37 @@ class TrashServiceTest @Autowired constructor(
 
     private fun moveToTrash(photoIds: List<Long>) {
         photoService.moveToTrash(fixture.galleryId, fixture.photographer.id!!, DeletePhotosRequest(photoIds))
+    }
+
+    private fun lockWithAdminBatch(resourceType: String, resourceId: Long, status: String) {
+        val batchId = checkNotNull(
+            jdbcTemplate.queryForObject(
+                """
+                INSERT INTO admin_trash_batches
+                    (root_type, root_id, root_label, reason, status, deleted_at, restore_until,
+                     created_at, updated_at)
+                VALUES (?, ?, ?, 'reasonCategory=TEST_OPERATION operatorReasonProvided=true', ?,
+                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 day',
+                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                RETURNING id
+                """.trimIndent(),
+                Long::class.java,
+                resourceType,
+                resourceId,
+                "$resourceType #$resourceId",
+                status,
+            ),
+        )
+        jdbcTemplate.update(
+            """
+            INSERT INTO admin_trash_entries
+                (batch_id, resource_type, resource_id, is_root, relation_path, created_at)
+            VALUES (?, ?, ?, TRUE, 'ROOT', CURRENT_TIMESTAMP)
+            """.trimIndent(),
+            batchId,
+            resourceType,
+            resourceId,
+        )
     }
 
     /** 발급 시각 기준 30분짜리 URL을 이미 지난 것으로 만든다. 즉시 삭제의 409 가드를 지나기 위해서다. */

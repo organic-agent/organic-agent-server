@@ -1,0 +1,39 @@
+// wes-admin 호스트의 관리자 API 로그를 기존 Loki로 전송한다. BackOffice 자체는 외부
+// 라우팅이 없는 internal network에만 있고, 이 sidecar는 runtime network에만 붙는다.
+
+logging {
+	level  = "info"
+	format = "logfmt"
+}
+
+local.file_match "admin_api" {
+	path_targets = [
+		{__path__ = "/var/log/spring/info/*.log", level = "info"},
+		{__path__ = "/var/log/spring/warn/*.log", level = "warn"},
+		{__path__ = "/var/log/spring/error/*.log", level = "error"},
+	]
+}
+
+loki.source.file "admin_api" {
+	targets    = local.file_match.admin_api.targets
+	forward_to = [loki.process.admin_api.receiver]
+}
+
+loki.process "admin_api" {
+	forward_to = [loki.write.loki.receiver]
+
+	stage.static_labels {
+		values = {
+			service = "wes-admin-api",
+			env     = "prod",
+		}
+	}
+}
+
+loki.write "loki" {
+	endpoint {
+		url        = sys.env("LOKI_URL")
+		batch_wait = "1s"
+		batch_size = "1MiB"
+	}
+}

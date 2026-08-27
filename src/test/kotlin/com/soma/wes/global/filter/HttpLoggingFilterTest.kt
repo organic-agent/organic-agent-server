@@ -81,12 +81,16 @@ class HttpLoggingFilterTest @Autowired constructor(
     @Test
     fun `민감한 쿼리 파라미터 값은 가려지고 나머지는 그대로 남는다`() {
         // when
-        send("/api/v1/users/me?token=secret&page=1&AccessToken=abc", accessToken = null)
+        send(
+            "/api/v1/users/me?token=secret&page=1&AccessToken=abc&query=private%40example.com",
+            accessToken = null,
+        )
 
         // then
         val request = appender.list.single { it.formattedMessage.startsWith("[REQUEST]") }
         assertThat(request.formattedMessage)
-            .isEqualTo("[REQUEST] GET /api/v1/users/me?token=****&page=1&AccessToken=****")
+            .isEqualTo("[REQUEST] GET /api/v1/users/me?token=****&page=1&AccessToken=****&query=****")
+        assertThat(request.formattedMessage).doesNotContain("private@example.com")
     }
 
     @Test

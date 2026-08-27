@@ -13,6 +13,11 @@ interface CollabPhotoCommentRepository : JpaRepository<CollabPhotoComment, Long>
     /** 최근에 쓴 것이 위로. 사진 아래 붙는 목록이라 새 말이 먼저 보여야 한다. */
     fun findAllByCollabPhotoIdOrderByIdDesc(collabPhotoId: Long, pageable: Pageable): Page<CollabPhotoComment>
 
+    fun findAllByCollabPhotoIdInOrderByIdDesc(
+        collabPhotoIds: Collection<Long>,
+        pageable: Pageable,
+    ): Page<CollabPhotoComment>
+
     /**
      * 사진마다 댓글이 몇 개인지. 목록 화면이 사진 수만큼 세지 않도록 한 번에 읽는다.
      *

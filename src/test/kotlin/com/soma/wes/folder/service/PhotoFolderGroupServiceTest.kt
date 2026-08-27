@@ -23,6 +23,11 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.jdbc.core.simple.JdbcClient
+import org.springframework.transaction.support.TransactionTemplate
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * 부모폴더(클러스터 고정)의 생성·목록·이름 변경·삭제를 서비스 경계에서 확인한다.
@@ -39,6 +44,8 @@ class PhotoFolderGroupServiceTest @Autowired constructor(
     private val photoFolderGroupRepository: PhotoFolderGroupRepository,
     private val photoFolderRepository: PhotoFolderRepository,
     private val photoFolderItemRepository: PhotoFolderItemRepository,
+    private val jdbcClient: JdbcClient,
+    private val transactionTemplate: TransactionTemplate,
 ) {
 
     private lateinit var fixture: OpenGallery
@@ -215,6 +222,34 @@ class PhotoFolderGroupServiceTest @Autowired constructor(
     }
 
     @Nested
+    @DisplayName("관리자 목업 재계산과 경쟁할 때")
+    inner class Concurrency {
+
+        @Test
+        fun `부모 이름 변경과 삭제는 부모 행 잠금 뒤 실행된다`() {
+            val renameGroup = createGroup(fixture, "기존 부모")
+            assertWaitsForGroupLock(renameGroup) {
+                photoFolderGroupService.rename(
+                    fixture.galleryId,
+                    renameGroup,
+                    fixture.member.id!!,
+                    RenameFolderGroupRequest("바뀐 부모"),
+                )
+            }
+
+            val deleteGroup = createGroup(fixture, "삭제할 부모")
+            assertWaitsForGroupLock(deleteGroup) {
+                photoFolderGroupService.delete(fixture.galleryId, deleteGroup, fixture.member.id!!)
+            }
+
+            assertThat(photoFolderGroupService.get(
+                fixture.galleryId, renameGroup, fixture.member.id!!,
+            ).name).isEqualTo("바뀐 부모")
+            assertThat(photoFolderGroupRepository.findById(deleteGroup)).isEmpty
+        }
+    }
+
+    @Nested
     @DisplayName("권한과 경계를 확인할 때")
     inner class Authorization {
 
@@ -319,5 +354,54 @@ class PhotoFolderGroupServiceTest @Autowired constructor(
             ),
         )
         return result.groupId to result.folders.first().folderId
+    }
+
+    private fun assertWaitsForGroupLock(groupId: Long, action: () -> Unit) {
+        val lockAcquired = CountDownLatch(1)
+        val allowCommit = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            val lockFuture = pool.submit<Unit> {
+                transactionTemplate.executeWithoutResult {
+                    jdbcClient.sql("SELECT id FROM photo_folder_groups WHERE id=:id FOR UPDATE")
+                        .param("id", groupId).query { rs, _ -> rs.getLong("id") }.single()
+                    lockAcquired.countDown()
+                    check(allowCommit.await(30, TimeUnit.SECONDS))
+                }
+            }
+            assertThat(lockAcquired.await(10, TimeUnit.SECONDS)).isTrue()
+
+            val actionFuture = pool.submit<Unit> { action() }
+            assertThat(waitForGroupRowLock()).isTrue()
+
+            allowCommit.countDown()
+            lockFuture.get(10, TimeUnit.SECONDS)
+            actionFuture.get(10, TimeUnit.SECONDS)
+        } finally {
+            allowCommit.countDown()
+            pool.shutdownNow()
+            pool.awaitTermination(10, TimeUnit.SECONDS)
+        }
+    }
+
+    private fun waitForGroupRowLock(): Boolean {
+        repeat(400) {
+            val waiting = jdbcClient.sql(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM pg_stat_activity
+                    WHERE datname=current_database()
+                      AND pid<>pg_backend_pid()
+                      AND state='active'
+                      AND wait_event_type='Lock'
+                      AND query ILIKE '%photo_folder_groups%'
+                      AND query ILIKE '%gallery_id%'
+                )
+                """.trimIndent(),
+            ).query { rs, _ -> rs.getBoolean(1) }.single()
+            if (waiting) return true
+            Thread.sleep(25)
+        }
+        return false
     }
 }

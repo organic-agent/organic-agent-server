@@ -1,21 +1,13 @@
 package com.soma.wes.security.config
 
-import com.soma.wes.admin.config.AdminAuthProperties
-import com.soma.wes.admin.service.AdminSessionService
-import com.soma.wes.admin.impersonation.service.AdminImpersonationService
 import com.soma.wes.auth.service.AuthTokenProvider
 import com.soma.wes.security.PublicPaths
 import com.soma.wes.security.exception.CustomAccessDeniedHandler
 import com.soma.wes.security.exception.CustomAuthenticationEntryPoint
-import com.soma.wes.security.filter.AdminMutationHeaderFilter
-import com.soma.wes.security.filter.AdminImpersonationReadOnlyFilter
-import com.soma.wes.security.filter.AdminSessionAuthFilter
 import com.soma.wes.security.filter.JwtAuthFilter
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
-import org.springframework.boot.context.properties.EnableConfigurationProperties
-import org.springframework.core.annotation.Order
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
 import org.springframework.security.config.annotation.web.invoke
@@ -28,11 +20,8 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 
 @Configuration
 @EnableWebSecurity
-@EnableConfigurationProperties(AdminAuthProperties::class)
 class SecurityConfig(
     private val authTokenProvider: AuthTokenProvider,
-    private val adminSessionService: AdminSessionService,
-    private val adminImpersonationService: AdminImpersonationService,
     private val authenticationEntryPoint: CustomAuthenticationEntryPoint,
     private val accessDeniedHandler: CustomAccessDeniedHandler,
 
@@ -41,44 +30,6 @@ class SecurityConfig(
 ) {
 
     @Bean
-    @Order(1)
-    fun adminFilterChain(http: HttpSecurity): SecurityFilterChain {
-        http {
-            securityMatcher("/internal/admin/**")
-            cors { disable() }
-            csrf { disable() }
-            httpBasic { disable() }
-            formLogin { disable() }
-            sessionManagement { sessionCreationPolicy = SessionCreationPolicy.STATELESS }
-
-            authorizeHttpRequests {
-                authorize("/internal/admin/v1/auth/login", permitAll)
-                authorize("/internal/admin/v1/auth/session", authenticated)
-                authorize("/internal/admin/v1/auth/logout", authenticated)
-                authorize("/internal/admin/v1/auth/change-password", authenticated)
-                authorize(anyRequest, hasRole("SUPER_ADMIN"))
-            }
-
-            exceptionHandling {
-                authenticationEntryPoint = this@SecurityConfig.authenticationEntryPoint
-                accessDeniedHandler = this@SecurityConfig.accessDeniedHandler
-            }
-
-            addFilterBefore<UsernamePasswordAuthenticationFilter>(
-                AdminMutationHeaderFilter(accessDeniedHandler),
-            )
-            addFilterAfter<AdminMutationHeaderFilter>(
-                AdminSessionAuthFilter(adminSessionService, authenticationEntryPoint),
-            )
-            addFilterAfter<AdminSessionAuthFilter>(
-                AdminImpersonationReadOnlyFilter(adminImpersonationService, accessDeniedHandler),
-            )
-        }
-        return http.build()
-    }
-
-    @Bean
-    @Order(2)
     fun filterChain(http: HttpSecurity): SecurityFilterChain {
         http {
             cors { configurationSource = corsConfigurationSource() }

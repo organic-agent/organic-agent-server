@@ -1,5 +1,6 @@
 package com.soma.wes.admin.domain
 
+import com.soma.wes.admin.audit.domain.AdminAuditReasonCategory
 import com.soma.wes.global.BaseEntity
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
@@ -45,6 +46,7 @@ class AdminAuthEvent private constructor(
     companion object {
         const val REASON_MAX_LENGTH = 500
 
+        @Suppress("UNUSED_PARAMETER")
         fun of(
             eventType: AdminEventType,
             actorAdminId: Long?,
@@ -58,9 +60,12 @@ class AdminAuthEvent private constructor(
                 eventType = eventType,
                 actorAdminId = actorAdminId,
                 targetAdminId = targetAdminId,
-                usernameSnapshot = usernameSnapshot,
-                sourceAddress = sourceAddress?.take(64),
-                reason = reason?.trim()?.takeIf { it.isNotBlank() },
+                // 로그인 이름은 계정 ID와 중복되는 장기 개인정보이므로 원문을 복제하지 않는다.
+                usernameSnapshot = (targetAdminId ?: actorAdminId)?.let { "ADMIN #$it" },
+                // 원격 IP는 불변 감사 DB에 영구 보존하지 않는다.
+                sourceAddress = null,
+                reason = "reasonCategory=${AdminAuditReasonCategory.fromOperatorText(reason).name} " +
+                    "operatorReasonProvided=${!reason.isNullOrBlank()}",
                 successful = successful,
             )
     }

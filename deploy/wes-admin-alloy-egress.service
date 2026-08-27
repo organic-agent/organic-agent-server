@@ -1,0 +1,16 @@
+[Unit]
+Description=Install WES admin Alloy Loki-only egress policy and readiness gate before Docker starts
+Wants=network-online.target
+After=network-online.target
+Before=docker.service
+
+[Service]
+Type=oneshot
+Environment=ALLOY_EGRESS_SUBNET=172.30.2.0/24
+Environment=AWS_REGION=ap-northeast-2
+Environment=LOKI_PARAMETER=/wes/admin-api/prod/app.logging.loki-url
+ExecStart=/usr/local/sbin/configure-admin-alloy-egress
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

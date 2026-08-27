@@ -6,6 +6,7 @@ import java.time.ZonedDateTime
 
 data class AdminAccountResponse(
     val id: Long,
+    val version: Long,
     val username: String,
     val displayName: String,
     val status: AdminAccountStatus,
@@ -20,6 +21,7 @@ data class AdminAccountResponse(
         fun from(account: AdminAccount): AdminAccountResponse =
             AdminAccountResponse(
                 id = account.requiredId,
+                version = account.version,
                 username = account.username,
                 displayName = account.displayName,
                 status = account.status,

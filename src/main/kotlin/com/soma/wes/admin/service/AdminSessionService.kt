@@ -73,6 +73,7 @@ class AdminSessionService(
             username = account.username,
             displayName = account.displayName,
             mustChangePassword = account.mustChangePassword,
+            adminSessionId = session.sessionId,
             authorities = authorities,
         )
         return UsernamePasswordAuthenticationToken(principal, "", authorities)

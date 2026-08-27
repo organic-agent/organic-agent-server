@@ -38,6 +38,7 @@ metadata_module.PhotoMetadata = type("PhotoMetadata", (), {})
 sys.modules.setdefault("embedder.metadata", metadata_module)
 
 from embedder import db
+from embedder.admin_event import AdminPhotoEvent
 
 
 class _Cursor:
@@ -52,18 +53,31 @@ class _Cursor:
 
     def execute(self, sql: str, params: tuple) -> None:
         self.connection.executed.append((" ".join(sql.split()), params))
+        self.rowcount = self.connection.next_rowcount()
+
+    def executemany(self, sql: str, params) -> None:
+        rows = tuple(params)
+        self.connection.executed.append((" ".join(sql.split()), rows))
+        self.rowcount = self.connection.next_rowcount()
 
     def fetchall(self):
         return self.connection.rows
 
+    def fetchone(self):
+        return self.connection.rows[0] if self.connection.rows else None
+
 
 class _Connection:
-    def __init__(self, rows: list[tuple]):
+    def __init__(self, rows: list[tuple], rowcounts: list[int] | None = None):
         self.rows = rows
         self.executed: list[tuple[str, tuple]] = []
+        self.rowcounts = iter(rowcounts or [])
 
     def cursor(self) -> _Cursor:
         return _Cursor(self)
+
+    def next_rowcount(self) -> int:
+        return next(self.rowcounts, len(self.rows))
 
 
 class FetchTargetsTest(unittest.TestCase):
@@ -106,6 +120,68 @@ class FetchTargetsTest(unittest.TestCase):
 
         sql, _ = connection.executed[0]
         self.assertNotIn("embedding IS NULL", sql)
+
+    def test_store_cas_uses_fetched_storage_key_and_active_resource_boundaries(self) -> None:
+        connection = _Connection(rows=[], rowcounts=[1])
+        ref = db.PhotoRef(17, "galleries/7/original-before-replacement.jpg")
+
+        stored = db.store_embeddings(connection, [(ref, [0.1, 0.2], None, None)])
+
+        self.assertEqual(1, stored)
+        sql, rows = connection.executed[0]
+        self.assertIn("WHERE id = %s AND storage_key = %s AND deleted_at IS NULL", sql)
+        self.assertIn("g.id = photos.gallery_id AND g.deleted_at IS NULL", sql)
+        self.assertEqual(17, rows[0][-2])
+        self.assertEqual("galleries/7/original-before-replacement.jpg", rows[0][-1])
+
+    def test_store_ignores_stale_photo_replaced_after_fetch(self) -> None:
+        connection = _Connection(rows=[], rowcounts=[0])
+        old_ref = db.PhotoRef(17, "galleries/7/old.jpg")
+
+        stored = db.store_embeddings(connection, [(old_ref, [0.1, 0.2], "previews/old.jpg", None)])
+
+        self.assertEqual(0, stored)
+
+
+class AdminPhotoJobDatabaseContractTest(unittest.TestCase):
+    def event(self) -> AdminPhotoEvent:
+        return AdminPhotoEvent(11, 2, "QUALITY_ANALYSIS", 31, 41, "galleries/41/photo.jpg", 51)
+
+    def test_verification_cas_includes_job_attempt_revision_and_storage_key(self) -> None:
+        connection = _Connection(rows=[(1,)])
+
+        self.assertTrue(db.verify_admin_photo_event(connection, self.event()))
+
+        sql, params = connection.executed[0]
+        self.assertIn("j.attempt_count = %s", sql)
+        self.assertIn("j.revision_id = %s", sql)
+        self.assertIn("p.storage_key = %s", sql)
+        self.assertIn("r.storage_key = %s", sql)
+        self.assertEqual(11, params[0])
+        self.assertEqual(2, params[1])
+
+    def test_photo_result_and_job_success_are_both_required_before_commit(self) -> None:
+        connection = _Connection(rows=[], rowcounts=[1, 0])
+        result = type("Quality", (), {"score": 82.5, "signals": {"algorithmVersion": "technical-v1"}})()
+
+        with self.assertRaises(db.AdminJobClaimLost):
+            db.complete_admin_quality(connection, self.event(), result)
+
+        self.assertEqual(2, len(connection.executed))
+        self.assertIn("technical_quality_score", connection.executed[0][0])
+        self.assertIn("status = 'SUCCEEDED'", connection.executed[1][0])
+
+    def test_explicit_failure_only_updates_matching_exact_attempt(self) -> None:
+        connection = _Connection(rows=[], rowcounts=[1])
+
+        updated = db.fail_admin_photo_job(connection, self.event(), "NO_SUCH_KEY")
+
+        self.assertEqual(1, updated)
+        sql, params = connection.executed[0]
+        self.assertIn("attempt_count = %s", sql)
+        self.assertIn("revision_id = %s", sql)
+        self.assertIn("status IN ('DISPATCHING', 'DISPATCHED')", sql)
+        self.assertEqual("NO_SUCH_KEY", params[0])
 
 
 if __name__ == "__main__":

@@ -7,7 +7,6 @@ spring:
   # 어긋나는지 확인만 한다. pgvector 확장은 테이블 생성보다 CREATE EXTENSION이 먼저
   # 와야 해서 ddl-auto로는 만들 수 없다 — 그것이 이 전환의 직접적인 이유다.
   flyway:
-    enabled: true
     # 운영 DB에는 ddl-auto가 만들어 둔 테이블이 이미 있다. 이 옵션이 없으면 Flyway가
     # "비어 있지 않은 스키마"를 보고 기동을 거부한다.
     baseline-on-migrate: true

@@ -18,7 +18,7 @@ class AdminObservabilityLinkService(
         if (!CORRELATION_ID.matches(normalized)) {
             throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         }
-        val lokiQuery = "{service=\"wes\",env=\"prod\"} | logfmt | traceId=\"$normalized\""
+        val lokiQuery = "{service=\"wes-admin-api\",env=\"prod\"} | logfmt | traceId=\"$normalized\""
         val encodedQuery = encode(lokiQuery)
         val grafanaState = """{"datasource":"Loki","queries":[{"refId":"A","expr":"$lokiQuery"}]}"""
 
@@ -27,8 +27,9 @@ class AdminObservabilityLinkService(
             grafanaUrl = properties.grafanaBaseUrl.takeIf { properties.grafanaConfigured }
                 ?.trimEnd('/')
                 ?.let { "$it/explore?orgId=1&left=${encode(grafanaState)}" },
+            // 이 base URL은 private Loki 주소가 아니라 Grafana의 server-side datasource
+            // proxy(uid=loki)다. 운영자 브라우저에는 기존 Grafana 인증과 HTTPS가 적용된다.
             lokiUrl = properties.lokiBaseUrl.takeIf { properties.lokiConfigured }
-                ?.removeSuffix("/loki/api/v1/push")
                 ?.trimEnd('/')
                 ?.let { "$it/loki/api/v1/query_range?query=$encodedQuery" },
         )

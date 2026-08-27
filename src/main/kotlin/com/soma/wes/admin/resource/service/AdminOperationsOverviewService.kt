@@ -28,6 +28,8 @@ class AdminOperationsOverviewService(
             targetId = null,
             action = null,
             outcome = null,
+            correlationId = null,
+            impersonationSessionId = null,
             from = null,
             to = null,
             page = 0,

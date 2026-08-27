@@ -33,7 +33,7 @@ import java.time.Clock
  * 그대로 지나지만, 갤러리 휴지통은 대상이 숨어 있어 그 관문을 지날 수 없다. 대신 쿼리의
  * `studio_id` 조건이 인가를 겸한다 — 내 스튜디오의 휴지통 행이 아니면 없는 것과 같다.
  *
- * 물리 삭제 메서드에 `@Transactional`이 없는 것은 의도다([TrashEraser] 참고).
+ * 물리 삭제의 S3·DB 경계와 관리자 배치 경쟁 제어는 [TrashEraser]가 담당한다.
  */
 @Service
 class TrashService(
@@ -79,12 +79,14 @@ class TrashService(
      */
     fun eraseGallery(galleryId: Long, userId: Long) {
         val studioId = requireStudioId(userId)
-        if (!trashRepository.isTrashedGalleryOf(galleryId, studioId)) {
+        if (!trashRepository.isTrashedGalleryOfForPurge(galleryId, studioId)) {
             throw TrashException(TrashErrorCode.GALLERY_NOT_IN_TRASH)
         }
         requireNoActiveUploadUrls(trashRepository.findAllPhotoTargets(galleryId))
 
-        trashEraser.eraseGallery(galleryId)
+        if (!trashEraser.eraseGallery(galleryId)) {
+            throw TrashException(TrashErrorCode.GALLERY_NOT_IN_TRASH)
+        }
     }
 
     /** 갤러리 휴지통 연산의 인가 재료. 스튜디오가 없다는 것도 "내 휴지통에 없다"로 답한다. */
@@ -143,7 +145,9 @@ class TrashService(
         }
         requireNoActiveUploadUrls(targets)
 
-        trashEraser.erasePhotos(targets)
+        if (!trashEraser.erasePhotos(targets)) {
+            throw TrashException(TrashErrorCode.PHOTO_NOT_IN_TRASH)
+        }
     }
 
     /** [restorePhotos]와 [erasePhotos]가 쓴다. 업로드·조회와 같은 배치 상한을 지킨다. */

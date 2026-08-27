@@ -6,6 +6,7 @@ import tools.jackson.databind.JsonNode
 import java.time.ZonedDateTime
 
 data class AdminAccountAuditSnapshot(
+    val version: Long,
     val username: String,
     val displayName: String,
     val status: AdminAccountStatus,
@@ -14,6 +15,7 @@ data class AdminAccountAuditSnapshot(
 ) {
 
     fun toMap(): Map<String, Any?> = linkedMapOf(
+        "version" to version,
         "username" to username,
         "displayName" to displayName,
         "status" to status.name,
@@ -24,6 +26,7 @@ data class AdminAccountAuditSnapshot(
     companion object {
         fun from(account: AdminAccount): AdminAccountAuditSnapshot =
             AdminAccountAuditSnapshot(
+                version = account.version,
                 username = account.username,
                 displayName = account.displayName,
                 status = account.status,
@@ -33,6 +36,7 @@ data class AdminAccountAuditSnapshot(
 
         fun from(node: JsonNode): AdminAccountAuditSnapshot =
             AdminAccountAuditSnapshot(
+                version = node.get("version").longValue(),
                 username = node.get("username").stringValue(),
                 displayName = node.get("displayName").stringValue(),
                 status = AdminAccountStatus.valueOf(node.get("status").stringValue()),

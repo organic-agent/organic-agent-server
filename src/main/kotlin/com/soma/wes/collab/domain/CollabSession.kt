@@ -43,6 +43,13 @@ class CollabSession(
     @Column(name = "revoked_at")
     var revokedAt: ZonedDateTime? = null,
 
+    /**
+     * 운영자가 재발급한 제한 시간 링크의 만료 시각. `null`은 부부가 직접 만든 일반 링크처럼
+     * 만료 기한이 없다는 뜻이다.
+     */
+    @Column(name = "expires_at")
+    var expiresAt: ZonedDateTime? = null,
+
 ) : BaseEntity() {
 
     @Column(name = "deleted_at")
@@ -76,6 +83,8 @@ class CollabSession(
     val isRevoked: Boolean
         get() = revokedAt != null
 
+    fun isExpiredAt(now: ZonedDateTime): Boolean = expiresAt?.let { !it.isAfter(now) } ?: false
+
     fun revoke(at: ZonedDateTime) {
         if (isRevoked) {
             return
@@ -89,6 +98,8 @@ class CollabSession(
     fun republish(collabToken: String) {
         this.collabToken = collabToken
         revokedAt = null
+        // 부부가 직접 다시 발행한 링크는 일반 제품 링크다. 이전 운영자 발급 TTL을 이어받지 않는다.
+        expiresAt = null
     }
 
     fun rename(name: String) {

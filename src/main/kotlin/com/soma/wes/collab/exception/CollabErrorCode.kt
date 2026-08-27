@@ -110,4 +110,7 @@ enum class CollabErrorCode(
      * 구분해야 하객에게 "새 링크를 받으세요"를 안내할 수 있다.
      */
     SESSION_REVOKED(HttpStatus.GONE, "COLLAB_410_1", "더 이상 사용할 수 없는 협업 링크입니다."),
+
+    /** 운영자가 제한 시간으로 재발급한 링크의 사용 기한이 끝난 경우. */
+    SESSION_EXPIRED(HttpStatus.GONE, "COLLAB_410_2", "사용 기한이 만료된 협업 링크입니다."),
 }

@@ -61,7 +61,7 @@ interface CollabGuestControllerDocs {
         ),
         ApiResponse(
             responseCode = "410",
-            description = "부부가 거둬들인 링크. 404와 나눠 두어야 \"새 링크를 받으세요\"를 안내할 수 있다",
+            description = "폐기되었거나 운영 재발급 기한이 만료된 링크. 404와 나눠 새 링크를 안내한다",
             content = [
                 Content(
                     mediaType = MediaType.APPLICATION_JSON_VALUE,
@@ -70,6 +70,10 @@ interface CollabGuestControllerDocs {
                         ExampleObject(
                             name = "폐기됨",
                             value = """{"code": "COLLAB_410_1", "message": "더 이상 사용할 수 없는 협업 링크입니다."}""",
+                        ),
+                        ExampleObject(
+                            name = "만료됨",
+                            value = """{"code": "COLLAB_410_2", "message": "사용 기한이 만료된 협업 링크입니다."}""",
                         ),
                     ],
                 ),

@@ -293,6 +293,8 @@ class RecordingPhotoStorage : PhotoStorage {
 
     override fun presignOriginal(key: String): String = "https://storage.test/original/$key"
 
+    override fun exists(key: String): Boolean = true
+
     override fun deleteAll(keys: Collection<String>) {
         deleted += keys
     }

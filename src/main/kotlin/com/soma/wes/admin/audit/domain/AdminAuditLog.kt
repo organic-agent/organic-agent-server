@@ -9,6 +9,7 @@ import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
+import java.util.UUID
 
 @Entity
 @Table(name = "admin_audit_logs")
@@ -50,6 +51,12 @@ class AdminAuditLog private constructor(
     @Column(name = "revision_number", updatable = false)
     val revisionNumber: Long?,
 
+    @Column(name = "correlation_id", updatable = false, length = 16)
+    val correlationId: String?,
+
+    @Column(name = "impersonation_session_id", updatable = false)
+    val impersonationSessionId: UUID?,
+
 ) : BaseEntity() {
 
     @Id
@@ -77,6 +84,8 @@ class AdminAuditLog private constructor(
             reason: String?,
             changedFields: Collection<String> = emptyList(),
             revisionNumber: Long? = null,
+            correlationId: String? = null,
+            impersonationSessionId: UUID? = null,
         ): AdminAuditLog =
             AdminAuditLog(
                 action = action,
@@ -90,6 +99,8 @@ class AdminAuditLog private constructor(
                 reason = reason?.trim()?.takeIf(String::isNotBlank)?.take(REASON_MAX_LENGTH),
                 changedFieldsValue = changedFields.distinct().sorted().joinToString(",").takeIf(String::isNotBlank),
                 revisionNumber = revisionNumber,
+                correlationId = correlationId,
+                impersonationSessionId = impersonationSessionId,
             )
     }
 }
