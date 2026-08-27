@@ -218,10 +218,31 @@ mv -f "$WORK_DIR/.config.alloy.next" "$WORK_DIR/config.alloy"
 cd "$WORK_DIR"
 handoff_public_service "$TARGET_SERVICE"
 # The legacy root container created level directories and current log files as root.
-# Capture rollback first, stop that writer, and never dereference a path changed into a symlink.
-mkdir -p "$WORK_DIR/logs/info" "$WORK_DIR/logs/warn" "$WORK_DIR/logs/error"
-find "$WORK_DIR/logs" -xdev \( -type d -o -type f \) \
-  -exec chown -h 10001:10001 {} +
+# Migrate them exactly once, after the legacy writer is gone. Later wes-api releases
+# already own their log tree and must not be traversed while that writer is running.
+if [ "$PREVIOUS_RELEASE_AVAILABLE" = "true" ] && [ "$PREVIOUS_SERVICE" = "wes-server" ]; then
+  if docker inspect wes-app >/dev/null 2>&1; then
+    echo "레거시 로그 권한 이전 전에 wes-app 컨테이너가 남아 있습니다" >&2
+    exit 1
+  fi
+  [ -d "$WORK_DIR/logs" ] && [ ! -L "$WORK_DIR/logs" ] || {
+    echo "레거시 로그 루트가 실제 디렉터리가 아닙니다" >&2
+    exit 1
+  }
+  LEGACY_LOG_SYMLINK=$(find "$WORK_DIR/logs" -xdev -type l -print -quit)
+  [ -z "$LEGACY_LOG_SYMLINK" ] || {
+    echo "레거시 로그 트리에 허용되지 않은 심볼릭 링크가 있습니다: $LEGACY_LOG_SYMLINK" >&2
+    exit 1
+  }
+  find "$WORK_DIR/logs" -xdev \( -type d -o -type f \) \
+    -exec chown -h 10001:10001 {} +
+  install -d -m 0755 -o 10001 -g 10001 \
+    "$WORK_DIR/logs/info" "$WORK_DIR/logs/warn" "$WORK_DIR/logs/error"
+elif [ "$PREVIOUS_RELEASE_AVAILABLE" = "false" ]; then
+  # A true first release has no writer and no legacy files to recurse over.
+  install -d -m 0755 -o 10001 -g 10001 \
+    "$WORK_DIR/logs" "$WORK_DIR/logs/info" "$WORK_DIR/logs/warn" "$WORK_DIR/logs/error"
+fi
 docker compose -f docker-compose.prod.yml up -d --force-recreate --pull never
 docker logout ghcr.io >/dev/null 2>&1 || true
 REGISTRY_LOGGED_IN=false
