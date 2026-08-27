@@ -28,6 +28,7 @@ import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.request.ServletRequestAttributes
+import org.testcontainers.containers.PostgreSQLContainer
 
 @IntegrationTest
 class AdminAuditServiceTest @Autowired constructor(
@@ -42,6 +43,7 @@ class AdminAuditServiceTest @Autowired constructor(
     private val adminAccountFixture: AdminAccountFixture,
     private val jdbcTemplate: JdbcTemplate,
     private val transactionManager: PlatformTransactionManager,
+    private val postgresContainer: PostgreSQLContainer<*>,
 ) {
 
     @Test
@@ -326,6 +328,10 @@ class AdminAuditServiceTest @Autowired constructor(
 
     @Test
     fun `V40은 과거 영구 감사와 휴지통 원문을 exact key로 비가역 정리한다`() {
+        if (!legacyRevisionExpiryColumnExists()) {
+            V40AuditHardeningMigrationVerifier.verify(postgresContainer, snapshotCodec)
+            return
+        }
         val actor = adminAccountFixture.관리자("legacy-redaction-actor")
         val beforeSnapshot =
             """{"type":"GALLERY","id":987654,"version":2,"title":"이전 본식 제목","status":"DRAFT","deleted":false,"createdAt":"2026-08-27T13:10:00Z","updatedAt":"2026-99-99T99:99:99+99:99","private@example.com":"ACTIVE","fields":{"status":"DRAFT","customerName-private@example.com":"OPEN"}}"""
@@ -567,6 +573,19 @@ class AdminAuditServiceTest @Autowired constructor(
         }
     }
 
+    private fun legacyRevisionExpiryColumnExists(): Boolean = jdbcTemplate.queryForObject(
+        """
+        SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'admin_entity_revisions'
+              AND column_name = 'expires_at'
+        )
+        """.trimIndent(),
+        Boolean::class.java,
+    ) == true
+
     @Test
     fun `영구 리비전은 payload 소거와 만료 단축 외 UPDATE 및 DELETE를 거부한다`() {
         val actor = adminAccountFixture.관리자("revision-db-guard-actor")
@@ -650,66 +669,80 @@ class AdminAuditServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `V43 롤링 호환 trigger는 구형과 신형 expiry 쓰기를 양방향 동기화한다`() {
-        jdbcTemplate.update(
+    fun `V44는 구 expiry 호환 계약을 제거하고 restore expiry만 유지한다`() {
+        val legacyArtifacts = jdbcTemplate.queryForObject(
             """
-            INSERT INTO admin_entity_revisions
-                (target_type, target_id, revision_number, operation, expires_at,
-                 snapshot_schema_version, created_at)
-            VALUES
-                ('USER', '99002', 1, 'RESOURCE_UPDATED', CURRENT_TIMESTAMP + INTERVAL '1 day',
-                 3, CURRENT_TIMESTAMP)
+            SELECT
+                (SELECT COUNT(*) FROM information_schema.columns
+                 WHERE table_schema = current_schema()
+                   AND table_name = 'admin_entity_revisions'
+                   AND column_name = 'expires_at')
+              + (SELECT COUNT(*) FROM pg_trigger
+                 WHERE tgrelid = 'admin_entity_revisions'::regclass
+                   AND tgname = 'trg_admin_entity_revisions_00_sync_expiry')
+              + (SELECT COUNT(*) FROM pg_constraint
+                 WHERE conrelid = 'admin_entity_revisions'::regclass
+                   AND conname = 'ck_admin_entity_revisions_expiry_columns_match')
+              + (SELECT COUNT(*) FROM pg_indexes
+                 WHERE schemaname = current_schema()
+                   AND indexname = 'idx_admin_entity_revisions_expires_at')
+              + (SELECT COUNT(*) FROM pg_proc p
+                 JOIN pg_namespace n ON n.oid = p.pronamespace
+                 WHERE n.nspname = current_schema()
+                   AND p.proname = 'wes_sync_admin_entity_revision_expiry')
             """.trimIndent(),
+            Long::class.java,
         )
-        jdbcTemplate.update(
-            """
-            INSERT INTO admin_entity_revisions
-                (target_type, target_id, revision_number, operation, restore_expires_at,
-                 snapshot_schema_version, created_at)
-            VALUES
-                ('USER', '99003', 1, 'RESOURCE_UPDATED', CURRENT_TIMESTAMP + INTERVAL '1 day',
-                 3, CURRENT_TIMESTAMP)
-            """.trimIndent(),
-        )
-
-        jdbcTemplate.update(
-            """
-            UPDATE admin_entity_revisions
-            SET expires_at = expires_at - INTERVAL '1 minute'
-            WHERE target_id = '99002'
-            """.trimIndent(),
-        )
-        jdbcTemplate.update(
-            """
-            UPDATE admin_entity_revisions
-            SET restore_expires_at = restore_expires_at - INTERVAL '1 minute'
-            WHERE target_id = '99003'
-            """.trimIndent(),
-        )
-
+        assertThat(legacyArtifacts).isZero()
         assertThat(
             jdbcTemplate.queryForObject(
                 """
                 SELECT COUNT(*)
-                FROM admin_entity_revisions
-                WHERE target_id IN ('99002', '99003')
-                  AND expires_at = restore_expires_at
-                """.trimIndent(),
-                Long::class.java,
-            ),
-        ).isEqualTo(2L)
-
-        assertThat(
-            jdbcTemplate.queryForObject(
-                """
-                SELECT COUNT(*)
-                FROM pg_trigger
-                WHERE tgrelid = 'admin_entity_revisions'::regclass
-                  AND tgname = 'trg_admin_entity_revisions_00_sync_expiry'
+                FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'admin_entity_revisions'
+                  AND column_name = 'restore_expires_at'
+                  AND is_nullable = 'NO'
                 """.trimIndent(),
                 Long::class.java,
             ),
         ).isOne()
+
+        val retainedContract = jdbcTemplate.queryForMap(
+            """
+            SELECT
+                EXISTS (
+                    SELECT 1
+                    FROM pg_indexes
+                    WHERE schemaname = current_schema()
+                      AND tablename = 'admin_entity_revisions'
+                      AND indexname = 'idx_admin_entity_revisions_restore_expires_at'
+                      AND indexdef ILIKE '%WHERE%before_restore_payload IS NOT NULL%'
+                      AND indexdef ILIKE '%after_restore_payload IS NOT NULL%'
+                ) AS partial_restore_index_retained,
+                EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conrelid = 'admin_entity_revisions'::regclass
+                      AND conname = 'ck_admin_entity_revisions_restore_window'
+                      AND convalidated
+                      AND pg_get_constraintdef(oid) ILIKE '%restore_expires_at%created_at%7 days%'
+                ) AS restore_window_constraint_retained,
+                EXISTS (
+                    SELECT 1
+                    FROM pg_trigger t
+                    JOIN pg_proc p ON p.oid = t.tgfoid
+                    WHERE t.tgrelid = 'admin_entity_revisions'::regclass
+                      AND t.tgname = 'trg_admin_entity_revisions_immutable'
+                      AND t.tgenabled <> 'D'
+                      AND NOT t.tgisinternal
+                      AND p.proname = 'prevent_admin_entity_revision_mutation'
+                ) AS immutable_trigger_retained
+            """.trimIndent(),
+        )
+        assertThat(retainedContract["partial_restore_index_retained"]).isEqualTo(true)
+        assertThat(retainedContract["restore_window_constraint_retained"]).isEqualTo(true)
+        assertThat(retainedContract["immutable_trigger_retained"]).isEqualTo(true)
     }
 
     @Test
