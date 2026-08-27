@@ -149,6 +149,8 @@ grep -Fq 'up -d --force-recreate --pull never "$PREVIOUS_SERVICE"' "$public_depl
 grep -Fq 'handoff_public_service()' "$public_deploy_script"
 grep -Fq 'handoff_public_service "$PREVIOUS_SERVICE"' "$public_deploy_script"
 grep -Fq 'handoff_public_service "$TARGET_SERVICE"' "$public_deploy_script"
+grep -Fq 'mkdir -p "$WORK_DIR" "$WORK_DIR/logs/info" "$WORK_DIR/logs/warn"' "$public_deploy_script"
+grep -Fq 'find "$WORK_DIR/logs" -xdev \( -type d -o -type f \)' "$public_deploy_script"
 grep -Fq -- '--timeout-seconds 1800' "$cd_workflow"
 grep -Fq 'for i in $(seq 1 180); do' "$cd_workflow"
 grep -Fq 'Loki URL must contain a host and no inline credentials' "$alloy_egress_script"
@@ -194,7 +196,9 @@ public_swap_line="$(grep -nF 'mv -f "$WORK_DIR/.docker-compose.prod.yml.next"' "
 public_candidate_pull_line="$(grep -nF 'docker-compose.prod.yml" pull' "$public_deploy_script" | head -n 1 | cut -d: -f1)"
 public_target_handoff_line="$(grep -nF 'handoff_public_service "$TARGET_SERVICE"' "$public_deploy_script" | head -n 1 | cut -d: -f1)"
 public_target_up_line="$(grep -nF 'docker compose -f docker-compose.prod.yml up -d --force-recreate --pull never' "$public_deploy_script" | head -n 1 | cut -d: -f1)"
-if [ "$public_validation_line" -ge "$public_candidate_pull_line" ] || \
+public_log_handoff_line="$(grep -nF 'find "$WORK_DIR/logs" -xdev' "$public_deploy_script" | head -n 1 | cut -d: -f1)"
+if [ "$public_log_handoff_line" -ge "$public_validation_line" ] || \
+  [ "$public_validation_line" -ge "$public_candidate_pull_line" ] || \
   [ "$public_candidate_pull_line" -ge "$public_arm_line" ] || \
   [ "$public_arm_line" -ge "$public_swap_line" ] || \
   [ "$public_swap_line" -ge "$public_target_handoff_line" ] || \
