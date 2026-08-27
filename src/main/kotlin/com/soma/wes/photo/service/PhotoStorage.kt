@@ -29,6 +29,9 @@ interface PhotoStorage {
     /** 최고 관리자 원본 다운로드. 구현이 별도 disposition을 지원하지 않으면 원본 조회 URL을 쓴다. */
     fun presignDownload(key: String, originalFileName: String): String = presignOriginal(key)
 
+    /** 브라우저가 PUT을 완료했다고 알린 키가 실제 버킷에 존재하는지 확인한다. */
+    fun exists(key: String): Boolean
+
     /** 휴지통 비우기에서 원본과 미리보기를 물리 삭제한다. 없는 키를 다시 지워도 성공해야 한다. */
     fun deleteAll(keys: Collection<String>)
 

@@ -21,7 +21,7 @@ import java.time.ZonedDateTime
  * 한 파일에 섞으면 "메서드 이름이 역할이다"라는 그쪽 규칙이 첫 줄부터 깨진다.
  *
  * 문이 셋이다:
- * - [requireReadable] — 보는 것. 마감된 뒤에도 열려 있다.
+ * - [requireReadable] — 보는 것. 갤러리 마감 뒤에도 열리지만 링크 자체의 만료는 지킨다.
  * - [requireWritable] — 남기는 것. 부부가 고르는 동안에만 열린다.
  * - [requireGuest] — 남기는 사람이 누구인지. 하객 토큰을 확인한다. 보기만 할 때는 [findGuest]로
  *   묻는다 — 같은 토큰을 같은 방식으로 풀되, 없다고 막지는 않는다.
@@ -45,6 +45,9 @@ class CollabSessionAccess(
             ?: throw CollabException(CollabErrorCode.SESSION_NOT_FOUND)
         if (session.isRevoked) {
             throw CollabException(CollabErrorCode.SESSION_REVOKED)
+        }
+        if (session.isExpiredAt(ZonedDateTime.now(clock))) {
+            throw CollabException(CollabErrorCode.SESSION_EXPIRED)
         }
 
         // 세션이 있는데 갤러리가 없으면 데이터가 깨진 것이다.

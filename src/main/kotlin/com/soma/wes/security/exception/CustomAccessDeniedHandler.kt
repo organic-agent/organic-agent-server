@@ -1,6 +1,7 @@
 package com.soma.wes.security.exception
 
 import com.soma.wes.global.exception.ErrorResponse
+import com.soma.wes.global.exception.BusinessException
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import org.springframework.http.MediaType
@@ -22,7 +23,11 @@ class CustomAccessDeniedHandler(
         response: HttpServletResponse,
         accessDeniedException: AccessDeniedException,
     ) {
-        val errorCode = AuthorizationErrorCode.ACCESS_DENIED
+        val errorCode = generateSequence<Throwable>(accessDeniedException) { it.cause }
+            .filterIsInstance<BusinessException>()
+            .firstOrNull()
+            ?.errorCode
+            ?: AuthorizationErrorCode.ACCESS_DENIED
 
         response.status = errorCode.httpStatus.value()
         response.contentType = MediaType.APPLICATION_JSON_VALUE

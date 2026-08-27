@@ -17,6 +17,7 @@ import com.soma.wes.collab.repository.requireByIdAndCollabSessionId
 import com.soma.wes.collab.repository.requireWithLockByIdAndCollabSessionId
 import com.soma.wes.collab.support.CollabSessionAccess
 import com.soma.wes.global.SecureTokenGenerator
+import com.soma.wes.trash.service.ProductChildTrashService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -30,6 +31,7 @@ class CollabGuestService(
     private val collabGuestRepository: CollabGuestRepository,
     private val collabPhotoCommentRepository: CollabPhotoCommentRepository,
     private val collabPhotoLikeRepository: CollabPhotoLikeRepository,
+    private val productChildTrashService: ProductChildTrashService,
     private val tokenGenerator: SecureTokenGenerator,
 ) {
 
@@ -97,7 +99,9 @@ class CollabGuestService(
         if (!comment.isWrittenBy(guest.requiredId)) {
             throw CollabException(CollabErrorCode.COMMENT_NOT_OWNED)
         }
-        collabPhotoCommentRepository.delete(comment)
+        if (!productChildTrashService.deleteGuestComment(access.sessionId, commentId, guest.requiredId)) {
+            throw CollabException(CollabErrorCode.COMMENT_NOT_FOUND)
+        }
     }
 
     /**
@@ -130,6 +134,6 @@ class CollabGuestService(
         val guest = collabSessionAccess.requireGuest(access, guestToken)
         collabPhotoRepository.requireByIdAndCollabSessionId(collabPhotoId, access.sessionId)
 
-        collabPhotoLikeRepository.deleteByCollabPhotoIdAndCollabGuestId(collabPhotoId, guest.requiredId)
+        productChildTrashService.cancelGuestLike(access.sessionId, collabPhotoId, guest.requiredId)
     }
 }

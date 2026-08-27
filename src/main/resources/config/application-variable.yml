@@ -50,6 +50,16 @@ app:
       # 비어 있으면 백오피스가 임의의 외부 주소를 만들지 않고 미구성 상태를 명시한다.
       grafana-base-url: ""
       loki-base-url: ""
+    workflow-executor:
+      # 외부 연동이 비어 있으면 작업을 성공으로 위장하지 않고 FAILED로 남긴다.
+      enabled: true
+      batch-size: 20
+      max-attempts: 5
+      retry-delay: 1m
+      stale-timeout: 10m
+      # 운영 Lambda event age 20m + 함수 timeout 15m + 종료 반영 여유 5m.
+      dispatched-timeout: 40m
+      fixed-delay: 10s
 
   trash:
     # 휴지통 보관 기간. 지난 사진·갤러리는 purge 스케줄러가 S3 객체와 함께 물리 삭제한다.

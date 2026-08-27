@@ -68,6 +68,9 @@ class Settings:
     #: 장당 200KB 안팎으로 떨어지는 지점이다.
     preview_quality: int
 
+    #: 빌드 시 내려받은 모델 snapshot과 런타임 로드를 같은 immutable commit으로 묶는다.
+    model_revision: str = "f9e44c814b77203eaa57a6bdbbd535f21ede1415"
+
     @staticmethod
     def from_env() -> "Settings":
         db_host = _required("DB_HOST")
@@ -87,6 +90,10 @@ class Settings:
             model_id=os.environ.get("EMBED_MODEL_ID", "facebook/dinov2-base"),
             resize_long_edge=int(os.environ.get("RESIZE_LONG_EDGE", "1024")),
             preview_quality=int(os.environ.get("PREVIEW_QUALITY", "82")),
+            model_revision=os.environ.get(
+                "EMBED_MODEL_REVISION",
+                "f9e44c814b77203eaa57a6bdbbd535f21ede1415",
+            ),
         )
 
 

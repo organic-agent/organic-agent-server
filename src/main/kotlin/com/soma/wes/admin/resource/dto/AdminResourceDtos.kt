@@ -1,6 +1,7 @@
 package com.soma.wes.admin.resource.dto
 
 import com.soma.wes.admin.audit.dto.response.AdminAuditLogResponse
+import com.soma.wes.admin.resource.domain.AdminChildTrashType
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.PositiveOrZero
@@ -41,9 +42,16 @@ data class AdminResourceContextResponse(
     val relations: List<AdminResourceSummaryResponse>,
     val facts: Map<String, Any?>,
     val sections: Map<String, List<Map<String, Any?>>>,
+    val sectionPageInfo: Map<String, AdminResourceSectionPageInfo> = emptyMap(),
 )
 
-enum class AdminPhotoAccessMode { VIEW, DOWNLOAD }
+data class AdminResourceSectionPageInfo(
+    val totalCount: Long,
+    val returnedCount: Int,
+    val truncated: Boolean,
+)
+
+enum class AdminPhotoAccessMode { PREVIEW, VIEW, DOWNLOAD }
 
 data class AdminPhotoAccessRequest(
     @field:NotBlank
@@ -56,6 +64,28 @@ data class AdminPhotoAccessResponse(
     val photoId: Long,
     val mode: AdminPhotoAccessMode,
     val originalFileName: String,
+    val url: String,
+    val expiresAt: ZonedDateTime,
+)
+
+enum class AdminRetouchArtifactType { ANNOTATION, RESULT }
+
+enum class AdminRetouchArtifactAccessMode { VIEW, DOWNLOAD }
+
+data class AdminRetouchArtifactAccessRequest(
+    @field:NotBlank
+    @field:Size(max = 500)
+    val reason: String,
+    val mode: AdminRetouchArtifactAccessMode,
+)
+
+data class AdminRetouchArtifactAccessResponse(
+    val roundId: Long,
+    val retouchPhotoId: Long,
+    val artifactType: AdminRetouchArtifactType,
+    val mode: AdminRetouchArtifactAccessMode,
+    val originalFileName: String,
+    val contentType: String,
     val url: String,
     val expiresAt: ZonedDateTime,
 )
@@ -118,6 +148,14 @@ data class AdminSystemSettingsResponse(
     val revisionRetentionDays: Long,
     val trashRetentionDays: Long,
     val embeddingConfigured: Boolean,
+    val uploadMaxBatchSize: Int,
+    val uploadUrlTtlSeconds: Long,
+    val viewUrlTtlSeconds: Long,
+    val originalUrlTtlSeconds: Long,
+    val mockGalleryConfigured: Boolean,
+    val notificationConfigured: Boolean,
+    val notificationInboxEnabled: Boolean,
+    val featureFlags: Map<String, Boolean>,
     val grafanaConfigured: Boolean,
     val lokiConfigured: Boolean,
     val secretsMasked: Boolean = true,
@@ -176,9 +214,41 @@ data class AdminTrashBatchResponse(
     val reason: String,
     val deletedAt: ZonedDateTime,
     val restoreUntil: ZonedDateTime,
+    val purgeEligibleAt: ZonedDateTime,
+    val restoreWindowDays: Long,
+    val restorable: Boolean,
     val restoredAt: ZonedDateTime?,
     val purgedAt: ZonedDateTime?,
     val purgeAttemptCount: Int,
     val failureCode: String?,
     val affectedCounts: Map<String, Long>,
+    val relationshipFacts: Map<String, Long>,
+    val entries: List<AdminTrashEntryResponse>,
+)
+
+data class AdminTrashEntryResponse(
+    val resourceType: String,
+    val resourceId: Long,
+    val root: Boolean,
+    val relationPath: String,
+)
+
+data class AdminChildTrashResponse(
+    val id: Long,
+    val resourceType: AdminChildTrashType,
+    val resourceId: Long,
+    val parentType: AdminResourceType,
+    val parentId: Long,
+    val status: String,
+    val actorUsername: String?,
+    val reason: String,
+    val deletedAt: ZonedDateTime,
+    val restoreUntil: ZonedDateTime,
+    val purgeEligibleAt: ZonedDateTime,
+    val restoreWindowDays: Long,
+    val restorable: Boolean,
+    val restoredAt: ZonedDateTime?,
+    val purgedAt: ZonedDateTime?,
+    val purgeAttemptCount: Int,
+    val failureCode: String?,
 )

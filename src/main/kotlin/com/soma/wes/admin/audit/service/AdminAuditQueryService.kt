@@ -10,6 +10,7 @@ import com.soma.wes.admin.audit.dto.response.AdminEntityRevisionResponse
 import com.soma.wes.admin.audit.repository.AdminAuditLogRepository
 import com.soma.wes.admin.audit.repository.AdminEntityRevisionRepository
 import com.soma.wes.admin.audit.support.AdminAuditSnapshotCodec
+import com.soma.wes.admin.audit.support.AdminAuditSanitizer
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.global.page.PageRequests
@@ -18,15 +19,16 @@ import org.springframework.data.domain.Sort
 import org.springframework.data.jpa.domain.Specification
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import java.time.Clock
 import java.time.ZonedDateTime
+import java.util.UUID
 
 @Service
 class AdminAuditQueryService(
     private val auditLogRepository: AdminAuditLogRepository,
     private val revisionRepository: AdminEntityRevisionRepository,
     private val snapshotCodec: AdminAuditSnapshotCodec,
-    private val clock: Clock,
+    private val sanitizer: AdminAuditSanitizer,
+    private val restorePolicy: AdminRevisionRestorePolicy,
 ) {
 
     @Transactional(readOnly = true)
@@ -37,6 +39,8 @@ class AdminAuditQueryService(
         targetId: String?,
         action: AdminAuditAction?,
         outcome: AdminAuditOutcome?,
+        correlationId: String?,
+        impersonationSessionId: UUID?,
         from: ZonedDateTime?,
         to: ZonedDateTime?,
         page: Int,
@@ -76,6 +80,16 @@ class AdminAuditQueryService(
                 criteriaBuilder.equal(root.get<AdminAuditOutcome>("outcome"), value)
             }
         }
+        correlationId?.trim()?.takeIf(String::isNotBlank)?.let { value ->
+            specification = specification.and { root, _, criteriaBuilder ->
+                criteriaBuilder.equal(root.get<String>("correlationId"), value)
+            }
+        }
+        impersonationSessionId?.let { value ->
+            specification = specification.and { root, _, criteriaBuilder ->
+                criteriaBuilder.equal(root.get<UUID>("impersonationSessionId"), value)
+            }
+        }
         from?.let { value ->
             specification = specification.and { root, _, criteriaBuilder ->
                 criteriaBuilder.greaterThanOrEqualTo(root.get("createdAt"), value)
@@ -90,7 +104,10 @@ class AdminAuditQueryService(
             specification,
             PageRequests.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt", "id")),
         )
-        return PageResponse.of(found, found.content.map(AdminAuditLogResponse::from))
+        return PageResponse.of(
+            found,
+            found.content.map { AdminAuditLogResponse.from(it, sanitizer, snapshotCodec) },
+        )
     }
 
     @Transactional(readOnly = true)
@@ -103,19 +120,20 @@ class AdminAuditQueryService(
                 audit.targetType!!,
                 audit.targetId!!,
                 audit.revisionNumber!!,
-            )?.takeIf { it.expiresAt.isAfter(ZonedDateTime.now(clock)) }
+            )
         } else {
             null
         }
         return AdminAuditLogDetailResponse(
-            audit = AdminAuditLogResponse.from(audit),
-            revision = revision?.let { AdminEntityRevisionResponse.from(it, snapshotCodec) },
+            audit = AdminAuditLogResponse.from(audit, sanitizer, snapshotCodec),
+            revision = revision?.let {
+                AdminEntityRevisionResponse.from(it, snapshotCodec, restorePolicy.isRestorable(it))
+            },
         )
     }
 
     @Transactional(readOnly = true)
     fun getRevisions(targetType: AdminAuditTargetType, targetId: String): List<AdminEntityRevisionResponse> =
         revisionRepository.findAllByTargetTypeAndTargetIdOrderByRevisionNumberDesc(targetType, targetId)
-            .filter { it.expiresAt.isAfter(ZonedDateTime.now(clock)) }
-            .map { AdminEntityRevisionResponse.from(it, snapshotCodec) }
+            .map { AdminEntityRevisionResponse.from(it, snapshotCodec, restorePolicy.isRestorable(it)) }
 }

@@ -14,7 +14,7 @@ class AdminObservabilityLinkServiceTest {
         val service = AdminObservabilityLinkService(
             AdminObservabilityProperties(
                 grafanaBaseUrl = "https://grafana.internal.example/",
-                lokiBaseUrl = "http://10.0.0.8:3100/loki/api/v1/push",
+                lokiBaseUrl = "https://grafana.internal.example/api/datasources/proxy/uid/loki/",
             ),
         )
 
@@ -22,8 +22,13 @@ class AdminObservabilityLinkServiceTest {
 
         assertThat(links.grafanaUrl).startsWith("https://grafana.internal.example/explore?")
         assertThat(links.grafanaUrl).contains("a1b2c3d4e5f60718")
-        assertThat(links.lokiUrl).startsWith("http://10.0.0.8:3100/loki/api/v1/query_range?")
+        assertThat(links.grafanaUrl).contains("wes-admin-api")
+        assertThat(links.lokiUrl).startsWith(
+            "https://grafana.internal.example/api/datasources/proxy/uid/loki/loki/api/v1/query_range?",
+        )
         assertThat(links.lokiUrl).contains("a1b2c3d4e5f60718")
+        assertThat(links.lokiUrl).contains("wes-admin-api")
+        assertThat(links.lokiUrl).doesNotContain("10.0.0.8", "/loki/api/v1/push")
     }
 
     @Test

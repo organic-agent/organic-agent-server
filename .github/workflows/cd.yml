@@ -1,16 +1,18 @@
 name: "[PROD] Build and Deploy"
 
 on:
-  # 초기 단계라 버저닝(릴리스 태그) 없이 main에 머지되면 바로 배포한다.
-  # 안정화되면 release 트리거 + semver 태그로 승격한다.
   push:
     branches: [main]
 
-  # 재배포(같은 latest 이미지 다시 올리기)용 수동 실행.
   workflow_dispatch:
 
+concurrency:
+  group: wes-server-production
+  cancel-in-progress: false
+
 env:
-  IMAGE_BASENAME: wes-server
+  PUBLIC_IMAGE_BASENAME: wes-api
+  ADMIN_IMAGE_BASENAME: wes-admin-api
   # EC2 아키텍처와 맞아야 한다. Graviton(t4g·m7g·c7g 등)이면 linux/arm64,
   # 그 외 t3·m5 등 인텔/AMD 계열이면 linux/amd64.
   # 어긋나면 컨테이너가 `exec format error`로 즉시 죽는다.
@@ -29,6 +31,8 @@ jobs:
 
     outputs:
       owner_lowercase: ${{ steps.image_meta.outputs.owner_lowercase }}
+      public_image_name: ${{ steps.image_meta.outputs.public_image_name }}
+      admin_image_name: ${{ steps.image_meta.outputs.admin_image_name }}
 
     steps:
       - name: 체크아웃
@@ -49,6 +53,9 @@ jobs:
           chmod +x ./gradlew
           ./gradlew clean build --no-daemon
 
+      - name: ARM64 에뮬레이션 설정
+        uses: docker/setup-qemu-action@v3
+
       - name: Docker Buildx 설정
         uses: docker/setup-buildx-action@v3
 
@@ -66,17 +73,27 @@ jobs:
           # GHCR 경로는 소문자만 받는다. 조직명에 대문자가 있어도 안전하도록 변환한다.
           OWNER_LOWERCASE=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
 
-          echo "owner_lowercase=${OWNER_LOWERCASE}" >> $GITHUB_OUTPUT
-          echo "image_name=ghcr.io/${OWNER_LOWERCASE}/${IMAGE_BASENAME}" >> $GITHUB_OUTPUT
+          echo "owner_lowercase=${OWNER_LOWERCASE}" >> "$GITHUB_OUTPUT"
+          echo "public_image_name=ghcr.io/${OWNER_LOWERCASE}/${PUBLIC_IMAGE_BASENAME}" >> "$GITHUB_OUTPUT"
+          echo "admin_image_name=ghcr.io/${OWNER_LOWERCASE}/${ADMIN_IMAGE_BASENAME}" >> "$GITHUB_OUTPUT"
 
-      - name: 이미지 빌드 및 푸쉬
+      - name: 공개 API 이미지 빌드 및 푸쉬
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: Dockerfile.api
           platforms: ${{ env.PLATFORM }}
           push: true
-          # 초기 단계라 latest 하나만 올린다. 버저닝(태그 롤백)은 나중에 도입한다.
-          tags: ${{ steps.image_meta.outputs.image_name }}:latest
+          tags: ${{ steps.image_meta.outputs.public_image_name }}:${{ github.sha }}
+
+      - name: 관리자 API 이미지 빌드 및 푸쉬
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.admin-api
+          platforms: ${{ env.PLATFORM }}
+          push: true
+          tags: ${{ steps.image_meta.outputs.admin_image_name }}:${{ github.sha }}
 
   # --- Job 2: 배포 (SSM Run Command) ---
   # SSH 대신 SSM을 쓴다: 보안그룹에 22번 인바운드가 없고(인프라 기본값), EC2 퍼블릭 IP는
@@ -84,8 +101,8 @@ jobs:
   # OIDC로 임시 자격증명을 받으므로 SSH 키·호스트 IP·고정 시크릿이 전부 필요 없다.
   # 필요한 시크릿은 AWS_DEPLOY_ROLE_ARN 하나 — WES-Infra의
   # `terraform output -raw github_deploy_role_arn` 값이다.
-  deploy:
-    name: EC2에 배포
+  deploy-public:
+    name: 공개 API 배포와 마이그레이션
     needs: build-and-push
     runs-on: ubuntu-latest
     permissions:
@@ -95,6 +112,7 @@ jobs:
 
     env:
       OWNER_LOWERCASE: ${{ needs.build-and-push.outputs.owner_lowercase }}
+      IMAGE_TAG: ${{ github.sha }}
       AWS_REGION: ap-northeast-2
       INSTANCE_NAME_TAG: wes-app
 
@@ -139,16 +157,192 @@ jobs:
           # GITHUB_TOKEN은 잡 종료와 함께 만료되는 단기 토큰이라 SSM 명령 이력에 남아도
           # 재사용이 불가능하다. 패키지를 public으로 바꾸면 login 단계는 지워도 된다.
           cat > deploy_script.sh <<SCRIPT
-          set -e
+          set -eu
 
           # compose 파일의 \${...}를 채울 값. 서버에 .env를 남기지 않는다.
-          # IMAGE_TAG는 넘기지 않는다 — compose의 \${IMAGE_TAG:-latest} 기본값이 latest다.
           export OWNER_LOWERCASE="${OWNER_LOWERCASE}"
+          export IMAGE_TAG="${IMAGE_TAG}"
+          TARGET_IMAGE_TAG="\$IMAGE_TAG"
           WORK_DIR=/opt/wes-prod
+          ROLLBACK_DIR="\$WORK_DIR/.public-rollback"
+          CANDIDATE_DIR="\$WORK_DIR/.public-candidate"
+          PREVIOUS_RELEASE_AVAILABLE=false
+          ROLLBACK_ARMED=false
+          REGISTRY_LOGGED_IN=false
+          PREVIOUS_IMAGE=
+          PREVIOUS_IMAGE_ID=
+          PREVIOUS_IMAGE_TAG=
+          PREVIOUS_SERVICE=
+          EXPECTED_PREVIOUS_SERVICE=
+          TARGET_SERVICE=wes-api
 
-          mkdir -p "\$WORK_DIR"
-          echo "${COMPOSE_B64}" | base64 -d > "\$WORK_DIR/docker-compose.prod.yml"
-          echo "${ALLOY_B64}" | base64 -d > "\$WORK_DIR/config.alloy"
+          handoff_public_service() (
+            set -eu
+            DESIRED_SERVICE="\$1"
+            case "\$DESIRED_SERVICE" in
+              wes-api|wes-server) ;;
+              *)
+                echo "허용되지 않은 공개 API compose service handoff: \$DESIRED_SERVICE" >&2
+                return 1
+                ;;
+            esac
+
+            docker inspect wes-app >/dev/null 2>&1 || return 0
+            CURRENT_SERVICE=\$(docker inspect \
+              --format '{{ index .Config.Labels "com.docker.compose.service" }}' wes-app)
+            [ "\$CURRENT_SERVICE" = "\$DESIRED_SERVICE" ] && return 0
+
+            # The legacy and split compose files use different service keys but the
+            # same fixed container_name. Remove only that captured container after
+            # rollback is armed so either direction can recreate it without conflict.
+            docker update --restart=no wes-app >/dev/null 2>&1 || true
+            docker rm -f wes-app >/dev/null
+            if docker inspect wes-app >/dev/null 2>&1; then
+              echo "공개 API service handoff 뒤에도 wes-app 컨테이너가 남아 있습니다" >&2
+              return 1
+            fi
+          )
+
+          rollback_public_release() (
+            set -eu
+
+            echo "공개 API 이전 릴리스 롤백을 시작합니다" >&2
+            install -m 0644 "\$ROLLBACK_DIR/docker-compose.prod.yml" \
+              "\$WORK_DIR/.docker-compose.prod.yml.rollback"
+            install -m 0644 "\$ROLLBACK_DIR/config.alloy" \
+              "\$WORK_DIR/.config.alloy.rollback"
+            mv -f "\$WORK_DIR/.docker-compose.prod.yml.rollback" \
+              "\$WORK_DIR/docker-compose.prod.yml"
+            mv -f "\$WORK_DIR/.config.alloy.rollback" "\$WORK_DIR/config.alloy"
+            cmp -s "\$ROLLBACK_DIR/docker-compose.prod.yml" "\$WORK_DIR/docker-compose.prod.yml"
+            cmp -s "\$ROLLBACK_DIR/config.alloy" "\$WORK_DIR/config.alloy"
+
+            docker image inspect "\$PREVIOUS_IMAGE_ID" >/dev/null
+            docker image tag "\$PREVIOUS_IMAGE_ID" "\$PREVIOUS_IMAGE"
+            export IMAGE_TAG="\$PREVIOUS_IMAGE_TAG"
+            handoff_public_service "\$PREVIOUS_SERVICE"
+
+            cd "\$WORK_DIR"
+            docker compose -f docker-compose.prod.yml \
+              up -d --force-recreate --pull never "\$PREVIOUS_SERVICE"
+            ROLLED_BACK_IMAGE=\$(docker inspect --format '{{.Config.Image}}' wes-app)
+            ROLLED_BACK_IMAGE_ID=\$(docker inspect --format '{{.Image}}' wes-app)
+            [ "\$ROLLED_BACK_IMAGE" = "\$PREVIOUS_IMAGE" ] || {
+              echo "공개 API 롤백 이미지 불일치: \$ROLLED_BACK_IMAGE (expected \$PREVIOUS_IMAGE)" >&2
+              return 1
+            }
+            [ "\$ROLLED_BACK_IMAGE_ID" = "\$PREVIOUS_IMAGE_ID" ] || {
+              echo "공개 API 롤백 이미지 ID 불일치: \$ROLLED_BACK_IMAGE_ID (expected \$PREVIOUS_IMAGE_ID)" >&2
+              return 1
+            }
+
+            for rollback_attempt in \$(seq 1 30); do
+              ROLLBACK_HTTP_CODE=\$(curl -s -o /dev/null -w '%{http_code}' \
+                --connect-timeout 2 --max-time 5 \
+                "http://127.0.0.1:8080/actuator/health" || true)
+              if [ "\$ROLLBACK_HTTP_CODE" = "200" ]; then
+                echo "공개 API 이전 릴리스 복구 완료 (\${rollback_attempt}번째 시도)" >&2
+                return 0
+              fi
+              sleep 5
+            done
+
+            echo "이전 공개 API 이미지로 복구했지만 8080 health 검증에 실패했습니다" >&2
+            docker logs --tail 100 wes-app >&2 || true
+            return 1
+          )
+
+          on_public_deploy_exit() {
+            ORIGINAL_STATUS=\$?
+            trap - EXIT HUP INT TERM
+            set +e
+
+            if [ "\$ORIGINAL_STATUS" -ne 0 ]; then
+              if [ "\$ROLLBACK_ARMED" = "true" ] && [ "\$PREVIOUS_RELEASE_AVAILABLE" = "true" ]; then
+                rollback_public_release
+                [ "\$?" -eq 0 ] || echo "공개 API 롤백도 실패했습니다; 수동 복구가 필요합니다" >&2
+              elif [ "\$ROLLBACK_ARMED" = "true" ]; then
+                echo "첫 공개 API 배포여서 이전 wes-app 컨테이너가 없습니다; 실패 상태를 유지합니다" >&2
+              else
+                echo "공개 API 변경 전 실패하여 기존 릴리스는 그대로 유지됩니다" >&2
+              fi
+            fi
+
+            if [ "\$REGISTRY_LOGGED_IN" = "true" ]; then
+              docker logout ghcr.io >/dev/null 2>&1 || true
+            fi
+            exit "\$ORIGINAL_STATUS"
+          }
+
+          trap on_public_deploy_exit EXIT
+          trap 'exit 129' HUP
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+
+          mkdir -p "\$WORK_DIR" "\$WORK_DIR/logs" "\$ROLLBACK_DIR"
+          install -d -m 0700 "\$CANDIDATE_DIR"
+          chown 10001:10001 "\$WORK_DIR/logs"
+
+          if docker inspect wes-app >/dev/null 2>&1; then
+            [ -f "\$WORK_DIR/docker-compose.prod.yml" ] && [ -f "\$WORK_DIR/config.alloy" ] || {
+              echo "기존 공개 API는 있지만 이전 compose/Alloy 설정이 없어 안전하게 배포할 수 없습니다" >&2
+              exit 1
+            }
+            PREVIOUS_IMAGE=\$(docker inspect --format '{{.Config.Image}}' wes-app)
+            PREVIOUS_IMAGE_ID=\$(docker inspect --format '{{.Image}}' wes-app)
+            PREVIOUS_SERVICE=\$(docker inspect \
+              --format '{{ index .Config.Labels "com.docker.compose.service" }}' wes-app)
+            PREVIOUS_IMAGE_PREFIX="ghcr.io/${OWNER_LOWERCASE}/${PUBLIC_IMAGE_BASENAME}:"
+            PREVIOUS_LEGACY_IMAGE="ghcr.io/${OWNER_LOWERCASE}/wes-server:latest"
+            case "\$PREVIOUS_IMAGE" in
+              "\$PREVIOUS_IMAGE_PREFIX"*)
+                PREVIOUS_IMAGE_TAG=\${PREVIOUS_IMAGE#"\$PREVIOUS_IMAGE_PREFIX"}
+                EXPECTED_PREVIOUS_SERVICE=wes-api
+                ;;
+              "\$PREVIOUS_LEGACY_IMAGE")
+                PREVIOUS_IMAGE_TAG=latest
+                EXPECTED_PREVIOUS_SERVICE=wes-server
+                ;;
+              *)
+                echo "기존 공개 API 이미지가 예상 저장소에 속하지 않습니다: \$PREVIOUS_IMAGE" >&2
+                exit 1
+                ;;
+            esac
+            [ -n "\$PREVIOUS_IMAGE_TAG" ]
+            [ "\$PREVIOUS_SERVICE" = "\$EXPECTED_PREVIOUS_SERVICE" ] || {
+              echo "기존 공개 API compose service 불일치: \$PREVIOUS_SERVICE" >&2
+              exit 1
+            }
+            docker image inspect "\$PREVIOUS_IMAGE_ID" >/dev/null
+
+            PREVIOUS_HEALTHY=false
+            for preflight_attempt in \$(seq 1 5); do
+              PREFLIGHT_HTTP_CODE=\$(curl -s -o /dev/null -w '%{http_code}' \
+                --connect-timeout 2 --max-time 5 \
+                "http://127.0.0.1:8080/actuator/health" || true)
+              if [ "\$PREFLIGHT_HTTP_CODE" = "200" ]; then
+                PREVIOUS_HEALTHY=true
+                break
+              fi
+              sleep 2
+            done
+            [ "\$PREVIOUS_HEALTHY" = "true" ] || {
+              echo "기존 공개 API가 healthy하지 않아 검증 가능한 롤백 기준점이 없습니다" >&2
+              exit 1
+            }
+
+            install -m 0600 "\$WORK_DIR/docker-compose.prod.yml" \
+              "\$ROLLBACK_DIR/docker-compose.prod.yml"
+            install -m 0600 "\$WORK_DIR/config.alloy" "\$ROLLBACK_DIR/config.alloy"
+            printf '%s\n' "\$PREVIOUS_IMAGE" > "\$ROLLBACK_DIR/previous-image"
+            printf '%s\n' "\$PREVIOUS_IMAGE_ID" > "\$ROLLBACK_DIR/previous-image-id"
+            printf '%s\n' "\$PREVIOUS_IMAGE_TAG" > "\$ROLLBACK_DIR/previous-image-tag"
+            chmod 0600 "\$ROLLBACK_DIR/previous-image" \
+              "\$ROLLBACK_DIR/previous-image-id" "\$ROLLBACK_DIR/previous-image-tag"
+            PREVIOUS_RELEASE_AVAILABLE=true
+          else
+            echo "첫 공개 API 배포: 이전 wes-app 컨테이너가 없어 롤백 기준점이 없습니다" >&2
+          fi
 
           # alloy가 로그를 보낼 Loki 주소. 인프라(모니터링 EC2)가 Parameter Store에 기록한다.
           # 인스턴스 롤은 /wes/prod/* 읽기 권한이 있고 aws-cli는 user_data가 깔아 둔다.
@@ -157,23 +351,52 @@ jobs:
             --name /wes/prod/app.logging.loki-url --query Parameter.Value --output text 2>/dev/null || true)
           [ -n "\$LOKI_URL" ] || echo "경고: /wes/prod/app.logging.loki-url 파라미터가 없어 로그가 Loki로 전송되지 않습니다" >&2
 
+          echo "${COMPOSE_B64}" | base64 -d > "\$CANDIDATE_DIR/docker-compose.prod.yml"
+          echo "${ALLOY_B64}" | base64 -d > "\$CANDIDATE_DIR/config.alloy"
+          chmod 0600 "\$CANDIDATE_DIR/docker-compose.prod.yml" "\$CANDIDATE_DIR/config.alloy"
+          [ -s "\$CANDIDATE_DIR/docker-compose.prod.yml" ] && \
+            [ -s "\$CANDIDATE_DIR/config.alloy" ]
+          docker compose --project-directory "\$WORK_DIR" \
+            -f "\$CANDIDATE_DIR/docker-compose.prod.yml" config --quiet
+
           echo "${{ secrets.GITHUB_TOKEN }}" \
             | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          REGISTRY_LOGGED_IN=true
+
+          docker compose --project-directory "\$WORK_DIR" \
+            -f "\$CANDIDATE_DIR/docker-compose.prod.yml" pull
+
+          install -m 0644 "\$CANDIDATE_DIR/docker-compose.prod.yml" \
+            "\$WORK_DIR/.docker-compose.prod.yml.next"
+          install -m 0644 "\$CANDIDATE_DIR/config.alloy" "\$WORK_DIR/.config.alloy.next"
+          ROLLBACK_ARMED=true
+          mv -f "\$WORK_DIR/.docker-compose.prod.yml.next" "\$WORK_DIR/docker-compose.prod.yml"
+          mv -f "\$WORK_DIR/.config.alloy.next" "\$WORK_DIR/config.alloy"
 
           cd "\$WORK_DIR"
-          docker compose -f docker-compose.prod.yml pull
-          docker compose -f docker-compose.prod.yml up -d --force-recreate
+          handoff_public_service "\$TARGET_SERVICE"
+          docker compose -f docker-compose.prod.yml up -d --force-recreate --pull never
+          docker logout ghcr.io >/dev/null 2>&1 || true
+          REGISTRY_LOGGED_IN=false
 
-          # 새 latest를 pull하면 이전 이미지는 태그를 잃고 dangling(<none>)이 된다.
-          # 작은 EC2는 이미지로 디스크가 차므로 그것들을 지운다.
-          docker image prune -f
+          RUNNING_IMAGE=\$(docker inspect --format '{{.Config.Image}}' wes-app)
+          EXPECTED_IMAGE="ghcr.io/${OWNER_LOWERCASE}/${PUBLIC_IMAGE_BASENAME}:\$TARGET_IMAGE_TAG"
+          [ "\$RUNNING_IMAGE" = "\$EXPECTED_IMAGE" ] || {
+            echo "실행 이미지 불일치: \$RUNNING_IMAGE (expected \$EXPECTED_IMAGE)" >&2
+            exit 1
+          }
 
           # 기동에 시간이 걸린다(Parameter Store 조회 + 컨텍스트 초기화).
           # 상태 코드로 판단한다. 200 = UP, 503 = DOWN.
           for i in \$(seq 1 30); do
             HTTP_CODE=\$(curl -s -o /dev/null -w '%{http_code}' \
-              --connect-timeout 2 "http://localhost:8080/actuator/health" || true)
-            [ "\$HTTP_CODE" = "200" ] && { echo "기동 완료 (\${i}번째 시도)"; exit 0; }
+              --connect-timeout 2 --max-time 5 \
+              "http://127.0.0.1:8080/actuator/health" || true)
+            if [ "\$HTTP_CODE" = "200" ]; then
+              docker image prune -f
+              echo "기동 완료 (\${i}번째 시도)"
+              exit 0
+            fi
             sleep 5
           done
 
@@ -188,14 +411,14 @@ jobs:
           COMMAND_ID=$(aws ssm send-command \
             --document-name AWS-RunShellScript \
             --instance-ids "$INSTANCE_ID" \
-            --comment "wes-server deploy ${{ github.sha }}" \
-            --timeout-seconds 600 \
+            --comment "wes-api deploy ${{ github.sha }}" \
+            --timeout-seconds 1800 \
             --parameters file://params.json \
             --query 'Command.CommandId' --output text)
 
-          # 원격 스크립트가 pull + 헬스체크(최대 150초)까지 하므로 넉넉히 10분 폴링.
+          # 후보 pull, target health, rollback health를 모두 포함해 최대 30분 폴링한다.
           STATUS=Pending
-          for i in $(seq 1 60); do
+          for i in $(seq 1 180); do
             STATUS=$(aws ssm get-command-invocation \
               --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
               --query Status --output text 2>/dev/null || echo Pending)
@@ -206,6 +429,1119 @@ jobs:
           done
 
           # 성공이든 실패든 원격 로그를 러너 콘솔에 그대로 남긴다.
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+            --query '{status:Status,stdout:StandardOutputContent,stderr:StandardErrorContent}' \
+            --output json \
+            | jq -r '"--- status: \(.status)\n--- stdout ---\n\(.stdout)\n--- stderr ---\n\(.stderr)"'
+
+          [ "$STATUS" = "Success" ]
+
+  # 공개 API가 Flyway migration을 끝낸 뒤에만 새 worker를 배포한다. Lambda 서비스의
+  # 자체 재시도는 Infra에서 0회로 두고, 재시도와 attempt CAS는 DB outbox가 단독 소유한다.
+  deploy-worker:
+    name: 비동기 사진 worker 배포
+    needs: deploy-public
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      AWS_REGION: ap-northeast-2
+      ECR_REPOSITORY: wes-embedder
+      ECR_REPOSITORY_URI: 233927217926.dkr.ecr.ap-northeast-2.amazonaws.com/wes-embedder
+      FUNCTION_NAME: wes-embedder
+      DEPLOY_TAG: deploy-${{ github.run_id }}-${{ github.run_attempt }}
+
+    steps:
+      - name: worker 소스 체크아웃
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: embedder
+
+      - name: Python 3.12 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: embedder/requirements-audit.txt
+
+      - name: worker Python 의존성 취약점 검사
+        run: |
+          python3 -m pip install --disable-pip-version-check pip-audit==2.10.1
+          pip-audit \
+            --requirement embedder/requirements-audit.txt \
+            --index-url https://pypi.org/simple \
+            --extra-index-url https://download.pytorch.org/whl/cpu \
+            --progress-spinner off \
+            --strict
+
+      - name: worker 배포 AWS 자격증명 설정
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_WORKER_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Amazon ECR 로그인
+        id: ecr_login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Docker Buildx 설정
+        uses: docker/setup-buildx-action@v3
+
+      # Lambda 함수 아키텍처가 x86_64이므로 Graviton EC2 이미지와 별개로 amd64를 빌드한다.
+      - name: worker 이미지 빌드 및 푸쉬
+        id: worker_build
+        uses: docker/build-push-action@v6
+        with:
+          context: embedder
+          file: embedder/Dockerfile
+          platforms: linux/amd64
+          # Lambda container image는 OCI index/manifest list를 받지 않는다. Buildx의
+          # provenance attestation이 별도 manifest를 붙이지 못하게 단일 image로 고정한다.
+          provenance: false
+          sbom: false
+          push: true
+          # SHA tag는 소스 추적용이고 deploy tag는 같은 SHA를 수동 재실행해도 이전 digest를
+          # tagged 상태로 보존한다. 그래야 실패한 후보가 SHA tag를 덮어써도 rollback 대상이
+          # ECR의 untagged lifecycle에 들어가지 않는다.
+          tags: |
+            ${{ env.ECR_REPOSITORY_URI }}:${{ github.sha }}
+            ${{ env.ECR_REPOSITORY_URI }}:${{ env.DEPLOY_TAG }}
+
+      - name: immutable digest로 Lambda 교체 및 검증
+        env:
+          CANDIDATE_DIGEST: ${{ steps.worker_build.outputs.digest }}
+        run: |
+          set -eu
+
+          case "$CANDIDATE_DIGEST" in
+            sha256:*) ;;
+            *)
+              echo "worker build가 immutable digest를 반환하지 않았습니다" >&2
+              exit 1
+              ;;
+          esac
+
+          for image_tag in "${{ github.sha }}" "$DEPLOY_TAG"; do
+            REMOTE_DIGEST=$(aws ecr describe-images \
+              --repository-name "$ECR_REPOSITORY" \
+              --image-ids "imageTag=$image_tag" \
+              --query 'imageDetails[0].imageDigest' --output text)
+            [ "$REMOTE_DIGEST" = "$CANDIDATE_DIGEST" ] || {
+              echo "ECR digest 불일치: tag=$image_tag digest=$REMOTE_DIGEST (expected $CANDIDATE_DIGEST)" >&2
+              exit 1
+            }
+          done
+
+          IMAGE_MEDIA_TYPE=$(aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids "imageDigest=$CANDIDATE_DIGEST" \
+            --query 'imageDetails[0].imageManifestMediaType' --output text)
+          case "$IMAGE_MEDIA_TYPE" in
+            application/vnd.docker.distribution.manifest.v2+json|application/vnd.oci.image.manifest.v1+json) ;;
+            *)
+              echo "Lambda에 배포할 수 없는 worker manifest 형식: $IMAGE_MEDIA_TYPE" >&2
+              exit 1
+              ;;
+          esac
+
+          SCAN_STATUS=PENDING
+          for scan_attempt in $(seq 1 60); do
+            SCAN_STATUS=$(aws ecr describe-image-scan-findings \
+              --repository-name "$ECR_REPOSITORY" \
+              --image-id "imageDigest=$CANDIDATE_DIGEST" \
+              --query 'imageScanStatus.status' --output text 2>/dev/null || echo PENDING)
+            case "$SCAN_STATUS" in
+              COMPLETE) break ;;
+              FAILED|UNSUPPORTED_IMAGE|SCAN_ELIGIBILITY_EXPIRED|FINDINGS_UNAVAILABLE|LIMIT_EXCEEDED)
+                echo "ECR image scan 실패: $SCAN_STATUS" >&2
+                exit 1
+                ;;
+            esac
+            sleep 10
+          done
+          [ "$SCAN_STATUS" = "COMPLETE" ] || {
+            echo "ECR image scan이 10분 안에 완료되지 않았습니다" >&2
+            exit 1
+          }
+          SCAN_COUNTS=$(aws ecr describe-image-scan-findings \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-id "imageDigest=$CANDIDATE_DIGEST" \
+            --query 'imageScanFindings.findingSeverityCounts' --output json)
+          CRITICAL_COUNT=$(printf '%s' "$SCAN_COUNTS" | jq -r '.CRITICAL // 0')
+          HIGH_COUNT=$(printf '%s' "$SCAN_COUNTS" | jq -r '.HIGH // 0')
+          [ "$CRITICAL_COUNT" -eq 0 ] && [ "$HIGH_COUNT" -eq 0 ] || {
+            echo "worker 이미지에서 차단 등급 취약점 발견: critical=$CRITICAL_COUNT high=$HIGH_COUNT" >&2
+            exit 1
+          }
+
+          CANDIDATE_IMAGE_URI="${ECR_REPOSITORY_URI}@${CANDIDATE_DIGEST}"
+          PREVIOUS_FUNCTION=$(aws lambda get-function --function-name "$FUNCTION_NAME")
+          printf '%s' "$PREVIOUS_FUNCTION" | jq -e '
+            .Configuration.State == "Active" and
+            .Configuration.LastUpdateStatus == "Successful" and
+            .Configuration.PackageType == "Image" and
+            .Configuration.Architectures == ["x86_64"] and
+            (.Configuration.RevisionId | type == "string" and length > 0)
+          ' >/dev/null
+          PREVIOUS_IMAGE_URI=$(printf '%s' "$PREVIOUS_FUNCTION" | jq -r '.Code.ResolvedImageUri')
+          PREVIOUS_REVISION_ID=$(printf '%s' "$PREVIOUS_FUNCTION" | jq -r '.Configuration.RevisionId')
+          case "$PREVIOUS_IMAGE_URI" in
+            "${ECR_REPOSITORY_URI}@sha256:"*) ;;
+            *)
+              echo "기존 Lambda 이미지가 허용된 ECR repository digest가 아닙니다" >&2
+              exit 1
+              ;;
+          esac
+
+          wait_for_worker_terminal() {
+            for wait_attempt in $(seq 1 90); do
+              last_update_status=$(aws lambda get-function-configuration \
+                --function-name "$FUNCTION_NAME" \
+                --query 'LastUpdateStatus' --output text 2>/dev/null || echo UNKNOWN)
+              case "$last_update_status" in
+                Successful|Failed) return 0 ;;
+                InProgress|UNKNOWN|None|'') ;;
+                *) echo "알 수 없는 Lambda update 상태: $last_update_status" >&2 ;;
+              esac
+              sleep 10
+            done
+            return 1
+          }
+
+          # update-function-code의 응답만 유실되면 첫 GET이 아직 이전 Successful 상태를 돌려줄
+          # 수 있다. 이전 digest와 이전 revision이 함께 유지되는 것을 최소 60초 관찰한 뒤에만
+          # 요청이 반영되지 않았다고 결론낸다. 후보 digest가 보이면 terminal까지 기다리고,
+          # 제3 digest는 동시 변경일 수 있으므로 절대 덮어쓰지 않는다.
+          RECONCILIATION_MIN_SECONDS=60
+          RECONCILED_IMAGE_URI=UNKNOWN
+          RECONCILED_REVISION_ID=UNKNOWN
+          RECONCILIATION_RESULT=UNKNOWN
+          reconcile_worker_update() {
+            reconciliation_started_at=$(date +%s)
+            for reconcile_attempt in $(seq 1 90); do
+              if ! current_function=$(aws lambda get-function \
+                --function-name "$FUNCTION_NAME" 2>/dev/null); then
+                sleep 10
+                continue
+              fi
+
+              current_image_uri=$(printf '%s' "$current_function" | jq -r \
+                '.Code.ResolvedImageUri // "UNKNOWN"')
+              current_revision_id=$(printf '%s' "$current_function" | jq -r \
+                '.Configuration.RevisionId // "UNKNOWN"')
+              current_update_status=$(printf '%s' "$current_function" | jq -r \
+                '.Configuration.LastUpdateStatus // "UNKNOWN"')
+
+              if [ "$current_image_uri" = "$PREVIOUS_IMAGE_URI" ]; then
+                case "$current_update_status" in
+                  InProgress)
+                    # AWS가 요청을 받았지만 아직 Code.ResolvedImageUri를 후보로 바꾸지 않은
+                    # 전파 구간이다. revision이 바뀌었더라도 terminal까지 계속 관찰한다.
+                    ;;
+                  Successful|Failed)
+                    if [ "$current_revision_id" != "$PREVIOUS_REVISION_ID" ]; then
+                      # 요청은 반영됐지만 Lambda가 이전 코드에 머문 terminal 결과다. 이미
+                      # rollback 목표 digest이므로 추가 update로 다른 변경을 덮어쓰지 않는다.
+                      RECONCILED_IMAGE_URI=$current_image_uri
+                      RECONCILED_REVISION_ID=$current_revision_id
+                      RECONCILIATION_RESULT=TERMINAL_PREVIOUS
+                      return 0
+                    fi
+
+                    if [ "$current_update_status" = "Successful" ]; then
+                      reconciliation_elapsed=$(( $(date +%s) - reconciliation_started_at ))
+                      if [ "$reconciliation_elapsed" -ge "$RECONCILIATION_MIN_SECONDS" ]; then
+                        RECONCILED_IMAGE_URI=$current_image_uri
+                        RECONCILED_REVISION_ID=$current_revision_id
+                        RECONCILIATION_RESULT=NOT_APPLIED_STABLE
+                        return 0
+                      fi
+                    else
+                      echo "CRITICAL: 이전 revision이 Failed 상태여서 요청 결과를 판별할 수 없습니다" >&2
+                      return 1
+                    fi
+                    ;;
+                  *)
+                    echo "알 수 없는 previous update 상태: $current_update_status" >&2
+                    return 1
+                    ;;
+                esac
+              elif [ "$current_image_uri" = "$CANDIDATE_IMAGE_URI" ]; then
+                case "$current_update_status" in
+                  Successful|Failed)
+                    RECONCILED_IMAGE_URI=$current_image_uri
+                    RECONCILED_REVISION_ID=$current_revision_id
+                    RECONCILIATION_RESULT=TERMINAL_CANDIDATE
+                    return 0
+                    ;;
+                  InProgress) ;;
+                  *)
+                    echo "알 수 없는 candidate update 상태: $current_update_status" >&2
+                    return 1
+                    ;;
+                esac
+              else
+                echo "CRITICAL: 알 수 없는 worker digest/revision 조합: image=$current_image_uri revision=$current_revision_id" >&2
+                return 1
+              fi
+              sleep 10
+            done
+            return 1
+          }
+
+          ROLLBACK_ARMED=false
+          rollback_worker() {
+            original_status=$?
+            trap - EXIT HUP INT TERM
+            set +e
+            if [ "$original_status" -ne 0 ] && [ "$ROLLBACK_ARMED" = "true" ]; then
+              echo "worker 배포 실패 상태를 reconcile합니다" >&2
+              if ! reconcile_worker_update; then
+                echo "CRITICAL: Lambda update를 15분 안에 안전하게 reconcile하지 못했습니다" >&2
+                exit "$original_status"
+              fi
+
+              case "$RECONCILED_IMAGE_URI" in
+                "$PREVIOUS_IMAGE_URI")
+                  case "$RECONCILIATION_RESULT" in
+                    NOT_APPLIED_STABLE)
+                      echo "worker 요청이 60초 동안 이전 digest/revision에 머물러 별도 롤백이 필요하지 않습니다" >&2
+                      ;;
+                    TERMINAL_PREVIOUS)
+                      echo "worker update가 terminal 이전 digest로 끝나 별도 롤백이 필요하지 않습니다" >&2
+                      ;;
+                    *)
+                      echo "CRITICAL: 알 수 없는 previous reconciliation 결과: $RECONCILIATION_RESULT" >&2
+                      ;;
+                  esac
+                  ;;
+                "$CANDIDATE_IMAGE_URI")
+                  echo "worker 이전 digest 롤백을 시작합니다" >&2
+                  rollback_requested=false
+                  for rollback_attempt in $(seq 1 6); do
+                    if aws lambda update-function-code \
+                      --function-name "$FUNCTION_NAME" \
+                      --image-uri "$PREVIOUS_IMAGE_URI" \
+                      --revision-id "$RECONCILED_REVISION_ID" >/dev/null; then
+                      rollback_requested=true
+                      break
+                    fi
+                    sleep 10
+                  done
+                  if [ "$rollback_requested" != "true" ] || ! wait_for_worker_terminal; then
+                    echo "CRITICAL: worker 이전 digest 롤백 요청 또는 완료 대기 실패" >&2
+                    exit "$original_status"
+                  fi
+                  restored_config=$(aws lambda get-function-configuration \
+                    --function-name "$FUNCTION_NAME" 2>/dev/null || echo '{}')
+                  restored_uri=$(aws lambda get-function \
+                    --function-name "$FUNCTION_NAME" \
+                    --query 'Code.ResolvedImageUri' --output text 2>/dev/null || echo UNKNOWN)
+                  if ! printf '%s' "$restored_config" | jq -e \
+                    '.State == "Active" and .LastUpdateStatus == "Successful"' >/dev/null || \
+                    [ "$restored_uri" != "$PREVIOUS_IMAGE_URI" ]; then
+                    echo "CRITICAL: worker rollback 상태/digest 검증 실패" >&2
+                  fi
+                  ;;
+                *)
+                  echo "CRITICAL: 알 수 없는 digest로 바뀌어 덮어쓰지 않습니다: $RECONCILED_IMAGE_URI" >&2
+                  ;;
+              esac
+            fi
+            exit "$original_status"
+          }
+          trap rollback_worker EXIT
+          trap 'exit 129' HUP
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+
+          # 요청 전부터 rollback을 arm한다. AWS가 요청을 수락한 뒤 응답만 유실돼도 EXIT
+          # handler가 update terminal 상태와 resolved digest를 확인한 뒤 안전하게 복구한다.
+          ROLLBACK_ARMED=true
+          aws lambda update-function-code \
+            --function-name "$FUNCTION_NAME" \
+            --image-uri "$CANDIDATE_IMAGE_URI" \
+            --revision-id "$PREVIOUS_REVISION_ID" >/dev/null
+          aws lambda wait function-updated-v2 --function-name "$FUNCTION_NAME"
+
+          CONFIG=$(aws lambda get-function-configuration --function-name "$FUNCTION_NAME")
+          printf '%s' "$CONFIG" | jq -e '
+            .State == "Active" and
+            .LastUpdateStatus == "Successful" and
+            .PackageType == "Image" and
+            .Architectures == ["x86_64"]
+          ' >/dev/null
+
+          RESOLVED_IMAGE_URI=$(aws lambda get-function \
+            --function-name "$FUNCTION_NAME" \
+            --query 'Code.ResolvedImageUri' --output text)
+          [ "$RESOLVED_IMAGE_URI" = "$CANDIDATE_IMAGE_URI" ] || {
+            echo "Lambda resolved digest 불일치" >&2
+            exit 1
+          }
+
+          trap - EXIT HUP INT TERM
+          echo "worker 배포 완료: ${CANDIDATE_DIGEST}"
+
+  # 공개 API가 Flyway migration을 끝내고 worker가 배포된 뒤에만 관리자 API를 교체한다.
+  deploy-admin:
+    name: 비공개 관리자 API 배포
+    needs: [build-and-push, deploy-public, deploy-worker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+
+    env:
+      OWNER_LOWERCASE: ${{ needs.build-and-push.outputs.owner_lowercase }}
+      IMAGE_TAG: ${{ github.sha }}
+      AWS_REGION: ap-northeast-2
+      INSTANCE_NAME_TAG: wes-admin
+
+    steps:
+      - name: 관리자 compose 파일 체크아웃
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            docker-compose.admin-api.prod.yml
+            deploy/wes-admin-alloy-egress.service
+            monitoring/config.admin.alloy
+            scripts/configure-admin-alloy-egress.sh
+          sparse-checkout-cone-mode: false
+
+      # 공개 API 배포 역할을 넓히지 않고 wes-admin에만 명령 가능한 전용 역할을 사용한다.
+      - name: 관리자 배포 AWS 자격증명 설정
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ADMIN_API_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 관리자 인스턴스 조회
+        id: admin_instance
+        run: |
+          INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=${INSTANCE_NAME_TAG}" 'Name=instance-state-name,Values=running' \
+            --query 'Reservations[0].Instances[0].InstanceId' --output text)
+
+          if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
+            echo "실행 중인 ${INSTANCE_NAME_TAG} 인스턴스가 없습니다" >&2
+            exit 1
+          fi
+          echo "id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: 관리자 API 교체 및 내부 헬스체크
+        run: |
+          INSTANCE_ID="${{ steps.admin_instance.outputs.id }}"
+          COMPOSE_B64=$(base64 -w0 docker-compose.admin-api.prod.yml)
+          ALLOY_B64=$(base64 -w0 monitoring/config.admin.alloy)
+          ALLOY_EGRESS_B64=$(base64 -w0 scripts/configure-admin-alloy-egress.sh)
+          ALLOY_EGRESS_UNIT_B64=$(base64 -w0 deploy/wes-admin-alloy-egress.service)
+
+          cat > deploy_admin_script.sh <<SCRIPT
+          set -eu
+
+          # BackOffice 배포와 같은 잠금을 사용해 두 컨테이너 교체가 겹치지 않게 한다.
+          exec 9>/var/lock/wes-admin-deploy.lock
+          flock -w 600 9
+
+          export OWNER_LOWERCASE="${OWNER_LOWERCASE}"
+          export IMAGE_TAG="${IMAGE_TAG}"
+          TARGET_IMAGE_TAG="\$IMAGE_TAG"
+          WORK_DIR=/opt/wes-admin-api-prod
+          ROLLBACK_DIR="\$WORK_DIR/.admin-rollback"
+          CANDIDATE_DIR="\$WORK_DIR/.admin-candidate"
+          INTERNAL_NETWORK_NAME=wes-admin-internal
+          INTERNAL_NETWORK_SUBNET=172.30.0.0/24
+          RUNTIME_NETWORK_NAME=wes-admin-runtime
+          RUNTIME_NETWORK_SUBNET=172.30.1.0/24
+          ALLOY_EGRESS_NETWORK_NAME=wes-admin-alloy-egress
+          ALLOY_EGRESS_NETWORK_SUBNET=172.30.2.0/24
+          PREVIOUS_RELEASE_AVAILABLE=false
+          ROLLBACK_ARMED=false
+          REGISTRY_LOGGED_IN=false
+          PREVIOUS_IMAGE=
+          PREVIOUS_IMAGE_ID=
+          PREVIOUS_IMAGE_TAG=
+          HOST_STATE_CAPTURED=false
+          PREVIOUS_EGRESS_SCRIPT_AVAILABLE=false
+          PREVIOUS_EGRESS_UNIT_AVAILABLE=false
+          PREVIOUS_EGRESS_UNIT_ENABLED=false
+          PREVIOUS_ADMIN_COMPOSE_AVAILABLE=false
+          PREVIOUS_ADMIN_ALLOY_CONFIG_AVAILABLE=false
+          PREVIOUS_ALLOY_EXISTS=false
+          PREVIOUS_ALLOY_WAS_ACTIVE=false
+          PREVIOUS_ALLOY_RESTART_POLICY=no
+          PREVIOUS_ALLOY_IMAGE=
+          PREVIOUS_ALLOY_IMAGE_ID=
+
+          rollback_admin_api_release() (
+            set -eu
+
+            echo "관리자 API 이전 릴리스 롤백을 시작합니다" >&2
+            install -m 0644 "\$ROLLBACK_DIR/docker-compose.admin-api.prod.yml" \
+              "\$WORK_DIR/.docker-compose.admin-api.prod.yml.rollback"
+            install -m 0644 "\$ROLLBACK_DIR/config.admin.alloy" \
+              "\$WORK_DIR/.config.admin.alloy.rollback"
+            mv -f "\$WORK_DIR/.docker-compose.admin-api.prod.yml.rollback" \
+              "\$WORK_DIR/docker-compose.admin-api.prod.yml"
+            mv -f "\$WORK_DIR/.config.admin.alloy.rollback" "\$WORK_DIR/config.admin.alloy"
+            cmp -s "\$ROLLBACK_DIR/docker-compose.admin-api.prod.yml" \
+              "\$WORK_DIR/docker-compose.admin-api.prod.yml"
+            cmp -s "\$ROLLBACK_DIR/config.admin.alloy" "\$WORK_DIR/config.admin.alloy"
+
+            # The previous container keeps the image layers referenced until replacement.
+            # Re-attach its immutable image ID to the recorded tag and never pull during rollback.
+            docker image inspect "\$PREVIOUS_IMAGE_ID" >/dev/null
+            docker image tag "\$PREVIOUS_IMAGE_ID" "\$PREVIOUS_IMAGE"
+            export IMAGE_TAG="\$PREVIOUS_IMAGE_TAG"
+
+            cd "\$WORK_DIR"
+            docker compose -f docker-compose.admin-api.prod.yml \
+              up -d --force-recreate --pull never wes-admin-api
+
+            ROLLED_BACK_IMAGE=\$(docker inspect --format '{{.Config.Image}}' wes-admin-api)
+            ROLLED_BACK_IMAGE_ID=\$(docker inspect --format '{{.Image}}' wes-admin-api)
+            [ "\$ROLLED_BACK_IMAGE" = "\$PREVIOUS_IMAGE" ] || {
+              echo "롤백 이미지 불일치: \$ROLLED_BACK_IMAGE (expected \$PREVIOUS_IMAGE)" >&2
+              return 1
+            }
+            [ "\$ROLLED_BACK_IMAGE_ID" = "\$PREVIOUS_IMAGE_ID" ] || {
+              echo "롤백 이미지 ID 불일치: \$ROLLED_BACK_IMAGE_ID (expected \$PREVIOUS_IMAGE_ID)" >&2
+              return 1
+            }
+
+            for rollback_attempt in \$(seq 1 30); do
+              ROLLBACK_HTTP_CODE=\$(curl -s -o /dev/null -w '%{http_code}' \
+                --connect-timeout 2 --max-time 5 \
+                "http://127.0.0.1:8081/actuator/health" || true)
+              if [ "\$ROLLBACK_HTTP_CODE" = "200" ]; then
+                echo "관리자 API 이전 릴리스 복구 완료 (\${rollback_attempt}번째 시도)" >&2
+                return 0
+              fi
+              sleep 5
+            done
+
+            echo "이전 관리자 API 이미지로 복구했지만 8081 health 검증에 실패했습니다" >&2
+            docker logs --tail 100 wes-admin-api >&2 || true
+            return 1
+          )
+
+          recover_admin_alloy_state() (
+            set -eu
+
+            [ "\$HOST_STATE_CAPTURED" = "true" ] || return 0
+            CURRENT_ALLOY_EXISTS=false
+            CURRENT_ALLOY_ACTIVE=false
+            CURRENT_ALLOY_RESTART_POLICY=no
+            if docker inspect wes-admin-alloy >/dev/null 2>&1; then
+              CURRENT_ALLOY_EXISTS=true
+              CURRENT_ALLOY_RESTART_POLICY=\$(docker inspect \
+                --format '{{.HostConfig.RestartPolicy.Name}}' wes-admin-alloy)
+              if [ "\$(docker inspect --format '{{.State.Running}}' wes-admin-alloy)" = "true" ] || \
+                [ "\$(docker inspect --format '{{.State.Restarting}}' wes-admin-alloy)" = "true" ]; then
+                CURRENT_ALLOY_ACTIVE=true
+              fi
+            fi
+
+            # Before any live swap or policy refresh, an unchanged runtime is already
+            # the exact previous state. In particular, never restart a legacy container
+            # whose Docker DNS boundary has not yet been upgraded.
+            if [ "\$ROLLBACK_ARMED" = "false" ] && \
+              [ "\$CURRENT_ALLOY_EXISTS" = "\$PREVIOUS_ALLOY_EXISTS" ] && \
+              [ "\$CURRENT_ALLOY_ACTIVE" = "\$PREVIOUS_ALLOY_WAS_ACTIVE" ] && \
+              [ "\$CURRENT_ALLOY_RESTART_POLICY" = "\$PREVIOUS_ALLOY_RESTART_POLICY" ]; then
+              return 0
+            fi
+
+            if [ "\$PREVIOUS_ALLOY_EXISTS" = "false" ]; then
+              if [ "\$CURRENT_ALLOY_EXISTS" = "true" ]; then
+                if ! docker update --restart=no wes-admin-alloy >/dev/null; then
+                  docker rm -f wes-admin-alloy >/dev/null 2>&1 || true
+                  echo "이전에는 없던 Alloy의 restart policy를 해제하지 못했습니다" >&2
+                  return 1
+                fi
+                if ! docker stop --time 30 wes-admin-alloy >/dev/null; then
+                  docker rm -f wes-admin-alloy >/dev/null 2>&1 || true
+                  echo "이전에는 없던 Alloy를 중지하지 못했습니다" >&2
+                  return 1
+                fi
+                [ "\$(docker inspect --format '{{.State.Running}}' wes-admin-alloy)" = "false" ]
+                [ "\$(docker inspect --format '{{.State.Restarting}}' wes-admin-alloy)" = "false" ]
+                [ "\$(docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' wes-admin-alloy)" = "no" ]
+              fi
+              return 0
+            fi
+
+            fail_closed_admin_alloy_recovery() {
+              RECOVERY_STATUS=\$?
+              trap - EXIT HUP INT TERM
+              set +e
+              if [ "\$RECOVERY_STATUS" -ne 0 ]; then
+                if docker inspect wes-admin-alloy >/dev/null 2>&1; then
+                  FAIL_CLOSED_UPDATE_OK=true
+                  FAIL_CLOSED_STOP_OK=true
+                  docker update --restart=no wes-admin-alloy >/dev/null 2>&1 || \
+                    FAIL_CLOSED_UPDATE_OK=false
+                  docker stop --time 30 wes-admin-alloy >/dev/null 2>&1 || \
+                    FAIL_CLOSED_STOP_OK=false
+                  if [ "\$FAIL_CLOSED_UPDATE_OK" = "false" ] || \
+                    [ "\$FAIL_CLOSED_STOP_OK" = "false" ]; then
+                    docker rm -f wes-admin-alloy >/dev/null 2>&1 || true
+                  fi
+                  if docker inspect wes-admin-alloy >/dev/null 2>&1; then
+                    FAIL_CLOSED_RUNNING=\$(docker inspect \
+                      --format '{{.State.Running}}' wes-admin-alloy)
+                    FAIL_CLOSED_RESTARTING=\$(docker inspect \
+                      --format '{{.State.Restarting}}' wes-admin-alloy)
+                    FAIL_CLOSED_POLICY=\$(docker inspect \
+                      --format '{{.HostConfig.RestartPolicy.Name}}' wes-admin-alloy)
+                    if [ "\$FAIL_CLOSED_RUNNING" != "false" ] || \
+                      [ "\$FAIL_CLOSED_RESTARTING" != "false" ] || \
+                      [ "\$FAIL_CLOSED_POLICY" != "no" ]; then
+                      echo "CRITICAL: Alloy collector를 fail-closed 상태로 만들지 못했습니다" >&2
+                    fi
+                  fi
+                fi
+                echo "이전 Alloy 경계를 검증·복구하지 못해 collector를 fail-closed 상태로 유지합니다" >&2
+              fi
+              exit "\$RECOVERY_STATUS"
+            }
+            trap fail_closed_admin_alloy_recovery EXIT
+            trap 'exit 129' HUP
+            trap 'exit 130' INT
+            trap 'exit 143' TERM
+
+            # Never retry the failed candidate here. Only the immutable snapshots
+            # captured before deployment may be used to recover the prior collector.
+            [ "\$PREVIOUS_EGRESS_SCRIPT_AVAILABLE" = "true" ] && \
+              [ "\$PREVIOUS_EGRESS_UNIT_AVAILABLE" = "true" ] && \
+              [ "\$PREVIOUS_ADMIN_COMPOSE_AVAILABLE" = "true" ] && \
+              [ "\$PREVIOUS_ADMIN_ALLOY_CONFIG_AVAILABLE" = "true" ] && \
+              [ -n "\${LOKI_URL:-}" ] && \
+              [ -n "\$PREVIOUS_ALLOY_IMAGE" ] && \
+              [ -n "\$PREVIOUS_ALLOY_IMAGE_ID" ] || {
+                echo "이전 Alloy script/unit/compose/image snapshot이 불완전해 재시작하지 않습니다" >&2
+                return 1
+              }
+            cmp -s "\$ROLLBACK_DIR/configure-admin-alloy-egress" \
+              /usr/local/sbin/configure-admin-alloy-egress
+            cmp -s "\$ROLLBACK_DIR/wes-admin-alloy-egress.service" \
+              /etc/systemd/system/wes-admin-alloy-egress.service
+            bash -n /usr/local/sbin/configure-admin-alloy-egress
+            grep -Fq 'RESTART_STOPPED_ALLOY="\${RESTART_STOPPED_ALLOY:-true}"' \
+              /usr/local/sbin/configure-admin-alloy-egress
+            grep -Fq 'rm -f -- "\$READY_FILE"' /usr/local/sbin/configure-admin-alloy-egress
+            grep -Fq 'iptables -w 5 -I DOCKER-USER 1 -s "\$ALLOY_EGRESS_SUBNET" -j "\$CHAIN_NAME"' \
+              /usr/local/sbin/configure-admin-alloy-egress
+            grep -Fq 'iptables -w 5 -I INPUT 1 -s "\$ALLOY_EGRESS_SUBNET" -j "\$HOST_CHAIN_NAME"' \
+              /usr/local/sbin/configure-admin-alloy-egress
+            grep -Fq 'iptables -w 5 -A "\$CHAIN_NAME" -j REJECT' \
+              /usr/local/sbin/configure-admin-alloy-egress
+            grep -Fq 'iptables -w 5 -A "\$HOST_CHAIN_NAME" -j REJECT' \
+              /usr/local/sbin/configure-admin-alloy-egress
+            grep -Fq 'install -m 0444 /dev/null "\$READY_FILE"' \
+              /usr/local/sbin/configure-admin-alloy-egress
+            grep -Fxq 'Before=docker.service' /etc/systemd/system/wes-admin-alloy-egress.service
+            grep -Fxq 'ExecStart=/usr/local/sbin/configure-admin-alloy-egress' \
+              /etc/systemd/system/wes-admin-alloy-egress.service
+            if [ "\$PREVIOUS_ALLOY_RESTART_POLICY" != "no" ]; then
+              [ "\$PREVIOUS_EGRESS_UNIT_ENABLED" = "true" ] && \
+                systemctl is-enabled --quiet wes-admin-alloy-egress.service
+            fi
+
+            install -m 0644 "\$ROLLBACK_DIR/docker-compose.admin-api.prod.yml" \
+              "\$WORK_DIR/.docker-compose.admin-api.prod.yml.alloy-rollback"
+            install -m 0644 "\$ROLLBACK_DIR/config.admin.alloy" \
+              "\$WORK_DIR/.config.admin.alloy.alloy-rollback"
+            mv -f "\$WORK_DIR/.docker-compose.admin-api.prod.yml.alloy-rollback" \
+              "\$WORK_DIR/docker-compose.admin-api.prod.yml"
+            mv -f "\$WORK_DIR/.config.admin.alloy.alloy-rollback" \
+              "\$WORK_DIR/config.admin.alloy"
+            cmp -s "\$ROLLBACK_DIR/docker-compose.admin-api.prod.yml" \
+              "\$WORK_DIR/docker-compose.admin-api.prod.yml"
+            cmp -s "\$ROLLBACK_DIR/config.admin.alloy" "\$WORK_DIR/config.admin.alloy"
+
+            export IMAGE_TAG="\${PREVIOUS_IMAGE_TAG:-\$TARGET_IMAGE_TAG}"
+            docker compose --project-directory "\$WORK_DIR" \
+              -f "\$ROLLBACK_DIR/docker-compose.admin-api.prod.yml" config --format json \
+              | PREVIOUS_ALLOY_IMAGE="\$PREVIOUS_ALLOY_IMAGE" \
+                EXPECTED_LOKI_HOST="\$LOKI_HOST" \
+                EXPECTED_LOKI_IP="\$LOKI_PRIMARY_IP" \
+                EXPECTED_ALLOY_NETWORK="\$ALLOY_EGRESS_NETWORK_NAME" \
+                python3 -c '
+          import json
+          import os
+          import sys
+
+          config = json.load(sys.stdin)
+          service = config.get("services", {}).get("wes-admin-alloy", {})
+          expected_host = os.environ["EXPECTED_LOKI_HOST"]
+          expected_ip = os.environ["EXPECTED_LOKI_IP"]
+          extra_hosts = service.get("extra_hosts") or []
+          if isinstance(extra_hosts, dict):
+              host_pin_ok = extra_hosts == {expected_host: expected_ip}
+          else:
+              host_pin_ok = len(extra_hosts) == 1 and extra_hosts[0] in {
+                  f"{expected_host}:{expected_ip}",
+                  f"{expected_host}={expected_ip}",
+              }
+          networks = service.get("networks") or {}
+          network_names = set(networks if isinstance(networks, dict) else networks)
+          command = json.dumps(service.get("command", ""))
+          checks = [
+              service.get("image") == os.environ["PREVIOUS_ALLOY_IMAGE"],
+              service.get("dns") == ["127.0.0.1"],
+              host_pin_ok,
+              network_names == {os.environ["EXPECTED_ALLOY_NETWORK"]},
+              service.get("read_only") is True,
+              service.get("user") == "473:473",
+              "ALL" in (service.get("cap_drop") or []),
+              "/run/wes-alloy-egress/ready" in command,
+          ]
+          if not all(checks):
+              raise SystemExit("previous Alloy compose does not satisfy the fail-closed boundary")
+          '
+
+            docker image inspect "\$PREVIOUS_ALLOY_IMAGE_ID" >/dev/null
+            case "\$PREVIOUS_ALLOY_IMAGE" in
+              *@sha256:*) ;;
+              *) docker image tag "\$PREVIOUS_ALLOY_IMAGE_ID" "\$PREVIOUS_ALLOY_IMAGE" ;;
+            esac
+
+            ALLOY_EGRESS_SUBNET="\$ALLOY_EGRESS_NETWORK_SUBNET" \
+              AWS_REGION="${AWS_REGION}" \
+              LOKI_URL="\$LOKI_URL" \
+              RESTART_STOPPED_ALLOY=false \
+              /usr/local/sbin/configure-admin-alloy-egress
+            test -r /run/wes-alloy-egress/ready
+            export LOKI_HOST=\$(cat /run/wes-alloy-egress/loki-host)
+            export LOKI_PRIMARY_IP=\$(cat /run/wes-alloy-egress/loki-primary-ip)
+            export LOKI_PORT=\$(cat /run/wes-alloy-egress/loki-port)
+
+            docker compose --project-directory "\$WORK_DIR" \
+              -f "\$ROLLBACK_DIR/docker-compose.admin-api.prod.yml" \
+              up -d --force-recreate --pull never wes-admin-alloy
+            [ "\$(docker inspect --format '{{.Config.Image}}' wes-admin-alloy)" = \
+              "\$PREVIOUS_ALLOY_IMAGE" ]
+            [ "\$(docker inspect --format '{{.Image}}' wes-admin-alloy)" = \
+              "\$PREVIOUS_ALLOY_IMAGE_ID" ]
+            [ "\$(docker inspect --format '{{json .HostConfig.Dns}}' wes-admin-alloy)" = \
+              '["127.0.0.1"]' ]
+            [ "\$(docker inspect --format '{{json .HostConfig.ExtraHosts}}' wes-admin-alloy)" = \
+              "[\"\$LOKI_HOST:\$LOKI_PRIMARY_IP\"]" ]
+            [ "\$(docker inspect --format '{{.HostConfig.NetworkMode}}' wes-admin-alloy)" = \
+              "\$ALLOY_EGRESS_NETWORK_NAME" ]
+
+            docker update --restart=no wes-admin-alloy >/dev/null
+            if [ "\$PREVIOUS_ALLOY_WAS_ACTIVE" = "true" ]; then
+              docker start wes-admin-alloy >/dev/null
+              [ "\$(docker inspect --format '{{.State.Running}}' wes-admin-alloy)" = "true" ]
+            else
+              docker stop --time 30 wes-admin-alloy >/dev/null || true
+              [ "\$(docker inspect --format '{{.State.Running}}' wes-admin-alloy)" = "false" ]
+            fi
+            docker update --restart="\$PREVIOUS_ALLOY_RESTART_POLICY" wes-admin-alloy >/dev/null
+            [ "\$(docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' wes-admin-alloy)" = \
+              "\$PREVIOUS_ALLOY_RESTART_POLICY" ]
+            trap - EXIT HUP INT TERM
+          )
+
+          restore_admin_host_artifacts() (
+            set -eu
+            [ "\$HOST_STATE_CAPTURED" = "true" ] || return 0
+
+            if [ "\$PREVIOUS_EGRESS_SCRIPT_AVAILABLE" = "true" ]; then
+              install -m 0755 "\$ROLLBACK_DIR/configure-admin-alloy-egress" \
+                /usr/local/sbin/.configure-admin-alloy-egress.rollback
+              mv -f /usr/local/sbin/.configure-admin-alloy-egress.rollback \
+                /usr/local/sbin/configure-admin-alloy-egress
+            else
+              rm -f -- /usr/local/sbin/configure-admin-alloy-egress \
+                /usr/local/sbin/.configure-admin-alloy-egress.next
+            fi
+            if [ "\$PREVIOUS_EGRESS_UNIT_AVAILABLE" = "true" ]; then
+              install -m 0644 "\$ROLLBACK_DIR/wes-admin-alloy-egress.service" \
+                /etc/systemd/system/.wes-admin-alloy-egress.service.rollback
+              mv -f /etc/systemd/system/.wes-admin-alloy-egress.service.rollback \
+                /etc/systemd/system/wes-admin-alloy-egress.service
+              systemctl daemon-reload
+              if [ "\$PREVIOUS_EGRESS_UNIT_ENABLED" = "true" ]; then
+                systemctl enable wes-admin-alloy-egress.service >/dev/null
+              else
+                systemctl disable wes-admin-alloy-egress.service >/dev/null
+              fi
+            else
+              systemctl disable wes-admin-alloy-egress.service >/dev/null 2>&1 || true
+              rm -f -- /etc/systemd/system/wes-admin-alloy-egress.service \
+                /etc/systemd/system/.wes-admin-alloy-egress.service.next
+              systemctl daemon-reload
+            fi
+          )
+
+          on_admin_deploy_exit() {
+            ORIGINAL_STATUS=\$?
+            trap - EXIT HUP INT TERM
+            set +e
+
+            if [ "\$ORIGINAL_STATUS" -ne 0 ]; then
+              if [ "\$ROLLBACK_ARMED" = "true" ] && [ "\$PREVIOUS_RELEASE_AVAILABLE" = "true" ]; then
+                rollback_admin_api_release
+                [ "\$?" -eq 0 ] || echo "관리자 API 롤백도 실패했습니다; 수동 복구가 필요합니다" >&2
+              elif [ "\$ROLLBACK_ARMED" = "true" ]; then
+                echo "첫 배포여서 이전 wes-admin-api 컨테이너가 없습니다; 롤백 없이 실패 상태를 유지합니다" >&2
+              else
+                echo "배포 변경 전 실패하여 기존 관리자 API 릴리스는 그대로 유지됩니다" >&2
+              fi
+
+              restore_admin_host_artifacts
+              [ "\$?" -eq 0 ] || echo "이전 Alloy host script/unit 복원에 실패했습니다" >&2
+              recover_admin_alloy_state
+              [ "\$?" -eq 0 ] || echo "Alloy의 이전 실행 상태를 안전하게 복구하지 못했습니다" >&2
+            fi
+
+            if [ "\$REGISTRY_LOGGED_IN" = "true" ]; then
+              docker logout ghcr.io >/dev/null 2>&1 || true
+            fi
+            exit "\$ORIGINAL_STATUS"
+          }
+
+          trap on_admin_deploy_exit EXIT
+          trap 'exit 129' HUP
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+
+          mkdir -p "\$WORK_DIR" "\$WORK_DIR/admin-api-logs" \
+            "\$WORK_DIR/admin-alloy-data" "\$ROLLBACK_DIR"
+          install -d -m 0700 "\$CANDIDATE_DIR"
+          chown 10001:10001 "\$WORK_DIR/admin-api-logs"
+          chown 473:473 "\$WORK_DIR/admin-alloy-data"
+
+          if [ -f /usr/local/sbin/configure-admin-alloy-egress ]; then
+            install -m 0600 /usr/local/sbin/configure-admin-alloy-egress \
+              "\$ROLLBACK_DIR/configure-admin-alloy-egress"
+            PREVIOUS_EGRESS_SCRIPT_AVAILABLE=true
+          fi
+          if [ -f /etc/systemd/system/wes-admin-alloy-egress.service ]; then
+            install -m 0600 /etc/systemd/system/wes-admin-alloy-egress.service \
+              "\$ROLLBACK_DIR/wes-admin-alloy-egress.service"
+            PREVIOUS_EGRESS_UNIT_AVAILABLE=true
+            if systemctl is-enabled --quiet wes-admin-alloy-egress.service; then
+              PREVIOUS_EGRESS_UNIT_ENABLED=true
+            fi
+          fi
+          if [ -f "\$WORK_DIR/docker-compose.admin-api.prod.yml" ]; then
+            install -m 0600 "\$WORK_DIR/docker-compose.admin-api.prod.yml" \
+              "\$ROLLBACK_DIR/docker-compose.admin-api.prod.yml"
+            PREVIOUS_ADMIN_COMPOSE_AVAILABLE=true
+          fi
+          if [ -f "\$WORK_DIR/config.admin.alloy" ]; then
+            install -m 0600 "\$WORK_DIR/config.admin.alloy" \
+              "\$ROLLBACK_DIR/config.admin.alloy"
+            PREVIOUS_ADMIN_ALLOY_CONFIG_AVAILABLE=true
+          fi
+          if docker inspect wes-admin-alloy >/dev/null 2>&1; then
+            PREVIOUS_ALLOY_EXISTS=true
+            PREVIOUS_ALLOY_RESTART_POLICY=\$(docker inspect \
+              --format '{{.HostConfig.RestartPolicy.Name}}' wes-admin-alloy)
+            PREVIOUS_ALLOY_IMAGE=\$(docker inspect --format '{{.Config.Image}}' wes-admin-alloy)
+            PREVIOUS_ALLOY_IMAGE_ID=\$(docker inspect --format '{{.Image}}' wes-admin-alloy)
+            docker image inspect "\$PREVIOUS_ALLOY_IMAGE_ID" >/dev/null
+            if [ "\$(docker inspect --format '{{.State.Running}}' wes-admin-alloy)" = "true" ] || \
+              [ "\$(docker inspect --format '{{.State.Restarting}}' wes-admin-alloy)" = "true" ]; then
+              PREVIOUS_ALLOY_WAS_ACTIVE=true
+            fi
+          fi
+          HOST_STATE_CAPTURED=true
+
+          if docker inspect wes-admin-api >/dev/null 2>&1; then
+            [ "\$PREVIOUS_ADMIN_COMPOSE_AVAILABLE" = "true" ] && \
+              [ "\$PREVIOUS_ADMIN_ALLOY_CONFIG_AVAILABLE" = "true" ] || {
+                echo "기존 관리자 API는 있지만 이전 compose/Alloy 설정이 없어 안전하게 배포할 수 없습니다" >&2
+                exit 1
+              }
+
+            PREVIOUS_IMAGE=\$(docker inspect --format '{{.Config.Image}}' wes-admin-api)
+            PREVIOUS_IMAGE_ID=\$(docker inspect --format '{{.Image}}' wes-admin-api)
+            PREVIOUS_IMAGE_PREFIX="ghcr.io/${OWNER_LOWERCASE}/${ADMIN_IMAGE_BASENAME}:"
+            case "\$PREVIOUS_IMAGE" in
+              "\$PREVIOUS_IMAGE_PREFIX"*)
+                PREVIOUS_IMAGE_TAG=\${PREVIOUS_IMAGE#"\$PREVIOUS_IMAGE_PREFIX"}
+                ;;
+              *)
+                echo "기존 관리자 API 이미지가 예상 저장소에 속하지 않습니다: \$PREVIOUS_IMAGE" >&2
+                exit 1
+                ;;
+            esac
+            [ -n "\$PREVIOUS_IMAGE_TAG" ] || {
+              echo "기존 관리자 API 이미지 태그를 확인할 수 없습니다" >&2
+              exit 1
+            }
+            docker image inspect "\$PREVIOUS_IMAGE_ID" >/dev/null
+
+            PREVIOUS_HEALTHY=false
+            for preflight_attempt in \$(seq 1 5); do
+              PREFLIGHT_HTTP_CODE=\$(curl -s -o /dev/null -w '%{http_code}' \
+                --connect-timeout 2 --max-time 5 \
+                "http://127.0.0.1:8081/actuator/health" || true)
+              if [ "\$PREFLIGHT_HTTP_CODE" = "200" ]; then
+                PREVIOUS_HEALTHY=true
+                break
+              fi
+              sleep 2
+            done
+            [ "\$PREVIOUS_HEALTHY" = "true" ] || {
+              echo "기존 관리자 API가 healthy하지 않아 검증 가능한 롤백 기준점이 없습니다" >&2
+              exit 1
+            }
+
+            install -m 0600 "\$WORK_DIR/docker-compose.admin-api.prod.yml" \
+              "\$ROLLBACK_DIR/docker-compose.admin-api.prod.yml"
+            install -m 0600 "\$WORK_DIR/config.admin.alloy" \
+              "\$ROLLBACK_DIR/config.admin.alloy"
+            printf '%s\n' "\$PREVIOUS_IMAGE" > "\$ROLLBACK_DIR/previous-image"
+            printf '%s\n' "\$PREVIOUS_IMAGE_ID" > "\$ROLLBACK_DIR/previous-image-id"
+            printf '%s\n' "\$PREVIOUS_IMAGE_TAG" > "\$ROLLBACK_DIR/previous-image-tag"
+            chmod 0600 "\$ROLLBACK_DIR/previous-image" \
+              "\$ROLLBACK_DIR/previous-image-id" "\$ROLLBACK_DIR/previous-image-tag"
+            PREVIOUS_RELEASE_AVAILABLE=true
+            echo "이전 관리자 API 릴리스 \$PREVIOUS_IMAGE를 롤백용으로 보존했습니다"
+          else
+            echo "첫 배포: 이전 wes-admin-api 컨테이너가 없어 실패 시 롤백할 릴리스가 없습니다" >&2
+          fi
+
+          ensure_network() {
+            NETWORK_NAME="\$1"
+            NETWORK_SUBNET="\$2"
+            NETWORK_INTERNAL="\$3"
+
+            if docker network inspect "\$NETWORK_NAME" >/dev/null 2>&1; then
+              ACTUAL_INTERNAL=\$(docker network inspect --format '{{.Internal}}' "\$NETWORK_NAME")
+              ACTUAL_SUBNET=\$(docker network inspect --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' "\$NETWORK_NAME")
+              [ "\$ACTUAL_INTERNAL" = "\$NETWORK_INTERNAL" ] && [ "\$ACTUAL_SUBNET" = "\$NETWORK_SUBNET" ] || {
+                echo "\$NETWORK_NAME 설정 불일치 (internal=\$ACTUAL_INTERNAL, subnet=\$ACTUAL_SUBNET)" >&2
+                exit 1
+              }
+              return
+            fi
+
+            if [ "\$NETWORK_INTERNAL" = "true" ]; then
+              docker network create --driver bridge --internal \
+                --subnet "\$NETWORK_SUBNET" "\$NETWORK_NAME" >/dev/null
+            else
+              docker network create --driver bridge \
+                --subnet "\$NETWORK_SUBNET" "\$NETWORK_NAME" >/dev/null
+            fi
+          }
+
+          # BackOffice 통신, 관리자 API runtime, Alloy 송신 경로를 서로 다른 대역으로 고정한다.
+          ensure_network "\$INTERNAL_NETWORK_NAME" "\$INTERNAL_NETWORK_SUBNET" true
+          ensure_network "\$RUNTIME_NETWORK_NAME" "\$RUNTIME_NETWORK_SUBNET" false
+          ensure_network "\$ALLOY_EGRESS_NETWORK_NAME" "\$ALLOY_EGRESS_NETWORK_SUBNET" false
+
+          export LOKI_URL=\$(aws ssm get-parameter --region ${AWS_REGION} \
+            --name /wes/admin-api/prod/app.logging.loki-url \
+            --query Parameter.Value --output text)
+          [ -n "\$LOKI_URL" ] || {
+            echo "관리자 Loki 주소가 없습니다" >&2
+            exit 1
+          }
+          export LOKI_HOST=\$(python3 -c '
+          from urllib.parse import urlsplit
+          import sys
+          parsed = urlsplit(sys.argv[1])
+          if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+              raise SystemExit("invalid Loki URL")
+          print(parsed.hostname)
+          ' "\$LOKI_URL")
+          export LOKI_PRIMARY_IP=\$(getent ahostsv4 "\$LOKI_HOST" | awk '{print \$1}' | sort -u | head -n 1)
+          [ -n "\$LOKI_HOST" ] && [ -n "\$LOKI_PRIMARY_IP" ] || {
+            echo "Loki host/IP를 사전 확인하지 못했습니다" >&2
+            exit 1
+          }
+
+          # Decode and validate every candidate while all live files and containers are
+          # still untouched. The live-path .next files make each subsequent rename atomic.
+          echo "${COMPOSE_B64}" | base64 -d > "\$CANDIDATE_DIR/docker-compose.admin-api.prod.yml"
+          echo "${ALLOY_B64}" | base64 -d > "\$CANDIDATE_DIR/config.admin.alloy"
+          echo "${ALLOY_EGRESS_B64}" | base64 -d > "\$CANDIDATE_DIR/configure-admin-alloy-egress.sh"
+          echo "${ALLOY_EGRESS_UNIT_B64}" | base64 -d > "\$CANDIDATE_DIR/wes-admin-alloy-egress.service"
+          chmod 0600 "\$CANDIDATE_DIR/docker-compose.admin-api.prod.yml" \
+            "\$CANDIDATE_DIR/config.admin.alloy" "\$CANDIDATE_DIR/wes-admin-alloy-egress.service"
+          chmod 0700 "\$CANDIDATE_DIR/configure-admin-alloy-egress.sh"
+          [ -s "\$CANDIDATE_DIR/docker-compose.admin-api.prod.yml" ] && \
+            [ -s "\$CANDIDATE_DIR/config.admin.alloy" ] && \
+            [ -s "\$CANDIDATE_DIR/configure-admin-alloy-egress.sh" ] && \
+            [ -s "\$CANDIDATE_DIR/wes-admin-alloy-egress.service" ]
+          bash -n "\$CANDIDATE_DIR/configure-admin-alloy-egress.sh"
+          docker compose --project-directory "\$WORK_DIR" \
+            -f "\$CANDIDATE_DIR/docker-compose.admin-api.prod.yml" config --quiet
+          grep -Fq 'ExecStart=/usr/local/sbin/configure-admin-alloy-egress' \
+            "\$CANDIDATE_DIR/wes-admin-alloy-egress.service"
+
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          REGISTRY_LOGGED_IN=true
+          docker compose --project-directory "\$WORK_DIR" \
+            -f "\$CANDIDATE_DIR/docker-compose.admin-api.prod.yml" pull
+
+          install -m 0644 "\$CANDIDATE_DIR/docker-compose.admin-api.prod.yml" \
+            "\$WORK_DIR/.docker-compose.admin-api.prod.yml.next"
+          install -m 0644 "\$CANDIDATE_DIR/config.admin.alloy" \
+            "\$WORK_DIR/.config.admin.alloy.next"
+          install -m 0755 "\$CANDIDATE_DIR/configure-admin-alloy-egress.sh" \
+            /usr/local/sbin/.configure-admin-alloy-egress.next
+          install -m 0644 "\$CANDIDATE_DIR/wes-admin-alloy-egress.service" \
+            /etc/systemd/system/.wes-admin-alloy-egress.service.next
+
+          # From the first atomic live-file swap onward, every failure must either
+          # restore the captured release or retain an explicit failed-first-deploy state.
+          ROLLBACK_ARMED=true
+          mv -f "\$WORK_DIR/.docker-compose.admin-api.prod.yml.next" \
+            "\$WORK_DIR/docker-compose.admin-api.prod.yml"
+          mv -f "\$WORK_DIR/.config.admin.alloy.next" "\$WORK_DIR/config.admin.alloy"
+          mv -f /usr/local/sbin/.configure-admin-alloy-egress.next \
+            /usr/local/sbin/configure-admin-alloy-egress
+          mv -f /etc/systemd/system/.wes-admin-alloy-egress.service.next \
+            /etc/systemd/system/wes-admin-alloy-egress.service
+          systemctl daemon-reload
+          systemctl enable wes-admin-alloy-egress.service >/dev/null
+
+          # 전용 대역은 Loki의 현재 IPv4/port만 허용하고 IMDS와 그 밖의 목적지는 거부한다.
+          ALLOY_EGRESS_SUBNET="\$ALLOY_EGRESS_NETWORK_SUBNET" \
+            AWS_REGION="${AWS_REGION}" \
+            LOKI_URL="\$LOKI_URL" \
+            RESTART_STOPPED_ALLOY=false \
+            /usr/local/sbin/configure-admin-alloy-egress
+          test -r /run/wes-alloy-egress/ready
+          export LOKI_HOST=\$(cat /run/wes-alloy-egress/loki-host)
+          export LOKI_PRIMARY_IP=\$(cat /run/wes-alloy-egress/loki-primary-ip)
+          export LOKI_PORT=\$(cat /run/wes-alloy-egress/loki-port)
+          [ -n "\$LOKI_HOST" ] && [ -n "\$LOKI_PRIMARY_IP" ] && [ -n "\$LOKI_PORT" ] || {
+            echo "Loki 고정 host/IP/port를 준비하지 못했습니다" >&2
+            exit 1
+          }
+
+          cd "\$WORK_DIR"
+          docker compose -f docker-compose.admin-api.prod.yml \
+            up -d --force-recreate --pull never
+          docker logout ghcr.io >/dev/null 2>&1 || true
+          REGISTRY_LOGGED_IN=false
+
+          EXPECTED_IMAGE="ghcr.io/${OWNER_LOWERCASE}/${ADMIN_IMAGE_BASENAME}:\$TARGET_IMAGE_TAG"
+          for i in \$(seq 1 30); do
+            HTTP_CODE=\$(curl -s -o /dev/null -w '%{http_code}' \
+              --connect-timeout 2 --max-time 5 \
+              "http://127.0.0.1:8081/actuator/health" || true)
+            if [ "\$HTTP_CODE" = "200" ]; then
+              RUNNING_IMAGE=\$(docker inspect --format '{{.Config.Image}}' wes-admin-api)
+              [ "\$RUNNING_IMAGE" = "\$EXPECTED_IMAGE" ] || {
+                echo "실행 이미지 불일치: \$RUNNING_IMAGE (expected \$EXPECTED_IMAGE)" >&2
+                exit 1
+              }
+
+              SESSION_CODE=\$(curl -s -o /dev/null -w '%{http_code}' \
+                --connect-timeout 2 --max-time 5 \
+                "http://127.0.0.1:8081/internal/admin/v1/auth/session" || true)
+              [ "\$SESSION_CODE" = "401" ] || {
+                echo "관리자 인증 경계 확인 실패 (HTTP \$SESSION_CODE)" >&2
+                exit 1
+              }
+
+              ALLOY_RUNNING=\$(docker inspect --format '{{.State.Running}}' wes-admin-alloy 2>/dev/null || true)
+              [ "\$ALLOY_RUNNING" = "true" ] || {
+                echo "관리자 로그 전송 sidecar가 실행 중이 아닙니다" >&2
+                docker logs --tail 100 wes-admin-alloy >&2 || true
+                exit 1
+              }
+
+              EXPECTED_ALLOY_IMAGE="grafana/alloy:v1.18.1@sha256:0f4434c92b3e6cdac38bb129b344e1790c246f7b6e2eaffcc16a5fa363240e33"
+              ALLOY_IMAGE=\$(docker inspect --format '{{.Config.Image}}' wes-admin-alloy)
+              [ "\$ALLOY_IMAGE" = "\$EXPECTED_ALLOY_IMAGE" ] || {
+                echo "Alloy 이미지 pin 불일치" >&2
+                exit 1
+              }
+              [ "\$(docker inspect --format '{{.HostConfig.NetworkMode}}' wes-admin-alloy)" = "\$ALLOY_EGRESS_NETWORK_NAME" ] || {
+                echo "Alloy가 전용 egress network에만 연결되지 않았습니다" >&2
+                exit 1
+              }
+              [ "\$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' wes-admin-alloy)" = "true" ] || {
+                echo "Alloy read-only root filesystem 검증 실패" >&2
+                exit 1
+              }
+              [ "\$(docker inspect --format '{{.Config.User}}' wes-admin-alloy)" = "473:473" ] || {
+                echo "Alloy 비루트 사용자 검증 실패" >&2
+                exit 1
+              }
+              [ "\$(docker inspect --format '{{json .HostConfig.Dns}}' wes-admin-alloy)" = '["127.0.0.1"]' ] || {
+                echo "Alloy DNS forwarding 차단 검증 실패" >&2
+                exit 1
+              }
+              [ "\$(docker inspect --format '{{json .HostConfig.ExtraHosts}}' wes-admin-alloy)" = "[\"\$LOKI_HOST:\$LOKI_PRIMARY_IP\"]" ] || {
+                echo "Alloy Loki host pin 검증 실패" >&2
+                exit 1
+              }
+              test -r /run/wes-alloy-egress/ready || {
+                echo "Alloy egress 준비 marker가 없습니다" >&2
+                exit 1
+              }
+              iptables -w 5 -C WES_ALLOY_OUT -d 169.254.169.254/32 -j REJECT >/dev/null
+              iptables -w 5 -C WES_ALLOY_OUT -j REJECT >/dev/null
+              iptables -w 5 -C WES_ALLOY_HOST -j REJECT >/dev/null
+              FIRST_FORWARD_RULE=\$(iptables -w 5 -S DOCKER-USER | awk '\$1 == "-A" { print; exit }')
+              FIRST_HOST_RULE=\$(iptables -w 5 -S INPUT | awk '\$1 == "-A" { print; exit }')
+              [ "\$FIRST_FORWARD_RULE" = \
+                "-A DOCKER-USER -s \$ALLOY_EGRESS_NETWORK_SUBNET -j WES_ALLOY_OUT" ] || {
+                  echo "Alloy DOCKER-USER jump가 첫 규칙이 아닙니다: \$FIRST_FORWARD_RULE" >&2
+                  exit 1
+                }
+              [ "\$FIRST_HOST_RULE" = \
+                "-A INPUT -s \$ALLOY_EGRESS_NETWORK_SUBNET -j WES_ALLOY_HOST" ] || {
+                  echo "Alloy INPUT jump가 첫 규칙이 아닙니다: \$FIRST_HOST_RULE" >&2
+                  exit 1
+                }
+              systemctl is-enabled --quiet wes-admin-alloy-egress.service || {
+                echo "Alloy egress boot policy가 활성화되지 않았습니다" >&2
+                exit 1
+              }
+
+              docker image prune -f
+              echo "관리자 API 기동 완료 (\${i}번째 시도)"
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "150초 안에 관리자 API가 기동하지 못했습니다" >&2
+          docker logs --tail 100 wes-admin-api >&2
+          exit 1
+          SCRIPT
+
+          jq -n --rawfile script deploy_admin_script.sh '{commands: [$script]}' > admin_params.json
+
+          COMMAND_ID=$(aws ssm send-command \
+            --document-name AWS-RunShellScript \
+            --instance-ids "$INSTANCE_ID" \
+            --comment "wes-admin-api deploy ${{ github.sha }}" \
+            --timeout-seconds 1800 \
+            --parameters file://admin_params.json \
+            --query 'Command.CommandId' --output text)
+
+          # Include the lock wait, target health window, and a full rollback health window.
+          STATUS=Pending
+          for i in $(seq 1 180); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+              --query Status --output text 2>/dev/null || echo Pending)
+            case "$STATUS" in
+              Success|Failed|Cancelled|TimedOut) break ;;
+            esac
+            sleep 10
+          done
+
           aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
             --query '{status:Status,stdout:StandardOutputContent,stderr:StandardErrorContent}' \

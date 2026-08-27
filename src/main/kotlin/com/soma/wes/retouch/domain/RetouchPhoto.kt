@@ -9,18 +9,17 @@ import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
-import jakarta.persistence.UniqueConstraint
+import org.hibernate.annotations.SQLRestriction
+import java.time.ZonedDateTime
 
 /**
  * 회차에 담긴 보정 요청 한 건. 요청 내용(텍스트·주석 이미지 key)과 작가의 결과 key를 함께 든다.
  */
 @Entity
-@Table(
-    name = "retouch_photos",
-    uniqueConstraints = [
-        UniqueConstraint(name = "uk_retouch_photos_round_photo", columnNames = ["round_id", "photo_id"]),
-    ],
-)
+@SQLRestriction("deleted_at is null")
+// 전체 UNIQUE 제약이 아니라 deleted_at IS NULL 부분 유니크 인덱스로 현재 담긴 항목만
+// 한 건을 허용한다. JPA는 부분 인덱스를 표현하지 못하므로 V35 migration이 계약을 소유한다.
+@Table(name = "retouch_photos")
 class RetouchPhoto(
 
     @Column(name = "round_id", nullable = false, updatable = false)
@@ -56,6 +55,11 @@ class RetouchPhoto(
 
     @Column(name = "result_content_type", length = 100)
     var resultContentType: String? = null
+
+    /** 관리자 휴지통에 들어간 항목은 모든 사용자 JPA 조회와 변경 경로에서 즉시 제외한다. */
+    @Column(name = "deleted_at")
+    var deletedAt: ZonedDateTime? = null
+        protected set
 
     val requiredId: Long
         get() = id ?: error("아직 저장되지 않은 RetouchPhoto 다")

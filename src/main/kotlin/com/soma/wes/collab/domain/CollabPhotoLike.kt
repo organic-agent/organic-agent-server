@@ -9,6 +9,8 @@ import jakarta.persistence.Id
 import jakarta.persistence.Index
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
+import org.hibernate.annotations.SQLRestriction
+import java.time.ZonedDateTime
 
 
 /**
@@ -18,6 +20,7 @@ import jakarta.persistence.UniqueConstraint
  * 눌러도 행이 늘지 않아야 "좋아요 40"이 사람 40명으로 남는다.
  */
 @Entity
+@SQLRestriction("deleted_at is null")
 @Table(
     name = "collab_photo_likes",
     uniqueConstraints = [
@@ -43,6 +46,11 @@ class CollabPhotoLike(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null
+
+    /** 관리자 7일 휴지통에 든 좋아요는 제품 집계와 하객의 liked 상태에서 제외한다. */
+    @Column(name = "deleted_at")
+    var deletedAt: ZonedDateTime? = null
+        protected set
 
     val requiredId: Long
         get() = checkNotNull(id) { "저장되지 않은 좋아요입니다." }

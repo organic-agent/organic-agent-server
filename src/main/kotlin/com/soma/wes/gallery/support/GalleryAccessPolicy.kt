@@ -9,6 +9,7 @@ import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.repository.requireById
 import com.soma.wes.studio.repository.StudioRepository
+import com.soma.wes.studio.repository.StudioMemberRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -22,6 +23,7 @@ class GalleryAccessPolicy(
     private val galleryRepository: GalleryRepository,
     private val galleryMemberRepository: GalleryMemberRepository,
     private val studioRepository: StudioRepository,
+    private val studioMemberRepository: StudioMemberRepository,
     private val clock: Clock,
 ) {
 
@@ -91,8 +93,15 @@ class GalleryAccessPolicy(
         return gallery
     }
 
-    private fun isPhotographer(gallery: Gallery, userId: Long): Boolean =
-        studioRepository.findByUserId(userId)?.id == gallery.studioId
+    private fun isPhotographer(gallery: Gallery, userId: Long): Boolean {
+        if (!studioRepository.existsByIdAndSuspendedAtIsNull(gallery.studioId)) return false
+        return studioRepository.existsByIdAndUserId(gallery.studioId, userId) ||
+            studioMemberRepository.existsByStudioIdAndUserIdAndRoleIn(
+                gallery.studioId,
+                userId,
+                ACTIVE_STUDIO_ROLES,
+            )
+    }
 
     private fun findMember(galleryId: Long, userId: Long): GalleryMember =
         galleryMemberRepository.findByGalleryIdAndUserId(galleryId, userId)
@@ -105,5 +114,9 @@ class GalleryAccessPolicy(
         if (gallery.status != GalleryStatus.OPEN) {
             throw GalleryException(GalleryErrorCode.GALLERY_NOT_OPEN)
         }
+    }
+
+    companion object {
+        private val ACTIVE_STUDIO_ROLES = com.soma.wes.studio.domain.StudioMemberRole.entries
     }
 }

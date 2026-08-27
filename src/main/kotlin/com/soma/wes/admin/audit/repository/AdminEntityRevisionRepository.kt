@@ -4,6 +4,7 @@ import com.soma.wes.admin.audit.domain.AdminAuditTargetType
 import com.soma.wes.admin.audit.domain.AdminEntityRevision
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
+import org.springframework.data.jpa.repository.Modifying
 import java.time.ZonedDateTime
 
 interface AdminEntityRevisionRepository : JpaRepository<AdminEntityRevision, Long> {
@@ -29,5 +30,15 @@ interface AdminEntityRevisionRepository : JpaRepository<AdminEntityRevision, Lon
         targetId: String,
     ): List<AdminEntityRevision>
 
-    fun deleteAllByExpiresAtLessThanEqual(expiresAt: ZonedDateTime): Long
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(
+        """
+        UPDATE AdminEntityRevision revision
+        SET revision.beforeRestorePayload = NULL,
+            revision.afterRestorePayload = NULL
+        WHERE revision.restoreExpiresAt <= :now
+          AND (revision.beforeRestorePayload IS NOT NULL OR revision.afterRestorePayload IS NOT NULL)
+        """,
+    )
+    fun clearExpiredRestorePayloads(now: ZonedDateTime): Int
 }

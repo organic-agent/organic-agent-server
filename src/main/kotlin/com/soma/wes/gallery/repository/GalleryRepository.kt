@@ -11,6 +11,8 @@ interface GalleryRepository : JpaRepository<Gallery, Long> {
 
     fun findAllByStudioId(studioId: Long): List<Gallery>
 
+    fun findAllByStudioIdIn(studioIds: Collection<Long>): List<Gallery>
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     fun findWithLockById(id: Long): Gallery?
 }

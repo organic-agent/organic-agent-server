@@ -1,6 +1,10 @@
 spring:
   application:
-    name: wes
+    name: wes-api
+
+  # 공개 API가 운영 스키마의 유일한 migration owner다.
+  flyway:
+    enabled: true
 
   config:
     import:

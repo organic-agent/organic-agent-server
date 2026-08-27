@@ -13,22 +13,32 @@ data class AdminEntityRevisionResponse(
     val targetId: String,
     val revisionNumber: Long,
     val operation: AdminAuditAction,
+    val snapshotSchemaVersion: Int,
+    val targetVersion: Long?,
     val before: JsonNode?,
     val after: JsonNode?,
     val expiresAt: ZonedDateTime,
+    val restorable: Boolean,
     val createdAt: ZonedDateTime?,
 ) {
     companion object {
-        fun from(revision: AdminEntityRevision, codec: AdminAuditSnapshotCodec): AdminEntityRevisionResponse =
+        fun from(
+            revision: AdminEntityRevision,
+            codec: AdminAuditSnapshotCodec,
+            restorable: Boolean,
+        ): AdminEntityRevisionResponse =
             AdminEntityRevisionResponse(
                 id = revision.requiredId,
                 targetType = revision.targetType,
                 targetId = revision.targetId,
                 revisionNumber = revision.revisionNumber,
                 operation = revision.operation,
-                before = codec.decode(revision.beforeSnapshot),
-                after = codec.decode(revision.afterSnapshot),
-                expiresAt = revision.expiresAt,
+                snapshotSchemaVersion = revision.snapshotSchemaVersion,
+                targetVersion = revision.targetVersion,
+                before = codec.decodePermanent(revision.beforeSnapshot),
+                after = codec.decodePermanent(revision.afterSnapshot),
+                expiresAt = revision.restoreExpiresAt,
+                restorable = restorable,
                 createdAt = revision.createdAt,
             )
     }

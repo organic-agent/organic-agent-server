@@ -2,12 +2,14 @@ package com.soma.wes.admin.resource.service
 
 import com.soma.wes.admin.audit.domain.AdminAuditAction
 import com.soma.wes.admin.audit.service.AdminAuditService
+import com.soma.wes.admin.audit.support.AdminAuditSanitizer
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.dto.AdminReasonRequest
 import com.soma.wes.admin.resource.dto.AdminResourceResponse
 import com.soma.wes.admin.resource.dto.AdminTrashBatchResponse
+import com.soma.wes.admin.resource.dto.AdminTrashEntryResponse
 import com.soma.wes.admin.resource.dto.ChangeAdminResourceStateRequest
 import com.soma.wes.admin.resource.repository.AdminCascadeTrashRepository
 import com.soma.wes.admin.resource.repository.AdminCascadeTrashRepository.BatchRow
@@ -17,6 +19,7 @@ import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
+import java.time.OffsetDateTime
 import java.time.ZonedDateTime
 
 @Service
@@ -24,6 +27,7 @@ class AdminCascadeTrashService(
     private val trashRepository: AdminCascadeTrashRepository,
     private val resourceRepository: AdminResourceRepository,
     private val auditService: AdminAuditService,
+    private val auditSanitizer: AdminAuditSanitizer,
     private val trashProperties: TrashProperties,
     private val clock: Clock,
 ) {
@@ -44,15 +48,20 @@ class AdminCascadeTrashService(
         if (before.deleted || trashRepository.hasOverlappingActiveBatch(type, id)) {
             throw AdminException(AdminErrorCode.TRASH_BATCH_CONFLICT)
         }
+        trashRepository.lockProductPurgeCoordinationScope(type, id)
 
         val deletedAt = ZonedDateTime.now(clock)
+        val canonicalLabel = requireNotNull(
+            auditSanitizer.canonicalTargetLabel(type.auditTargetType, id.toString(), before.label),
+        )
+        val sanitizedReason = auditSanitizer.canonicalOperatorReason(request.reason)
         val batchId = try {
             trashRepository.createBatch(
                 actorAdminId = actorAdminId,
                 rootType = type,
                 rootId = id,
-                rootLabel = before.label,
-                reason = request.reason.trim(),
+                rootLabel = canonicalLabel,
+                reason = sanitizedReason,
                 deletedAt = deletedAt,
                 restoreUntil = deletedAt.plus(trashProperties.retention),
             )
@@ -63,17 +72,23 @@ class AdminCascadeTrashService(
         if (counts[type.name] != 1L) {
             throw AdminException(AdminErrorCode.TRASH_BATCH_CONFLICT)
         }
+        if (trashRepository.hasProductPurgeClaimForBatch(batchId)) {
+            // moveToTrash와 같은 transaction이므로 claim 충돌은 batch/soft-delete까지 전부 rollback한다.
+            throw AdminException(AdminErrorCode.TRASH_BATCH_CONFLICT)
+        }
         if (type == AdminResourceType.USER) {
             trashRepository.revokeRefreshToken(id)
         }
+        trashRepository.cancelPendingOperations(batchId)
+        val relationshipFacts = trashRepository.captureRelationshipFacts(batchId)
 
         auditService.recordMutation(
             action = AdminAuditAction.RESOURCE_DELETED,
             actorAdminId = actorAdminId,
             targetType = type.auditTargetType,
             targetId = id.toString(),
-            targetLabel = before.label,
-            reason = request.reason.trim(),
+            targetLabel = canonicalLabel,
+            reason = sanitizedReason,
             sourceAddress = sourceAddress,
             before = before.snapshot(),
             after = before.snapshot() + mapOf(
@@ -82,8 +97,11 @@ class AdminCascadeTrashService(
                 "trashBatchId" to batchId,
                 "restoreUntil" to deletedAt.plus(trashProperties.retention),
                 "affectedCounts" to counts,
+                "relationshipFacts" to relationshipFacts,
             ),
         )
+        // 삭제 감사 자체가 만든 리비전까지 배치의 최종 관계 사실에 포함한다.
+        trashRepository.captureRelationshipFacts(batchId)
         return response(requireNotNull(trashRepository.find(batchId)))
     }
 
@@ -99,9 +117,17 @@ class AdminCascadeTrashService(
         requireVersion(current, request.expectedVersion)
         val batch = trashRepository.findActiveByRoot(type, id)
         if (batch == null) {
-            return restoreLegacy(actorAdminId, current, request.reason.trim(), sourceAddress)
+            if (trashRepository.findActiveContaining(type, id) != null) {
+                throw AdminException(AdminErrorCode.TRASH_CHILD_RESTORE_FORBIDDEN)
+            }
+            return restoreLegacy(
+                actorAdminId,
+                current,
+                auditSanitizer.canonicalOperatorReason(request.reason),
+                sourceAddress,
+            )
         }
-        restore(actorAdminId, batch, request.reason.trim(), sourceAddress)
+        restore(actorAdminId, batch, auditSanitizer.canonicalOperatorReason(request.reason), sourceAddress)
         return requireResource(type, id)
     }
 
@@ -113,7 +139,7 @@ class AdminCascadeTrashService(
         sourceAddress: String?,
     ): AdminTrashBatchResponse {
         val batch = trashRepository.find(batchId) ?: throw AdminException(AdminErrorCode.TRASH_BATCH_NOT_FOUND)
-        restore(actorAdminId, batch, request.reason.trim(), sourceAddress)
+        restore(actorAdminId, batch, auditSanitizer.canonicalOperatorReason(request.reason), sourceAddress)
         return response(requireNotNull(trashRepository.find(batchId)))
     }
 
@@ -155,6 +181,11 @@ class AdminCascadeTrashService(
         if (before.type !in LEGACY_TRASH_TYPES || !before.deleted) {
             throw AdminException(AdminErrorCode.TRASH_BATCH_NOT_FOUND)
         }
+        val deletedAt = (before.fields["deletedAt"] as? OffsetDateTime)?.toZonedDateTime()
+            ?: throw AdminException(AdminErrorCode.TRASH_BATCH_NOT_FOUND)
+        if (!ZonedDateTime.now(clock).isBefore(deletedAt.plus(trashProperties.retention))) {
+            throw AdminException(AdminErrorCode.TRASH_BATCH_EXPIRED)
+        }
         if (resourceRepository.restore(before.type, before.id, before.version) != 1) {
             throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
         }
@@ -187,11 +218,23 @@ class AdminCascadeTrashService(
         reason = batch.reason,
         deletedAt = batch.deletedAt,
         restoreUntil = batch.restoreUntil,
+        purgeEligibleAt = batch.restoreUntil,
+        restoreWindowDays = trashProperties.retention.toDays(),
+        restorable = batch.status == "ACTIVE" && ZonedDateTime.now(clock).isBefore(batch.restoreUntil),
         restoredAt = batch.restoredAt,
         purgedAt = batch.purgedAt,
         purgeAttemptCount = batch.purgeAttemptCount,
         failureCode = batch.failureCode,
         affectedCounts = trashRepository.affectedCounts(batch.id),
+        relationshipFacts = batch.relationshipFacts,
+        entries = trashRepository.entries(batch.id).map { entry ->
+            AdminTrashEntryResponse(
+                resourceType = entry.resourceType,
+                resourceId = entry.resourceId,
+                root = entry.root,
+                relationPath = entry.relationPath,
+            )
+        },
     )
 
     private fun AdminResourceResponse.snapshot(): Map<String, Any?> = linkedMapOf(

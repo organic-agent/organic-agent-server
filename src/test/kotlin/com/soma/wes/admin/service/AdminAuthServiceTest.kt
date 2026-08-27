@@ -51,8 +51,9 @@ class AdminAuthServiceTest @Autowired constructor(
             assertThat(result.response.absoluteExpiresAt)
                 .isBetween(before.plusHours(7).plusMinutes(59), before.plusHours(8).plusMinutes(1))
             assertThat(result.response.admin.mustChangePassword).isTrue()
-            assertThat(adminAuthEventRepository.findAll().single().eventType)
-                .isEqualTo(AdminEventType.LOGIN_SUCCEEDED)
+            val authEvent = adminAuthEventRepository.findAll().single()
+            assertThat(authEvent.eventType).isEqualTo(AdminEventType.LOGIN_SUCCEEDED)
+            assertThat(authEvent.sourceAddress).isNull()
         }
 
         @Test

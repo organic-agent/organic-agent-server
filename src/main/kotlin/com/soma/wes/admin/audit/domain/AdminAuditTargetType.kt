@@ -12,4 +12,7 @@ enum class AdminAuditTargetType {
     ALBUM,
     RETOUCH_REQUEST,
     SYSTEM_SETTING,
+    TRASH_BATCH,
+    IMPERSONATION,
+    ADMIN_OPERATION,
 }

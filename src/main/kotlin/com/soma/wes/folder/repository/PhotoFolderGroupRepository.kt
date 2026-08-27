@@ -15,9 +15,7 @@ interface PhotoFolderGroupRepository : JpaRepository<PhotoFolderGroup, Long> {
      */
     fun findByIdAndGalleryId(id: Long, galleryId: Long): PhotoFolderGroup?
 
-    /**
-     * 부모 안의 사진 구성을 바꾸는 동안 부모 행을 잠근다.
-     */
+    /** 관리자 재계산과 수동 폴더·사진 구조 변경을 이 부모 행 하나로 직렬화한다. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     fun findWithLockByIdAndGalleryId(id: Long, galleryId: Long): PhotoFolderGroup?
 }

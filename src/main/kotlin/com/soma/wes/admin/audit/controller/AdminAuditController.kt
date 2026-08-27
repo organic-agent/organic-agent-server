@@ -4,13 +4,13 @@ import com.soma.wes.admin.audit.controller.docs.AdminAuditControllerDocs
 import com.soma.wes.admin.audit.domain.AdminAuditAction
 import com.soma.wes.admin.audit.domain.AdminAuditOutcome
 import com.soma.wes.admin.audit.domain.AdminAuditTargetType
+import com.soma.wes.admin.audit.dto.request.AdminRevisionRestoreRequest
 import com.soma.wes.admin.audit.dto.response.AdminAuditLogDetailResponse
 import com.soma.wes.admin.audit.dto.response.AdminAuditLogResponse
 import com.soma.wes.admin.audit.dto.response.AdminEntityRevisionResponse
 import com.soma.wes.admin.audit.service.AdminAuditQueryService
 import com.soma.wes.admin.audit.service.AdminRevisionRestoreService
 import com.soma.wes.admin.domain.AdminLoginUser
-import com.soma.wes.admin.dto.request.AdminReasonRequest
 import com.soma.wes.global.page.PageResponse
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import java.time.ZonedDateTime
+import java.util.UUID
 
 @RestController
 @RequestMapping("/internal/admin/v1/audit-logs")
@@ -42,6 +43,8 @@ class AdminAuditController(
         @RequestParam(required = false) targetId: String?,
         @RequestParam(required = false) action: AdminAuditAction?,
         @RequestParam(required = false) outcome: AdminAuditOutcome?,
+        @RequestParam(required = false) correlationId: String?,
+        @RequestParam(required = false) impersonationSessionId: UUID?,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) from: ZonedDateTime?,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) to: ZonedDateTime?,
         @RequestParam(defaultValue = "0") page: Int,
@@ -55,6 +58,8 @@ class AdminAuditController(
                 targetId = targetId,
                 action = action,
                 outcome = outcome,
+                correlationId = correlationId,
+                impersonationSessionId = impersonationSessionId,
                 from = from,
                 to = to,
                 page = page,
@@ -81,7 +86,7 @@ class AdminAuditController(
     override fun restoreRevision(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable revisionId: Long,
-        @Valid @RequestBody request: AdminReasonRequest,
+        @Valid @RequestBody request: AdminRevisionRestoreRequest,
         servletRequest: HttpServletRequest,
     ): ResponseEntity<AdminAuditLogDetailResponse> {
         val auditLogId = restoreService.restore(

@@ -4,6 +4,7 @@ import com.soma.wes.folder.dto.request.AddPhotosRequest
 import com.soma.wes.folder.dto.request.CreateFolderGroupRequest
 import com.soma.wes.folder.dto.request.CreatePhotoFolderRequest
 import com.soma.wes.folder.dto.request.MovePhotosRequest
+import com.soma.wes.folder.dto.request.RenamePhotoFolderRequest
 import com.soma.wes.folder.exception.FolderErrorCode
 import com.soma.wes.folder.exception.FolderException
 import com.soma.wes.folder.repository.PhotoFolderGroupRepository
@@ -21,6 +22,11 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.jdbc.core.simple.JdbcClient
+import org.springframework.transaction.support.TransactionTemplate
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * 부모폴더 아래 자식폴더의 생성·조회·사진 담기·옮기기·빼기·삭제를 서비스 경계에서 확인한다.
@@ -36,6 +42,8 @@ class PhotoFolderServiceTest @Autowired constructor(
     private val photoRepository: PhotoRepository,
     private val photoFolderGroupRepository: PhotoFolderGroupRepository,
     private val photoFolderItemRepository: PhotoFolderItemRepository,
+    private val jdbcClient: JdbcClient,
+    private val transactionTemplate: TransactionTemplate,
 ) {
 
     private lateinit var fixture: OpenGallery
@@ -63,6 +71,40 @@ class PhotoFolderServiceTest @Autowired constructor(
             // then
             assertThat(result.groupId).isEqualTo(groupId)
             assertThat(result.photos).isEmpty()
+        }
+
+        @Test
+        fun `사진이 든 자식은 저장 순서와 생성 응답 재조회 순서가 같다`() {
+            // given
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 3)
+            val groupId = createGroup(fixture, "순서가 있는 부모")
+
+            // when
+            val created = photoFolderService.create(
+                fixture.galleryId,
+                groupId,
+                fixture.member.id!!,
+                CreatePhotoFolderRequest(name = "순서가 있는 자식", photoIds = photoIds),
+            )
+            val found = photoFolderService.get(
+                fixture.galleryId, groupId, created.folderId, fixture.member.id!!,
+            )
+            val storedItems = photoFolderItemRepository
+                .findAllByFolderIdOrderBySortOrderAscIdAsc(created.folderId)
+            val createdOrder = created.items.map { it.photo.photoId to it.sortOrder }
+            val foundOrder = found.items.map { it.photo.photoId to it.sortOrder }
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(storedItems.map { it.photoId }).containsExactlyElementsOf(photoIds)
+                softly.assertThat(storedItems.map { it.sortOrder }).containsExactly(0, 1, 2)
+                softly.assertThat(createdOrder).containsExactly(
+                    photoIds[0] to 0,
+                    photoIds[1] to 1,
+                    photoIds[2] to 2,
+                )
+                softly.assertThat(foundOrder).containsExactlyElementsOf(createdOrder)
+            }
         }
     }
 
@@ -93,6 +135,36 @@ class PhotoFolderServiceTest @Autowired constructor(
     inner class ManagePhotos {
 
         @Test
+        fun `추가한 사진은 기존 사진의 마지막 순서 뒤에 붙는다`() {
+            val initialPhotoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 3)
+            val (groupId, folderId) = createGroupWithFolder(
+                fixture, "순서 유지 부모", "순서 유지 자식", initialPhotoIds,
+            )
+            val beforeIds = photoFolderService.get(
+                fixture.galleryId, groupId, folderId, fixture.member.id!!,
+            ).items.map { it.photo.photoId }
+            val additionalPhotoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 2)
+
+            val result = photoFolderService.addPhotos(
+                fixture.galleryId,
+                groupId,
+                folderId,
+                fixture.member.id!!,
+                AddPhotosRequest(additionalPhotoIds),
+            )
+
+            assertSoftly { softly ->
+                softly.assertThat(result.items.map { it.photo.photoId })
+                    .containsExactlyElementsOf(beforeIds + additionalPhotoIds)
+                softly.assertThat(result.items.map { it.sortOrder }).containsExactly(0, 1, 2, 3, 4)
+                softly.assertThat(
+                    photoFolderItemRepository.findAllByFolderIdOrderBySortOrderAscIdAsc(folderId)
+                        .map { it.sortOrder },
+                ).containsExactly(0, 1, 2, 3, 4)
+            }
+        }
+
+        @Test
         fun `같은 부모의 다른 자식에 이미 든 사진은 담을 수 없다`() {
             // given
             val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 2)
@@ -120,9 +192,16 @@ class PhotoFolderServiceTest @Autowired constructor(
         @Test
         fun `사진을 같은 부모의 다른 자식으로 옮긴다`() {
             // given
-            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 3)
-            val (groupId, sourceId) = createGroupWithFolder(fixture, "본식", "묶음 1", photoIds)
-            val targetId = createFolder(fixture, groupId, "묶음 2", emptyList())
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 4)
+            val (groupId, sourceId) = createGroupWithFolder(fixture, "본식", "묶음 1", photoIds.take(3))
+            val targetId = createFolder(fixture, groupId, "묶음 2", photoIds.takeLast(1))
+            val sourceIds = photoFolderService.get(
+                fixture.galleryId, groupId, sourceId, fixture.member.id!!,
+            ).items.map { it.photo.photoId }
+            val targetIds = photoFolderService.get(
+                fixture.galleryId, groupId, targetId, fixture.member.id!!,
+            ).items.map { it.photo.photoId }
+            val movingIds = sourceIds.take(2)
 
             // when
             val result = photoFolderService.movePhotos(
@@ -130,16 +209,18 @@ class PhotoFolderServiceTest @Autowired constructor(
                 groupId,
                 sourceId,
                 fixture.member.id!!,
-                MovePhotosRequest(targetFolderId = targetId, photoIds = photoIds.take(2)),
+                MovePhotosRequest(targetFolderId = targetId, photoIds = movingIds),
             )
 
             // then
             assertSoftly { softly ->
                 // 응답은 사진이 도착한 폴더의 상세다.
                 softly.assertThat(result.folderId).isEqualTo(targetId)
-                softly.assertThat(result.photos).hasSize(2)
+                softly.assertThat(result.items.map { it.photo.photoId })
+                    .containsExactlyElementsOf(targetIds + movingIds)
+                softly.assertThat(result.items.map { it.sortOrder }).containsExactly(0, 1, 2)
                 softly.assertThat(photoFolderItemRepository.countByFolderId(sourceId)).isEqualTo(1L)
-                softly.assertThat(photoFolderItemRepository.countByFolderId(targetId)).isEqualTo(2L)
+                softly.assertThat(photoFolderItemRepository.countByFolderId(targetId)).isEqualTo(3L)
             }
         }
 
@@ -250,6 +331,54 @@ class PhotoFolderServiceTest @Autowired constructor(
         }
     }
 
+    @Nested
+    @DisplayName("관리자 목업 재계산과 경쟁할 때")
+    inner class Concurrency {
+
+        @Test
+        fun `자식 이름 변경 삭제 사진 제거는 부모 행 잠금 뒤 실행된다`() {
+            val renamePhoto = photoFixture.업로드된_사진(fixture.galleryId, count = 1).single()
+            val (renameGroup, renameFolder) = createGroupWithFolder(
+                fixture, "이름 변경 부모", "기존 이름", listOf(renamePhoto),
+            )
+            assertWaitsForGroupLock(renameGroup) {
+                photoFolderService.rename(
+                    fixture.galleryId,
+                    renameGroup,
+                    renameFolder,
+                    fixture.member.id!!,
+                    RenamePhotoFolderRequest("바뀐 이름"),
+                )
+            }
+
+            val removePhoto = photoFixture.업로드된_사진(fixture.galleryId, count = 1).single()
+            val (removeGroup, removeFolder) = createGroupWithFolder(
+                fixture, "사진 제거 부모", "사진 폴더", listOf(removePhoto),
+            )
+            assertWaitsForGroupLock(removeGroup) {
+                photoFolderService.removePhoto(
+                    fixture.galleryId, removeGroup, removeFolder, removePhoto, fixture.member.id!!,
+                )
+            }
+
+            val deletePhoto = photoFixture.업로드된_사진(fixture.galleryId, count = 1).single()
+            val (deleteGroup, deleteFolder) = createGroupWithFolder(
+                fixture, "자식 삭제 부모", "삭제 폴더", listOf(deletePhoto),
+            )
+            assertWaitsForGroupLock(deleteGroup) {
+                photoFolderService.delete(
+                    fixture.galleryId, deleteGroup, deleteFolder, fixture.member.id!!,
+                )
+            }
+
+            assertThat(photoFolderService.get(
+                fixture.galleryId, renameGroup, renameFolder, fixture.member.id!!,
+            ).name).isEqualTo("바뀐 이름")
+            assertThat(photoFolderItemRepository.countByFolderId(removeFolder)).isZero()
+            assertThat(photoFolderItemRepository.countByFolderId(deleteFolder)).isZero()
+        }
+    }
+
     // --- helpers ---
 
     private fun createGroup(fixture: OpenGallery, name: String): Long =
@@ -282,4 +411,53 @@ class PhotoFolderServiceTest @Autowired constructor(
             fixture.member.id!!,
             CreatePhotoFolderRequest(name = name, photoIds = photoIds),
         ).folderId
+
+    private fun assertWaitsForGroupLock(groupId: Long, action: () -> Unit) {
+        val lockAcquired = CountDownLatch(1)
+        val allowCommit = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            val lockFuture = pool.submit<Unit> {
+                transactionTemplate.executeWithoutResult {
+                    jdbcClient.sql("SELECT id FROM photo_folder_groups WHERE id=:id FOR UPDATE")
+                        .param("id", groupId).query { rs, _ -> rs.getLong("id") }.single()
+                    lockAcquired.countDown()
+                    check(allowCommit.await(30, TimeUnit.SECONDS))
+                }
+            }
+            assertThat(lockAcquired.await(10, TimeUnit.SECONDS)).isTrue()
+
+            val actionFuture = pool.submit<Unit> { action() }
+            assertThat(waitForGroupRowLock()).isTrue()
+
+            allowCommit.countDown()
+            lockFuture.get(10, TimeUnit.SECONDS)
+            actionFuture.get(10, TimeUnit.SECONDS)
+        } finally {
+            allowCommit.countDown()
+            pool.shutdownNow()
+            pool.awaitTermination(10, TimeUnit.SECONDS)
+        }
+    }
+
+    private fun waitForGroupRowLock(): Boolean {
+        repeat(400) {
+            val waiting = jdbcClient.sql(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM pg_stat_activity
+                    WHERE datname=current_database()
+                      AND pid<>pg_backend_pid()
+                      AND state='active'
+                      AND wait_event_type='Lock'
+                      AND query ILIKE '%photo_folder_groups%'
+                      AND query ILIKE '%gallery_id%'
+                )
+                """.trimIndent(),
+            ).query { rs, _ -> rs.getBoolean(1) }.single()
+            if (waiting) return true
+            Thread.sleep(25)
+        }
+        return false
+    }
 }

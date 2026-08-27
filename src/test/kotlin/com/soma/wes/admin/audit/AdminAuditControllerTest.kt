@@ -55,7 +55,9 @@ class AdminAuditControllerTest @Autowired constructor(
         }.andExpect {
             status { isOk() }
             jsonPath("$.totalCount") { value(1) }
-            jsonPath("$.contents[0].reason") { value("감사 조회 검증") }
+            jsonPath("$.contents[0].reason") {
+                value("reasonCategory=UNSPECIFIED operatorReasonProvided=true")
+            }
             jsonPath("$.contents[0].changedFields[0]") { value("status") }
         }
 

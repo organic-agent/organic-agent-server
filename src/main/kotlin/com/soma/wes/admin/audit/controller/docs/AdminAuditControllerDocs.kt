@@ -3,15 +3,16 @@ package com.soma.wes.admin.audit.controller.docs
 import com.soma.wes.admin.audit.domain.AdminAuditAction
 import com.soma.wes.admin.audit.domain.AdminAuditOutcome
 import com.soma.wes.admin.audit.domain.AdminAuditTargetType
+import com.soma.wes.admin.audit.dto.request.AdminRevisionRestoreRequest
 import com.soma.wes.admin.audit.dto.response.AdminAuditLogDetailResponse
 import com.soma.wes.admin.audit.dto.response.AdminAuditLogResponse
 import com.soma.wes.admin.audit.dto.response.AdminEntityRevisionResponse
 import com.soma.wes.admin.domain.AdminLoginUser
-import com.soma.wes.admin.dto.request.AdminReasonRequest
 import com.soma.wes.global.page.PageResponse
 import io.swagger.v3.oas.annotations.Operation
 import org.springframework.http.ResponseEntity
 import java.time.ZonedDateTime
+import java.util.UUID
 
 interface AdminAuditControllerDocs {
 
@@ -24,6 +25,8 @@ interface AdminAuditControllerDocs {
         targetId: String?,
         action: AdminAuditAction?,
         outcome: AdminAuditOutcome?,
+        correlationId: String?,
+        impersonationSessionId: UUID?,
         from: ZonedDateTime?,
         to: ZonedDateTime?,
         page: Int,
@@ -44,7 +47,7 @@ interface AdminAuditControllerDocs {
     fun restoreRevision(
         loginUser: AdminLoginUser,
         revisionId: Long,
-        request: AdminReasonRequest,
+        request: AdminRevisionRestoreRequest,
         servletRequest: jakarta.servlet.http.HttpServletRequest,
     ): ResponseEntity<AdminAuditLogDetailResponse>
 }

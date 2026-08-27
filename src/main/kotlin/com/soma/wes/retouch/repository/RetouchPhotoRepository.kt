@@ -18,9 +18,6 @@ interface RetouchPhotoRepository : JpaRepository<RetouchPhoto, Long> {
 
     fun countByRoundId(roundId: Long): Long
 
-    /** 0을 돌려주면 회차에 없는 사진이다 — 호출자가 404로 번역한다. */
-    fun deleteByRoundIdAndPhotoId(roundId: Long, photoId: Long): Long
-
     /** 회차 목록 요약에 쓴다. 회차 수만큼 count 질의를 반복하지 않기 위한 한 번의 집계다. */
     @Query(
         "SELECT rp.roundId AS roundId, COUNT(rp.id) AS photoCount " +

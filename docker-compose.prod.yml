@@ -1,6 +1,6 @@
 services:
-  wes-server:
-    image: ghcr.io/${OWNER_LOWERCASE}/wes-server:${IMAGE_TAG:-latest}
+  wes-api:
+    image: ghcr.io/${OWNER_LOWERCASE}/wes-api:${IMAGE_TAG:?IMAGE_TAG must be set}
     container_name: wes-app
     restart: always
     environment:
@@ -11,6 +11,13 @@ services:
       - JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75
     ports:
       - "8080:8080"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
     volumes:
       # logback-spring.xml(prod)의 LOG_PATH. 호스트에 남겨 alloy와 공유하고, 재배포에도 유지된다.
       - ./logs:/var/log/spring

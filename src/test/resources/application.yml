@@ -86,6 +86,9 @@ app:
     lockout:
       max-failed-attempts: 5
       duration: 30m
+    workflow-executor:
+      # 통합 테스트는 필요한 시점에 runOnce를 직접 호출한다.
+      enabled: false
   storage:
     # 실제 버킷이 아니다. 서명 URL의 형태만 확인하는 용도로, 이 이름으로는 아무것도 올라가지 않는다.
     bucket: wes-test-photos

@@ -30,6 +30,8 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.jdbc.core.simple.JdbcClient
+import java.time.ZonedDateTime
 
 /**
  * 부부 쪽 협업 세션 관리를 서비스 경계에서 확인한다.
@@ -53,6 +55,7 @@ class CollabSessionServiceTest @Autowired constructor(
     private val collabPhotoRepository: CollabPhotoRepository,
     private val collabPhotoCommentRepository: CollabPhotoCommentRepository,
     private val collabPhotoLikeRepository: CollabPhotoLikeRepository,
+    private val jdbcClient: JdbcClient,
 ) {
 
     private lateinit var fixture: OpenGallery
@@ -178,6 +181,9 @@ class CollabSessionServiceTest @Autowired constructor(
         fun `폐기하면 링크가 끊기고 재발급하면 새 토큰이 나온다`() {
             // given
             val session = openSession(fixture)
+            val expiring = collabSessionRepository.findById(session.sessionId).orElseThrow()
+            expiring.expiresAt = ZonedDateTime.now().plusDays(1)
+            collabSessionRepository.saveAndFlush(expiring)
             val collabPhotoId =
                 addPhotos(fixture, session.sessionId, photoFixture.업로드된_사진(fixture.galleryId, count = 1)).single()
             val guestToken = enter(session.collabToken, "친구")
@@ -196,6 +202,9 @@ class CollabSessionServiceTest @Autowired constructor(
             assertThat(republished.collabToken)
                 .describedAs("폐기한 토큰을 되살리면 링크가 퍼진 단톡방이 함께 되살아난다")
                 .isNotEqualTo(session.collabToken)
+            assertThat(collabSessionRepository.findById(session.sessionId).orElseThrow().expiresAt)
+                .describedAs("부부가 직접 재발행한 제품 링크는 운영자 TTL을 이어받지 않는다")
+                .isNull()
 
             // 세션을 새로 열지 않고 토큰만 갈았으므로, 받은 말은 그대로 남는다.
             val comments = collabGuestQueryService.listComments(
@@ -425,6 +434,46 @@ class CollabSessionServiceTest @Autowired constructor(
 
             // then
             assertThat(collabPhotoCommentRepository.count()).isEqualTo(0L)
+            val productTrash = jdbcClient.sql(
+                """
+                SELECT c.deleted_at IS NOT NULL AS deleted,
+                       c.version,
+                       t.parent_id,
+                       t.actor_admin_id IS NULL AS actor_admin_id_null,
+                       t.actor_username,
+                       t.reason,
+                       t.status,
+                       t.restore_until = t.deleted_at + INTERVAL '7 days' AS has_seven_day_window
+                FROM collab_photo_comments c
+                JOIN admin_child_trash_records t
+                  ON t.resource_type = 'COLLAB_COMMENT' AND t.resource_id = c.id
+                WHERE c.id = :commentId AND t.status = 'ACTIVE'
+                """.trimIndent(),
+            )
+                .param("commentId", commentId)
+                .query { rs, _ ->
+                    listOf(
+                        rs.getBoolean("deleted"),
+                        rs.getLong("version"),
+                        rs.getLong("parent_id"),
+                        rs.getBoolean("actor_admin_id_null"),
+                        rs.getString("actor_username"),
+                        rs.getString("reason"),
+                        rs.getString("status"),
+                        rs.getBoolean("has_seven_day_window"),
+                    )
+                }
+                .single()
+            assertThat(productTrash).containsExactly(
+                true,
+                1L,
+                session.sessionId,
+                true,
+                "PRODUCT_USER",
+                "PRODUCT_USER_COMMENT_MODERATION",
+                "ACTIVE",
+                true,
+            )
         }
     }
 

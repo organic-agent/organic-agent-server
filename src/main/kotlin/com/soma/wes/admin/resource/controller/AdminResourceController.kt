@@ -1,5 +1,6 @@
 package com.soma.wes.admin.resource.controller
 
+import com.soma.wes.admin.audit.service.AdminResourceReadAuditService
 import com.soma.wes.admin.domain.AdminLoginUser
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.dto.AdminReprocessRequest
@@ -9,23 +10,32 @@ import com.soma.wes.admin.resource.dto.AdminOperationsOverviewResponse
 import com.soma.wes.admin.resource.dto.AdminObservabilityLinksResponse
 import com.soma.wes.admin.resource.dto.AdminPhotoAccessRequest
 import com.soma.wes.admin.resource.dto.AdminPhotoAccessResponse
+import com.soma.wes.admin.resource.dto.AdminRetouchArtifactAccessRequest
+import com.soma.wes.admin.resource.dto.AdminRetouchArtifactAccessResponse
+import com.soma.wes.admin.resource.dto.AdminRetouchArtifactType
 import com.soma.wes.admin.resource.dto.AdminResourcePageResponse
 import com.soma.wes.admin.resource.dto.AdminResourceContextResponse
 import com.soma.wes.admin.resource.dto.AdminResourceResponse
 import com.soma.wes.admin.resource.dto.AdminSystemSettingsResponse
 import com.soma.wes.admin.resource.dto.AdminTrashBatchResponse
+import com.soma.wes.admin.resource.dto.AdminChildTrashResponse
+import com.soma.wes.admin.resource.dto.AdminWorkflowRequest
+import com.soma.wes.admin.resource.dto.AdminWorkflowResponse
 import com.soma.wes.admin.resource.dto.ChangeAdminResourceStateRequest
 import com.soma.wes.admin.resource.dto.CreateAdminResourceRequest
 import com.soma.wes.admin.resource.dto.UpdateAdminResourceRequest
 import com.soma.wes.admin.resource.service.AdminReprocessService
 import com.soma.wes.admin.resource.service.AdminCascadeTrashService
+import com.soma.wes.admin.resource.service.AdminChildTrashService
 import com.soma.wes.admin.resource.service.AdminOperationsOverviewService
 import com.soma.wes.admin.resource.service.AdminObservabilityLinkService
 import com.soma.wes.admin.resource.service.AdminPhotoAccessService
+import com.soma.wes.admin.resource.service.AdminRetouchArtifactAccessService
 import com.soma.wes.admin.resource.service.AdminResourceService
 import com.soma.wes.admin.resource.service.AdminResourceSuspensionService
 import com.soma.wes.admin.resource.service.AdminResourceContextService
 import com.soma.wes.admin.resource.service.AdminSystemSettingsService
+import com.soma.wes.admin.resource.service.AdminWorkflowService
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
@@ -45,14 +55,18 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/internal/admin/v1")
 class AdminResourceController(
     private val resourceService: AdminResourceService,
+    private val resourceReadAuditService: AdminResourceReadAuditService,
     private val reprocessService: AdminReprocessService,
     private val systemSettingsService: AdminSystemSettingsService,
     private val operationsOverviewService: AdminOperationsOverviewService,
     private val resourceContextService: AdminResourceContextService,
     private val photoAccessService: AdminPhotoAccessService,
+    private val retouchArtifactAccessService: AdminRetouchArtifactAccessService,
     private val observabilityLinkService: AdminObservabilityLinkService,
     private val cascadeTrashService: AdminCascadeTrashService,
+    private val childTrashService: AdminChildTrashService,
     private val suspensionService: AdminResourceSuspensionService,
+    private val workflowService: AdminWorkflowService,
 ) {
 
     @GetMapping("/operations/overview")
@@ -73,6 +87,11 @@ class AdminResourceController(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
     ): ResponseEntity<List<AdminTrashBatchResponse>> = ResponseEntity.ok(cascadeTrashService.list())
 
+    @GetMapping("/operations/trash/children")
+    fun listChildTrash(
+        @AuthenticationPrincipal loginUser: AdminLoginUser,
+    ): ResponseEntity<List<AdminChildTrashResponse>> = ResponseEntity.ok(childTrashService.list())
+
     @PostMapping("/operations/trash/{batchId}/restore")
     fun restoreTrashBatch(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
@@ -90,22 +109,46 @@ class AdminResourceController(
         @RequestParam(required = false) types: Set<AdminResourceType>?,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "50") size: Int,
-    ): ResponseEntity<AdminResourcePageResponse> =
-        ResponseEntity.ok(resourceService.search(query, types.orEmpty(), page, size))
+        servletRequest: HttpServletRequest,
+    ): ResponseEntity<AdminResourcePageResponse> {
+        val response = resourceService.search(query, types.orEmpty(), page, size)
+        resourceReadAuditService.recordList(
+            actor = loginUser,
+            sourceAddress = servletRequest.remoteAddr,
+            page = page,
+            size = size,
+            queryFilterPresent = !query.isNullOrBlank(),
+            typeFilterPresent = types != null,
+            typeFilterCount = types?.size ?: 0,
+            returnedCount = response.contents.size,
+            totalCount = response.totalCount,
+        )
+        return ResponseEntity.ok(response)
+    }
 
     @GetMapping("/resources/{type}/{id}")
     fun get(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable type: AdminResourceType,
         @PathVariable id: Long,
-    ): ResponseEntity<AdminResourceResponse> = ResponseEntity.ok(resourceService.get(type, id))
+        servletRequest: HttpServletRequest,
+    ): ResponseEntity<AdminResourceResponse> {
+        val response = resourceService.get(type, id)
+        resourceReadAuditService.recordDetail(loginUser, servletRequest.remoteAddr, type, id)
+        return ResponseEntity.ok(response)
+    }
 
     @GetMapping("/resources/{type}/{id}/context")
     fun getContext(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable type: AdminResourceType,
         @PathVariable id: Long,
-    ): ResponseEntity<AdminResourceContextResponse> = ResponseEntity.ok(resourceContextService.get(type, id))
+        servletRequest: HttpServletRequest,
+    ): ResponseEntity<AdminResourceContextResponse> {
+        val response = resourceContextService.get(type, id)
+        resourceReadAuditService.recordContext(loginUser, servletRequest.remoteAddr, type, id)
+        return ResponseEntity.ok(response)
+    }
 
     @PostMapping("/resources/PHOTO/{id}/original-access")
     fun accessOriginalPhoto(
@@ -115,6 +158,25 @@ class AdminResourceController(
         servletRequest: HttpServletRequest,
     ): ResponseEntity<AdminPhotoAccessResponse> = ResponseEntity.ok(
         photoAccessService.access(loginUser.id, id, request, servletRequest.remoteAddr),
+    )
+
+    @PostMapping("/resources/RETOUCH_REQUEST/{roundId}/items/{retouchPhotoId}/artifacts/{artifactType}/access")
+    fun accessRetouchArtifact(
+        @AuthenticationPrincipal loginUser: AdminLoginUser,
+        @PathVariable roundId: Long,
+        @PathVariable retouchPhotoId: Long,
+        @PathVariable artifactType: AdminRetouchArtifactType,
+        @Valid @RequestBody request: AdminRetouchArtifactAccessRequest,
+        servletRequest: HttpServletRequest,
+    ): ResponseEntity<AdminRetouchArtifactAccessResponse> = ResponseEntity.ok(
+        retouchArtifactAccessService.access(
+            loginUser.id,
+            roundId,
+            retouchPhotoId,
+            artifactType,
+            request,
+            servletRequest.remoteAddr,
+        ),
     )
 
     @PostMapping("/resources/{type}")
@@ -194,6 +256,18 @@ class AdminResourceController(
     ): ResponseEntity<AdminReprocessResponse> = ResponseEntity.accepted().body(
         reprocessService.reprocess(loginUser.id, type, id, request, servletRequest.remoteAddr),
     )
+
+    @PostMapping("/resources/{type}/{id}/workflows")
+    fun executeWorkflow(
+        @AuthenticationPrincipal loginUser: AdminLoginUser,
+        @PathVariable type: AdminResourceType,
+        @PathVariable id: Long,
+        @Valid @RequestBody request: AdminWorkflowRequest,
+        servletRequest: HttpServletRequest,
+    ): ResponseEntity<AdminWorkflowResponse> {
+        val response = workflowService.execute(loginUser.id, type, id, request, servletRequest.remoteAddr)
+        return ResponseEntity.ok(response)
+    }
 
     @GetMapping("/system-settings")
     fun getSystemSettings(

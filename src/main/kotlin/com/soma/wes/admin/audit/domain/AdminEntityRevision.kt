@@ -35,8 +35,24 @@ class AdminEntityRevision private constructor(
     @Column(name = "after_snapshot", updatable = false, columnDefinition = "TEXT")
     val afterSnapshot: String?,
 
-    @Column(name = "expires_at", nullable = false, updatable = false)
-    val expiresAt: ZonedDateTime,
+    @Column(name = "restore_expires_at", nullable = false, updatable = false)
+    val restoreExpiresAt: ZonedDateTime,
+
+    @Column(name = "snapshot_schema_version", nullable = false, updatable = false)
+    val snapshotSchemaVersion: Int,
+
+    @Column(name = "target_version", updatable = false)
+    val targetVersion: Long?,
+
+    /**
+     * 영구 감사 조회용 snapshot과 분리된 7일 한정 복원 자료다. API DTO에는 노출하지 않고
+     * restoreExpiresAt purge 및 cascade trash purge 시 payload만 제거하고 영구 snapshot 행은 유지한다.
+     */
+    @Column(name = "before_restore_payload", updatable = false, columnDefinition = "TEXT")
+    val beforeRestorePayload: String?,
+
+    @Column(name = "after_restore_payload", updatable = false, columnDefinition = "TEXT")
+    val afterRestorePayload: String?,
 
 ) : BaseEntity() {
 
@@ -55,7 +71,11 @@ class AdminEntityRevision private constructor(
             operation: AdminAuditAction,
             beforeSnapshot: String?,
             afterSnapshot: String?,
-            expiresAt: ZonedDateTime,
+            restoreExpiresAt: ZonedDateTime,
+            snapshotSchemaVersion: Int,
+            targetVersion: Long?,
+            beforeRestorePayload: String?,
+            afterRestorePayload: String?,
         ): AdminEntityRevision =
             AdminEntityRevision(
                 targetType = targetType,
@@ -64,7 +84,11 @@ class AdminEntityRevision private constructor(
                 operation = operation,
                 beforeSnapshot = beforeSnapshot,
                 afterSnapshot = afterSnapshot,
-                expiresAt = expiresAt,
+                restoreExpiresAt = restoreExpiresAt,
+                snapshotSchemaVersion = snapshotSchemaVersion,
+                targetVersion = targetVersion,
+                beforeRestorePayload = beforeRestorePayload,
+                afterRestorePayload = afterRestorePayload,
             )
     }
 }

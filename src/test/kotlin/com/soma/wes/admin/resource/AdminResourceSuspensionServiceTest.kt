@@ -6,13 +6,12 @@ import com.soma.wes.admin.resource.dto.ChangeAdminResourceStateRequest
 import com.soma.wes.admin.resource.dto.CreateAdminResourceRequest
 import com.soma.wes.admin.resource.service.AdminResourceService
 import com.soma.wes.admin.resource.service.AdminResourceSuspensionService
-import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.auth.exception.AuthErrorCode
 import com.soma.wes.auth.exception.TokenException
-import com.soma.wes.auth.service.AuthTokenProvider
+import com.soma.wes.auth.repository.AuthAccessStatusRepository
 import com.soma.wes.support.IntegrationTest
-import com.soma.wes.user.repository.UserRepository
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatCode
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -23,26 +22,27 @@ class AdminResourceSuspensionServiceTest @Autowired constructor(
     private val suspensionService: AdminResourceSuspensionService,
     private val resourceService: AdminResourceService,
     private val adminAccountFixture: AdminAccountFixture,
-    private val userRepository: UserRepository,
-    private val authTokenProvider: AuthTokenProvider,
     private val jdbcClient: JdbcClient,
 ) {
+    private val accessStatusRepository = AuthAccessStatusRepository(jdbcClient)
+
     @Test
-    fun `사용자 정지는 refresh 토큰과 기존 access 토큰을 즉시 막고 활성화하면 접근을 되살린다`() {
+    fun `사용자 정지는 refresh 토큰과 기존 access 권한을 즉시 막고 활성화하면 접근을 되살린다`() {
         val actor = adminAccountFixture.관리자("suspend-user")
         val created = resourceService.create(
             actor.requiredId,
             AdminResourceType.USER,
             CreateAdminResourceRequest("정지 테스트 사용자", mapOf(
-                "provider" to OAuthProvider.GOOGLE.name,
+                "provider" to "GOOGLE",
                 "providerId" to "suspended-user",
                 "nickname" to "정지 사용자",
             )),
             "127.0.0.1",
         )
-        val user = userRepository.findById(created.id).orElseThrow()
-        val accessToken = authTokenProvider.generateAccessToken(user)
-        authTokenProvider.generateRefreshToken(user)
+        insertRefreshToken(created.id, "suspended-user-refresh")
+
+        assertThatCode { accessStatusRepository.requireActive(created.id) }
+            .doesNotThrowAnyException()
 
         val suspended = suspensionService.suspend(
             actor.requiredId, AdminResourceType.USER, created.id,
@@ -51,7 +51,7 @@ class AdminResourceSuspensionServiceTest @Autowired constructor(
 
         assertThat(suspended.fields["suspendedAt"]).isNotNull()
         assertThat(refreshTokenCount(created.id)).isZero()
-        assertThatThrownBy { authTokenProvider.getAuthUser(accessToken) }
+        assertThatThrownBy { accessStatusRepository.requireActive(created.id) }
             .isInstanceOfSatisfying(TokenException::class.java) {
                 assertThat(it.errorCode).isEqualTo(AuthErrorCode.USER_SUSPENDED)
             }
@@ -61,11 +61,12 @@ class AdminResourceSuspensionServiceTest @Autowired constructor(
             ChangeAdminResourceStateRequest("조사 종료", suspended.version), "127.0.0.1",
         )
         assertThat(activated.fields["suspendedAt"]).isNull()
-        assertThat(authTokenProvider.getAuthUser(accessToken).isAuthenticated).isTrue()
+        assertThatCode { accessStatusRepository.requireActive(created.id) }
+            .doesNotThrowAnyException()
     }
 
     @Test
-    fun `스튜디오 정지는 소유자의 기존 access 토큰을 즉시 막는다`() {
+    fun `스튜디오 정지는 소유자의 기존 access 권한을 즉시 막고 활성화하면 되살린다`() {
         val actor = adminAccountFixture.관리자("suspend-studio")
         val user = resourceService.create(
             actor.requiredId, AdminResourceType.USER,
@@ -79,17 +80,40 @@ class AdminResourceSuspensionServiceTest @Autowired constructor(
                 "userId" to user.id, "name" to "정지 스튜디오", "galleryUrl" to "suspended-studio",
             )), "127.0.0.1",
         )
-        val accessToken = authTokenProvider.generateAccessToken(userRepository.findById(user.id).orElseThrow())
+        insertRefreshToken(user.id, "suspended-studio-refresh")
 
-        suspensionService.suspend(
+        assertThatCode { accessStatusRepository.requireActive(user.id) }
+            .doesNotThrowAnyException()
+
+        val suspended = suspensionService.suspend(
             actor.requiredId, AdminResourceType.STUDIO, studio.id,
             ChangeAdminResourceStateRequest("스튜디오 운영 정지", studio.version), "127.0.0.1",
         )
 
-        assertThatThrownBy { authTokenProvider.getAuthUser(accessToken) }
+        assertThat(refreshTokenCount(user.id)).isZero()
+        assertThatThrownBy { accessStatusRepository.requireActive(user.id) }
             .isInstanceOfSatisfying(TokenException::class.java) {
                 assertThat(it.errorCode).isEqualTo(AuthErrorCode.STUDIO_SUSPENDED)
             }
+
+        suspensionService.activate(
+            actor.requiredId, AdminResourceType.STUDIO, studio.id,
+            ChangeAdminResourceStateRequest("스튜디오 운영 재개", suspended.version), "127.0.0.1",
+        )
+        assertThatCode { accessStatusRepository.requireActive(user.id) }
+            .doesNotThrowAnyException()
+    }
+
+    private fun insertRefreshToken(userId: Long, token: String) {
+        jdbcClient.sql(
+            """
+            INSERT INTO refresh_tokens (user_id, token, expires_at, version, created_at, updated_at)
+            VALUES (:userId, :token, CURRENT_TIMESTAMP + INTERVAL '1 day', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """.trimIndent(),
+        )
+            .param("userId", userId)
+            .param("token", token)
+            .update()
     }
 
     private fun refreshTokenCount(userId: Long): Long = jdbcClient.sql(

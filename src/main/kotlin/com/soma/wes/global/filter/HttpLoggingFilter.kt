@@ -36,7 +36,11 @@ class HttpLoggingFilter : OncePerRequestFilter() {
         private const val MASK_VALUE = "****"
 
         /** 쿼리스트링에 실려 오면 값 대신 [MASK_VALUE]를 찍는 키. 대소문자를 가리지 않는다. */
-        private val SENSITIVE_KEYS = setOf("token", "accesstoken", "refreshtoken", "password", "authorization", "apikey")
+        private val SENSITIVE_KEYS = setOf(
+            "token", "accesstoken", "refreshtoken", "password", "authorization", "apikey",
+            // 관리자 통합 검색에는 이름·스튜디오명·이메일이 들어올 수 있으므로 Loki에 원문을 남기지 않는다.
+            "query",
+        )
 
         private val PATH_PATTERN_PARSER = PathPatternParser()
 

@@ -8,18 +8,21 @@ from __future__ import annotations
 
 import logging
 
-from embedder import job, model
+from embedder import admin_job, job
+from embedder.admin_event import AdminPhotoEvent
 from embedder.config import Settings
 
 logging.getLogger().setLevel(logging.INFO)
 
-# 초기화 단계(모듈 임포트)에서 모델을 올려 둔다. 핸들러 안에서 로드하면 웜 스타트에도 매번
-# 다시 읽고, Lambda가 초기화 구간에 더 넉넉히 주는 CPU도 못 쓴다.
+# 설정은 가볍게 읽되 모델은 올리지 않는다. DERIVATIVE/QUALITY_ANALYSIS는 torch나 DINO를
+# 전혀 쓰지 않고, EMBEDDING의 첫 호출만 model.load_from의 프로세스 캐시를 채운다.
 _SETTINGS = Settings.from_env()
-model.load_from(_SETTINGS)
 
 
 def handler(event: dict, context) -> dict:
+    if "jobId" in event:
+        return admin_job.run(AdminPhotoEvent.from_payload(event), _SETTINGS)
+
     gallery_id = event.get("galleryId")
     if gallery_id is None:
         raise ValueError("페이로드에 galleryId가 없습니다")

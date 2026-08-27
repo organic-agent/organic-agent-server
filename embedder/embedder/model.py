@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 
 
 class DinoEmbedder:
-    def __init__(self, model_id: str, expected_dim: int) -> None:
+    def __init__(self, model_id: str, model_revision: str, expected_dim: int) -> None:
         # torch는 여기서만 import한다. 임포트 자체가 수 초 걸려서, 모델을 안 쓰는 경로가
         # 그 값을 치르지 않게 한다.
         import torch
@@ -28,6 +28,7 @@ class DinoEmbedder:
 
         self._torch = torch
         self.model_id = model_id
+        self.model_revision = model_revision
         self.expected_dim = expected_dim
 
         # Lambda에는 GPU가 없다. 로컬 맥에서 같은 코드를 돌릴 때만 MPS가 잡힌다.
@@ -38,9 +39,9 @@ class DinoEmbedder:
         else:
             self.device = "cpu"
 
-        log.info("모델 로드: %s (device=%s)", model_id, self.device)
-        self.processor = AutoImageProcessor.from_pretrained(model_id)
-        self.model = AutoModel.from_pretrained(model_id).to(self.device).eval()
+        log.info("모델 로드: %s@%s (device=%s)", model_id, model_revision, self.device)
+        self.processor = AutoImageProcessor.from_pretrained(model_id, revision=model_revision)
+        self.model = AutoModel.from_pretrained(model_id, revision=model_revision).to(self.device).eval()
 
     def encode(self, images: list[Image.Image]) -> np.ndarray:
         torch = self._torch
@@ -60,10 +61,10 @@ class DinoEmbedder:
 
 
 @lru_cache(maxsize=1)
-def get_embedder(model_id: str, expected_dim: int) -> DinoEmbedder:
+def get_embedder(model_id: str, model_revision: str, expected_dim: int) -> DinoEmbedder:
     """웜 스타트에서 재사용하려고 프로세스당 하나만 만든다."""
-    return DinoEmbedder(model_id, expected_dim)
+    return DinoEmbedder(model_id, model_revision, expected_dim)
 
 
 def load_from(settings: Settings) -> DinoEmbedder:
-    return get_embedder(settings.model_id, settings.embed_dim)
+    return get_embedder(settings.model_id, settings.model_revision, settings.embed_dim)

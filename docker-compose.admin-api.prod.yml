@@ -1,0 +1,90 @@
+services:
+  wes-admin-api:
+    image: ghcr.io/${OWNER_LOWERCASE}/wes-admin-api:${IMAGE_TAG:?IMAGE_TAG must be set}
+    container_name: wes-admin-api
+    restart: always
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - SERVER_PORT=8081
+      - AWS_REGION=ap-northeast-2
+      - TZ=Asia/Seoul
+      - JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75
+    ports:
+      # 호스트에서는 헬스체크만 가능하고, BackOffice는 아래 내부 네트워크의 컨테이너 DNS를 쓴다.
+      - "127.0.0.1:8081:8081"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    volumes:
+      - ./admin-api-logs:/var/log/spring
+    networks:
+      - wes-admin-internal
+      - wes-admin-runtime
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  wes-admin-alloy:
+    # v1.18.1 official multi-architecture image index. Keep the version and
+    # digest together so a mutable tag cannot replace the deployed binary.
+    image: grafana/alloy:v1.18.1@sha256:0f4434c92b3e6cdac38bb129b344e1790c246f7b6e2eaffcc16a5fa363240e33
+    platform: linux/arm64
+    container_name: wes-admin-alloy
+    restart: always
+    user: "473:473"
+    environment:
+      - LOKI_URL=${LOKI_URL:?LOKI_URL must be set}
+    # A compromised collector cannot use Docker's embedded resolver as a
+    # host-network DNS tunnel. Loki itself is pinned in /etc/hosts below.
+    dns:
+      - 127.0.0.1
+    extra_hosts:
+      - "${LOKI_HOST:?LOKI_HOST must be set}:${LOKI_PRIMARY_IP:?LOKI_PRIMARY_IP must be set}"
+    volumes:
+      - ./admin-api-logs:/var/log/spring:ro
+      - ./config.admin.alloy:/etc/alloy/config.alloy:ro
+      - ./admin-alloy-data:/var/lib/alloy/data
+      - /run/wes-alloy-egress:/run/wes-alloy-egress:ro
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        until [ -r /run/wes-alloy-egress/ready ]; do sleep 5; done
+        exec /bin/alloy run --storage.path=/var/lib/alloy/data --disable-reporting /etc/alloy/config.alloy
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    networks:
+      # 관리자 API의 RDS/AWS runtime과 분리한다. 이 대역은 배포 스크립트가
+      # IMDS 접근을 거부하고 Loki 송신에만 사용한다.
+      - wes-admin-alloy-egress
+    deploy:
+      resources:
+        limits:
+          memory: 192m
+          pids: 128
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "2" }
+
+networks:
+  wes-admin-internal:
+    name: wes-admin-internal
+    external: true
+  wes-admin-runtime:
+    name: wes-admin-runtime
+    external: true
+  wes-admin-alloy-egress:
+    name: wes-admin-alloy-egress
+    external: true

@@ -13,6 +13,7 @@ import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
+import software.amazon.awssdk.services.s3.model.S3Exception
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest
@@ -77,6 +78,21 @@ class S3PhotoStorage(
             .getObjectRequest(getRequest)
             .build()
         return s3Presigner.presignGetObject(presignRequest).url().toExternalForm()
+    }
+
+    override fun exists(key: String): Boolean = try {
+        s3Client.headObject { request -> request.bucket(properties.bucket).key(key) }
+        true
+    } catch (error: S3Exception) {
+        if (error.statusCode() == 404) {
+            false
+        } else {
+            log.error("S3 사진 메타데이터 조회 실패: bucket={}, key={}", properties.bucket, key, error)
+            throw PhotoException(PhotoErrorCode.STORAGE_METADATA_FAILED)
+        }
+    } catch (error: SdkException) {
+        log.error("S3 사진 메타데이터 조회 실패: bucket={}, key={}", properties.bucket, key, error)
+        throw PhotoException(PhotoErrorCode.STORAGE_METADATA_FAILED)
     }
 
     /** 조회용 서명은 수명만 다르다. [presignView]와 [presignOriginal]이 쓴다. */

@@ -1,0 +1,7 @@
+# Dockerfile에서 CPU 전용 인덱스로 먼저 설치하는 ML 런타임까지 pip-audit의 dependency
+# resolution에 포함한다. 실제 설치 버전과 이 파일을 항상 함께 바꿔야 한다.
+-r requirements.txt
+# PyPI 취약점 식별자는 CPU wheel의 local suffix(+cpu)를 쓰지 않으므로 upstream 버전으로
+# 정규화한다. Dockerfile은 같은 버전의 CPU wheel만 설치한다.
+torch==2.13.0
+torchvision==0.28.0

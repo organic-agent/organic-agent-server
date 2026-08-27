@@ -14,6 +14,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.jdbc.core.simple.JdbcClient
 import java.time.ZonedDateTime
 
 /**
@@ -30,6 +31,7 @@ class FolderViewAssemblerTest @Autowired constructor(
     private val folderFixture: FolderFixture,
     private val photoFolderRepository: PhotoFolderRepository,
     private val photoRepository: PhotoRepository,
+    private val jdbcClient: JdbcClient,
 ) {
 
     private var galleryId: Long = 0L
@@ -208,6 +210,42 @@ class FolderViewAssemblerTest @Autowired constructor(
 
             // then
             assertThat(result.photos.map { it.photoId }).containsExactly(photoIds.last())
+        }
+
+        @Test
+        fun `관리자 앨범 레이아웃의 명시 순서와 크롭을 사용자 응답에 반영한다`() {
+            // given
+            val photoIds = photoFixture.업로드된_사진(galleryId, count = 2)
+            val folder = savedFolder(folderFixture.확정된_폴더(galleryId, "앨범", photoIds))
+            jdbcClient.sql(
+                """
+                UPDATE photo_folder_items
+                SET sort_order = CASE photo_id WHEN :secondPhotoId THEN 0 ELSE 1 END,
+                    crop_json = CASE photo_id
+                        WHEN :secondPhotoId THEN CAST('{"x":0.1,"y":0.2,"width":0.7,"height":0.6}' AS JSONB)
+                        ELSE NULL
+                    END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE folder_id = :folderId
+                """.trimIndent(),
+            )
+                .param("secondPhotoId", photoIds[1])
+                .param("folderId", folder.requiredId)
+                .update()
+
+            // when
+            val result = folderViewAssembler.detailOf(folder)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(result.photos.map { it.photoId })
+                    .containsExactly(photoIds[1], photoIds[0])
+                softly.assertThat(result.items.map { it.sortOrder }).containsExactly(0, 1)
+                softly.assertThat(result.items.first().photo.photoId).isEqualTo(photoIds[1])
+                softly.assertThat(result.items.first().crop)
+                    .containsEntry("x", 0.1)
+                    .containsEntry("width", 0.7)
+            }
         }
     }
 

@@ -27,6 +27,7 @@ import com.soma.wes.retouch.repository.RetouchPhotoRepository
 import com.soma.wes.retouch.repository.RetouchRoundRepository
 import com.soma.wes.retouch.support.RetouchPhotoLoader
 import com.soma.wes.retouch.support.RetouchViewAssembler
+import com.soma.wes.trash.service.ProductChildTrashService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -44,6 +45,7 @@ class RetouchService(
     private val retouchPhotoRepository: RetouchPhotoRepository,
     private val retouchPhotoLoader: RetouchPhotoLoader,
     private val retouchViewAssembler: RetouchViewAssembler,
+    private val productChildTrashService: ProductChildTrashService,
     private val photoStorage: PhotoStorage,
     private val properties: StorageProperties,
     private val clock: Clock,
@@ -149,7 +151,7 @@ class RetouchService(
         galleryRepository.requireWithLockById(galleryId)
         val round = requireDraftingRound(galleryId, RetouchErrorCode.PHOTO_NOT_IN_ROUND)
 
-        if (retouchPhotoRepository.deleteByRoundIdAndPhotoId(round.requiredId, photoId) == 0L) {
+        if (!productChildTrashService.removeUserRetouchItem(round.requiredId, photoId)) {
             throw RetouchException(RetouchErrorCode.PHOTO_NOT_IN_ROUND)
         }
     }

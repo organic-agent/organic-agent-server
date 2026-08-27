@@ -14,6 +14,8 @@ import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.studio.exception.StudioErrorCode
 import com.soma.wes.studio.exception.StudioException
 import com.soma.wes.studio.repository.StudioRepository
+import com.soma.wes.studio.repository.StudioMemberRepository
+import com.soma.wes.studio.domain.StudioMemberRole
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -25,14 +27,14 @@ class GalleryService(
     private val galleryRepository: GalleryRepository,
     private val galleryMemberRepository: GalleryMemberRepository,
     private val studioRepository: StudioRepository,
+    private val studioMemberRepository: StudioMemberRepository,
     private val galleryAccessPolicy: GalleryAccessPolicy,
     private val clock: Clock,
 ) {
 
     @Transactional
     fun create(userId: Long, request: CreateGalleryRequest): GalleryResponse {
-        val studio = studioRepository.findByUserId(userId)
-            ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
+        val studio = requireOperatingStudio(userId)
 
         val gallery = galleryRepository.save(
             Gallery.create(
@@ -48,9 +50,19 @@ class GalleryService(
 
     @Transactional(readOnly = true)
     fun findAllVisibleTo(userId: Long): List<GalleryResponse> {
-        val asPhotographer = studioRepository.findByUserId(userId)
-            ?.let { galleryRepository.findAllByStudioId(it.requiredId) }
-            .orEmpty()
+        val operatingStudioIds = buildSet {
+            studioRepository.findByUserIdAndSuspendedAtIsNull(userId)?.let { add(it.requiredId) }
+            val memberStudioIds = studioMemberRepository.findAllByUserIdAndRoleIn(userId, ACTIVE_STUDIO_ROLES)
+                .map { it.studioId }
+                .distinct()
+            studioRepository.findAllByIdInAndSuspendedAtIsNull(memberStudioIds)
+                .forEach { add(it.requiredId) }
+        }
+        val asPhotographer = if (operatingStudioIds.isEmpty()) {
+            emptyList()
+        } else {
+            galleryRepository.findAllByStudioIdIn(operatingStudioIds)
+        }
 
         val memberGalleryIds = galleryMemberRepository.findAllByUserId(userId).map { it.galleryId }
         val asCouple = galleryRepository.findAllById(memberGalleryIds)
@@ -152,5 +164,21 @@ class GalleryService(
         val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
 
         gallery.moveToTrash(ZonedDateTime.now(clock))
+    }
+
+    private fun requireOperatingStudio(userId: Long): com.soma.wes.studio.domain.Studio {
+        val studioIds = buildSet {
+            studioRepository.findByUserIdAndSuspendedAtIsNull(userId)?.let { add(it.requiredId) }
+            studioMemberRepository.findAllByUserIdAndRoleIn(userId, ACTIVE_STUDIO_ROLES)
+                .forEach { add(it.studioId) }
+        }
+        val studios = studioRepository.findAllByIdInAndSuspendedAtIsNull(studioIds)
+        if (studios.isEmpty()) throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
+        if (studios.size > 1) throw StudioException(StudioErrorCode.STUDIO_SELECTION_REQUIRED)
+        return studios.single()
+    }
+
+    companion object {
+        private val ACTIVE_STUDIO_ROLES = StudioMemberRole.entries
     }
 }
