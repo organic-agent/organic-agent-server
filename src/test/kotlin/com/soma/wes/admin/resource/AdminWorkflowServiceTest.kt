@@ -39,6 +39,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.Instant
 import java.time.ZonedDateTime
+import java.time.temporal.ChronoUnit
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -685,7 +686,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         }
 
-        val initialFuture = ZonedDateTime.now().plusDays(7).toOffsetDateTime()
+        val initialFuture = ZonedDateTime.now().plusDays(7).truncatedTo(ChronoUnit.MICROS).toOffsetDateTime()
         execute(
             actor.requiredId, AdminResourceType.GALLERY, graph.gallery.id,
             AdminWorkflowAction.UPDATE_GALLERY_STATES, 0, "gallery-deadline-close-001",
@@ -705,7 +706,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         }
 
-        val renewedDeadline = ZonedDateTime.now().plusDays(30).toOffsetDateTime()
+        val renewedDeadline = ZonedDateTime.now().plusDays(30).truncatedTo(ChronoUnit.MICROS).toOffsetDateTime()
         val reopened = execute(
             actor.requiredId, AdminResourceType.GALLERY, graph.gallery.id,
             AdminWorkflowAction.REOPEN_GALLERY, 1, "gallery-reopen-future-deadline-001",
