@@ -122,13 +122,8 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-mkdir -p "$WORK_DIR" "$WORK_DIR/logs/info" "$WORK_DIR/logs/warn" \
-  "$WORK_DIR/logs/error" "$ROLLBACK_DIR"
+mkdir -p "$WORK_DIR" "$WORK_DIR/logs" "$ROLLBACK_DIR"
 install -d -m 0700 "$CANDIDATE_DIR"
-# The legacy root container created level directories and current log files as root.
-# Transfer only regular files/directories on this bind mount; never follow app-created symlinks.
-find "$WORK_DIR/logs" -xdev \( -type d -o -type f \) \
-  -exec chown 10001:10001 {} +
 
 if docker inspect wes-app >/dev/null 2>&1; then
   [ -f "$WORK_DIR/docker-compose.prod.yml" ] && [ -f "$WORK_DIR/config.alloy" ] || {
@@ -222,6 +217,11 @@ mv -f "$WORK_DIR/.config.alloy.next" "$WORK_DIR/config.alloy"
 
 cd "$WORK_DIR"
 handoff_public_service "$TARGET_SERVICE"
+# The legacy root container created level directories and current log files as root.
+# Capture rollback first, stop that writer, and never dereference a path changed into a symlink.
+mkdir -p "$WORK_DIR/logs/info" "$WORK_DIR/logs/warn" "$WORK_DIR/logs/error"
+find "$WORK_DIR/logs" -xdev \( -type d -o -type f \) \
+  -exec chown -h 10001:10001 {} +
 docker compose -f docker-compose.prod.yml up -d --force-recreate --pull never
 docker logout ghcr.io >/dev/null 2>&1 || true
 REGISTRY_LOGGED_IN=false
