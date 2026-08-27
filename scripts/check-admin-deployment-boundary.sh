@@ -5,6 +5,9 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 admin_config="$repo_root/wes-admin-api/src/main/resources/application.yml"
 admin_compose="$repo_root/docker-compose.admin-api.prod.yml"
 cd_workflow="$repo_root/.github/workflows/cd.yml"
+public_deploy_script="$repo_root/scripts/deploy-public-ssm.sh"
+admin_deploy_script="$repo_root/scripts/deploy-admin-api-ssm.sh"
+workflow_run_size_check="$repo_root/scripts/check-workflow-run-size.rb"
 admin_alloy="$repo_root/monitoring/config.admin.alloy"
 alloy_egress_script="$repo_root/scripts/configure-admin-alloy-egress.sh"
 alloy_egress_unit="$repo_root/deploy/wes-admin-alloy-egress.service"
@@ -19,6 +22,25 @@ fi
 grep -Fq 'secrets.AWS_ADMIN_API_DEPLOY_ROLE_ARN' "$cd_workflow"
 if grep -Fq 'secrets.AWS_ADMIN_DEPLOY_ROLE_ARN' "$cd_workflow"; then
   echo "관리자 API 배포 역할 secret 이름이 Infra 출력 계약과 다릅니다." >&2
+  exit 1
+fi
+
+bash -n "$public_deploy_script"
+bash -n "$admin_deploy_script"
+ruby "$workflow_run_size_check" "$cd_workflow"
+
+[ "$(grep -Fc 'scripts/deploy-public-ssm.sh' "$cd_workflow")" -eq 2 ]
+[ "$(grep -Fc 'scripts/deploy-admin-api-ssm.sh' "$cd_workflow")" -eq 2 ]
+grep -Fq -- '--rawfile script scripts/deploy-public-ssm.sh' "$cd_workflow"
+grep -Fq -- '--rawfile script scripts/deploy-admin-api-ssm.sh' "$cd_workflow"
+[ "$(grep -Fc -- '--arg github_token "${{ secrets.GITHUB_TOKEN }}"' "$cd_workflow")" -eq 2 ]
+[ "$(grep -Fc 'env_line("GITHUB_TOKEN"; $github_token)' "$cd_workflow")" -eq 2 ]
+grep -Fq 'echo "$GITHUB_TOKEN"' "$public_deploy_script"
+grep -Fq 'docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin' "$public_deploy_script"
+grep -Fq 'echo "$GITHUB_TOKEN"' "$admin_deploy_script"
+grep -Fq 'docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin' "$admin_deploy_script"
+if grep -Fq '${{' "$public_deploy_script" || grep -Fq '${{' "$admin_deploy_script"; then
+  echo "원격 SSM 스크립트에 GitHub expression이 남아 있습니다." >&2
   exit 1
 fi
 
@@ -52,14 +74,14 @@ printf '%s\n' "$rendered_compose_json" | jq -e '
   (any(.services["wes-admin-alloy"].volumes[]; .target == "/run/wes-alloy-egress" and .read_only == true))
 ' >/dev/null
 grep -Fq 'service = "wes-admin-api"' "$admin_alloy"
-grep -Fq '/wes/admin-api/prod/app.logging.loki-url' "$cd_workflow"
-grep -Fq 'wes-admin-alloy' "$cd_workflow"
+grep -Fq '/wes/admin-api/prod/app.logging.loki-url' "$admin_deploy_script"
+grep -Fq 'wes-admin-alloy' "$admin_deploy_script"
 grep -Fq 'docker/setup-qemu-action@v3' "$cd_workflow"
-grep -Fq 'INTERNAL_NETWORK_SUBNET=172.30.0.0/24' "$cd_workflow"
-grep -Fq 'RUNTIME_NETWORK_SUBNET=172.30.1.0/24' "$cd_workflow"
-grep -Fq 'ALLOY_EGRESS_NETWORK_SUBNET=172.30.2.0/24' "$cd_workflow"
-grep -Fq 'configure-admin-alloy-egress' "$cd_workflow"
-grep -Fq 'systemctl enable wes-admin-alloy-egress.service' "$cd_workflow"
+grep -Fq 'INTERNAL_NETWORK_SUBNET=172.30.0.0/24' "$admin_deploy_script"
+grep -Fq 'RUNTIME_NETWORK_SUBNET=172.30.1.0/24' "$admin_deploy_script"
+grep -Fq 'ALLOY_EGRESS_NETWORK_SUBNET=172.30.2.0/24' "$admin_deploy_script"
+grep -Fq 'configure-admin-alloy-egress' "$admin_deploy_script"
+grep -Fq 'systemctl enable wes-admin-alloy-egress.service' "$admin_deploy_script"
 grep -Fq 'Before=docker.service' "$alloy_egress_unit"
 grep -Fq '169.254.169.254/32' "$alloy_egress_script"
 grep -Fq 'iptables -w 5 -A "$CHAIN_NAME" -j REJECT' "$alloy_egress_script"
@@ -76,68 +98,68 @@ grep -Fq 'FORWARD_JUMP_COUNT="$(iptables -w 5 -S DOCKER-USER' "$alloy_egress_scr
 grep -Fq 'HOST_JUMP_COUNT="$(iptables -w 5 -S INPUT' "$alloy_egress_script"
 grep -Fq '[ "$FORWARD_JUMP_COUNT" -eq 1 ]' "$alloy_egress_script"
 grep -Fq '[ "$HOST_JUMP_COUNT" -eq 1 ]' "$alloy_egress_script"
-grep -Fq 'FIRST_FORWARD_RULE=\$(iptables -w 5 -S DOCKER-USER' "$cd_workflow"
-grep -Fq 'FIRST_HOST_RULE=\$(iptables -w 5 -S INPUT' "$cd_workflow"
+grep -Fq 'FIRST_FORWARD_RULE=$(iptables -w 5 -S DOCKER-USER' "$admin_deploy_script"
+grep -Fq 'FIRST_HOST_RULE=$(iptables -w 5 -S INPUT' "$admin_deploy_script"
 grep -Fq 'READY_FILE="$READY_DIRECTORY/ready"' "$alloy_egress_script"
 grep -Fq 'LOKI_PRIMARY_IP_FILE="$READY_DIRECTORY/loki-primary-ip"' "$alloy_egress_script"
 grep -Fq 'install -m 0444 /dev/null "$READY_FILE"' "$alloy_egress_script"
-grep -Fq 'test -r /run/wes-alloy-egress/ready' "$cd_workflow"
-grep -Fq 'RESTART_STOPPED_ALLOY=false' "$cd_workflow"
-grep -Fq "'[\"127.0.0.1\"]'" "$cd_workflow"
-grep -Fq 'rollback_admin_api_release()' "$cd_workflow"
-grep -Fq 'recover_admin_alloy_state()' "$cd_workflow"
-grep -Fq 'restore_admin_host_artifacts()' "$cd_workflow"
-grep -Fq 'trap on_admin_deploy_exit EXIT' "$cd_workflow"
-grep -Fq 'CANDIDATE_DIR="\$WORK_DIR/.admin-candidate"' "$cd_workflow"
-grep -Fq 'bash -n "\$CANDIDATE_DIR/configure-admin-alloy-egress.sh"' "$cd_workflow"
-grep -Fq 'config --quiet' "$cd_workflow"
-grep -Fq '"\$CANDIDATE_DIR/configure-admin-alloy-egress.sh"' "$cd_workflow"
-grep -Fq '.configure-admin-alloy-egress.next' "$cd_workflow"
-grep -Fq 'mv -f "\$WORK_DIR/.docker-compose.admin-api.prod.yml.next"' "$cd_workflow"
-grep -Fq 'PREVIOUS_IMAGE_ID=\$(docker inspect --format' "$cd_workflow"
-grep -Fq 'previous-image-tag' "$cd_workflow"
-grep -Fq 'install -m 0600 "\$WORK_DIR/docker-compose.admin-api.prod.yml"' "$cd_workflow"
-grep -Fq 'install -m 0600 "\$WORK_DIR/config.admin.alloy"' "$cd_workflow"
-grep -Fq 'up -d --force-recreate --pull never' "$cd_workflow"
-grep -Fq 'ROLLED_BACK_IMAGE_ID=\$(docker inspect --format' "$cd_workflow"
-grep -Fq 'http://127.0.0.1:8081/actuator/health' "$cd_workflow"
-grep -Fq -- '--connect-timeout 2 --max-time 5' "$cd_workflow"
-grep -Fq '첫 배포여서 이전 wes-admin-api 컨테이너가 없습니다' "$cd_workflow"
-grep -Fq 'PREVIOUS_EGRESS_SCRIPT_AVAILABLE=true' "$cd_workflow"
-grep -Fq 'PREVIOUS_EGRESS_UNIT_AVAILABLE=true' "$cd_workflow"
-grep -Fq 'PREVIOUS_ADMIN_COMPOSE_AVAILABLE=true' "$cd_workflow"
-grep -Fq 'PREVIOUS_ADMIN_ALLOY_CONFIG_AVAILABLE=true' "$cd_workflow"
-grep -Fq 'PREVIOUS_ALLOY_IMAGE=\$(docker inspect --format' "$cd_workflow"
-grep -Fq 'PREVIOUS_ALLOY_IMAGE_ID=\$(docker inspect --format' "$cd_workflow"
-grep -Fq 'rm -f -- /usr/local/sbin/configure-admin-alloy-egress' "$cd_workflow"
-grep -Fq 'rm -f -- /etc/systemd/system/wes-admin-alloy-egress.service' "$cd_workflow"
-grep -Fq 'PREVIOUS_ALLOY_RESTART_POLICY=\$(docker inspect' "$cd_workflow"
-grep -Fq 'docker compose --project-directory "\$WORK_DIR"' "$cd_workflow"
-grep -Fq 'up -d --force-recreate --pull never wes-admin-alloy' "$cd_workflow"
-grep -Fq 'up -d --force-recreate --pull never wes-admin-api' "$cd_workflow"
-grep -Fq '공개 API 이전 릴리스 롤백을 시작합니다' "$cd_workflow"
-grep -Fq 'PREVIOUS_IMAGE_ID=\$(docker inspect --format' "$cd_workflow"
-grep -Fq 'http://127.0.0.1:8080/actuator/health' "$cd_workflow"
-grep -Fq 'trap on_public_deploy_exit EXIT' "$cd_workflow"
-grep -Fq 'rollback_public_release()' "$cd_workflow"
-grep -Fq 'PREVIOUS_LEGACY_IMAGE="ghcr.io/${OWNER_LOWERCASE}/wes-server:latest"' "$cd_workflow"
-grep -Fq '"\$PREVIOUS_LEGACY_IMAGE")' "$cd_workflow"
-grep -Fq 'EXPECTED_PREVIOUS_SERVICE=wes-server' "$cd_workflow"
-grep -Fq 'up -d --force-recreate --pull never "\$PREVIOUS_SERVICE"' "$cd_workflow"
-grep -Fq 'handoff_public_service()' "$cd_workflow"
-grep -Fq 'handoff_public_service "\$PREVIOUS_SERVICE"' "$cd_workflow"
-grep -Fq 'handoff_public_service "\$TARGET_SERVICE"' "$cd_workflow"
+grep -Fq 'test -r /run/wes-alloy-egress/ready' "$admin_deploy_script"
+grep -Fq 'RESTART_STOPPED_ALLOY=false' "$admin_deploy_script"
+grep -Fq "'[\"127.0.0.1\"]'" "$admin_deploy_script"
+grep -Fq 'rollback_admin_api_release()' "$admin_deploy_script"
+grep -Fq 'recover_admin_alloy_state()' "$admin_deploy_script"
+grep -Fq 'restore_admin_host_artifacts()' "$admin_deploy_script"
+grep -Fq 'trap on_admin_deploy_exit EXIT' "$admin_deploy_script"
+grep -Fq 'CANDIDATE_DIR="$WORK_DIR/.admin-candidate"' "$admin_deploy_script"
+grep -Fq 'bash -n "$CANDIDATE_DIR/configure-admin-alloy-egress.sh"' "$admin_deploy_script"
+grep -Fq 'config --quiet' "$admin_deploy_script"
+grep -Fq '"$CANDIDATE_DIR/configure-admin-alloy-egress.sh"' "$admin_deploy_script"
+grep -Fq '.configure-admin-alloy-egress.next' "$admin_deploy_script"
+grep -Fq 'mv -f "$WORK_DIR/.docker-compose.admin-api.prod.yml.next"' "$admin_deploy_script"
+grep -Fq 'PREVIOUS_IMAGE_ID=$(docker inspect --format' "$admin_deploy_script"
+grep -Fq 'previous-image-tag' "$admin_deploy_script"
+grep -Fq 'install -m 0600 "$WORK_DIR/docker-compose.admin-api.prod.yml"' "$admin_deploy_script"
+grep -Fq 'install -m 0600 "$WORK_DIR/config.admin.alloy"' "$admin_deploy_script"
+grep -Fq 'up -d --force-recreate --pull never' "$admin_deploy_script"
+grep -Fq 'ROLLED_BACK_IMAGE_ID=$(docker inspect --format' "$admin_deploy_script"
+grep -Fq 'http://127.0.0.1:8081/actuator/health' "$admin_deploy_script"
+grep -Fq -- '--connect-timeout 2 --max-time 5' "$admin_deploy_script"
+grep -Fq '첫 배포여서 이전 wes-admin-api 컨테이너가 없습니다' "$admin_deploy_script"
+grep -Fq 'PREVIOUS_EGRESS_SCRIPT_AVAILABLE=true' "$admin_deploy_script"
+grep -Fq 'PREVIOUS_EGRESS_UNIT_AVAILABLE=true' "$admin_deploy_script"
+grep -Fq 'PREVIOUS_ADMIN_COMPOSE_AVAILABLE=true' "$admin_deploy_script"
+grep -Fq 'PREVIOUS_ADMIN_ALLOY_CONFIG_AVAILABLE=true' "$admin_deploy_script"
+grep -Fq 'PREVIOUS_ALLOY_IMAGE=$(docker inspect --format' "$admin_deploy_script"
+grep -Fq 'PREVIOUS_ALLOY_IMAGE_ID=$(docker inspect --format' "$admin_deploy_script"
+grep -Fq 'rm -f -- /usr/local/sbin/configure-admin-alloy-egress' "$admin_deploy_script"
+grep -Fq 'rm -f -- /etc/systemd/system/wes-admin-alloy-egress.service' "$admin_deploy_script"
+grep -Fq 'PREVIOUS_ALLOY_RESTART_POLICY=$(docker inspect' "$admin_deploy_script"
+grep -Fq 'docker compose --project-directory "$WORK_DIR"' "$admin_deploy_script"
+grep -Fq 'up -d --force-recreate --pull never wes-admin-alloy' "$admin_deploy_script"
+grep -Fq 'up -d --force-recreate --pull never wes-admin-api' "$admin_deploy_script"
+grep -Fq '공개 API 이전 릴리스 롤백을 시작합니다' "$public_deploy_script"
+grep -Fq 'PREVIOUS_IMAGE_ID=$(docker inspect --format' "$public_deploy_script"
+grep -Fq 'http://127.0.0.1:8080/actuator/health' "$public_deploy_script"
+grep -Fq 'trap on_public_deploy_exit EXIT' "$public_deploy_script"
+grep -Fq 'rollback_public_release()' "$public_deploy_script"
+grep -Fq 'PREVIOUS_LEGACY_IMAGE="ghcr.io/${OWNER_LOWERCASE}/wes-server:latest"' "$public_deploy_script"
+grep -Fq '"$PREVIOUS_LEGACY_IMAGE")' "$public_deploy_script"
+grep -Fq 'EXPECTED_PREVIOUS_SERVICE=wes-server' "$public_deploy_script"
+grep -Fq 'up -d --force-recreate --pull never "$PREVIOUS_SERVICE"' "$public_deploy_script"
+grep -Fq 'handoff_public_service()' "$public_deploy_script"
+grep -Fq 'handoff_public_service "$PREVIOUS_SERVICE"' "$public_deploy_script"
+grep -Fq 'handoff_public_service "$TARGET_SERVICE"' "$public_deploy_script"
 grep -Fq -- '--timeout-seconds 1800' "$cd_workflow"
 grep -Fq 'for i in $(seq 1 180); do' "$cd_workflow"
 grep -Fq 'Loki URL must contain a host and no inline credentials' "$alloy_egress_script"
 
 admin_alloy_recovery_block="$(awk '
-  /          recover_admin_alloy_state\(\) \(/ { capture = 1 }
+  /^recover_admin_alloy_state\(\) \(/ { capture = 1 }
   capture { print }
-  capture && /^          \)$/ { exit }
-' "$cd_workflow")"
+  capture && /^\)$/ { exit }
+' "$admin_deploy_script")"
 printf '%s\n' "$admin_alloy_recovery_block" | grep -Fq -- \
-  '-f "\$ROLLBACK_DIR/docker-compose.admin-api.prod.yml"'
+  '-f "$ROLLBACK_DIR/docker-compose.admin-api.prod.yml"'
 printf '%s\n' "$admin_alloy_recovery_block" | grep -Fq \
   '/usr/local/sbin/configure-admin-alloy-egress'
 printf '%s\n' "$admin_alloy_recovery_block" | grep -Fq \
@@ -148,16 +170,16 @@ printf '%s\n' "$admin_alloy_recovery_block" | grep -Fq \
   "'{{.State.Restarting}}'"
 printf '%s\n' "$admin_alloy_recovery_block" | grep -Fq \
   'FAIL_CLOSED_POLICY'
-if printf '%s\n' "$admin_alloy_recovery_block" | grep -Fq '\$CANDIDATE_DIR'; then
+if printf '%s\n' "$admin_alloy_recovery_block" | grep -Fq '$CANDIDATE_DIR'; then
   echo "관리자 Alloy rollback이 실패한 candidate artifact를 다시 사용합니다." >&2
   exit 1
 fi
 
-candidate_validation_line="$(grep -nF 'bash -n "\$CANDIDATE_DIR/configure-admin-alloy-egress.sh"' "$cd_workflow" | head -n 1 | cut -d: -f1)"
-rollback_arm_line="$(grep -nF 'ROLLBACK_ARMED=true' "$cd_workflow" | tail -n 1 | cut -d: -f1)"
-live_swap_line="$(grep -nF 'mv -f "\$WORK_DIR/.docker-compose.admin-api.prod.yml.next"' "$cd_workflow" | head -n 1 | cut -d: -f1)"
-admin_candidate_pull_line="$(grep -nF 'docker-compose.admin-api.prod.yml" pull' "$cd_workflow" | tail -n 1 | cut -d: -f1)"
-admin_live_firewall_line="$(grep -nF '            /usr/local/sbin/configure-admin-alloy-egress' "$cd_workflow" | tail -n 1 | cut -d: -f1)"
+candidate_validation_line="$(grep -nF 'bash -n "$CANDIDATE_DIR/configure-admin-alloy-egress.sh"' "$admin_deploy_script" | head -n 1 | cut -d: -f1)"
+rollback_arm_line="$(grep -nF 'ROLLBACK_ARMED=true' "$admin_deploy_script" | tail -n 1 | cut -d: -f1)"
+live_swap_line="$(grep -nF 'mv -f "$WORK_DIR/.docker-compose.admin-api.prod.yml.next"' "$admin_deploy_script" | head -n 1 | cut -d: -f1)"
+admin_candidate_pull_line="$(grep -nF 'docker-compose.admin-api.prod.yml" pull' "$admin_deploy_script" | tail -n 1 | cut -d: -f1)"
+admin_live_firewall_line="$(grep -nF '  /usr/local/sbin/configure-admin-alloy-egress' "$admin_deploy_script" | tail -n 1 | cut -d: -f1)"
 if [ "$candidate_validation_line" -ge "$admin_candidate_pull_line" ] || \
   [ "$admin_candidate_pull_line" -ge "$rollback_arm_line" ] || \
   [ "$rollback_arm_line" -ge "$live_swap_line" ] || \
@@ -166,12 +188,12 @@ if [ "$candidate_validation_line" -ge "$admin_candidate_pull_line" ] || \
   exit 1
 fi
 
-public_validation_line="$(grep -nF 'docker-compose.prod.yml" config --quiet' "$cd_workflow" | head -n 1 | cut -d: -f1)"
-public_arm_line="$(grep -nF 'ROLLBACK_ARMED=true' "$cd_workflow" | head -n 1 | cut -d: -f1)"
-public_swap_line="$(grep -nF 'mv -f "\$WORK_DIR/.docker-compose.prod.yml.next"' "$cd_workflow" | head -n 1 | cut -d: -f1)"
-public_candidate_pull_line="$(grep -nF 'docker-compose.prod.yml" pull' "$cd_workflow" | head -n 1 | cut -d: -f1)"
-public_target_handoff_line="$(grep -nF 'handoff_public_service "\$TARGET_SERVICE"' "$cd_workflow" | head -n 1 | cut -d: -f1)"
-public_target_up_line="$(grep -nF 'docker compose -f docker-compose.prod.yml up -d --force-recreate --pull never' "$cd_workflow" | head -n 1 | cut -d: -f1)"
+public_validation_line="$(grep -nF 'docker-compose.prod.yml" config --quiet' "$public_deploy_script" | head -n 1 | cut -d: -f1)"
+public_arm_line="$(grep -nF 'ROLLBACK_ARMED=true' "$public_deploy_script" | head -n 1 | cut -d: -f1)"
+public_swap_line="$(grep -nF 'mv -f "$WORK_DIR/.docker-compose.prod.yml.next"' "$public_deploy_script" | head -n 1 | cut -d: -f1)"
+public_candidate_pull_line="$(grep -nF 'docker-compose.prod.yml" pull' "$public_deploy_script" | head -n 1 | cut -d: -f1)"
+public_target_handoff_line="$(grep -nF 'handoff_public_service "$TARGET_SERVICE"' "$public_deploy_script" | head -n 1 | cut -d: -f1)"
+public_target_up_line="$(grep -nF 'docker compose -f docker-compose.prod.yml up -d --force-recreate --pull never' "$public_deploy_script" | head -n 1 | cut -d: -f1)"
 if [ "$public_validation_line" -ge "$public_candidate_pull_line" ] || \
   [ "$public_candidate_pull_line" -ge "$public_arm_line" ] || \
   [ "$public_arm_line" -ge "$public_swap_line" ] || \
@@ -181,9 +203,9 @@ if [ "$public_validation_line" -ge "$public_candidate_pull_line" ] || \
   exit 1
 fi
 
-admin_api_rollback_call_line="$(grep -nF 'rollback_admin_api_release' "$cd_workflow" | tail -n 1 | cut -d: -f1)"
-admin_alloy_recovery_call_line="$(grep -nF 'recover_admin_alloy_state' "$cd_workflow" | tail -n 1 | cut -d: -f1)"
-admin_host_restore_call_line="$(grep -nF 'restore_admin_host_artifacts' "$cd_workflow" | tail -n 1 | cut -d: -f1)"
+admin_api_rollback_call_line="$(grep -nF 'rollback_admin_api_release' "$admin_deploy_script" | tail -n 1 | cut -d: -f1)"
+admin_alloy_recovery_call_line="$(grep -nF 'recover_admin_alloy_state' "$admin_deploy_script" | tail -n 1 | cut -d: -f1)"
+admin_host_restore_call_line="$(grep -nF 'restore_admin_host_artifacts' "$admin_deploy_script" | tail -n 1 | cut -d: -f1)"
 if [ "$admin_api_rollback_call_line" -ge "$admin_host_restore_call_line" ] || \
   [ "$admin_host_restore_call_line" -ge "$admin_alloy_recovery_call_line" ]; then
   echo "관리자 API, host artifact, Alloy 경계 복구 순서가 안전하지 않습니다." >&2

@@ -58,6 +58,9 @@ jobs:
           chmod +x ./gradlew
           ./gradlew test --no-daemon
 
+      - name: GitHub Actions run 길이 제한 검사
+        run: ruby ./scripts/check-workflow-run-size.rb
+
       - name: 관리자 배포 경계 검사
         run: bash ./scripts/check-admin-deployment-boundary.sh
 
