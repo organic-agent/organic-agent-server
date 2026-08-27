@@ -234,7 +234,9 @@ jobs:
       - name: worker 소스 체크아웃
         uses: actions/checkout@v4
         with:
-          sparse-checkout: embedder
+          sparse-checkout: |
+            embedder
+            scripts
 
       - name: Python 3.12 설정
         uses: actions/setup-python@v5
@@ -348,12 +350,32 @@ jobs:
             echo "ECR image scan이 10분 안에 완료되지 않았습니다" >&2
             exit 1
           }
-          SCAN_COUNTS=$(aws ecr describe-image-scan-findings \
+          # JMESPath가 빈 map을 선택하면 AWS CLI는 빈 문자열을 출력할 수 있다.
+          # 전체 응답을 받아 digest·완료 상태·map 형식을 함께 검증한 뒤 0건으로 해석한다.
+          SCAN_FINDINGS=$(aws ecr describe-image-scan-findings \
             --repository-name "$ECR_REPOSITORY" \
             --image-id "imageDigest=$CANDIDATE_DIGEST" \
-            --query 'imageScanFindings.findingSeverityCounts' --output json)
-          CRITICAL_COUNT=$(printf '%s' "$SCAN_COUNTS" | jq -r '.CRITICAL // 0')
-          HIGH_COUNT=$(printf '%s' "$SCAN_COUNTS" | jq -r '.HIGH // 0')
+            --output json)
+          NORMALIZED_SCAN_COUNTS=$(printf '%s' "$SCAN_FINDINGS" |
+            jq -ce --arg digest "$CANDIDATE_DIGEST" \
+              -f scripts/normalize-worker-scan-findings.jq) || {
+            echo "worker ECR scan 응답의 digest/status/counts 형식이 올바르지 않습니다" >&2
+            exit 1
+          }
+          CRITICAL_COUNT=$(printf '%s' "$NORMALIZED_SCAN_COUNTS" | jq -r '.critical')
+          HIGH_COUNT=$(printf '%s' "$NORMALIZED_SCAN_COUNTS" | jq -r '.high')
+          case "$CRITICAL_COUNT" in
+            ''|*[!0-9]*)
+              echo "worker ECR scan 취약점 집계가 정수가 아닙니다" >&2
+              exit 1
+              ;;
+          esac
+          case "$HIGH_COUNT" in
+            ''|*[!0-9]*)
+              echo "worker ECR scan 취약점 집계가 정수가 아닙니다" >&2
+              exit 1
+              ;;
+          esac
           [ "$CRITICAL_COUNT" -eq 0 ] && [ "$HIGH_COUNT" -eq 0 ] || {
             echo "worker 이미지에서 차단 등급 취약점 발견: critical=$CRITICAL_COUNT high=$HIGH_COUNT" >&2
             exit 1
