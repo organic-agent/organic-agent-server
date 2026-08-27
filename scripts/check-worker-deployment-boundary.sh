@@ -28,6 +28,7 @@ grep -Fq 'FUNCTION_NAME: wes-embedder' "$worker_block"
 grep -Fq 'DEPLOY_TAG: deploy-${{ github.run_id }}-${{ github.run_attempt }}' "$worker_block"
 grep -Fq 'uses: actions/setup-python@v5' "$worker_block"
 grep -Fq 'python-version: "3.12"' "$worker_block"
+grep -Fq 'scripts/normalize-worker-scan-findings.jq' "$worker_block"
 grep -Fq 'pip-audit==2.10.1' "$worker_block"
 grep -Fq 'embedder/requirements.txt' "$worker_block"
 grep -Fq 'embedder/requirements-audit.txt' "$worker_block"
@@ -46,8 +47,13 @@ grep -Fq 'imageManifestMediaType' "$worker_block"
 grep -Fq 'application/vnd.docker.distribution.manifest.v2+json' "$worker_block"
 grep -Fq 'application/vnd.oci.image.manifest.v1+json' "$worker_block"
 grep -Fq 'aws ecr describe-image-scan-findings' "$worker_block"
+grep -Fq 'SCAN_FINDINGS=$(aws ecr describe-image-scan-findings' "$worker_block"
+grep -Fq 'NORMALIZED_SCAN_COUNTS=$(printf' "$worker_block"
+grep -Fq -- '-f scripts/normalize-worker-scan-findings.jq' "$worker_block"
 grep -Fq 'CRITICAL_COUNT=$(printf' "$worker_block"
 grep -Fq 'HIGH_COUNT=$(printf' "$worker_block"
+grep -Fq 'case "$CRITICAL_COUNT" in' "$worker_block"
+grep -Fq 'case "$HIGH_COUNT" in' "$worker_block"
 grep -Fq 'CANDIDATE_IMAGE_URI="${ECR_REPOSITORY_URI}@${CANDIDATE_DIGEST}"' "$worker_block"
 grep -Fq 'PREVIOUS_REVISION_ID=$(printf' "$worker_block"
 grep -Fq 'RECONCILIATION_MIN_SECONDS=60' "$worker_block"
@@ -80,6 +86,33 @@ worker_audit_requirements="$repo_root/embedder/requirements-audit.txt"
 grep -Fq -- '-r requirements.txt' "$worker_audit_requirements"
 grep -Fq 'torch==2.13.0' "$worker_audit_requirements"
 grep -Fq 'torchvision==0.28.0' "$worker_audit_requirements"
+
+scan_validator="$repo_root/scripts/normalize-worker-scan-findings.jq"
+candidate_digest="sha256:worker-scan-contract"
+valid_empty_counts='{"imageId":{"imageDigest":"sha256:worker-scan-contract"},"imageScanStatus":{"status":"COMPLETE"},"imageScanFindings":{"findingSeverityCounts":{}}}'
+normalized_empty_counts="$(printf '%s' "$valid_empty_counts" |
+  jq -ce --arg digest "$candidate_digest" -f "$scan_validator")"
+[ "$normalized_empty_counts" = '{"critical":0,"high":0}' ]
+
+valid_nonzero_counts='{"imageId":{"imageDigest":"sha256:worker-scan-contract"},"imageScanStatus":{"status":"COMPLETE"},"imageScanFindings":{"findingSeverityCounts":{"CRITICAL":0,"HIGH":2}}}'
+normalized_nonzero_counts="$(printf '%s' "$valid_nonzero_counts" |
+  jq -ce --arg digest "$candidate_digest" -f "$scan_validator")"
+[ "$normalized_nonzero_counts" = '{"critical":0,"high":2}' ]
+
+invalid_scan_fixtures=(
+  '{"imageId":{"imageDigest":"sha256:worker-scan-contract"},"imageScanStatus":{"status":"COMPLETE"}}'
+  '{"imageId":{"imageDigest":"sha256:worker-scan-contract"},"imageScanStatus":{"status":"COMPLETE"},"imageScanFindings":{"findingSeverityCounts":{"CRITICAL":false,"HIGH":0}}}'
+  '{"imageId":{"imageDigest":"sha256:worker-scan-contract"},"imageScanStatus":{"status":"COMPLETE"},"imageScanFindings":{"findingSeverityCounts":{"CRITICAL":"0","HIGH":0}}}'
+  '{"imageId":{"imageDigest":"sha256:worker-scan-contract"},"imageScanStatus":{"status":"COMPLETE"},"imageScanFindings":{"findingSeverityCounts":{"CRITICAL":-1,"HIGH":0}}}'
+  '{"imageId":{"imageDigest":"sha256:worker-scan-contract"},"imageScanStatus":{"status":"COMPLETE"},"imageScanFindings":{"findingSeverityCounts":{"CRITICAL":0.5,"HIGH":0}}}'
+)
+for invalid_scan_fixture in "${invalid_scan_fixtures[@]}"; do
+  if printf '%s' "$invalid_scan_fixture" |
+    jq -ce --arg digest "$candidate_digest" -f "$scan_validator" >/dev/null 2>&1; then
+    echo "Malformed worker scan fixture unexpectedly passed validation." >&2
+    exit 1
+  fi
+done
 
 if awk '
   /--image-uri/ {
