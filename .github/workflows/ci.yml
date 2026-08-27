@@ -37,9 +37,15 @@ jobs:
         run: |
           python3 -m pip install --disable-pip-version-check pip-audit==2.10.1
           pip-audit \
-            --requirement embedder/requirements-audit.txt \
+            --requirement embedder/requirements.txt \
             --index-url https://pypi.org/simple \
-            --extra-index-url https://download.pytorch.org/whl/cpu \
+            --progress-spinner off \
+            --strict
+          pip-audit \
+            --requirement embedder/requirements-audit.txt \
+            --no-deps \
+            --disable-pip \
+            --vulnerability-service osv \
             --progress-spinner off \
             --strict
 
