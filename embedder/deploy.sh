@@ -50,6 +50,20 @@ aws ecr get-login-password --region "$REGION" \
 METADATA=$(mktemp -t embedder-build)
 trap 'rm -f "$METADATA"' EXIT
 
+# 가중치를 굽는 단계가 Hugging Face 토큰을 요구한다(DINOv3는 게이트 모델). HF_TOKEN 이
+# 있으면 그것을, 없으면 `hf auth login` 이 남긴 파일을 빌드 시크릿으로 넘긴다. 시크릿은
+# 이미지 레이어에 남지 않는다.
+HF_TOKEN_FILE="${HF_HOME:-$HOME/.cache/huggingface}/token"
+if [ -n "${HF_TOKEN:-}" ]; then
+  HF_SECRET=(--secret "id=hf_token,env=HF_TOKEN")
+elif [ -r "$HF_TOKEN_FILE" ]; then
+  HF_SECRET=(--secret "id=hf_token,src=$HF_TOKEN_FILE")
+else
+  echo "Hugging Face 토큰이 없다. HF_TOKEN 을 내보내거나 'hf auth login' 을 먼저 실행할 것." >&2
+  echo "토큰의 계정이 huggingface.co/${EMBED_MODEL_ID:-facebook/dinov3-vitb16-pretrain-lvd1689m} 라이선스를 승인했어야 한다." >&2
+  exit 1
+fi
+
 # 세 플래그가 전부 필요하다. 이유는 README 의 "빌드와 배포" 참고.
 #   --platform linux/amd64        맥 기본은 arm64인데 함수는 x86_64로 만들어져 있다
 #   --provenance=false --sbom=false  attestation 이 붙으면 manifest list 가 되어 Lambda 가 거절한다
@@ -57,6 +71,7 @@ docker buildx build \
   --platform linux/amd64 \
   --provenance=false --sbom=false \
   --metadata-file "$METADATA" \
+  "${HF_SECRET[@]}" \
   -t "$REPO:$TAG" --push .
 
 DIGEST=$(jq -r '.["containerimage.digest"]' "$METADATA")

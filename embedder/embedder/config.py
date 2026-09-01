@@ -55,7 +55,7 @@ class Settings:
     batch_size: int
     model_id: str
 
-    #: 임베딩 전에 줄이는 긴 변 길이. DINOv2가 실제로 보는 것은 224px이고 프로세서가 알아서
+    #: 임베딩 전에 줄이는 긴 변 길이. DINOv3가 실제로 보는 것은 224px이고 프로세서가 알아서
     #: 줄이므로, 여기서는 디코딩 직후 메모리를 눌러 두는 것이 목적이다. 원본 그대로 배치를
     #: 쌓으면 4천만 화소 몇 장으로 Lambda 메모리가 넘어간다.
     #:
@@ -69,7 +69,7 @@ class Settings:
     preview_quality: int
 
     #: 빌드 시 내려받은 모델 snapshot과 런타임 로드를 같은 immutable commit으로 묶는다.
-    model_revision: str = "f9e44c814b77203eaa57a6bdbbd535f21ede1415"
+    model_revision: str = "5931719e67bbdb9737e363e781fb0c67687896bc"
 
     @staticmethod
     def from_env() -> "Settings":
@@ -87,12 +87,12 @@ class Settings:
             s3_bucket=_required("S3_BUCKET"),
             embed_dim=int(os.environ.get("EMBED_DIM", "768")),
             batch_size=int(os.environ.get("EMBED_BATCH_SIZE", "8")),
-            model_id=os.environ.get("EMBED_MODEL_ID", "facebook/dinov2-base"),
+            model_id=os.environ.get("EMBED_MODEL_ID", "facebook/dinov3-vitb16-pretrain-lvd1689m"),
             resize_long_edge=int(os.environ.get("RESIZE_LONG_EDGE", "1024")),
             preview_quality=int(os.environ.get("PREVIEW_QUALITY", "82")),
             model_revision=os.environ.get(
                 "EMBED_MODEL_REVISION",
-                "f9e44c814b77203eaa57a6bdbbd535f21ede1415",
+                "5931719e67bbdb9737e363e781fb0c67687896bc",
             ),
         )
 
