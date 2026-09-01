@@ -42,4 +42,23 @@ enum class RecommendationErrorCode(
      * 이름 붙이기는 full 잡이 남긴 임베딩 그룹·CLIP 벡터 위에서 돈다 — 사진별 분석이 먼저다.
      */
     FULL_ANALYSIS_NOT_DONE(HttpStatus.CONFLICT, "RECOMMENDATION_409_4", "사진별 분석(full)이 끝난 적이 없어 이름 붙이기를 시작할 수 없습니다."),
+
+    /**
+     * 추천을 요청했는데 갤러리에 AI 폴더 세트가 없는 경우(만든 적 없거나 전부 지움).
+     *
+     * 추천은 폴더 단위다(폴더마다 상위 n장) — 세트 없이 돌릴 폴백을 두면 "폴더별 추천"이 두 가지
+     * 모양이 된다. 폴더 생성(POST /folder-groups/ai)이 먼저다.
+     */
+    FOLDER_SET_NOT_READY(HttpStatus.CONFLICT, "RECOMMENDATION_409_5", "AI 폴더 세트가 없어 추천을 시작할 수 없습니다."),
+
+    /**
+     * 셀렉에 아직 끝나지 않은(PENDING·RUNNING) 추천 잡이 있는 경우.
+     *
+     * 같은 셀렉에 두 라운드가 동시에 적히면 어느 쪽이 최신인지 말할 수 없다. DB의 부분 유니크가
+     * 최종 방어선이다.
+     */
+    SELECTION_JOB_ALREADY_ACTIVE(HttpStatus.CONFLICT, "RECOMMENDATION_409_6", "이미 진행 중인 AI 추천이 있습니다."),
+
+    /** 요청이 콕 집은 AI 폴더 세트(analysisJobId)가 이 갤러리에 없는 경우. 지운 세트도 없는 것이다. */
+    FOLDER_SET_NOT_FOUND(HttpStatus.NOT_FOUND, "RECOMMENDATION_404_2", "요청한 AI 폴더 세트를 찾을 수 없습니다."),
 }
