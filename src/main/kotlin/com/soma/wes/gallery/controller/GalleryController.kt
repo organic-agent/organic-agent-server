@@ -5,6 +5,7 @@ import com.soma.wes.gallery.controller.docs.GalleryControllerDocs
 import com.soma.wes.gallery.dto.request.ChangeMaxRetouchRoundCountRequest
 import com.soma.wes.gallery.dto.request.ChangeMaxSelectablePhotoCountRequest
 import com.soma.wes.gallery.dto.request.ChangeSelectionDeadlineRequest
+import com.soma.wes.gallery.dto.request.ChangeShootTypeRequest
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.dto.request.RenameGalleryRequest
 import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
@@ -91,6 +92,17 @@ class GalleryController(
         @Valid @RequestBody request: ChangeMaxRetouchRoundCountRequest,
     ): ResponseEntity<GalleryResponse> {
         val result = galleryService.changeMaxRetouchRoundCount(galleryId, loginUser.id, request)
+
+        return ResponseEntity.ok(result)
+    }
+
+    @PatchMapping("/{galleryId}/shoot-type")
+    override fun changeShootType(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @Valid @RequestBody request: ChangeShootTypeRequest,
+    ): ResponseEntity<GalleryResponse> {
+        val result = galleryService.changeShootType(galleryId, loginUser.id, request)
 
         return ResponseEntity.ok(result)
     }

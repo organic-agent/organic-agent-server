@@ -4,6 +4,8 @@ import com.soma.wes.cluster.repository.PhotoSimilarityRepository
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.photo.domain.Photo
+import com.soma.wes.photo.domain.PhotoAnalysis
+import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
@@ -34,6 +36,7 @@ import kotlin.system.measureTimeMillis
 @Tag("scale")
 class PhotoClusterScaleTest @Autowired constructor(
     private val photoRepository: PhotoRepository,
+    private val photoAnalysisRepository: PhotoAnalysisRepository,
     private val photoSimilarityRepository: PhotoSimilarityRepository,
     private val studioRepository: StudioRepository,
     private val galleryRepository: GalleryRepository,
@@ -86,25 +89,32 @@ class PhotoClusterScaleTest @Autowired constructor(
      */
     private fun insertPhotos(galleryId: Long, size: Int) {
         val random = Random(galleryId)
-        val photos = (0 until size).map { index ->
-            val angle = random.nextDouble(0.0, Math.PI / 2)
-            Photo(
-                galleryId = galleryId,
-                storageKey = "galleries/$galleryId/photo-$index.jpg",
-                originalFileName = "photo-$index.jpg",
-                contentType = "image/jpeg",
-                displayOrder = index,
-            ).also {
-                it.applyEmbedding(
-                    FloatArray(Photo.EMBEDDING_DIMENSION).apply {
+        val photos = photoRepository.saveAll(
+            (0 until size).map { index ->
+                Photo(
+                    galleryId = galleryId,
+                    storageKey = "galleries/$galleryId/photo-$index.jpg",
+                    originalFileName = "photo-$index.jpg",
+                    contentType = "image/jpeg",
+                    displayOrder = index,
+                ).also { it.markEmbedded() }
+            },
+        )
+        photoRepository.flush()
+        photoAnalysisRepository.saveAll(
+            photos.map { photo ->
+                val angle = random.nextDouble(0.0, Math.PI / 2)
+                PhotoAnalysis.embeddedBy(
+                    photoId = photo.requiredId,
+                    vector = FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).apply {
                         this[0] = cos(angle).toFloat()
                         this[1] = sin(angle).toFloat()
                     },
+                    model = "facebook/dinov3-vitb16-pretrain-lvd1689m",
                 )
-            }
-        }
-        photoRepository.saveAll(photos)
-        photoRepository.flush()
+            },
+        )
+        photoAnalysisRepository.flush()
     }
 
     private fun createGallery(): Long {

@@ -22,7 +22,7 @@ class EmbeddingServiceTest {
         // given
         stubAvailableInvoker()
         whenever(
-            photoRepository.countByGalleryIdAndStatusNotAndEmbeddingIsNull(GALLERY_ID, PhotoStatus.PENDING),
+            photoRepository.countByGalleryIdAndStatusNotAndNotEmbedded(GALLERY_ID, PhotoStatus.PENDING),
         ).thenReturn(2)
 
         // when
@@ -31,7 +31,7 @@ class EmbeddingServiceTest {
         // then
         assertThat(response.targets).isEqualTo(2)
         verify(photoRepository)
-            .countByGalleryIdAndStatusNotAndEmbeddingIsNull(GALLERY_ID, PhotoStatus.PENDING)
+            .countByGalleryIdAndStatusNotAndNotEmbedded(GALLERY_ID, PhotoStatus.PENDING)
         verify(embeddingInvoker).invoke(GALLERY_ID, false)
     }
 

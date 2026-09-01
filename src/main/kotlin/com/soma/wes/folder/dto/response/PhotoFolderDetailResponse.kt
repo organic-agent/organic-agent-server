@@ -1,5 +1,6 @@
 package com.soma.wes.folder.dto.response
 
+import com.soma.wes.folder.domain.FolderCategory
 import com.soma.wes.folder.domain.PhotoFolder
 import com.soma.wes.photo.dto.response.PhotoResponse
 import io.swagger.v3.oas.annotations.media.Schema
@@ -13,6 +14,12 @@ data class PhotoFolderDetailResponse(
     val groupId: Long,
 
     val name: String,
+
+    @field:Schema(description = "피사체 카테고리 칩. null이면 없음")
+    val category: FolderCategory?,
+
+    @field:Schema(description = "AI 배정의 확신이 낮아 확인이 필요하다는 배지")
+    val needsReview: Boolean,
 
     @field:Schema(description = "폴더에 든 사진. 앨범 sortOrder를 우선하고 같은 값은 갤러리 노출 순서를 따른다")
     val photos: List<PhotoResponse>,
@@ -38,6 +45,8 @@ data class PhotoFolderDetailResponse(
                 folderId = folder.requiredId,
                 groupId = folder.groupId,
                 name = folder.name.value,
+                category = folder.category,
+                needsReview = folder.needsReview,
                 photos = photos,
                 items = items,
                 viewUrlTtlSeconds = viewUrlTtlSeconds,

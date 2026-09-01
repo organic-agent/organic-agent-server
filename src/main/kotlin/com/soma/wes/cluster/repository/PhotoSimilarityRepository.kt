@@ -33,6 +33,9 @@ class PhotoSimilarityRepository(
      * 네이티브 SQL은 `Photo`의 `@SQLRestriction`을 타지 않으므로 휴지통 사진(`deleted_at`)을
      * 여기서 직접 걸러야 한다. 빼먹으면 지운 사진이 묶음의 대표로 되살아난다.
      *
+     * 벡터는 `photos`가 아니라 `photo_analysis`에 있다(모델 파생값이라 정체성과 생명주기가
+     * 다르다). 사진마다 분석 행을 조인하고, 벡터가 없는 행은 조인 조건에서 떨어진다.
+     *
      * @param strictDistance 모든 쌍에 적용하는 코사인 '거리' 상한. `<=>`가 돌려주는 것이
      *   유사도가 아니라 거리라 유사도 0.9는 거리 0.1이다.
      * @param lenientDistance 촬영 시각이 창 안인 쌍에만 허용하는 더 큰 거리 상한.
@@ -50,7 +53,7 @@ class PhotoSimilarityRepository(
             """
             SELECT a.id AS left_id,
                    b.id AS right_id,
-                   (a.embedding <=> b.embedding) AS distance,
+                   (ea.embedding <=> eb.embedding) AS distance,
                    CASE
                        WHEN a.taken_at IS NULL OR b.taken_at IS NULL THEN 'UNKNOWN'
                        WHEN abs(extract(epoch FROM (a.taken_at - b.taken_at))) <= :windowSeconds
@@ -58,18 +61,22 @@ class PhotoSimilarityRepository(
                        ELSE 'OUT_OF_WINDOW'
                    END AS time_relation
             FROM photos a
+                     JOIN photo_analysis ea
+                          ON ea.photo_id = a.id
+                              AND ea.embedding IS NOT NULL
                      JOIN photos b
                           ON b.gallery_id = a.gallery_id
                               AND b.id > a.id
-                              AND b.embedding IS NOT NULL
                               AND b.deleted_at IS NULL
+                     JOIN photo_analysis eb
+                          ON eb.photo_id = b.id
+                              AND eb.embedding IS NOT NULL
             WHERE a.gallery_id = :galleryId
-              AND a.embedding IS NOT NULL
               AND a.deleted_at IS NULL
-              AND ((a.embedding <=> b.embedding) <= :strictDistance
+              AND ((ea.embedding <=> eb.embedding) <= :strictDistance
                   OR (a.taken_at IS NOT NULL AND b.taken_at IS NOT NULL
                       AND abs(extract(epoch FROM (a.taken_at - b.taken_at))) <= :windowSeconds
-                      AND (a.embedding <=> b.embedding) <= :lenientDistance))
+                      AND (ea.embedding <=> eb.embedding) <= :lenientDistance))
             """.trimIndent(),
         )
             .param("galleryId", galleryId)

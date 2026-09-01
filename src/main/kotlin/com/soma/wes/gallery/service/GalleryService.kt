@@ -4,6 +4,7 @@ import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.dto.request.ChangeMaxRetouchRoundCountRequest
 import com.soma.wes.gallery.dto.request.ChangeMaxSelectablePhotoCountRequest
 import com.soma.wes.gallery.dto.request.ChangeSelectionDeadlineRequest
+import com.soma.wes.gallery.dto.request.ChangeShootTypeRequest
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.dto.request.RenameGalleryRequest
 import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
@@ -42,6 +43,7 @@ class GalleryService(
                 title = request.title,
                 selectionDeadline = request.selectionDeadline,
                 maxSelectablePhotoCount = request.maxSelectablePhotoCount,
+                shootType = request.shootType,
                 at = ZonedDateTime.now(clock),
             ),
         )
@@ -100,6 +102,15 @@ class GalleryService(
         val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
 
         gallery.changeMaxRetouchRoundCount(request.maxRetouchRoundCount)
+        return GalleryResponse.from(gallery)
+    }
+
+    /** 촬영 종류만 바꾼다. 이미 만든 AI 폴더는 그대로다 — 새 목록은 다음 NAMING 잡부터 반영된다. */
+    @Transactional
+    fun changeShootType(galleryId: Long, userId: Long, request: ChangeShootTypeRequest): GalleryResponse {
+        val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
+
+        gallery.changeShootType(request.shootType)
         return GalleryResponse.from(gallery)
     }
 

@@ -9,7 +9,7 @@ import java.time.LocalDateTime
  *
  * [Photo]가 채우지 않는다. 이 서버는 이미지 바이트를 만지지 않으므로 EXIF를 읽을 방법이 없고,
  * 원본을 이미 디코딩해 들고 있는 임베딩 Lambda가 벡터·파생본과 같은 UPDATE에 함께 싣는다.
- * [Photo.applyMetadata]는 그 경로를 쓰지 않는 테스트를 위해 둔다 — [Photo.applyEmbedding]과 같다.
+ * [Photo.applyMetadata]는 그 경로를 쓰지 않는 테스트를 위해 둔다 — [Photo.markEmbedded]와 같다.
  *
  * 모든 필드가 nullable인 이유는 둘이다. 아직 Lambda가 돌지 않았거나(PENDING·UPLOADED),
  * 파일에 EXIF가 아예 없거나(스크린샷·편집본). 뒤쪽이면 [width]·[height]·[byteSize]만 채워진다.

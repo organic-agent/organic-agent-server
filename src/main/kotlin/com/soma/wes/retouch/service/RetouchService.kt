@@ -68,13 +68,14 @@ class RetouchService(
             "image/heic" to "heic",
             "image/heif" to "heif",
         )
-
-        private fun annotationKeyPrefix(galleryId: Long): String =
-            "galleries/$galleryId/retouch/annotations/"
-
-        private fun resultKeyPrefix(galleryId: Long, roundNo: Int): String =
-            "galleries/$galleryId/retouch/results/$roundNo/"
     }
+
+    /** 갤러리 키 공간([PhotoStorage.galleryPrefix]) 아래의 고정 자리. */
+    private fun annotationKeyPrefix(galleryId: Long): String =
+        "${photoStorage.galleryPrefix(galleryId)}retouch/annotations/"
+
+    private fun resultKeyPrefix(galleryId: Long, roundNo: Int): String =
+        "${photoStorage.galleryPrefix(galleryId)}retouch/results/$roundNo/"
 
     /**
      * 보정사진 페이지를 연다. 작가는 요청을 봐야 하고, 부부는 마감 뒤에도 결과를 봐야 하므로
