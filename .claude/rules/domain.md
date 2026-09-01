@@ -45,7 +45,7 @@ paths:
 
 - **companion object는 클래스의 필드·함수보다 아래, 클래스 맨 끝에 둔다.** 읽는 순서는
   인스턴스의 형태(필드) → 행위(함수) → 정적 멤버다.
-- 도메인 상수는 companion에 (`FolderName.MAX_LENGTH`, `Photo.EMBEDDING_DIMENSION` — 후자는
+- 도메인 상수는 companion에 (`FolderName.MAX_LENGTH`, `PhotoAnalysis.EMBEDDING_DIMENSION` — 후자는
   마이그레이션·인프라 repo와 세 곳이 일치해야 한다).
 - 여러 도메인이 쓰는 정렬 규칙은 그 값을 소유한 도메인의 companion에 한 번만 정의한다
   (`Photo.DISPLAY_ORDER`). 각자 복제하지 마라.

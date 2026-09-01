@@ -10,7 +10,7 @@ paths:
 ## Flyway가 스키마를 소유한다
 
 - `src/main/resources/db/migration`이 스키마의 유일한 출처다. `ddl-auto`는 모든 프로파일에서
-  `validate` — 스타일 취향이 아니다. `photos.embedding`은 pgvector `vector(768)` 컬럼이고,
+  `validate` — 스타일 취향이 아니다. `photo_analysis.embedding`은 pgvector `vector(768)` 컬럼이고,
   `CREATE EXTENSION vector`가 어떤 테이블보다 먼저 실행돼야 하는데 `ddl-auto`는 그걸 못 한다.
 - **엔티티·컬럼을 추가하면 마이그레이션을 함께 쓴다.** 예외 없다.
 - prod는 V1으로 baseline되어 있다(Flyway보다 오래된 DB). V1은 빈 DB에서만 실행된다.
@@ -27,8 +27,15 @@ paths:
 
 ## 세 곳이 일치해야 하는 값
 
-- `EMBEDDING_DIMENSION`: `Photo.EMBEDDING_DIMENSION` ↔ 마이그레이션의 `vector(n)` ↔
+- `EMBEDDING_DIMENSION`: `PhotoAnalysis.EMBEDDING_DIMENSION` ↔ 마이그레이션의 `vector(n)` ↔
   인프라 repo의 `embedding_dimension`(Lambda의 `EMBED_DIM`). 하나를 바꾸면 셋 다 바꾼다.
+
+## AI가 쓰는 테이블
+
+- `photo_analysis`·`ai_analysis_jobs`·`ai_selection_jobs`·`ai_recommendations`는 이 서버 밖
+  (임베더 Lambda, AI 분석 배치, 추천 Lambda)이 직접 INSERT/UPDATE 한다. 엔티티의 그 컬럼은
+  읽기 전용 `val`이고, 컬럼을 바꾸면 AI repo(`photoselect/store.py`)와 임베더(`embedder/db.py`)도
+  함께 바꾼다. 전용 DB 유저(`embedder`, `photoselect`)의 GRANT도 새 테이블마다 필요하다.
 
 ## 새 테이블의 부수 작업
 

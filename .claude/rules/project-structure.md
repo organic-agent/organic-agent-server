@@ -12,9 +12,9 @@ paths:
 ## 도메인 단위 패키지
 
 `auth`, `user`, `studio`, `gallery`, `photo`, `embedding`, `cluster`, `folder`,
-`selection`, `collab`, `trash` + 횡단 관심사 `global`/`security`.
+`selection`, `collab`, `trash`, `retouch`, `recommendation`, `admin` + 횡단 관심사 `global`/`security`.
 
-- 뒤의 여섯(`embedding`~`trash`)은 전부 사진에 *관한* 도메인이지만 `photo`의 하위 패키지가
+- `embedding`~`recommendation`은 전부 사진에 *관한* 도메인이지만 `photo`의 하위 패키지가
   아니다 — 각자 service·controller·config를 소유하고, `folder`/`selection`/`collab`은 자기
   엔티티도 가진다. 합치면 `photo`가 모든 것이 떨어지는 패키지가 된다.
 - 새 도메인 이름은 소문자 한 단어. 두 단어가 되면 경계를 다시 생각하라.
