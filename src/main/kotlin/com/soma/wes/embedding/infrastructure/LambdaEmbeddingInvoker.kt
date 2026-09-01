@@ -6,6 +6,7 @@ import com.soma.wes.embedding.service.ExactPhotoProcessingRequest
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
 import org.slf4j.LoggerFactory
+import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Component
 import software.amazon.awssdk.core.SdkBytes
 import software.amazon.awssdk.core.exception.SdkException
@@ -15,7 +16,12 @@ import software.amazon.awssdk.services.lambda.model.InvokeRequest
 import tools.jackson.databind.ObjectMapper
 
 
+/**
+ * 운영 실행기. 로컬 프로필에서는 [LocalProcessEmbeddingInvoker]가 이 자리를 대신한다 —
+ * 실행기 빈은 프로필당 하나다.
+ */
 @Component
+@Profile("!local")
 class LambdaEmbeddingInvoker(
     private val lambdaClient: LambdaClient,
     private val properties: EmbeddingProperties,
