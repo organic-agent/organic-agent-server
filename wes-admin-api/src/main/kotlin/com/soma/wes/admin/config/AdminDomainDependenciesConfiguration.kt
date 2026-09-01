@@ -5,7 +5,7 @@ import com.soma.wes.collab.config.CollabProperties
 import com.soma.wes.collab.service.CollabSessionQueryService
 import com.soma.wes.collab.support.CollabLinkResolver
 import com.soma.wes.collab.support.CollabPhotoViewAssembler
-import com.soma.wes.embedding.config.AwsLambdaConfig
+import com.soma.wes.global.config.AwsLambdaConfig
 import com.soma.wes.embedding.config.EmbeddingProperties
 import com.soma.wes.embedding.infrastructure.LambdaEmbeddingInvoker
 import com.soma.wes.folder.service.PhotoFolderGroupService
