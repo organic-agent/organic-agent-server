@@ -61,4 +61,27 @@ enum class RecommendationErrorCode(
 
     /** 요청이 콕 집은 AI 폴더 세트(analysisJobId)가 이 갤러리에 없는 경우. 지운 세트도 없는 것이다. */
     FOLDER_SET_NOT_FOUND(HttpStatus.NOT_FOUND, "RECOMMENDATION_404_2", "요청한 AI 폴더 세트를 찾을 수 없습니다."),
+
+    COMPARE_SAME_PHOTO(HttpStatus.BAD_REQUEST, "RECOMMENDATION_400_1", "같은 사진 두 장은 비교할 수 없습니다."),
+
+    /** 비교 대상 사진이 이 갤러리에 없는 경우. 휴지통에 들어간 사진도 없는 것이다. */
+    COMPARE_PHOTO_NOT_FOUND(HttpStatus.NOT_FOUND, "RECOMMENDATION_404_3", "비교할 사진을 찾을 수 없습니다."),
+
+    /**
+     * 비교 대상 중 AI 분석이 끝나지 않은 사진이 있는 경우.
+     *
+     * 판정의 재료(초점·백분위·연사 관계)가 `photo_analysis`의 분석 컬럼이다 — FULL 분석이 먼저다.
+     * AI 쪽에서도 같은 이유로 죽지만, 5초를 기다리게 한 뒤 실패하는 것보다 여기서 거절하는 게 낫다.
+     */
+    COMPARE_NOT_ANALYZED(HttpStatus.CONFLICT, "RECOMMENDATION_409_7", "AI 분석이 끝나지 않은 사진이라 비교할 수 없습니다."),
+
+    /**
+     * 판정 실행이 시작됐지만 실패한 경우(프로세스 오류, Lambda 함수 오류, 계약을 벗어난 응답).
+     *
+     * 템플릿 폴백은 AI 쪽 안에서 처리되므로, 여기까지 온 실패는 실행 경로 자체의 문제다.
+     */
+    COMPARE_FAILED(HttpStatus.BAD_GATEWAY, "RECOMMENDATION_502_1", "AI 비교 판정에 실패했습니다."),
+
+    /** 실행기(Lambda·로컬 스크립트)가 설정되지 않은 경우. 로컬·테스트에는 없는 것이 정상이라 호출 시점에 실패한다. */
+    COMPARE_NOT_CONFIGURED(HttpStatus.SERVICE_UNAVAILABLE, "RECOMMENDATION_503_1", "AI 비교가 설정되지 않았습니다."),
 }
