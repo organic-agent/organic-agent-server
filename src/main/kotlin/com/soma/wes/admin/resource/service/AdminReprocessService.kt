@@ -95,14 +95,18 @@ class AdminReprocessService(
     }
 
     private fun countTargets(galleryId: Long, force: Boolean): Long {
-        val embeddingCondition = if (force) "" else " AND embedding IS NULL"
+        val embeddingCondition = if (force) {
+            ""
+        } else {
+            " AND NOT EXISTS (SELECT 1 FROM photo_analysis a WHERE a.photo_id = p.id AND a.embedding IS NOT NULL)"
+        }
         return jdbcClient.sql(
             """
                 SELECT COUNT(*)
-                FROM photos
-                WHERE gallery_id = :galleryId
-                  AND deleted_at IS NULL
-                  AND status <> :pendingStatus
+                FROM photos p
+                WHERE p.gallery_id = :galleryId
+                  AND p.deleted_at IS NULL
+                  AND p.status <> :pendingStatus
                   $embeddingCondition
             """.trimIndent(),
         )

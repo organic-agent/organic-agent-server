@@ -33,10 +33,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **이미지 바이트는 이 서버를 지나지 않는다.** 서버는 presigned S3 URL만 발급하고 브라우저가
   직접 업로드한다. 임베딩·프리뷰·EXIF는 갤러리당 한 번(`InvocationType.EVENT`) 호출되는
   Lambda의 일이다 — 사진당 호출은 없다.
-- `embedder/`가 그 Lambda다 (Python, DINOv2, ECR 컨테이너 이미지). 같은 repo지만 Gradle이
+- 객체 키는 `galleries/{galleryId}/…`이고 미리보기는 `previews/` + 원본 키다. 환경은 키가 아니라
+  버킷으로 갈린다 — prod는 운영 버킷, local 프로필은 인프라 `module.storage_dev`의 dev 버킷
+  (`/wes/local/app.storage.bucket`). 키 조립은 `PhotoStorage.galleryPrefix`를 지난다.
+- `embedder/`가 그 Lambda다 (Python, DINOv3 ViT-B/16, ECR 컨테이너 이미지). 같은 repo지만 Gradle이
   빌드하지 않는 별도 배포 경로이고, 자체 README를 따른다.
-- 인프라는 sibling repo `../../organic-agent-infra` (Terraform: VPC/ALB/EC2/RDS, 사진 S3 버킷,
-  임베딩 Lambda). `EMBEDDING_DIMENSION`은 이 repo 두 곳과 인프라 repo까지 세 곳이 일치해야
+- 인프라는 sibling repo `../../organic-agent-infra` (Terraform: VPC/ALB/EC2/RDS, 사진 S3 버킷
+  + 로컬 개발용 dev 버킷, 임베딩 Lambda). `EMBEDDING_DIMENSION`은 이 repo 두 곳과 인프라 repo까지 세 곳이 일치해야
   한다 (`.claude/rules/migration.md`).
 - 설정은 `src/main/resources/application.yml`이 `config/application-{cloud,db,variable}.yml`을
   import한다. 시크릿과 인프라 파생 값은 시작 시 AWS Parameter Store(`/wes/{local,prod}/`)에서
@@ -46,6 +49,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     Parameter Store에서 읽는다.
   - `reset-test-data.sh [local|remote] [--all] [--with-s3]` — 수동 테스트 데이터 초기화.
     계정은 기본 보존(토큰 유지). TRUNCATE 목록 규칙은 `.claude/rules/migration.md` 참조.
+  - `local-ai.sh <galleryId> [--force] [--no-vlm]` — 로컬에서 Lambda·배치 대신
+    임베딩(DINOv3) → AI 분석(VLM은 호스트 Ollama)을 한 번에 돌린다. 로컬 pg +
+    dev 버킷(`/wes/local/app.storage.bucket`, 인프라 `module.storage_dev`)을 쓴다.
 
 ## 규칙 참조
 

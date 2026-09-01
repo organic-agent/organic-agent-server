@@ -4,7 +4,7 @@ import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.folder.dto.request.AddPhotosRequest
 import com.soma.wes.folder.dto.request.CreatePhotoFolderRequest
 import com.soma.wes.folder.dto.request.MovePhotosRequest
-import com.soma.wes.folder.dto.request.RenamePhotoFolderRequest
+import com.soma.wes.folder.dto.request.UpdatePhotoFolderRequest
 import com.soma.wes.folder.dto.response.PhotoFolderDetailResponse
 import com.soma.wes.folder.dto.response.PhotoFolderResponse
 import io.swagger.v3.oas.annotations.Operation
@@ -62,19 +62,23 @@ interface PhotoFolderControllerDocs {
         folderId: Long,
     ): ResponseEntity<PhotoFolderDetailResponse>
 
-    @Operation(summary = "자식폴더 이름 변경")
+    @Operation(
+        summary = "자식폴더 수정",
+        description = "이름·피사체 카테고리·확인 완료를 부분 수정한다. 보낸 필드만 바뀐다. " +
+            "reviewed=true는 AI가 켠 확인 필요 배지를 끄는 것이고, 서버가 다시 켜지 않는다.",
+    )
     @ApiResponses(
-        ApiResponse(responseCode = "200", description = "변경 성공"),
+        ApiResponse(responseCode = "200", description = "수정 성공"),
         ApiResponse(responseCode = "400", description = "이름이 비었거나 100자를 넘음", content = []),
         ApiResponse(responseCode = "403", description = "갤러리와 무관한 사용자이거나, 부부인데 마감/미공개 갤러리", content = []),
         ApiResponse(responseCode = "404", description = "존재하지 않는 부모폴더 또는 폴더", content = []),
     )
-    fun rename(
+    fun update(
         loginUser: LoginUser,
         galleryId: Long,
         groupId: Long,
         folderId: Long,
-        request: RenamePhotoFolderRequest,
+        request: UpdatePhotoFolderRequest,
     ): ResponseEntity<PhotoFolderResponse>
 
     @Operation(

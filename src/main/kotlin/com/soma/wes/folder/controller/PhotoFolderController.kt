@@ -5,7 +5,7 @@ import com.soma.wes.folder.controller.docs.PhotoFolderControllerDocs
 import com.soma.wes.folder.dto.request.AddPhotosRequest
 import com.soma.wes.folder.dto.request.CreatePhotoFolderRequest
 import com.soma.wes.folder.dto.request.MovePhotosRequest
-import com.soma.wes.folder.dto.request.RenamePhotoFolderRequest
+import com.soma.wes.folder.dto.request.UpdatePhotoFolderRequest
 import com.soma.wes.folder.dto.response.PhotoFolderDetailResponse
 import com.soma.wes.folder.dto.response.PhotoFolderResponse
 import com.soma.wes.folder.service.PhotoFolderService
@@ -55,14 +55,14 @@ class PhotoFolderController(
     }
 
     @PatchMapping("/{folderId}")
-    override fun rename(
+    override fun update(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
         @PathVariable groupId: Long,
         @PathVariable folderId: Long,
-        @Valid @RequestBody request: RenamePhotoFolderRequest,
+        @Valid @RequestBody request: UpdatePhotoFolderRequest,
     ): ResponseEntity<PhotoFolderResponse> {
-        val result = photoFolderService.rename(galleryId, groupId, folderId, loginUser.id, request)
+        val result = photoFolderService.update(galleryId, groupId, folderId, loginUser.id, request)
 
         return ResponseEntity.ok(result)
     }

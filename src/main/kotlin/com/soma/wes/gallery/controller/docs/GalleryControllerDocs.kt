@@ -4,6 +4,7 @@ import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.gallery.dto.request.ChangeMaxRetouchRoundCountRequest
 import com.soma.wes.gallery.dto.request.ChangeMaxSelectablePhotoCountRequest
 import com.soma.wes.gallery.dto.request.ChangeSelectionDeadlineRequest
+import com.soma.wes.gallery.dto.request.ChangeShootTypeRequest
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.dto.request.RenameGalleryRequest
 import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
@@ -277,6 +278,38 @@ interface GalleryControllerDocs {
         loginUser: LoginUser,
         galleryId: Long,
         request: ChangeMaxRetouchRoundCountRequest,
+    ): ResponseEntity<GalleryResponse>
+
+    @Operation(
+        summary = "촬영 종류 변경",
+        description = "갤러리의 촬영 종류(리허설/본식/기타)를 바꾼다. 담당 작가만 할 수 있다. " +
+            "AI 폴더의 큰 분류 목록이 이 값으로 갈리므로, 바꾼 뒤 AI 분석(NAMING)을 다시 돌려야 새 목록이 반영된다. " +
+            "이미 만들어 둔 AI 폴더는 그대로 남는다.",
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "변경 성공"),
+        ApiResponse(
+            responseCode = "403",
+            description = "담당 작가가 아님",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "권한 없음",
+                            value = """{"code": "GALLERY_403_1", "message": "갤러리에 접근할 권한이 없습니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(responseCode = "404", description = "존재하지 않는 갤러리", content = []),
+    )
+    fun changeShootType(
+        loginUser: LoginUser,
+        galleryId: Long,
+        request: ChangeShootTypeRequest,
     ): ResponseEntity<GalleryResponse>
 
     @Operation(

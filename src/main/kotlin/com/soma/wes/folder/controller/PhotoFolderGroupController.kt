@@ -5,6 +5,7 @@ import com.soma.wes.folder.controller.docs.PhotoFolderGroupControllerDocs
 import com.soma.wes.folder.dto.request.CreateFolderGroupRequest
 import com.soma.wes.folder.dto.request.RenameFolderGroupRequest
 import com.soma.wes.folder.dto.response.PhotoFolderGroupResponse
+import com.soma.wes.folder.service.AiFolderGroupService
 import com.soma.wes.folder.service.PhotoFolderGroupService
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/v1/galleries/{galleryId}/folder-groups")
 class PhotoFolderGroupController(
     private val photoFolderGroupService: PhotoFolderGroupService,
+    private val aiFolderGroupService: AiFolderGroupService,
 ) : PhotoFolderGroupControllerDocs {
 
     @PostMapping
@@ -33,6 +35,17 @@ class PhotoFolderGroupController(
         @Valid @RequestBody request: CreateFolderGroupRequest,
     ): ResponseEntity<PhotoFolderGroupResponse> {
         val result = photoFolderGroupService.create(galleryId, loginUser.id, request)
+        val status = HttpStatus.CREATED
+
+        return ResponseEntity.status(status).body(result)
+    }
+
+    @PostMapping("/ai")
+    override fun createFromAnalysis(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+    ): ResponseEntity<List<PhotoFolderGroupResponse>> {
+        val result = aiFolderGroupService.createFromAnalysis(galleryId, loginUser.id)
         val status = HttpStatus.CREATED
 
         return ResponseEntity.status(status).body(result)

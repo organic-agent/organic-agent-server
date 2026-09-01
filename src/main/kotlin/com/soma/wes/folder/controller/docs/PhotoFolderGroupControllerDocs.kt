@@ -42,6 +42,33 @@ interface PhotoFolderGroupControllerDocs {
     ): ResponseEntity<PhotoFolderGroupResponse>
 
     @Operation(
+        summary = "AI 폴더 세트 생성",
+        description = """
+            최신 AI 분석의 컨셉 배정으로 "큰 분류(부모) → 컨셉(자식)" 폴더 세트를 한 번에 만든다.
+            부모 여러 개가 생기고, 같은 analysisJobId가 한 세트다 — 목록 화면은 세트 단위로 접거나 지운다.
+
+            생성 시점의 스냅샷이다. 이미 AI 폴더가 있어도 지우거나 덮어쓰지 않고 새 세트를 하나 더
+            만든다 — 편집한 폴더를 서버가 건드리는 일은 없고, 옛 세트는 사용자가 지운다.
+
+            AI 분석(POST /ai-analysis)이 DONE이어야 한다. 배정이 없으면 409_2다 — 이름 붙이기만
+            실패했다면 mode=NAMING으로 분석을 다시 요청한 뒤 다시 부른다. 담당 작가 전용이다 —
+            부부는 만들어진 폴더를 편집(이동·이름·카테고리·확인)만 한다.
+
+            폴더 안 사진은 같은 세트(임베딩 그룹)·같은 순간(연사 클러스터)이 나란히 오도록 정렬돼
+            저장된다. 확신이 낮은 폴더에는 needsReview 배지가 붙는다.
+        """,
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "201", description = "세트 생성 성공. 만들어진 부모폴더 전부를 돌려준다"),
+        ApiResponse(responseCode = "403", description = "담당 작가가 아님", content = []),
+        ApiResponse(responseCode = "409", description = "AI 분석(배정)이 없거나 정리할 사진이 없음", content = []),
+    )
+    fun createFromAnalysis(
+        loginUser: LoginUser,
+        galleryId: Long,
+    ): ResponseEntity<List<PhotoFolderGroupResponse>>
+
+    @Operation(
         summary = "부모폴더 목록",
         description = "부모마다 자식폴더 요약(대표 사진과 개수)이 함께 온다. 좌측 폴더 메뉴가 이 응답 하나로 그려진다.\n"
             + "최근에 만든 부모가 먼저, 자식은 만든 순서대로다.",

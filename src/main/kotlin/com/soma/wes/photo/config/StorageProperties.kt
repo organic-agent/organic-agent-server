@@ -11,6 +11,10 @@ import java.time.Duration
  */
 @ConfigurationProperties(prefix = "app.storage")
 data class StorageProperties(
+    /**
+     * 환경마다 버킷이 다르다(prod는 운영 버킷, local은 인프라 `module.storage_dev`의 dev 버킷).
+     * 그래서 객체 키에는 환경 구분자가 없고 `galleries/{galleryId}/`부터 시작한다.
+     */
     val bucket: String,
 
     /** 업로드용 서명 URL의 수명. 프론트가 수천 장을 순차 업로드하는 동안 만료되면 안 된다. */

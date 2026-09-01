@@ -38,7 +38,7 @@ class EmbeddingService(
         val targets = if (force) {
             photoRepository.countByGalleryIdAndStatusNot(galleryId, PhotoStatus.PENDING)
         } else {
-            photoRepository.countByGalleryIdAndStatusNotAndEmbeddingIsNull(galleryId, PhotoStatus.PENDING)
+            photoRepository.countByGalleryIdAndStatusNotAndNotEmbedded(galleryId, PhotoStatus.PENDING)
         }
 
         embeddingInvoker.invoke(galleryId, force)

@@ -81,8 +81,8 @@ def run(gallery_id: int, force: bool = False, settings: Settings | None = None) 
                     loaded_images.append(prepared)
                     loaded_metadata.append(_read_metadata(ref, original, len(data), result))
                 except Exception:
-                    # 한 장이 잡 전체를 죽이지 않게 한다. 실패한 사진은 embedding이 NULL로
-                    # 남으므로, 다시 호출하면 fetch_targets가 자연히 다시 집어 온다.
+                    # 한 장이 잡 전체를 죽이지 않게 한다. 실패한 사진은 photo_analysis에 벡터가
+                    # 없는 채로 남으므로, 다시 호출하면 fetch_targets가 자연히 다시 집어 온다.
                     log.exception("사진을 읽지 못했습니다: %s", ref.storage_key)
                     result.failed.append(ref.storage_key)
 
@@ -100,6 +100,7 @@ def run(gallery_id: int, force: bool = False, settings: Settings | None = None) 
             stored = db.store_embeddings(
                 connection,
                 zip(loaded_refs, vectors, preview_keys, loaded_metadata),
+                model_id=settings.model_id,
             )
 
             # 배치 단위로 커밋한다. 중간에 죽어도 그때까지의 벡터는 남고, 다시 부르면
@@ -124,7 +125,7 @@ def _read_metadata(
     """원본에서 촬영 정보를 읽는다. 실패하면 None.
 
     바깥 try와 분리된 것이 핵심이다. 여기서 예외를 그대로 올려보내면 사진이 '읽지 못했다'로
-    분류되어 embedding까지 NULL로 남는다 -- EXIF 파싱 문제 하나가 임베딩 실패로 둔갑한다.
+    분류되어 벡터까지 적재되지 않는다 -- EXIF 파싱 문제 하나가 임베딩 실패로 둔갑한다.
     파생본 업로드와 같은 취급이고, 이유도 같다: 이 값이 없어도 사진은 멀쩡히 보인다.
 
     회전·축소를 거치기 전의 이미지를 넘겨야 한다. 그쪽은 Orientation 태그가 지워지고 크기도
@@ -148,8 +149,8 @@ def _upload_preview(
     """브라우저가 그릴 수 있는 파생본을 올리고 그 키를 돌려준다. 실패하면 None.
 
     임베딩과 분리된 try인 것이 핵심이다. IAM에 s3:PutObject가 없으면 이 호출이 사진마다
-    실패하는데, 바깥 try가 이를 삼키면 사진이 '읽지 못했다'로 분류되어 embedding까지
-    NULL로 남는다 -- 미리보기 권한 문제가 임베딩 실패로 둔갑한다.
+    실패하는데, 바깥 try가 이를 삼키면 사진이 '읽지 못했다'로 분류되어 벡터까지 적재되지
+    않는다 -- 미리보기 권한 문제가 임베딩 실패로 둔갑한다.
 
     파생본이 없어도 사진은 보인다(원본을 그대로 서명해 준다). 그래서 여기서 잡을 멈추지
     않고, 대신 결과의 previewsFailed로 드러낸다.

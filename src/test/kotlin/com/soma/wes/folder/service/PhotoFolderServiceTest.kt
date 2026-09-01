@@ -4,7 +4,7 @@ import com.soma.wes.folder.dto.request.AddPhotosRequest
 import com.soma.wes.folder.dto.request.CreateFolderGroupRequest
 import com.soma.wes.folder.dto.request.CreatePhotoFolderRequest
 import com.soma.wes.folder.dto.request.MovePhotosRequest
-import com.soma.wes.folder.dto.request.RenamePhotoFolderRequest
+import com.soma.wes.folder.dto.request.UpdatePhotoFolderRequest
 import com.soma.wes.folder.exception.FolderErrorCode
 import com.soma.wes.folder.exception.FolderException
 import com.soma.wes.folder.repository.PhotoFolderGroupRepository
@@ -342,12 +342,12 @@ class PhotoFolderServiceTest @Autowired constructor(
                 fixture, "이름 변경 부모", "기존 이름", listOf(renamePhoto),
             )
             assertWaitsForGroupLock(renameGroup) {
-                photoFolderService.rename(
+                photoFolderService.update(
                     fixture.galleryId,
                     renameGroup,
                     renameFolder,
                     fixture.member.id!!,
-                    RenamePhotoFolderRequest("바뀐 이름"),
+                    UpdatePhotoFolderRequest(name = "바뀐 이름"),
                 )
             }
 

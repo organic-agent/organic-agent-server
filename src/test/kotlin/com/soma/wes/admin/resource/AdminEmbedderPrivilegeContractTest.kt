@@ -6,7 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.core.io.ClassPathResource
 import javax.sql.DataSource
 
-/** V42의 column grant가 worker의 실제 SET/WHERE 표현식을 실행할 수 있는지 PostgreSQL로 검증한다. */
+/** V45의 grant 블록(현재 워커 권한 계약의 단일 출처)이 worker의 실제 SET/WHERE 표현식을 실행할 수 있는지 PostgreSQL로 검증한다. */
 @IntegrationTest
 class AdminEmbedderPrivilegeContractTest @Autowired constructor(
     private val dataSource: DataSource,
@@ -19,7 +19,7 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
                 statement.execute("DROP ROLE IF EXISTS embedder")
                 statement.execute("CREATE ROLE embedder NOLOGIN")
                 try {
-                    statement.execute(v42GrantBlock())
+                    statement.execute(v45GrantBlock())
                     statement.execute("SET ROLE embedder")
                     try {
                         statementsUsedByWorker.forEach { sql -> statement.execute(sql) }
@@ -34,12 +34,12 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
         }
     }
 
-    private fun v42GrantBlock(): String {
-        val migration = ClassPathResource("db/migration/V42__add_photo_technical_quality.sql")
+    private fun v45GrantBlock(): String {
+        val migration = ClassPathResource("db/migration/V45__ai_folder_analysis.sql")
             .inputStream.bufferedReader().use { it.readText() }
         val start = migration.indexOf("DO \$\$")
         val end = migration.indexOf("\$\$;", start)
-        check(start >= 0 && end >= 0) { "V42 embedder grant block not found" }
+        check(start >= 0 && end >= 0) { "V45 embedder grant block not found" }
         return migration.substring(start, end + 3)
     }
 
@@ -52,14 +52,25 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
             JOIN galleries g ON g.id = p.gallery_id
             WHERE p.gallery_id = -1 AND p.status <> 'PENDING'
               AND p.deleted_at IS NULL AND g.deleted_at IS NULL
-              AND p.embedding IS NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM photo_analysis a
+                  WHERE a.photo_id = p.id AND a.embedding IS NOT NULL
+              )
             ORDER BY p.id
             """.trimIndent(),
             // store_embeddings / complete_admin_derivative가 읽는 COALESCE·version·active 경계
             """
+            EXPLAIN INSERT INTO photo_analysis (photo_id, embedding, embedding_model, created_at, updated_at)
+            VALUES (-1, NULL, 'model', now(), now())
+            ON CONFLICT (photo_id) DO UPDATE
+            SET embedding = EXCLUDED.embedding,
+                embedding_model = EXCLUDED.embedding_model,
+                version = photo_analysis.version + 1,
+                updated_at = now()
+            """.trimIndent(),
+            """
             EXPLAIN UPDATE photos
-            SET embedding = NULL,
-                preview_key = COALESCE(NULL, preview_key),
+            SET preview_key = COALESCE(NULL, preview_key),
                 taken_at = COALESCE(NULL, taken_at),
                 camera_make = COALESCE(NULL, camera_make),
                 camera_model = COALESCE(NULL, camera_model),
@@ -90,6 +101,26 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
               AND p.status <> 'PENDING' AND p.deleted_at IS NULL AND g.deleted_at IS NULL
               AND r.storage_key = 'key'
               AND j.payload ->> 'galleryId' = '-1' AND j.payload ->> 'storageKey' = 'key'
+            """.trimIndent(),
+            // complete_admin_embedding: 사진 CAS와 벡터 upsert를 CTE 한 문장으로
+            """
+            EXPLAIN WITH target AS (
+                UPDATE photos p
+                SET status = 'EMBEDDED', version = version + 1, updated_at = now()
+                WHERE p.id = -1 AND p.gallery_id = -1 AND p.storage_key = 'key' AND p.deleted_at IS NULL
+                  AND EXISTS (
+                      SELECT 1 FROM admin_photo_revisions r
+                      WHERE r.id = -1 AND r.photo_id = p.id AND r.storage_key = p.storage_key
+                  )
+                RETURNING p.id
+            )
+            INSERT INTO photo_analysis (photo_id, embedding, embedding_model, created_at, updated_at)
+            SELECT id, NULL, 'model', now(), now() FROM target
+            ON CONFLICT (photo_id) DO UPDATE
+            SET embedding = EXCLUDED.embedding,
+                embedding_model = EXCLUDED.embedding_model,
+                version = photo_analysis.version + 1,
+                updated_at = now()
             """.trimIndent(),
             // complete_admin_quality + final job CAS
             """

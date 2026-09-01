@@ -6,6 +6,7 @@
 #   scripts/reset-test-data.sh remote             SSM 터널 너머의 RDS를 같은 방식으로 지운다
 #   scripts/reset-test-data.sh remote --all       계정(users·studios·토큰)까지 지운다
 #   scripts/reset-test-data.sh remote --with-s3   S3의 원본과 파생본도 함께 지운다
+#   scripts/reset-test-data.sh local --with-s3    dev 버킷의 원본과 파생본도 함께 지운다
 #   scripts/reset-test-data.sh remote --yes       확인 프롬프트를 건너뛴다
 #
 # **계정을 기본으로 남기는 이유**: users를 지우면 발급받은 액세스 토큰이 무효가 되어
@@ -40,13 +41,9 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
-# 버킷은 하나뿐이라, local에 --with-s3를 붙이면 로컬 DB를 지우면서 원격 버킷을 비우게 된다.
-# 로컬은 서명 URL이 가리키는 버킷(wes-local-photos)이 실재하지 않아 올라간 객체도 없다.
-if [ "$WITH_S3" = "true" ] && [ "$TARGET" != "remote" ]; then
-  echo "--with-s3 는 remote 에서만 쓸 수 있다." >&2
-  echo "로컬에는 실제 버킷이 없고, 그대로 두면 로컬 DB를 지우면서 원격 객체를 지우게 된다." >&2
-  exit 1
-fi
+# 환경은 버킷으로 갈린다(local은 dev 버킷, remote는 운영 버킷 — 아래 BUCKET_PARAM). 키 구조는
+# 같으므로 원본(galleries/)과 임베더가 만드는 파생본(previews/galleries/)만 지운다.
+S3_PREFIXES=(galleries/ previews/galleries/)
 
 if [ "$TARGET" = "local" ]; then
   DB_HOST="host.docker.internal"; DB_PORT="5432"
@@ -88,11 +85,14 @@ else
 fi
 # 확인을 받기 전에 S3 쪽도 규모를 보여준다. "몇 개가 지워지는지" 모르고 yes를 치게 하지 않는다.
 if [ "$WITH_S3" = "true" ]; then
-  BUCKET=$(aws ssm get-parameter --region "$REGION" --name /wes/prod/app.storage.bucket \
+  # local은 dev 버킷(/wes/local), remote는 운영 버킷(/wes/prod). 로컬 pg를 비우면서 운영 객체를
+  # 지우면 안 되므로 대상과 버킷을 같은 축으로 묶는다.
+  if [ "$TARGET" = "local" ]; then BUCKET_PARAM=/wes/local/app.storage.bucket; else BUCKET_PARAM=/wes/prod/app.storage.bucket; fi
+  BUCKET=$(aws ssm get-parameter --region "$REGION" --name "$BUCKET_PARAM" \
     --query 'Parameter.Value' --output text)
   echo
-  echo "S3: s3://$BUCKET 의 galleries/ 와 previews/"
-  for prefix in galleries/ previews/; do
+  echo "S3: s3://$BUCKET 의 ${S3_PREFIXES[*]}"
+  for prefix in "${S3_PREFIXES[@]}"; do
     # summarize는 마지막 두 줄에 개수와 합계 크기를 준다. 객체가 없으면 0으로 나온다.
     printf "  %-12s " "$prefix"
     aws s3 ls "s3://$BUCKET/$prefix" --region "$REGION" --recursive --summarize 2>/dev/null \
@@ -116,6 +116,7 @@ fi
 # URL을 그대로 재사용할 수 있고, 어제 만든 갤러리 3번과 오늘 것이 헷갈리지 않는다.
 TABLES="collab_photo_likes, collab_photo_comments, collab_guests, collab_photos, collab_sessions"
 TABLES="$TABLES, admin_photo_replacement_uploads, admin_photo_revisions"
+TABLES="$TABLES, ai_concept_assignments, ai_analysis_jobs, photo_analysis"
 TABLES="$TABLES, admin_selection_revisions, photo_selection_items, photo_selections, photo_ratings"
 TABLES="$TABLES, retouch_photos, retouch_rounds"
 TABLES="$TABLES, photo_folder_items, photo_folders, photo_folder_groups, photos"
@@ -131,8 +132,8 @@ psql_run -c "TRUNCATE TABLE $TABLES RESTART IDENTITY;"
 echo "DB 정리 완료: $TABLES"
 
 if [ "$WITH_S3" = "true" ]; then
-  # 접두사 둘만 지운다. 버킷을 통째로 비우면 나중에 다른 것이 들어왔을 때 함께 날아간다.
-  for prefix in galleries/ previews/; do
+  # 환경의 접두사만 지운다. 버킷을 통째로 비우면 다른 환경의 객체까지 함께 날아간다.
+  for prefix in "${S3_PREFIXES[@]}"; do
     echo "S3 삭제: s3://$BUCKET/$prefix"
     aws s3 rm "s3://$BUCKET/$prefix" --region "$REGION" --recursive --only-show-errors
   done

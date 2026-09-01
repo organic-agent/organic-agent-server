@@ -37,14 +37,31 @@ class S3PhotoStorageTest {
     private val storage = S3PhotoStorage(
         s3Client = s3Client,
         s3Presigner = s3Presigner,
-        properties = StorageProperties(
-            bucket = "test-bucket",
-            uploadUrlTtl = Duration.ofMinutes(30),
-            viewUrlTtl = Duration.ofMinutes(15),
-            originalUrlTtl = Duration.ofHours(1),
-            maxBatchSize = 1000,
-        ),
+        properties = properties(),
     )
+
+    private fun properties() = StorageProperties(
+        bucket = "test-bucket",
+        uploadUrlTtl = Duration.ofMinutes(30),
+        viewUrlTtl = Duration.ofMinutes(15),
+        originalUrlTtl = Duration.ofHours(1),
+        maxBatchSize = 1000,
+    )
+
+    @Nested
+    @DisplayName("키를 만들 때")
+    inner class BuildKey {
+
+        @Test
+        fun `갤러리 키 공간 galleries 아래에 둔다`() {
+            // when
+            val key = storage.buildKey(7, "IMG_0001.JPG")
+
+            // then
+            assertThat(storage.galleryPrefix(7)).isEqualTo("galleries/7/")
+            assertThat(key).startsWith("galleries/7/").endsWith(".jpg")
+        }
+    }
 
     @Nested
     @DisplayName("업로드 URL을 서명할 때")

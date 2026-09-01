@@ -19,6 +19,11 @@ spring:
       on-profile: local
     import: aws-parameterstore:/wes/local/
 
+app:
+  embedding:
+    # 로컬에는 Lambda가 없다. 임베딩 실행 버튼이 이 스크립트를 띄운다(임베더 venv·S3 버킷은 스크립트가 정한다).
+    local-script: scripts/local-ai.sh
+
 ---
 spring:
   config:

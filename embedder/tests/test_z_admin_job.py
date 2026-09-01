@@ -85,7 +85,7 @@ def _connect(settings):
 db_module.connect = _connect
 db_module.verify_admin_photo_event = lambda connection, event: True
 db_module.complete_admin_derivative = lambda connection, event, preview, meta: _completed.append("DERIVATIVE")
-db_module.complete_admin_embedding = lambda connection, event, vector: _completed.append("EMBEDDING")
+db_module.complete_admin_embedding = lambda connection, event, vector, model_id: _completed.append("EMBEDDING")
 db_module.complete_admin_quality = lambda connection, event, result: _completed.append("QUALITY_ANALYSIS")
 db_module.fail_admin_photo_job = lambda connection, event, code: (_failed.append(code) or 1)
 
@@ -157,7 +157,7 @@ class AdminPhotoJobTest(unittest.TestCase):
         return AdminPhotoEvent(11, 2, job_type, 31, 41, "galleries/41/photo.jpg", 51)
 
     def settings(self):
-        return SimpleNamespace(s3_bucket="bucket", resize_long_edge=1024, preview_quality=82)
+        return SimpleNamespace(s3_bucket="bucket", resize_long_edge=1024, preview_quality=82, model_id="test-model")
 
     def test_derivative_does_not_load_embedding_model(self) -> None:
         result = admin_job.run(self.event("DERIVATIVE"), self.settings())

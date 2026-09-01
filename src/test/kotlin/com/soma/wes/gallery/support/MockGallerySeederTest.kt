@@ -7,7 +7,9 @@ import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.photo.domain.Photo
+import com.soma.wes.photo.domain.PhotoAnalysis
 import com.soma.wes.photo.domain.PhotoStatus
+import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.studio.exception.StudioErrorCode
 import com.soma.wes.studio.exception.StudioException
@@ -42,6 +44,7 @@ class MockGallerySeederTest @Autowired constructor(
     private val studioRepository: StudioRepository,
     private val galleryRepository: GalleryRepository,
     private val photoRepository: PhotoRepository,
+    private val photoAnalysisRepository: PhotoAnalysisRepository,
 ) {
 
     @Nested
@@ -68,7 +71,6 @@ class MockGallerySeederTest @Autowired constructor(
                 softly.assertThat(templates.map { it.id }).containsExactly(first.id, second.id)
                 softly.assertThat(templates).allSatisfy { photo ->
                     assertThat(photo.status).isEqualTo(PhotoStatus.EMBEDDED)
-                    assertThat(photo.embedding).isNotNull()
                 }
             }
         }
@@ -212,7 +214,7 @@ class MockGallerySeederTest @Autowired constructor(
                     softly.assertThat(copy.storageKey).isEqualTo(plans[index].storageKey)
                     softly.assertThat(copy.previewKey).isEqualTo(plans[index].previewKey)
                     softly.assertThat(copy.status).isEqualTo(PhotoStatus.EMBEDDED)
-                    softly.assertThat(copy.embedding).isEqualTo(sources[index].embedding)
+                    softly.assertThat(vectorOf(copy)).isEqualTo(vectorOf(sources[index]))
                     // 업로드 URL을 발급한 적 없는 복제 행 — 값이 있으면 휴지통 즉시 삭제가 막힌다.
                     softly.assertThat(copy.uploadUrlExpiresAt).isNull()
                 }
@@ -279,15 +281,27 @@ class MockGallerySeederTest @Autowired constructor(
         return galleryRepository.save(Gallery(studioId = studio.requiredId, title = "샘플 템플릿"))
     }
 
-    private fun 임베딩_사진(galleryId: Long, displayOrder: Int, withPreview: Boolean = true): Photo =
-        photoRepository.save(
+    private fun 임베딩_사진(galleryId: Long, displayOrder: Int, withPreview: Boolean = true): Photo {
+        val photo = photoRepository.save(
             사진(galleryId, displayOrder).also { photo ->
                 if (withPreview) {
                     photo.previewKey = "previews/${photo.storageKey.substringBeforeLast('.')}.jpg"
                 }
-                photo.applyEmbedding(FloatArray(Photo.EMBEDDING_DIMENSION) { (displayOrder + 1) * 0.01f })
+                photo.markEmbedded()
             },
         )
+        photoAnalysisRepository.save(
+            PhotoAnalysis.embeddedBy(
+                photoId = photo.requiredId,
+                vector = FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION) { (displayOrder + 1) * 0.01f },
+                model = "facebook/dinov3-vitb16-pretrain-lvd1689m",
+            ),
+        )
+        return photo
+    }
+
+    private fun vectorOf(photo: Photo): FloatArray? =
+        photoAnalysisRepository.findById(photo.requiredId).orElseThrow().embedding
 
     private fun 사진(galleryId: Long, displayOrder: Int): Photo =
         Photo(

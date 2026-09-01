@@ -16,9 +16,10 @@ enum class PhotoErrorCode(
     UNSUPPORTED_CONTENT_TYPE(HttpStatus.BAD_REQUEST, "PHOTO_400_2", "지원하지 않는 이미지 형식입니다."),
 
     /**
-     * 벡터 폭이 `photos.embedding`의 `vector(n)`과 다른 경우.
+     * 벡터 폭이 `photo_analysis.embedding`의 `vector(n)`과 다른 경우.
      *
-     * 정상 경로에서는 DB가 먼저 거절하지만, 그때는 이미 배치 하나를 통째로 계산한 뒤다.
+     * 정상 경로(임베더 Lambda)에서는 DB가 거절한다. 이 코드는 이 서버가 벡터를 복제하는 우회로
+     * (`PhotoAnalysis.embeddedBy`)가 던진다.
      */
     EMBEDDING_DIMENSION_MISMATCH(HttpStatus.BAD_REQUEST, "PHOTO_400_3", "임베딩 차원이 올바르지 않습니다."),
 

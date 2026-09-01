@@ -28,7 +28,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Photo.EMBEDDING_DIMENSION과 같은 값이다. 다르면 fixture 생성 시 실패시킨다.
+# PhotoAnalysis.EMBEDDING_DIMENSION과 같은 값이다. 다르면 fixture 생성 시 실패시킨다.
 EMBEDDING_DIMENSION = 768
 
 # psql 출력에서 SQL NULL을 구분하기 위한 대체 문자열 (파일명·라벨에 나올 수 없는 값)
@@ -92,10 +92,11 @@ def export_fixture(args: argparse.Namespace) -> int:
     labels = read_labels(args.labels)
 
     rows = query(args, f"""
-        SELECT id, original_file_name, taken_at, embedding::text
-        FROM photos
-        WHERE gallery_id = {args.gallery_id} AND deleted_at IS NULL
-        ORDER BY taken_at NULLS LAST, id
+        SELECT p.id, p.original_file_name, p.taken_at, a.embedding::text
+        FROM photos p
+        LEFT JOIN photo_analysis a ON a.photo_id = p.id
+        WHERE p.gallery_id = {args.gallery_id} AND p.deleted_at IS NULL
+        ORDER BY p.taken_at NULLS LAST, p.id
     """)
     by_id = {int(r[0]): r for r in rows}
 

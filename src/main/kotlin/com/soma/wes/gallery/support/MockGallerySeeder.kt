@@ -1,12 +1,14 @@
 package com.soma.wes.gallery.support
 
 import com.soma.wes.gallery.domain.Gallery
+import com.soma.wes.gallery.domain.ShootType
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.photo.domain.Photo
-import com.soma.wes.photo.domain.PhotoStatus
+import com.soma.wes.photo.domain.PhotoAnalysis
+import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.studio.exception.StudioErrorCode
 import com.soma.wes.studio.exception.StudioException
@@ -29,6 +31,7 @@ class MockGallerySeeder(
     private val studioRepository: StudioRepository,
     private val galleryRepository: GalleryRepository,
     private val photoRepository: PhotoRepository,
+    private val photoAnalysisRepository: PhotoAnalysisRepository,
     private val clock: Clock,
 ) {
 
@@ -41,8 +44,7 @@ class MockGallerySeeder(
         if (!galleryRepository.existsById(templateGalleryId)) {
             throw GalleryException(GalleryErrorCode.MOCK_GALLERY_NOT_READY)
         }
-        val templates = photoRepository.findAllByGalleryIdOrderByDisplayOrderAsc(templateGalleryId)
-            .filter { it.status == PhotoStatus.EMBEDDED && it.embedding != null }
+        val templates = photoRepository.findAllEmbeddedByGalleryId(templateGalleryId)
         if (templates.isEmpty()) {
             throw GalleryException(GalleryErrorCode.MOCK_GALLERY_NOT_READY)
         }
@@ -65,20 +67,24 @@ class MockGallerySeeder(
                 title = request?.title ?: DEFAULT_TITLE,
                 selectionDeadline = request?.selectionDeadline,
                 maxSelectablePhotoCount = request?.maxSelectablePhotoCount,
+                shootType = request?.shootType ?: ShootType.REHEARSAL,
                 at = ZonedDateTime.now(clock),
             ),
         )
     }
 
     /**
-     * 복사된 객체들을 가리키는 사진 행을 만든다.
+     * 복사된 객체들을 가리키는 사진 행과, 템플릿의 벡터를 복제한 분석 행을 만든다.
      *
      * `displayOrder`는 템플릿 순서 그대로 0부터 다시 매긴다. 템플릿 갤러리의 번호를 복사하면
      * 운영자가 템플릿에서 사진을 지웠을 때 구멍 난 순서가 그대로 전파된다.
+     *
+     * 벡터만 복제하고 태그·점수·클러스터는 복제하지 않는다. 그 값들은 갤러리 안 백분위·클러스터
+     * 번호라 갤러리를 바꾸면 의미가 달라진다 — 새 갤러리에서 AI 분석을 다시 돌리는 것이 맞다.
      */
     @Transactional
     fun persistPhotos(gallery: Gallery, plans: List<MockGalleryCopyPlan>) {
-        photoRepository.saveAll(
+        val copies = photoRepository.saveAll(
             plans.mapIndexed { index, plan ->
                 Photo.copyOf(
                     source = plan.source,
@@ -86,6 +92,22 @@ class MockGallerySeeder(
                     storageKey = plan.storageKey,
                     previewKey = plan.previewKey,
                     displayOrder = index,
+                )
+            },
+        )
+
+        val sourceAnalyses = photoAnalysisRepository
+            .findAllByPhotoIdIn(plans.map { it.source.requiredId })
+            .associateBy { it.photoId }
+        photoAnalysisRepository.saveAll(
+            plans.zip(copies) { plan, copy ->
+                val source = checkNotNull(sourceAnalyses[plan.source.requiredId]) {
+                    "임베딩이 없는 사진은 복제할 수 없습니다: photoId=${plan.source.requiredId}"
+                }
+                PhotoAnalysis.embeddedBy(
+                    photoId = copy.requiredId,
+                    vector = checkNotNull(source.embedding).copyOf(),
+                    model = checkNotNull(source.embeddingModel),
                 )
             },
         )
