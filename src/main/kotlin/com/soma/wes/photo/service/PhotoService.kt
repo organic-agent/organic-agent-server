@@ -5,6 +5,7 @@ import com.soma.wes.global.page.PageRequests
 import com.soma.wes.global.page.PageResponse
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.domain.Photo
+import com.soma.wes.photo.domain.PhotoAnalysis
 import com.soma.wes.photo.domain.PhotoRating
 import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.dto.request.CompleteUploadRequest
@@ -18,6 +19,7 @@ import com.soma.wes.photo.dto.response.PhotoPageResponse
 import com.soma.wes.photo.dto.response.PhotoSummaryResponse
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
+import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.support.PhotoViewAssembler
 import org.springframework.data.domain.Page
@@ -34,6 +36,7 @@ import java.time.ZonedDateTime
 @Service
 class PhotoService(
     private val photoRepository: PhotoRepository,
+    private val photoAnalysisRepository: PhotoAnalysisRepository,
     private val galleryAccessPolicy: GalleryAccessPolicy,
     private val photoStorage: PhotoStorage,
     private val photoViewAssembler: PhotoViewAssembler,
@@ -104,8 +107,8 @@ class PhotoService(
     }
 
     /**
-     * 업로드 2단계. S3 PUT을 마친 사진들을 통보받아 [UPLOADED][PhotoStatus.UPLOADED]로 옮긴다.
-     * 여기까지 온 사진만 임베딩 대상이 된다.
+     * 업로드 2단계. S3 PUT을 마친 사진들을 통보받아 [UPLOADED][PhotoStatus.UPLOADED]로 옮기고,
+     * [PhotoAnalysis] 빈 행을 함께 만든다. 여기까지 온 사진만 임베딩 대상이 된다.
      */
     @Transactional
     fun completeUpload(galleryId: Long, userId: Long, request: CompleteUploadRequest): PhotoCountResponse {
@@ -113,7 +116,23 @@ class PhotoService(
 
         val photos = checkAndLoadPhotos(galleryId, request.photoIds)
         photos.forEach { it.markUploaded() }
+        createMissingAnalysisRows(photos)
         return PhotoCountResponse(photos.size)
+    }
+
+    /**
+     * 분석 행을 사진과 함께 태어나게 한다 — 행의 존재·생명주기는 이 서버가, 컬럼 값은
+     * Lambda(임베더·AI 분석 배치)가 소유한다. 잡 테이블(PENDING 행 생성 → 워커 전이)과 같은 규약.
+     *
+     * 이미 있는 행은 건드리지 않는다 — 재통보([Photo.markUploaded]처럼 멱등)가 임베딩이 적힌
+     * 행을 빈 행으로 되돌리면 안 된다.
+     */
+    private fun createMissingAnalysisRows(photos: List<Photo>) {
+        val photoIds = photos.mapNotNull { it.id }
+        val existing = photoAnalysisRepository.findAllByPhotoIdIn(photoIds).mapTo(mutableSetOf()) { it.photoId }
+        photoAnalysisRepository.saveAll(
+            photoIds.filterNot { it in existing }.map { PhotoAnalysis(photoId = it) },
+        )
     }
 
     /**
