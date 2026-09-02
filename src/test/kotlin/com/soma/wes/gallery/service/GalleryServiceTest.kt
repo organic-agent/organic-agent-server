@@ -1,6 +1,7 @@
 package com.soma.wes.gallery.service
 
 import com.soma.wes.gallery.domain.GalleryStatus
+import com.soma.wes.gallery.domain.GalleryStage
 import com.soma.wes.gallery.domain.GalleryWorkflowStatus
 import com.soma.wes.gallery.dto.request.ChangeWorkflowStatusRequest
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
@@ -36,13 +37,29 @@ class GalleryServiceTest @Autowired constructor(
 
         val result = galleryService.create(
             user.requiredId,
-            CreateGalleryRequest(personal.requiredId, "개인 본식"),
+            CreateGalleryRequest(personal.requiredId, "개인 본식", maxRetouchRoundCount = 3),
         )
 
         assertThat(result.workspaceId).isEqualTo(personal.requiredId)
         assertThat(result.createdByUserId).isEqualTo(user.requiredId)
         assertThat(result.status).isEqualTo(GalleryStatus.DRAFT)
         assertThat(result.workflowStatus).isEqualTo(GalleryWorkflowStatus.DRAFT)
+        assertThat(result.stage).isEqualTo(GalleryStage.UPLOAD)
+        assertThat(result.maxRetouchRoundCount).isEqualTo(3)
+    }
+
+    @Test
+    fun `갤러리 목록은 6단계 진행 상태로 필터링한다`() {
+        val owner = studioFixture.작가()
+        val studio = studioFixture.소유_스튜디오(owner)
+        val upload = galleryService.create(owner.requiredId, CreateGalleryRequest(studio.workspaceId, "업로드"))
+        val selecting = galleryService.create(owner.requiredId, CreateGalleryRequest(studio.workspaceId, "선택"))
+        galleryService.open(selecting.id, owner.requiredId)
+
+        assertThat(galleryService.findAllVisibleTo(owner.requiredId, GalleryStage.UPLOAD).map { it.id })
+            .containsExactly(upload.id)
+        assertThat(galleryService.findAllVisibleTo(owner.requiredId, GalleryStage.SELECTION_IN_PROGRESS).map { it.id })
+            .containsExactly(selecting.id)
     }
 
     @Test

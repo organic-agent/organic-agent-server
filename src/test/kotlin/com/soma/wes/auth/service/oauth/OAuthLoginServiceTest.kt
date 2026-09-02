@@ -71,7 +71,7 @@ class OAuthLoginServiceTest @Autowired constructor(
     inner class Login {
 
         @Test
-        fun `로그인하면 소셜에서 바뀐 프로필이 실제로 저장된다`() {
+        fun `로그인하면 사용자 닉네임은 유지하고 소셜 이메일만 저장한다`() {
             // given
             val providerId = "oauth-login-${sequence.incrementAndGet()}"
             userRepository.save(
@@ -96,9 +96,8 @@ class OAuthLoginServiceTest @Autowired constructor(
             oAuthLoginService.login("kakao", AuthCodeRequest("auth-code"), "http://localhost:3000")
 
             // then
-            // 트랜잭션이 열리지 않았다면 준영속 엔티티에 쓴 셈이라 옛 값이 그대로 남는다.
             val updated = userRepository.findByProviderAndProviderId(OAuthProvider.KAKAO, providerId)
-            assertThat(updated?.nickname).isEqualTo("새 닉네임")
+            assertThat(updated?.nickname).isEqualTo("옛 닉네임")
             assertThat(updated?.email).isEqualTo("new@example.com")
         }
 

@@ -1,11 +1,15 @@
 package com.soma.wes.retouch.service
 
 import com.soma.wes.gallery.domain.Gallery
+import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.repository.requireWithLockById
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.service.PhotoStorage
+import com.soma.wes.notification.domain.UserNotificationScope
+import com.soma.wes.notification.domain.UserNotificationType
+import com.soma.wes.notification.service.UserNotificationPublisher
 import com.soma.wes.retouch.domain.RetouchPhoto
 import com.soma.wes.retouch.domain.RetouchRound
 import com.soma.wes.retouch.domain.RetouchRoundStatus
@@ -28,6 +32,8 @@ import com.soma.wes.retouch.repository.RetouchRoundRepository
 import com.soma.wes.retouch.support.RetouchPhotoLoader
 import com.soma.wes.retouch.support.RetouchViewAssembler
 import com.soma.wes.trash.service.ProductChildTrashService
+import com.soma.wes.workspace.domain.WorkspaceRole
+import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -49,6 +55,9 @@ class RetouchService(
     private val photoStorage: PhotoStorage,
     private val properties: StorageProperties,
     private val clock: Clock,
+    private val workspaceMemberRepository: WorkspaceMemberRepository,
+    private val galleryMemberRepository: GalleryMemberRepository,
+    private val notificationPublisher: UserNotificationPublisher,
 ) {
 
     companion object {
@@ -225,6 +234,17 @@ class RetouchService(
         validateWithinMaxRounds(gallery, submittedRoundCount = submittedCount.toInt())
 
         round.submit(ZonedDateTime.now(clock))
+        gallery.markRetouchStarted()
+        notificationPublisher.publish(
+            userIds = workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId)
+                .filter { it.role == WorkspaceRole.OWNER }
+                .map { it.userId },
+            type = UserNotificationType.RETOUCH_REQUESTED,
+            scope = UserNotificationScope.GALLERY,
+            scopeId = galleryId,
+            title = "보정 요청이 도착했습니다",
+            message = "${gallery.title}의 보정 요청이 제출되었습니다.",
+        )
         return overviewOf(gallery)
     }
 
@@ -360,6 +380,15 @@ class RetouchService(
         }
 
         round.complete(ZonedDateTime.now(clock))
+        gallery.markAlbumReady()
+        notificationPublisher.publish(
+            userIds = galleryMemberRepository.findAllByGalleryId(galleryId).map { it.userId },
+            type = UserNotificationType.RETOUCH_COMPLETED,
+            scope = UserNotificationScope.GALLERY,
+            scopeId = galleryId,
+            title = "보정 결과가 준비되었습니다",
+            message = "${gallery.title}의 보정 결과를 확인할 수 있습니다.",
+        )
         return overviewOf(gallery)
     }
 

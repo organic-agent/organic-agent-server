@@ -4,10 +4,15 @@ import com.soma.wes.gallery.domain.GalleryInvite
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import org.springframework.data.jpa.repository.JpaRepository
+import jakarta.persistence.LockModeType
+import org.springframework.data.jpa.repository.Lock
 
 interface GalleryInviteRepository : JpaRepository<GalleryInvite, Long> {
 
     fun findByToken(token: String): GalleryInvite?
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    fun findWithLockByToken(token: String): GalleryInvite?
 
     /**
      * 두 값을 함께 받는다. 인가는 갤러리 단위라, id만으로 찾으면 자기 갤러리 하나를 가진

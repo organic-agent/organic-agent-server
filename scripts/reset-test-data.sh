@@ -122,6 +122,7 @@ TABLES="$TABLES, admin_selection_revisions, photo_selection_items, photo_selecti
 TABLES="$TABLES, retouch_photos, retouch_rounds"
 TABLES="$TABLES, photo_folder_items, photo_folders, photo_folder_groups, photos"
 TABLES="$TABLES, gallery_invites, gallery_members, galleries"
+TABLES="$TABLES, user_notifications, user_notification_settings"
 TABLES="$TABLES, studio_retouch_capabilities"
 if [ "$SCOPE" = "all" ]; then
   TABLES="$TABLES, admin_impersonation_sessions, admin_auth_events, admin_sessions, admin_accounts"

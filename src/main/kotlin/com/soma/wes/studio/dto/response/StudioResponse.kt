@@ -10,7 +10,10 @@ data class StudioResponse(
     val workspaceId: Long,
     val name: String,
     val galleryUrl: String,
+    @field:Schema(description = "과거 운영 데이터 호환용 필드. 공개 생성 요청에서는 받지 않는다.", deprecated = true)
     val inflowChannel: String?,
+    val contact: String?,
+    val description: String?,
     val createdAt: ZonedDateTime?,
 ) {
 
@@ -21,6 +24,8 @@ data class StudioResponse(
             name = studio.name,
             galleryUrl = studio.galleryUrl,
             inflowChannel = studio.inflowChannel,
+            contact = studio.contact,
+            description = studio.description,
             createdAt = studio.createdAt,
         )
     }

@@ -64,6 +64,14 @@ class User(
         this.email = email
     }
 
+    fun updateNickname(nickname: String) {
+        this.nickname = nickname
+    }
+
+    fun syncProviderEmail(email: String?) {
+        this.email = email
+    }
+
     fun changeRole(role: Role) {
         this.role = role
     }

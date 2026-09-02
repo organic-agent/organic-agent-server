@@ -185,4 +185,16 @@ interface StudioControllerDocs {
         ),
     )
     fun updateMyStudio(loginUser: LoginUser, request: UpdateStudioRequest): ResponseEntity<StudioResponse>
+
+    @Operation(
+        summary = "스튜디오 멤버 탈퇴",
+        description = "MEMBER가 해당 스튜디오 소속에서 나간다. OWNER는 스튜디오 삭제 API를 사용해야 한다.",
+    )
+    fun leave(loginUser: LoginUser, studioId: Long): ResponseEntity<Unit>
+
+    @Operation(
+        summary = "내 스튜디오 삭제",
+        description = "내가 소유한 단일 스튜디오와 하위 갤러리를 삭제하고 다른 소속 멤버에게 알린다.",
+    )
+    fun deleteMyStudio(loginUser: LoginUser): ResponseEntity<Unit>
 }

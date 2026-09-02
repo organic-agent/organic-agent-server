@@ -51,6 +51,10 @@ class Gallery(
     @Column(name = "workflow_status", nullable = false, length = 20)
     var workflowStatus: GalleryWorkflowStatus = GalleryWorkflowStatus.DRAFT,
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
+    var stage: GalleryStage = GalleryStage.UPLOAD,
+
     @Column(name = "selection_deadline")
     var selectionDeadline: ZonedDateTime? = null,
 
@@ -128,6 +132,7 @@ class Gallery(
             throw GalleryException(GalleryErrorCode.INVALID_STATUS_TRANSITION)
         }
         status = GalleryStatus.OPEN
+        stage = GalleryStage.SELECTION_IN_PROGRESS
     }
 
     fun close() {
@@ -135,6 +140,7 @@ class Gallery(
             throw GalleryException(GalleryErrorCode.INVALID_STATUS_TRANSITION)
         }
         status = GalleryStatus.CLOSED
+        stage = GalleryStage.SELECTION_COMPLETED
     }
 
     fun reopen(selectionDeadline: ZonedDateTime?, at: ZonedDateTime) {
@@ -144,11 +150,31 @@ class Gallery(
         validateDeadlineNotPassed(selectionDeadline, at)
 
         status = GalleryStatus.OPEN
+        stage = GalleryStage.SELECTION_IN_PROGRESS
         this.selectionDeadline = selectionDeadline
     }
 
     fun changeWorkflowStatus(workflowStatus: GalleryWorkflowStatus) {
         this.workflowStatus = workflowStatus
+        if (workflowStatus == GalleryWorkflowStatus.ARCHIVED) {
+            stage = GalleryStage.ARCHIVED
+        }
+    }
+
+    fun markSelectionCompleted() {
+        stage = GalleryStage.SELECTION_COMPLETED
+    }
+
+    fun markSelectionInProgress() {
+        stage = GalleryStage.SELECTION_IN_PROGRESS
+    }
+
+    fun markRetouchStarted() {
+        stage = GalleryStage.RETOUCH
+    }
+
+    fun markAlbumReady() {
+        stage = GalleryStage.ALBUM
     }
 
     companion object {
@@ -166,18 +192,21 @@ class Gallery(
             title: String,
             selectionDeadline: ZonedDateTime?,
             maxSelectablePhotoCount: Int?,
+            maxRetouchRoundCount: Int?,
             shootType: ShootType,
             at: ZonedDateTime,
         ): Gallery {
             validateTitle(title)
             validateDeadlineNotPassed(selectionDeadline, at)
             validateMaxSelectablePhotoCount(maxSelectablePhotoCount)
+            validateMaxRetouchRoundCount(maxRetouchRoundCount)
             return Gallery(
                 studioId = workspaceId,
                 createdByUserId = createdByUserId,
                 title = title,
                 selectionDeadline = selectionDeadline,
                 maxSelectablePhotoCount = maxSelectablePhotoCount,
+                maxRetouchRoundCount = maxRetouchRoundCount,
                 shootType = shootType,
             )
         }
@@ -185,6 +214,12 @@ class Gallery(
         private fun validateMaxSelectablePhotoCount(maxSelectablePhotoCount: Int?) {
             if (maxSelectablePhotoCount != null && maxSelectablePhotoCount < MIN_SELECTABLE_PHOTO_COUNT) {
                 throw GalleryException(GalleryErrorCode.INVALID_MAX_SELECTABLE_PHOTO_COUNT)
+            }
+        }
+
+        private fun validateMaxRetouchRoundCount(maxRetouchRoundCount: Int?) {
+            if (maxRetouchRoundCount != null && maxRetouchRoundCount < MIN_RETOUCH_ROUND_COUNT) {
+                throw GalleryException(GalleryErrorCode.INVALID_MAX_RETOUCH_ROUND_COUNT)
             }
         }
 

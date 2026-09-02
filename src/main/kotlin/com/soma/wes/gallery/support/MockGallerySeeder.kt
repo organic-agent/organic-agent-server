@@ -73,6 +73,7 @@ class MockGallerySeeder(
                 title = request.title,
                 selectionDeadline = request.selectionDeadline,
                 maxSelectablePhotoCount = request.maxSelectablePhotoCount,
+                maxRetouchRoundCount = request.maxRetouchRoundCount,
                 shootType = request.shootType,
                 at = ZonedDateTime.now(clock),
             ),

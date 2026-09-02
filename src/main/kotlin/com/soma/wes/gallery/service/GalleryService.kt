@@ -45,6 +45,7 @@ class GalleryService(
                 title = request.title,
                 selectionDeadline = request.selectionDeadline,
                 maxSelectablePhotoCount = request.maxSelectablePhotoCount,
+                maxRetouchRoundCount = request.maxRetouchRoundCount,
                 shootType = request.shootType,
                 at = ZonedDateTime.now(clock),
             ),
@@ -53,7 +54,7 @@ class GalleryService(
     }
 
     @Transactional(readOnly = true)
-    fun findAllVisibleTo(userId: Long): List<GalleryResponse> {
+    fun findAllVisibleTo(userId: Long, stage: com.soma.wes.gallery.domain.GalleryStage? = null): List<GalleryResponse> {
         val operatingWorkspaceIds = workspaceMemberRepository
             .findAllByUserIdAndRoleIn(userId, WorkspaceRole.entries)
             .map { it.workspaceId }
@@ -72,6 +73,7 @@ class GalleryService(
         // 그 규칙이 생기기 전 데이터까지 같은 갤러리를 두 번 그리게 두지는 않는다.
         return (asManager + asCouple)
             .distinctBy { it.requiredId }
+            .filter { stage == null || it.stage == stage }
             .map(GalleryResponse::from)
     }
 

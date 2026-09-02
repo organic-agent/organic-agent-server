@@ -2,6 +2,8 @@ package com.soma.wes.selection.service
 
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
+import com.soma.wes.gallery.domain.GalleryStage
+import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
 import com.soma.wes.photo.fixture.PhotoFixture
@@ -40,6 +42,7 @@ class PhotoSelectionServiceTest @Autowired constructor(
     private val photoRepository: PhotoRepository,
     private val photoSelectionRepository: PhotoSelectionRepository,
     private val photoSelectionItemRepository: PhotoSelectionItemRepository,
+    private val galleryRepository: GalleryRepository,
 ) {
 
     @Nested
@@ -282,6 +285,8 @@ class PhotoSelectionServiceTest @Autowired constructor(
             val submitted = photoSelectionService.submit(fixture.galleryId, fixture.member.id!!)
             assertSoftly { softly ->
                 softly.assertThat(submitted.status).isEqualTo(PhotoSelectionStatus.SUBMITTED)
+                softly.assertThat(galleryRepository.findById(fixture.galleryId).orElseThrow().stage)
+                    .isEqualTo(GalleryStage.SELECTION_COMPLETED)
                 // 계약 장수에 못 미쳐도 제출된다. 화면은 목표와 현재 장수를 보고 미리 물어본다.
                 softly.assertThat(submitted.selectedCount).isEqualTo(2)
                 softly.assertThat(submitted.submittedAt).isNotNull()
@@ -307,6 +312,8 @@ class PhotoSelectionServiceTest @Autowired constructor(
             assertSoftly { softly ->
                 softly.assertThat(withdrawn.status).isEqualTo(PhotoSelectionStatus.SELECTING)
                 softly.assertThat(withdrawn.submittedAt).isNull()
+                softly.assertThat(galleryRepository.findById(fixture.galleryId).orElseThrow().stage)
+                    .isEqualTo(GalleryStage.SELECTION_IN_PROGRESS)
             }
 
             select(fixture, photoIds.drop(2))

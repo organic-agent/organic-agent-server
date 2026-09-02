@@ -4,6 +4,9 @@ import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.repository.requireWithLockById
 import com.soma.wes.gallery.support.GalleryAccessPolicy
+import com.soma.wes.notification.domain.UserNotificationScope
+import com.soma.wes.notification.domain.UserNotificationType
+import com.soma.wes.notification.service.UserNotificationPublisher
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoStatus
@@ -21,6 +24,8 @@ import com.soma.wes.selection.exception.SelectionErrorCode
 import com.soma.wes.selection.exception.SelectionException
 import com.soma.wes.selection.repository.PhotoSelectionItemRepository
 import com.soma.wes.selection.repository.PhotoSelectionRepository
+import com.soma.wes.workspace.domain.WorkspaceRole
+import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -41,6 +46,8 @@ class PhotoSelectionService(
     private val photoStorage: PhotoStorage,
     private val properties: StorageProperties,
     private val clock: Clock,
+    private val workspaceMemberRepository: WorkspaceMemberRepository,
+    private val notificationPublisher: UserNotificationPublisher,
 ) {
 
     /**
@@ -155,6 +162,17 @@ class PhotoSelectionService(
         val items = photoSelectionItemRepository.findAllBySelectionId(selection.requiredId)
         val photos = selectedPhotoResponses(selection.galleryId, items)
         selection.submit(photos.size, userId, ZonedDateTime.now(clock))
+        gallery.markSelectionCompleted()
+        notificationPublisher.publish(
+            userIds = workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId)
+                .filter { it.role == WorkspaceRole.OWNER }
+                .map { it.userId },
+            type = UserNotificationType.SELECTION_SUBMITTED,
+            scope = UserNotificationScope.GALLERY,
+            scopeId = galleryId,
+            title = "사진 선택이 제출되었습니다",
+            message = "${gallery.title}의 사진 선택이 완료되었습니다.",
+        )
 
         return PhotoSelectionResponse.of(
             selection = selection,
@@ -176,6 +194,7 @@ class PhotoSelectionService(
             ?: throw SelectionException(SelectionErrorCode.SELECTION_NOT_SUBMITTED)
 
         selection.withdraw()
+        gallery.markSelectionInProgress()
         return responseOf(gallery, selection)
     }
 

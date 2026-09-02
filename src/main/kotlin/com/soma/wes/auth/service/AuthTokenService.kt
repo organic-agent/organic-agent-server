@@ -5,12 +5,15 @@ import com.soma.wes.auth.dto.request.ReissueRequest
 import com.soma.wes.auth.dto.response.ReissueResponse
 import com.soma.wes.auth.exception.AuthErrorCode
 import com.soma.wes.auth.exception.TokenException
+import com.soma.wes.user.repository.UserRepository
+import com.soma.wes.user.repository.requireById
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
 @Service
 class AuthTokenService(
     private val authTokenProvider: AuthTokenProvider,
+    private val userRepository: UserRepository,
 ) {
 
     /**
@@ -37,5 +40,10 @@ class AuthTokenService(
             authTokenProvider.generateAccessToken(user),
             authTokenProvider.generateRefreshToken(user),
         )
+    }
+
+    @Transactional
+    fun logout(userId: Long) {
+        authTokenProvider.logout(userRepository.requireById(userId))
     }
 }

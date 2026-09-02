@@ -39,8 +39,8 @@ class OAuthLoginProcessor(
         val user = userRepository.findByProviderAndProviderId(userInfo.provider, userInfo.providerId)
 
         if (user != null) {
-            // provider 쪽에서 닉네임이나 이메일을 바꿨을 수 있으므로 로그인할 때마다 맞춘다.
-            user.updateProfile(nickname = userInfo.nickname, email = userInfo.email)
+            // 서비스에서 사용자가 바꾼 닉네임은 유지하고 provider 이메일만 동기화한다.
+            user.syncProviderEmail(email = userInfo.email)
             return user
         }
 

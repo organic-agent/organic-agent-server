@@ -11,6 +11,8 @@ import com.soma.wes.category.service.CategorizationService
 import com.soma.wes.category.service.AiCategoryFolderService
 import com.soma.wes.category.service.CategoryService
 import jakarta.validation.Valid
+import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
@@ -24,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController
 
 @RestController
 @RequestMapping("/api/v1/galleries/{galleryId}")
+@Tag(name = "[Category]", description = "Concept/Detail 카테고리와 비동기 분류 API")
 class CategoryController(
     private val categoryService: CategoryService,
     private val categorizationService: CategorizationService,
@@ -40,6 +43,10 @@ class CategoryController(
     }
 
     @GetMapping("/concept-folders")
+    @Operation(
+        summary = "Concept/Detail 카테고리 조회",
+        description = "폐기된 photo-clusters API 대신 Concept와 하위 Detail 카테고리 구조를 반환한다.",
+    )
     fun list(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
@@ -49,6 +56,10 @@ class CategoryController(
 
     /** `/folder-groups/ai`는 origin/main 클라이언트 호환 경로이며 응답은 최종 카테고리 계약이다. */
     @PostMapping(value = ["/concept-folders/ai", "/folder-groups/ai"])
+    @Operation(
+        summary = "AI 분석 결과로 카테고리 생성",
+        description = "클러스터 공개 API를 복원하지 않고 분석 결과를 Concept/Detail 카테고리로 materialize한다.",
+    )
     fun createFromAnalysis(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
@@ -100,6 +111,7 @@ class CategoryController(
     }
 
     @PostMapping("/categorization-jobs")
+    @Operation(summary = "사진 카테고리 분류 작업 시작")
     fun runCategorization(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
@@ -108,6 +120,7 @@ class CategoryController(
     }
 
     @GetMapping("/categorization-jobs/latest")
+    @Operation(summary = "최근 사진 카테고리 분류 작업 조회")
     fun latestCategorization(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,

@@ -53,8 +53,7 @@ class OAuthLoginProcessorTest @Autowired constructor(
     }
 
     @Test
-    fun `다시 로그인하면 소셜에서 바뀐 프로필이 반영된다`() {
-        // 트랜잭션이 열려 있지 않으면 조회된 엔티티가 준영속이라 이 갱신이 조용히 사라진다.
+    fun `다시 로그인하면 사용자 닉네임은 유지하고 소셜 이메일만 동기화한다`() {
         // given
         val providerId = "oauth-refresh-${sequence.incrementAndGet()}"
         userRepository.save(
@@ -71,7 +70,7 @@ class OAuthLoginProcessorTest @Autowired constructor(
 
         // then
         val updated = userRepository.findByProviderAndProviderId(OAuthProvider.KAKAO, providerId)
-        assertThat(updated?.nickname).isEqualTo("새 닉네임")
+        assertThat(updated?.nickname).isEqualTo("옛 닉네임")
         assertThat(updated?.email).isEqualTo("new@example.com")
     }
 

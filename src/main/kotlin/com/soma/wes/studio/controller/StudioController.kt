@@ -11,6 +11,7 @@ import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PostMapping
@@ -81,5 +82,22 @@ class StudioController(
         val result = studioService.updateMyStudio(loginUser.id, request)
 
         return ResponseEntity.ok(result)
+    }
+
+    @DeleteMapping("/{studioId}/members/me")
+    override fun leave(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable studioId: Long,
+    ): ResponseEntity<Unit> {
+        studioService.leave(studioId, loginUser.id)
+        return ResponseEntity.noContent().build()
+    }
+
+    @DeleteMapping("/me")
+    override fun deleteMyStudio(
+        @AuthenticationPrincipal loginUser: LoginUser,
+    ): ResponseEntity<Unit> {
+        studioService.deleteMyStudio(loginUser.id)
+        return ResponseEntity.noContent().build()
     }
 }

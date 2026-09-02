@@ -4,9 +4,11 @@ import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.gallery.config.GalleryInviteProperties
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryInvite
+import com.soma.wes.gallery.domain.GalleryInviteKind
 import com.soma.wes.gallery.domain.GalleryInviteStatus
 import com.soma.wes.gallery.domain.GalleryStatus
 import com.soma.wes.gallery.dto.response.GalleryInviteResponse
+import com.soma.wes.gallery.dto.request.IssueGalleryInviteRequest
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.repository.GalleryInviteRepository
@@ -167,6 +169,48 @@ class GalleryInviteServiceTest @Autowired constructor(
         }
 
         @Test
+        fun `미리보기는 초대 종류와 사용 가능 상태를 구분한다`() {
+            val gallery = saveGallery()
+            val invite = galleryInviteService.issue(
+                galleryId(gallery),
+                photographerId,
+                IssueGalleryInviteRequest(maxUses = 1),
+            )
+            val token = tokenOf(invite)
+
+            val active = galleryInviteService.preview(token, groomId)
+            galleryInviteService.accept(token, groomId)
+            val alreadyMember = galleryInviteService.preview(token, groomId)
+            val full = galleryInviteService.preview(token, brideId)
+
+            assertSoftly { softly ->
+                softly.assertThat(active.kind).isEqualTo(GalleryInviteKind.GALLERY_MEMBER)
+                softly.assertThat(active.status).isEqualTo(GalleryInviteStatus.ACTIVE)
+                softly.assertThat(active.maxUses).isEqualTo(1)
+                softly.assertThat(alreadyMember.status).isEqualTo(GalleryInviteStatus.ALREADY_MEMBER)
+                softly.assertThat(full.status).isEqualTo(GalleryInviteStatus.FULL)
+            }
+        }
+
+        @Test
+        fun `스튜디오 멤버 초대는 작업공간 소속을 만든다`() {
+            val gallery = saveGallery()
+            val invite = galleryInviteService.issue(
+                galleryId(gallery),
+                photographerId,
+                IssueGalleryInviteRequest(kind = GalleryInviteKind.STUDIO_MEMBER, maxUses = 1),
+            )
+
+            val result = galleryInviteService.accept(tokenOf(invite), groomId)
+
+            assertThat(result.kind).isEqualTo(GalleryInviteKind.STUDIO_MEMBER)
+            assertThat(result.memberId).isNull()
+            assertThat(
+                workspaceMemberRepository.findByWorkspaceIdAndUserId(gallery.workspaceId, groomId)?.role,
+            ).isEqualTo(WorkspaceRole.MEMBER)
+        }
+
+        @Test
         fun `담당 작가가 아니면 링크를 발급할 수 없다`() {
             // given
             val gallery = saveGallery()
@@ -319,7 +363,7 @@ class GalleryInviteServiceTest @Autowired constructor(
             assertThatThrownBy { galleryInviteService.accept("존재하지-않는-토큰", groomId) }
                 .isInstanceOf(GalleryException::class.java)
                 .extracting("errorCode")
-                .isEqualTo(GalleryErrorCode.INVITE_NOT_FOUND)
+                .isEqualTo(GalleryErrorCode.INVITE_INVALID)
         }
 
         @Test
@@ -463,7 +507,7 @@ class GalleryInviteServiceTest @Autowired constructor(
             assertThatThrownBy { galleryInviteService.accept(token, stranger) }
                 .isInstanceOf(GalleryException::class.java)
                 .extracting("errorCode")
-                .isEqualTo(GalleryErrorCode.GALLERY_MEMBER_LIMIT_EXCEEDED)
+                .isEqualTo(GalleryErrorCode.INVITE_FULL)
 
             assertThat(galleryMemberRepository.countByGalleryId(galleryId(gallery))).isEqualTo(2L)
         }

@@ -40,6 +40,12 @@ class Studio(
     @Column(name = "inflow_channel", length = 255)
     var inflowChannel: String? = null,
 
+    @Column(length = 100)
+    var contact: String? = null,
+
+    @Column(length = 500)
+    var description: String? = null,
+
 ) : BaseEntity() {
 
     @Column(name = "deleted_at")
@@ -57,19 +63,28 @@ class Studio(
     val requiredId: Long
         get() = workspaceId
 
-    fun update(name: String, galleryUrl: String) {
+    fun update(name: String, galleryUrl: String, contact: String?, description: String?) {
         this.name = name
         this.galleryUrl = validateGalleryUrl(galleryUrl)
+        this.contact = contact
+        this.description = description
     }
 
     companion object {
 
-        fun create(userId: Long, name: String, galleryUrl: String, inflowChannel: String? = null) =
+        fun create(
+            userId: Long,
+            name: String,
+            galleryUrl: String,
+            contact: String?,
+            description: String?,
+        ) =
             Studio(
                 userId = userId,
                 name = name,
                 galleryUrl = validateGalleryUrl(galleryUrl),
-                inflowChannel = inflowChannel
+                contact = contact,
+                description = description,
             )
 
         /**

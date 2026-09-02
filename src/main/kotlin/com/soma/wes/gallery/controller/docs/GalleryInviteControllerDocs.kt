@@ -3,6 +3,8 @@ package com.soma.wes.gallery.controller.docs
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.gallery.dto.response.GalleryInviteAcceptResponse
 import com.soma.wes.gallery.dto.response.GalleryInviteResponse
+import com.soma.wes.gallery.dto.response.GalleryInvitePreviewResponse
+import com.soma.wes.gallery.dto.request.IssueGalleryInviteRequest
 import com.soma.wes.global.exception.ErrorResponse
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.media.Content
@@ -59,7 +61,11 @@ interface GalleryInviteControllerDocs {
             ],
         ),
     )
-    fun issue(loginUser: LoginUser, galleryId: Long): ResponseEntity<GalleryInviteResponse>
+    fun issue(
+        loginUser: LoginUser,
+        galleryId: Long,
+        request: IssueGalleryInviteRequest?,
+    ): ResponseEntity<GalleryInviteResponse>
 
     @Operation(
         summary = "현재 초대 링크 조회",
@@ -153,14 +159,14 @@ interface GalleryInviteControllerDocs {
             "누가 들어왔는지 남겨야 하기 때문이다. 아직 종류를 정하지 않은 계정은 이때 예비 부부(CLIENT)로 확정된다. " +
             "멱등하다: 같은 사람이 여러 번 눌러도 멤버는 하나이며 매번 200이다. " +
             "담당 작가는 자기 갤러리의 초대를 수락할 수 없다. " +
-            "갤러리 정원은 2명(부부)이며, 이미 두 사람이 들어와 있으면 403이다 — " +
+            "갤러리 정원은 2명(부부)이며, 초대 사용 횟수나 정원을 모두 쓰면 409다 — " +
             "이미 멤버인 사람의 재요청은 정원과 무관하게 200이다.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "수락 성공. 이미 멤버였어도 같은 응답이 온다"),
         ApiResponse(
             responseCode = "403",
-            description = "담당 작가가 자기 갤러리 초대를 수락하려 하거나, 정원이 참",
+            description = "담당 작가가 자기 갤러리 초대를 수락하려 함",
             content = [
                 Content(
                     mediaType = MediaType.APPLICATION_JSON_VALUE,
@@ -170,9 +176,21 @@ interface GalleryInviteControllerDocs {
                             name = "작가는 수락 불가",
                             value = """{"code": "GALLERY_403_3", "message": "담당 작가는 초대를 수락할 수 없습니다."}""",
                         ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(
+            responseCode = "409",
+            description = "초대 사용 횟수 또는 갤러리 정원 소진",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
                         ExampleObject(
-                            name = "정원 초과",
-                            value = """{"code": "GALLERY_403_5", "message": "이미 정원이 찬 갤러리입니다."}""",
+                            name = "초대 소진",
+                            value = """{"code": "GALLERY_409_1", "message": "초대 링크의 사용 가능 횟수를 모두 소진했습니다."}""",
                         ),
                     ],
                 ),
@@ -188,7 +206,7 @@ interface GalleryInviteControllerDocs {
                     examples = [
                         ExampleObject(
                             name = "초대 없음",
-                            value = """{"code": "GALLERY_404_3", "message": "존재하지 않는 초대 링크입니다."}""",
+                            value = """{"code": "GALLERY_404_4", "message": "유효하지 않은 초대 링크입니다."}""",
                         ),
                     ],
                 ),
@@ -217,4 +235,10 @@ interface GalleryInviteControllerDocs {
         ),
     )
     fun accept(loginUser: LoginUser, token: String): ResponseEntity<GalleryInviteAcceptResponse>
+
+    @Operation(
+        summary = "초대 미리보기",
+        description = "수락 전에 스튜디오·갤러리와 초대 종류, 만료·폐기·정원·기존 소속 상태를 확인한다.",
+    )
+    fun preview(loginUser: LoginUser, token: String): ResponseEntity<GalleryInvitePreviewResponse>
 }

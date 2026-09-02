@@ -2,6 +2,8 @@ package com.soma.wes.retouch.service
 
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
+import com.soma.wes.gallery.domain.GalleryStage
+import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
 import com.soma.wes.photo.fixture.PhotoFixture
@@ -40,6 +42,7 @@ class RetouchServiceTest @Autowired constructor(
     private val retouchRoundRepository: RetouchRoundRepository,
     private val retouchPhotoRepository: RetouchPhotoRepository,
     private val jdbcClient: JdbcClient,
+    private val galleryRepository: GalleryRepository,
 ) {
 
     @Nested
@@ -547,6 +550,8 @@ class RetouchServiceTest @Autowired constructor(
                 softly.assertThat(result.currentRound!!.status).isEqualTo(RetouchRoundStatus.REQUESTED)
                 softly.assertThat(result.currentRound!!.requestedAt).isNotNull()
                 softly.assertThat(result.remainingRoundCount).isEqualTo(1)
+                softly.assertThat(galleryRepository.findById(fixture.galleryId).orElseThrow().stage)
+                    .isEqualTo(GalleryStage.RETOUCH)
             }
         }
 
@@ -856,6 +861,8 @@ class RetouchServiceTest @Autowired constructor(
                 softly.assertThat(result.rounds.single().status).isEqualTo(RetouchRoundStatus.COMPLETED)
                 softly.assertThat(result.rounds.single().completedAt).isNotNull()
                 softly.assertThat(result.currentRound).isNull()
+                softly.assertThat(galleryRepository.findById(fixture.galleryId).orElseThrow().stage)
+                    .isEqualTo(GalleryStage.ALBUM)
             }
         }
 

@@ -20,7 +20,11 @@ data class CreateStudioRequest(
     )
     val galleryUrl: String,
 
-    @field:Size(max = 255)
-    @field:Schema(description = "유입 경로. 마케팅 집계용이라 없어도 가입은 된다.", example = "인스타그램")
-    val inflowChannel: String? = null,
+    @field:Size(max = 100)
+    @field:Schema(description = "고객에게 노출할 연락처", example = "010-1234-5678")
+    val contact: String? = null,
+
+    @field:Size(max = 500)
+    @field:Schema(description = "스튜디오 소개", example = "자연스러운 순간을 기록합니다.")
+    val description: String? = null,
 )

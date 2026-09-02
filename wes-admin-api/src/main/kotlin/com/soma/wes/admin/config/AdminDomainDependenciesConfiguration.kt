@@ -28,6 +28,7 @@ import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.infrastructure.S3PhotoStorage
 import com.soma.wes.photo.service.PhotoService
 import com.soma.wes.photo.support.PhotoViewAssembler
+import com.soma.wes.notification.service.UserNotificationPublisher
 import com.soma.wes.retouch.service.RetouchService
 import com.soma.wes.retouch.support.RetouchPhotoLoader
 import com.soma.wes.retouch.support.RetouchResultLoader
@@ -40,6 +41,7 @@ import com.soma.wes.trash.repository.ProductChildTrashRepository
 import com.soma.wes.trash.service.ProductChildTrashService
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Configuration
+import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 
 /**
@@ -93,4 +95,8 @@ import org.springframework.context.annotation.Import
     PhotoSimilarityRepository::class,
     CategorizationService::class,
 )
-class AdminDomainDependenciesConfiguration
+class AdminDomainDependenciesConfiguration {
+    /** 관리자 조회 재사용 경로에서는 사용자 알림을 발행하지 않는다. */
+    @Bean
+    fun userNotificationPublisher(): UserNotificationPublisher = UserNotificationPublisher { _, _, _, _, _, _ -> }
+}

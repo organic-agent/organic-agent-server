@@ -14,6 +14,7 @@ enum class StudioErrorCode(
 
     NOT_STUDIO_OWNER(HttpStatus.FORBIDDEN, "STUDIO_403_1", "스튜디오 소유자만 할 수 있습니다."),
     STUDIO_ACCESS_DENIED(HttpStatus.FORBIDDEN, "STUDIO_403_2", "이 스튜디오를 운영할 권한이 없습니다."),
+    STUDIO_OWNER_CANNOT_LEAVE(HttpStatus.FORBIDDEN, "STUDIO_403_3", "스튜디오 소유자는 탈퇴할 수 없습니다. 스튜디오를 삭제해 주세요."),
     STUDIO_NOT_FOUND(HttpStatus.NOT_FOUND, "STUDIO_404_1", "존재하지 않는 스튜디오입니다."),
 
     // STUDIO_400_2, STUDIO_409_3~10, STUDIO_503_1은 폐기된 운영자 hard delete가 쓰던 번호다.
