@@ -70,13 +70,8 @@ export SPRING_DATASOURCE_PASSWORD=$(aws ssm get-parameter --region ap-northeast-
 
 `nc -z localhost 8080`이 열릴 때까지 대기(30초 내외).
 
-실험용 파라미터가 필요하면 `--args`에 커맨드라인 프로퍼티를 추가한다(우선순위 최상).
-예: 클러스터 레벨 3과 같은 번들에 kNN만 끈 임시 레벨 6으로 전/후 비교 —
-
-```
---app.cluster.levels.6.strict-threshold=0.92 --app.cluster.levels.6.lenient-threshold=0.82
---app.cluster.levels.6.window-seconds=90 --app.cluster.levels.6.knn-k=0
-```
+실험용 파라미터가 필요하면 `--args`에 `--app.*` 커맨드라인 프로퍼티를 추가한다(우선순위 최상).
+설정값을 바꿔 가며 전/후를 비교할 때 application-variable.yml을 고치지 않고 쓸 수 있다.
 
 ## Phase 4: JWT 직접 발급
 

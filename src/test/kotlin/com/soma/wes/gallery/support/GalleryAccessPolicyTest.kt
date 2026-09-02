@@ -283,11 +283,11 @@ class GalleryAccessPolicyTest @Autowired constructor(
     }
 
     @Nested
-    @DisplayName("폴더와 클러스터를 만질 때")
-    inner class OrganizeFoldersAndClusters {
+    @DisplayName("폴더를 만질 때")
+    inner class OrganizeFolders {
 
         @Test
-        fun `작가는 마감이 지나도 폴더와 클러스터를 만질 수 있다`() {
+        fun `작가는 마감이 지나도 폴더를 만질 수 있다`() {
             // 마감은 고객이 고르는 기한이지 작가의 작업 기한이 아니다.
             // given
             val studio = saveStudio(userId = 10L)
@@ -301,7 +301,7 @@ class GalleryAccessPolicyTest @Autowired constructor(
         }
 
         @Test
-        fun `부부는 고를 수 있는 동안에만 폴더와 클러스터를 만질 수 있다`() {
+        fun `부부는 고를 수 있는 동안에만 폴더를 만질 수 있다`() {
             // given
             val gallery = saveGallery(saveStudio(userId = 10L), status = GalleryStatus.OPEN)
             saveMember(galleryId(gallery), userId = 100L)
@@ -314,7 +314,7 @@ class GalleryAccessPolicyTest @Autowired constructor(
         }
 
         @Test
-        fun `부부는 마감이 지나면 폴더와 클러스터를 만질 수 없다`() {
+        fun `부부는 마감이 지나면 폴더를 만질 수 없다`() {
             // given
             val gallery = saveGallery(saveStudio(userId = 10L), selectionDeadline = now.minusMinutes(1))
             saveMember(galleryId(gallery), userId = 100L)
@@ -327,7 +327,7 @@ class GalleryAccessPolicyTest @Autowired constructor(
         }
 
         @Test
-        fun `갤러리와 무관한 사용자는 폴더와 클러스터를 만질 수 없다`() {
+        fun `갤러리와 무관한 사용자는 폴더를 만질 수 없다`() {
             // given
             val gallery = saveGallery(saveStudio(userId = 10L), status = GalleryStatus.OPEN)
 

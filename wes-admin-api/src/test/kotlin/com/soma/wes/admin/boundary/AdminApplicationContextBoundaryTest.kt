@@ -11,7 +11,6 @@ import com.soma.wes.auth.service.AuthTokenProvider
 import com.soma.wes.auth.support.OAuthRegistrations
 import com.soma.wes.auth.support.OAuthStateCleaner
 import com.soma.wes.auth.token.config.JwtProperties
-import com.soma.wes.cluster.config.ClusterProperties
 import com.soma.wes.collab.config.CollabProperties
 import com.soma.wes.collab.repository.CollabSessionRepository
 import com.soma.wes.collab.service.CollabSessionQueryService
@@ -145,7 +144,6 @@ class AdminApplicationContextBoundaryTest @Autowired constructor(
             OAuthStateCleaner::class.java,
             TrashPurgeScheduler::class.java,
             JwtProperties::class.java,
-            ClusterProperties::class.java,
         )
     }
 
