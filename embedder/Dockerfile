@@ -1,5 +1,5 @@
 # Lambda 컨테이너 이미지. zip 패키지는 압축 해제 250MB 한도라 torch 하나로 넘는다.
-FROM public.ecr.aws/lambda/python:3.12
+FROM public.ecr.aws/lambda/python:3.12@sha256:8f8b720c9ec0cf3da897db1dc2c82398b9fcc34e72eb08c8c87dac4ea3322a6a
 
 # CPU 전용 휠. 기본 PyPI에서 받으면 CUDA 런타임이 함께 들어와 이미지가 GB 단위로 불어나는데,
 # Lambda에는 GPU가 없어서 전부 죽은 무게다. transformers가 이 인덱스에 없으므로 분리한다.
@@ -7,7 +7,9 @@ FROM public.ecr.aws/lambda/python:3.12
 # torchvision도 필요하다. 최신 transformers의 AutoImageProcessor는 fast 이미지 프로세서를
 # 기본으로 쓰고 그게 torchvision 백엔드를 요구해서, 없으면 모델을 받는 단계에서 ImportError로
 # 죽는다("requires the Torchvision library"). torch와 같은 인덱스로 받아 버전을 맞춘다.
-RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir \
+      torch==2.13.0+cpu torchvision==0.28.0+cpu \
+      --index-url https://download.pytorch.org/whl/cpu
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -26,16 +28,30 @@ RUN mkdir -p /opt/rds-ca \
 # `--secret id=hf_token`으로 넣어 주고, 이 RUN 한 줄 밖에서는 파일이 존재하지 않는다.
 ENV HF_HOME=/opt/hf
 ARG EMBED_MODEL_ID=facebook/dinov3-vitb16-pretrain-lvd1689m
+# config.py의 기본값과 같은 immutable commit. 빌드가 굽는 snapshot과 런타임 오프라인 로드가
+# 같은 리비전이어야 한다 — 리비전 없이 받으면 HF main이 전진했을 때 첫 호출이 죽는다.
+ARG EMBED_MODEL_REVISION=5931719e67bbdb9737e363e781fb0c67687896bc
 RUN --mount=type=secret,id=hf_token,required=true \
     HF_TOKEN="$(cat /run/secrets/hf_token)" \
     python -c "from transformers import AutoImageProcessor, AutoModel; \
-m = '${EMBED_MODEL_ID}'; \
-AutoImageProcessor.from_pretrained(m); AutoModel.from_pretrained(m)"
+m = '${EMBED_MODEL_ID}'; r = '${EMBED_MODEL_REVISION}'; \
+AutoImageProcessor.from_pretrained(m, revision=r); AutoModel.from_pretrained(m, revision=r)"
 
 # 런타임 파일시스템은 /tmp 말고는 읽기 전용이다. 캐시를 다시 쓰려 하지 않도록 오프라인으로 못박는다.
 ENV HF_HUB_OFFLINE=1 \
-    TRANSFORMERS_OFFLINE=1
+    TRANSFORMERS_OFFLINE=1 \
+    EMBED_MODEL_ID=${EMBED_MODEL_ID} \
+    EMBED_MODEL_REVISION=${EMBED_MODEL_REVISION}
 
 COPY embedder/ ${LAMBDA_TASK_ROOT}/embedder/
+
+# 배포 뒤 첫 호출에서야 import 오류를 발견하지 않도록 이미지 빌드 안에서 실제 handler를
+# 로드한다. Settings가 import 시 필수 환경변수를 검증하므로 비밀이 아닌 더미 값만 넣는다.
+RUN DB_HOST=localhost \
+    DB_NAME=wes \
+    DB_USER=wes \
+    DB_PASSWORD=build-only \
+    S3_BUCKET=build-only \
+    python -c "from embedder.handler import handler; assert callable(handler)"
 
 CMD ["embedder.handler.handler"]

@@ -261,6 +261,17 @@ jobs:
             --progress-spinner off \
             --strict
 
+      # DINOv3는 게이트 모델이라 빌드 타임 가중치 다운로드에 HF 토큰이 필요하다. 시크릿이
+      # 비어 있으면 buildx가 한참 돌다 "secret hf_token: not found"로 죽으므로 먼저 확인한다.
+      - name: HF 토큰 확인
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "repo 시크릿 HF_TOKEN이 비어 있다. DINOv3 라이선스를 승인한 HF 계정의 토큰을 등록하라." >&2
+            exit 1
+          fi
+
       - name: worker 배포 AWS 자격증명 설정
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -293,6 +304,9 @@ jobs:
           tags: |
             ${{ env.ECR_REPOSITORY_URI }}:${{ github.sha }}
             ${{ env.ECR_REPOSITORY_URI }}:${{ env.DEPLOY_TAG }}
+          # Dockerfile의 게이트 모델 다운로드가 요구하는 빌드 시크릿(id=hf_token,required=true).
+          secrets: |
+            hf_token=${{ secrets.HF_TOKEN }}
 
       - name: immutable digest로 Lambda 교체 및 검증
         env:
