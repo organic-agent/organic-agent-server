@@ -47,12 +47,13 @@ data class AdminImpersonationResponse(
 
 data class AdminImpersonationViewerResponse(
     val userId: Long,
-    val role: String,
+    /** 사용자 고정 권한이 아니라 현재 대리보기 대상에 대한 접근 근거다. */
+    val accessRole: String,
 )
 
 data class AdminImpersonationViewResponse(
     val profile: Map<String, Any?>,
-    val studios: List<AdminImpersonationStudioViewResponse>,
+    val workspaces: List<AdminImpersonationWorkspaceViewResponse>,
     val galleries: List<AdminImpersonationGalleryViewResponse>,
     /** 실제 사용자 API의 권한 검사를 통과해 구성한, BackOffice generic renderer용 read model. */
     val sections: Map<String, List<Map<String, Any?>>> = emptyMap(),
@@ -71,17 +72,22 @@ data class AdminImpersonationViewResponse(
     ),
 )
 
-data class AdminImpersonationStudioViewResponse(
-    val id: Long,
+data class AdminImpersonationWorkspaceViewResponse(
+    val workspaceId: Long,
+    val workspaceType: String,
     val name: String,
-    val galleryUrl: String,
+    val accessRole: String,
+    val galleryUrl: String?,
 )
 
 data class AdminImpersonationGalleryViewResponse(
     val id: Long,
-    val studioId: Long,
+    val workspaceId: Long,
+    val workspaceType: String,
+    val createdByUserId: Long?,
     val title: String,
-    val status: String,
+    val publicStatus: String,
+    val workflowStatus: String,
     val selectionDeadline: ZonedDateTime?,
     val accessRole: String,
     val photoCount: Long,

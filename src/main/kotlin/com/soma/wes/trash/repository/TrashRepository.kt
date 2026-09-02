@@ -42,20 +42,20 @@ class TrashRepository(
             .forEach { photoId -> lockPurgeCoordination("PHOTO", photoId) }
     }
 
-    fun findTrashedGalleries(studioId: Long): List<TrashedGalleryRow> =
+    fun findTrashedGalleries(workspaceIds: Collection<Long>): List<TrashedGalleryRow> =
         jdbcClient.sql(
             """
             SELECT g.id, g.title, g.deleted_at,
                    (SELECT count(*) FROM photos p WHERE p.gallery_id = g.id) AS photo_count
             FROM galleries g
-            WHERE g.studio_id = :studioId
+            WHERE g.workspace_id IN (:workspaceIds)
               AND g.deleted_at IS NOT NULL
               AND ${notProtectedByAdminSql("g.id")}
               AND ${notClaimedForGallerySql("g.id")}
             ORDER BY g.deleted_at DESC, g.id DESC
             """.trimIndent(),
         )
-            .param("studioId", studioId)
+            .param("workspaceIds", workspaceIds)
             .query { rs, _ ->
                 TrashedGalleryRow(
                     galleryId = rs.getLong("id"),
@@ -67,55 +67,55 @@ class TrashRepository(
             .list()
 
     /** 스튜디오 조건이 곧 인가다 — 갤러리가 숨어 있어 GalleryAccessPolicy를 지날 수 없다. */
-    fun isTrashedGalleryOf(galleryId: Long, studioId: Long): Boolean =
+    fun isTrashedGalleryOf(galleryId: Long, workspaceIds: Collection<Long>): Boolean =
         jdbcClient.sql(
             """
             SELECT count(*)
             FROM galleries g
             WHERE g.id = :galleryId
-              AND g.studio_id = :studioId
+              AND g.workspace_id IN (:workspaceIds)
               AND g.deleted_at IS NOT NULL
               AND ${notProtectedByAdminSql("g.id")}
               AND ${notClaimedForGallerySql("g.id")}
             """.trimIndent(),
         )
             .param("galleryId", galleryId)
-            .param("studioId", studioId)
+            .param("workspaceIds", workspaceIds)
             .query { rs, _ -> rs.getLong(1) }
             .single() > 0
 
     /** 즉시 purge 사전 인가. 같은 대상의 만료 claim은 실행부가 lease를 확인해 재사용한다. */
-    fun isTrashedGalleryOfForPurge(galleryId: Long, studioId: Long): Boolean =
+    fun isTrashedGalleryOfForPurge(galleryId: Long, workspaceIds: Collection<Long>): Boolean =
         jdbcClient.sql(
             """
             SELECT count(*)
             FROM galleries g
             WHERE g.id = :galleryId
-              AND g.studio_id = :studioId
+              AND g.workspace_id IN (:workspaceIds)
               AND g.deleted_at IS NOT NULL
               AND ${notProtectedByAdminSql("g.id")}
             """.trimIndent(),
         )
             .param("galleryId", galleryId)
-            .param("studioId", studioId)
+            .param("workspaceIds", workspaceIds)
             .query { rs, _ -> rs.getLong(1) }
             .single() > 0
 
-    fun restoreGallery(galleryId: Long, studioId: Long): Int =
+    fun restoreGallery(galleryId: Long, workspaceIds: Collection<Long>): Int =
         jdbcClient.sql(
             """
             UPDATE galleries
             SET deleted_at = NULL,
                 version = version + 1
             WHERE id = :galleryId
-              AND studio_id = :studioId
+              AND workspace_id IN (:workspaceIds)
               AND deleted_at IS NOT NULL
               AND ${notProtectedByAdminSql("galleries.id")}
               AND ${notClaimedForGallerySql("galleries.id")}
             """.trimIndent(),
         )
             .param("galleryId", galleryId)
-            .param("studioId", studioId)
+            .param("workspaceIds", workspaceIds)
             .update()
 
     /**
@@ -141,18 +141,9 @@ class TrashRepository(
             "SELECT id FROM photo_selections WHERE gallery_id = :galleryId ORDER BY id FOR UPDATE",
             "SELECT id FROM collab_sessions WHERE gallery_id = :galleryId ORDER BY id FOR UPDATE",
             """
-                SELECT p.id
-                FROM collab_photos p
-                JOIN collab_sessions s ON s.id = p.collab_session_id
-                WHERE s.gallery_id = :galleryId
-                ORDER BY p.id
-                FOR UPDATE OF p
-            """.trimIndent(),
-            """
                 SELECT c.id
                 FROM collab_photo_comments c
-                JOIN collab_photos p ON p.id = c.collab_photo_id
-                JOIN collab_sessions s ON s.id = p.collab_session_id
+                JOIN collab_sessions s ON s.id = c.collab_session_id
                 WHERE s.gallery_id = :galleryId
                 ORDER BY c.id
                 FOR UPDATE OF c
@@ -160,8 +151,7 @@ class TrashRepository(
             """
                 SELECT l.id
                 FROM collab_photo_likes l
-                JOIN collab_photos p ON p.id = l.collab_photo_id
-                JOIN collab_sessions s ON s.id = p.collab_session_id
+                JOIN collab_sessions s ON s.id = l.collab_session_id
                 WHERE s.gallery_id = :galleryId
                 ORDER BY l.id
                 FOR UPDATE OF l
@@ -346,24 +336,30 @@ class TrashRepository(
                 SELECT s.id
                 FROM collab_sessions s
                 WHERE EXISTS (
-                    SELECT 1 FROM collab_photos p
-                    WHERE p.collab_session_id = s.id AND p.photo_id IN (:photoIds)
+                    SELECT 1 FROM collab_photo_comments c
+                    WHERE c.collab_session_id = s.id AND c.photo_id IN (:photoIds)
+                ) OR EXISTS (
+                    SELECT 1 FROM collab_photo_likes l
+                    WHERE l.collab_session_id = s.id AND l.photo_id IN (:photoIds)
+                ) OR EXISTS (
+                    SELECT 1
+                    FROM detail_folders d
+                    JOIN photo_category_assignments a ON a.detail_folder_id = d.id
+                    WHERE d.concept_folder_id = s.concept_folder_id
+                      AND a.photo_id IN (:photoIds)
                 )
                 ORDER BY s.id FOR UPDATE OF s
             """.trimIndent(),
-            "SELECT id FROM collab_photos WHERE photo_id IN (:photoIds) ORDER BY id FOR UPDATE",
             """
                 SELECT c.id
                 FROM collab_photo_comments c
-                JOIN collab_photos p ON p.id = c.collab_photo_id
-                WHERE p.photo_id IN (:photoIds)
+                WHERE c.photo_id IN (:photoIds)
                 ORDER BY c.id FOR UPDATE OF c
             """.trimIndent(),
             """
                 SELECT l.id
                 FROM collab_photo_likes l
-                JOIN collab_photos p ON p.id = l.collab_photo_id
-                WHERE p.photo_id IN (:photoIds)
+                WHERE l.photo_id IN (:photoIds)
                 ORDER BY l.id FOR UPDATE OF l
             """.trimIndent(),
             """
@@ -710,8 +706,7 @@ class TrashRepository(
                       AND EXISTS (
                           SELECT 1
                           FROM collab_photo_comments c
-                          JOIN collab_photos p ON p.id = c.collab_photo_id
-                          JOIN collab_sessions s ON s.id = p.collab_session_id
+                          JOIN collab_sessions s ON s.id = c.collab_session_id
                           WHERE c.id = e.resource_id AND s.gallery_id = $galleryIdExpression
                       )
                   )
@@ -742,7 +737,7 @@ class TrashRepository(
                       AND EXISTS (
                           SELECT 1 FROM galleries protected_gallery
                           WHERE protected_gallery.id = $galleryIdExpression
-                            AND protected_gallery.studio_id = root_batch.root_id
+                            AND protected_gallery.workspace_id = root_batch.root_id
                       )
                   )
                   OR (
@@ -750,9 +745,11 @@ class TrashRepository(
                       AND EXISTS (
                           SELECT 1
                           FROM galleries protected_gallery
-                          JOIN studios protected_studio ON protected_studio.id = protected_gallery.studio_id
+                          JOIN workspace_members protected_member
+                            ON protected_member.workspace_id = protected_gallery.workspace_id
+                           AND protected_member.deleted_at IS NULL
                           WHERE protected_gallery.id = $galleryIdExpression
-                            AND protected_studio.user_id = root_batch.root_id
+                            AND protected_member.user_id = root_batch.root_id
                       )
                   )
               )
@@ -809,8 +806,11 @@ class TrashRepository(
                   OR (
                       e.resource_type = 'COLLABORATION'
                       AND EXISTS (
-                          SELECT 1 FROM collab_photos item
-                          WHERE item.collab_session_id = e.resource_id AND item.photo_id = $photoIdExpression
+                          SELECT 1
+                          FROM collab_sessions session
+                          JOIN detail_folders detail ON detail.concept_folder_id = session.concept_folder_id
+                          JOIN photo_category_assignments assignment ON assignment.detail_folder_id = detail.id
+                          WHERE session.id = e.resource_id AND assignment.photo_id = $photoIdExpression
                       )
                   )
                   OR (
@@ -818,8 +818,7 @@ class TrashRepository(
                       AND EXISTS (
                           SELECT 1
                           FROM collab_photo_comments comment
-                          JOIN collab_photos item ON item.id = comment.collab_photo_id
-                          WHERE comment.id = e.resource_id AND item.photo_id = $photoIdExpression
+                          WHERE comment.id = e.resource_id AND comment.photo_id = $photoIdExpression
                       )
                   )
                   OR (
@@ -846,12 +845,16 @@ class TrashRepository(
                   SELECT 1
                   FROM photos protected_photo
                   JOIN galleries protected_gallery ON protected_gallery.id = protected_photo.gallery_id
-                  JOIN studios protected_studio ON protected_studio.id = protected_gallery.studio_id
                   WHERE protected_photo.id = $photoIdExpression
                     AND (
                         (root_batch.root_type = 'GALLERY' AND root_batch.root_id = protected_gallery.id)
-                        OR (root_batch.root_type = 'STUDIO' AND root_batch.root_id = protected_gallery.studio_id)
-                        OR (root_batch.root_type = 'USER' AND root_batch.root_id = protected_studio.user_id)
+                        OR (root_batch.root_type = 'STUDIO' AND root_batch.root_id = protected_gallery.workspace_id)
+                        OR (root_batch.root_type = 'USER' AND EXISTS (
+                            SELECT 1 FROM workspace_members protected_member
+                            WHERE protected_member.workspace_id = protected_gallery.workspace_id
+                              AND protected_member.user_id = root_batch.root_id
+                              AND protected_member.deleted_at IS NULL
+                        ))
                     )
               )
         )
@@ -865,8 +868,7 @@ class TrashRepository(
                       AND EXISTS (
                           SELECT 1
                           FROM collab_photo_comments comment
-                          JOIN collab_photos item ON item.id = comment.collab_photo_id
-                          WHERE comment.id = child.resource_id AND item.photo_id = $photoIdExpression
+                          WHERE comment.id = child.resource_id AND comment.photo_id = $photoIdExpression
                       )
                   )
                   OR (
@@ -874,8 +876,7 @@ class TrashRepository(
                       AND EXISTS (
                           SELECT 1
                           FROM collab_photo_likes reaction
-                          JOIN collab_photos item ON item.id = reaction.collab_photo_id
-                          WHERE reaction.id = child.resource_id AND item.photo_id = $photoIdExpression
+                          WHERE reaction.id = child.resource_id AND reaction.photo_id = $photoIdExpression
                       )
                   )
                   OR (

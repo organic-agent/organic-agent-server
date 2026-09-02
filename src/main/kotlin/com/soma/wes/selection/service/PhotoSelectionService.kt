@@ -59,7 +59,7 @@ class PhotoSelectionService(
      */
     @Transactional
     fun select(galleryId: Long, userId: Long, request: SelectPhotosRequest): PhotoSelectionResponse {
-        galleryAccessPolicy.requireCouple(galleryId, userId)
+        galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
         val gallery = galleryRepository.requireWithLockById(galleryId)
         val selection = loadOrCreate(galleryId)
@@ -107,7 +107,7 @@ class PhotoSelectionService(
      */
     @Transactional
     fun deselect(galleryId: Long, userId: Long, request: DeselectPhotosRequest): PhotoSelectionResponse {
-        galleryAccessPolicy.requireCouple(galleryId, userId)
+        galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
         val gallery = galleryRepository.requireWithLockById(galleryId)
         val selection = photoSelectionRepository.findByGalleryId(galleryId)
@@ -127,7 +127,7 @@ class PhotoSelectionService(
      */
     @Transactional
     fun deselectPhoto(galleryId: Long, photoId: Long, userId: Long) {
-        galleryAccessPolicy.requireCouple(galleryId, userId)
+        galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
         galleryRepository.requireWithLockById(galleryId)
         val selection = photoSelectionRepository.findByGalleryId(galleryId)
@@ -144,7 +144,7 @@ class PhotoSelectionService(
      */
     @Transactional
     fun submit(galleryId: Long, userId: Long): PhotoSelectionResponse {
-        galleryAccessPolicy.requireCouple(galleryId, userId)
+        galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
         val gallery = galleryRepository.requireWithLockById(galleryId)
         val selection = photoSelectionRepository.findByGalleryId(galleryId)
@@ -154,7 +154,7 @@ class PhotoSelectionService(
         // "몇 장을 제출했는지"를 두 값이 다르게 말하지 않는다.
         val items = photoSelectionItemRepository.findAllBySelectionId(selection.requiredId)
         val photos = selectedPhotoResponses(selection.galleryId, items)
-        selection.submit(photos.size, ZonedDateTime.now(clock))
+        selection.submit(photos.size, userId, ZonedDateTime.now(clock))
 
         return PhotoSelectionResponse.of(
             selection = selection,

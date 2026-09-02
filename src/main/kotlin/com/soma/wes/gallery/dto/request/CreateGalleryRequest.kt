@@ -9,6 +9,9 @@ import java.time.ZonedDateTime
 @Schema(description = "갤러리 생성 요청")
 data class CreateGalleryRequest(
 
+    @field:Schema(description = "갤러리를 소유할 PERSONAL 또는 STUDIO 작업공간 id")
+    val workspaceId: Long,
+
     @field:NotBlank
     @field:Size(max = 100)
     @field:Schema(description = "갤러리 이름", example = "김철수 · 이영희 본식")

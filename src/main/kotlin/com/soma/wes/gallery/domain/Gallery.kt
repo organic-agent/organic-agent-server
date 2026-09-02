@@ -27,13 +27,18 @@ import java.time.ZonedDateTime
 @Table(
     name = "galleries",
     indexes = [
-        Index(name = "idx_galleries_studio_id", columnList = "studio_id"),
+        Index(name = "idx_galleries_workspace_id", columnList = "workspace_id"),
+        Index(name = "idx_galleries_created_by_user_id", columnList = "created_by_user_id"),
     ],
 )
 class Gallery(
 
-    @Column(name = "studio_id", nullable = false, updatable = false)
+    /** 기존 호출부의 이름만 studioId이며 실제 저장 의미는 PERSONAL/STUDIO 공통 workspace id다. */
+    @Column(name = "workspace_id", nullable = false, updatable = false)
     val studioId: Long,
+
+    @Column(name = "created_by_user_id", updatable = false)
+    val createdByUserId: Long? = null,
 
     @Column(nullable = false, length = 100)
     var title: String,
@@ -41,6 +46,10 @@ class Gallery(
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     var status: GalleryStatus = GalleryStatus.DRAFT,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "workflow_status", nullable = false, length = 20)
+    var workflowStatus: GalleryWorkflowStatus = GalleryWorkflowStatus.DRAFT,
 
     @Column(name = "selection_deadline")
     var selectionDeadline: ZonedDateTime? = null,
@@ -60,6 +69,9 @@ class Gallery(
 
     val requiredId: Long
         get() = checkNotNull(id) { "저장되지 않은 갤러리입니다." }
+
+    val workspaceId: Long
+        get() = studioId
 
     /** 휴지통에 들어간 시각. null이면 살아 있는 갤러리다. 자세한 규칙은 클래스 KDoc에. */
     @Column(name = "deleted_at")
@@ -126,6 +138,10 @@ class Gallery(
         this.selectionDeadline = selectionDeadline
     }
 
+    fun changeWorkflowStatus(workflowStatus: GalleryWorkflowStatus) {
+        this.workflowStatus = workflowStatus
+    }
+
     companion object {
 
         /** 0장짜리 계약은 없다. 장수를 정하지 않는 계약은 null로 둔다. */
@@ -136,7 +152,8 @@ class Gallery(
         const val MAX_TITLE_LENGTH = 100
 
         fun create(
-            studioId: Long,
+            workspaceId: Long,
+            createdByUserId: Long,
             title: String,
             selectionDeadline: ZonedDateTime?,
             maxSelectablePhotoCount: Int?,
@@ -146,7 +163,8 @@ class Gallery(
             validateDeadlineNotPassed(selectionDeadline, at)
             validateMaxSelectablePhotoCount(maxSelectablePhotoCount)
             return Gallery(
-                studioId = studioId,
+                studioId = workspaceId,
+                createdByUserId = createdByUserId,
                 title = title,
                 selectionDeadline = selectionDeadline,
                 maxSelectablePhotoCount = maxSelectablePhotoCount,

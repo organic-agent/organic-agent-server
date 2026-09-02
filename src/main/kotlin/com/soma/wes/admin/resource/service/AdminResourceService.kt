@@ -11,7 +11,6 @@ import com.soma.wes.admin.resource.dto.ChangeAdminResourceStateRequest
 import com.soma.wes.admin.resource.dto.CreateAdminResourceRequest
 import com.soma.wes.admin.resource.dto.UpdateAdminResourceRequest
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
-import com.soma.wes.admin.resource.repository.AdminUserTypeChange
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -58,9 +57,6 @@ class AdminResourceService(
             before = null,
             after = created.snapshot(),
         )
-        creation.userTypeChange?.let { change ->
-            recordUserTypeChange(actorAdminId, request.reason, sourceAddress, change)
-        }
         created
     }
 
@@ -167,25 +163,6 @@ class AdminResourceService(
             "label" to label,
             "deleted" to deleted,
         ) + fields
-
-    private fun recordUserTypeChange(
-        actorAdminId: Long,
-        reason: String,
-        sourceAddress: String?,
-        change: AdminUserTypeChange,
-    ) {
-        auditService.recordMutation(
-            action = AdminAuditAction.RESOURCE_UPDATED,
-            actorAdminId = actorAdminId,
-            targetType = AdminResourceType.USER.auditTargetType,
-            targetId = change.after.id.toString(),
-            targetLabel = change.after.label,
-            reason = reason.trim(),
-            sourceAddress = sourceAddress,
-            before = change.before.snapshot(),
-            after = change.after.snapshot(),
-        )
-    }
 
     private inline fun <T> translateIntegrityFailure(block: () -> T): T =
         try {

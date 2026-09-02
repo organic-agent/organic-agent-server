@@ -6,7 +6,7 @@ import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
 import com.soma.wes.photo.service.PhotoStorage
-import com.soma.wes.studio.repository.StudioRepository
+import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.trash.config.TrashProperties
 import com.soma.wes.trash.dto.request.EraseTrashedPhotosRequest
 import com.soma.wes.trash.dto.request.RestorePhotosRequest
@@ -31,7 +31,7 @@ import java.time.Clock
  *
  * 인가가 둘로 갈리는 이유: 사진 휴지통은 갤러리가 살아 있으므로 [GalleryAccessPolicy]를
  * 그대로 지나지만, 갤러리 휴지통은 대상이 숨어 있어 그 관문을 지날 수 없다. 대신 쿼리의
- * `studio_id` 조건이 인가를 겸한다 — 내 스튜디오의 휴지통 행이 아니면 없는 것과 같다.
+ * `workspace_id` 조건이 인가를 겸한다 — 내가 속한 작업공간의 휴지통 행이 아니면 없는 것과 같다.
  *
  * 물리 삭제의 S3·DB 경계와 관리자 배치 경쟁 제어는 [TrashEraser]가 담당한다.
  */
@@ -39,7 +39,7 @@ import java.time.Clock
 class TrashService(
     private val trashRepository: TrashRepository,
     private val trashEraser: TrashEraser,
-    private val studioRepository: StudioRepository,
+    private val workspaceMemberRepository: WorkspaceMemberRepository,
     private val galleryAccessPolicy: GalleryAccessPolicy,
     private val photoStorage: PhotoStorage,
     private val trashProperties: TrashProperties,
@@ -49,12 +49,12 @@ class TrashService(
 
     // --- 갤러리 휴지통 ---
 
-    /** 내 스튜디오의 휴지통 갤러리. 스튜디오가 없으면(부부 계정) 빈 목록이다. */
+    /** 내가 속한 모든 작업공간의 휴지통 갤러리. */
     @Transactional(readOnly = true)
     fun listGalleries(userId: Long): List<TrashedGalleryResponse> {
-        val studio = studioRepository.findByUserId(userId) ?: return emptyList()
-
-        return trashRepository.findTrashedGalleries(checkNotNull(studio.id) { "저장되지 않은 스튜디오입니다." })
+        val workspaceIds = workspaceIdsOf(userId)
+        if (workspaceIds.isEmpty()) return emptyList()
+        return trashRepository.findTrashedGalleries(workspaceIds)
             .map { TrashedGalleryResponse.of(it, trashProperties.retention) }
     }
 
@@ -64,9 +64,9 @@ class TrashService(
      */
     @Transactional
     fun restoreGallery(galleryId: Long, userId: Long) {
-        val studioId = requireStudioId(userId)
+        val workspaceIds = requireWorkspaceIds(userId)
 
-        if (trashRepository.restoreGallery(galleryId, studioId) == 0) {
+        if (trashRepository.restoreGallery(galleryId, workspaceIds) == 0) {
             throw TrashException(TrashErrorCode.GALLERY_NOT_IN_TRASH)
         }
     }
@@ -78,8 +78,8 @@ class TrashService(
      * 가리키지 않는 객체가 남는다. URL 수명(30분)이 지나면 다시 시도할 수 있다.
      */
     fun eraseGallery(galleryId: Long, userId: Long) {
-        val studioId = requireStudioId(userId)
-        if (!trashRepository.isTrashedGalleryOfForPurge(galleryId, studioId)) {
+        val workspaceIds = requireWorkspaceIds(userId)
+        if (!trashRepository.isTrashedGalleryOfForPurge(galleryId, workspaceIds)) {
             throw TrashException(TrashErrorCode.GALLERY_NOT_IN_TRASH)
         }
         requireNoActiveUploadUrls(trashRepository.findAllPhotoTargets(galleryId))
@@ -90,11 +90,11 @@ class TrashService(
     }
 
     /** 갤러리 휴지통 연산의 인가 재료. 스튜디오가 없다는 것도 "내 휴지통에 없다"로 답한다. */
-    private fun requireStudioId(userId: Long): Long {
-        val studio = studioRepository.findByUserId(userId)
-            ?: throw TrashException(TrashErrorCode.GALLERY_NOT_IN_TRASH)
-        return checkNotNull(studio.id) { "저장되지 않은 스튜디오입니다." }
-    }
+    private fun workspaceIdsOf(userId: Long): Set<Long> =
+        workspaceMemberRepository.findAllByUserId(userId).map { it.workspaceId }.toSet()
+
+    private fun requireWorkspaceIds(userId: Long): Set<Long> =
+        workspaceIdsOf(userId).ifEmpty { throw TrashException(TrashErrorCode.GALLERY_NOT_IN_TRASH) }
 
     // --- 사진 휴지통 ---
 

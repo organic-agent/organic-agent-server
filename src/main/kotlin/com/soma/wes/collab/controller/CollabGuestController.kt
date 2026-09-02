@@ -1,8 +1,8 @@
 package com.soma.wes.collab.controller
 
-import com.soma.wes.collab.controller.docs.CollabGuestControllerDocs
 import com.soma.wes.collab.dto.request.EnterCollabRequest
 import com.soma.wes.collab.dto.request.WriteCollabCommentRequest
+import com.soma.wes.collab.controller.docs.CollabGuestControllerDocs
 import com.soma.wes.collab.dto.response.CollabCommentResponse
 import com.soma.wes.collab.dto.response.CollabGuestResponse
 import com.soma.wes.collab.dto.response.CollabLandingResponse
@@ -24,45 +24,22 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
-
-/**
- * 하객이 링크 하나로 하는 모든 것. 로그인하지 않고 부른다
- * ([com.soma.wes.security.PublicPaths]).
- *
- * 이 URL 공간 전체가 한 클래스다. 보는 것과 남기는 것의 규칙이 다르긴 하지만
- * — 보는 것은 하객 토큰 없이도 되고 마감된 뒤에도 열려 있는 반면, 남기는 것은 토큰이 필수이고
- * 부부가 고르는 동안에만 열린다 — 그 구분은 [com.soma.wes.collab.support.CollabSessionAccess]와
- * 서비스 둘([CollabGuestQueryService]·[CollabGuestService])이 이미 강제한다. 컨트롤러에서 한 번
- * 더 나누면 강제력 없는 세 번째 사본이 되고, 같은 주소의 API를 찾는 사람이 파일 둘을 뒤져야 한다.
- *
- * 로그인해서 같은 세션을 다루는 경로는 [CollabSessionController]다.
- */
 @RestController
 @RequestMapping("/api/v1/collab/{collabToken}")
 class CollabGuestController(
-    private val collabGuestQueryService: CollabGuestQueryService,
-    private val collabGuestService: CollabGuestService,
+    private val queryService: CollabGuestQueryService,
+    private val service: CollabGuestService,
 ) : CollabGuestControllerDocs {
-
     @GetMapping
-    override fun getLanding(
-        @PathVariable collabToken: String,
-    ): ResponseEntity<CollabLandingResponse> {
-        val result = collabGuestQueryService.getLanding(collabToken)
-
-        return ResponseEntity.ok(result)
-    }
+    override fun getLanding(@PathVariable collabToken: String): ResponseEntity<CollabLandingResponse> =
+        ResponseEntity.ok(queryService.getLanding(collabToken))
 
     @PostMapping("/guests")
     override fun enter(
         @PathVariable collabToken: String,
         @RequestBody request: EnterCollabRequest,
-    ): ResponseEntity<CollabGuestResponse> {
-        val result = collabGuestService.enter(collabToken, request)
-        val status = HttpStatus.CREATED
-
-        return ResponseEntity.status(status).body(result)
-    }
+    ): ResponseEntity<CollabGuestResponse> =
+        ResponseEntity.status(HttpStatus.CREATED).body(service.enter(collabToken, request))
 
     @GetMapping("/photos")
     override fun listPhotos(
@@ -70,37 +47,27 @@ class CollabGuestController(
         @RequestHeader(name = GuestTokenHeader.NAME, required = false) guestToken: String?,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "50") size: Int,
-    ): ResponseEntity<CollabPhotoPageResponse> {
-        val result = collabGuestQueryService.listPhotos(collabToken, guestToken, page, size)
+    ): ResponseEntity<CollabPhotoPageResponse> =
+        ResponseEntity.ok(queryService.listPhotos(collabToken, guestToken, page, size))
 
-        return ResponseEntity.ok(result)
-    }
-
-    @GetMapping("/photos/{collabPhotoId}/comments")
+    @GetMapping("/photos/{photoId}/comments")
     override fun listComments(
         @PathVariable collabToken: String,
-        @PathVariable collabPhotoId: Long,
+        @PathVariable photoId: Long,
         @RequestHeader(name = GuestTokenHeader.NAME, required = false) guestToken: String?,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "50") size: Int,
-    ): ResponseEntity<PageResponse<CollabCommentResponse>> {
-        val result = collabGuestQueryService.listComments(collabToken, collabPhotoId, guestToken, page, size)
+    ): ResponseEntity<PageResponse<CollabCommentResponse>> =
+        ResponseEntity.ok(queryService.listComments(collabToken, photoId, guestToken, page, size))
 
-        return ResponseEntity.ok(result)
-    }
-
-    @PostMapping("/photos/{collabPhotoId}/comments")
+    @PostMapping("/photos/{photoId}/comments")
     override fun writeComment(
         @PathVariable collabToken: String,
-        @PathVariable collabPhotoId: Long,
+        @PathVariable photoId: Long,
         @RequestHeader(name = GuestTokenHeader.NAME, required = false) guestToken: String?,
         @RequestBody request: WriteCollabCommentRequest,
-    ): ResponseEntity<CollabCommentResponse> {
-        val result = collabGuestService.writeComment(collabToken, collabPhotoId, guestToken, request)
-        val status = HttpStatus.CREATED
-
-        return ResponseEntity.status(status).body(result)
-    }
+    ): ResponseEntity<CollabCommentResponse> =
+        ResponseEntity.status(HttpStatus.CREATED).body(service.writeComment(collabToken, photoId, guestToken, request))
 
     @DeleteMapping("/comments/{commentId}")
     override fun deleteComment(
@@ -108,33 +75,27 @@ class CollabGuestController(
         @PathVariable commentId: Long,
         @RequestHeader(name = GuestTokenHeader.NAME, required = false) guestToken: String?,
     ): ResponseEntity<Unit> {
-        collabGuestService.deleteComment(collabToken, commentId, guestToken)
-        val status = HttpStatus.NO_CONTENT
-
-        return ResponseEntity.status(status).build()
+        service.deleteComment(collabToken, commentId, guestToken)
+        return ResponseEntity.noContent().build()
     }
 
-    @PutMapping("/photos/{collabPhotoId}/like")
+    @PutMapping("/photos/{photoId}/like")
     override fun like(
         @PathVariable collabToken: String,
-        @PathVariable collabPhotoId: Long,
+        @PathVariable photoId: Long,
         @RequestHeader(name = GuestTokenHeader.NAME, required = false) guestToken: String?,
     ): ResponseEntity<Unit> {
-        collabGuestService.like(collabToken, collabPhotoId, guestToken)
-        val status = HttpStatus.NO_CONTENT
-
-        return ResponseEntity.status(status).build()
+        service.like(collabToken, photoId, guestToken)
+        return ResponseEntity.noContent().build()
     }
 
-    @DeleteMapping("/photos/{collabPhotoId}/like")
+    @DeleteMapping("/photos/{photoId}/like")
     override fun cancelLike(
         @PathVariable collabToken: String,
-        @PathVariable collabPhotoId: Long,
+        @PathVariable photoId: Long,
         @RequestHeader(name = GuestTokenHeader.NAME, required = false) guestToken: String?,
     ): ResponseEntity<Unit> {
-        collabGuestService.cancelLike(collabToken, collabPhotoId, guestToken)
-        val status = HttpStatus.NO_CONTENT
-
-        return ResponseEntity.status(status).build()
+        service.cancelLike(collabToken, photoId, guestToken)
+        return ResponseEntity.noContent().build()
     }
 }

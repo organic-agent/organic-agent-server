@@ -14,8 +14,6 @@ import com.soma.wes.gallery.repository.requireWithLockById
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.gallery.support.GalleryInviteUrlResolver
 import com.soma.wes.global.SecureTokenGenerator
-import com.soma.wes.user.repository.UserRepository
-import com.soma.wes.user.repository.requireById
 import java.time.Clock
 import java.time.Duration
 import java.time.ZonedDateTime
@@ -28,7 +26,6 @@ class GalleryInviteService(
     private val galleryRepository: GalleryRepository,
     private val galleryInviteRepository: GalleryInviteRepository,
     private val galleryMemberRepository: GalleryMemberRepository,
-    private val userRepository: UserRepository,
     private val galleryAccessPolicy: GalleryAccessPolicy,
     private val tokenGenerator: SecureTokenGenerator,
     private val urlResolver: GalleryInviteUrlResolver,
@@ -120,18 +117,10 @@ class GalleryInviteService(
             throw GalleryException(GalleryErrorCode.GALLERY_MEMBER_LIMIT_EXCEEDED)
         }
 
-        confirmClient(userId)
-
         val member = galleryMemberRepository.save(
             GalleryMember(galleryId = invite.galleryId, userId = userId),
         )
         return GalleryInviteAcceptResponse.from(member)
     }
 
-    /**
-     * 예비 부부의 온보딩. 초대 링크로만 가입할 수 있으므로 수락이 곧 종류 확정이다.
-     */
-    private fun confirmClient(userId: Long) {
-        userRepository.requireById(userId).selectClientTypeIfUnset()
-    }
 }

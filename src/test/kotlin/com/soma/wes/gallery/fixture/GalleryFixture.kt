@@ -6,7 +6,6 @@ import com.soma.wes.gallery.domain.GalleryStatus
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.studio.fixture.StudioFixture
-import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.fixture.UserFixture
 import org.springframework.stereotype.Component
@@ -16,7 +15,6 @@ import java.time.ZonedDateTime
 class GalleryFixture(
     private val galleryRepository: GalleryRepository,
     private val galleryMemberRepository: GalleryMemberRepository,
-    private val studioRepository: StudioRepository,
     private val studioFixture: StudioFixture,
     private val userFixture: UserFixture,
 ) {
@@ -27,10 +25,11 @@ class GalleryFixture(
         maxRetouchRoundCount: Int? = null,
     ): OpenGallery {
         val photographer = studioFixture.작가()
-        val studio = studioRepository.findByUserId(photographer.id!!)!!
+        val studio = studioFixture.소유_스튜디오(photographer)
         val gallery = galleryRepository.save(
             Gallery(
                 studioId = studio.id!!,
+                createdByUserId = photographer.requiredId,
                 title = "본식",
                 status = GalleryStatus.OPEN,
                 maxSelectablePhotoCount = maxSelectablePhotoCount,

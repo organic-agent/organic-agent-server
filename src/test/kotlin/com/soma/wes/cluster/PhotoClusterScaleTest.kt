@@ -7,6 +7,8 @@ import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
+import com.soma.wes.workspace.domain.Workspace
+import com.soma.wes.workspace.repository.WorkspaceRepository
 import com.soma.wes.support.TestcontainersConfiguration
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Tag
@@ -37,6 +39,7 @@ class PhotoClusterScaleTest @Autowired constructor(
     private val photoSimilarityRepository: PhotoSimilarityRepository,
     private val studioRepository: StudioRepository,
     private val galleryRepository: GalleryRepository,
+    private val workspaceRepository: WorkspaceRepository,
 ) {
 
     private val sequence = AtomicLong(System.nanoTime())
@@ -109,15 +112,16 @@ class PhotoClusterScaleTest @Autowired constructor(
 
     private fun createGallery(): Long {
         val suffix = sequence.incrementAndGet()
+        val workspace = workspaceRepository.save(Workspace.studio("클러스터 규모 테스트"))
         val studio = studioRepository.save(
             Studio(
-                userId = suffix,
+                userId = workspace.requiredId,
                 name = "클러스터 규모 테스트",
                 galleryUrl = "cluster-scale-$suffix",
             ),
         )
         val gallery = galleryRepository.save(
-            Gallery(studioId = checkNotNull(studio.id), title = "규모 테스트"),
+            Gallery(studioId = studio.id, title = "규모 테스트"),
         )
         return checkNotNull(gallery.id)
     }

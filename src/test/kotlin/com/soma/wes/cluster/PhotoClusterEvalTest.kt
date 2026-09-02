@@ -12,6 +12,8 @@ import com.soma.wes.photo.domain.PhotoMetadata
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
+import com.soma.wes.workspace.domain.Workspace
+import com.soma.wes.workspace.repository.WorkspaceRepository
 import com.soma.wes.support.TestSequence
 import com.soma.wes.support.TestcontainersConfiguration
 import java.time.LocalDateTime
@@ -50,6 +52,7 @@ class PhotoClusterEvalTest @Autowired constructor(
     private val galleryRepository: GalleryRepository,
     private val objectMapper: ObjectMapper,
     private val clusterProperties: ClusterProperties,
+    private val workspaceRepository: WorkspaceRepository,
 ) {
 
     @Test
@@ -197,15 +200,16 @@ class PhotoClusterEvalTest @Autowired constructor(
 
     private fun createGallery(): Long {
         val suffix = TestSequence.next()
+        val workspace = workspaceRepository.save(Workspace.studio("클러스터 평가"))
         val studio = studioRepository.save(
             Studio(
-                userId = suffix,
+                userId = workspace.requiredId,
                 name = "클러스터 평가",
                 galleryUrl = "cluster-eval-$suffix",
             ),
         )
         val gallery = galleryRepository.save(
-            Gallery(studioId = checkNotNull(studio.id), title = "평가 갤러리"),
+            Gallery(studioId = studio.id, title = "평가 갤러리"),
         )
         return checkNotNull(gallery.id)
     }

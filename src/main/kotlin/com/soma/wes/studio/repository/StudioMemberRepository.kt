@@ -7,8 +7,8 @@ import org.springframework.data.jpa.repository.JpaRepository
 interface StudioMemberRepository : JpaRepository<StudioMember, Long> {
     fun findAllByUserIdAndRoleIn(userId: Long, roles: Collection<StudioMemberRole>): List<StudioMember>
 
-    fun existsByStudioIdAndUserIdAndRoleIn(
-        studioId: Long,
+    fun existsByWorkspaceIdAndUserIdAndRoleIn(
+        workspaceId: Long,
         userId: Long,
         roles: Collection<StudioMemberRole>,
     ): Boolean

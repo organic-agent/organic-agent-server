@@ -2,8 +2,6 @@ package com.soma.wes.user.domain
 
 import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.global.BaseEntity
-import com.soma.wes.user.exception.UserErrorCode
-import com.soma.wes.user.exception.UserException
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
@@ -46,10 +44,6 @@ class User(
     @Column(nullable = false, length = 20)
     var role: Role = Role.USER,
 
-    @Enumerated(EnumType.STRING)
-    @Column(length = 20)
-    var userType: UserType? = null,
-
 ) : BaseEntity() {
 
     @Column(name = "deleted_at")
@@ -74,16 +68,4 @@ class User(
         this.role = role
     }
 
-    fun selectPhotographerType() {
-        if (userType != null && userType != UserType.PHOTOGRAPHER) {
-            throw UserException(UserErrorCode.USER_TYPE_ALREADY_SELECTED)
-        }
-        userType = UserType.PHOTOGRAPHER
-    }
-
-    fun selectClientTypeIfUnset() {
-        if (userType == null) {
-            userType = UserType.CLIENT
-        }
-    }
 }

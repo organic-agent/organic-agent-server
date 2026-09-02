@@ -65,7 +65,7 @@ class AdminWorkflowControllerTest @Autowired constructor(
             AdminResourceType.STUDIO,
             CreateAdminResourceRequest(
                 "컨트롤러 스튜디오",
-                mapOf("userId" to user.id, "name" to "컨트롤러 스튜디오", "galleryUrl" to "workflow-controller"),
+                mapOf("ownerUserId" to user.id, "name" to "컨트롤러 스튜디오", "galleryUrl" to "workflow-controller"),
             ),
             "127.0.0.1",
         )

@@ -9,7 +9,10 @@ import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.repository.requireById
 import com.soma.wes.studio.repository.StudioRepository
-import com.soma.wes.studio.repository.StudioMemberRepository
+import com.soma.wes.workspace.domain.WorkspaceRole
+import com.soma.wes.workspace.domain.WorkspaceType
+import com.soma.wes.workspace.repository.WorkspaceMemberRepository
+import com.soma.wes.workspace.repository.WorkspaceRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -23,42 +26,58 @@ class GalleryAccessPolicy(
     private val galleryRepository: GalleryRepository,
     private val galleryMemberRepository: GalleryMemberRepository,
     private val studioRepository: StudioRepository,
-    private val studioMemberRepository: StudioMemberRepository,
+    private val workspaceRepository: WorkspaceRepository,
+    private val workspaceMemberRepository: WorkspaceMemberRepository,
     private val clock: Clock,
 ) {
 
     /** 갤러리 상태 전이·계약 장수·업로드 URL 발급·임베딩 실행·초대 발급/폐기·제출 철회. */
     @Transactional(readOnly = true)
-    fun requirePhotographer(galleryId: Long, userId: Long): Gallery {
+    fun requireManager(galleryId: Long, userId: Long): Gallery {
         val gallery = galleryRepository.requireById(galleryId)
-        if (!isPhotographer(gallery, userId)) {
+        if (!isManager(gallery, userId)) {
             throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
         }
         return gallery
     }
 
+    @Transactional(readOnly = true)
+    fun requirePhotographer(galleryId: Long, userId: Long): Gallery = requireManager(galleryId, userId)
+
     /**
      * 초대 수락.
      */
     @Transactional(readOnly = true)
-    fun requireNotPhotographer(galleryId: Long, userId: Long) {
+    fun requireNotManager(galleryId: Long, userId: Long) {
         val gallery = galleryRepository.requireById(galleryId)
-        if (isPhotographer(gallery, userId)) {
+        if (isManager(gallery, userId)) {
             throw GalleryException(GalleryErrorCode.MANAGER_CANNOT_ACCEPT_INVITE)
         }
     }
+
+    @Transactional(readOnly = true)
+    fun requireNotPhotographer(galleryId: Long, userId: Long) = requireNotManager(galleryId, userId)
 
     /**
      * 선택 앨범의 담기·빼기·제출, 협업 세션 개설과 큐레이션.
      */
     @Transactional(readOnly = true)
-    fun requireCouple(galleryId: Long, userId: Long): GalleryMember {
+    fun requireSelectionEditor(galleryId: Long, userId: Long): Gallery {
         val gallery = galleryRepository.requireById(galleryId)
-        val member = findMember(galleryId, userId)
+        val workspace = workspaceRepository.findById(gallery.workspaceId).orElse(null)
+            ?: throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        val invited = galleryMemberRepository.findByGalleryIdAndUserId(galleryId, userId) != null
+        val personalOwner = workspace.type == WorkspaceType.PERSONAL && isManager(gallery, userId)
+        if (!invited && !personalOwner) {
+            throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        }
 
         requireSelectable(gallery)
-        return member
+        return gallery
     }
+
+    @Transactional(readOnly = true)
+    fun requireCouple(galleryId: Long, userId: Long): Gallery = requireSelectionEditor(galleryId, userId)
 
     /**
      * 갤러리 상세, 사진 목록, 선택 앨범 조회, 협업 결과 조회.
@@ -66,7 +85,7 @@ class GalleryAccessPolicy(
     @Transactional(readOnly = true)
     fun requireViewer(galleryId: Long, userId: Long): Gallery {
         val gallery = galleryRepository.requireById(galleryId)
-        if (isPhotographer(gallery, userId)) {
+        if (isManager(gallery, userId)) {
             return gallery
         }
 
@@ -82,24 +101,27 @@ class GalleryAccessPolicy(
      * 클러스터 조회, 폴더 전반, 사진 상세, 별점 주기/지우기.
      */
     @Transactional(readOnly = true)
-    fun requirePhotographerOrCouple(galleryId: Long, userId: Long): Gallery {
+    fun requireManagerOrSelectionEditor(galleryId: Long, userId: Long): Gallery {
         val gallery = galleryRepository.requireById(galleryId)
-        if (isPhotographer(gallery, userId)) {
+        if (isManager(gallery, userId)) {
             return gallery
         }
-
-        findMember(galleryId, userId)
-        requireSelectable(gallery)
-        return gallery
+        return requireSelectionEditor(galleryId, userId)
     }
 
-    private fun isPhotographer(gallery: Gallery, userId: Long): Boolean {
-        if (!studioRepository.existsByIdAndSuspendedAtIsNull(gallery.studioId)) return false
-        return studioRepository.existsByIdAndUserId(gallery.studioId, userId) ||
-            studioMemberRepository.existsByStudioIdAndUserIdAndRoleIn(
-                gallery.studioId,
+    @Transactional(readOnly = true)
+    fun requirePhotographerOrCouple(galleryId: Long, userId: Long): Gallery =
+        requireManagerOrSelectionEditor(galleryId, userId)
+
+    private fun isManager(gallery: Gallery, userId: Long): Boolean {
+        val workspace = workspaceRepository.findById(gallery.workspaceId).orElse(null) ?: return false
+        if (workspace.type == WorkspaceType.STUDIO &&
+            !studioRepository.existsByIdAndSuspendedAtIsNull(gallery.workspaceId)
+        ) return false
+        return workspaceMemberRepository.existsByWorkspaceIdAndUserIdAndRoleIn(
+                gallery.workspaceId,
                 userId,
-                ACTIVE_STUDIO_ROLES,
+                ACTIVE_WORKSPACE_ROLES,
             )
     }
 
@@ -117,6 +139,6 @@ class GalleryAccessPolicy(
     }
 
     companion object {
-        private val ACTIVE_STUDIO_ROLES = com.soma.wes.studio.domain.StudioMemberRole.entries
+        private val ACTIVE_WORKSPACE_ROLES = WorkspaceRole.entries
     }
 }

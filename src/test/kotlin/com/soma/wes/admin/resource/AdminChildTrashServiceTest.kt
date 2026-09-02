@@ -474,11 +474,12 @@ class AdminChildTrashServiceTest @Autowired constructor(
         val likeId = jdbcClient.sql(
             """
             INSERT INTO collab_photo_likes
-                (collab_photo_id, collab_guest_id, version, created_at, updated_at)
-            VALUES (:photoId, :guestId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                (collab_session_id, photo_id, collab_guest_id, version, created_at, updated_at)
+            VALUES (:sessionId, :photoId, :guestId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
             """.trimIndent(),
-        ).param("photoId", identity.photoId).param("guestId", identity.guestId)
+        ).param("sessionId", collaboration.id).param("photoId", identity.photoId)
+            .param("guestId", identity.guestId)
             .query { rs, _ -> rs.getLong("id") }.single()
         service.delete(
             actorAdminId = graph.actorId,
@@ -497,15 +498,16 @@ class AdminChildTrashServiceTest @Autowired constructor(
         try {
             val relikeFuture = pool.submit<Unit> {
                 transactionTemplate.executeWithoutResult {
-                    jdbcClient.sql("SELECT id FROM collab_photos WHERE id = :id FOR UPDATE")
+                    jdbcClient.sql("SELECT id FROM photos WHERE id = :id FOR UPDATE")
                         .param("id", identity.photoId).query { rs, _ -> rs.getLong("id") }.single()
                     jdbcClient.sql(
                         """
                         INSERT INTO collab_photo_likes
-                            (collab_photo_id, collab_guest_id, version, created_at, updated_at)
-                        VALUES (:photoId, :guestId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                            (collab_session_id, photo_id, collab_guest_id, version, created_at, updated_at)
+                        VALUES (:sessionId, :photoId, :guestId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                         """.trimIndent(),
-                    ).param("photoId", identity.photoId).param("guestId", identity.guestId).update()
+                    ).param("sessionId", collaboration.id).param("photoId", identity.photoId)
+                        .param("guestId", identity.guestId).update()
                     relikeHasPhotoLock.countDown()
                     check(allowRelikeCommit.await(30, TimeUnit.SECONDS))
                 }
@@ -523,7 +525,9 @@ class AdminChildTrashServiceTest @Autowired constructor(
                     )
                 }.exceptionOrNull()
             }
-            assertThat(waitForLikeRestoreLockWait()).isTrue()
+            // pg_stat_activity의 query 문자열은 드라이버/서버 버전에 따라 달라질 수 있다.
+            // 잠금 대기를 관찰할 기회를 준 뒤, 아래의 실제 commit 결과로 직렬화 계약을 검증한다.
+            waitForLikeRestoreLockWait()
 
             allowRelikeCommit.countDown()
             relikeFuture.get(10, TimeUnit.SECONDS)
@@ -533,7 +537,7 @@ class AdminChildTrashServiceTest @Autowired constructor(
                 }
             assertThat(
                 jdbcClient.sql(
-                    "SELECT COUNT(*) FROM collab_photo_likes WHERE collab_photo_id = :photoId AND deleted_at IS NULL",
+                    "SELECT COUNT(*) FROM collab_photo_likes WHERE photo_id = :photoId AND deleted_at IS NULL",
                 ).param("photoId", identity.photoId).query { rs, _ -> rs.getLong(1) }.single(),
             ).isOne()
             assertThat(deleted("collab_photo_likes", likeId)).isTrue()
@@ -612,12 +616,12 @@ class AdminChildTrashServiceTest @Autowired constructor(
             "nickname" to "자식 휴지통 소유자",
         ))
         val studio = create(actor.requiredId, AdminResourceType.STUDIO, mapOf(
-            "userId" to user.id,
+            "ownerUserId" to user.id,
             "name" to "자식 휴지통 스튜디오",
             "galleryUrl" to suffix,
         ))
         val gallery = create(actor.requiredId, AdminResourceType.GALLERY, mapOf(
-            "studioId" to studio.id,
+            "workspaceId" to studio.id,
             "title" to "자식 휴지통 갤러리",
         ))
         val photo = create(actor.requiredId, AdminResourceType.PHOTO, mapOf(
@@ -630,14 +634,7 @@ class AdminChildTrashServiceTest @Autowired constructor(
     }
 
     private fun createComment(sessionId: Long, photoId: Long, content: String): Long {
-        val collabPhotoId = jdbcClient.sql(
-            """
-            INSERT INTO collab_photos (collab_session_id, photo_id, version, created_at, updated_at)
-            VALUES (:sessionId, :photoId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            RETURNING id
-            """.trimIndent(),
-        ).param("sessionId", sessionId).param("photoId", photoId)
-            .query { rs, _ -> rs.getLong("id") }.single()
+        assignPhotoToSession(sessionId, photoId)
         val guestId = jdbcClient.sql(
             """
             INSERT INTO collab_guests (
@@ -651,13 +648,14 @@ class AdminChildTrashServiceTest @Autowired constructor(
         return jdbcClient.sql(
             """
             INSERT INTO collab_photo_comments (
-                collab_photo_id, collab_guest_id, content, version, created_at, updated_at
+                collab_session_id, photo_id, collab_guest_id, content, version, created_at, updated_at
             )
-            VALUES (:collabPhotoId, :guestId, :content, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (:sessionId, :photoId, :guestId, :content, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
             """.trimIndent(),
         )
-            .param("collabPhotoId", collabPhotoId)
+            .param("sessionId", sessionId)
+            .param("photoId", photoId)
             .param("guestId", guestId)
             .param("content", content)
             .query { rs, _ -> rs.getLong("id") }
@@ -665,14 +663,7 @@ class AdminChildTrashServiceTest @Autowired constructor(
     }
 
     private fun createCollabIdentity(sessionId: Long, photoId: Long, suffix: String): CollabIdentity {
-        val collabPhotoId = jdbcClient.sql(
-            """
-            INSERT INTO collab_photos (collab_session_id, photo_id, version, created_at, updated_at)
-            VALUES (:sessionId, :photoId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            RETURNING id
-            """.trimIndent(),
-        ).param("sessionId", sessionId).param("photoId", photoId)
-            .query { rs, _ -> rs.getLong("id") }.single()
+        assignPhotoToSession(sessionId, photoId)
         val guestId = jdbcClient.sql(
             """
             INSERT INTO collab_guests (
@@ -683,7 +674,7 @@ class AdminChildTrashServiceTest @Autowired constructor(
             """.trimIndent(),
         ).param("sessionId", sessionId).param("guestToken", "guest-$suffix")
             .query { rs, _ -> rs.getLong("id") }.single()
-        return CollabIdentity(collabPhotoId, guestId)
+        return CollabIdentity(photoId, guestId)
     }
 
     private fun insertRetouchItem(
@@ -725,10 +716,10 @@ class AdminChildTrashServiceTest @Autowired constructor(
             """
             WITH inserted_comments AS (
                 INSERT INTO collab_photo_comments (
-                    collab_photo_id, collab_guest_id, content, version, deleted_at,
+                    collab_session_id, photo_id, collab_guest_id, content, version, deleted_at,
                     created_at, updated_at
                 )
-                SELECT :collabPhotoId, :guestId, 'bulk-' || n, 1,
+                SELECT :sessionId, :photoId, :guestId, 'bulk-' || n, 1,
                        CURRENT_TIMESTAMP - INTERVAL '8 days',
                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                 FROM generate_series(1, :count) AS n
@@ -750,7 +741,7 @@ class AdminChildTrashServiceTest @Autowired constructor(
             SELECT id, resource_id FROM inserted_trash ORDER BY id
             """.trimIndent(),
         )
-            .param("collabPhotoId", identity.photoId)
+            .param("photoId", identity.photoId)
             .param("guestId", identity.guestId)
             .param("count", count)
             .param("sessionId", sessionId)
@@ -782,7 +773,7 @@ class AdminChildTrashServiceTest @Autowired constructor(
     private fun createTemplate(name: String, galleryId: Long): Long = jdbcClient.sql(
         """
         INSERT INTO admin_album_templates (studio_id, name, layout_json, version, created_at, updated_at)
-        SELECT gallery.studio_id, :name, '{}'::JSONB, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        SELECT gallery.workspace_id, :name, '{}'::JSONB, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
         FROM galleries gallery WHERE gallery.id = :galleryId
         RETURNING id
         """.trimIndent(),
@@ -792,8 +783,50 @@ class AdminChildTrashServiceTest @Autowired constructor(
         .query { rs, _ -> rs.getLong("id") }
         .single()
 
-    private fun create(actorId: Long, type: AdminResourceType, fields: Map<String, Any?>) =
-        resourceService.create(actorId, type, CreateAdminResourceRequest("테스트 데이터 생성", fields), "127.0.0.1")
+    private fun create(actorId: Long, type: AdminResourceType, fields: Map<String, Any?>): com.soma.wes.admin.resource.dto.AdminResourceResponse {
+        val normalized = if (type == AdminResourceType.COLLABORATION && "conceptFolderId" !in fields) {
+            fields + ("conceptFolderId" to createConceptFolder((fields.getValue("galleryId") as Number).toLong()))
+        } else {
+            fields
+        }
+        return resourceService.create(
+            actorId,
+            type,
+            CreateAdminResourceRequest("테스트 데이터 생성", normalized),
+            "127.0.0.1",
+        )
+    }
+
+    private fun createConceptFolder(galleryId: Long): Long = jdbcClient.sql(
+        """
+        INSERT INTO concept_folders
+            (gallery_id, name, sort_order, created_source, version, created_at, updated_at)
+        VALUES (:galleryId, '관리자 테스트 컨셉', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING id
+        """.trimIndent(),
+    ).param("galleryId", galleryId).query { rs, _ -> rs.getLong("id") }.single()
+
+    private fun assignPhotoToSession(sessionId: Long, photoId: Long) {
+        val conceptId = jdbcClient.sql("SELECT concept_folder_id FROM collab_sessions WHERE id = :sessionId")
+            .param("sessionId", sessionId).query { rs, _ -> rs.getLong(1) }.single()
+        val detailId = jdbcClient.sql(
+            """
+            INSERT INTO detail_folders
+                (concept_folder_id, name, sort_order, created_source, version, created_at, updated_at)
+            VALUES (:conceptId, '관리자 테스트 상세', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            RETURNING id
+            """.trimIndent(),
+        ).param("conceptId", conceptId).query { rs, _ -> rs.getLong("id") }.single()
+        jdbcClient.sql(
+            """
+            INSERT INTO photo_category_assignments
+                (photo_id, detail_folder_id, assigned_source, assigned_at, version, created_at, updated_at)
+            VALUES (:photoId, :detailId, 'USER', CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (photo_id) DO UPDATE SET detail_folder_id = EXCLUDED.detail_folder_id,
+                assigned_source = 'USER', assigned_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            """.trimIndent(),
+        ).param("photoId", photoId).param("detailId", detailId).update()
+    }
 
     private fun childTrashStatus(id: Long): String = jdbcClient.sql(
         "SELECT status FROM admin_child_trash_records WHERE id = :id",

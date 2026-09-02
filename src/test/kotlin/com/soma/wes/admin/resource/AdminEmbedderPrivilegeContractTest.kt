@@ -6,7 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.core.io.ClassPathResource
 import javax.sql.DataSource
 
-/** V42의 column grant가 worker의 실제 SET/WHERE 표현식을 실행할 수 있는지 PostgreSQL로 검증한다. */
+/** 단일 V1 baseline의 column grant가 worker의 실제 SET/WHERE 표현식을 실행할 수 있는지 검증한다. */
 @IntegrationTest
 class AdminEmbedderPrivilegeContractTest @Autowired constructor(
     private val dataSource: DataSource,
@@ -19,7 +19,7 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
                 statement.execute("DROP ROLE IF EXISTS embedder")
                 statement.execute("CREATE ROLE embedder NOLOGIN")
                 try {
-                    statement.execute(v42GrantBlock())
+                    statement.execute(embedderGrantBlock())
                     statement.execute("SET ROLE embedder")
                     try {
                         statementsUsedByWorker.forEach { sql -> statement.execute(sql) }
@@ -34,12 +34,12 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
         }
     }
 
-    private fun v42GrantBlock(): String {
-        val migration = ClassPathResource("db/migration/V42__add_photo_technical_quality.sql")
+    private fun embedderGrantBlock(): String {
+        val migration = ClassPathResource("db/migration/V1__baseline.sql")
             .inputStream.bufferedReader().use { it.readText() }
         val start = migration.indexOf("DO \$\$")
         val end = migration.indexOf("\$\$;", start)
-        check(start >= 0 && end >= 0) { "V42 embedder grant block not found" }
+        check(start >= 0 && end >= 0) { "V1 embedder grant block not found" }
         return migration.substring(start, end + 3)
     }
 

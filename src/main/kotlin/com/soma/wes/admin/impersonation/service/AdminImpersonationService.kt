@@ -57,7 +57,7 @@ class AdminImpersonationService(
             adminId = actor.id,
             adminSessionId = actor.adminSessionId,
             viewerUserId = viewer.userId,
-            viewerRole = viewer.role,
+            viewerAccessRole = viewer.accessRole,
             targetType = request.targetType,
             targetId = request.targetId,
             targetLabel = requireNotNull(
@@ -164,14 +164,14 @@ class AdminImpersonationService(
     }
 
     private fun AdminImpersonationRepository.Session.toResponse(actor: AdminLoginUser): AdminImpersonationResponse {
-        val viewer = AdminImpersonationViewRepository.Viewer(viewerUserId, viewerRole)
+        val viewer = AdminImpersonationViewRepository.Viewer(viewerUserId, viewerAccessRole)
         return AdminImpersonationResponse(
             id = id,
             correlationId = currentRequestCorrelationId(),
             admin = AdminImpersonationAdminResponse(actor.id, actor.username, actor.displayName),
             targetType = targetType,
             targetId = targetId,
-            viewer = AdminImpersonationViewerResponse(viewerUserId, viewerRole),
+            viewer = AdminImpersonationViewerResponse(viewerUserId, viewerAccessRole),
             view = readModelService.view(targetType, targetId, viewer),
             startedAt = startedAt,
             expiresAt = expiresAt,

@@ -12,6 +12,8 @@ import com.soma.wes.trash.RecordingTrashPhotoStorage
 import com.soma.wes.trash.RecordingTrashPhotoStorageConfig
 import com.soma.wes.trash.config.TrashProperties
 import com.soma.wes.trash.repository.TrashRepository
+import com.soma.wes.workspace.domain.Workspace
+import com.soma.wes.workspace.repository.WorkspaceRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.BeforeEach
@@ -47,6 +49,7 @@ class TrashEraserTest @Autowired constructor(
     private val transactionTemplate: TransactionTemplate,
     private val photoStorage: RecordingTrashPhotoStorage,
     private val trashProperties: TrashProperties,
+    private val workspaceRepository: WorkspaceRepository,
 ) {
 
     private val sequence = AtomicLong(System.nanoTime())
@@ -286,7 +289,7 @@ class TrashEraserTest @Autowired constructor(
         trashGallery(galleryId, expiredAt())
         val studioId = checkNotNull(
             jdbcTemplate.queryForObject(
-                "SELECT studio_id FROM galleries WHERE id = ?",
+                "SELECT workspace_id FROM galleries WHERE id = ?",
                 Long::class.java,
                 galleryId,
             ),
@@ -455,14 +458,15 @@ class TrashEraserTest @Autowired constructor(
     // --- helpers ---
 
     private fun createGallery(): Long {
+        val workspace = workspaceRepository.save(Workspace.studio("테스트 스튜디오"))
         val studio = studioRepository.save(
             Studio(
-                userId = sequence.incrementAndGet(),
+                userId = workspace.requiredId,
                 name = "테스트 스튜디오",
                 galleryUrl = "eraser-${sequence.incrementAndGet()}",
             ),
         )
-        return checkNotNull(galleryRepository.save(Gallery(studioId = checkNotNull(studio.id), title = "본식")).id)
+        return checkNotNull(galleryRepository.save(Gallery(studioId = studio.id, title = "본식")).id)
     }
 
     private fun savePhoto(galleryId: Long): Photo =
@@ -491,12 +495,20 @@ class TrashEraserTest @Autowired constructor(
     private fun insertCollabSession(galleryId: Long, suffix: String): Long = checkNotNull(
         jdbcTemplate.queryForObject(
             """
+            WITH concept AS (
+                INSERT INTO concept_folders
+                    (gallery_id, name, sort_order, created_source, version, created_at, updated_at)
+                VALUES (?, ?, 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                RETURNING id
+            )
             INSERT INTO collab_sessions
-                (gallery_id, name, collab_token, version, created_at, updated_at)
-            VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                (gallery_id, concept_folder_id, name, collab_token, version, created_at, updated_at)
+            SELECT ?, concept.id, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP FROM concept
             RETURNING id
             """.trimIndent(),
             Long::class.java,
+            galleryId,
+            "concept-$suffix",
             galleryId,
             suffix,
             "token-$suffix-${sequence.incrementAndGet()}",

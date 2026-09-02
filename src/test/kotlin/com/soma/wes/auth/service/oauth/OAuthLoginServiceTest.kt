@@ -13,8 +13,12 @@ import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.TestcontainersConfiguration
 import com.soma.wes.user.domain.User
-import com.soma.wes.user.domain.UserType
 import com.soma.wes.user.repository.UserRepository
+import com.soma.wes.workspace.domain.Workspace
+import com.soma.wes.workspace.domain.WorkspaceMember
+import com.soma.wes.workspace.domain.WorkspaceRole
+import com.soma.wes.workspace.repository.WorkspaceMemberRepository
+import com.soma.wes.workspace.repository.WorkspaceRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.DisplayName
@@ -53,6 +57,8 @@ class OAuthLoginServiceTest @Autowired constructor(
     private val galleryRepository: GalleryRepository,
     private val galleryInviteRepository: GalleryInviteRepository,
     private val galleryMemberRepository: GalleryMemberRepository,
+    private val workspaceRepository: WorkspaceRepository,
+    private val workspaceMemberRepository: WorkspaceMemberRepository,
 ) {
 
     @MockitoBean
@@ -145,7 +151,6 @@ class OAuthLoginServiceTest @Autowired constructor(
             // then
             assertThat(response.galleryId).isEqualTo(gallery.id)
             val user = checkNotNull(userRepository.findByProviderAndProviderId(OAuthProvider.KAKAO, providerId))
-            assertThat(user.userType).isEqualTo(UserType.CLIENT)
             assertThat(galleryMemberRepository.findByGalleryIdAndUserId(gallery.id!!, user.id!!)).isNotNull()
         }
 
@@ -178,9 +183,8 @@ class OAuthLoginServiceTest @Autowired constructor(
             assertSoftly { softly ->
                 softly.assertThat(response.galleryId).isNull()
                 softly.assertThat(response.accessToken).isNotBlank()
-                // 수락을 안 했으므로 종류도 아직 정해지지 않는다.
-                softly.assertThat(userRepository.findByProviderAndProviderId(OAuthProvider.KAKAO, providerId)?.userType)
-                    .isNull()
+                softly.assertThat(userRepository.findByProviderAndProviderId(OAuthProvider.KAKAO, providerId))
+                    .isNotNull()
             }
         }
 
@@ -248,11 +252,20 @@ class OAuthLoginServiceTest @Autowired constructor(
                 email = "photographer-$suffix@example.com",
             ),
         )
+        val workspace = workspaceRepository.save(Workspace.studio("스튜디오"))
+        workspaceMemberRepository.save(
+            WorkspaceMember(workspace.requiredId, photographer.requiredId, WorkspaceRole.OWNER),
+        )
         val studio = studioRepository.save(
-            Studio(userId = photographer.id!!, name = "스튜디오", galleryUrl = "studio-$suffix"),
+            Studio(userId = workspace.requiredId, name = "스튜디오", galleryUrl = "studio-$suffix"),
         )
         val gallery = galleryRepository.save(
-            Gallery(studioId = studio.id!!, title = "본식", status = GalleryStatus.OPEN),
+            Gallery(
+                studioId = studio.id,
+                createdByUserId = photographer.requiredId,
+                title = "본식",
+                status = GalleryStatus.OPEN,
+            ),
         )
         galleryInviteRepository.save(
             GalleryInvite(galleryId = gallery.id!!, token = token, expiresAt = expiresAt),

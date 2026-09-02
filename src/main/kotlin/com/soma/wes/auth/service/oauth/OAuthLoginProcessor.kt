@@ -6,6 +6,7 @@ import com.soma.wes.auth.dto.response.LoginResponse
 import com.soma.wes.auth.service.AuthTokenProvider
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
+import com.soma.wes.workspace.service.WorkspaceService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -15,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional
 class OAuthLoginProcessor(
     private val userRepository: UserRepository,
     private val authTokenProvider: AuthTokenProvider,
+    private val workspaceService: WorkspaceService,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -22,6 +24,7 @@ class OAuthLoginProcessor(
     @Transactional
     fun process(userInfo: OAuthUserInfo): OAuthLoginResult {
         val user = findOrCreateUser(userInfo)
+        workspaceService.ensurePersonalWorkspace(user)
 
         val accessToken = authTokenProvider.generateAccessToken(user)
         val refreshToken = authTokenProvider.generateRefreshToken(user)

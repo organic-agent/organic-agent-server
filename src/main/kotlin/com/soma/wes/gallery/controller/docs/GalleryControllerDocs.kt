@@ -121,7 +121,7 @@ interface GalleryControllerDocs {
             ],
         ),
     )
-    fun createMock(loginUser: LoginUser, request: CreateGalleryRequest?): ResponseEntity<GalleryResponse>
+    fun createMock(loginUser: LoginUser, request: CreateGalleryRequest): ResponseEntity<GalleryResponse>
 
     @Operation(
         summary = "내 갤러리 목록",

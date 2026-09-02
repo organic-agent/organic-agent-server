@@ -67,19 +67,17 @@ class PhotoRatingServiceTest @Autowired constructor(
         }
 
         @Test
-        fun `작가도 매긴다`() {
-            // 추천작을 같은 자리에 표시한다. 부부의 점수와 작가의 점수가 따로 있지 않다.
+        fun `STUDIO 관리자는 별점을 매길 수 없다`() {
             // given
             val photoId = photoFixture.업로드된_사진(fixture.galleryId, count = 1).first()
 
-            // when
-            val result = photoRatingService.rate(
-                fixture.galleryId, photoId, fixture.photographer.id!!, RatePhotoRequest(score = 5),
-            )
-
-            // then
-            assertThat(result.score).isEqualTo(5)
-            assertThat(result.ratedBy).isEqualTo(fixture.photographer.id!!)
+            assertThatThrownBy {
+                photoRatingService.rate(
+                    fixture.galleryId, photoId, fixture.photographer.id!!, RatePhotoRequest(score = 5),
+                )
+            }.isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
         }
 
         @Test
@@ -91,13 +89,13 @@ class PhotoRatingServiceTest @Autowired constructor(
 
             // when
             val result = photoRatingService.rate(
-                fixture.galleryId, photoId, fixture.photographer.id!!, RatePhotoRequest(score = 5),
+                fixture.galleryId, photoId, fixture.member.id!!, RatePhotoRequest(score = 5),
             )
 
             // then
             assertThat(result.score).isEqualTo(5)
             // 마지막에 매긴 사람으로 바뀐다.
-            assertThat(result.ratedBy).isEqualTo(fixture.photographer.id!!)
+            assertThat(result.ratedBy).isEqualTo(fixture.member.id!!)
             assertThat(photoRatingRepository.count()).isEqualTo(1L)
         }
 
@@ -160,8 +158,7 @@ class PhotoRatingServiceTest @Autowired constructor(
         }
 
         @Test
-        fun `마감이 지나면 부부는 매길 수 없고 작가는 매길 수 있다`() {
-            // 마감은 고객이 고르는 기한이지 작가의 작업 기한이 아니다.
+        fun `마감이 지나면 초대 멤버는 매길 수 없다`() {
             // given
             val photoId = photoFixture.업로드된_사진(fixture.galleryId, count = 1).first()
             galleryFixture.마감_지남(fixture.galleryId)
@@ -176,10 +173,7 @@ class PhotoRatingServiceTest @Autowired constructor(
                 .extracting("errorCode")
                 .isEqualTo(GalleryErrorCode.SELECTION_DEADLINE_PASSED)
 
-            val result = photoRatingService.rate(
-                fixture.galleryId, photoId, fixture.photographer.id!!, RatePhotoRequest(score = 5),
-            )
-            assertThat(result.score).isEqualTo(5)
+            assertThat(photoRatingRepository.count()).isZero()
         }
     }
 

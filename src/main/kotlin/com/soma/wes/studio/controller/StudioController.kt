@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RestController
 
 
@@ -45,6 +46,22 @@ class StudioController(
         val result = studioService.checkGalleryUrl(galleryUrl)
 
         return ResponseEntity.ok(result)
+    }
+
+    @GetMapping
+    fun listMine(
+        @AuthenticationPrincipal loginUser: LoginUser,
+    ): ResponseEntity<List<StudioResponse>> {
+        return ResponseEntity.ok(studioService.listMine(loginUser.id))
+    }
+
+    @PatchMapping("/{workspaceId}")
+    fun update(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable workspaceId: Long,
+        @Valid @RequestBody request: UpdateStudioRequest,
+    ): ResponseEntity<StudioResponse> {
+        return ResponseEntity.ok(studioService.update(workspaceId, loginUser.id, request))
     }
 
     @GetMapping("/me")

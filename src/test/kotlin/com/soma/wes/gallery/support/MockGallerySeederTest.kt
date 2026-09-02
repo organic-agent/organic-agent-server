@@ -101,19 +101,20 @@ class MockGallerySeederTest @Autowired constructor(
     inner class CreateGallery {
 
         @Test
-        fun `요청이 없으면 기본 제목의 DRAFT 갤러리를 만든다`() {
+        fun `요청한 작업공간에 DRAFT 갤러리를 만든다`() {
             // given
             val photographer = studioFixture.작가()
 
             // when
-            val gallery = mockGallerySeeder.createGallery(photographer.id!!, null)
+            val request = requestFor(photographer)
+            val gallery = mockGallerySeeder.createGallery(photographer.id!!, request)
 
             // then
             assertSoftly { softly ->
-                softly.assertThat(gallery.title).isEqualTo(MockGallerySeeder.DEFAULT_TITLE)
+                softly.assertThat(gallery.title).isEqualTo("체험 갤러리")
                 softly.assertThat(gallery.status).isEqualTo(GalleryStatus.DRAFT)
                 softly.assertThat(gallery.studioId)
-                    .isEqualTo(studioRepository.findByUserId(photographer.id!!)!!.requiredId)
+                    .isEqualTo(request.workspaceId)
                 softly.assertThat(gallery.selectionDeadline).isNull()
                 softly.assertThat(gallery.maxSelectablePhotoCount).isNull()
             }
@@ -125,6 +126,7 @@ class MockGallerySeederTest @Autowired constructor(
             val photographer = studioFixture.작가()
             val deadline = ZonedDateTime.now().plusDays(7)
             val request = CreateGalleryRequest(
+                workspaceId = studioFixture.소유_스튜디오(photographer).workspaceId,
                 title = "체험 갤러리",
                 selectionDeadline = deadline,
                 maxSelectablePhotoCount = 30,
@@ -142,15 +144,17 @@ class MockGallerySeederTest @Autowired constructor(
         }
 
         @Test
-        fun `스튜디오가 없는 사용자는 만들 수 없다`() {
+        fun `소속되지 않은 작업공간에는 만들 수 없다`() {
             // given
             val user = userFixture.사용자()
+            val owner = studioFixture.작가()
+            val request = requestFor(owner)
 
             // when & then
-            assertThatThrownBy { mockGallerySeeder.createGallery(user.id!!, null) }
-                .isInstanceOf(StudioException::class.java)
+            assertThatThrownBy { mockGallerySeeder.createGallery(user.id!!, request) }
+                .isInstanceOf(GalleryException::class.java)
                 .extracting("errorCode")
-                .isEqualTo(StudioErrorCode.STUDIO_NOT_FOUND)
+                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
 
             assertThat(galleryRepository.count()).isEqualTo(0L)
         }
@@ -161,6 +165,7 @@ class MockGallerySeederTest @Autowired constructor(
             // given
             val photographer = studioFixture.작가()
             val request = CreateGalleryRequest(
+                workspaceId = studioFixture.소유_스튜디오(photographer).workspaceId,
                 title = "체험 갤러리",
                 selectionDeadline = ZonedDateTime.now().minusDays(1),
             )
@@ -190,7 +195,7 @@ class MockGallerySeederTest @Autowired constructor(
                 임베딩_사진(template.requiredId, displayOrder = 7),
             )
             val photographer = studioFixture.작가()
-            val gallery = mockGallerySeeder.createGallery(photographer.id!!, null)
+            val gallery = mockGallerySeeder.createGallery(photographer.id!!, requestFor(photographer))
             val plans = sources.map { source ->
                 val storageKey = "galleries/${gallery.requiredId}/copy-${TestSequence.next()}.png"
                 MockGalleryCopyPlan(
@@ -226,7 +231,7 @@ class MockGallerySeederTest @Autowired constructor(
             val template = 템플릿_갤러리()
             val source = 임베딩_사진(template.requiredId, displayOrder = 0, withPreview = false)
             val photographer = studioFixture.작가()
-            val gallery = mockGallerySeeder.createGallery(photographer.id!!, null)
+            val gallery = mockGallerySeeder.createGallery(photographer.id!!, requestFor(photographer))
             val plan = MockGalleryCopyPlan(
                 source = source,
                 storageKey = "galleries/${gallery.requiredId}/copy-${TestSequence.next()}.png",
@@ -250,7 +255,7 @@ class MockGallerySeederTest @Autowired constructor(
         fun `사진 없이 남은 갤러리 행을 걷어낸다`() {
             // given
             val photographer = studioFixture.작가()
-            val gallery = mockGallerySeeder.createGallery(photographer.id!!, null)
+            val gallery = mockGallerySeeder.createGallery(photographer.id!!, requestFor(photographer))
 
             // when
             mockGallerySeeder.discard(gallery.requiredId)
@@ -275,9 +280,20 @@ class MockGallerySeederTest @Autowired constructor(
      */
     private fun 템플릿_갤러리(): Gallery {
         val operator = studioFixture.작가()
-        val studio = studioRepository.findByUserId(operator.id!!)!!
-        return galleryRepository.save(Gallery(studioId = studio.requiredId, title = "샘플 템플릿"))
+        val studio = studioFixture.소유_스튜디오(operator)
+        return galleryRepository.save(
+            Gallery(
+                studioId = studio.requiredId,
+                createdByUserId = operator.requiredId,
+                title = "샘플 템플릿",
+            ),
+        )
     }
+
+    private fun requestFor(photographer: com.soma.wes.user.domain.User) = CreateGalleryRequest(
+        workspaceId = studioFixture.소유_스튜디오(photographer).workspaceId,
+        title = "체험 갤러리",
+    )
 
     private fun 임베딩_사진(galleryId: Long, displayOrder: Int, withPreview: Boolean = true): Photo =
         photoRepository.save(

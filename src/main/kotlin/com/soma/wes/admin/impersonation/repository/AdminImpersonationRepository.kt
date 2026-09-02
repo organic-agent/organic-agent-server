@@ -30,7 +30,7 @@ class AdminImpersonationRepository(
             .param("adminId", session.adminId)
             .param("adminSessionId", session.adminSessionId)
             .param("viewerUserId", session.viewerUserId)
-            .param("viewerRole", session.viewerRole)
+            .param("viewerRole", session.viewerAccessRole)
             .param("targetType", session.targetType.name)
             .param("targetId", session.targetId)
             .param("targetLabel", session.targetLabel)
@@ -106,7 +106,7 @@ class AdminImpersonationRepository(
         adminId = rs.getLong("admin_id"),
         adminSessionId = rs.getObject("admin_session_id", UUID::class.java),
         viewerUserId = rs.getLong("viewer_user_id"),
-        viewerRole = rs.getString("viewer_role"),
+        viewerAccessRole = rs.getString("viewer_role"),
         targetType = AdminResourceType.valueOf(rs.getString("target_type")),
         targetId = rs.getLong("target_id"),
         targetLabel = rs.getString("target_label"),
@@ -122,7 +122,7 @@ class AdminImpersonationRepository(
         val adminId: Long,
         val adminSessionId: UUID,
         val viewerUserId: Long,
-        val viewerRole: String,
+        val viewerAccessRole: String,
         val targetType: AdminResourceType,
         val targetId: Long,
         val targetLabel: String,

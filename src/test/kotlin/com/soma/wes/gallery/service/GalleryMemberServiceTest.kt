@@ -15,6 +15,11 @@ import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.TestcontainersConfiguration
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
+import com.soma.wes.workspace.domain.Workspace
+import com.soma.wes.workspace.domain.WorkspaceMember
+import com.soma.wes.workspace.domain.WorkspaceRole
+import com.soma.wes.workspace.repository.WorkspaceMemberRepository
+import com.soma.wes.workspace.repository.WorkspaceRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.assertj.core.api.SoftAssertions.assertSoftly
@@ -39,6 +44,8 @@ class GalleryMemberServiceTest @Autowired constructor(
     private val galleryRepository: GalleryRepository,
     private val studioRepository: StudioRepository,
     private val userRepository: UserRepository,
+    private val workspaceRepository: WorkspaceRepository,
+    private val workspaceMemberRepository: WorkspaceMemberRepository,
 ) {
 
     private var photographerId = 0L
@@ -62,11 +69,20 @@ class GalleryMemberServiceTest @Autowired constructor(
     ).requiredId
 
     private fun saveGallery(ownerUserId: Long = photographerId): Long {
+        val workspace = workspaceRepository.save(Workspace.studio("스튜디오"))
+        workspaceMemberRepository.save(
+            WorkspaceMember(workspace.requiredId, ownerUserId, WorkspaceRole.OWNER),
+        )
         val studio = studioRepository.save(
-            Studio(userId = ownerUserId, name = "스튜디오", galleryUrl = "studio-$ownerUserId"),
+            Studio(userId = workspace.requiredId, name = "스튜디오", galleryUrl = "studio-${workspace.requiredId}"),
         )
         return galleryRepository.save(
-            Gallery(studioId = studio.requiredId, title = "본식", status = GalleryStatus.OPEN),
+            Gallery(
+                studioId = studio.requiredId,
+                createdByUserId = ownerUserId,
+                title = "본식",
+                status = GalleryStatus.OPEN,
+            ),
         ).requiredId
     }
 

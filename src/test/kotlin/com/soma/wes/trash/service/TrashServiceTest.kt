@@ -1,5 +1,7 @@
 package com.soma.wes.trash.service
 
+import com.soma.wes.category.dto.request.CreateConceptFolderRequest
+import com.soma.wes.category.service.CategoryService
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
 import com.soma.wes.collab.service.CollabGuestQueryService
 import com.soma.wes.collab.service.CollabSessionService
@@ -53,6 +55,7 @@ import java.time.Instant
 @Import(TrashServiceTest.RecordingStorageConfig::class)
 class TrashServiceTest @Autowired constructor(
     private val trashService: TrashService,
+    private val categoryService: CategoryService,
     private val photoService: PhotoService,
     private val galleryService: GalleryService,
     private val collabSessionService: CollabSessionService,
@@ -474,8 +477,15 @@ class TrashServiceTest @Autowired constructor(
 
     /** 하객 협업 링크의 토큰. 세션은 부부가 여는 것이라 부부 멤버로 연다. */
     private fun openCollabSession(): String {
+        val conceptId = categoryService.createConcept(
+            fixture.galleryId,
+            fixture.photographer.requiredId,
+            CreateConceptFolderRequest("본식 후보"),
+        ).id
         val session = collabSessionService.open(
-            fixture.galleryId, fixture.member.id!!, OpenCollabSessionRequest(name = "본식 후보"),
+            fixture.galleryId,
+            fixture.photographer.id!!,
+            OpenCollabSessionRequest(conceptId, "본식 후보"),
         )
         return session.collabUrl.substringAfterLast('/')
     }

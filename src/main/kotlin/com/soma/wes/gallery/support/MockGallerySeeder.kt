@@ -8,9 +8,8 @@ import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.repository.PhotoRepository
-import com.soma.wes.studio.exception.StudioErrorCode
-import com.soma.wes.studio.exception.StudioException
-import com.soma.wes.studio.repository.StudioRepository
+import com.soma.wes.workspace.domain.WorkspaceRole
+import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -26,7 +25,7 @@ import java.time.ZonedDateTime
  */
 @Service
 class MockGallerySeeder(
-    private val studioRepository: StudioRepository,
+    private val workspaceMemberRepository: WorkspaceMemberRepository,
     private val galleryRepository: GalleryRepository,
     private val photoRepository: PhotoRepository,
     private val clock: Clock,
@@ -55,16 +54,23 @@ class MockGallerySeeder(
      * [discard]로 걷어낸다.
      */
     @Transactional
-    fun createGallery(userId: Long, request: CreateGalleryRequest?): Gallery {
-        val studio = studioRepository.findByUserId(userId)
-            ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
+    fun createGallery(userId: Long, request: CreateGalleryRequest): Gallery {
+        val canManage = workspaceMemberRepository.existsByWorkspaceIdAndUserIdAndRoleIn(
+            request.workspaceId,
+            userId,
+            WorkspaceRole.entries,
+        )
+        if (!canManage) {
+            throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        }
 
         return galleryRepository.save(
             Gallery.create(
-                studioId = studio.requiredId,
-                title = request?.title ?: DEFAULT_TITLE,
-                selectionDeadline = request?.selectionDeadline,
-                maxSelectablePhotoCount = request?.maxSelectablePhotoCount,
+                workspaceId = request.workspaceId,
+                createdByUserId = userId,
+                title = request.title,
+                selectionDeadline = request.selectionDeadline,
+                maxSelectablePhotoCount = request.maxSelectablePhotoCount,
                 at = ZonedDateTime.now(clock),
             ),
         )
@@ -97,7 +103,4 @@ class MockGallerySeeder(
         galleryRepository.deleteById(galleryId)
     }
 
-    companion object {
-        const val DEFAULT_TITLE = "샘플 갤러리"
-    }
 }

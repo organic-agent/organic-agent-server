@@ -7,6 +7,7 @@ import java.time.ZonedDateTime
 @Schema(description = "스튜디오")
 data class StudioResponse(
     val id: Long,
+    val workspaceId: Long,
     val name: String,
     val galleryUrl: String,
     val inflowChannel: String?,
@@ -16,6 +17,7 @@ data class StudioResponse(
     companion object {
         fun from(studio: Studio) = StudioResponse(
             id = studio.requiredId,
+            workspaceId = studio.workspaceId,
             name = studio.name,
             galleryUrl = studio.galleryUrl,
             inflowChannel = studio.inflowChannel,

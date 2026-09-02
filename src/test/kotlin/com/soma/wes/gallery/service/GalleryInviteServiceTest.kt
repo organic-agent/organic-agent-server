@@ -20,8 +20,12 @@ import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.TestcontainersConfiguration
 import com.soma.wes.user.domain.User
-import com.soma.wes.user.domain.UserType
 import com.soma.wes.user.repository.UserRepository
+import com.soma.wes.workspace.domain.Workspace
+import com.soma.wes.workspace.domain.WorkspaceMember
+import com.soma.wes.workspace.domain.WorkspaceRole
+import com.soma.wes.workspace.repository.WorkspaceMemberRepository
+import com.soma.wes.workspace.repository.WorkspaceRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.assertj.core.api.SoftAssertions.assertSoftly
@@ -53,6 +57,8 @@ class GalleryInviteServiceTest @Autowired constructor(
     private val galleryRepository: GalleryRepository,
     private val studioRepository: StudioRepository,
     private val userRepository: UserRepository,
+    private val workspaceRepository: WorkspaceRepository,
+    private val workspaceMemberRepository: WorkspaceMemberRepository,
     private val clock: Clock,
 ) {
 
@@ -83,11 +89,20 @@ class GalleryInviteServiceTest @Autowired constructor(
     private fun requiredId(user: User): Long = checkNotNull(user.id)
 
     private fun saveGallery(ownerUserId: Long = photographerId): Gallery {
+        val workspace = workspaceRepository.save(Workspace.studio("스튜디오"))
+        workspaceMemberRepository.save(
+            WorkspaceMember(workspace.requiredId, ownerUserId, WorkspaceRole.OWNER),
+        )
         val studio = studioRepository.save(
-            Studio(userId = ownerUserId, name = "스튜디오", galleryUrl = "studio-$ownerUserId"),
+            Studio(userId = workspace.requiredId, name = "스튜디오", galleryUrl = "studio-${workspace.requiredId}"),
         )
         return galleryRepository.save(
-            Gallery(studioId = checkNotNull(studio.id), title = "본식", status = GalleryStatus.OPEN),
+            Gallery(
+                studioId = studio.requiredId,
+                createdByUserId = ownerUserId,
+                title = "본식",
+                status = GalleryStatus.OPEN,
+            ),
         )
     }
 
@@ -216,26 +231,25 @@ class GalleryInviteServiceTest @Autowired constructor(
             galleryInviteService.accept(tokenOf(invite), groomId)
 
             // then
-            assertThat(userRepository.findById(groomId).orElseThrow().userType).isEqualTo(UserType.CLIENT)
+            assertThat(galleryMemberRepository.findByGalleryIdAndUserId(galleryId(gallery), groomId)).isNotNull()
         }
 
         @Test
         fun `작가가 남의 갤러리 초대를 수락해도 작가로 남는다`() {
-            // 무조건 CLIENT로 덮어쓰면 이미 PHOTOGRAPHER인 사용자가 USER_TYPE_ALREADY_SELECTED에
-            // 걸려 수락 자체가 실패한다. 본인 결혼식 갤러리에 초대받는 것은 정상 시나리오다.
+            // 작업공간 역할과 무관하게 본인 결혼식 갤러리 초대를 수락할 수 있어야 한다.
             // given
             val otherGallery = saveGallery()
             val invite = galleryInviteService.issue(galleryId(otherGallery), photographerId)
 
             val guestPhotographerId = requiredId(saveUser("guest-photographer"))
-            userRepository.findById(guestPhotographerId).orElseThrow().selectPhotographerType()
 
             // when
             galleryInviteService.accept(tokenOf(invite), guestPhotographerId)
 
             // then
-            assertThat(userRepository.findById(guestPhotographerId).orElseThrow().userType)
-                .isEqualTo(UserType.PHOTOGRAPHER)
+            assertThat(
+                galleryMemberRepository.findByGalleryIdAndUserId(galleryId(otherGallery), guestPhotographerId),
+            ).isNotNull()
         }
 
         @Test
@@ -346,8 +360,9 @@ class GalleryInviteServiceTest @Autowired constructor(
         fun `다른 갤러리의 초대를 자기 갤러리 권한으로 폐기할 수 없다`() {
             // given
             val mine = saveGallery(ownerUserId = photographerId)
-            val other = saveGallery(ownerUserId = 20L)
-            val otherInvite = galleryInviteService.issue(galleryId(other), userId = 20L)
+            val otherOwnerId = requiredId(saveUser("other-owner"))
+            val other = saveGallery(ownerUserId = otherOwnerId)
+            val otherInvite = galleryInviteService.issue(galleryId(other), userId = otherOwnerId)
 
             // when & then
             assertThatThrownBy { galleryInviteService.revoke(galleryId(mine), otherInvite.id, photographerId) }

@@ -11,6 +11,8 @@ interface CollabSessionRepository : JpaRepository<CollabSession, Long> {
 
     fun findByIdAndGalleryId(id: Long, galleryId: Long): CollabSession?
 
+    fun findByConceptFolderId(conceptFolderId: Long): CollabSession?
+
     fun countByGalleryId(galleryId: Long): Long
 
     fun findByCollabToken(collabToken: String): CollabSession?

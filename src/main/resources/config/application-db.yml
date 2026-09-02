@@ -3,18 +3,13 @@ spring:
   datasource:
     driver-class-name: org.postgresql.Driver
 
-  # 스키마는 Flyway가 소유한다(src/main/resources/db/migration). Hibernate는 엔티티와
+  # 스키마는 단일 V1 베이스라인을 Flyway가 소유한다. Hibernate는 엔티티와
   # 어긋나는지 확인만 한다. pgvector 확장은 테이블 생성보다 CREATE EXTENSION이 먼저
-  # 와야 해서 ddl-auto로는 만들 수 없다 — 그것이 이 전환의 직접적인 이유다.
+  # 와야 해서 ddl-auto로는 만들 수 없다.
   flyway:
-    # 운영 DB에는 ddl-auto가 만들어 둔 테이블이 이미 있다. 이 옵션이 없으면 Flyway가
-    # "비어 있지 않은 스키마"를 보고 기동을 거부한다.
-    baseline-on-migrate: true
-    # 0이라서 V1도 실제로 실행된다. 1로 두면 "스키마가 비어 있지 않다"만 보고 V1이 이미
-    # 적용된 것으로 단정하는데, 그 단정은 검증되지 않는다 — 테이블이 일부만 있는 DB가
-    # V1을 건너뛰고 V2에서 깨진다(실제로 로컬에서 그렇게 깨졌다).
-    # V1은 전부 IF NOT EXISTS라 이미 있는 DB에서도 안전하게 다시 돈다.
-    baseline-version: 0
+    # 베이스라인 재설정 후에는 빈 DB에만 V1을 적용한다. 기존 스키마를 무시한
+    # 중간 상태를 허용하지 않도록 자동 baseline은 끄는다.
+    baseline-on-migrate: false
 
   jpa:
     open-in-view: false

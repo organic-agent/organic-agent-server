@@ -66,7 +66,7 @@ class AdminResourceSuspensionServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `스튜디오 정지는 소유자의 기존 access 권한을 즉시 막고 활성화하면 되살린다`() {
+    fun `스튜디오 정지는 구성원 토큰만 회수하고 개인 워크스페이스 로그인은 유지한다`() {
         val actor = adminAccountFixture.관리자("suspend-studio")
         val user = resourceService.create(
             actor.requiredId, AdminResourceType.USER,
@@ -77,7 +77,7 @@ class AdminResourceSuspensionServiceTest @Autowired constructor(
         val studio = resourceService.create(
             actor.requiredId, AdminResourceType.STUDIO,
             CreateAdminResourceRequest("정지할 스튜디오", mapOf(
-                "userId" to user.id, "name" to "정지 스튜디오", "galleryUrl" to "suspended-studio",
+                "ownerUserId" to user.id, "name" to "정지 스튜디오", "galleryUrl" to "suspended-studio",
             )), "127.0.0.1",
         )
         insertRefreshToken(user.id, "suspended-studio-refresh")
@@ -90,16 +90,16 @@ class AdminResourceSuspensionServiceTest @Autowired constructor(
             ChangeAdminResourceStateRequest("스튜디오 운영 정지", studio.version), "127.0.0.1",
         )
 
+        assertThat(suspended.fields["suspendedAt"]).isNotNull()
         assertThat(refreshTokenCount(user.id)).isZero()
-        assertThatThrownBy { accessStatusRepository.requireActive(user.id) }
-            .isInstanceOfSatisfying(TokenException::class.java) {
-                assertThat(it.errorCode).isEqualTo(AuthErrorCode.STUDIO_SUSPENDED)
-            }
+        assertThatCode { accessStatusRepository.requireActive(user.id) }
+            .doesNotThrowAnyException()
 
-        suspensionService.activate(
+        val activated = suspensionService.activate(
             actor.requiredId, AdminResourceType.STUDIO, studio.id,
             ChangeAdminResourceStateRequest("스튜디오 운영 재개", suspended.version), "127.0.0.1",
         )
+        assertThat(activated.fields["suspendedAt"]).isNull()
         assertThatCode { accessStatusRepository.requireActive(user.id) }
             .doesNotThrowAnyException()
     }

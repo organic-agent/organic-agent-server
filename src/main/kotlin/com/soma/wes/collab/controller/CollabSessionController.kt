@@ -2,9 +2,7 @@ package com.soma.wes.collab.controller
 
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.collab.controller.docs.CollabSessionControllerDocs
-import com.soma.wes.collab.dto.request.AddCollabPhotosRequest
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
-import com.soma.wes.collab.dto.request.RemoveCollabPhotosRequest
 import com.soma.wes.collab.dto.request.RenameCollabSessionRequest
 import com.soma.wes.collab.dto.response.CollabPhotoPageResponse
 import com.soma.wes.collab.dto.response.CollabSessionResponse
@@ -23,46 +21,32 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
-
 @RestController
 @RequestMapping("/api/v1/galleries/{galleryId}/collab-sessions")
 class CollabSessionController(
-    private val collabSessionService: CollabSessionService,
-    private val collabSessionQueryService: CollabSessionQueryService,
+    private val service: CollabSessionService,
+    private val queryService: CollabSessionQueryService,
 ) : CollabSessionControllerDocs {
-
     @PostMapping
     override fun open(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
         @RequestBody request: OpenCollabSessionRequest,
-    ): ResponseEntity<CollabSessionResponse> {
-        val result = collabSessionService.open(galleryId, loginUser.id, request)
-        val status = HttpStatus.CREATED
-
-        return ResponseEntity.status(status).body(result)
-    }
+    ): ResponseEntity<CollabSessionResponse> =
+        ResponseEntity.status(HttpStatus.CREATED).body(service.open(galleryId, loginUser.id, request))
 
     @GetMapping
     override fun list(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
-    ): ResponseEntity<List<CollabSessionResponse>> {
-        val result = collabSessionQueryService.list(galleryId, loginUser.id)
-
-        return ResponseEntity.ok(result)
-    }
+    ): ResponseEntity<List<CollabSessionResponse>> = ResponseEntity.ok(queryService.list(galleryId, loginUser.id))
 
     @GetMapping("/{sessionId}")
     override fun get(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
         @PathVariable sessionId: Long,
-    ): ResponseEntity<CollabSessionResponse> {
-        val result = collabSessionQueryService.get(galleryId, sessionId, loginUser.id)
-
-        return ResponseEntity.ok(result)
-    }
+    ): ResponseEntity<CollabSessionResponse> = ResponseEntity.ok(queryService.get(galleryId, sessionId, loginUser.id))
 
     @PatchMapping("/{sessionId}")
     override fun rename(
@@ -70,11 +54,8 @@ class CollabSessionController(
         @PathVariable galleryId: Long,
         @PathVariable sessionId: Long,
         @RequestBody request: RenameCollabSessionRequest,
-    ): ResponseEntity<CollabSessionResponse> {
-        val result = collabSessionService.rename(galleryId, sessionId, loginUser.id, request)
-
-        return ResponseEntity.ok(result)
-    }
+    ): ResponseEntity<CollabSessionResponse> =
+        ResponseEntity.ok(service.rename(galleryId, sessionId, loginUser.id, request))
 
     @DeleteMapping("/{sessionId}")
     override fun revoke(
@@ -82,10 +63,8 @@ class CollabSessionController(
         @PathVariable galleryId: Long,
         @PathVariable sessionId: Long,
     ): ResponseEntity<Unit> {
-        collabSessionService.revoke(galleryId, sessionId, loginUser.id)
-        val status = HttpStatus.NO_CONTENT
-
-        return ResponseEntity.status(status).build()
+        service.revoke(galleryId, sessionId, loginUser.id)
+        return ResponseEntity.noContent().build()
     }
 
     @PostMapping("/{sessionId}/republish")
@@ -93,35 +72,8 @@ class CollabSessionController(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
         @PathVariable sessionId: Long,
-    ): ResponseEntity<CollabSessionResponse> {
-        val result = collabSessionService.republish(galleryId, sessionId, loginUser.id)
-
-        return ResponseEntity.ok(result)
-    }
-
-    @PostMapping("/{sessionId}/photos")
-    override fun addPhotos(
-        @AuthenticationPrincipal loginUser: LoginUser,
-        @PathVariable galleryId: Long,
-        @PathVariable sessionId: Long,
-        @RequestBody request: AddCollabPhotosRequest,
-    ): ResponseEntity<CollabPhotoPageResponse> {
-        val result = collabSessionService.addPhotos(galleryId, sessionId, loginUser.id, request)
-
-        return ResponseEntity.ok(result)
-    }
-
-    @DeleteMapping("/{sessionId}/photos")
-    override fun removePhotos(
-        @AuthenticationPrincipal loginUser: LoginUser,
-        @PathVariable galleryId: Long,
-        @PathVariable sessionId: Long,
-        @RequestBody request: RemoveCollabPhotosRequest,
-    ): ResponseEntity<CollabPhotoPageResponse> {
-        val result = collabSessionService.removePhotos(galleryId, sessionId, loginUser.id, request)
-
-        return ResponseEntity.ok(result)
-    }
+    ): ResponseEntity<CollabSessionResponse> =
+        ResponseEntity.ok(service.republish(galleryId, sessionId, loginUser.id))
 
     @GetMapping("/{sessionId}/photos")
     override fun listPhotos(
@@ -130,11 +82,8 @@ class CollabSessionController(
         @PathVariable sessionId: Long,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "200") size: Int,
-    ): ResponseEntity<CollabPhotoPageResponse> {
-        val result = collabSessionQueryService.listPhotos(galleryId, sessionId, loginUser.id, page, size)
-
-        return ResponseEntity.ok(result)
-    }
+    ): ResponseEntity<CollabPhotoPageResponse> =
+        ResponseEntity.ok(queryService.listPhotos(galleryId, sessionId, loginUser.id, page, size))
 
     @DeleteMapping("/{sessionId}/comments/{commentId}")
     override fun deleteComment(
@@ -143,9 +92,7 @@ class CollabSessionController(
         @PathVariable sessionId: Long,
         @PathVariable commentId: Long,
     ): ResponseEntity<Unit> {
-        collabSessionService.deleteComment(galleryId, sessionId, commentId, loginUser.id)
-        val status = HttpStatus.NO_CONTENT
-
-        return ResponseEntity.status(status).build()
+        service.deleteComment(galleryId, sessionId, commentId, loginUser.id)
+        return ResponseEntity.noContent().build()
     }
 }

@@ -25,6 +25,7 @@ enum class AdminWorkflowAction(
         setOf("publicStatus", "workflowStatus"),
         setOf("selectionDeadline"),
     ),
+    RUN_CATEGORIZATION(setOf(AdminResourceType.GALLERY)),
     REISSUE_GALLERY_INVITE(setOf(AdminResourceType.GALLERY)),
     REVOKE_GALLERY_INVITE(setOf(AdminResourceType.GALLERY), setOf("inviteId")),
     REISSUE_COLLAB_LINK(setOf(AdminResourceType.COLLABORATION), optionalFields = setOf("ttlSeconds")),
@@ -52,7 +53,7 @@ enum class AdminWorkflowAction(
     WITHDRAW_SELECTION(setOf(AdminResourceType.SELECTION)),
     CREATE_COLLAB_COMMENT(
         setOf(AdminResourceType.COLLABORATION),
-        setOf("collabPhotoId", "guestId", "content"),
+        setOf("photoId", "guestId", "content"),
     ),
     UPDATE_COLLAB_COMMENT(
         setOf(AdminResourceType.COLLABORATION),
@@ -66,10 +67,10 @@ enum class AdminWorkflowAction(
         setOf(AdminResourceType.COLLABORATION),
         setOf("commentId", "commentExpectedVersion"),
     ),
-    ADD_COLLAB_LIKE(setOf(AdminResourceType.COLLABORATION), setOf("collabPhotoId", "guestId")),
+    ADD_COLLAB_LIKE(setOf(AdminResourceType.COLLABORATION), setOf("photoId", "guestId")),
     REMOVE_COLLAB_LIKE(
         setOf(AdminResourceType.COLLABORATION),
-        setOf("collabPhotoId", "guestId", "likeExpectedVersion"),
+        setOf("photoId", "guestId", "likeExpectedVersion"),
     ),
     RESTORE_COLLAB_LIKE(
         setOf(AdminResourceType.COLLABORATION),

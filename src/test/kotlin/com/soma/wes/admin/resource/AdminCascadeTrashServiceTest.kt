@@ -10,6 +10,7 @@ import com.soma.wes.admin.resource.dto.CreateAdminResourceRequest
 import com.soma.wes.admin.resource.repository.AdminCascadeTrashRepository
 import com.soma.wes.admin.resource.service.AdminCascadeTrashPurgeService
 import com.soma.wes.admin.resource.service.AdminCascadeTrashService
+import com.soma.wes.admin.resource.service.AdminResourceContextService
 import com.soma.wes.admin.resource.service.AdminResourceService
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.trash.RecordingTrashPhotoStorage
@@ -30,6 +31,7 @@ import java.util.UUID
 class AdminCascadeTrashServiceTest @Autowired constructor(
     private val service: AdminCascadeTrashService,
     private val resourceService: AdminResourceService,
+    private val contextService: AdminResourceContextService,
     private val purgeService: AdminCascadeTrashPurgeService,
     private val adminAccountFixture: AdminAccountFixture,
     private val jdbcClient: JdbcClient,
@@ -46,10 +48,10 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             "provider" to "GOOGLE", "providerId" to "cascade-owner", "nickname" to "연쇄 소유자",
         ))
         val studio = create(actor.requiredId, AdminResourceType.STUDIO, mapOf(
-            "userId" to user.id, "name" to "연쇄 스튜디오", "galleryUrl" to "cascade-gallery",
+            "ownerUserId" to user.id, "name" to "연쇄 스튜디오", "galleryUrl" to "cascade-gallery",
         ))
         val gallery = create(actor.requiredId, AdminResourceType.GALLERY, mapOf(
-            "studioId" to studio.id, "title" to "연쇄 갤러리",
+            "workspaceId" to studio.id, "title" to "연쇄 갤러리",
         ))
         val galleryMember = create(actor.requiredId, AdminResourceType.USER, mapOf(
             "provider" to "NAVER", "providerId" to "cascade-gallery-member", "nickname" to "갤러리 멤버",
@@ -68,7 +70,9 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             .param("id", alreadyTrashedPhoto.id).update()
         val selection = create(actor.requiredId, AdminResourceType.SELECTION, mapOf("galleryId" to gallery.id))
         val collaboration = create(actor.requiredId, AdminResourceType.COLLABORATION, mapOf(
-            "galleryId" to gallery.id, "name" to "가족 의견",
+            "galleryId" to gallery.id,
+            "conceptFolderId" to createConceptFolder(gallery.id),
+            "name" to "가족 의견",
         ))
         val album = create(actor.requiredId, AdminResourceType.ALBUM, mapOf(
             "galleryId" to gallery.id, "name" to "후보 앨범",
@@ -76,14 +80,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         val retouch = create(actor.requiredId, AdminResourceType.RETOUCH_REQUEST, mapOf(
             "galleryId" to gallery.id, "roundNo" to 1,
         ))
-        val collabPhotoId = jdbcClient.sql(
-            """
-            INSERT INTO collab_photos (collab_session_id, photo_id, version, created_at, updated_at)
-            VALUES (:sessionId, :photoId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            RETURNING id
-            """.trimIndent(),
-        ).param("sessionId", collaboration.id).param("photoId", activePhoto.id)
-            .query { rs, _ -> rs.getLong("id") }.single()
+        assignPhotoToSession(collaboration.id, activePhoto.id)
         val collabGuestId = jdbcClient.sql(
             """
             INSERT INTO collab_guests (collab_session_id, guest_token, nickname, version, created_at, updated_at)
@@ -95,10 +92,11 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         jdbcClient.sql(
             """
             INSERT INTO collab_photo_comments
-                (collab_photo_id, collab_guest_id, content, version, created_at, updated_at)
-            VALUES (:photoId, :guestId, '복원되어야 할 댓글', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                (collab_session_id, photo_id, collab_guest_id, content, version, created_at, updated_at)
+            VALUES (:sessionId, :photoId, :guestId, '복원되어야 할 댓글', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """.trimIndent(),
-        ).param("photoId", collabPhotoId).param("guestId", collabGuestId).update()
+        ).param("sessionId", collaboration.id).param("photoId", activePhoto.id)
+            .param("guestId", collabGuestId).update()
         val templateId = jdbcClient.sql(
             """
             INSERT INTO admin_album_templates (studio_id, name, layout_json, version, created_at, updated_at)
@@ -147,6 +145,12 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             .containsEntry("SELECTION", 1L).containsEntry("COLLABORATION", 1L)
             .containsEntry("ALBUM", 1L).containsEntry("RETOUCH_REQUEST", 1L)
             .containsEntry("COLLAB_COMMENT", 1L)
+        assertThat(contextService.get(AdminResourceType.GALLERY, gallery.id).facts)
+            .containsEntry("trashBatchId", batch.id)
+            .containsEntry("canRestoreDirectly", true)
+        assertThat(contextService.get(AdminResourceType.PHOTO, activePhoto.id).facts)
+            .containsEntry("trashBatchId", batch.id)
+            .containsEntry("canRestoreDirectly", false)
         assertThat(Duration.between(batch.deletedAt, batch.restoreUntil)).isEqualTo(Duration.ofDays(7))
         assertThat(batch.purgeEligibleAt).isEqualTo(batch.restoreUntil)
         assertThat(batch.restoreWindowDays).isEqualTo(7)
@@ -203,6 +207,55 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             "photo_folder_groups" to album.id,
             "retouch_rounds" to retouch.id,
         ).forEach { (table, id) -> assertThat(deletedAt(table, id)).isNull() }
+        assertThat(contextService.get(AdminResourceType.GALLERY, gallery.id).facts)
+            .containsEntry("trashBatchId", null)
+            .containsEntry("canRestoreDirectly", false)
+    }
+
+    @Test
+    fun `카테고리 폴더는 7일 배치로 하위 폴더와 함께 삭제하고 루트만 직접 복원한다`() {
+        val actor = adminAccountFixture.관리자("cascade-category-folder")
+        val owner = create(actor.requiredId, AdminResourceType.USER, mapOf(
+            "provider" to "GOOGLE", "providerId" to "category-owner", "nickname" to "카테고리 소유자",
+        ))
+        val studio = create(actor.requiredId, AdminResourceType.STUDIO, mapOf(
+            "ownerUserId" to owner.id, "name" to "카테고리 스튜디오", "galleryUrl" to "category-cascade",
+        ))
+        val gallery = create(actor.requiredId, AdminResourceType.GALLERY, mapOf(
+            "workspaceId" to studio.id, "title" to "카테고리 갤러리",
+        ))
+        val concept = create(actor.requiredId, AdminResourceType.CONCEPT_FOLDER, mapOf(
+            "galleryId" to gallery.id, "name" to "가족", "sortOrder" to 0,
+        ))
+        val detail = create(actor.requiredId, AdminResourceType.DETAIL_FOLDER, mapOf(
+            "conceptFolderId" to concept.id, "name" to "부모님", "sortOrder" to 0,
+        ))
+
+        val batch = service.delete(
+            actor.requiredId,
+            AdminResourceType.CONCEPT_FOLDER,
+            concept.id,
+            ChangeAdminResourceStateRequest("카테고리 폴더 삭제", concept.version),
+            "127.0.0.1",
+        )
+
+        assertThat(batch.restoreWindowDays).isEqualTo(7)
+        assertThat(batch.affectedCounts)
+            .containsEntry("CONCEPT_FOLDER", 1L)
+            .containsEntry("DETAIL_FOLDER", 1L)
+        assertThat(resourceService.get(AdminResourceType.CONCEPT_FOLDER, concept.id).deleted).isTrue()
+        assertThat(resourceService.get(AdminResourceType.DETAIL_FOLDER, detail.id).deleted).isTrue()
+        assertThat(contextService.get(AdminResourceType.CONCEPT_FOLDER, concept.id).facts)
+            .containsEntry("trashBatchId", batch.id)
+            .containsEntry("canRestoreDirectly", true)
+        assertThat(contextService.get(AdminResourceType.DETAIL_FOLDER, detail.id).facts)
+            .containsEntry("trashBatchId", batch.id)
+            .containsEntry("canRestoreDirectly", false)
+
+        service.restoreBatch(actor.requiredId, batch.id, AdminReasonRequest("카테고리 폴더 복원"), "127.0.0.1")
+
+        assertThat(resourceService.get(AdminResourceType.CONCEPT_FOLDER, concept.id).deleted).isFalse()
+        assertThat(resourceService.get(AdminResourceType.DETAIL_FOLDER, detail.id).deleted).isFalse()
     }
 
     @Test
@@ -212,10 +265,10 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             "provider" to "GOOGLE", "providerId" to "claim-owner", "nickname" to "claim 소유자",
         ))
         val studio = create(actor.requiredId, AdminResourceType.STUDIO, mapOf(
-            "userId" to user.id, "name" to "claim 스튜디오", "galleryUrl" to "claim-scope",
+            "ownerUserId" to user.id, "name" to "claim 스튜디오", "galleryUrl" to "claim-scope",
         ))
         val gallery = create(actor.requiredId, AdminResourceType.GALLERY, mapOf(
-            "studioId" to studio.id, "title" to "선행 휴지통 갤러리",
+            "workspaceId" to studio.id, "title" to "선행 휴지통 갤러리",
         ))
         val photo = createPhoto(actor.requiredId, gallery.id, "claim-photo.jpg")
         jdbcClient.sql(
@@ -272,21 +325,24 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             "provider" to "KAKAO", "providerId" to "cascade-target", "nickname" to "삭제 대상",
         ))
         val targetStudio = create(actor.requiredId, AdminResourceType.STUDIO, mapOf(
-            "userId" to target.id, "name" to "대상 스튜디오", "galleryUrl" to "cascade-target",
+            "ownerUserId" to target.id, "name" to "대상 스튜디오", "galleryUrl" to "cascade-target",
         ))
+        val personalWorkspaceId = jdbcClient.sql(
+            "SELECT id FROM workspaces WHERE type = 'PERSONAL' AND personal_owner_user_id = :userId",
+        ).param("userId", target.id).query { rs, _ -> rs.getLong(1) }.single()
         val targetTemplateId = insertAlbumTemplate(targetStudio.id, "target-user")
         create(actor.requiredId, AdminResourceType.GALLERY, mapOf(
-            "studioId" to targetStudio.id, "title" to "대상 갤러리",
+            "workspaceId" to targetStudio.id, "title" to "대상 갤러리",
         ))
         val other = create(actor.requiredId, AdminResourceType.USER, mapOf(
             "provider" to "NAVER", "providerId" to "other-owner", "nickname" to "다른 소유자",
         ))
         val otherStudio = create(actor.requiredId, AdminResourceType.STUDIO, mapOf(
-            "userId" to other.id, "name" to "다른 스튜디오", "galleryUrl" to "other-gallery",
+            "ownerUserId" to other.id, "name" to "다른 스튜디오", "galleryUrl" to "other-gallery",
         ))
         val otherTemplateId = insertAlbumTemplate(otherStudio.id, "other-user")
         val otherGallery = create(actor.requiredId, AdminResourceType.GALLERY, mapOf(
-            "studioId" to otherStudio.id, "title" to "외부 갤러리",
+            "workspaceId" to otherStudio.id, "title" to "외부 갤러리",
         ))
         val externalStudioMemberId = insertStudioMember(otherStudio.id, target.id)
         val ownedStudioMember = create(actor.requiredId, AdminResourceType.USER, mapOf(
@@ -319,18 +375,23 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
 
         assertThat(batch.affectedCounts)
             .containsEntry("USER", 1L)
-            .containsEntry("STUDIO_MEMBER", 2L)
+            .containsEntry("WORKSPACE", 2L)
+            .containsEntry("WORKSPACE_MEMBER", 4L)
             .containsEntry("GALLERY_MEMBER", 1L)
-        assertThat(deletedAt("studio_members", externalStudioMemberId)).isNotNull()
-        assertThat(deletedAt("studio_members", ownedStudioMemberId)).isNotNull()
+        assertThat(deletedAt("workspaces", personalWorkspaceId)).isNotNull()
+        assertThat(deletedAt("workspaces", targetStudio.id)).isNotNull()
+        assertThat(deletedAt("workspace_members", externalStudioMemberId)).isNotNull()
+        assertThat(deletedAt("workspace_members", ownedStudioMemberId)).isNotNull()
         assertThat(deletedAt("gallery_members", memberId)).isNotNull()
         assertThat(count("refresh_tokens", "user_id", target.id)).isZero()
 
         service.restoreBatch(actor.requiredId, batch.id, AdminReasonRequest("탈퇴 처리 취소"), "127.0.0.1")
 
-        assertThat(deletedAt("studio_members", externalStudioMemberId)).isNull()
-        assertThat(deletedAt("studio_members", ownedStudioMemberId)).isNull()
+        assertThat(deletedAt("workspace_members", externalStudioMemberId)).isNull()
+        assertThat(deletedAt("workspace_members", ownedStudioMemberId)).isNull()
         assertThat(deletedAt("gallery_members", memberId)).isNull()
+        assertThat(deletedAt("workspaces", personalWorkspaceId)).isNull()
+        assertThat(deletedAt("workspaces", targetStudio.id)).isNull()
         assertThat(count("refresh_tokens", "user_id", target.id)).isZero()
 
         val restoredTarget = resourceService.get(AdminResourceType.USER, target.id)
@@ -351,8 +412,8 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
 
         assertThat(count("users", "id", target.id)).isZero()
         assertThat(count("studios", "id", targetStudio.id)).isZero()
-        assertThat(count("studio_members", "id", externalStudioMemberId)).isZero()
-        assertThat(count("studio_members", "id", ownedStudioMemberId)).isZero()
+        assertThat(count("workspace_members", "id", externalStudioMemberId)).isZero()
+        assertThat(count("workspace_members", "id", ownedStudioMemberId)).isZero()
         assertThat(count("admin_album_templates", "id", targetTemplateId)).isZero()
         assertThat(count("users", "id", ownedStudioMember.id)).isOne()
         assertThat(count("studios", "id", otherStudio.id)).isOne()
@@ -369,10 +430,10 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             "provider" to "GOOGLE", "providerId" to "overlap-owner", "nickname" to "갤러리 소유자",
         ))
         val studio = create(actor.requiredId, AdminResourceType.STUDIO, mapOf(
-            "userId" to owner.id, "name" to "충돌 스튜디오", "galleryUrl" to "overlap-gallery",
+            "ownerUserId" to owner.id, "name" to "충돌 스튜디오", "galleryUrl" to "overlap-gallery",
         ))
         val gallery = create(actor.requiredId, AdminResourceType.GALLERY, mapOf(
-            "studioId" to studio.id, "title" to "충돌 갤러리",
+            "workspaceId" to studio.id, "title" to "충돌 갤러리",
         ))
         jdbcClient.sql(
             """
@@ -401,7 +462,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             "provider" to "GOOGLE", "providerId" to "studio-member-owner", "nickname" to "스튜디오 소유자",
         ))
         val studio = create(actor.requiredId, AdminResourceType.STUDIO, mapOf(
-            "userId" to owner.id, "name" to "구성원 대상 스튜디오", "galleryUrl" to "studio-member-cascade",
+            "ownerUserId" to owner.id, "name" to "구성원 대상 스튜디오", "galleryUrl" to "studio-member-cascade",
         ))
         val templateId = insertAlbumTemplate(studio.id, "target-studio")
         val member = create(actor.requiredId, AdminResourceType.USER, mapOf(
@@ -413,7 +474,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             "provider" to "NAVER", "providerId" to "studio-member-other-owner", "nickname" to "다른 소유자",
         ))
         val unrelatedStudio = create(actor.requiredId, AdminResourceType.STUDIO, mapOf(
-            "userId" to unrelatedOwner.id, "name" to "무관 스튜디오", "galleryUrl" to "studio-member-unrelated",
+            "ownerUserId" to unrelatedOwner.id, "name" to "무관 스튜디오", "galleryUrl" to "studio-member-unrelated",
         ))
         val unrelatedTemplateId = insertAlbumTemplate(unrelatedStudio.id, "unrelated-studio")
         val unrelatedRelationId = insertStudioMember(unrelatedStudio.id, member.id)
@@ -426,11 +487,15 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             "127.0.0.1",
         )
 
-        assertThat(batch.affectedCounts).containsEntry("STUDIO", 1L).containsEntry("STUDIO_MEMBER", 1L)
-        assertThat(batch.entries.single { it.resourceType == "STUDIO_MEMBER" }.relationPath)
-            .isEqualTo("STUDIO>STUDIO_MEMBER")
-        assertThat(deletedAt("studio_members", memberRelationId)).isNotNull()
-        assertThat(deletedAt("studio_members", unrelatedRelationId)).isNull()
+        assertThat(batch.affectedCounts)
+            .containsEntry("STUDIO", 1L)
+            .containsEntry("WORKSPACE", 1L)
+            .containsEntry("WORKSPACE_MEMBER", 2L)
+        assertThat(batch.entries.filter { it.resourceType == "WORKSPACE_MEMBER" }.map { it.relationPath })
+            .containsOnly("STUDIO>WORKSPACE_MEMBER")
+        assertThat(deletedAt("workspace_members", memberRelationId)).isNotNull()
+        assertThat(deletedAt("workspaces", studio.id)).isNotNull()
+        assertThat(deletedAt("workspace_members", unrelatedRelationId)).isNull()
         assertThat(count("users", "id", member.id)).isOne()
 
         service.restoreBatch(
@@ -439,8 +504,9 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             AdminReasonRequest("[INCIDENT_RECOVERY] 스튜디오 복원"),
             "127.0.0.1",
         )
-        assertThat(deletedAt("studio_members", memberRelationId)).isNull()
-        assertThat(deletedAt("studio_members", unrelatedRelationId)).isNull()
+        assertThat(deletedAt("workspace_members", memberRelationId)).isNull()
+        assertThat(deletedAt("workspaces", studio.id)).isNull()
+        assertThat(deletedAt("workspace_members", unrelatedRelationId)).isNull()
 
         val restoredStudio = resourceService.get(AdminResourceType.STUDIO, studio.id)
         val purgeBatch = service.delete(
@@ -459,12 +525,12 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         purgeService.purgeExpired()
 
         assertThat(count("studios", "id", studio.id)).isZero()
-        assertThat(count("studio_members", "id", memberRelationId)).isZero()
+        assertThat(count("workspace_members", "id", memberRelationId)).isZero()
         assertThat(count("admin_album_templates", "id", templateId)).isZero()
         assertThat(count("users", "id", owner.id)).isOne()
         assertThat(count("users", "id", member.id)).isOne()
         assertThat(count("studios", "id", unrelatedStudio.id)).isOne()
-        assertThat(count("studio_members", "id", unrelatedRelationId)).isOne()
+        assertThat(count("workspace_members", "id", unrelatedRelationId)).isOne()
         assertThat(count("admin_album_templates", "id", unrelatedTemplateId)).isOne()
     }
 
@@ -475,10 +541,10 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             "provider" to "GOOGLE", "providerId" to "purge-owner", "nickname" to "영구 삭제 소유자",
         ))
         val studio = create(actor.requiredId, AdminResourceType.STUDIO, mapOf(
-            "userId" to user.id, "name" to "영구 삭제 스튜디오", "galleryUrl" to "purge-gallery",
+            "ownerUserId" to user.id, "name" to "영구 삭제 스튜디오", "galleryUrl" to "purge-gallery",
         ))
         val gallery = create(actor.requiredId, AdminResourceType.GALLERY, mapOf(
-            "studioId" to studio.id, "title" to "영구 삭제 갤러리",
+            "workspaceId" to studio.id, "title" to "영구 삭제 갤러리",
         ))
         val reusableTemplateId = insertAlbumTemplate(studio.id, "gallery-shared")
         val member = create(actor.requiredId, AdminResourceType.USER, mapOf(
@@ -494,7 +560,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             .query { rs, _ -> rs.getLong("id") }.single()
         val photo = createPhoto(actor.requiredId, gallery.id, "purge.jpg")
         val siblingGallery = create(actor.requiredId, AdminResourceType.GALLERY, mapOf(
-            "studioId" to studio.id, "title" to "보존 대상 갤러리",
+            "workspaceId" to studio.id, "title" to "보존 대상 갤러리",
         ))
         val siblingPhoto = createPhoto(actor.requiredId, siblingGallery.id, "sibling.jpg")
         insertProcessingJob(photo.id, "SUCCEEDED", "purge-target")
@@ -560,13 +626,13 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             "nickname" to "대량 삭제 소유자",
         ))
         val studio = create(actor.requiredId, AdminResourceType.STUDIO, mapOf(
-            "userId" to owner.id,
+            "ownerUserId" to owner.id,
             "name" to "대량 삭제 스튜디오",
             "galleryUrl" to "cascade-purge-fairness",
         ))
         val batchToGallery = (1..22).associate { index ->
             val gallery = create(actor.requiredId, AdminResourceType.GALLERY, mapOf(
-                "studioId" to studio.id,
+                "workspaceId" to studio.id,
                 "title" to "대량 삭제 갤러리 $index",
             ))
             val batch = service.delete(
@@ -637,10 +703,10 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             "provider" to "GOOGLE", "providerId" to "cancel-owner", "nickname" to "취소 소유자",
         ))
         val studio = create(actor.requiredId, AdminResourceType.STUDIO, mapOf(
-            "userId" to owner.id, "name" to "취소 스튜디오", "galleryUrl" to "cancel-pending",
+            "ownerUserId" to owner.id, "name" to "취소 스튜디오", "galleryUrl" to "cancel-pending",
         ))
         val gallery = create(actor.requiredId, AdminResourceType.GALLERY, mapOf(
-            "studioId" to studio.id, "title" to "취소 대상 갤러리",
+            "workspaceId" to studio.id, "title" to "취소 대상 갤러리",
         ))
         val photo = createPhoto(actor.requiredId, gallery.id, "cancel.jpg")
         val selection = create(actor.requiredId, AdminResourceType.SELECTION, mapOf("galleryId" to gallery.id))
@@ -649,10 +715,10 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             "provider" to "NAVER", "providerId" to "cancel-other", "nickname" to "무관 소유자",
         ))
         val otherStudio = create(actor.requiredId, AdminResourceType.STUDIO, mapOf(
-            "userId" to otherOwner.id, "name" to "무관 스튜디오", "galleryUrl" to "cancel-other",
+            "ownerUserId" to otherOwner.id, "name" to "무관 스튜디오", "galleryUrl" to "cancel-other",
         ))
         val otherGallery = create(actor.requiredId, AdminResourceType.GALLERY, mapOf(
-            "studioId" to otherStudio.id, "title" to "무관 갤러리",
+            "workspaceId" to otherStudio.id, "title" to "무관 갤러리",
         ))
         val otherPhoto = createPhoto(actor.requiredId, otherGallery.id, "other.jpg")
         val otherSelection = create(
@@ -715,13 +781,13 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             "provider" to "GOOGLE", "providerId" to "legacy-owner", "nickname" to "기존 삭제 소유자",
         ))
         val studio = create(actor.requiredId, AdminResourceType.STUDIO, mapOf(
-            "userId" to user.id, "name" to "기존 삭제 스튜디오", "galleryUrl" to "legacy-cutoff",
+            "ownerUserId" to user.id, "name" to "기존 삭제 스튜디오", "galleryUrl" to "legacy-cutoff",
         ))
         val expiredGallery = create(actor.requiredId, AdminResourceType.GALLERY, mapOf(
-            "studioId" to studio.id, "title" to "만료 갤러리",
+            "workspaceId" to studio.id, "title" to "만료 갤러리",
         ))
         val activeGallery = create(actor.requiredId, AdminResourceType.GALLERY, mapOf(
-            "studioId" to studio.id, "title" to "사진 부모 갤러리",
+            "workspaceId" to studio.id, "title" to "사진 부모 갤러리",
         ))
         val expiredPhoto = createPhoto(actor.requiredId, activeGallery.id, "legacy-expired.jpg")
         listOf(
@@ -766,6 +832,34 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
     private fun create(actorId: Long, type: AdminResourceType, fields: Map<String, Any?>) =
         resourceService.create(actorId, type, CreateAdminResourceRequest("테스트 데이터 생성", fields), "127.0.0.1")
 
+    private fun createConceptFolder(galleryId: Long): Long = jdbcClient.sql(
+        """
+        INSERT INTO concept_folders
+            (gallery_id, name, sort_order, created_source, version, created_at, updated_at)
+        VALUES (:galleryId, '연쇄 삭제 컨셉', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING id
+        """.trimIndent(),
+    ).param("galleryId", galleryId).query { rs, _ -> rs.getLong("id") }.single()
+
+    private fun assignPhotoToSession(sessionId: Long, photoId: Long) {
+        val detailId = jdbcClient.sql(
+            """
+            INSERT INTO detail_folders
+                (concept_folder_id, name, sort_order, created_source, version, created_at, updated_at)
+            SELECT concept_folder_id, '연쇄 삭제 상세', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            FROM collab_sessions WHERE id = :sessionId
+            RETURNING id
+            """.trimIndent(),
+        ).param("sessionId", sessionId).query { rs, _ -> rs.getLong("id") }.single()
+        jdbcClient.sql(
+            """
+            INSERT INTO photo_category_assignments
+                (photo_id, detail_folder_id, assigned_source, assigned_at, version, created_at, updated_at)
+            VALUES (:photoId, :detailId, 'USER', CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """.trimIndent(),
+        ).param("photoId", photoId).param("detailId", detailId).update()
+    }
+
     private fun createPhoto(actorId: Long, galleryId: Long, name: String) = create(
         actorId,
         AdminResourceType.PHOTO,
@@ -794,7 +888,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
 
     private fun insertStudioMember(studioId: Long, userId: Long): Long = jdbcClient.sql(
         """
-        INSERT INTO studio_members (studio_id, user_id, role, version, created_at, updated_at)
+        INSERT INTO workspace_members (workspace_id, user_id, role, version, created_at, updated_at)
         VALUES (:studioId, :userId, 'MEMBER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING id
         """.trimIndent(),
@@ -952,12 +1046,15 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
     ).param("id", id).query { rs, _ -> rs.getString("status") }.list()
 
     private fun deletedAt(table: String, id: Long): Long? = jdbcClient.sql(
-        "SELECT COALESCE((EXTRACT(EPOCH FROM deleted_at) * 1000000)::BIGINT, -1) FROM $table WHERE id = :id",
+        "SELECT COALESCE((EXTRACT(EPOCH FROM deleted_at) * 1000000)::BIGINT, -1) FROM $table WHERE ${idColumn(table, "id")} = :id",
     ).param("id", id).query { rs, _ -> rs.getLong(1) }.single().takeUnless { it == -1L }
 
     private fun count(table: String, idColumn: String, id: Long): Long = jdbcClient.sql(
-        "SELECT COUNT(*) FROM $table WHERE $idColumn = :id",
+        "SELECT COUNT(*) FROM $table WHERE ${idColumn(table, idColumn)} = :id",
     ).param("id", id).query { rs, _ -> rs.getLong(1) }.single()
+
+    private fun idColumn(table: String, requested: String): String =
+        if (table == "studios" && requested == "id") "workspace_id" else requested
 
     private fun batchStatus(id: Long): String = jdbcClient.sql("SELECT status FROM admin_trash_batches WHERE id = :id")
         .param("id", id).query { rs, _ -> rs.getString(1) }.single()

@@ -1,5 +1,7 @@
 package com.soma.wes.collab.support
 
+import com.soma.wes.category.dto.request.CreateConceptFolderRequest
+import com.soma.wes.category.service.CategoryService
 import com.soma.wes.collab.dto.request.EnterCollabRequest
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
 import com.soma.wes.collab.dto.response.CollabSessionResponse
@@ -34,6 +36,7 @@ import java.time.ZonedDateTime
 @IntegrationTest
 class CollabSessionAccessTest @Autowired constructor(
     private val collabSessionAccess: CollabSessionAccess,
+    private val categoryService: CategoryService,
     private val collabSessionService: CollabSessionService,
     private val collabGuestService: CollabGuestService,
     private val galleryFixture: GalleryFixture,
@@ -43,10 +46,16 @@ class CollabSessionAccessTest @Autowired constructor(
 ) {
 
     private lateinit var fixture: OpenGallery
+    private var conceptId: Long = 0
 
     @BeforeEach
     fun setUpBaseData() {
         fixture = galleryFixture.멤버와_열린_갤러리()
+        conceptId = categoryService.createConcept(
+            fixture.galleryId,
+            fixture.photographer.requiredId,
+            CreateConceptFolderRequest("하객 공유"),
+        ).id
     }
 
     @Nested
@@ -85,7 +94,7 @@ class CollabSessionAccessTest @Autowired constructor(
             // "우리가 발급했던 링크가 맞고 지금은 쓸 수 없다"를 알아야 새 링크를 안내할 수 있다.
             // given
             val session = openSession()
-            collabSessionService.revoke(fixture.galleryId, session.sessionId, fixture.member.id!!)
+            collabSessionService.revoke(fixture.galleryId, session.sessionId, fixture.photographer.id!!)
 
             // when & then
             assertThatThrownBy { collabSessionAccess.requireReadable(session.collabToken) }
@@ -271,8 +280,22 @@ class CollabSessionAccessTest @Autowired constructor(
     private val CollabSessionResponse.collabToken: String
         get() = collabUrl.substringAfterLast('/')
 
-    private fun openSession(target: OpenGallery = fixture, name: String = "하객에게"): CollabSessionResponse =
-        collabSessionService.open(target.galleryId, target.member.id!!, OpenCollabSessionRequest(name = name))
+    private fun openSession(target: OpenGallery = fixture, name: String = "하객에게"): CollabSessionResponse {
+        val targetConceptId = if (target.galleryId == fixture.galleryId) {
+            conceptId
+        } else {
+            categoryService.createConcept(
+                target.galleryId,
+                target.photographer.requiredId,
+                CreateConceptFolderRequest("하객 공유"),
+            ).id
+        }
+        return collabSessionService.open(
+            target.galleryId,
+            target.photographer.requiredId,
+            OpenCollabSessionRequest(targetConceptId, name),
+        )
+    }
 
     private fun enter(collabToken: String, nickname: String): String =
         collabGuestService.enter(collabToken, EnterCollabRequest(nickname)).guestToken

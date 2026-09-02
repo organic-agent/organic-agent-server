@@ -32,15 +32,18 @@ class ProductChildTrashRepository(
         .isPresent
 
     /** 좋아요 생성과 동일한 사진 행을 잠궈 재좋아요와 취소가 교차하지 않게 한다. */
-    fun lockCollabPhoto(sessionId: Long, collabPhotoId: Long): Boolean = jdbcClient.sql(
+    fun lockCollabPhoto(sessionId: Long, photoId: Long): Boolean = jdbcClient.sql(
         """
-        SELECT id
-        FROM collab_photos
-        WHERE id = :collabPhotoId AND collab_session_id = :sessionId
+        SELECT p.id
+        FROM collab_sessions s
+        JOIN detail_folders d ON d.concept_folder_id = s.concept_folder_id AND d.deleted_at IS NULL
+        JOIN photo_category_assignments a ON a.detail_folder_id = d.id
+        JOIN photos p ON p.id = a.photo_id AND p.deleted_at IS NULL
+        WHERE s.id = :sessionId AND p.id = :photoId
         FOR UPDATE
         """.trimIndent(),
     )
-        .param("collabPhotoId", collabPhotoId)
+        .param("photoId", photoId)
         .param("sessionId", sessionId)
         .query { rs, _ -> rs.getLong("id") }
         .optional()
@@ -58,10 +61,7 @@ class ProductChildTrashRepository(
             UPDATE collab_photo_comments c
             SET deleted_at = :deletedAt, version = c.version + 1, updated_at = :deletedAt
             WHERE c.id = :commentId AND c.deleted_at IS NULL
-              AND EXISTS (
-                  SELECT 1 FROM collab_photos p
-                  WHERE p.id = c.collab_photo_id AND p.collab_session_id = :sessionId
-              )
+              AND c.collab_session_id = :sessionId
               $authorPredicate
             RETURNING c.id
             """.trimIndent(),
@@ -75,25 +75,22 @@ class ProductChildTrashRepository(
 
     fun softDeleteLike(
         sessionId: Long,
-        collabPhotoId: Long,
+        photoId: Long,
         guestId: Long,
         deletedAt: ZonedDateTime,
     ): Long? = jdbcClient.sql(
         """
         UPDATE collab_photo_likes l
         SET deleted_at = :deletedAt, version = l.version + 1, updated_at = :deletedAt
-        WHERE l.collab_photo_id = :collabPhotoId
+        WHERE l.collab_session_id = :sessionId
+          AND l.photo_id = :photoId
           AND l.collab_guest_id = :guestId
           AND l.deleted_at IS NULL
-          AND EXISTS (
-              SELECT 1 FROM collab_photos p
-              WHERE p.id = l.collab_photo_id AND p.collab_session_id = :sessionId
-          )
         RETURNING l.id
         """.trimIndent(),
     )
         .param("sessionId", sessionId)
-        .param("collabPhotoId", collabPhotoId)
+        .param("photoId", photoId)
         .param("guestId", guestId)
         .param("deletedAt", deletedAt.toOffsetDateTime())
         .query { rs, _ -> rs.getLong("id") }

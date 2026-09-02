@@ -38,7 +38,7 @@ class AdminImpersonationReadModelService(
         val base = baseRepository.view(type, targetId, viewer)
         val galleries = galleryService.findAllVisibleTo(viewer.userId).filter { gallery ->
             when (type) {
-                AdminResourceType.STUDIO -> gallery.studioId == targetId
+                AdminResourceType.STUDIO -> gallery.workspaceId == targetId
                 AdminResourceType.GALLERY -> gallery.id == targetId
                 else -> true
             }

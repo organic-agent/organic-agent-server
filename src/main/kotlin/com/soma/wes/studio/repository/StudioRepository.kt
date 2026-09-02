@@ -7,14 +7,6 @@ import org.springframework.data.jpa.repository.Lock
 
 interface StudioRepository : JpaRepository<Studio, Long> {
 
-    fun findByUserId(userId: Long): Studio?
-
-    fun findByUserIdAndSuspendedAtIsNull(userId: Long): Studio?
-
-    fun existsByUserId(userId: Long): Boolean
-
-    fun existsByIdAndUserId(id: Long, userId: Long): Boolean
-
     fun existsByIdAndSuspendedAtIsNull(id: Long): Boolean
 
     fun findAllByIdInAndSuspendedAtIsNull(ids: Collection<Long>): List<Studio>

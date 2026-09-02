@@ -29,15 +29,15 @@ class AdminCascadeTrashRepository(
             AdminResourceType.USER -> jdbcClient.sql(
                 """
                 SELECT g.id FROM galleries g
-                JOIN studios s ON s.id = g.studio_id
-                WHERE s.user_id = :rootId ORDER BY g.id
+                WHERE g.workspace_id IN ($USER_OWNED_WORKSPACES_SQL)
+                ORDER BY g.id
                 """.trimIndent(),
             )
                 .param("rootId", rootId)
                 .query { rs, _ -> rs.getLong("id") }
                 .list()
             AdminResourceType.STUDIO -> jdbcClient.sql(
-                "SELECT id FROM galleries WHERE studio_id = :rootId ORDER BY id",
+                "SELECT id FROM galleries WHERE workspace_id = :rootId ORDER BY id",
             )
                 .param("rootId", rootId)
                 .query { rs, _ -> rs.getLong("id") }
@@ -54,8 +54,8 @@ class AdminCascadeTrashRepository(
                 """
                 SELECT p.id FROM photos p
                 JOIN galleries g ON g.id = p.gallery_id
-                JOIN studios s ON s.id = g.studio_id
-                WHERE s.user_id = :rootId ORDER BY p.id
+                WHERE g.workspace_id IN ($USER_OWNED_WORKSPACES_SQL)
+                ORDER BY p.id
                 """.trimIndent(),
             )
                 .param("rootId", rootId)
@@ -65,7 +65,7 @@ class AdminCascadeTrashRepository(
                 """
                 SELECT p.id FROM photos p
                 JOIN galleries g ON g.id = p.gallery_id
-                WHERE g.studio_id = :rootId ORDER BY p.id
+                WHERE g.workspace_id = :rootId ORDER BY p.id
                 """.trimIndent(),
             )
                 .param("rootId", rootId)
@@ -80,7 +80,13 @@ class AdminCascadeTrashRepository(
             AdminResourceType.PHOTO -> listOf(rootId)
             AdminResourceType.SELECTION -> relatedPhotoIds("photo_selection_items", "selection_id", rootId)
             AdminResourceType.COLLABORATION -> jdbcClient.sql(
-                "SELECT photo_id AS id FROM collab_photos WHERE collab_session_id = :rootId ORDER BY photo_id",
+                """
+                SELECT a.photo_id AS id
+                FROM collab_sessions s
+                JOIN detail_folders d ON d.concept_folder_id = s.concept_folder_id AND d.deleted_at IS NULL
+                JOIN photo_category_assignments a ON a.detail_folder_id = d.id
+                WHERE s.id = :rootId ORDER BY a.photo_id
+                """.trimIndent(),
             )
                 .param("rootId", rootId)
                 .query { rs, _ -> rs.getLong("id") }
@@ -92,6 +98,20 @@ class AdminCascadeTrashRepository(
                 .param("rootId", rootId)
                 .query { rs, _ -> rs.getLong("id") }
                 .list()
+            AdminResourceType.CONCEPT_FOLDER -> jdbcClient.sql(
+                """
+                SELECT a.photo_id AS id
+                FROM detail_folders d
+                JOIN photo_category_assignments a ON a.detail_folder_id = d.id
+                WHERE d.concept_folder_id = :rootId ORDER BY a.photo_id
+                """.trimIndent(),
+            ).param("rootId", rootId).query { rs, _ -> rs.getLong("id") }.list()
+            AdminResourceType.DETAIL_FOLDER -> relatedPhotoIds(
+                "photo_category_assignments",
+                "detail_folder_id",
+                rootId,
+            )
+            else -> emptyList()
         }
         photoIds.distinct().sorted().forEach { photoId ->
             lockProductPurgeCoordination("PHOTO", photoId)
@@ -153,7 +173,7 @@ class AdminCascadeTrashRepository(
                         updated_at = CURRENT_TIMESTAMP
                     WHERE r.deleted_at IS NULL
                       AND ($predicate)
-                    RETURNING r.id
+                    RETURNING r.${target.idColumn} AS id
                 )
                 INSERT INTO admin_trash_entries (
                     batch_id, resource_type, resource_id, is_root, relation_path, created_at
@@ -217,8 +237,7 @@ class AdminCascadeTrashRepository(
                           OR (e.resource_type = 'COLLAB_COMMENT' AND EXISTS (
                               SELECT 1
                               FROM collab_photo_comments x
-                              JOIN collab_photos p ON p.id = x.collab_photo_id
-                              JOIN collab_sessions s ON s.id = p.collab_session_id
+                              JOIN collab_sessions s ON s.id = x.collab_session_id
                               WHERE x.id = e.resource_id AND s.gallery_id = claim.resource_id
                           ))
                           OR (e.resource_type = 'ALBUM' AND EXISTS (
@@ -235,12 +254,37 @@ class AdminCascadeTrashRepository(
                         SELECT 1
                         FROM admin_trash_batches b
                         LEFT JOIN galleries g ON g.id = claim.resource_id
-                        LEFT JOIN studios s ON s.id = g.studio_id
                         WHERE b.id = :batchId
                           AND (
                               (b.root_type = 'GALLERY' AND b.root_id = claim.resource_id)
-                              OR (b.root_type = 'STUDIO' AND b.root_id = g.studio_id)
-                              OR (b.root_type = 'USER' AND b.root_id = s.user_id)
+                              OR (b.root_type = 'STUDIO' AND b.root_id = g.workspace_id)
+                              OR (b.root_type = 'USER' AND g.workspace_id IN (
+                                  SELECT w.id
+                                  FROM workspaces w
+                                  WHERE (w.type = 'PERSONAL' AND w.personal_owner_user_id = b.root_id)
+                                     OR (w.type = 'STUDIO'
+                                         AND EXISTS (
+                                             SELECT 1 FROM workspace_members owner_member
+                                             WHERE owner_member.workspace_id = w.id
+                                               AND owner_member.user_id = b.root_id
+                                               AND owner_member.role = 'OWNER'
+                                               AND (
+                                                   owner_member.deleted_at IS NULL
+                                                   OR EXISTS (
+                                                       SELECT 1 FROM studios owned_studio
+                                                       WHERE owned_studio.workspace_id = w.id
+                                                         AND owned_studio.deleted_at IS NOT NULL
+                                                   )
+                                               )
+                                         )
+                                         AND NOT EXISTS (
+                                             SELECT 1 FROM workspace_members other_owner
+                                             WHERE other_owner.workspace_id = w.id
+                                               AND other_owner.user_id <> b.root_id
+                                               AND other_owner.role = 'OWNER'
+                                               AND other_owner.deleted_at IS NULL
+                                         ))
+                              ))
                           )
                     )
                 )
@@ -259,14 +303,29 @@ class AdminCascadeTrashRepository(
                               WHERE x.selection_id = e.resource_id AND x.photo_id = claim.resource_id
                           ))
                           OR (e.resource_type = 'COLLABORATION' AND EXISTS (
-                              SELECT 1 FROM collab_photos x
-                              WHERE x.collab_session_id = e.resource_id AND x.photo_id = claim.resource_id
+                              SELECT 1
+                              FROM collab_sessions s
+                              JOIN detail_folders d ON d.concept_folder_id = s.concept_folder_id
+                              JOIN photo_category_assignments a ON a.detail_folder_id = d.id
+                              WHERE s.id = e.resource_id AND a.photo_id = claim.resource_id
                           ))
                           OR (e.resource_type = 'COLLAB_COMMENT' AND EXISTS (
                               SELECT 1
                               FROM collab_photo_comments x
-                              JOIN collab_photos p ON p.id = x.collab_photo_id
-                              WHERE x.id = e.resource_id AND p.photo_id = claim.resource_id
+                              WHERE x.id = e.resource_id AND x.photo_id = claim.resource_id
+                          ))
+                          OR (e.resource_type = 'CONCEPT_FOLDER' AND EXISTS (
+                              SELECT 1
+                              FROM detail_folders d
+                              JOIN photo_category_assignments a ON a.detail_folder_id = d.id
+                              WHERE d.concept_folder_id = e.resource_id
+                                AND a.photo_id = claim.resource_id
+                          ))
+                          OR (e.resource_type = 'DETAIL_FOLDER' AND EXISTS (
+                              SELECT 1
+                              FROM photo_category_assignments a
+                              WHERE a.detail_folder_id = e.resource_id
+                                AND a.photo_id = claim.resource_id
                           ))
                           OR (e.resource_type = 'ALBUM' AND EXISTS (
                               SELECT 1 FROM photo_folder_items x
@@ -283,12 +342,50 @@ class AdminCascadeTrashRepository(
                         FROM admin_trash_batches b
                         LEFT JOIN photos p ON p.id = claim.resource_id
                         LEFT JOIN galleries g ON g.id = p.gallery_id
-                        LEFT JOIN studios s ON s.id = g.studio_id
                         WHERE b.id = :batchId
                           AND (
                               (b.root_type = 'GALLERY' AND b.root_id = g.id)
-                              OR (b.root_type = 'STUDIO' AND b.root_id = g.studio_id)
-                              OR (b.root_type = 'USER' AND b.root_id = s.user_id)
+                              OR (b.root_type = 'STUDIO' AND b.root_id = g.workspace_id)
+                              OR (b.root_type = 'CONCEPT_FOLDER' AND EXISTS (
+                                  SELECT 1
+                                  FROM detail_folders d
+                                  JOIN photo_category_assignments a ON a.detail_folder_id = d.id
+                                  WHERE d.concept_folder_id = b.root_id
+                                    AND a.photo_id = claim.resource_id
+                              ))
+                              OR (b.root_type = 'DETAIL_FOLDER' AND EXISTS (
+                                  SELECT 1
+                                  FROM photo_category_assignments a
+                                  WHERE a.detail_folder_id = b.root_id
+                                    AND a.photo_id = claim.resource_id
+                              ))
+                              OR (b.root_type = 'USER' AND g.workspace_id IN (
+                                  SELECT w.id
+                                  FROM workspaces w
+                                  WHERE (w.type = 'PERSONAL' AND w.personal_owner_user_id = b.root_id)
+                                     OR (w.type = 'STUDIO'
+                                         AND EXISTS (
+                                             SELECT 1 FROM workspace_members owner_member
+                                             WHERE owner_member.workspace_id = w.id
+                                               AND owner_member.user_id = b.root_id
+                                               AND owner_member.role = 'OWNER'
+                                               AND (
+                                                   owner_member.deleted_at IS NULL
+                                                   OR EXISTS (
+                                                       SELECT 1 FROM studios owned_studio
+                                                       WHERE owned_studio.workspace_id = w.id
+                                                         AND owned_studio.deleted_at IS NOT NULL
+                                                   )
+                                               )
+                                         )
+                                         AND NOT EXISTS (
+                                             SELECT 1 FROM workspace_members other_owner
+                                             WHERE other_owner.workspace_id = w.id
+                                               AND other_owner.user_id <> b.root_id
+                                               AND other_owner.role = 'OWNER'
+                                               AND other_owner.deleted_at IS NULL
+                                         ))
+                              ))
                           )
                     )
                 )
@@ -568,7 +665,7 @@ class AdminCascadeTrashRepository(
                   FROM admin_trash_entries e
                   WHERE e.batch_id = :batchId
                     AND e.resource_type = :resourceType
-                    AND e.resource_id = r.id
+                    AND e.resource_id = r.${target.idColumn}
               )
             """.trimIndent(),
         )
@@ -683,18 +780,31 @@ class AdminCascadeTrashRepository(
                 .param("rootId", batch.rootId).update()
             jdbcClient.sql("DELETE FROM gallery_members WHERE user_id = :rootId")
                 .param("rootId", batch.rootId).update()
-            jdbcClient.sql("DELETE FROM studios WHERE user_id = :rootId")
-                .param("rootId", batch.rootId).update()
+            jdbcClient.sql(
+                """
+                DELETE FROM workspaces w
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM admin_trash_entries e
+                    WHERE e.batch_id = :batchId
+                      AND e.resource_type = 'WORKSPACE'
+                      AND e.resource_id = w.id
+                )
+                """.trimIndent(),
+            ).param("batchId", batch.id).update()
             jdbcClient.sql("DELETE FROM users WHERE id = :rootId")
                 .param("rootId", batch.rootId).update()
         }
-        AdminResourceType.STUDIO -> deleteById("studios", batch.rootId)
+        AdminResourceType.STUDIO -> deleteById("workspaces", batch.rootId)
         AdminResourceType.GALLERY -> deleteById("galleries", batch.rootId)
         AdminResourceType.PHOTO -> deleteById("photos", batch.rootId)
         AdminResourceType.SELECTION -> deleteById("photo_selections", batch.rootId)
         AdminResourceType.COLLABORATION -> deleteById("collab_sessions", batch.rootId)
         AdminResourceType.ALBUM -> deleteById("photo_folder_groups", batch.rootId)
         AdminResourceType.RETOUCH_REQUEST -> deleteById("retouch_rounds", batch.rootId)
+        AdminResourceType.CONCEPT_FOLDER -> deleteById("concept_folders", batch.rootId)
+        AdminResourceType.DETAIL_FOLDER -> deleteById("detail_folders", batch.rootId)
+        else -> 0
     }
 
     fun cancelPendingOperations(batchId: Long): Int {
@@ -913,27 +1023,28 @@ class AdminCascadeTrashRepository(
     private fun scopePredicate(root: AdminResourceType, target: String): String? = when (root) {
         AdminResourceType.USER -> when (target) {
             "USER" -> "r.id = :rootId"
-            "STUDIO_MEMBER" -> """
-                r.user_id = :rootId
-                OR r.studio_id IN (SELECT s.id FROM studios s WHERE s.user_id = :rootId)
-            """.trimIndent()
+            "WORKSPACE" -> "r.id IN ($USER_OWNED_WORKSPACES_SQL)"
+            "WORKSPACE_MEMBER" -> "r.user_id = :rootId OR r.workspace_id IN ($USER_OWNED_WORKSPACES_SQL)"
             "GALLERY_MEMBER" -> """
                 r.user_id = :rootId
                 OR r.gallery_id IN (
                     SELECT g.id
                     FROM galleries g
-                    WHERE g.studio_id IN (SELECT s.id FROM studios s WHERE s.user_id = :rootId)
+                    WHERE g.workspace_id IN (
+                        $USER_OWNED_WORKSPACES_SQL
+                    )
                 )
             """.trimIndent()
-            "STUDIO" -> "r.user_id = :rootId"
-            "GALLERY" -> "r.studio_id IN (SELECT s.id FROM studios s WHERE s.user_id = :rootId)"
-            else -> childGalleryPredicate(target, "g.studio_id IN (SELECT s.id FROM studios s WHERE s.user_id = :rootId)")
+            "STUDIO" -> "r.workspace_id IN ($USER_OWNED_WORKSPACES_SQL)"
+            "GALLERY" -> "r.workspace_id IN ($USER_OWNED_WORKSPACES_SQL)"
+            else -> childGalleryPredicate(target, "g.workspace_id IN ($USER_OWNED_WORKSPACES_SQL)")
         }
         AdminResourceType.STUDIO -> when (target) {
-            "STUDIO" -> "r.id = :rootId"
-            "STUDIO_MEMBER" -> "r.studio_id = :rootId"
-            "GALLERY" -> "r.studio_id = :rootId"
-            else -> childGalleryPredicate(target, "g.studio_id = :rootId")
+            "STUDIO" -> "r.workspace_id = :rootId"
+            "WORKSPACE" -> "r.id = :rootId"
+            "WORKSPACE_MEMBER" -> "r.workspace_id = :rootId"
+            "GALLERY" -> "r.workspace_id = :rootId"
+            else -> childGalleryPredicate(target, "g.workspace_id = :rootId")
         }
         AdminResourceType.GALLERY -> when (target) {
             "GALLERY" -> "r.id = :rootId"
@@ -943,47 +1054,56 @@ class AdminCascadeTrashRepository(
         AdminResourceType.SELECTION -> if (target == "SELECTION") "r.id = :rootId" else null
         AdminResourceType.COLLABORATION -> when (target) {
             "COLLABORATION" -> "r.id = :rootId"
-            "COLLAB_COMMENT" -> "r.collab_photo_id IN (SELECT cp.id FROM collab_photos cp WHERE cp.collab_session_id = :rootId)"
+            "COLLAB_COMMENT" -> "r.collab_session_id = :rootId"
             else -> null
         }
         AdminResourceType.ALBUM -> if (target == "ALBUM") "r.id = :rootId" else null
         AdminResourceType.RETOUCH_REQUEST -> if (target == "RETOUCH_REQUEST") "r.id = :rootId" else null
+        AdminResourceType.CONCEPT_FOLDER -> when (target) {
+            "CONCEPT_FOLDER" -> "r.id = :rootId"
+            "DETAIL_FOLDER" -> "r.concept_folder_id = :rootId"
+            "COLLABORATION" -> "r.concept_folder_id = :rootId"
+            "COLLAB_COMMENT" -> "r.collab_session_id IN (SELECT s.id FROM collab_sessions s WHERE s.concept_folder_id = :rootId)"
+            else -> null
+        }
+        AdminResourceType.DETAIL_FOLDER -> if (target == "DETAIL_FOLDER") "r.id = :rootId" else null
+        else -> null
     }
 
     private fun childGalleryPredicate(target: String, galleryPredicate: String): String? = when (target) {
         "GALLERY_MEMBER" ->
             "r.gallery_id IN (SELECT g.id FROM galleries g WHERE $galleryPredicate)"
-        "PHOTO", "SELECTION", "COLLABORATION", "ALBUM", "RETOUCH_REQUEST" ->
+        "PHOTO", "SELECTION", "COLLABORATION", "ALBUM", "RETOUCH_REQUEST", "CONCEPT_FOLDER" ->
             "r.gallery_id IN (SELECT g.id FROM galleries g WHERE $galleryPredicate)"
+        "DETAIL_FOLDER" ->
+            "r.concept_folder_id IN (SELECT c.id FROM concept_folders c WHERE c.gallery_id IN (SELECT g.id FROM galleries g WHERE $galleryPredicate))"
         "COLLAB_COMMENT" ->
-            "r.collab_photo_id IN (SELECT cp.id FROM collab_photos cp JOIN collab_sessions cs ON cs.id = cp.collab_session_id WHERE cs.gallery_id IN (SELECT g.id FROM galleries g WHERE $galleryPredicate))"
+            "r.collab_session_id IN (SELECT cs.id FROM collab_sessions cs WHERE cs.gallery_id IN (SELECT g.id FROM galleries g WHERE $galleryPredicate))"
         else -> null
     }
 
     private fun overlapPredicate(root: AdminResourceType): String = when (root) {
         AdminResourceType.USER -> """
             (b.root_type = 'USER' AND b.root_id = :rootId)
-            OR (b.root_type = 'STUDIO' AND b.root_id IN (SELECT s.id FROM studios s WHERE s.user_id = :rootId))
-            OR (b.root_type = 'STUDIO' AND b.root_id IN (SELECT sm.studio_id FROM studio_members sm WHERE sm.user_id = :rootId))
-            OR (b.root_type = 'STUDIO' AND b.root_id IN (SELECT g.studio_id FROM gallery_members gm JOIN galleries g ON g.id = gm.gallery_id WHERE gm.user_id = :rootId))
-            OR (b.root_type = 'GALLERY' AND b.root_id IN (SELECT g.id FROM galleries g JOIN studios s ON s.id = g.studio_id WHERE s.user_id = :rootId))
+            OR (b.root_type = 'STUDIO' AND b.root_id IN (SELECT wm.workspace_id FROM workspace_members wm JOIN studios s ON s.workspace_id = wm.workspace_id WHERE wm.user_id = :rootId))
+            OR (b.root_type = 'GALLERY' AND b.root_id IN (SELECT g.id FROM galleries g WHERE g.workspace_id IN ($USER_OWNED_WORKSPACES_SQL)))
             OR (b.root_type = 'GALLERY' AND b.root_id IN (SELECT gm.gallery_id FROM gallery_members gm WHERE gm.user_id = :rootId))
-            OR (b.root_type = 'USER' AND b.root_id IN (SELECT s.user_id FROM gallery_members gm JOIN galleries g ON g.id = gm.gallery_id JOIN studios s ON s.id = g.studio_id WHERE gm.user_id = :rootId))
-            OR (b.root_type = 'PHOTO' AND b.root_id IN (SELECT p.id FROM photos p JOIN galleries g ON g.id = p.gallery_id JOIN studios s ON s.id = g.studio_id WHERE s.user_id = :rootId))
-            OR (b.root_type = 'SELECTION' AND b.root_id IN (SELECT x.id FROM photo_selections x JOIN galleries g ON g.id = x.gallery_id JOIN studios s ON s.id = g.studio_id WHERE s.user_id = :rootId))
-            OR (b.root_type = 'COLLABORATION' AND b.root_id IN (SELECT x.id FROM collab_sessions x JOIN galleries g ON g.id = x.gallery_id JOIN studios s ON s.id = g.studio_id WHERE s.user_id = :rootId))
-            OR (b.root_type = 'ALBUM' AND b.root_id IN (SELECT x.id FROM photo_folder_groups x JOIN galleries g ON g.id = x.gallery_id JOIN studios s ON s.id = g.studio_id WHERE s.user_id = :rootId))
-            OR (b.root_type = 'RETOUCH_REQUEST' AND b.root_id IN (SELECT x.id FROM retouch_rounds x JOIN galleries g ON g.id = x.gallery_id JOIN studios s ON s.id = g.studio_id WHERE s.user_id = :rootId))
+            OR (b.root_type = 'PHOTO' AND b.root_id IN (SELECT p.id FROM photos p JOIN galleries g ON g.id = p.gallery_id WHERE g.workspace_id IN ($USER_OWNED_WORKSPACES_SQL)))
+            OR (b.root_type = 'SELECTION' AND b.root_id IN (SELECT x.id FROM photo_selections x JOIN galleries g ON g.id = x.gallery_id WHERE g.workspace_id IN ($USER_OWNED_WORKSPACES_SQL)))
+            OR (b.root_type = 'COLLABORATION' AND b.root_id IN (SELECT x.id FROM collab_sessions x JOIN galleries g ON g.id = x.gallery_id WHERE g.workspace_id IN ($USER_OWNED_WORKSPACES_SQL)))
+            OR (b.root_type = 'ALBUM' AND b.root_id IN (SELECT x.id FROM photo_folder_groups x JOIN galleries g ON g.id = x.gallery_id WHERE g.workspace_id IN ($USER_OWNED_WORKSPACES_SQL)))
+            OR (b.root_type = 'RETOUCH_REQUEST' AND b.root_id IN (SELECT x.id FROM retouch_rounds x JOIN galleries g ON g.id = x.gallery_id WHERE g.workspace_id IN ($USER_OWNED_WORKSPACES_SQL)))
+            OR (b.root_type = 'CONCEPT_FOLDER' AND b.root_id IN (SELECT x.id FROM concept_folders x JOIN galleries g ON g.id = x.gallery_id WHERE g.workspace_id IN ($USER_OWNED_WORKSPACES_SQL)))
+            OR (b.root_type = 'DETAIL_FOLDER' AND b.root_id IN (SELECT d.id FROM detail_folders d JOIN concept_folders c ON c.id = d.concept_folder_id JOIN galleries g ON g.id = c.gallery_id WHERE g.workspace_id IN ($USER_OWNED_WORKSPACES_SQL)))
         """.trimIndent()
-        AdminResourceType.STUDIO -> descendantOverlap("g.studio_id = :rootId", includeStudio = true)
+        AdminResourceType.STUDIO -> descendantOverlap("g.workspace_id = :rootId", includeStudio = true)
         AdminResourceType.GALLERY -> descendantOverlap("g.id = :rootId", includeStudio = false)
         else -> "b.root_type = '${root.name}' AND b.root_id = :rootId"
     }
 
     private fun descendantOverlap(galleryPredicate: String, includeStudio: Boolean): String = buildList {
         if (includeStudio) add("(b.root_type = 'STUDIO' AND b.root_id = :rootId)")
-        if (includeStudio) add("(b.root_type = 'USER' AND b.root_id IN (SELECT s.user_id FROM studios s WHERE s.id = :rootId))")
-        if (includeStudio) add("(b.root_type = 'USER' AND b.root_id IN (SELECT sm.user_id FROM studio_members sm WHERE sm.studio_id = :rootId))")
+        if (includeStudio) add("(b.root_type = 'USER' AND b.root_id IN (SELECT wm.user_id FROM workspace_members wm WHERE wm.workspace_id = :rootId))")
         add("(b.root_type = 'USER' AND b.root_id IN (SELECT gm.user_id FROM gallery_members gm WHERE gm.gallery_id IN (SELECT g.id FROM galleries g WHERE $galleryPredicate)))")
         add("(b.root_type = 'GALLERY' AND b.root_id IN (SELECT g.id FROM galleries g WHERE $galleryPredicate))")
         add("(b.root_type = 'PHOTO' AND b.root_id IN (SELECT p.id FROM photos p WHERE p.gallery_id IN (SELECT g.id FROM galleries g WHERE $galleryPredicate)))")
@@ -991,11 +1111,13 @@ class AdminCascadeTrashRepository(
         add("(b.root_type = 'COLLABORATION' AND b.root_id IN (SELECT x.id FROM collab_sessions x WHERE x.gallery_id IN (SELECT g.id FROM galleries g WHERE $galleryPredicate)))")
         add("(b.root_type = 'ALBUM' AND b.root_id IN (SELECT x.id FROM photo_folder_groups x WHERE x.gallery_id IN (SELECT g.id FROM galleries g WHERE $galleryPredicate)))")
         add("(b.root_type = 'RETOUCH_REQUEST' AND b.root_id IN (SELECT x.id FROM retouch_rounds x WHERE x.gallery_id IN (SELECT g.id FROM galleries g WHERE $galleryPredicate)))")
+        add("(b.root_type = 'CONCEPT_FOLDER' AND b.root_id IN (SELECT x.id FROM concept_folders x WHERE x.gallery_id IN (SELECT g.id FROM galleries g WHERE $galleryPredicate)))")
+        add("(b.root_type = 'DETAIL_FOLDER' AND b.root_id IN (SELECT d.id FROM detail_folders d JOIN concept_folders c ON c.id = d.concept_folder_id WHERE c.gallery_id IN (SELECT g.id FROM galleries g WHERE $galleryPredicate)))")
     }.joinToString(" OR ")
 
     private fun galleryScopePredicate(root: AdminResourceType): String? = when (root) {
-        AdminResourceType.USER -> "g.studio_id IN (SELECT s.id FROM studios s WHERE s.user_id = :rootId)"
-        AdminResourceType.STUDIO -> "g.studio_id = :rootId"
+        AdminResourceType.USER -> "g.workspace_id IN ($USER_OWNED_WORKSPACES_SQL)"
+        AdminResourceType.STUDIO -> "g.workspace_id = :rootId"
         AdminResourceType.GALLERY -> "g.id = :rootId"
         else -> null
     }
@@ -1026,9 +1148,37 @@ class AdminCascadeTrashRepository(
         val relationPath: String,
     )
 
-    private data class SoftTarget(val type: String, val table: String)
+    private data class SoftTarget(val type: String, val table: String, val idColumn: String = "id")
 
     companion object {
+        private const val USER_OWNED_WORKSPACES_SQL = """
+            SELECT w.id
+            FROM workspaces w
+            WHERE (w.type = 'PERSONAL' AND w.personal_owner_user_id = :rootId)
+               OR (w.type = 'STUDIO'
+                   AND EXISTS (
+                       SELECT 1 FROM workspace_members owner_member
+                       WHERE owner_member.workspace_id = w.id
+                         AND owner_member.user_id = :rootId
+                         AND owner_member.role = 'OWNER'
+                         AND (
+                             owner_member.deleted_at IS NULL
+                             OR EXISTS (
+                                 SELECT 1 FROM studios owned_studio
+                                 WHERE owned_studio.workspace_id = w.id
+                                   AND owned_studio.deleted_at IS NOT NULL
+                             )
+                         )
+                   )
+                   AND NOT EXISTS (
+                       SELECT 1 FROM workspace_members other_owner
+                       WHERE other_owner.workspace_id = w.id
+                         AND other_owner.user_id <> :rootId
+                         AND other_owner.role = 'OWNER'
+                         AND other_owner.deleted_at IS NULL
+                   ))
+        """
+
         private val FACT_NAMES = listOf(
             "entryCount",
             "rootEntryCount",
@@ -1043,11 +1193,14 @@ class AdminCascadeTrashRepository(
         )
         private val SOFT_TARGETS = listOf(
             SoftTarget("USER", "users"),
-            SoftTarget("STUDIO_MEMBER", "studio_members"),
+            SoftTarget("STUDIO", "studios", "workspace_id"),
+            SoftTarget("WORKSPACE", "workspaces"),
+            SoftTarget("WORKSPACE_MEMBER", "workspace_members"),
             SoftTarget("GALLERY_MEMBER", "gallery_members"),
-            SoftTarget("STUDIO", "studios"),
             SoftTarget("GALLERY", "galleries"),
             SoftTarget("PHOTO", "photos"),
+            SoftTarget("CONCEPT_FOLDER", "concept_folders"),
+            SoftTarget("DETAIL_FOLDER", "detail_folders"),
             SoftTarget("SELECTION", "photo_selections"),
             SoftTarget("COLLABORATION", "collab_sessions"),
             SoftTarget("COLLAB_COMMENT", "collab_photo_comments"),

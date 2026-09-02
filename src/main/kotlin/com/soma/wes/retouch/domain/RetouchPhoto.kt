@@ -18,7 +18,7 @@ import java.time.ZonedDateTime
 @Entity
 @SQLRestriction("deleted_at is null")
 // 전체 UNIQUE 제약이 아니라 deleted_at IS NULL 부분 유니크 인덱스로 현재 담긴 항목만
-// 한 건을 허용한다. JPA는 부분 인덱스를 표현하지 못하므로 V35 migration이 계약을 소유한다.
+// 한 건을 허용한다. JPA는 부분 인덱스를 표현하지 못하므로 기준선 DB 스키마가 계약을 소유한다.
 @Table(name = "retouch_photos")
 class RetouchPhoto(
 

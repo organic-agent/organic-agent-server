@@ -685,10 +685,10 @@ class AdminWorkflowExecutorTest @Autowired constructor(
             "provider" to "GOOGLE", "providerId" to suffix, "nickname" to suffix,
         ))
         val studio = create(AdminResourceType.STUDIO, actor.requiredId, mapOf(
-            "userId" to user.id, "name" to suffix, "galleryUrl" to suffix,
+            "ownerUserId" to user.id, "name" to suffix, "galleryUrl" to suffix,
         ))
         val gallery = create(AdminResourceType.GALLERY, actor.requiredId, mapOf(
-            "studioId" to studio.id, "title" to suffix,
+            "workspaceId" to studio.id, "title" to suffix,
         ))
         val photos = (1..photoCount).map { index ->
             create(AdminResourceType.PHOTO, actor.requiredId, mapOf(

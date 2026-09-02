@@ -9,11 +9,16 @@ import org.springframework.data.repository.query.Param
 interface CollabPhotoLikeRepository : JpaRepository<CollabPhotoLike, Long> {
 
     /** 이 하객이 이 사진을 이미 눌렀는지. 눌렀으면 그대로 두고 없을 때만 만든다. */
-    fun existsByCollabPhotoIdAndCollabGuestId(collabPhotoId: Long, collabGuestId: Long): Boolean
+    fun existsByCollabSessionIdAndPhotoIdAndCollabGuestId(
+        collabSessionId: Long,
+        photoId: Long,
+        collabGuestId: Long,
+    ): Boolean
 
     /** 하객 자신이 어느 사진을 눌렀는지. 화면이 자기가 누른 버튼을 켜둔 채로 그린다. */
-    fun findAllByCollabPhotoIdInAndCollabGuestId(
-        collabPhotoIds: Collection<Long>,
+    fun findAllByCollabSessionIdAndPhotoIdInAndCollabGuestId(
+        collabSessionId: Long,
+        photoIds: Collection<Long>,
         collabGuestId: Long,
     ): List<CollabPhotoLike>
 
@@ -23,13 +28,17 @@ interface CollabPhotoLikeRepository : JpaRepository<CollabPhotoLike, Long> {
      */
     @Query(
         """
-        SELECT l.collabPhotoId AS collabPhotoId, COUNT(l) AS count
+        SELECT l.photoId AS photoId, COUNT(l) AS count
         FROM CollabPhotoLike l
-        WHERE l.collabPhotoId IN :collabPhotoIds
-        GROUP BY l.collabPhotoId
+        WHERE l.collabSessionId = :sessionId AND l.photoId IN :photoIds
+        GROUP BY l.photoId
         """,
     )
-    fun countByCollabPhotoIdIn(
-        @Param("collabPhotoIds") collabPhotoIds: Collection<Long>,
+    fun countBySessionAndPhotoIdIn(
+        @Param("sessionId") sessionId: Long,
+        @Param("photoIds") photoIds: Collection<Long>,
     ): List<CollabLikeCountProjection>
+
+    fun deleteAllByCollabSessionIdAndPhotoIdIn(collabSessionId: Long, photoIds: Collection<Long>)
+    fun deleteAllByCollabSessionId(collabSessionId: Long)
 }
