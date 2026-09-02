@@ -39,7 +39,7 @@ paths:
 ## 소프트 삭제와 native SQL
 
 - JPA 경로는 `@SQLRestriction`이 `deleted_at` 필터를 자동으로 건다. **`TrashRepository` 밖에서
-  native SQL을 쓰면 `deleted_at IS NULL`을 직접 걸어야 한다** (pgvector pair 쿼리가 그렇게 한다).
+  native SQL을 쓰면 `deleted_at IS NULL`을 직접 걸어야 한다.**
   휴지통 행을 읽는 코드는 전부 `trash` 도메인의 `TrashRepository`(JdbcClient)로 모은다.
 
 ## 기타
