@@ -54,11 +54,11 @@ if [ ! -d "$AI_ROOT/photoselect" ]; then
 fi
 AI_PY="$AI_ROOT/photoselect/scripts/spike/.venv/bin/python"
 [ -x "$AI_PY" ] || AI_PY="python3"
-if ! "$AI_PY" -c "import photoselect" 2>/dev/null; then
+if ! "$AI_PY" -c "import photoselect_v1" 2>/dev/null; then
   echo "[setup] pip install -e $AI_ROOT/photoselect (최초 1회)" >&2
   "$AI_PY" -m pip install -q -e "$AI_ROOT/photoselect" --no-deps >&2
 fi
 
-# compare는 v3 전용이고 torch를 import하지 않는다 — 동기 경로가 가벼운 이유다.
-exec "$AI_PY" -m photoselect --pipeline v3 compare --db \
+# compare는 torch를 import하지 않는다 — 동기 경로가 가벼운 이유다.
+exec "$AI_PY" -m photoselect_v1 compare --db \
   --selection-id "$SELECTION_ID" --a "$PHOTO_A" --b "$PHOTO_B"

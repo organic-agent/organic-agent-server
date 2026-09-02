@@ -2,15 +2,14 @@
 # 로컬 AI 워커를 띄운다 — 웹의 "AI 분석"·"AI 추천" 버튼이 만든 잡(ai_analysis_jobs·ai_selection_jobs)을
 # 집어 AI repo의 analyze(A)·draft(B)를 돌린다. 운영에서 GPU EC2가 하는 일을 노트북 터미널 하나가 대신한다.
 #
-#   scripts/local-worker.sh [--no-vlm] [--llm] [--poll N] [--once]
+#   scripts/local-worker.sh [--llm] [--poll N] [--once]
 #
-#   --no-vlm   분석에서 VLM 태그를 뺀다. Ollama를 띄우지 않는다
-#   --llm      추천 이유 문장·피드백 번역을 Bedrock으로 (노트북 AWS 자격증명, 텍스트만 전송)
+#   --llm      naming·추천 이유 문장을 Bedrock으로 (노트북 AWS 자격증명. 폴더화 잡은 필수)
 #   --poll N   빈 큐일 때 대기 초 (기본 2)
 #   --once     쌓인 잡만 처리하고 종료
 #
-# 전제·접속 정보는 local-ai.sh와 같다: docker(pg), AI repo venv(photoselect/scripts/spike/.venv), 호스트 Ollama
-# (--no-vlm이면 불필요), AWS 자격증명(dev 버킷 + /wes/local/ 읽기). S3_BUCKET은 환경변수 → SSM 순.
+# 전제·접속 정보는 local-ai.sh와 같다: docker(pg), AI repo venv(photoselect/scripts/spike/.venv),
+# AWS 자격증명(dev 버킷 + /wes/local/ 읽기). S3_BUCKET은 환경변수 → SSM 순.
 # 임베딩은 이 워커가 하지 않는다 — 로컬 wes(local 프로필)가 "임베딩 실행" 버튼에서 `scripts/local-ai.sh
 # <galleryId> --only-embed`를 서브프로세스로 띄운다(LocalProcessEmbeddingInvoker). 즉 업로드부터 추천까지 웹 버튼이다.
 set -euo pipefail
@@ -19,13 +18,9 @@ AI_ROOT="${AI_ROOT:-$WES_ROOT/../../organic-agent-ai}"
 COMPOSE=(docker compose -f "$WES_ROOT/docker-compose.local.yml")
 REGION="${AWS_REGION:-ap-northeast-2}"
 BUCKET_PARAM="/wes/local/app.storage.bucket"
-VLM_MODEL="${VLM_MODEL:-gemma3:12b}"   # AI repo config.py의 vlm_model과 같아야 한다
-VLM_HOST="http://127.0.0.1:11434"
-
-NO_VLM=false; WORKER_ARGS=()
+WORKER_ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    --no-vlm) NO_VLM=true; WORKER_ARGS+=(--no-vlm) ;;
     --llm|--once) WORKER_ARGS+=("$1") ;;
     --poll) WORKER_ARGS+=(--poll "$2"); shift ;;
     -h|--help) sed -n 2,16p "$0"; exit 0 ;;
@@ -64,26 +59,13 @@ if [ ! -d "$AI_ROOT/photoselect" ]; then
 fi
 AI_PY="$AI_ROOT/photoselect/scripts/spike/.venv/bin/python"
 [ -x "$AI_PY" ] || AI_PY="python3"
-# src 레이아웃이라 editable 설치가 있어야 -m photoselect 가 잡힌다. 없으면 한 번 해 준다.
-if ! "$AI_PY" -c "import photoselect.worker" 2>/dev/null; then
+# src 레이아웃이라 editable 설치가 있어야 -m photoselect_v1 이 잡힌다. 없으면 한 번 해 준다.
+if ! "$AI_PY" -c "import photoselect_v1.worker" 2>/dev/null; then
   echo "[setup] pip install -e $AI_ROOT/photoselect (최초 1회)"
   "$AI_PY" -m pip install -q -e "$AI_ROOT/photoselect" --no-deps
 fi
 
-# --- VLM (Ollama) -------------------------------------------------------------------------------
-if [ "$NO_VLM" = false ]; then
-  if ! curl -sf "$VLM_HOST/api/tags" >/dev/null; then
-    command -v ollama >/dev/null || { echo "ollama가 없다. brew install ollama 또는 --no-vlm" >&2; exit 1; }
-    echo "[vlm] ollama serve 기동 (로그: /tmp/ollama-local.log)"
-    nohup ollama serve >/tmp/ollama-local.log 2>&1 &
-    for _ in $(seq 1 30); do curl -sf "$VLM_HOST/api/tags" >/dev/null && break; sleep 1; done
-  fi
-  if ! ollama list 2>/dev/null | grep -q "^$VLM_MODEL"; then
-    echo "[vlm] 모델 pull: $VLM_MODEL (첫 실행은 수 GB)"
-    ollama pull "$VLM_MODEL"
-  fi
-fi
 
 echo "worker  db=$DB_USER@$DB_HOST:$DB_PORT/$DB_NAME  bucket=$S3_BUCKET  args=${WORKER_ARGS[*]:-}"
 echo "        웹에서 AI 분석 / AI 추천 버튼을 누르면 여기서 처리된다. Ctrl-C 로 종료."
-exec "$AI_PY" -m photoselect worker "${WORKER_ARGS[@]}"
+exec "$AI_PY" -m photoselect_v1 worker "${WORKER_ARGS[@]}"
