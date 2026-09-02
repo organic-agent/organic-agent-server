@@ -22,7 +22,7 @@ import org.hibernate.type.SqlTypes
  * 쓰는 주체가 둘이다. 임베더 Lambda가 [embedding]·[embeddingModel]을 `INSERT … ON CONFLICT`로
  * 채우고, AI 분석 배치(full 잡)가 그룹·피사체·점수·클러스터를 채운다. 이 서버는 두 값 모두 정상
  * 경로에서는 쓰지 않는다 — [embeddedBy]는 Mock 갤러리 복제와 테스트가 쓰는 우회로다. 분석 컬럼은
- * 읽기 전용이라 `val`이고, `face_boxes`·`sub_scores`(jsonb)는 이 서버가 읽지 않아 매핑하지 않았다.
+ * 읽기 전용이라 `val`이고, `sub_scores`(jsonb)는 이 서버가 읽지 않아 매핑하지 않았다.
  */
 @Entity
 @Table(name = "photo_analysis")
