@@ -1,8 +1,13 @@
-"""photos 테이블 읽기/쓰기.
+"""photos·photo_analysis 테이블 읽기/쓰기.
 
-스키마는 앱(Flyway)이 소유한다. 이 모듈이 건드리는 것은 벡터(`embedding`)와 파생본 위치
-(`preview_key`), 촬영 정보(EXIF) 컬럼들, 그리고 `status`·`updated_at`이다. 전부 앱이 채울 수
-없는 값이라는 공통점이 있다 -- 이미지 바이트가 앱을 거치지 않기 때문이다.
+스키마는 앱(Flyway)이 소유한다. 이 모듈이 건드리는 것은 `photo_analysis`의 벡터(`embedding`·
+`embedding_model`)와 `photos`의 파생본 위치(`preview_key`), 촬영 정보(EXIF) 컬럼들, 그리고
+`status`·`updated_at`이다. 전부 앱이 채울 수 없는 값이라는 공통점이 있다 -- 이미지 바이트가
+앱을 거치지 않기 때문이다.
+
+벡터가 `photos`가 아니라 `photo_analysis`에 있는 이유는 생명주기다(V29). EXIF는 업로드 때 한 번
+정해지지만 벡터는 모델을 바꿀 때마다 다시 적는다. AI 분석 배치가 같은 행에 태그·점수·클러스터를
+채우므로, 여기서는 그 컬럼을 건드리지 않도록 벡터 두 컬럼만 `ON CONFLICT DO UPDATE` 한다.
 
 접속은 원래 **RDS IAM 인증 토큰**을 썼다. 토큰 생성(`generate_db_auth_token`)은 로컬 서명
 연산이라 네트워크를 타지 않는다 -- NAT도 인터페이스 엔드포인트도 없는 이 서브넷에서
@@ -99,7 +104,10 @@ def fetch_targets(connection: psycopg.Connection, gallery_id: int, force: bool) 
           AND g.deleted_at IS NULL
     """
     if not force:
-        sql += " AND p.embedding IS NULL"
+        sql += (
+            " AND NOT EXISTS (SELECT 1 FROM photo_analysis a"
+            " WHERE a.photo_id = p.id AND a.embedding IS NOT NULL)"
+        )
     sql += " ORDER BY p.id"
 
     with connection.cursor() as cursor:
@@ -110,14 +118,20 @@ def fetch_targets(connection: psycopg.Connection, gallery_id: int, force: bool) 
 def store_embeddings(
     connection: psycopg.Connection,
     results: Iterable[tuple[PhotoRef, np.ndarray, str | None, PhotoMetadata | None]],
+    model_id: str,
 ) -> int:
     """계산된 벡터와 파생본 위치, 촬영 정보를 배치로 적재한다.
 
     벡터 차원은 vector(n) 컬럼이 강제한다. 모델을 바꿔 폭이 달라지면 여기서 DB 에러로
     떨어진다 -- 조용히 틀린 값이 들어가지 않는다는 뜻이라 굳이 앞단에서 또 막지 않는다.
 
-    셋을 한 UPDATE에 쓰는 것이 중요하다. 따로 쓰면 "벡터는 있는데 미리보기는 없는" 중간
-    상태가 생기고, 그 상태를 프론트가 구분할 방법이 없다. 촬영 정보도 마찬가지다.
+    두 문장이지만 한 트랜잭션이다(커밋은 호출자가 배치 단위로 한다). 따로 커밋하면 "벡터는
+    있는데 상태는 UPLOADED인" 중간 상태가 생기고, 앱의 대상 수 집계와 fetch_targets가 서로
+    다른 답을 낸다. 미리보기·촬영 정보도 같은 이유로 같은 트랜잭션에 있다.
+
+    photo_analysis는 INSERT ... ON CONFLICT DO UPDATE다. 재실행(--force)이면 행이 이미 있고,
+    AI 분석 배치가 태그·점수를 채워 둔 행일 수도 있다 -- 그 컬럼은 건드리지 않고 벡터 둘만
+    갈아 끼운다. 분석 배치는 model_version으로 재분석 대상을 판별하므로 여기서 지울 것이 없다.
 
     COALESCE인 이유: 이번 실행에서 파생본 업로드나 EXIF 추출만 실패하면 그 자리에 None이
     오는데, 그때 이전 실행이 남긴 멀쩡한 값을 지우면 안 된다. 값이 원래 없던 사진에는
@@ -127,15 +141,19 @@ def store_embeddings(
     storage_key와 활성 사진·갤러리 조건을 함께 CAS해, 구 원본의 늦은 결과는 0행 갱신으로
     무시한다.
     """
+    results = list(results)
+    analysis_rows: Sequence[tuple] = [
+        (ref.photo_id, vector, model_id)
+        for ref, vector, _, _ in results
+    ]
     rows: Sequence[tuple] = [
         (
-            vector,
             preview_key,
             *_metadata_params(meta),
             ref.photo_id,
             ref.storage_key,
         )
-        for ref, vector, preview_key, meta in results
+        for ref, _, preview_key, meta in results
     ]
     if not rows:
         return 0
@@ -143,9 +161,20 @@ def store_embeddings(
     with connection.cursor() as cursor:
         cursor.executemany(
             """
+            INSERT INTO photo_analysis (photo_id, embedding, embedding_model, created_at, updated_at)
+            VALUES (%s, %s, %s, now(), now())
+            ON CONFLICT (photo_id) DO UPDATE
+            SET embedding = EXCLUDED.embedding,
+                embedding_model = EXCLUDED.embedding_model,
+                version = photo_analysis.version + 1,
+                updated_at = now()
+            """,
+            analysis_rows,
+        )
+        cursor.executemany(
+            """
             UPDATE photos
-            SET embedding = %s,
-                preview_key = COALESCE(%s, preview_key),
+            SET preview_key = COALESCE(%s, preview_key),
                 taken_at = COALESCE(%s, taken_at),
                 camera_make = COALESCE(%s, camera_make),
                 camera_model = COALESCE(%s, camera_model),
@@ -246,20 +275,33 @@ def complete_admin_embedding(
     connection: psycopg.Connection,
     event: "AdminPhotoEvent",
     vector: np.ndarray,
+    model_id: str,
 ) -> None:
+    # 벡터는 photo_analysis에 산다(V1 baseline). CTE 한 문장인 이유 -- _complete_admin_photo_job이
+    # rowcount 1로 CAS 성공을 판정하므로, 사진 CAS가 빗나가면 벡터 upsert도 0행이어야 한다.
     _complete_admin_photo_job(
         connection,
         event,
         """
-        UPDATE photos p
-        SET embedding = %s, status = 'EMBEDDED', version = version + 1, updated_at = now()
-        WHERE p.id = %s AND p.gallery_id = %s AND p.storage_key = %s AND p.deleted_at IS NULL
-          AND EXISTS (
-              SELECT 1 FROM admin_photo_revisions r
-              WHERE r.id = %s AND r.photo_id = p.id AND r.storage_key = p.storage_key
-          )
+        WITH target AS (
+            UPDATE photos p
+            SET status = 'EMBEDDED', version = version + 1, updated_at = now()
+            WHERE p.id = %s AND p.gallery_id = %s AND p.storage_key = %s AND p.deleted_at IS NULL
+              AND EXISTS (
+                  SELECT 1 FROM admin_photo_revisions r
+                  WHERE r.id = %s AND r.photo_id = p.id AND r.storage_key = p.storage_key
+              )
+            RETURNING p.id
+        )
+        INSERT INTO photo_analysis (photo_id, embedding, embedding_model, created_at, updated_at)
+        SELECT id, %s, %s, now(), now() FROM target
+        ON CONFLICT (photo_id) DO UPDATE
+        SET embedding = EXCLUDED.embedding,
+            embedding_model = EXCLUDED.embedding_model,
+            version = photo_analysis.version + 1,
+            updated_at = now()
         """,
-        (vector, *_photo_identity_params(event)),
+        (*_photo_identity_params(event), vector, model_id),
     )
 
 

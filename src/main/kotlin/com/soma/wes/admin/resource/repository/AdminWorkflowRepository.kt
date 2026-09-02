@@ -566,7 +566,6 @@ class AdminWorkflowRepository(
                 content_type = :contentType,
                 status = 'UPLOADED',
                 preview_key = NULL,
-                embedding = NULL,
                 byte_size = NULL,
                 width = NULL,
                 height = NULL,
@@ -592,6 +591,10 @@ class AdminWorkflowRepository(
             .param("expectedVersion", expectedVersion)
             .update()
         if (photoUpdated != 1) throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
+        // 교체된 이미지의 모델 파생값은 전부 무효다. 행을 지우면 임베더가 ON CONFLICT INSERT로 다시 만든다.
+        jdbcClient.sql("DELETE FROM photo_analysis WHERE photo_id = :photoId")
+            .param("photoId", photoId)
+            .update()
         val replacementUpdated = jdbcClient.sql(
             """
             UPDATE admin_photo_replacement_uploads
@@ -847,15 +850,16 @@ class AdminWorkflowRepository(
             .query { rs, _ -> rs.getLong(1) }.single()
         val candidates = jdbcClient.sql(
             """
-            SELECT p.id, p.embedding::TEXT AS embedding,
+            SELECT p.id, pa.embedding::TEXT AS embedding,
                    COALESCE(AVG(r.score), 0.0) AS rating,
                    COALESCE(p.width::BIGINT * p.height::BIGINT, 0) AS pixels,
                    p.technical_quality_score
             FROM photos p
+            JOIN photo_analysis pa ON pa.photo_id = p.id
             LEFT JOIN photo_ratings r ON r.photo_id = p.id
             WHERE p.gallery_id = :galleryId AND p.deleted_at IS NULL
-              AND p.status = 'EMBEDDED' AND p.embedding IS NOT NULL
-            GROUP BY p.id, p.embedding, p.width, p.height, p.technical_quality_score
+              AND p.status = 'EMBEDDED' AND pa.embedding IS NOT NULL
+            GROUP BY p.id, pa.embedding, p.width, p.height, p.technical_quality_score
             ORDER BY p.id
             """.trimIndent(),
         )

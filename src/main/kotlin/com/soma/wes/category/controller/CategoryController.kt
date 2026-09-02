@@ -8,6 +8,7 @@ import com.soma.wes.category.dto.response.CategorizationJobResponse
 import com.soma.wes.category.dto.response.ConceptFolderResponse
 import com.soma.wes.category.dto.response.DetailFolderResponse
 import com.soma.wes.category.service.CategorizationService
+import com.soma.wes.category.service.AiCategoryFolderService
 import com.soma.wes.category.service.CategoryService
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
@@ -26,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController
 class CategoryController(
     private val categoryService: CategoryService,
     private val categorizationService: CategorizationService,
+    private val aiCategoryFolderService: AiCategoryFolderService,
 ) {
     @PostMapping("/concept-folders")
     fun createConcept(
@@ -43,6 +45,16 @@ class CategoryController(
         @PathVariable galleryId: Long,
     ): ResponseEntity<List<ConceptFolderResponse>> {
         return ResponseEntity.ok(categoryService.list(galleryId, loginUser.id))
+    }
+
+    /** `/folder-groups/ai`는 origin/main 클라이언트 호환 경로이며 응답은 최종 카테고리 계약이다. */
+    @PostMapping(value = ["/concept-folders/ai", "/folder-groups/ai"])
+    fun createFromAnalysis(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+    ): ResponseEntity<List<ConceptFolderResponse>> {
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(aiCategoryFolderService.createFromAnalysis(galleryId, loginUser.id))
     }
 
     @PostMapping("/concept-folders/{conceptId}/detail-folders")

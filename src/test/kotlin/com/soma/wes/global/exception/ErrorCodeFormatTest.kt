@@ -7,6 +7,7 @@ import com.soma.wes.collab.exception.CollabErrorCode
 import com.soma.wes.folder.exception.FolderErrorCode
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.photo.exception.PhotoErrorCode
+import com.soma.wes.recommendation.exception.RecommendationErrorCode
 import com.soma.wes.retouch.exception.RetouchErrorCode
 import com.soma.wes.security.exception.AuthorizationErrorCode
 import com.soma.wes.selection.exception.SelectionErrorCode
@@ -30,7 +31,8 @@ class ErrorCodeFormatTest {
         GlobalErrorCode.entries + AdminErrorCode.entries + AuthErrorCode.entries + AuthorizationErrorCode.entries + UserErrorCode.entries +
             StudioErrorCode.entries + GalleryErrorCode.entries + PhotoErrorCode.entries +
             ClusterErrorCode.entries + FolderErrorCode.entries + SelectionErrorCode.entries +
-            RetouchErrorCode.entries + CollabErrorCode.entries + TrashErrorCode.entries
+            RetouchErrorCode.entries + CollabErrorCode.entries + TrashErrorCode.entries +
+            RecommendationErrorCode.entries
 
     private val format = Regex("""^([A-Z]+)_(\d{3})_(\d+)$""")
 

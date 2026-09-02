@@ -5,8 +5,9 @@ import com.soma.wes.category.domain.CategorizationStatus
 import com.soma.wes.category.dto.request.MoveCategoryPhotosRequest
 import com.soma.wes.category.repository.PhotoCategoryAssignmentRepository
 import com.soma.wes.gallery.fixture.GalleryFixture
-import com.soma.wes.photo.domain.Photo
+import com.soma.wes.photo.domain.PhotoAnalysis
 import com.soma.wes.photo.fixture.PhotoFixture
+import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.support.IntegrationTest
 import org.assertj.core.api.Assertions.assertThat
@@ -20,6 +21,7 @@ class CategorizationServiceTest @Autowired constructor(
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
     private val photoRepository: PhotoRepository,
+    private val photoAnalysisRepository: PhotoAnalysisRepository,
     private val assignmentRepository: PhotoCategoryAssignmentRepository,
 ) {
     @Test
@@ -49,7 +51,14 @@ class CategorizationServiceTest @Autowired constructor(
         val ids = photoFixture.업로드된_사진(galleryId, count)
         return ids.mapIndexed { index, id ->
             photoRepository.findById(id).orElseThrow().also { photo ->
-                photo.applyEmbedding(FloatArray(Photo.EMBEDDING_DIMENSION) { 0.01f * (index + 1) })
+                photoAnalysisRepository.save(
+                    PhotoAnalysis.embeddedBy(
+                        photoId = photo.requiredId,
+                        vector = FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION) { 0.01f * (index + 1) },
+                        model = "test-model",
+                    ),
+                )
+                photo.markEmbedded()
                 photoRepository.save(photo)
             }.requiredId
         }

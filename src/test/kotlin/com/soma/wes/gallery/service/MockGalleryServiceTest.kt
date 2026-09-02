@@ -12,6 +12,8 @@ import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.dto.PresignedUploadDto
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
+import com.soma.wes.photo.domain.PhotoAnalysis
+import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.service.PhotoStorage
 import com.soma.wes.studio.fixture.StudioFixture
@@ -56,6 +58,7 @@ class MockGalleryServiceTest @Autowired constructor(
     private val studioRepository: StudioRepository,
     private val galleryRepository: GalleryRepository,
     private val photoRepository: PhotoRepository,
+    private val photoAnalysisRepository: PhotoAnalysisRepository,
     private val jdbcTemplate: JdbcTemplate,
     private val photoStorage: RecordingPhotoStorage,
 ) {
@@ -92,7 +95,7 @@ class MockGalleryServiceTest @Autowired constructor(
                 assertSoftly { softly ->
                     softly.assertThat(photo.displayOrder).isEqualTo(index)
                     softly.assertThat(photo.status).isEqualTo(PhotoStatus.EMBEDDED)
-                    softly.assertThat(photo.embedding).isEqualTo(templates[index].embedding)
+                    softly.assertThat(vectorOf(photo)).isEqualTo(vectorOf(templates[index]))
                     softly.assertThat(photo.metadata?.cameraMake).isEqualTo("Canon")
                     // 키는 일반 갤러리와 같은 자기 키 공간이다. 삭제·리셋 경로가 그대로 집는다.
                     softly.assertThat(photo.storageKey).startsWith("galleries/${result.id}/")
@@ -230,12 +233,20 @@ class MockGalleryServiceTest @Autowired constructor(
             operator.requiredId,
         )
         return (0 until photoCount).map { index ->
-            photoRepository.save(
+            val photo = photoRepository.save(
                 templatePhoto(index, withPreview).also { photo ->
                     photo.applyMetadata(PhotoMetadata(cameraMake = "Canon", width = 1024, height = 768))
-                    photo.applyEmbedding(FloatArray(Photo.EMBEDDING_DIMENSION) { (index + 1) * 0.01f })
+                    photo.markEmbedded()
                 },
             )
+            photoAnalysisRepository.save(
+                PhotoAnalysis.embeddedBy(
+                    photoId = photo.requiredId,
+                    vector = FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION) { (index + 1) * 0.01f },
+                    model = "facebook/dinov3-vitb16-pretrain-lvd1689m",
+                ),
+            )
+            photo
         }
     }
 
@@ -243,6 +254,9 @@ class MockGalleryServiceTest @Autowired constructor(
         workspaceId = studioFixture.소유_스튜디오(photographer).workspaceId,
         title = "샘플 갤러리",
     )
+
+    private fun vectorOf(photo: Photo): FloatArray? =
+        photoAnalysisRepository.findById(photo.requiredId).orElseThrow().embedding
 
     private fun templatePhoto(index: Int, withPreview: Boolean = false): Photo =
         Photo(
@@ -289,10 +303,12 @@ class RecordingPhotoStorage : PhotoStorage {
         failCopyAfter = null
     }
 
+    override fun galleryPrefix(galleryId: Long): String = "galleries/$galleryId/"
+
     override fun buildKey(galleryId: Long, originalFileName: String): String {
         val extension = originalFileName.substringAfterLast('.', "").lowercase()
         val suffix = if (extension.isBlank()) "" else ".$extension"
-        return "galleries/$galleryId/${UUID.randomUUID()}$suffix"
+        return "${galleryPrefix(galleryId)}${UUID.randomUUID()}$suffix"
     }
 
     override fun presignUpload(key: String, contentType: String): PresignedUploadDto =

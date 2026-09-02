@@ -9,6 +9,8 @@ import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoMetadata
+import com.soma.wes.photo.domain.PhotoAnalysis
+import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
@@ -47,6 +49,7 @@ import tools.jackson.databind.ObjectMapper
 @Tag("eval")
 class PhotoClusterEvalTest @Autowired constructor(
     private val photoRepository: PhotoRepository,
+    private val photoAnalysisRepository: PhotoAnalysisRepository,
     private val photoSimilarityRepository: PhotoSimilarityRepository,
     private val studioRepository: StudioRepository,
     private val galleryRepository: GalleryRepository,
@@ -150,12 +153,22 @@ class PhotoClusterEvalTest @Autowired constructor(
                 contentType = "image/jpeg",
                 displayOrder = index,
             ).also {
-                it.applyEmbedding(photo.embedding)
+                it.markEmbedded()
                 photo.takenAt?.let { takenAt -> it.applyMetadata(PhotoMetadata(takenAt = takenAt)) }
             }
         }
         photoRepository.saveAll(photos)
         photoRepository.flush()
+        photoAnalysisRepository.saveAll(
+            photos.zip(fixture.photos) { photo, source ->
+                PhotoAnalysis.embeddedBy(
+                    photoId = photo.requiredId,
+                    vector = source.embedding,
+                    model = "facebook/dinov3-vitb16-pretrain-lvd1689m",
+                )
+            },
+        )
+        photoAnalysisRepository.flush()
 
         return photos.withIndex().associate { (index, photo) ->
             photo.requiredId to fixture.photos[index].groupLabel

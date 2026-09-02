@@ -68,8 +68,21 @@ interface PhotoRepository : JpaRepository<Photo, Long> {
         pageable: Pageable,
     ): Page<Photo>
 
-    /** 클러스터링 대상. */
-    fun findAllByGalleryIdAndEmbeddingIsNotNullOrderByDisplayOrderAscIdAsc(galleryId: Long): List<Photo>
+    /**
+     * 벡터가 적재된 사진. 클러스터링 대상이자 Mock 갤러리의 복제 원본이다.
+     *
+     * `status = EMBEDDED`가 아니라 `photo_analysis.embedding`의 존재로 판정한다. 상태는 사진 쪽
+     * 표식일 뿐이고 실제로 벡터를 읽는 질의(pgvector pair)가 보는 것은 분석 행이다.
+     */
+    @Query(
+        """
+            SELECT p FROM Photo p
+            WHERE p.galleryId = :galleryId
+              AND EXISTS (SELECT 1 FROM PhotoAnalysis a WHERE a.photoId = p.id AND a.embedding IS NOT NULL)
+            ORDER BY p.displayOrder ASC, p.id ASC
+        """,
+    )
+    fun findAllEmbeddedByGalleryId(@Param("galleryId") galleryId: Long): List<Photo>
 
     /**
      * 다음 사진이 받을 노출 순서. 업로드 URL 발급이 쓴다.
@@ -85,13 +98,42 @@ interface PhotoRepository : JpaRepository<Photo, Long> {
     fun countByGalleryIdAndStatus(galleryId: Long, status: PhotoStatus): Long
 
     /** 클러스터 준비 여부 확인용. 아직 업로드되지 않은 사진도 미완료로 센다. */
-    fun countByGalleryIdAndEmbeddingIsNull(galleryId: Long): Long
+    @Query(
+        """
+            SELECT COUNT(p) FROM Photo p
+            WHERE p.galleryId = :galleryId
+              AND NOT EXISTS (SELECT 1 FROM PhotoAnalysis a WHERE a.photoId = p.id AND a.embedding IS NOT NULL)
+        """,
+    )
+    fun countNotEmbeddedByGalleryId(@Param("galleryId") galleryId: Long): Long
+
+    /** 벡터가 적재된 사진 수. AI 분석을 시작할 수 있는지 볼 때 쓴다. */
+    @Query(
+        """
+            SELECT COUNT(p) FROM Photo p
+            WHERE p.galleryId = :galleryId
+              AND EXISTS (SELECT 1 FROM PhotoAnalysis a WHERE a.photoId = p.id AND a.embedding IS NOT NULL)
+        """,
+    )
+    fun countEmbeddedByGalleryId(@Param("galleryId") galleryId: Long): Long
 
     /** force 실행 대상 수. S3 객체가 아직 없을 수 있는 [PhotoStatus.PENDING]은 제외한다. */
     fun countByGalleryIdAndStatusNot(galleryId: Long, status: PhotoStatus): Long
 
     /**
-     * 일반 임베딩 실행 대상 수.
+     * 일반 임베딩 실행 대상 수. 임베더 Lambda의 `fetch_targets`와 같은 조건이다 — PENDING을 빼고,
+     * 벡터가 아직 없는 사진만.
      */
-    fun countByGalleryIdAndStatusNotAndEmbeddingIsNull(galleryId: Long, status: PhotoStatus): Long
+    @Query(
+        """
+            SELECT COUNT(p) FROM Photo p
+            WHERE p.galleryId = :galleryId
+              AND p.status <> :status
+              AND NOT EXISTS (SELECT 1 FROM PhotoAnalysis a WHERE a.photoId = p.id AND a.embedding IS NOT NULL)
+        """,
+    )
+    fun countByGalleryIdAndStatusNotAndNotEmbedded(
+        @Param("galleryId") galleryId: Long,
+        @Param("status") status: PhotoStatus,
+    ): Long
 }

@@ -32,6 +32,10 @@ class ConceptFolder(
     @Enumerated(EnumType.STRING)
     @Column(name = "created_source", nullable = false, updatable = false, length = 20)
     val createdSource: CategorySource,
+
+    /** AI가 만든 컨셉 세트의 분석 잡. 사용자가 직접 만든 컨셉은 null이다. */
+    @Column(name = "analysis_job_id", updatable = false)
+    val analysisJobId: Long? = null,
 ) : BaseEntity() {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

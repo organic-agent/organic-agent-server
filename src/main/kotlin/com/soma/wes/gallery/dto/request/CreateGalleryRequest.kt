@@ -1,5 +1,6 @@
 package com.soma.wes.gallery.dto.request
 
+import com.soma.wes.gallery.domain.ShootType
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.NotBlank
@@ -30,4 +31,10 @@ data class CreateGalleryRequest(
         example = "50",
     )
     val maxSelectablePhotoCount: Int? = null,
+
+    @field:Schema(
+        description = "촬영 종류. REHEARSAL(리허설) | CEREMONY(본식) | OTHER. AI 폴더의 큰 분류 목록이 이 값으로 갈린다. 지정하지 않으면 REHEARSAL.",
+        example = "REHEARSAL",
+    )
+    val shootType: ShootType = ShootType.REHEARSAL,
 )

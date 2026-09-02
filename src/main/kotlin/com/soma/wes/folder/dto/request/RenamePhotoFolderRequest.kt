@@ -7,7 +7,6 @@ import jakarta.validation.constraints.Size
 
 @Schema(description = "폴더 이름 변경 요청")
 data class RenamePhotoFolderRequest(
-
     @field:NotBlank
     @field:Size(max = FolderName.MAX_LENGTH)
     @field:Schema(description = "새 폴더 이름", example = "본식 - 신부 단독 (최종)")

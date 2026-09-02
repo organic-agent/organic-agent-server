@@ -67,8 +67,9 @@ app:
     retention: 7d
 
   storage:
-    # 버킷 이름만 인프라에 종속된다. prod는 Parameter Store(app.storage.bucket)가 덮어쓰고,
-    # 로컬·테스트에는 실제 버킷이 없으므로 서명 형태만 확인하는 더미 값을 둔다.
+    # 버킷 이름만 인프라에 종속된다. 환경마다 버킷이 다르며(prod는 운영 버킷, local은 dev 버킷)
+    # Parameter Store(/wes/{local,prod}/app.storage.bucket)가 덮어쓴다. 테스트에는 실제 버킷이
+    # 없으므로 서명 형태만 확인하는 더미 값을 둔다.
     bucket: wes-local-photos
     # 프론트가 수천 장을 순차 업로드하는 동안 만료되지 않을 만큼은 길어야 한다.
     upload-url-ttl: 30m
@@ -87,6 +88,15 @@ app:
     # prod는 Parameter Store(app.embedding.function-name)가 덮어쓴다.
     # 로컬·테스트에는 Lambda가 없으므로 빈 값이 정상이다 — 기동이 아니라 호출 시점에 실패한다.
     function-name: ""
+    # local 프로필만: Lambda 대신 서브프로세스로 띄울 스크립트(작업 디렉토리 기준). 프로필 블록(application.yml)이 채운다.
+    local-script: ""
+
+  compare:
+    # 비교샷 경량 Lambda(RequestResponse). prod는 Parameter Store(app.compare.function-name)가
+    # 덮어쓴다 — 함수가 배포되기 전까지는 prod에서도 빈 값이라 호출 시점에 503이다.
+    function-name: ""
+    # local 프로필만: 프로필 블록(application.yml)이 채운다. stdout이 판정 JSON인 계약이다.
+    local-script: ""
 
   mock-gallery:
     # Mock 갤러리가 복제할 샘플 템플릿 갤러리 id. 0은 "기능 꺼짐"이다(생성 요청이 503).

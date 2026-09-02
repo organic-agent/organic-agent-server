@@ -22,10 +22,16 @@ RUN mkdir -p /opt/rds-ca \
 
 # 가중치를 빌드 타임에 굽는다. 실행 시점의 Lambda는 NAT 없는 프라이빗 서브넷에 있어
 # huggingface.co에 나갈 수 없다. 여기서 받아두지 않으면 첫 호출이 네트워크 타임아웃으로 죽는다.
+#
+# DINOv3는 게이트 모델이라 라이선스를 승인한 계정의 토큰이 있어야 받아진다. 토큰은 ENV/ARG가
+# 아니라 빌드 시크릿으로 넘긴다 -- ARG는 이미지 히스토리에 남는다. deploy.sh 가
+# `--secret id=hf_token`으로 넣어 주고, 이 RUN 한 줄 밖에서는 파일이 존재하지 않는다.
 ENV HF_HOME=/opt/hf
-ARG EMBED_MODEL_ID=facebook/dinov2-base
-ARG EMBED_MODEL_REVISION=f9e44c814b77203eaa57a6bdbbd535f21ede1415
-RUN python -c "from transformers import AutoImageProcessor, AutoModel; \
+ARG EMBED_MODEL_ID=facebook/dinov3-vitb16-pretrain-lvd1689m
+ARG EMBED_MODEL_REVISION=5931719e67bbdb9737e363e781fb0c67687896bc
+RUN --mount=type=secret,id=hf_token,required=true \
+    HF_TOKEN="$(cat /run/secrets/hf_token)" \
+    python -c "from transformers import AutoImageProcessor, AutoModel; \
 m = '${EMBED_MODEL_ID}'; r = '${EMBED_MODEL_REVISION}'; \
 AutoImageProcessor.from_pretrained(m, revision=r); AutoModel.from_pretrained(m, revision=r)"
 
@@ -37,8 +43,7 @@ ENV HF_HUB_OFFLINE=1 \
 
 COPY embedder/ ${LAMBDA_TASK_ROOT}/embedder/
 
-# 배포 뒤 첫 호출에서야 import 오류를 발견하지 않도록 이미지 빌드 안에서 실제 handler를
-# 로드한다. Settings가 import 시 필수 환경변수를 검증하므로 비밀이 아닌 더미 값만 넣는다.
+# 배포 뒤 첫 호출에서야 import 오류를 발견하지 않도록 실제 handler를 빌드 안에서 로드한다.
 RUN DB_HOST=localhost \
     DB_NAME=wes \
     DB_USER=wes \

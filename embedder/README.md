@@ -1,6 +1,8 @@
 # embedder
 
-갤러리 하나의 사진을 DINOv2로 임베딩해 `photos.embedding`(pgvector `vector(768)`)에 적재한다.
+갤러리 하나의 사진을 DINOv3(ViT-B/16)로 임베딩해 `photo_analysis.embedding`(pgvector `vector(768)`)에
+적재한다. 이 벡터는 앱의 클러스터링과 AI 셀렉(`photoselect`)이 함께 읽는다 — 두 소비자가 같은
+DINOv3 벡터를 본다.
 Lambda로 배포되지만 **로컬에서도 같은 코드가 그대로 돈다** — 진입점만 다르다.
 
 ```
@@ -12,15 +14,20 @@ __main__.py   로컬 CLI    python -m embedder --gallery-id 1
 ## 흐름
 
 ```
-SELECT id, storage_key FROM photos
-WHERE gallery_id = ? AND status <> 'PENDING' AND embedding IS NULL
+SELECT id, storage_key FROM photos p
+WHERE gallery_id = ? AND status <> 'PENDING'
+  AND NOT EXISTS (SELECT 1 FROM photo_analysis a WHERE a.photo_id = p.id AND a.embedding IS NOT NULL)
   → S3 GET → 원본 열기 → EXIF 읽기(촬영 시각 · 카메라 · 셔터/조리개/ISO · 크기)
-           → HEIC 디코드 · EXIF 회전 · 리사이즈 → DINOv2(L2 정규화)
+           → HEIC 디코드 · EXIF 회전 · 리사이즈 → DINOv3(L2 정규화)
   → S3 PUT previews/{원본키}.jpg
-  → UPDATE photos SET embedding = ?, preview_key = ?, taken_at = ?, ... , status = 'EMBEDDED'
+  → INSERT INTO photo_analysis (photo_id, embedding, embedding_model) ... ON CONFLICT DO UPDATE
+    UPDATE photos SET preview_key = ?, taken_at = ?, ... , status = 'EMBEDDED'   (같은 트랜잭션)
 ```
 
-- **재실행이 안전하다.** 기본 조건이 `embedding IS NULL`이라 중간에 죽어도 다시 부르면 남은
+- **벡터는 `photo_analysis`에, 나머지는 `photos`에.** 벡터는 모델을 바꾸면 다시 적는 파생값이라
+  업로드 때 정해지는 정체성(EXIF)과 테이블을 나눴다(V29). 같은 행에 AI 분석 배치가
+  태그·점수·클러스터를 채우므로 여기서는 `embedding`·`embedding_model`만 갈아 끼운다.
+- **재실행이 안전하다.** 기본 조건이 "벡터 없음"이라 중간에 죽어도 다시 부르면 남은
   것만 이어서 한다. 한 장이 실패해도 잡을 죽이지 않고 `failed`에 키만 모아 돌려준다.
 - **미리보기 파생본도 여기서 만든다.** 임베딩을 하려면 어차피 HEIC를 디코딩하고 EXIF 회전을
   굽고 크기를 줄여야 하는데, 그 결과가 그대로 브라우저가 그릴 수 있는 이미지다. 남은 일은
@@ -67,18 +74,23 @@ WHERE gallery_id = ? AND status <> 'PENDING' AND embedding IS NULL
 CREATE USER embedder;
 GRANT rds_iam TO embedder;
 GRANT SELECT (id, deleted_at) ON galleries TO embedder;
-GRANT SELECT (id, gallery_id, storage_key, status, deleted_at, embedding, preview_key,
+GRANT SELECT (id, gallery_id, storage_key, status, deleted_at, preview_key,
     taken_at, camera_make, camera_model, exposure_time, f_number, iso, width, height,
     byte_size, version) ON photos TO embedder;
-GRANT UPDATE (embedding, status, preview_key, taken_at, camera_make, camera_model,
+GRANT UPDATE (status, preview_key, taken_at, camera_make, camera_model,
     exposure_time, f_number, iso, width, height, byte_size, technical_quality_score,
     technical_quality_signals, quality_analyzed_at, version, updated_at) ON photos TO embedder;
+GRANT SELECT, INSERT, UPDATE ON photo_analysis TO embedder;
 GRANT SELECT (id, attempt_count, job_type, target_type, target_id, revision_id, status, payload)
     ON admin_processing_jobs TO embedder;
 GRANT UPDATE (status, failure_code, last_run_at, updated_at)
     ON admin_processing_jobs TO embedder;
 GRANT SELECT (id, photo_id, storage_key) ON admin_photo_revisions TO embedder;
 ```
+
+`photo_analysis`는 단일 V1 baseline에 정의돼 있다(벡터도 `photos.embedding`이 아니라 여기 있다).
+V1을 적용할 때 이 GRANT를 빠뜨리면 첫 배치의 INSERT가
+`permission denied for table photo_analysis`로 실패하고, 사진은 전부 UPLOADED로 남는다.
 
 `galleries` 읽기는 대상 선별(`fetch_targets`)이 휴지통에 들어간 갤러리를 거르는 데 쓴다.
 빠뜨리면 임베딩이 `InsufficientPrivilege: permission denied for table galleries`로
@@ -112,6 +124,21 @@ docker run --rm -e PGPASSWORD pgvector/pgvector:pg16 \
 ```
 
 ## 로컬 실행
+
+### 로컬 pg + dev 버킷 (개발 기본)
+
+`scripts/local-ai.sh <galleryId>`가 venv 생성부터 임베딩, 이어지는 AI 분석·추천 CLI까지 한 번에
+돌린다(`--only-embed`면 여기까지만). DB는 `docker-compose.local.yml`의 pg, 버킷은 인프라가
+`/wes/local/app.storage.bucket`에 기록한 dev 버킷(`wes-dev-photos-*`)이다 — 로컬 wes(local 프로필)도
+같은 파라미터를 읽으므로 브라우저가 올린 사진을 이 CLI가 그대로 읽는다. 손으로 돌리려면:
+
+```bash
+export DB_HOST=localhost DB_PORT=5432 DB_NAME=wes DB_USER=wes DB_PASSWORD=wes DB_SSLMODE=disable
+export S3_BUCKET="$(aws ssm get-parameter --region ap-northeast-2 --name /wes/local/app.storage.bucket --query Parameter.Value --output text)"
+python -m embedder --gallery-id 1
+```
+
+### 공유 RDS (배포 전 검증)
 
 RDS는 퍼블릭 접근이 없으므로 SSM 포트 포워딩으로 터널을 먼저 연다.
 
@@ -161,6 +188,12 @@ python -m embedder --gallery-id 1
 - **ECR에 `:latest`를 푸시하는 것만으로도 안 나간다.** Lambda는 갱신 시점의 다이제스트를 고정해
   둔다. 태그가 새 이미지를 가리켜도 함수는 옛 다이제스트를 계속 실행한다.
 
+**Hugging Face 토큰이 필요하다.** DINOv3는 게이트 모델이라 가중치를 굽는 단계에서 라이선스를
+승인한 계정의 토큰을 요구한다. `HF_TOKEN`을 내보내거나 `hf auth login`을 해 두면 스크립트가
+빌드 시크릿(`--secret id=hf_token`)으로 넘긴다 — ARG/ENV가 아니라서 이미지 히스토리에 남지
+않는다. 토큰이 없으면 빌드를 시작하기 전에 멈춘다. 로컬 실행(`python -m embedder`)도 같은
+토큰으로 처음 한 번 받아 `~/.cache/huggingface`에 캐시한다.
+
 스크립트가 쓰는 세 플래그가 전부 필요하다.
 
 - **`--platform linux/amd64`** — 맥에서 빌드하면 기본이 arm64다. Lambda 함수는 x86_64로
@@ -192,6 +225,6 @@ python -m embedder --gallery-id 1
 | `S3_BUCKET` | — | 필수 |
 | `EMBED_DIM` | `768` | `vector(n)` 컬럼과 `Photo.EMBEDDING_DIMENSION`과 셋이 같아야 한다 |
 | `EMBED_BATCH_SIZE` | `8` | 모델에 한 번에 넣는 장수 |
-| `EMBED_MODEL_ID` | `facebook/dinov2-base` | 바꾸면 이미지를 다시 빌드해야 한다(가중치가 구워져 있다) |
+| `EMBED_MODEL_ID` | `facebook/dinov3-vitb16-pretrain-lvd1689m` | 바꾸면 이미지를 다시 빌드해야 한다(가중치가 구워져 있다). 차원이 다른 모델(ViT-S 384, ViT-L 1024)은 `EMBED_DIM`·`vector(n)`·`EMBEDDING_DIMENSION`도 같이 바꿔야 한다 |
 | `RESIZE_LONG_EDGE` | `1024` | 디코딩 직후 메모리를 누르는 용도. 미리보기 파생본도 이 크기로 나간다 |
 | `PREVIEW_QUALITY` | `82` | 파생본 JPEG 품질. 1024px에서 장당 200KB 안팎 |

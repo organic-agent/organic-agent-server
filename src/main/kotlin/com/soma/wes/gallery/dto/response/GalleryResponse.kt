@@ -3,6 +3,7 @@ package com.soma.wes.gallery.dto.response
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryStatus
 import com.soma.wes.gallery.domain.GalleryWorkflowStatus
+import com.soma.wes.gallery.domain.ShootType
 import io.swagger.v3.oas.annotations.media.Schema
 import java.time.ZonedDateTime
 
@@ -24,6 +25,9 @@ data class GalleryResponse(
     @field:Schema(description = "계약한 보정 요청 횟수. null이면 제한이 없다")
     val maxRetouchRoundCount: Int?,
 
+    @field:Schema(description = "촬영 종류. AI 폴더의 큰 분류 목록이 이 값으로 갈린다.")
+    val shootType: ShootType,
+
     val createdAt: ZonedDateTime?,
 ) {
 
@@ -39,6 +43,7 @@ data class GalleryResponse(
             selectionDeadline = gallery.selectionDeadline,
             maxSelectablePhotoCount = gallery.maxSelectablePhotoCount,
             maxRetouchRoundCount = gallery.maxRetouchRoundCount,
+            shootType = gallery.shootType,
             createdAt = gallery.createdAt,
         )
     }

@@ -8,7 +8,7 @@ import com.soma.wes.collab.support.CollabPhotoViewAssembler
 import com.soma.wes.category.service.CategorizationService
 import com.soma.wes.cluster.config.ClusterProperties
 import com.soma.wes.cluster.repository.PhotoSimilarityRepository
-import com.soma.wes.embedding.config.AwsLambdaConfig
+import com.soma.wes.global.config.AwsLambdaConfig
 import com.soma.wes.embedding.config.EmbeddingProperties
 import com.soma.wes.embedding.infrastructure.LambdaEmbeddingInvoker
 import com.soma.wes.folder.service.PhotoFolderGroupService

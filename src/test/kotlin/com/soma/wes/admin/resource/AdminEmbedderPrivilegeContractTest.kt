@@ -37,10 +37,14 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
     private fun embedderGrantBlock(): String {
         val migration = ClassPathResource("db/migration/V1__baseline.sql")
             .inputStream.bufferedReader().use { it.readText() }
-        val start = migration.indexOf("DO \$\$")
-        val end = migration.indexOf("\$\$;", start)
+        val contractStart = migration.indexOf("-- EMBEDDER_GRANT_CONTRACT_BEGIN")
+        val contractEnd = migration.indexOf("-- EMBEDDER_GRANT_CONTRACT_END", contractStart)
+        check(contractStart >= 0 && contractEnd >= 0) { "V1 embedder grant contract not found" }
+        val contract = migration.substring(contractStart, contractEnd)
+        val start = contract.indexOf("DO \$\$")
+        val end = contract.indexOf("\$\$;", start)
         check(start >= 0 && end >= 0) { "V1 embedder grant block not found" }
-        return migration.substring(start, end + 3)
+        return contract.substring(start, end + 3)
     }
 
     private companion object {
@@ -52,14 +56,25 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
             JOIN galleries g ON g.id = p.gallery_id
             WHERE p.gallery_id = -1 AND p.status <> 'PENDING'
               AND p.deleted_at IS NULL AND g.deleted_at IS NULL
-              AND p.embedding IS NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM photo_analysis a
+                  WHERE a.photo_id = p.id AND a.embedding IS NOT NULL
+              )
             ORDER BY p.id
             """.trimIndent(),
             // store_embeddings / complete_admin_derivative가 읽는 COALESCE·version·active 경계
             """
+            EXPLAIN INSERT INTO photo_analysis (photo_id, embedding, embedding_model, created_at, updated_at)
+            VALUES (-1, NULL, 'model', now(), now())
+            ON CONFLICT (photo_id) DO UPDATE
+            SET embedding = EXCLUDED.embedding,
+                embedding_model = EXCLUDED.embedding_model,
+                version = photo_analysis.version + 1,
+                updated_at = now()
+            """.trimIndent(),
+            """
             EXPLAIN UPDATE photos
-            SET embedding = NULL,
-                preview_key = COALESCE(NULL, preview_key),
+            SET preview_key = COALESCE(NULL, preview_key),
                 taken_at = COALESCE(NULL, taken_at),
                 camera_make = COALESCE(NULL, camera_make),
                 camera_model = COALESCE(NULL, camera_model),
@@ -90,6 +105,26 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
               AND p.status <> 'PENDING' AND p.deleted_at IS NULL AND g.deleted_at IS NULL
               AND r.storage_key = 'key'
               AND j.payload ->> 'galleryId' = '-1' AND j.payload ->> 'storageKey' = 'key'
+            """.trimIndent(),
+            // complete_admin_embedding: 사진 CAS와 벡터 upsert를 CTE 한 문장으로
+            """
+            EXPLAIN WITH target AS (
+                UPDATE photos p
+                SET status = 'EMBEDDED', version = version + 1, updated_at = now()
+                WHERE p.id = -1 AND p.gallery_id = -1 AND p.storage_key = 'key' AND p.deleted_at IS NULL
+                  AND EXISTS (
+                      SELECT 1 FROM admin_photo_revisions r
+                      WHERE r.id = -1 AND r.photo_id = p.id AND r.storage_key = p.storage_key
+                  )
+                RETURNING p.id
+            )
+            INSERT INTO photo_analysis (photo_id, embedding, embedding_model, created_at, updated_at)
+            SELECT id, NULL, 'model', now(), now() FROM target
+            ON CONFLICT (photo_id) DO UPDATE
+            SET embedding = EXCLUDED.embedding,
+                embedding_model = EXCLUDED.embedding_model,
+                version = photo_analysis.version + 1,
+                updated_at = now()
             """.trimIndent(),
             // complete_admin_quality + final job CAS
             """

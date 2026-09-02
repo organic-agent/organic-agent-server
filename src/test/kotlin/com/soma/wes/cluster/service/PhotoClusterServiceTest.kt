@@ -6,7 +6,7 @@ import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
-import com.soma.wes.photo.domain.Photo
+import com.soma.wes.photo.domain.PhotoAnalysis
 import com.soma.wes.photo.domain.PhotoMetadata
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.repository.PhotoRepository
@@ -362,15 +362,17 @@ class PhotoClusterServiceTest @Autowired constructor(
      * 두 축이 만드는 평면 위의 단위 벡터. 두 벡터가 이루는 각의 코사인이 곧 코사인 유사도라,
      * 원하는 유사도를 각도로 바로 지정할 수 있다.
      */
-    private fun vectorAt(radians: Double) = FloatArray(Photo.EMBEDDING_DIMENSION).also {
+    private fun vectorAt(radians: Double) = FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also {
         it[0] = cos(radians).toFloat()
         it[1] = sin(radians).toFloat()
     }
 
     private fun embed(photoId: Long, vector: FloatArray, takenAt: LocalDateTime? = null) {
-        val photo = photoRepository.findById(photoId).orElseThrow()
-        photo.applyEmbedding(vector)
-        takenAt?.let { photo.applyMetadata(PhotoMetadata(takenAt = it)) }
-        photoRepository.saveAndFlush(photo)
+        photoFixture.벡터_적재(photoId, vector)
+        takenAt?.let {
+            val photo = photoRepository.findById(photoId).orElseThrow()
+            photo.applyMetadata(PhotoMetadata(takenAt = it))
+            photoRepository.saveAndFlush(photo)
+        }
     }
 }

@@ -6,6 +6,7 @@ import com.soma.wes.category.domain.CategorizationStatus
 import com.soma.wes.category.domain.CategorySource
 import com.soma.wes.category.domain.ConceptFolder
 import com.soma.wes.category.domain.DetailFolder
+import com.soma.wes.category.domain.DetailFolderCategory
 
 data class DetailFolderResponse(
     val id: Long,
@@ -13,6 +14,8 @@ data class DetailFolderResponse(
     val name: String,
     val sortOrder: Int,
     val createdSource: CategorySource,
+    val category: DetailFolderCategory?,
+    val needsReview: Boolean,
     val photoIds: List<Long>,
 )
 
@@ -22,6 +25,7 @@ data class ConceptFolderResponse(
     val name: String,
     val sortOrder: Int,
     val createdSource: CategorySource,
+    val analysisJobId: Long?,
     val details: List<DetailFolderResponse>,
 ) {
     companion object {
@@ -31,6 +35,7 @@ data class ConceptFolderResponse(
             name = concept.name,
             sortOrder = concept.sortOrder,
             createdSource = concept.createdSource,
+            analysisJobId = concept.analysisJobId,
             details = details,
         )
     }

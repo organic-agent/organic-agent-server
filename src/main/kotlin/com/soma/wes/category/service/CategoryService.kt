@@ -154,6 +154,8 @@ class CategoryService(
         name = detail.name,
         sortOrder = detail.sortOrder,
         createdSource = detail.createdSource,
+        category = detail.category,
+        needsReview = detail.needsReview,
         photoIds = photoIds,
     )
 }

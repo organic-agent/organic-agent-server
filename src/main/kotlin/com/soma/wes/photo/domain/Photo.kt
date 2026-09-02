@@ -1,8 +1,6 @@
 package com.soma.wes.photo.domain
 
 import com.soma.wes.global.BaseEntity
-import com.soma.wes.photo.exception.PhotoErrorCode
-import com.soma.wes.photo.exception.PhotoException
 import jakarta.persistence.Column
 import jakarta.persistence.Embedded
 import jakarta.persistence.Entity
@@ -16,7 +14,6 @@ import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
 import java.time.Instant
 import java.time.ZonedDateTime
-import org.hibernate.annotations.Array
 import org.hibernate.annotations.JdbcTypeCode
 import org.hibernate.annotations.SQLRestriction
 import org.hibernate.type.SqlTypes
@@ -69,11 +66,6 @@ class Photo(
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     var status: PhotoStatus = PhotoStatus.PENDING
-
-    @JdbcTypeCode(SqlTypes.VECTOR)
-    @Array(length = EMBEDDING_DIMENSION)
-    @Column(name = "embedding")
-    var embedding: FloatArray? = null
 
     @Column(name = "preview_key", length = 500)
     var previewKey: String? = null
@@ -141,16 +133,17 @@ class Photo(
         status = PhotoStatus.UPLOADED
     }
 
-    /** [embedding]과 같은 이유로 둔다 — 정상 경로는 Lambda의 UPDATE라 이 메서드를 지나지 않는다. */
+    /** [markEmbedded]와 같은 이유로 둔다 — 정상 경로는 Lambda의 UPDATE라 이 메서드를 지나지 않는다. */
     fun applyMetadata(metadata: PhotoMetadata) {
         this.metadata = metadata
     }
 
-    fun applyEmbedding(vector: FloatArray) {
-        if (vector.size != EMBEDDING_DIMENSION) {
-            throw PhotoException(PhotoErrorCode.EMBEDDING_DIMENSION_MISMATCH)
-        }
-        embedding = vector
+    /**
+     * 벡터가 [PhotoAnalysis]에 적재됐음을 표시한다. 벡터 자체는 이 엔티티에 없다 — 정상 경로는
+     * 임베더 Lambda가 두 테이블을 한 트랜잭션으로 쓰는 것이라 이 메서드를 지나지 않고,
+     * Mock 갤러리 복제와 테스트만 쓴다. 호출자가 같은 트랜잭션에서 [PhotoAnalysis]도 저장해야 한다.
+     */
+    fun markEmbedded() {
         status = PhotoStatus.EMBEDDED
     }
 
@@ -162,8 +155,6 @@ class Photo(
     }
 
     companion object {
-
-        const val EMBEDDING_DIMENSION = 768
 
         /**
          * 화면 순서는 갤러리에서 정한 노출 순서를 따른다. 같으면 id로 한 번 더 갈라, 같은
@@ -178,8 +169,9 @@ class Photo(
          *
          * [storageKey]·[previewKey]는 호출자가 새 갤러리의 키 공간으로 복사해 둔 S3 위치다 —
          * 원본 키를 그대로 넘기면 두 행이 한 객체를 참조해 storage_key 전역 유니크에 걸린다.
-         * 벡터와 촬영 정보는 값을 새로 떠서 담는다. detached 원본과 인스턴스를 나눠 가지면
-         * 한쪽 상태 변경이 다른 엔티티에 새어 들어간다.
+         * 촬영 정보는 값을 새로 떠서 담는다. detached 원본과 인스턴스를 나눠 가지면 한쪽 상태
+         * 변경이 다른 엔티티에 새어 들어간다. 벡터는 [PhotoAnalysis]에 있으므로 호출자가 따로
+         * 복제한다 — 그래서 여기서는 [markEmbedded]만 한다.
          */
         fun copyOf(
             source: Photo,
@@ -216,9 +208,7 @@ class Photo(
             if (qualityScore != null && qualitySignals != null && qualityAnalyzedAt != null) {
                 copy.applyTechnicalQuality(qualityScore, qualitySignals, qualityAnalyzedAt)
             }
-            copy.applyEmbedding(
-                checkNotNull(source.embedding) { "임베딩이 없는 사진은 복제할 수 없습니다." }.copyOf(),
-            )
+            copy.markEmbedded()
         }
     }
 }

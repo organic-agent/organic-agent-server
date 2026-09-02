@@ -2490,12 +2490,22 @@ class AdminWorkflowServiceTest @Autowired constructor(
 
     private fun setEmbedded(photoId: Long, embedding: String, width: Int, height: Int) {
         jdbcClient.sql(
-            "UPDATE photos SET status = 'EMBEDDED', embedding = CAST(:embedding AS vector), width = :width, height = :height WHERE id = :id",
+            "UPDATE photos SET status = 'EMBEDDED', width = :width, height = :height WHERE id = :id",
         )
-            .param("embedding", embedding)
             .param("width", width)
             .param("height", height)
             .param("id", photoId)
+            .update()
+        jdbcClient.sql(
+            """
+            INSERT INTO photo_analysis (photo_id, embedding, embedding_model, created_at, updated_at)
+            VALUES (:id, CAST(:embedding AS vector), 'test-model', now(), now())
+            ON CONFLICT (photo_id) DO UPDATE
+            SET embedding = EXCLUDED.embedding, updated_at = now()
+            """.trimIndent(),
+        )
+            .param("id", photoId)
+            .param("embedding", embedding)
             .update()
     }
 

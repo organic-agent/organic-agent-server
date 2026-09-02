@@ -48,8 +48,8 @@ class PhotoClusterService(
         val bundle = properties.levels[selectedLevel]
             ?: throw ClusterException(ClusterErrorCode.INVALID_LEVEL)
 
-        val unclassified = photoRepository.countByGalleryIdAndEmbeddingIsNull(galleryId)
-        val members = photoRepository.findAllByGalleryIdAndEmbeddingIsNotNullOrderByDisplayOrderAscIdAsc(galleryId)
+        val unclassified = photoRepository.countNotEmbeddedByGalleryId(galleryId)
+        val members = photoRepository.findAllEmbeddedByGalleryId(galleryId)
         if (members.isEmpty()) {
             return PhotoClustersResponse(level = selectedLevel, clusters = emptyList(), unclassified = unclassified)
         }

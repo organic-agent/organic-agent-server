@@ -30,7 +30,6 @@ class PhotoFolderGroup(
 
     @Embedded
     var name: FolderName,
-
 ) : BaseEntity() {
 
     @Column(name = "deleted_at")

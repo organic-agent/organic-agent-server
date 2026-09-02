@@ -105,12 +105,18 @@ class FetchTargetsTest(unittest.TestCase):
         )
 
     def test_default_run_only_picks_photos_without_embedding(self) -> None:
+        # V29부터 벡터는 photos가 아니라 photo_analysis에 있다. photos.embedding을 계속 읽으면
+        # 컬럼이 없어 전량 실패한다.
         connection = _Connection(rows=[])
 
         db.fetch_targets(connection, gallery_id=7, force=False)
 
         sql, _ = connection.executed[0]
-        self.assertIn("p.embedding IS NULL", sql)
+        self.assertNotIn("p.embedding", sql)
+        self.assertIn(
+            "NOT EXISTS (SELECT 1 FROM photo_analysis a WHERE a.photo_id = p.id AND a.embedding IS NOT NULL)",
+            sql,
+        )
         self.assertTrue(sql.endswith("ORDER BY p.id"))
 
     def test_force_recomputes_everything(self) -> None:
@@ -119,26 +125,71 @@ class FetchTargetsTest(unittest.TestCase):
         db.fetch_targets(connection, gallery_id=7, force=True)
 
         sql, _ = connection.executed[0]
-        self.assertNotIn("embedding IS NULL", sql)
+        self.assertNotIn("photo_analysis", sql)
 
-    def test_store_cas_uses_fetched_storage_key_and_active_resource_boundaries(self) -> None:
-        connection = _Connection(rows=[], rowcounts=[1])
-        ref = db.PhotoRef(17, "galleries/7/original-before-replacement.jpg")
 
-        stored = db.store_embeddings(connection, [(ref, [0.1, 0.2], None, None)])
+class _ManyCursor(_Cursor):
+    def executemany(self, sql: str, rows) -> None:
+        rows = list(rows)
+        self.connection.executed.append((" ".join(sql.split()), rows))
+        # 실제 드라이버처럼 배치 크기를 갱신 행 수로 본다. rowcounts를 넘긴 테스트는 그 값을 쓴다.
+        self.rowcount = next(self.connection.rowcounts, len(rows))
+
+
+class _ManyConnection(_Connection):
+    def cursor(self) -> _ManyCursor:
+        return _ManyCursor(self)
+
+
+class StoreEmbeddingsTest(unittest.TestCase):
+    """벡터는 photo_analysis에, 파생본·EXIF·상태는 photos에 -- 두 문장이 한 배치에서 함께 나가는지 지킨다."""
+
+    def test_writes_vector_to_photo_analysis_and_status_to_photos(self) -> None:
+        connection = _ManyConnection(rows=[])
+        ref = db.PhotoRef(1, "galleries/7/a.jpg")
+
+        stored = db.store_embeddings(
+            connection,
+            [(ref, "VECTOR", "previews/galleries/7/a.jpg", None)],
+            model_id="facebook/dinov3-vitb16-pretrain-lvd1689m",
+        )
 
         self.assertEqual(1, stored)
-        sql, rows = connection.executed[0]
+        analysis_sql, analysis_rows = connection.executed[0]
+        photos_sql, photo_rows = connection.executed[1]
+        self.assertIn("INSERT INTO photo_analysis (photo_id, embedding, embedding_model", analysis_sql)
+        self.assertIn("ON CONFLICT (photo_id) DO UPDATE", analysis_sql)
+        self.assertEqual([(1, "VECTOR", "facebook/dinov3-vitb16-pretrain-lvd1689m")], analysis_rows)
+        self.assertIn("UPDATE photos", photos_sql)
+        self.assertNotIn("embedding", photos_sql)
+        self.assertIn("status = 'EMBEDDED'", photos_sql)
+        self.assertEqual(1, photo_rows[0][-2])
+        self.assertEqual("galleries/7/a.jpg", photo_rows[0][-1])
+
+    def test_empty_batch_writes_nothing(self) -> None:
+        connection = _ManyConnection(rows=[])
+
+        self.assertEqual(0, db.store_embeddings(connection, [], model_id="facebook/dinov3-vitb16-pretrain-lvd1689m"))
+        self.assertEqual([], connection.executed)
+
+    def test_store_cas_uses_fetched_storage_key_and_active_resource_boundaries(self) -> None:
+        connection = _Connection(rows=[], rowcounts=[1, 1])
+        ref = db.PhotoRef(17, "galleries/7/original-before-replacement.jpg")
+
+        stored = db.store_embeddings(connection, [(ref, [0.1, 0.2], None, None)], model_id="test-model")
+
+        self.assertEqual(1, stored)
+        sql, rows = connection.executed[1]
         self.assertIn("WHERE id = %s AND storage_key = %s AND deleted_at IS NULL", sql)
         self.assertIn("g.id = photos.gallery_id AND g.deleted_at IS NULL", sql)
         self.assertEqual(17, rows[0][-2])
         self.assertEqual("galleries/7/original-before-replacement.jpg", rows[0][-1])
 
     def test_store_ignores_stale_photo_replaced_after_fetch(self) -> None:
-        connection = _Connection(rows=[], rowcounts=[0])
+        connection = _Connection(rows=[], rowcounts=[1, 0])
         old_ref = db.PhotoRef(17, "galleries/7/old.jpg")
 
-        stored = db.store_embeddings(connection, [(old_ref, [0.1, 0.2], "previews/old.jpg", None)])
+        stored = db.store_embeddings(connection, [(old_ref, [0.1, 0.2], "previews/old.jpg", None)], model_id="test-model")
 
         self.assertEqual(0, stored)
 

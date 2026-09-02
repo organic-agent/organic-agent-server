@@ -85,10 +85,10 @@ class AdminResourceRepository(
             severity = "WARNING",
             resourceType = AdminResourceType.PHOTO,
             sql = """
-                SELECT COUNT(*) FROM photos
-                WHERE deleted_at IS NULL
-                  AND status = 'UPLOADED'
-                  AND embedding IS NULL
+                SELECT COUNT(*) FROM photos p
+                WHERE p.deleted_at IS NULL
+                  AND p.status = 'UPLOADED'
+                  AND NOT EXISTS (SELECT 1 FROM photo_analysis a WHERE a.photo_id = p.id AND a.embedding IS NOT NULL)
             """.trimIndent(),
         ),
         issue(

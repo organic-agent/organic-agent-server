@@ -57,7 +57,7 @@ def run(event: AdminPhotoEvent, settings: Settings) -> dict:
             if event.job_type == "DERIVATIVE":
                 db.complete_admin_derivative(final_connection, event, preview_key, photo_metadata)
             elif event.job_type == "EMBEDDING":
-                db.complete_admin_embedding(final_connection, event, vector)
+                db.complete_admin_embedding(final_connection, event, vector, settings.model_id)
             else:
                 db.complete_admin_quality(final_connection, event, analyzed)
             final_connection.commit()

@@ -25,10 +25,12 @@ class RecordingTrashPhotoStorage : PhotoStorage {
 
     fun deletedKeys(): Set<String> = deletedBatches.flatten().toSet()
 
+    override fun galleryPrefix(galleryId: Long): String = "galleries/$galleryId/"
+
     override fun buildKey(galleryId: Long, originalFileName: String): String {
         val extension = originalFileName.substringAfterLast('.', "").lowercase()
         val suffix = if (extension.isBlank()) "" else ".$extension"
-        return "galleries/$galleryId/${UUID.randomUUID()}$suffix"
+        return "${galleryPrefix(galleryId)}${UUID.randomUUID()}$suffix"
     }
 
     override fun presignUpload(key: String, contentType: String): PresignedUploadDto =

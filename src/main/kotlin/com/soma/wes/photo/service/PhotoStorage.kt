@@ -5,6 +5,12 @@ import com.soma.wes.photo.dto.PresignedUploadDto
 
 interface PhotoStorage {
 
+    /**
+     * 갤러리 하나의 키 공간. 원본·보정 주석·보정 결과가 전부 이 아래에 있다 — 키를 조립하는
+     * 곳은 이 메서드를 지나야 한다. 환경은 버킷으로 갈리므로 키에 환경 구분자는 없다.
+     */
+    fun galleryPrefix(galleryId: Long): String
+
     /** 사진 한 장이 저장될 위치를 정한다.*/
     fun buildKey(galleryId: Long, originalFileName: String): String
 

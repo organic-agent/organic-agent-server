@@ -14,6 +14,12 @@ import org.springframework.data.jpa.repository.Lock
 
 interface ConceptFolderRepository : JpaRepository<ConceptFolder, Long> {
     fun findAllByGalleryIdOrderBySortOrderAscIdAsc(galleryId: Long): List<ConceptFolder>
+    fun findAllByGalleryIdAndAnalysisJobIdOrderBySortOrderAscIdAsc(
+        galleryId: Long,
+        analysisJobId: Long,
+    ): List<ConceptFolder>
+    fun findFirstByGalleryIdAndAnalysisJobIdIsNotNullOrderByAnalysisJobIdDesc(galleryId: Long): ConceptFolder?
+    fun existsByGalleryIdAndAnalysisJobId(galleryId: Long, analysisJobId: Long): Boolean
     fun findByIdAndGalleryId(id: Long, galleryId: Long): ConceptFolder?
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     fun findWithLockByIdAndGalleryId(id: Long, galleryId: Long): ConceptFolder?
@@ -44,4 +50,5 @@ interface CategorizationJobRepository : JpaRepository<CategorizationJob, Long> {
 
 interface CategorizationJobPhotoRepository : JpaRepository<CategorizationJobPhoto, CategorizationJobPhotoId> {
     fun findAllByPhotoIdIn(photoIds: Collection<Long>): List<CategorizationJobPhoto>
+    fun countByJobId(jobId: Long): Long
 }

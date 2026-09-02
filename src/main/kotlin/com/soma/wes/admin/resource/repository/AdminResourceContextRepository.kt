@@ -186,7 +186,7 @@ class AdminResourceContextRepository(
         AdminResourceType.PHOTO -> singleFacts(
             """
                 SELECT byte_size, width, height, camera_make, camera_model, taken_at,
-                       embedding IS NOT NULL AS analyzed,
+                       EXISTS (SELECT 1 FROM photo_analysis a WHERE a.photo_id = photos.id AND a.embedding IS NOT NULL) AS analyzed,
                        (SELECT COUNT(*) FROM photo_folder_items WHERE photo_id = :id) AS album_references,
                        (SELECT COUNT(*) FROM photo_selection_items WHERE photo_id = :id) AS selection_references,
                        (SELECT COUNT(*) FROM retouch_photos WHERE photo_id = :id) AS retouch_references,

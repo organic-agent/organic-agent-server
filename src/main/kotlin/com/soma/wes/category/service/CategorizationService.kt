@@ -23,6 +23,7 @@ import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.repository.requireWithLockById
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.domain.Photo
+import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import java.time.Clock
 import java.time.ZonedDateTime
@@ -35,6 +36,7 @@ class CategorizationService(
     private val galleryAccessPolicy: GalleryAccessPolicy,
     private val galleryRepository: GalleryRepository,
     private val photoRepository: PhotoRepository,
+    private val photoAnalysisRepository: PhotoAnalysisRepository,
     private val conceptRepository: ConceptFolderRepository,
     private val detailRepository: DetailFolderRepository,
     private val assignmentRepository: PhotoCategoryAssignmentRepository,
@@ -63,7 +65,7 @@ class CategorizationService(
             CategorizationStatus.SUCCEEDED,
         )
         val mode = if (initialCompleted) CategorizationMode.INCREMENTAL else CategorizationMode.INITIAL
-        val allEmbedded = photoRepository.findAllByGalleryIdAndEmbeddingIsNotNullOrderByDisplayOrderAscIdAsc(galleryId)
+        val allEmbedded = photoRepository.findAllEmbeddedByGalleryId(galleryId)
         val processedIds = jobPhotoRepository.findAllByPhotoIdIn(allEmbedded.map { it.requiredId })
             .mapTo(mutableSetOf()) { it.photoId }
         val candidates = if (mode == CategorizationMode.INITIAL) allEmbedded else allEmbedded.filter { it.requiredId !in processedIds }
@@ -73,7 +75,7 @@ class CategorizationService(
         if (mode == CategorizationMode.INITIAL) {
             createInitialFolders(galleryId, candidates, now)
         } else {
-            categorizeIncrementally(galleryId, candidates, now)
+            categorizeIncrementally(galleryId, candidates, allEmbedded, now)
         }
         jobPhotoRepository.saveAll(candidates.map { CategorizationJobPhoto(job.requiredId, it.requiredId) })
         job.complete(ZonedDateTime.now(clock))
@@ -85,8 +87,7 @@ class CategorizationService(
     fun latest(galleryId: Long, userId: Long): CategorizationJobResponse? {
         galleryAccessPolicy.requireViewer(galleryId, userId)
         val job = jobRepository.findFirstByGalleryIdOrderByCreatedAtDesc(galleryId) ?: return null
-        val count = jobPhotoRepository.findAll().count { it.jobId == job.requiredId }
-        return CategorizationJobResponse.of(job, count)
+        return CategorizationJobResponse.of(job, jobPhotoRepository.countByJobId(job.requiredId).toInt())
     }
 
     private fun createInitialFolders(galleryId: Long, candidates: List<Photo>, at: ZonedDateTime) {
@@ -127,18 +128,27 @@ class CategorizationService(
         }
     }
 
-    private fun categorizeIncrementally(galleryId: Long, candidates: List<Photo>, at: ZonedDateTime) {
+    private fun categorizeIncrementally(
+        galleryId: Long,
+        candidates: List<Photo>,
+        embeddedPhotos: List<Photo>,
+        at: ZonedDateTime,
+    ) {
         if (candidates.isEmpty()) return
-        val existingPhotos = photoRepository.findAllByGalleryIdAndEmbeddingIsNotNullOrderByDisplayOrderAscIdAsc(galleryId)
-        val assignments = assignmentRepository.findAllByPhotoIdIn(existingPhotos.map { it.requiredId })
+        val analyses = photoAnalysisRepository.findAllByPhotoIdIn(embeddedPhotos.map { it.requiredId })
             .associateBy { it.photoId }
-        val assignedPhotos = existingPhotos.filter { it.requiredId in assignments }
+        val assignments = assignmentRepository.findAllByPhotoIdIn(embeddedPhotos.map { it.requiredId })
+            .associateBy { it.photoId }
+        val assignedPhotos = embeddedPhotos.filter { it.requiredId in assignments }
         val threshold = clusterProperties.levels.getValue(clusterProperties.defaultLevel).strictThreshold
         var nextConceptOrder = conceptRepository.findAllByGalleryIdOrderBySortOrderAscIdAsc(galleryId).size
 
         candidates.forEach { candidate ->
-            val nearest = assignedPhotos.maxByOrNull { cosine(candidate.embedding, it.embedding) }
-            val similarity = nearest?.let { cosine(candidate.embedding, it.embedding) }
+            val candidateEmbedding = analyses[candidate.requiredId]?.embedding
+            val nearest = assignedPhotos.maxByOrNull {
+                cosine(candidateEmbedding, analyses[it.requiredId]?.embedding)
+            }
+            val similarity = nearest?.let { cosine(candidateEmbedding, analyses[it.requiredId]?.embedding) }
             val targetDetailId = if (nearest != null && similarity != null && similarity >= threshold) {
                 assignments.getValue(nearest.requiredId).detailFolderId
             } else {
