@@ -74,10 +74,10 @@ if [ "$DB_HOST" = "localhost" ] && [ "$DB_PORT" = "5432" ]; then
   "${COMPOSE[@]}" up -d postgres >/dev/null
 fi
 
-# --- 1. 임베딩 (embedder/, DINOv3) --------------------------------------------------------------
-# venv는 embedder/.venv 에 한 번 만든다. 리눅스에서는 CUDA 빌드가 딸려오지 않게 CPU 인덱스로,
-# 맥은 pypi 기본 빌드가 MPS를 잡는다.
-EMBEDDER_DIR="$WES_ROOT/embedder"
+# --- 1. 임베딩 (AI repo embedder/, DINOv3) ------------------------------------------------------
+# embedder는 organic-agent-ai repo로 이관됐다(#123). venv는 embedder/.venv 에 한 번 만든다.
+# 리눅스에서는 CUDA 빌드가 딸려오지 않게 CPU 인덱스로, 맥은 pypi 기본 빌드가 MPS를 잡는다.
+EMBEDDER_DIR="$AI_ROOT/embedder"
 EMBEDDER_PY="$EMBEDDER_DIR/.venv/bin/python"
 if [ "$SKIP_EMBED" = false ]; then
   if [ ! -x "$EMBEDDER_PY" ]; then
