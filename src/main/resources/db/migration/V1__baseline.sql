@@ -2930,39 +2930,43 @@ ALTER TABLE ONLY public.studio_retouch_capabilities
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'embedder') THEN
-        EXECUTE 'GRANT SELECT (id, deleted_at) ON galleries TO embedder';
+        EXECUTE 'GRANT SELECT (id, deleted_at) ON public.galleries TO embedder';
         EXECUTE 'GRANT SELECT (id, gallery_id, storage_key, status, deleted_at, preview_key, '
                 'taken_at, camera_make, camera_model, exposure_time, f_number, iso, width, height, '
-                'byte_size, version) ON photos TO embedder';
+                'byte_size, version) ON public.photos TO embedder';
         EXECUTE 'GRANT UPDATE (status, preview_key, taken_at, camera_make, camera_model, '
                 'exposure_time, f_number, iso, width, height, byte_size, technical_quality_score, '
-                'technical_quality_signals, quality_analyzed_at, version, updated_at) ON photos TO embedder';
-        EXECUTE 'GRANT SELECT, INSERT, UPDATE ON photo_analysis TO embedder';
+                'technical_quality_signals, quality_analyzed_at, version, updated_at) ON public.photos TO embedder';
+        EXECUTE 'GRANT SELECT, INSERT, UPDATE ON public.photo_analysis TO embedder';
         EXECUTE 'GRANT SELECT (id, attempt_count, job_type, target_type, target_id, revision_id, status, payload) '
-                'ON admin_processing_jobs TO embedder';
+                'ON public.admin_processing_jobs TO embedder';
         EXECUTE 'GRANT UPDATE (status, failure_code, last_run_at, updated_at) '
-                'ON admin_processing_jobs TO embedder';
-        EXECUTE 'GRANT SELECT (id, photo_id, storage_key) ON admin_photo_revisions TO embedder';
+                'ON public.admin_processing_jobs TO embedder';
+        EXECUTE 'GRANT SELECT (id, photo_id, storage_key) ON public.admin_photo_revisions TO embedder';
     END IF;
 END
 $$;
 -- EMBEDDER_GRANT_CONTRACT_END
 
 -- 운영 DB에 AI 워커 전용 role이 이미 있으면 현재 분석·카테고리·추천 계약을 연다.
+-- PHOTOSELECT_GRANT_CONTRACT_BEGIN
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'photoselect') THEN
-        EXECUTE 'GRANT SELECT ON galleries, photos, photo_analysis, '
-                'concept_folders, detail_folders, photo_category_assignments, '
-                'photo_selections, photo_selection_items, '
-                'ai_analysis_jobs, ai_concept_assignments, ai_selection_jobs, ai_recommendations, ai_pair_verdicts '
+        EXECUTE 'GRANT SELECT ON public.galleries, public.photos, public.photo_analysis, '
+                'public.concept_folders, public.detail_folders, public.photo_category_assignments, '
+                'public.photo_selections, public.photo_selection_items, '
+                'public.ai_analysis_jobs, public.ai_concept_assignments, public.ai_selection_jobs, '
+                'public.ai_recommendations, public.ai_pair_verdicts '
                 'TO photoselect';
-        EXECUTE 'GRANT INSERT, UPDATE ON photo_analysis, ai_concept_assignments, ai_recommendations, ai_pair_verdicts '
+        EXECUTE 'GRANT INSERT, UPDATE ON public.photo_analysis, public.ai_concept_assignments, '
+                'public.ai_recommendations, public.ai_pair_verdicts '
                 'TO photoselect';
-        EXECUTE 'GRANT UPDATE ON ai_analysis_jobs, ai_selection_jobs TO photoselect';
+        EXECUTE 'GRANT UPDATE ON public.ai_analysis_jobs, public.ai_selection_jobs TO photoselect';
     END IF;
 END
 $$;
+-- PHOTOSELECT_GRANT_CONTRACT_END
 
 --
 -- PostgreSQL database dump complete
