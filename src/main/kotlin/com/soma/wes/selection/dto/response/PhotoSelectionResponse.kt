@@ -24,6 +24,8 @@ data class PhotoSelectionResponse(
 
     val submittedAt: ZonedDateTime?,
 
+    val submittedByUserId: Long?,
+
     @field:Schema(description = "고른 항목. 갤러리에서 정한 노출 순서를 따르고, 보정본으로 담은 항목은 결과 URL을 함께 든다")
     val photos: List<SelectedPhotoResponse>,
 
@@ -51,6 +53,7 @@ data class PhotoSelectionResponse(
             selectedCount = photos.size,
             remainingCount = maxSelectablePhotoCount?.let { (it - photos.size).coerceAtLeast(0) },
             submittedAt = selection?.submittedAt,
+            submittedByUserId = selection?.submittedByUserId,
             photos = photos,
             viewUrlTtlSeconds = viewUrlTtlSeconds,
         )

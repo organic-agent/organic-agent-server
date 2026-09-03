@@ -6,7 +6,7 @@ import com.soma.wes.folder.domain.PhotoFolderItem
 import com.soma.wes.folder.dto.request.AddPhotosRequest
 import com.soma.wes.folder.dto.request.CreatePhotoFolderRequest
 import com.soma.wes.folder.dto.request.MovePhotosRequest
-import com.soma.wes.folder.dto.request.UpdatePhotoFolderRequest
+import com.soma.wes.folder.dto.request.RenamePhotoFolderRequest
 import com.soma.wes.folder.dto.response.PhotoFolderDetailResponse
 import com.soma.wes.folder.dto.response.PhotoFolderResponse
 import com.soma.wes.folder.exception.FolderErrorCode
@@ -75,23 +75,18 @@ class PhotoFolderService(
         return folderViewAssembler.detailOf(findFolder(galleryId, groupId, folderId))
     }
 
-    /** 보낸 필드만 바꾼다. reviewed는 true(확인 완료)만 의미가 있다 — 배지를 다시 켜는 건 AI 배치의 일이다. */
     @Transactional
-    fun update(
+    fun rename(
         galleryId: Long,
         groupId: Long,
         folderId: Long,
         userId: Long,
-        request: UpdatePhotoFolderRequest,
+        request: RenamePhotoFolderRequest,
     ): PhotoFolderResponse {
         galleryAccessPolicy.requirePhotographerOrCouple(galleryId, userId)
 
         val folder = findFolderInLockedGroup(galleryId, groupId, folderId)
-        request.name?.let { folder.rename(it) }
-        request.category?.let { folder.changeCategory(it) }
-        if (request.reviewed == true) {
-            folder.markReviewed()
-        }
+        folder.rename(request.name)
 
         return folderViewAssembler.summaryOf(folder)
     }

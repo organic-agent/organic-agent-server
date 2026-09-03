@@ -209,7 +209,11 @@ class AdminResourceController(
         @Valid @RequestBody request: ChangeAdminResourceStateRequest,
         servletRequest: HttpServletRequest,
     ): ResponseEntity<Unit> {
-        cascadeTrashService.delete(loginUser.id, type, id, request, servletRequest.remoteAddr)
+        if (type in IMMEDIATE_DELETE_TYPES) {
+            resourceService.delete(loginUser.id, type, id, request, servletRequest.remoteAddr)
+        } else {
+            cascadeTrashService.delete(loginUser.id, type, id, request, servletRequest.remoteAddr)
+        }
         return ResponseEntity.noContent().build()
     }
 
@@ -273,4 +277,11 @@ class AdminResourceController(
     fun getSystemSettings(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
     ): ResponseEntity<AdminSystemSettingsResponse> = ResponseEntity.ok(systemSettingsService.get())
+
+    private companion object {
+        val IMMEDIATE_DELETE_TYPES = setOf(
+            AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
+            AdminResourceType.PHOTO_RATING,
+        )
+    }
 }

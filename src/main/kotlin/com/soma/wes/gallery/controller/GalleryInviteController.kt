@@ -4,7 +4,10 @@ import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.gallery.controller.docs.GalleryInviteControllerDocs
 import com.soma.wes.gallery.dto.response.GalleryInviteAcceptResponse
 import com.soma.wes.gallery.dto.response.GalleryInviteResponse
+import com.soma.wes.gallery.dto.response.GalleryInvitePreviewResponse
+import com.soma.wes.gallery.dto.request.IssueGalleryInviteRequest
 import com.soma.wes.gallery.service.GalleryInviteService
+import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
@@ -13,6 +16,7 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RestController
 
 
@@ -30,8 +34,9 @@ class GalleryInviteController(
     override fun issue(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
+        @Valid @RequestBody(required = false) request: IssueGalleryInviteRequest?,
     ): ResponseEntity<GalleryInviteResponse> {
-        val result = galleryInviteService.issue(galleryId, loginUser.id)
+        val result = galleryInviteService.issue(galleryId, loginUser.id, request ?: IssueGalleryInviteRequest())
         val status = HttpStatus.CREATED
 
         return ResponseEntity.status(status).body(result)
@@ -68,4 +73,11 @@ class GalleryInviteController(
 
         return ResponseEntity.ok(result)
     }
+
+    @GetMapping("/invites/{token}")
+    override fun preview(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable token: String,
+    ): ResponseEntity<GalleryInvitePreviewResponse> =
+        ResponseEntity.ok(galleryInviteService.preview(token, loginUser.id))
 }

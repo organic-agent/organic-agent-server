@@ -29,6 +29,9 @@ enum class GalleryErrorCode(
 
     /** [INVALID_MAX_SELECTABLE_PHOTO_COUNT]와 같은 이유다 — 0회짜리 보정 계약은 없고, 제한을 두지 않으려면 null을 보낸다. */
     INVALID_MAX_RETOUCH_ROUND_COUNT(HttpStatus.BAD_REQUEST, "GALLERY_400_4", "보정 횟수는 1 이상이어야 합니다."),
+    INVALID_INVITE_KIND(HttpStatus.BAD_REQUEST, "GALLERY_400_5", "작업공간 종류와 맞지 않는 초대 종류입니다."),
+    INVALID_INVITE_EXPIRY(HttpStatus.BAD_REQUEST, "GALLERY_400_6", "초대 만료 시각은 현재보다 뒤여야 합니다."),
+    INVALID_INVITE_MAX_USES(HttpStatus.BAD_REQUEST, "GALLERY_400_7", "초대 사용 가능 횟수는 1~100이어야 합니다."),
 
     /** 멤버도 담당 작가도 아닌 사용자의 접근. */
     GALLERY_ACCESS_DENIED(HttpStatus.FORBIDDEN, "GALLERY_403_1", "갤러리에 접근할 권한이 없습니다."),
@@ -58,6 +61,9 @@ enum class GalleryErrorCode(
     GALLERY_NOT_FOUND(HttpStatus.NOT_FOUND, "GALLERY_404_1", "존재하지 않는 갤러리입니다."),
     MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "GALLERY_404_2", "갤러리 멤버가 아닙니다."),
     INVITE_NOT_FOUND(HttpStatus.NOT_FOUND, "GALLERY_404_3", "존재하지 않는 초대 링크입니다."),
+    INVITE_INVALID(HttpStatus.NOT_FOUND, "GALLERY_404_4", "유효하지 않은 초대 링크입니다."),
+
+    INVITE_FULL(HttpStatus.CONFLICT, "GALLERY_409_1", "초대 링크의 사용 가능 횟수를 모두 소진했습니다."),
 
     /**
      * 만료·폐기는 410으로 돌려준다. 링크 자체는 우리가 발급한 것이 맞고 지금은 쓸 수 없다는 뜻이라,

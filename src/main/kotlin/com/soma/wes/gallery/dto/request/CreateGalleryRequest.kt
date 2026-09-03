@@ -10,6 +10,9 @@ import java.time.ZonedDateTime
 @Schema(description = "갤러리 생성 요청")
 data class CreateGalleryRequest(
 
+    @field:Schema(description = "갤러리를 소유할 PERSONAL 또는 STUDIO 작업공간 id")
+    val workspaceId: Long,
+
     @field:NotBlank
     @field:Size(max = 100)
     @field:Schema(description = "갤러리 이름", example = "김철수 · 이영희 본식")
@@ -28,6 +31,13 @@ data class CreateGalleryRequest(
         example = "50",
     )
     val maxSelectablePhotoCount: Int? = null,
+
+    @field:Min(1)
+    @field:Schema(
+        description = "부부가 보정을 요청할 수 있는 계약 회차 수. 지정하지 않으면 제한이 없다.",
+        example = "3",
+    )
+    val maxRetouchRoundCount: Int? = null,
 
     @field:Schema(
         description = "촬영 종류. REHEARSAL(리허설) | CEREMONY(본식) | OTHER. AI 폴더의 큰 분류 목록이 이 값으로 갈린다. 지정하지 않으면 REHEARSAL.",

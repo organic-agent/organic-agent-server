@@ -3,6 +3,7 @@ package com.soma.wes.admin.audit.service
 import com.soma.wes.admin.audit.domain.AdminAuditAction
 import com.soma.wes.admin.audit.domain.AdminAuditOutcome
 import com.soma.wes.admin.audit.domain.AdminAuditTargetType
+import com.soma.wes.admin.resource.domain.AdminResourceType
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
@@ -78,7 +79,9 @@ class AdminMutationFailureAuditService(
     private data class Target(val type: AdminAuditTargetType, val id: String?)
 
     companion object {
-        private val RESOURCE = Regex("/resources/(USER|STUDIO|GALLERY|PHOTO|SELECTION|COLLABORATION|ALBUM|RETOUCH_REQUEST)(?:/([0-9]+))?")
+        private val RESOURCE = Regex(
+            "/resources/(${AdminResourceType.entries.joinToString("|") { it.name }})(?:/([0-9]+))?",
+        )
         private val TRASH = Regex("/operations/trash/([0-9]+)")
         private val ADMIN_ACCOUNT = Regex("/admins/([0-9]+)")
         private val IMPERSONATION = Regex("/impersonations/([0-9a-fA-F-]{36}|current)")

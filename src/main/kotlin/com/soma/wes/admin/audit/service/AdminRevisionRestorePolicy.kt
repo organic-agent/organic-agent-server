@@ -82,25 +82,37 @@ class AdminRevisionRestorePolicy(
         private val REDACTED_VALUES = setOf(REDACTED, "[MASKED]")
         private val SUPPORTED_RESOURCE_TYPES = mapOf(
             AdminAuditTargetType.USER to AdminResourceType.USER,
+            AdminAuditTargetType.WORKSPACE to AdminResourceType.WORKSPACE,
             AdminAuditTargetType.STUDIO to AdminResourceType.STUDIO,
             AdminAuditTargetType.GALLERY to AdminResourceType.GALLERY,
             AdminAuditTargetType.PHOTO to AdminResourceType.PHOTO,
+            AdminAuditTargetType.CONCEPT_FOLDER to AdminResourceType.CONCEPT_FOLDER,
+            AdminAuditTargetType.DETAIL_FOLDER to AdminResourceType.DETAIL_FOLDER,
+            AdminAuditTargetType.PHOTO_RATING to AdminResourceType.PHOTO_RATING,
             AdminAuditTargetType.COLLABORATION to AdminResourceType.COLLABORATION,
             AdminAuditTargetType.ALBUM to AdminResourceType.ALBUM,
         )
         private val RELATION_FIELDS = mapOf(
             AdminResourceType.USER to emptySet(),
-            AdminResourceType.STUDIO to setOf("userId"),
-            AdminResourceType.GALLERY to setOf("studioId"),
+            AdminResourceType.WORKSPACE to setOf("type", "personalOwnerUserId"),
+            AdminResourceType.STUDIO to setOf("workspaceId", "ownerUserId"),
+            AdminResourceType.GALLERY to setOf("workspaceId"),
             AdminResourceType.PHOTO to setOf("galleryId"),
-            AdminResourceType.COLLABORATION to setOf("galleryId"),
+            AdminResourceType.CONCEPT_FOLDER to setOf("galleryId"),
+            AdminResourceType.DETAIL_FOLDER to setOf("conceptFolderId"),
+            AdminResourceType.PHOTO_RATING to setOf("photoId"),
+            AdminResourceType.COLLABORATION to setOf("galleryId", "conceptFolderId"),
             AdminResourceType.ALBUM to setOf("galleryId"),
         )
         private val MUTABLE_FIELDS = mapOf(
-            AdminResourceType.USER to setOf("nickname", "email", "role"),
-            AdminResourceType.STUDIO to setOf("name", "galleryUrl", "inflowChannel"),
+            AdminResourceType.USER to setOf("nickname", "email"),
+            AdminResourceType.WORKSPACE to setOf("name"),
+            AdminResourceType.STUDIO to setOf("name", "galleryUrl", "contact", "description"),
             AdminResourceType.GALLERY to setOf("title", "maxSelectablePhotoCount", "maxRetouchRoundCount"),
             AdminResourceType.PHOTO to setOf("displayOrder", "status", "uploadUrlExpiresAt"),
+            AdminResourceType.CONCEPT_FOLDER to setOf("name", "sortOrder"),
+            AdminResourceType.DETAIL_FOLDER to setOf("name", "sortOrder"),
+            AdminResourceType.PHOTO_RATING to setOf("score", "ratedByUserId"),
             AdminResourceType.COLLABORATION to setOf("name"),
             AdminResourceType.ALBUM to setOf("name"),
         )

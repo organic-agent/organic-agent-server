@@ -2,6 +2,7 @@ package com.soma.wes.auth.controller.docs
 
 import com.soma.wes.auth.dto.request.ReissueRequest
 import com.soma.wes.auth.dto.response.ReissueResponse
+import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.global.exception.ErrorResponse
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.media.Content
@@ -64,4 +65,7 @@ interface AuthControllerDocs {
     )
     @SecurityRequirements // access token이 만료된 상태로 부르는 API다. Authorization 헤더를 요구하면 안 된다.
     fun reissue(request: ReissueRequest): ResponseEntity<ReissueResponse>
+
+    @Operation(summary = "로그아웃", description = "서버에 저장된 refresh token을 폐기한다. 현재 access token은 만료 시점까지 유효하다.")
+    fun logout(loginUser: LoginUser): ResponseEntity<Unit>
 }

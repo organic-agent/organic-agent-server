@@ -1,6 +1,7 @@
 package com.soma.wes.admin.impersonation.dto
 
 import com.soma.wes.admin.resource.domain.AdminResourceType
+import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.Size
@@ -47,12 +48,13 @@ data class AdminImpersonationResponse(
 
 data class AdminImpersonationViewerResponse(
     val userId: Long,
-    val role: String,
+    /** 사용자 고정 권한이 아니라 현재 대리보기 대상에 대한 접근 근거다. */
+    val accessRole: String,
 )
 
 data class AdminImpersonationViewResponse(
     val profile: Map<String, Any?>,
-    val studios: List<AdminImpersonationStudioViewResponse>,
+    val workspaces: List<AdminImpersonationWorkspaceViewResponse>,
     val galleries: List<AdminImpersonationGalleryViewResponse>,
     /** 실제 사용자 API의 권한 검사를 통과해 구성한, BackOffice generic renderer용 read model. */
     val sections: Map<String, List<Map<String, Any?>>> = emptyMap(),
@@ -71,17 +73,38 @@ data class AdminImpersonationViewResponse(
     ),
 )
 
-data class AdminImpersonationStudioViewResponse(
-    val id: Long,
+data class AdminImpersonationWorkspaceViewResponse(
+    val workspaceId: Long,
+    val workspaceType: String,
     val name: String,
-    val galleryUrl: String,
+    val accessRole: String,
+    val galleryUrl: String?,
+    @field:Schema(description = "스튜디오 연락처. 개인 작업공간은 null", maxLength = 100)
+    val contact: String?,
+    @field:Schema(description = "스튜디오 소개. 개인 작업공간은 null", maxLength = 500)
+    val description: String?,
 )
 
 data class AdminImpersonationGalleryViewResponse(
     val id: Long,
-    val studioId: Long,
+    val workspaceId: Long,
+    val workspaceType: String,
+    val createdByUserId: Long?,
     val title: String,
-    val status: String,
+    val publicStatus: String,
+    val workflowStatus: String,
+    @field:Schema(
+        description = "status 및 workflowStatus와 분리된 읽기 전용 6단계 제품 진행 상태",
+        allowableValues = [
+            "UPLOAD",
+            "SELECTION_IN_PROGRESS",
+            "SELECTION_COMPLETED",
+            "RETOUCH",
+            "ALBUM",
+            "ARCHIVED",
+        ],
+    )
+    val stage: String,
     val selectionDeadline: ZonedDateTime?,
     val accessRole: String,
     val photoCount: Long,

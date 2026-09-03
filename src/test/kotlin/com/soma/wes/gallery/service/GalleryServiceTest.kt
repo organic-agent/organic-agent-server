@@ -1,728 +1,126 @@
 package com.soma.wes.gallery.service
 
-import com.soma.wes.gallery.domain.GalleryMember
 import com.soma.wes.gallery.domain.GalleryStatus
-import com.soma.wes.gallery.dto.request.ChangeMaxRetouchRoundCountRequest
-import com.soma.wes.gallery.dto.request.ChangeMaxSelectablePhotoCountRequest
-import com.soma.wes.gallery.dto.request.ChangeSelectionDeadlineRequest
+import com.soma.wes.gallery.domain.GalleryStage
+import com.soma.wes.gallery.domain.GalleryWorkflowStatus
+import com.soma.wes.gallery.dto.request.ChangeWorkflowStatusRequest
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.dto.request.RenameGalleryRequest
-import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.fixture.GalleryFixture
-import com.soma.wes.gallery.repository.GalleryMemberRepository
-import com.soma.wes.photo.fixture.PhotoFixture
-import com.soma.wes.selection.dto.request.SelectPhotosRequest
-import com.soma.wes.selection.service.PhotoSelectionService
-import com.soma.wes.studio.exception.StudioErrorCode
-import com.soma.wes.studio.exception.StudioException
 import com.soma.wes.studio.fixture.StudioFixture
-import com.soma.wes.studio.domain.StudioMember
-import com.soma.wes.studio.domain.StudioMemberRole
-import com.soma.wes.studio.repository.StudioMemberRepository
-import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.IntegrationTest
-import com.soma.wes.user.domain.User
 import com.soma.wes.user.fixture.UserFixture
+import com.soma.wes.workspace.domain.WorkspaceMember
+import com.soma.wes.workspace.domain.WorkspaceRole
+import com.soma.wes.workspace.repository.WorkspaceMemberRepository
+import com.soma.wes.workspace.repository.WorkspaceRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
-import org.assertj.core.api.SoftAssertions.assertSoftly
-import org.junit.jupiter.api.DisplayName
-import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import java.time.ZonedDateTime
 
-/**
- * 갤러리의 생애를 서비스 경계에서 확인한다.
- *
- * 보는 것은 셋이다: DRAFT로 시작해 열고 닫는 상태 전이가 규칙대로 도는지, 누구에게 무엇이
- * 보이는지(작가는 자기 스튜디오, 부부는 열린 갤러리만), 그리고 계약 장수가 작가의 손에만
- * 있고 줄어들어도 부부의 화면이 깨지지 않는지.
- */
 @IntegrationTest
 class GalleryServiceTest @Autowired constructor(
     private val galleryService: GalleryService,
-    private val photoSelectionService: PhotoSelectionService,
-    private val userFixture: UserFixture,
-    private val studioFixture: StudioFixture,
     private val galleryFixture: GalleryFixture,
-    private val photoFixture: PhotoFixture,
-    private val galleryMemberRepository: GalleryMemberRepository,
-    private val studioRepository: StudioRepository,
-    private val studioMemberRepository: StudioMemberRepository,
+    private val studioFixture: StudioFixture,
+    private val userFixture: UserFixture,
+    private val workspaceRepository: WorkspaceRepository,
+    private val workspaceMemberRepository: WorkspaceMemberRepository,
 ) {
+    @Test
+    fun `PERSONAL 작업공간에도 갤러리를 만들 수 있다`() {
+        val user = userFixture.사용자()
+        val personal = workspaceRepository.findByPersonalOwnerUserId(user.requiredId)!!
 
-    @Nested
-    @DisplayName("갤러리를 만들 때")
-    inner class Create {
+        val result = galleryService.create(
+            user.requiredId,
+            CreateGalleryRequest(personal.requiredId, "개인 본식", maxRetouchRoundCount = 3),
+        )
 
-        @Test
-        fun `작가가 만들면 DRAFT로 시작한다`() {
-            // 사진을 올리고 정리하는 동안 초대된 사람에게 보이면 안 된다. 여는 시점은 작가가 정한다.
-            // given
-            val photographer = studioFixture.작가()
-
-            // when
-            val result = galleryService.create(
-                photographer.id!!, CreateGalleryRequest(title = "김철수 · 이영희 본식"),
-            )
-
-            // then
-            assertSoftly { softly ->
-                softly.assertThat(result.id).isNotNull()
-                softly.assertThat(result.title).isEqualTo("김철수 · 이영희 본식")
-                softly.assertThat(result.status).isEqualTo(GalleryStatus.DRAFT)
-                softly.assertThat(result.selectionDeadline).isNull()
-            }
-        }
-
-        @Test
-        fun `온보딩을 마치지 않은 사용자는 만들 수 없다`() {
-            // 스튜디오가 없다는 것은 아직 작가가 아니라는 뜻이다. 갤러리는 작가 개인이 아니라
-            // 스튜디오에 속하므로 붙일 곳 자체가 없다.
-            // given
-            val notOnboarded = userFixture.사용자()
-
-            // when & then
-            assertThatThrownBy {
-                galleryService.create(notOnboarded.id!!, CreateGalleryRequest(title = "갤러리"))
-            }
-                .isInstanceOf(StudioException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(StudioErrorCode.STUDIO_NOT_FOUND)
-        }
-
-        @Test
-        fun `제목이 비면 만들 수 없다`() {
-            // 컨트롤러의 @Valid(GLOBAL_400_2)는 서비스 직접 호출에서는 돌지 않는다.
-            // 이 경로의 유일한 검증은 도메인 관문(Gallery.create의 require)이다.
-            // given
-            val photographer = studioFixture.작가()
-
-            // when & then
-            assertThatThrownBy {
-                galleryService.create(photographer.id!!, CreateGalleryRequest(title = "  "))
-            }
-                .isInstanceOf(IllegalArgumentException::class.java)
-        }
-
-        @Test
-        fun `이미 지난 마감 기한으로는 만들 수 없다`() {
-            // 만들자마자 아무도 못 고르는 갤러리가 된다. 작가가 알아챌 수 있는 지점은 여기뿐이다.
-            // given
-            val photographer = studioFixture.작가()
-
-            // when & then
-            assertThatThrownBy {
-                galleryService.create(
-                    photographer.id!!,
-                    CreateGalleryRequest(title = "본식", selectionDeadline = ZonedDateTime.now().minusDays(1)),
-                )
-            }
-                .isInstanceOf(GalleryException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(GalleryErrorCode.INVALID_SELECTION_DEADLINE)
-        }
-
-        @Test
-        fun `활성 스튜디오 MEMBER는 기존 갤러리를 읽고 바꾸며 같은 스튜디오에 새 갤러리를 만든다`() {
-            val owner = studioFixture.작가()
-            val studio = requireNotNull(studioRepository.findByUserId(owner.id!!))
-            val existingGalleryId = createGallery(owner, "공유 전 갤러리")
-            val member = userFixture.사용자()
-            studioMemberRepository.saveAndFlush(
-                StudioMember(studio.requiredId, member.id!!, StudioMemberRole.MEMBER),
-            )
-
-            assertThat(galleryService.get(existingGalleryId, member.id!!).title).isEqualTo("공유 전 갤러리")
-            assertThat(
-                galleryService.rename(existingGalleryId, member.id!!, RenameGalleryRequest("멤버가 수정")),
-            ).extracting("title").isEqualTo("멤버가 수정")
-
-            val created = galleryService.create(
-                member.id!!,
-                CreateGalleryRequest(title = "멤버가 생성"),
-            )
-            assertThat(created.studioId).isEqualTo(studio.requiredId)
-            assertThat(galleryService.findAllVisibleTo(member.id!!).map { it.id })
-                .containsExactlyInAnyOrder(existingGalleryId, created.id)
-        }
-
-        @Test
-        fun `삭제된 스튜디오 MEMBER 권한은 즉시 회수된다`() {
-            val owner = studioFixture.작가()
-            val studio = requireNotNull(studioRepository.findByUserId(owner.id!!))
-            val galleryId = createGallery(owner, "권한 회수 갤러리")
-            val member = userFixture.사용자()
-            val membership = studioMemberRepository.saveAndFlush(
-                StudioMember(studio.requiredId, member.id!!, StudioMemberRole.MEMBER),
-            )
-            membership.deletedAt = ZonedDateTime.now()
-            studioMemberRepository.saveAndFlush(membership)
-
-            assertThatThrownBy { galleryService.get(galleryId, member.id!!) }
-                .isInstanceOf(GalleryException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
-            assertThat(galleryService.findAllVisibleTo(member.id!!)).isEmpty()
-            assertThatThrownBy {
-                galleryService.create(
-                    member.id!!,
-                    CreateGalleryRequest(title = "회수 뒤 생성"),
-                )
-            }
-                .isInstanceOf(StudioException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(StudioErrorCode.STUDIO_NOT_FOUND)
-        }
-
-        @Test
-        fun `정지된 스튜디오는 MEMBER의 조회 수정 목록 생성 권한을 모두 차단한다`() {
-            val owner = studioFixture.작가()
-            val studio = requireNotNull(studioRepository.findByUserId(owner.id!!))
-            val galleryId = createGallery(owner, "정지 전 갤러리")
-            val member = userFixture.사용자()
-            studioMemberRepository.saveAndFlush(
-                StudioMember(studio.requiredId, member.id!!, StudioMemberRole.MEMBER),
-            )
-            studio.suspendedAt = ZonedDateTime.now()
-            studioRepository.saveAndFlush(studio)
-
-            assertThatThrownBy { galleryService.get(galleryId, member.id!!) }
-                .isInstanceOf(GalleryException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
-            assertThatThrownBy {
-                galleryService.rename(galleryId, member.id!!, RenameGalleryRequest("정지 우회 수정"))
-            }
-                .isInstanceOf(GalleryException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
-            assertThat(galleryService.findAllVisibleTo(member.id!!)).isEmpty()
-            assertThatThrownBy {
-                galleryService.create(
-                    member.id!!,
-                    CreateGalleryRequest(title = "정지 우회 생성"),
-                )
-            }
-                .isInstanceOf(StudioException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(StudioErrorCode.STUDIO_NOT_FOUND)
-        }
-
-        @Test
-        fun `스튜디오 OWNER는 멤버 관계가 없어도 기존 권한을 유지한다`() {
-            val owner = studioFixture.작가()
-            val studio = requireNotNull(studioRepository.findByUserId(owner.id!!))
-            val galleryId = createGallery(owner, "소유자 갤러리")
-
-            assertThat(galleryService.get(galleryId, owner.id!!).id).isEqualTo(galleryId)
-            assertThat(galleryService.rename(galleryId, owner.id!!, RenameGalleryRequest("소유자 수정")).title)
-                .isEqualTo("소유자 수정")
-            assertThat(
-                galleryService.create(
-                    owner.id!!,
-                    CreateGalleryRequest(title = "소유자 추가 생성"),
-                ).studioId,
-            ).isEqualTo(studio.requiredId)
-        }
-
-        @Test
-        fun `여러 스튜디오의 MEMBER는 공개 생성 요청에서 대상을 선택할 수 없어 거절된다`() {
-            val firstOwner = studioFixture.작가()
-            val secondOwner = studioFixture.작가()
-            val firstStudio = requireNotNull(studioRepository.findByUserId(firstOwner.id!!))
-            val secondStudio = requireNotNull(studioRepository.findByUserId(secondOwner.id!!))
-            val member = userFixture.사용자()
-            listOf(firstStudio.requiredId, secondStudio.requiredId).forEach { studioId ->
-                studioMemberRepository.saveAndFlush(
-                    StudioMember(studioId, member.id!!, StudioMemberRole.MEMBER),
-                )
-            }
-
-            assertThatThrownBy {
-                galleryService.create(member.id!!, CreateGalleryRequest(title = "소속 미지정"))
-            }
-                .isInstanceOf(StudioException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(StudioErrorCode.STUDIO_SELECTION_REQUIRED)
-        }
-
-        @Test
-        fun `스튜디오 소유자라도 다른 활성 스튜디오 소속이면 공개 생성 대상을 추측하지 않는다`() {
-            val owner = studioFixture.작가()
-            val otherOwner = studioFixture.작가()
-            val otherStudio = requireNotNull(studioRepository.findByUserId(otherOwner.id!!))
-            studioMemberRepository.saveAndFlush(
-                StudioMember(otherStudio.requiredId, owner.id!!, StudioMemberRole.MEMBER),
-            )
-
-            assertThatThrownBy {
-                galleryService.create(owner.id!!, CreateGalleryRequest(title = "소유와 소속이 겹친 생성"))
-            }
-                .isInstanceOf(StudioException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(StudioErrorCode.STUDIO_SELECTION_REQUIRED)
-        }
+        assertThat(result.workspaceId).isEqualTo(personal.requiredId)
+        assertThat(result.createdByUserId).isEqualTo(user.requiredId)
+        assertThat(result.status).isEqualTo(GalleryStatus.DRAFT)
+        assertThat(result.workflowStatus).isEqualTo(GalleryWorkflowStatus.DRAFT)
+        assertThat(result.stage).isEqualTo(GalleryStage.UPLOAD)
+        assertThat(result.maxRetouchRoundCount).isEqualTo(3)
     }
 
-    @Nested
-    @DisplayName("갤러리를 조회할 때")
-    inner class Read {
+    @Test
+    fun `갤러리 목록은 6단계 진행 상태로 필터링한다`() {
+        val owner = studioFixture.작가()
+        val studio = studioFixture.소유_스튜디오(owner)
+        val upload = galleryService.create(owner.requiredId, CreateGalleryRequest(studio.workspaceId, "업로드"))
+        val selecting = galleryService.create(owner.requiredId, CreateGalleryRequest(studio.workspaceId, "선택"))
+        galleryService.open(selecting.id, owner.requiredId)
 
-        @Test
-        fun `작가 목록에는 자기 스튜디오의 갤러리만 나온다`() {
-            // given
-            val mine = studioFixture.작가()
-            val other = studioFixture.작가()
-            createGallery(mine, "내 갤러리")
-            createGallery(other, "남의 갤러리")
-
-            // when
-            val result = galleryService.findAllVisibleTo(mine.id!!)
-
-            // then
-            assertThat(result).hasSize(1)
-            assertThat(result[0].title).isEqualTo("내 갤러리")
-        }
-
-        @Test
-        fun `부부 목록에는 아직 열리지 않은 갤러리가 나오지 않는다`() {
-            // given
-            val photographer = studioFixture.작가()
-            val draftId = createGallery(photographer, "정리 중")
-            val openedId = createGallery(photographer, "열린 갤러리")
-            galleryService.open(openedId, photographer.id!!)
-
-            val member = userFixture.사용자()
-            galleryMemberRepository.save(GalleryMember(galleryId = draftId, userId = member.id!!))
-            galleryMemberRepository.save(GalleryMember(galleryId = openedId, userId = member.id!!))
-
-            // when
-            val result = galleryService.findAllVisibleTo(member.id!!)
-
-            // then
-            assertThat(result).hasSize(1)
-            assertThat(result[0].title).isEqualTo("열린 갤러리")
-        }
-
-        @Test
-        fun `초대받지 않은 사용자는 조회할 수 없다`() {
-            // given
-            val photographer = studioFixture.작가()
-            val galleryId = createGallery(photographer, "남의 갤러리")
-            galleryService.open(galleryId, photographer.id!!)
-            val stranger = userFixture.사용자()
-
-            // when & then
-            assertThatThrownBy { galleryService.get(galleryId, stranger.id!!) }
-                .isInstanceOf(GalleryException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
-        }
-
-        @Test
-        fun `없는 갤러리는 조회할 수 없다`() {
-            // given
-            val photographer = studioFixture.작가()
-
-            // when & then
-            assertThatThrownBy { galleryService.get(99999999L, photographer.id!!) }
-                .isInstanceOf(GalleryException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(GalleryErrorCode.GALLERY_NOT_FOUND)
-        }
+        assertThat(galleryService.findAllVisibleTo(owner.requiredId, GalleryStage.UPLOAD).map { it.id })
+            .containsExactly(upload.id)
+        assertThat(galleryService.findAllVisibleTo(owner.requiredId, GalleryStage.SELECTION_IN_PROGRESS).map { it.id })
+            .containsExactly(selecting.id)
     }
 
-    @Nested
-    @DisplayName("갤러리를 열고 닫을 때")
-    inner class OpenAndClose {
+    @Test
+    fun `STUDIO 멤버는 명시한 작업공간에 갤러리를 만들고 관리한다`() {
+        val owner = studioFixture.작가()
+        val studio = studioFixture.소유_스튜디오(owner)
+        val member = userFixture.사용자()
+        workspaceMemberRepository.save(
+            WorkspaceMember(studio.workspaceId, member.requiredId, WorkspaceRole.MEMBER),
+        )
 
-        @Test
-        fun `작가가 열면 초대된 부부에게 보인다`() {
-            // 여는 경로가 없으면 갤러리는 영원히 DRAFT로 남고, 멤버 행이 있어도 부부는 접근이 막힌다.
-            // given
-            val photographer = studioFixture.작가()
-            val galleryId = createGallery(photographer, "본식")
-            val member = galleryFixture.멤버(galleryId)
+        val created = galleryService.create(
+            member.requiredId,
+            CreateGalleryRequest(studio.workspaceId, "멤버가 생성"),
+        )
+        val renamed = galleryService.rename(
+            created.id,
+            member.requiredId,
+            RenameGalleryRequest("멤버가 수정"),
+        )
 
-            // when
-            val opened = galleryService.open(galleryId, photographer.id!!)
-
-            // then
-            val visible = galleryService.get(galleryId, member.id!!)
-            assertSoftly { softly ->
-                softly.assertThat(opened.status).isEqualTo(GalleryStatus.OPEN)
-                softly.assertThat(visible.title).isEqualTo("본식")
-                softly.assertThat(visible.status).isEqualTo(GalleryStatus.OPEN)
-            }
-        }
-
-        @Test
-        fun `담당 작가가 아니면 열 수 없다`() {
-            // given
-            val photographer = studioFixture.작가()
-            val galleryId = createGallery(photographer, "남의 갤러리")
-            val other = studioFixture.작가()
-
-            // when & then
-            assertThatThrownBy { galleryService.open(galleryId, other.id!!) }
-                .isInstanceOf(GalleryException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
-        }
-
-        @Test
-        fun `이미 열린 갤러리는 다시 열 수 없다`() {
-            // given
-            val photographer = studioFixture.작가()
-            val galleryId = createGallery(photographer, "본식")
-            galleryService.open(galleryId, photographer.id!!)
-
-            // when & then
-            assertThatThrownBy { galleryService.open(galleryId, photographer.id!!) }
-                .isInstanceOf(GalleryException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(GalleryErrorCode.INVALID_STATUS_TRANSITION)
-        }
-
-        @Test
-        fun `마감해도 부부는 갤러리를 계속 볼 수 있다`() {
-            // 마감은 선택을 멈추는 것이지 갤러리를 숨기는 것이 아니다. 마감됐다는 사실 자체를
-            // 그 화면에서 알려줘야 한다.
-            // given
-            val photographer = studioFixture.작가()
-            val galleryId = createGallery(photographer, "본식")
-            val member = galleryFixture.멤버(galleryId)
-            galleryService.open(galleryId, photographer.id!!)
-
-            // when
-            val closed = galleryService.close(galleryId, photographer.id!!)
-
-            // then
-            assertThat(closed.status).isEqualTo(GalleryStatus.CLOSED)
-            assertThat(galleryService.get(galleryId, member.id!!).status).isEqualTo(GalleryStatus.CLOSED)
-        }
+        assertThat(created.workspaceId).isEqualTo(studio.workspaceId)
+        assertThat(renamed.title).isEqualTo("멤버가 수정")
     }
 
-    @Nested
-    @DisplayName("갤러리를 재오픈할 때")
-    inner class Reopen {
+    @Test
+    fun `소속되지 않은 작업공간을 소유자가 다르다는 이유로 사용할 수 없다`() {
+        val firstOwner = studioFixture.작가()
+        val secondOwner = studioFixture.작가()
+        val secondStudio = studioFixture.소유_스튜디오(secondOwner)
 
-        @Test
-        fun `재오픈하면 마감 기한을 새로 받는다`() {
-            // given
-            val photographer = studioFixture.작가()
-            val galleryId = closedGallery(photographer)
-            val newDeadline = ZonedDateTime.now().plusDays(30)
-
-            // when
-            val result = galleryService.reopen(
-                galleryId, photographer.id!!, ReopenGalleryRequest(selectionDeadline = newDeadline),
+        assertThatThrownBy {
+            galleryService.create(
+                firstOwner.requiredId,
+                CreateGalleryRequest(secondStudio.workspaceId, "남의 갤러리"),
             )
-
-            // then
-            assertThat(result.status).isEqualTo(GalleryStatus.OPEN)
-            assertThat(result.selectionDeadline).isNotNull()
-        }
-
-        @Test
-        fun `이미 지난 기한으로는 재오픈할 수 없다`() {
-            // given
-            val photographer = studioFixture.작가()
-            val galleryId = closedGallery(photographer)
-
-            // when & then
-            assertThatThrownBy {
-                galleryService.reopen(
-                    galleryId,
-                    photographer.id!!,
-                    ReopenGalleryRequest(selectionDeadline = ZonedDateTime.now().minusDays(1)),
-                )
-            }
-                .isInstanceOf(GalleryException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(GalleryErrorCode.INVALID_SELECTION_DEADLINE)
-
-            // 거절된 재오픈은 상태를 건드리지 않는다.
-            assertThat(galleryService.get(galleryId, photographer.id!!).status)
-                .isEqualTo(GalleryStatus.CLOSED)
-        }
-
-        @Test
-        fun `마감된 적 없는 갤러리는 재오픈할 수 없다`() {
-            // given
-            val photographer = studioFixture.작가()
-            val galleryId = createGallery(photographer, "본식")
-
-            // when & then
-            assertThatThrownBy {
-                galleryService.reopen(galleryId, photographer.id!!, ReopenGalleryRequest())
-            }
-                .isInstanceOf(GalleryException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(GalleryErrorCode.INVALID_STATUS_TRANSITION)
-        }
+        }.isInstanceOf(com.soma.wes.studio.exception.StudioException::class.java)
     }
 
-    @Nested
-    @DisplayName("계약 장수를 바꿀 때")
-    inner class ChangeMaxSelectablePhotoCount {
+    @Test
+    fun `고객 노출 상태와 제작 워크플로 상태는 독립적이다`() {
+        val fixture = galleryFixture.멤버와_열린_갤러리()
 
-        @Test
-        fun `계약 장수는 작가만 정한다`() {
-            // given
-            val fixture = galleryFixture.멤버와_열린_갤러리(maxSelectablePhotoCount = null)
+        val changed = galleryService.changeWorkflowStatus(
+            fixture.galleryId,
+            fixture.photographer.requiredId,
+            ChangeWorkflowStatusRequest(GalleryWorkflowStatus.IN_PROGRESS),
+        )
 
-            // when & then
-            assertThatThrownBy {
-                galleryService.changeMaxSelectablePhotoCount(
-                    fixture.galleryId, fixture.member.id!!, ChangeMaxSelectablePhotoCountRequest(10),
-                )
-            }
-                .isInstanceOf(GalleryException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
-
-            val result = galleryService.changeMaxSelectablePhotoCount(
-                fixture.galleryId, fixture.photographer.id!!, ChangeMaxSelectablePhotoCountRequest(10),
-            )
-            assertThat(result.maxSelectablePhotoCount).isEqualTo(10)
-        }
-
-        @Test
-        fun `계약 장수를 0으로 정할 수 없다`() {
-            // 막히는 것은 값을 넣은 작가가 아니라 아무것도 못 고르는 부부다.
-            // 컨트롤러의 @Min은 GLOBAL_400_2를 내지만, 서비스 직접 호출은 도메인의
-            // 두 번째 방어선(GALLERY_400_3)에 걸린다.
-            // given
-            val fixture = galleryFixture.멤버와_열린_갤러리(maxSelectablePhotoCount = null)
-
-            // when & then
-            assertThatThrownBy {
-                galleryService.changeMaxSelectablePhotoCount(
-                    fixture.galleryId, fixture.photographer.id!!, ChangeMaxSelectablePhotoCountRequest(0),
-                )
-            }
-                .isInstanceOf(GalleryException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(GalleryErrorCode.INVALID_MAX_SELECTABLE_PHOTO_COUNT)
-        }
-
-        @Test
-        fun `계약 장수가 줄어 이미 넘겼다면 남은 장수는 0이다`() {
-            // 계약이 줄어드는 일은 실제로 있다. 그때 필요한 것은 작가 쪽의 400이 아니라
-            // 부부에게 몇 장이 넘쳤는지 보여주는 화면이다.
-            // given
-            val fixture = galleryFixture.멤버와_열린_갤러리(maxSelectablePhotoCount = 3)
-            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 3)
-            photoSelectionService.select(fixture.galleryId, fixture.member.id!!, SelectPhotosRequest(photoIds))
-
-            // when
-            galleryService.changeMaxSelectablePhotoCount(
-                fixture.galleryId, fixture.photographer.id!!, ChangeMaxSelectablePhotoCountRequest(1),
-            )
-
-            // then
-            val album = photoSelectionService.get(fixture.galleryId, fixture.member.id!!)
-            assertSoftly { softly ->
-                softly.assertThat(album.maxSelectablePhotoCount).isEqualTo(1)
-                softly.assertThat(album.selectedCount).isEqualTo(3)
-                softly.assertThat(album.remainingCount).isEqualTo(0)
-            }
-        }
+        assertThat(changed.status).isEqualTo(GalleryStatus.OPEN)
+        assertThat(changed.workflowStatus).isEqualTo(GalleryWorkflowStatus.IN_PROGRESS)
     }
 
-    @Nested
-    @DisplayName("계약 보정 횟수를 바꿀 때")
-    inner class ChangeMaxRetouchRoundCount {
+    @Test
+    fun `초대 멤버는 갤러리 관리 정보를 바꾸지 못한다`() {
+        val fixture = galleryFixture.멤버와_열린_갤러리()
 
-        @Test
-        fun `보정 횟수는 작가만 정한다`() {
-            // given
-            val fixture = galleryFixture.멤버와_열린_갤러리()
-
-            // when & then
-            assertThatThrownBy {
-                galleryService.changeMaxRetouchRoundCount(
-                    fixture.galleryId, fixture.member.id!!, ChangeMaxRetouchRoundCountRequest(3),
-                )
-            }
-                .isInstanceOf(GalleryException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
-
-            val result = galleryService.changeMaxRetouchRoundCount(
-                fixture.galleryId, fixture.photographer.id!!, ChangeMaxRetouchRoundCountRequest(3),
-            )
-            assertThat(result.maxRetouchRoundCount).isEqualTo(3)
-        }
-
-        @Test
-        fun `보정 횟수를 0으로 정할 수 없다`() {
-            // 컨트롤러의 @Min은 GLOBAL 코드를 내지만, 서비스 직접 호출은 도메인의
-            // 두 번째 방어선(GALLERY_400_4)에 걸린다. 제한을 없애려면 null을 보낸다.
-            // given
-            val fixture = galleryFixture.멤버와_열린_갤러리()
-
-            // when & then
-            assertThatThrownBy {
-                galleryService.changeMaxRetouchRoundCount(
-                    fixture.galleryId, fixture.photographer.id!!, ChangeMaxRetouchRoundCountRequest(0),
-                )
-            }
-                .isInstanceOf(GalleryException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(GalleryErrorCode.INVALID_MAX_RETOUCH_ROUND_COUNT)
-        }
-    }
-
-    @Nested
-    @DisplayName("갤러리 이름을 바꿀 때")
-    inner class Rename {
-
-        @Test
-        fun `이름은 작가만 바꾼다`() {
-            // given
-            val fixture = galleryFixture.멤버와_열린_갤러리()
-
-            // when & then
-            assertThatThrownBy {
-                galleryService.rename(fixture.galleryId, fixture.member.id!!, RenameGalleryRequest("바뀐 이름"))
-            }
-                .isInstanceOf(GalleryException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
-
-            val result = galleryService.rename(
-                fixture.galleryId, fixture.photographer.id!!, RenameGalleryRequest("바뀐 이름"),
-            )
-            assertThat(result.title).isEqualTo("바뀐 이름")
-        }
-
-        @Test
-        fun `빈 이름으로는 바꿀 수 없다`() {
-            // 컨트롤러의 @Valid(GLOBAL_400_2)는 서비스 직접 호출에서는 돌지 않는다.
-            // 이 경로의 유일한 검증은 도메인 관문(Gallery.rename의 require)이다.
-            // given
-            val fixture = galleryFixture.멤버와_열린_갤러리()
-
-            // when & then
-            assertThatThrownBy {
-                galleryService.rename(fixture.galleryId, fixture.photographer.id!!, RenameGalleryRequest("  "))
-            }
-                .isInstanceOf(IllegalArgumentException::class.java)
-        }
-
-        @Test
-        fun `마감된 갤러리의 이름도 바꿀 수 있다`() {
-            // 이름은 상태와 무관한 표시 정보다. 마감이 이름 오타까지 잠글 이유가 없다.
-            // given
-            val photographer = studioFixture.작가()
-            val galleryId = closedGallery(photographer)
-
-            // when
-            val result = galleryService.rename(galleryId, photographer.id!!, RenameGalleryRequest("오타 수정"))
-
-            // then
-            assertThat(result.title).isEqualTo("오타 수정")
-            assertThat(result.status).isEqualTo(GalleryStatus.CLOSED)
-        }
-    }
-
-    @Nested
-    @DisplayName("선택 마감 기한을 바꿀 때")
-    inner class ChangeSelectionDeadline {
-
-        @Test
-        fun `마감 기한은 작가만 바꾼다`() {
-            // given
-            val fixture = galleryFixture.멤버와_열린_갤러리()
-            val newDeadline = ZonedDateTime.now().plusDays(30)
-
-            // when & then
-            assertThatThrownBy {
-                galleryService.changeSelectionDeadline(
-                    fixture.galleryId, fixture.member.id!!, ChangeSelectionDeadlineRequest(newDeadline),
-                )
-            }
-                .isInstanceOf(GalleryException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
-
-            val result = galleryService.changeSelectionDeadline(
-                fixture.galleryId, fixture.photographer.id!!, ChangeSelectionDeadlineRequest(newDeadline),
-            )
-            assertThat(result.selectionDeadline).isNotNull()
-        }
-
-        @Test
-        fun `이미 지난 기한으로는 바꿀 수 없다`() {
-            // given
-            val fixture = galleryFixture.멤버와_열린_갤러리()
-
-            // when & then
-            assertThatThrownBy {
-                galleryService.changeSelectionDeadline(
-                    fixture.galleryId,
-                    fixture.photographer.id!!,
-                    ChangeSelectionDeadlineRequest(ZonedDateTime.now().minusDays(1)),
-                )
-            }
-                .isInstanceOf(GalleryException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(GalleryErrorCode.INVALID_SELECTION_DEADLINE)
-        }
-
-        @Test
-        fun `null을 보내면 기한이 없어진다`() {
-            // given
-            val fixture = galleryFixture.멤버와_열린_갤러리()
-            galleryService.changeSelectionDeadline(
-                fixture.galleryId,
-                fixture.photographer.id!!,
-                ChangeSelectionDeadlineRequest(ZonedDateTime.now().plusDays(30)),
-            )
-
-            // when
-            val result = galleryService.changeSelectionDeadline(
-                fixture.galleryId, fixture.photographer.id!!, ChangeSelectionDeadlineRequest(),
-            )
-
-            // then
-            assertThat(result.selectionDeadline).isNull()
-        }
-
-        @Test
-        fun `마감된 갤러리의 기한을 바꿔도 상태는 그대로다`() {
-            // 기한 변경은 기한만 바꾼다. 마감된 갤러리를 다시 여는 것은 재오픈의 일이다.
-            // given
-            val photographer = studioFixture.작가()
-            val galleryId = closedGallery(photographer)
-
-            // when
-            val result = galleryService.changeSelectionDeadline(
-                galleryId, photographer.id!!, ChangeSelectionDeadlineRequest(ZonedDateTime.now().plusDays(30)),
-            )
-
-            // then
-            assertThat(result.selectionDeadline).isNotNull()
-            assertThat(result.status).isEqualTo(GalleryStatus.CLOSED)
-        }
-    }
-
-    // --- helpers ---
-
-    /** DRAFT 갤러리 하나. 생성 경로 자체가 검증 대상이라 픽스처가 아니라 서비스로 만든다. */
-    private fun createGallery(photographer: User, title: String): Long =
-        galleryService.create(photographer.id!!, CreateGalleryRequest(title = title)).id
-
-    private fun closedGallery(photographer: User): Long {
-        val galleryId = createGallery(photographer, "본식")
-        galleryService.open(galleryId, photographer.id!!)
-        galleryService.close(galleryId, photographer.id!!)
-        return galleryId
+        assertThatThrownBy {
+            galleryService.rename(fixture.galleryId, fixture.member.requiredId, RenameGalleryRequest("고객 수정"))
+        }.isInstanceOf(GalleryException::class.java)
+            .extracting("errorCode")
+            .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
     }
 }

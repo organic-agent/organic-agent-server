@@ -4,8 +4,6 @@ import com.soma.wes.global.BaseEntity
 import jakarta.persistence.Column
 import jakarta.persistence.Embedded
 import jakarta.persistence.Entity
-import jakarta.persistence.EnumType
-import jakarta.persistence.Enumerated
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
@@ -40,33 +38,11 @@ class PhotoFolder(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null
 
-    /** 피사체 카테고리 칩. AI 폴더 생성이 과반으로 정하고, 이후에는 사용자가 고친다. null이면 없음. */
-    @Enumerated(EnumType.STRING)
-    @Column(name = "category", length = 20)
-    var category: FolderCategory? = null
-        protected set
-
-    /**
-     * AI 배정의 확신이 낮았다는 표식. 판정(CLIP 불일치, 낮은 confidence)은 AI 배치가 하고,
-     * 사용자가 확인하고 끄면 서버가 다시 켜지 않는다.
-     */
-    @Column(name = "needs_review", nullable = false)
-    var needsReview: Boolean = false
-        protected set
-
     val requiredId: Long
         get() = id ?: error("아직 저장되지 않은 PhotoFolder 다")
 
     fun rename(name: String) {
         this.name = FolderName.of(name)
-    }
-
-    fun changeCategory(category: FolderCategory?) {
-        this.category = category
-    }
-
-    fun markReviewed() {
-        this.needsReview = false
     }
 
     companion object {
@@ -75,16 +51,5 @@ class PhotoFolder(
             galleryId = group.galleryId,
             name = FolderName.of(name),
         )
-
-        /** AI 세트의 자식 하나. 컨셉 이름과 함께 카테고리·확인 필요 표식을 처음부터 단다. */
-        fun aiOf(
-            group: PhotoFolderGroup,
-            name: String,
-            category: FolderCategory?,
-            needsReview: Boolean,
-        ): PhotoFolder = of(group, name).also {
-            it.category = category
-            it.needsReview = needsReview
-        }
     }
 }

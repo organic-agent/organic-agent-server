@@ -4,6 +4,11 @@ import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.support.TestSequence
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
+import com.soma.wes.workspace.domain.Workspace
+import com.soma.wes.workspace.domain.WorkspaceMember
+import com.soma.wes.workspace.domain.WorkspaceRole
+import com.soma.wes.workspace.repository.WorkspaceMemberRepository
+import com.soma.wes.workspace.repository.WorkspaceRepository
 import org.springframework.stereotype.Component
 
 /**
@@ -17,11 +22,13 @@ import org.springframework.stereotype.Component
 @Component
 class UserFixture(
     private val userRepository: UserRepository,
+    private val workspaceRepository: WorkspaceRepository,
+    private val workspaceMemberRepository: WorkspaceMemberRepository,
 ) {
 
     fun 사용자(nickname: String = "테스터"): User {
         val suffix = TestSequence.next()
-        return userRepository.save(
+        val user = userRepository.save(
             User(
                 provider = OAuthProvider.KAKAO,
                 providerId = "fixture-$suffix",
@@ -29,5 +36,16 @@ class UserFixture(
                 email = "fixture-$suffix@example.com",
             ),
         )
+        val workspace = workspaceRepository.save(
+            Workspace.personal(user.requiredId, "${user.nickname}의 작업공간"),
+        )
+        workspaceMemberRepository.save(
+            WorkspaceMember(
+                workspaceId = workspace.requiredId,
+                userId = user.requiredId,
+                role = WorkspaceRole.OWNER,
+            ),
+        )
+        return user
     }
 }

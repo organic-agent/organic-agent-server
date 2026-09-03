@@ -42,7 +42,7 @@ class AdminProductChildTrashRestoreTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.STUDIO,
             mapOf(
-                "userId" to user.id,
+                "ownerUserId" to user.id,
                 "name" to "제품 휴지통 스튜디오",
                 "galleryUrl" to "product-child-restore",
             ),
@@ -50,7 +50,7 @@ class AdminProductChildTrashRestoreTest @Autowired constructor(
         val gallery = create(
             actor.requiredId,
             AdminResourceType.GALLERY,
-            mapOf("studioId" to studio.id, "title" to "제품 휴지통 갤러리"),
+            mapOf("workspaceId" to studio.id, "title" to "제품 휴지통 갤러리"),
         )
         val photo = create(
             actor.requiredId,
@@ -65,16 +65,20 @@ class AdminProductChildTrashRestoreTest @Autowired constructor(
         val collaboration = create(
             actor.requiredId,
             AdminResourceType.COLLABORATION,
-            mapOf("galleryId" to gallery.id, "name" to "제품 휴지통 복원"),
+            mapOf(
+                "galleryId" to gallery.id,
+                "conceptFolderId" to insertConceptFolder(gallery.id),
+                "name" to "제품 휴지통 복원",
+            ),
         )
         val retouch = create(
             actor.requiredId,
             AdminResourceType.RETOUCH_REQUEST,
             mapOf("galleryId" to gallery.id, "roundNo" to 1),
         )
-        val collabPhotoId = insertCollabPhoto(collaboration.id, photo.id)
+        val photoId = assignPhotoToSessionConcept(collaboration.id, photo.id)
         val guestId = insertGuest(collaboration.id)
-        val commentId = insertComment(collabPhotoId, guestId)
+        val commentId = insertComment(photoId, guestId)
 
         transactionTemplate.executeWithoutResult {
             assertThat(
@@ -89,10 +93,10 @@ class AdminProductChildTrashRestoreTest @Autowired constructor(
             childTable = "collab_photo_comments",
         )
 
-        val likeId = insertLike(collabPhotoId, guestId)
+        val likeId = insertLike(photoId, guestId)
         transactionTemplate.executeWithoutResult {
             assertThat(
-                productChildTrashService.cancelGuestLike(collaboration.id, collabPhotoId, guestId),
+                productChildTrashService.cancelGuestLike(collaboration.id, photoId, guestId),
             ).isTrue()
         }
         restore(
@@ -124,17 +128,35 @@ class AdminProductChildTrashRestoreTest @Autowired constructor(
             "127.0.0.1",
         )
 
-    private fun insertCollabPhoto(sessionId: Long, photoId: Long): Long = jdbcClient.sql(
+    private fun assignPhotoToSessionConcept(sessionId: Long, photoId: Long): Long {
+        val conceptId = jdbcClient.sql("SELECT concept_folder_id FROM collab_sessions WHERE id = :sessionId")
+            .param("sessionId", sessionId).query { rs, _ -> rs.getLong(1) }.single()
+        val detailId = jdbcClient.sql(
+            """
+            INSERT INTO detail_folders
+                (concept_folder_id, name, sort_order, created_source, version, created_at, updated_at)
+            VALUES (:conceptId, '복원 상세', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            RETURNING id
+            """.trimIndent(),
+        ).param("conceptId", conceptId).query { rs, _ -> rs.getLong("id") }.single()
+        jdbcClient.sql(
+            """
+            INSERT INTO photo_category_assignments
+                (photo_id, detail_folder_id, assigned_source, assigned_at, version, created_at, updated_at)
+            VALUES (:photoId, :detailId, 'USER', CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """.trimIndent(),
+        ).param("photoId", photoId).param("detailId", detailId).update()
+        return photoId
+    }
+
+    private fun insertConceptFolder(galleryId: Long): Long = jdbcClient.sql(
         """
-        INSERT INTO collab_photos (collab_session_id, photo_id, version, created_at, updated_at)
-        VALUES (:sessionId, :photoId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        INSERT INTO concept_folders
+            (gallery_id, name, sort_order, created_source, version, created_at, updated_at)
+        VALUES (:galleryId, '제품 휴지통 컨셉', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING id
         """.trimIndent(),
-    )
-        .param("sessionId", sessionId)
-        .param("photoId", photoId)
-        .query { rs, _ -> rs.getLong("id") }
-        .single()
+    ).param("galleryId", galleryId).query { rs, _ -> rs.getLong("id") }.single()
 
     private fun insertGuest(sessionId: Long): Long = jdbcClient.sql(
         """
@@ -149,30 +171,32 @@ class AdminProductChildTrashRestoreTest @Autowired constructor(
         .query { rs, _ -> rs.getLong("id") }
         .single()
 
-    private fun insertComment(collabPhotoId: Long, guestId: Long): Long = jdbcClient.sql(
+    private fun insertComment(photoId: Long, guestId: Long): Long = jdbcClient.sql(
         """
         INSERT INTO collab_photo_comments (
-            collab_photo_id, collab_guest_id, content, version, created_at, updated_at
+            collab_session_id, photo_id, collab_guest_id, content, version, created_at, updated_at
         )
-        VALUES (:collabPhotoId, :guestId, '복원할 댓글', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        SELECT collab_session_id, :photoId, id, '복원할 댓글', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        FROM collab_guests WHERE id = :guestId
         RETURNING id
         """.trimIndent(),
     )
-        .param("collabPhotoId", collabPhotoId)
+        .param("photoId", photoId)
         .param("guestId", guestId)
         .query { rs, _ -> rs.getLong("id") }
         .single()
 
-    private fun insertLike(collabPhotoId: Long, guestId: Long): Long = jdbcClient.sql(
+    private fun insertLike(photoId: Long, guestId: Long): Long = jdbcClient.sql(
         """
         INSERT INTO collab_photo_likes (
-            collab_photo_id, collab_guest_id, version, created_at, updated_at
+            collab_session_id, photo_id, collab_guest_id, version, created_at, updated_at
         )
-        VALUES (:collabPhotoId, :guestId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        SELECT collab_session_id, :photoId, id, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        FROM collab_guests WHERE id = :guestId
         RETURNING id
         """.trimIndent(),
     )
-        .param("collabPhotoId", collabPhotoId)
+        .param("photoId", photoId)
         .param("guestId", guestId)
         .query { rs, _ -> rs.getLong("id") }
         .single()

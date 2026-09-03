@@ -19,4 +19,10 @@ enum class GalleryInviteStatus {
 
     /** 작가가 거둬들였다. */
     REVOKED,
+
+    /** 최대 사용 횟수를 모두 소진했다. */
+    FULL,
+
+    /** 미리보기 요청 사용자가 이미 해당 소속에 들어와 있다. */
+    ALREADY_MEMBER,
 }

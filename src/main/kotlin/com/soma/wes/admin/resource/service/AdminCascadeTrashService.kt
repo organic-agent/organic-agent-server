@@ -43,6 +43,9 @@ class AdminCascadeTrashService(
         request: ChangeAdminResourceStateRequest,
         sourceAddress: String?,
     ): AdminTrashBatchResponse {
+        if (type !in CASCADE_TRASH_ROOT_TYPES) {
+            throw AdminException(AdminErrorCode.RESOURCE_DELETE_UNSUPPORTED)
+        }
         val before = requireResource(type, id)
         requireVersion(before, request.expectedVersion)
         if (before.deleted || trashRepository.hasOverlappingActiveBatch(type, id)) {
@@ -113,6 +116,9 @@ class AdminCascadeTrashService(
         request: ChangeAdminResourceStateRequest,
         sourceAddress: String?,
     ): AdminResourceResponse {
+        if (type !in CASCADE_TRASH_ROOT_TYPES) {
+            throw AdminException(AdminErrorCode.RESOURCE_RESTORE_UNSUPPORTED)
+        }
         val current = requireResource(type, id)
         requireVersion(current, request.expectedVersion)
         val batch = trashRepository.findActiveByRoot(type, id)
@@ -246,6 +252,18 @@ class AdminCascadeTrashService(
     ) + fields
 
     companion object {
+        private val CASCADE_TRASH_ROOT_TYPES = setOf(
+            AdminResourceType.USER,
+            AdminResourceType.STUDIO,
+            AdminResourceType.GALLERY,
+            AdminResourceType.PHOTO,
+            AdminResourceType.CONCEPT_FOLDER,
+            AdminResourceType.DETAIL_FOLDER,
+            AdminResourceType.SELECTION,
+            AdminResourceType.COLLABORATION,
+            AdminResourceType.ALBUM,
+            AdminResourceType.RETOUCH_REQUEST,
+        )
         private val LEGACY_TRASH_TYPES = setOf(AdminResourceType.GALLERY, AdminResourceType.PHOTO)
     }
 }

@@ -1,6 +1,6 @@
 package com.soma.wes.recommendation.service
 
-import com.soma.wes.folder.service.AiFolderGroupService
+import com.soma.wes.category.service.AiCategoryFolderService
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.fixture.GalleryFixture
@@ -29,7 +29,7 @@ import org.springframework.jdbc.core.JdbcTemplate
 @IntegrationTest
 class AiRecommendationServiceTest @Autowired constructor(
     private val aiRecommendationService: AiRecommendationService,
-    private val aiFolderGroupService: AiFolderGroupService,
+    private val aiCategoryFolderService: AiCategoryFolderService,
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
     private val recommendationFixture: RecommendationFixture,
@@ -51,10 +51,10 @@ class AiRecommendationServiceTest @Autowired constructor(
         val jobId = recommendationFixture.분석_잡(fixture.galleryId)
         recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 1, parentName = "야외 자연", conceptName = "해변")
 
-        val groups = aiFolderGroupService.createFromAnalysis(fixture.galleryId, fixture.photographer.id!!)
+        val concepts = aiCategoryFolderService.createFromAnalysis(fixture.galleryId, fixture.photographer.id!!)
         return AiSet(
             analysisJobId = jobId,
-            folderId = groups.single().folders.single().folderId,
+            folderId = concepts.single().details.single().id,
             photoIds = photoIds,
         )
     }

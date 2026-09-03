@@ -1,6 +1,5 @@
 package com.soma.wes.folder.dto.response
 
-import com.soma.wes.folder.domain.FolderCategory
 import com.soma.wes.folder.domain.PhotoFolder
 import com.soma.wes.photo.dto.response.PhotoResponse
 import io.swagger.v3.oas.annotations.media.Schema
@@ -14,12 +13,6 @@ data class PhotoFolderResponse(
     val groupId: Long,
 
     val name: String,
-
-    @field:Schema(description = "피사체 카테고리 칩(BRIDE/GROOM/COUPLE/GROUP). AI가 과반으로 정하고 사용자가 고칠 수 있다. null이면 없음")
-    val category: FolderCategory?,
-
-    @field:Schema(description = "AI 배정의 확신이 낮아 확인이 필요하다는 배지. 사용자가 확인하면 꺼진다")
-    val needsReview: Boolean,
 
     @field:Schema(description = "폴더에 든 사진 수. 삭제된 사진은 세지 않는다")
     val photoCount: Long,
@@ -39,8 +32,6 @@ data class PhotoFolderResponse(
             folderId = folder.requiredId,
             groupId = folder.groupId,
             name = folder.name.value,
-            category = folder.category,
-            needsReview = folder.needsReview,
             photoCount = photoCount,
             coverPhoto = coverPhoto,
             createdAt = folder.createdAt,

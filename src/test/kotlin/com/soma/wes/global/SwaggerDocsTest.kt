@@ -30,7 +30,19 @@ class SwaggerDocsTest @Autowired constructor(
                 status { isOk() }
                 jsonPath("$.paths['/api/v1/oauth/{provider}'].post") { exists() }
                 jsonPath("$.paths['/api/v1/auth/reissue'].post") { exists() }
-                jsonPath("$.paths['/api/v1/studios/me'].delete") { doesNotExist() }
+                jsonPath("$.paths['/api/v1/auth/logout'].post") { exists() }
+                jsonPath("$.paths['/api/v1/users/me'].patch") { exists() }
+                jsonPath("$.paths['/api/v1/users/me'].delete") { exists() }
+                jsonPath("$.paths['/api/v1/users/me/workspaces'].get") { exists() }
+                jsonPath("$.paths['/api/v1/studios/me'].delete") { exists() }
+                jsonPath("$.paths['/api/v1/studios/{studioId}/members/me'].delete") { exists() }
+                jsonPath("$.paths['/api/v1/invites/{token}'].get") { exists() }
+                jsonPath("$.paths['/api/v1/invites/{token}/accept'].post") { exists() }
+                jsonPath("$.paths['/api/v1/notifications'].get") { exists() }
+                jsonPath("$.paths['/api/v1/notifications/settings'].get") { exists() }
+                jsonPath("$.paths['/api/v1/notifications/settings'].put") { exists() }
+                jsonPath("$.paths['/api/v1/galleries/{galleryId}/members/me'].delete") { exists() }
+                jsonPath("$.paths['/api/v1/galleries/{galleryId}/photo-clusters']") { doesNotExist() }
             }
     }
 
@@ -51,6 +63,11 @@ class SwaggerDocsTest @Autowired constructor(
                 jsonPath("$.paths['/api/v1/oauth/{provider}'].post.tags[0]") { value(oauthTag) }
                 jsonPath("$.paths['/api/v1/auth/reissue'].post.summary") { value("토큰 재발급") }
                 jsonPath("$.paths['/api/v1/users/me'].get.summary") { value("내 정보 조회") }
+                jsonPath("$.paths['/api/v1/users/me/workspaces'].get.summary") { value("내 스튜디오·갤러리 소속 조회") }
+                jsonPath("$.paths['/api/v1/invites/{token}'].get.summary") { value("초대 미리보기") }
+                jsonPath("$.paths['/api/v1/galleries/{galleryId}/concept-folders'].get.description") {
+                    value(org.hamcrest.Matchers.containsString("photo-clusters API 대신"))
+                }
 
                 // 실패 응답도 문서에 있어야 클라이언트가 분기할 코드를 알 수 있다.
                 jsonPath("$.paths['/api/v1/oauth/{provider}'].post.responses.400.content['application/json'].examples") {

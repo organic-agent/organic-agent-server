@@ -20,21 +20,16 @@ import org.springframework.http.ResponseEntity
 interface StudioControllerDocs {
 
     @Operation(
-        summary = "스튜디오 생성 (작가 온보딩 완료)",
+        summary = "스튜디오 작업공간 생성",
         description = """
-            소셜 로그인을 마친 사용자가 스튜디오를 만들어 온보딩을 끝낸다.
-            **이 요청이 성공하면 사용자 종류가 PHOTOGRAPHER로 확정된다** — 종류만 정하는 API는 없다.
+            소셜 로그인을 마친 사용자가 스튜디오 작업공간을 만든다.
+            요청 사용자는 새 작업공간의 OWNER가 되며, 기존 개인 작업공간과 다른 스튜디오 소속은 유지된다.
 
             공개 주소는 앞뒤 공백을 제거하고 Locale.ROOT 기준 소문자로 변환한 canonical 값으로 저장한다.
-
-            갤러리는 작가 개인이 아니라 스튜디오에 속하므로, 이 단계를 거치지 않으면
-            갤러리 생성이 STUDIO_404_1로 실패한다.
-
-            초대 링크로 먼저 들어와 예비 부부(CLIENT)로 확정된 계정은 스튜디오를 만들 수 없다.
         """,
     )
     @ApiResponses(
-        ApiResponse(responseCode = "201", description = "생성 성공. 이 시점부터 GET /users/me의 userType이 PHOTOGRAPHER다."),
+        ApiResponse(responseCode = "201", description = "생성 성공. 요청 사용자는 새 스튜디오 작업공간의 OWNER가 된다."),
         ApiResponse(
             responseCode = "400",
             description = "주소 형식이 맞지 않거나 서비스 예약어임",
@@ -190,4 +185,16 @@ interface StudioControllerDocs {
         ),
     )
     fun updateMyStudio(loginUser: LoginUser, request: UpdateStudioRequest): ResponseEntity<StudioResponse>
+
+    @Operation(
+        summary = "스튜디오 멤버 탈퇴",
+        description = "MEMBER가 해당 스튜디오 소속에서 나간다. OWNER는 스튜디오 삭제 API를 사용해야 한다.",
+    )
+    fun leave(loginUser: LoginUser, studioId: Long): ResponseEntity<Unit>
+
+    @Operation(
+        summary = "내 스튜디오 삭제",
+        description = "내가 소유한 단일 스튜디오와 하위 갤러리를 삭제하고 다른 소속 멤버에게 알린다.",
+    )
+    fun deleteMyStudio(loginUser: LoginUser): ResponseEntity<Unit>
 }

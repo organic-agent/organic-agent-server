@@ -8,6 +8,8 @@ import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.dto.ChangeAdminResourceStateRequest
 import com.soma.wes.admin.resource.dto.CreateAdminResourceRequest
 import com.soma.wes.admin.resource.dto.UpdateAdminResourceRequest
+import com.soma.wes.admin.resource.service.AdminCascadeTrashService
+import com.soma.wes.admin.resource.service.AdminResourceContextService
 import com.soma.wes.admin.resource.service.AdminResourceService
 import com.soma.wes.support.IntegrationTest
 import org.assertj.core.api.Assertions.assertThat
@@ -21,6 +23,8 @@ import java.time.ZonedDateTime
 @IntegrationTest
 class AdminResourceServiceTest @Autowired constructor(
     private val service: AdminResourceService,
+    private val contextService: AdminResourceContextService,
+    private val cascadeTrashService: AdminCascadeTrashService,
     private val adminAccountFixture: AdminAccountFixture,
     private val auditLogRepository: AdminAuditLogRepository,
     private val jdbcClient: JdbcClient,
@@ -138,7 +142,7 @@ class AdminResourceServiceTest @Autowired constructor(
             AdminResourceType.STUDIO,
             CreateAdminResourceRequest(
                 "복원 테스트 스튜디오",
-                mapOf("userId" to user.id, "name" to "복원 스튜디오", "galleryUrl" to "restore-studio"),
+                mapOf("ownerUserId" to user.id, "name" to "복원 스튜디오", "galleryUrl" to "restore-studio"),
             ),
             "127.0.0.1",
         )
@@ -147,7 +151,7 @@ class AdminResourceServiceTest @Autowired constructor(
             AdminResourceType.GALLERY,
             CreateAdminResourceRequest(
                 "복원 테스트 갤러리",
-                mapOf("studioId" to studio.id, "title" to "복원 갤러리"),
+                mapOf("workspaceId" to studio.id, "title" to "복원 갤러리"),
             ),
             "127.0.0.1",
         )
@@ -181,20 +185,24 @@ class AdminResourceServiceTest @Autowired constructor(
         val studio = service.create(
             actor.requiredId,
             AdminResourceType.STUDIO,
-            CreateAdminResourceRequest("협업 스튜디오", mapOf("userId" to user.id, "name" to "협업", "galleryUrl" to "collab-studio")),
+            CreateAdminResourceRequest("협업 스튜디오", mapOf("ownerUserId" to user.id, "name" to "협업", "galleryUrl" to "collab-studio")),
             "127.0.0.1",
         )
         val gallery = service.create(
             actor.requiredId,
             AdminResourceType.GALLERY,
-            CreateAdminResourceRequest("협업 갤러리", mapOf("studioId" to studio.id, "title" to "협업 갤러리")),
+            CreateAdminResourceRequest("협업 갤러리", mapOf("workspaceId" to studio.id, "title" to "협업 갤러리")),
             "127.0.0.1",
         )
+        val conceptFolderId = createConceptFolder(gallery.id, "가족")
 
         val collaboration = service.create(
             actor.requiredId,
             AdminResourceType.COLLABORATION,
-            CreateAdminResourceRequest("지원용 링크 생성", mapOf("galleryId" to gallery.id, "name" to "가족 의견")),
+            CreateAdminResourceRequest(
+                "지원용 링크 생성",
+                mapOf("galleryId" to gallery.id, "conceptFolderId" to conceptFolderId, "name" to "가족 의견"),
+            ),
             "127.0.0.1",
         )
 
@@ -215,13 +223,13 @@ class AdminResourceServiceTest @Autowired constructor(
         val studio = service.create(
             actor.requiredId,
             AdminResourceType.STUDIO,
-            CreateAdminResourceRequest("전체 리소스 스튜디오", mapOf("userId" to user.id, "name" to "전체 리소스", "galleryUrl" to "all-resource")),
+            CreateAdminResourceRequest("전체 리소스 스튜디오", mapOf("ownerUserId" to user.id, "name" to "전체 리소스", "galleryUrl" to "all-resource")),
             "127.0.0.1",
         )
         val gallery = service.create(
             actor.requiredId,
             AdminResourceType.GALLERY,
-            CreateAdminResourceRequest("전체 리소스 갤러리", mapOf("studioId" to studio.id, "title" to "전체 리소스 갤러리")),
+            CreateAdminResourceRequest("전체 리소스 갤러리", mapOf("workspaceId" to studio.id, "title" to "전체 리소스 갤러리")),
             "127.0.0.1",
         )
         val photo = service.create(
@@ -244,10 +252,14 @@ class AdminResourceServiceTest @Autowired constructor(
             CreateAdminResourceRequest("셀렉 앨범 복구", mapOf("galleryId" to gallery.id)),
             "127.0.0.1",
         )
+        val conceptFolderId = createConceptFolder(gallery.id, "전체 리소스")
         val collaboration = service.create(
             actor.requiredId,
             AdminResourceType.COLLABORATION,
-            CreateAdminResourceRequest("협업 복구", mapOf("galleryId" to gallery.id, "name" to "전체 리소스 협업")),
+            CreateAdminResourceRequest(
+                "협업 복구",
+                mapOf("galleryId" to gallery.id, "conceptFolderId" to conceptFolderId, "name" to "전체 리소스 협업"),
+            ),
             "127.0.0.1",
         )
         val album = service.create(
@@ -278,6 +290,232 @@ class AdminResourceServiceTest @Autowired constructor(
                 AdminResourceType.COLLABORATION,
                 AdminResourceType.ALBUM,
             )
+    }
+
+    @Test
+    fun `워크스페이스 카테고리 분류 작업 평점은 새 관리자 리소스 계약으로 조회 수정 삭제한다`() {
+        val actor = adminAccountFixture.관리자("new-schema-resource-owner")
+        val owner = createUser(actor.requiredId, "new-schema-owner")
+        val personalWorkspaceId = jdbcClient.sql(
+            "SELECT id FROM workspaces WHERE type = 'PERSONAL' AND personal_owner_user_id = :userId",
+        ).param("userId", owner.id).query { rs, _ -> rs.getLong(1) }.single()
+        val workspace = service.get(AdminResourceType.WORKSPACE, personalWorkspaceId)
+        assertThat(workspace.fields)
+            .containsEntry("type", "PERSONAL")
+            .doesNotContainKeys("role", "userType")
+        assertThat(owner.fields).doesNotContainKeys("role", "userType")
+        assertThat(
+            jdbcClient.sql("SELECT role FROM users WHERE id = :id")
+                .param("id", owner.id).query { rs, _ -> rs.getString(1) }.single(),
+        ).isEqualTo("USER")
+        assertThatThrownBy {
+            service.update(
+                actor.requiredId,
+                AdminResourceType.USER,
+                owner.id,
+                UpdateAdminResourceRequest("전역 역할 수정 차단", owner.version, mapOf("role" to "ADMIN")),
+                "127.0.0.1",
+            )
+        }.isInstanceOfSatisfying(AdminException::class.java) {
+            assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
+        }
+
+        val studio = service.create(
+            actor.requiredId,
+            AdminResourceType.STUDIO,
+            CreateAdminResourceRequest(
+                "새 스키마 스튜디오",
+                mapOf("ownerUserId" to owner.id, "name" to "새 스키마", "galleryUrl" to "new-schema"),
+            ),
+            "127.0.0.1",
+        )
+        val gallery = service.create(
+            actor.requiredId,
+            AdminResourceType.GALLERY,
+            CreateAdminResourceRequest(
+                "새 스키마 갤러리",
+                mapOf("workspaceId" to studio.id, "createdByUserId" to owner.id, "title" to "분류 갤러리"),
+            ),
+            "127.0.0.1",
+        )
+        val photo = service.create(
+            actor.requiredId,
+            AdminResourceType.PHOTO,
+            CreateAdminResourceRequest(
+                "분류 사진",
+                mapOf(
+                    "galleryId" to gallery.id,
+                    "storageKey" to "galleries/${gallery.id}/category.jpg",
+                    "originalFileName" to "category.jpg",
+                    "contentType" to "image/jpeg",
+                ),
+            ),
+            "127.0.0.1",
+        )
+        val concept = service.create(
+            actor.requiredId,
+            AdminResourceType.CONCEPT_FOLDER,
+            CreateAdminResourceRequest(
+                "컨셉 폴더 생성",
+                mapOf("galleryId" to gallery.id, "name" to "가족", "sortOrder" to 0),
+            ),
+            "127.0.0.1",
+        )
+        val firstDetail = service.create(
+            actor.requiredId,
+            AdminResourceType.DETAIL_FOLDER,
+            CreateAdminResourceRequest(
+                "세부 폴더 생성",
+                mapOf("conceptFolderId" to concept.id, "name" to "부모님", "sortOrder" to 0),
+            ),
+            "127.0.0.1",
+        )
+        val secondDetail = service.create(
+            actor.requiredId,
+            AdminResourceType.DETAIL_FOLDER,
+            CreateAdminResourceRequest(
+                "대체 세부 폴더 생성",
+                mapOf("conceptFolderId" to concept.id, "name" to "형제", "sortOrder" to 1),
+            ),
+            "127.0.0.1",
+        )
+        val assignment = service.create(
+            actor.requiredId,
+            AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
+            CreateAdminResourceRequest(
+                "사진 수동 분류",
+                mapOf(
+                    "photoId" to photo.id,
+                    "detailFolderId" to firstDetail.id,
+                    "assignedByUserId" to owner.id,
+                ),
+            ),
+            "127.0.0.1",
+        )
+        val rating = service.create(
+            actor.requiredId,
+            AdminResourceType.PHOTO_RATING,
+            CreateAdminResourceRequest(
+                "사진 평점",
+                mapOf("photoId" to photo.id, "score" to 4, "ratedByUserId" to owner.id),
+            ),
+            "127.0.0.1",
+        )
+        val jobId = jdbcClient.sql(
+            """
+            INSERT INTO categorization_jobs
+                (gallery_id, mode, status, started_at, completed_at, version, created_at, updated_at)
+            VALUES (:galleryId, 'INITIAL', 'SUCCEEDED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                    0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            RETURNING id
+            """.trimIndent(),
+        ).param("galleryId", gallery.id).query { rs, _ -> rs.getLong(1) }.single()
+        jdbcClient.sql(
+            "INSERT INTO categorization_job_photos (job_id, photo_id) VALUES (:jobId, :photoId)",
+        ).param("jobId", jobId).param("photoId", photo.id).update()
+
+        assertThat(assignment.id).isEqualTo(photo.id)
+        assertThat(rating.id).isEqualTo(photo.id)
+        assertThat(service.get(AdminResourceType.CATEGORIZATION_JOB, jobId).fields["status"])
+            .isEqualTo("SUCCEEDED")
+        assertThat(service.search("부모님", setOf(AdminResourceType.DETAIL_FOLDER), 0, 20).contents.map { it.id })
+            .containsExactly(firstDetail.id)
+
+        val workspaceContext = contextService.get(AdminResourceType.WORKSPACE, studio.id)
+        assertThat(workspaceContext.facts)
+            .containsEntry("workspaceType", "STUDIO")
+            .containsEntry("galleries", 1L)
+        assertThat(workspaceContext.sections.getValue("members").single())
+            .containsEntry("accessRole", "OWNER")
+        assertThat(workspaceContext.sections.getValue("galleries").single())
+            .containsEntry("stage", "UPLOAD")
+        assertThat(contextService.get(AdminResourceType.STUDIO, studio.id).sections.getValue("galleries").single())
+            .containsEntry("stage", "UPLOAD")
+        val galleryContext = contextService.get(AdminResourceType.GALLERY, gallery.id)
+        assertThat(galleryContext.facts)
+            .containsEntry("publicStatus", "DRAFT")
+            .containsEntry("workflowStatus", "DRAFT")
+            .containsEntry("stage", "UPLOAD")
+            .containsEntry("categoryAssignments", 1L)
+            .containsEntry("categorizationJobs", 1L)
+            .containsEntry("ratings", 1L)
+        assertThat(galleryContext.sections).containsKeys(
+            "conceptFolders", "detailFolders", "categoryAssignments", "categorizationJobs", "photoRatings",
+            "userNotifications", "userNotificationSettings",
+        )
+        val photoContext = contextService.get(AdminResourceType.PHOTO, photo.id)
+        assertThat(photoContext.sections).containsKeys("categoryAssignment", "categorizationJobs", "rating")
+        val jobPhotoRow = contextService.get(AdminResourceType.CATEGORIZATION_JOB, jobId)
+            .sections.getValue("photos").single()
+        assertThat(jobPhotoRow).containsEntry("photoId", photo.id)
+
+        val moved = service.update(
+            actor.requiredId,
+            AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
+            assignment.id,
+            UpdateAdminResourceRequest(
+                "분류 이동",
+                assignment.version,
+                mapOf("detailFolderId" to secondDetail.id, "assignedByUserId" to owner.id),
+            ),
+            "127.0.0.1",
+        )
+        assertThat(moved.fields)
+            .containsEntry("detailFolderId", secondDetail.id)
+            .containsEntry("assignedSource", "USER")
+            .containsEntry("confidence", null)
+        val rerated = service.update(
+            actor.requiredId,
+            AdminResourceType.PHOTO_RATING,
+            rating.id,
+            UpdateAdminResourceRequest("평점 수정", rating.version, mapOf("score" to 5)),
+            "127.0.0.1",
+        )
+        assertThat(rerated.fields["score"]).isEqualTo(5)
+
+        listOf(AdminResourceType.WORKSPACE to studio.id, AdminResourceType.CATEGORIZATION_JOB to jobId)
+            .forEach { (type, id) ->
+                assertThatThrownBy {
+                    cascadeTrashService.delete(
+                        actor.requiredId,
+                        type,
+                        id,
+                        ChangeAdminResourceStateRequest("지원하지 않는 삭제", service.get(type, id).version),
+                        "127.0.0.1",
+                    )
+                }.isInstanceOfSatisfying(AdminException::class.java) {
+                    assertThat(it.errorCode).isEqualTo(AdminErrorCode.RESOURCE_DELETE_UNSUPPORTED)
+                }
+            }
+        assertThatThrownBy {
+            service.create(
+                actor.requiredId,
+                AdminResourceType.CATEGORIZATION_JOB,
+                CreateAdminResourceRequest("직접 작업 생성 차단", emptyMap()),
+                "127.0.0.1",
+            )
+        }.isInstanceOfSatisfying(AdminException::class.java) {
+            assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
+        }
+
+        service.delete(
+            actor.requiredId,
+            AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
+            moved.id,
+            ChangeAdminResourceStateRequest("분류 제거", moved.version),
+            "127.0.0.1",
+        )
+        service.delete(
+            actor.requiredId,
+            AdminResourceType.PHOTO_RATING,
+            rerated.id,
+            ChangeAdminResourceStateRequest("평점 제거", rerated.version),
+            "127.0.0.1",
+        )
+        assertThat(jdbcClient.sql("SELECT COUNT(*) FROM photo_category_assignments WHERE photo_id = :id")
+            .param("id", photo.id).query { rs, _ -> rs.getLong(1) }.single()).isZero()
+        assertThat(jdbcClient.sql("SELECT COUNT(*) FROM photo_ratings WHERE photo_id = :id")
+            .param("id", photo.id).query { rs, _ -> rs.getLong(1) }.single()).isZero()
     }
 
     @Test
@@ -452,103 +690,49 @@ class AdminResourceServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `스튜디오 생성은 미확정 소유자를 사진작가로 확정하고 CLIENT 소유자는 거절한다`() {
-        val actor = adminAccountFixture.관리자("studio-owner-type-policy")
-        val untypedOwner = createUser(actor.requiredId, "studio-untyped-owner")
-        val ownerRevisionCountBefore = userRevisionCount(untypedOwner.id)
-        val ownerAuditCountBefore = userAuditCount(untypedOwner.id)
+    fun `스튜디오 생성은 STUDIO 워크스페이스와 소유자 멤버십을 함께 만든다`() {
+        val actor = adminAccountFixture.관리자("studio-workspace-policy")
+        val owner = createUser(actor.requiredId, "studio-workspace-owner")
 
         val studio = service.create(
             actor.requiredId,
             AdminResourceType.STUDIO,
             CreateAdminResourceRequest(
-                "미확정 사용자의 스튜디오 생성",
-                mapOf("userId" to untypedOwner.id, "name" to "타입 확정 스튜디오", "galleryUrl" to "typed-owner"),
+                "워크스페이스 기반 스튜디오 생성",
+                mapOf("ownerUserId" to owner.id, "name" to "워크스페이스 스튜디오", "galleryUrl" to "workspace-owner"),
             ),
             "127.0.0.1",
         )
-        val confirmedOwner = service.get(AdminResourceType.USER, untypedOwner.id)
-        assertThat(studio.fields["userId"]).isEqualTo(untypedOwner.id)
-        assertThat(confirmedOwner.fields["userType"]).isEqualTo("PHOTOGRAPHER")
-        assertThat(confirmedOwner.version).isEqualTo(untypedOwner.version + 1)
-        assertThat(userRevisionCount(untypedOwner.id)).isEqualTo(ownerRevisionCountBefore + 1)
-        assertThat(userAuditCount(untypedOwner.id)).isEqualTo(ownerAuditCountBefore + 1)
-        val typeRevision = jdbcClient.sql(
-            """
-            SELECT before_snapshot, after_snapshot, target_version
-            FROM admin_entity_revisions
-            WHERE target_type = 'USER' AND target_id = :targetId
-            ORDER BY revision_number DESC
-            LIMIT 1
-            """.trimIndent(),
-        )
-            .param("targetId", untypedOwner.id.toString())
-            .query { rs, _ -> Triple(
-                rs.getString("before_snapshot"),
-                rs.getString("after_snapshot"),
-                rs.getLong("target_version"),
-            ) }
-            .single()
-        assertThat(typeRevision.first).contains("\"version\":0", "\"userType\":null")
-        assertThat(typeRevision.second).contains("\"version\":1", "\"userType\":\"PHOTOGRAPHER\"")
-        assertThat(typeRevision.third).isEqualTo(1L)
+
+        assertThat(studio.id).isEqualTo(studio.fields["workspaceId"])
+        assertThat(studio.fields["ownerUserId"]).isEqualTo(owner.id)
+        assertThat(service.get(AdminResourceType.USER, owner.id).version).isEqualTo(owner.version)
+        assertThat(
+            jdbcClient.sql("SELECT type FROM workspaces WHERE id = :workspaceId")
+                .param("workspaceId", studio.id)
+                .query { rs, _ -> rs.getString(1) }
+                .single(),
+        ).isEqualTo("STUDIO")
+        assertThat(
+            jdbcClient.sql(
+                "SELECT role FROM workspace_members WHERE workspace_id = :workspaceId AND user_id = :userId AND deleted_at IS NULL",
+            )
+                .param("workspaceId", studio.id)
+                .param("userId", owner.id)
+                .query { rs, _ -> rs.getString(1) }
+                .single(),
+        ).isEqualTo("OWNER")
         assertThatThrownBy {
             service.update(
                 actor.requiredId,
                 AdminResourceType.USER,
-                untypedOwner.id,
-                UpdateAdminResourceRequest(
-                    "확정 타입 직접 변경 차단",
-                    confirmedOwner.version,
-                    mapOf("userType" to "CLIENT"),
-                ),
+                owner.id,
+                UpdateAdminResourceRequest("구 사용자 유형 변경 차단", owner.version, mapOf("userType" to "CLIENT")),
                 "127.0.0.1",
             )
         }.isInstanceOfSatisfying(AdminException::class.java) {
             assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         }
-        val ownerAfterRejectedChange = service.get(AdminResourceType.USER, untypedOwner.id)
-        assertThat(ownerAfterRejectedChange.fields["userType"]).isEqualTo("PHOTOGRAPHER")
-        assertThat(ownerAfterRejectedChange.version).isEqualTo(confirmedOwner.version)
-        assertThat(userRevisionCount(untypedOwner.id)).isEqualTo(ownerRevisionCountBefore + 1)
-        assertThat(userAuditCount(untypedOwner.id)).isEqualTo(ownerAuditCountBefore + 1)
-
-        val clientOwner = service.create(
-            actor.requiredId,
-            AdminResourceType.USER,
-            CreateAdminResourceRequest(
-                "CLIENT 사용자 생성",
-                mapOf(
-                    "provider" to "GOOGLE",
-                    "providerId" to "studio-client-owner",
-                    "nickname" to "CLIENT 소유자",
-                    "userType" to "CLIENT",
-                ),
-            ),
-            "127.0.0.1",
-        )
-        val clientRevisionCountBefore = userRevisionCount(clientOwner.id)
-        val clientAuditCountBefore = userAuditCount(clientOwner.id)
-        assertThatThrownBy {
-            service.create(
-                actor.requiredId,
-                AdminResourceType.STUDIO,
-                CreateAdminResourceRequest(
-                    "CLIENT 스튜디오 우회 시도",
-                    mapOf("userId" to clientOwner.id, "name" to "차단 대상", "galleryUrl" to "client-owner-blocked"),
-                ),
-                "127.0.0.1",
-            )
-        }.isInstanceOfSatisfying(AdminException::class.java) {
-            assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-        }
-        assertThat(service.get(AdminResourceType.USER, clientOwner.id).fields["userType"]).isEqualTo("CLIENT")
-        assertThat(userRevisionCount(clientOwner.id)).isEqualTo(clientRevisionCountBefore)
-        assertThat(userAuditCount(clientOwner.id)).isEqualTo(clientAuditCountBefore)
-        assertThat(
-            jdbcClient.sql("SELECT COUNT(*) FROM studios WHERE gallery_url = 'client-owner-blocked'")
-                .query { rs, _ -> rs.getLong(1) }.single(),
-        ).isZero()
     }
 
     @Test
@@ -560,7 +744,7 @@ class AdminResourceServiceTest @Autowired constructor(
             AdminResourceType.STUDIO,
             CreateAdminResourceRequest(
                 "상태 정책 스튜디오",
-                mapOf("userId" to user.id, "name" to "상태 정책", "galleryUrl" to "gallery-state-policy"),
+                mapOf("ownerUserId" to user.id, "name" to "상태 정책", "galleryUrl" to "gallery-state-policy"),
             ),
             "127.0.0.1",
         )
@@ -572,10 +756,11 @@ class AdminResourceServiceTest @Autowired constructor(
                 CreateAdminResourceRequest(
                     "OPEN 생성 우회",
                     mapOf(
-                        "studioId" to studio.id,
+                        "workspaceId" to studio.id,
                         "title" to "우회 갤러리",
                         "status" to "OPEN",
                         "workflowStatus" to "IN_PROGRESS",
+                        "stage" to "RETOUCH",
                         "selectionDeadline" to ZonedDateTime.now().plusDays(7).toOffsetDateTime().toString(),
                     ),
                 ),
@@ -590,7 +775,7 @@ class AdminResourceServiceTest @Autowired constructor(
             AdminResourceType.GALLERY,
             CreateAdminResourceRequest(
                 "DRAFT 갤러리 생성",
-                mapOf("studioId" to studio.id, "title" to "정상 갤러리"),
+                mapOf("workspaceId" to studio.id, "title" to "정상 갤러리"),
             ),
             "127.0.0.1",
         )
@@ -605,6 +790,7 @@ class AdminResourceServiceTest @Autowired constructor(
                     mapOf(
                         "status" to "CLOSED",
                         "workflowStatus" to "COMPLETED",
+                        "stage" to "ALBUM",
                         "selectionDeadline" to ZonedDateTime.now().plusDays(14).toOffsetDateTime().toString(),
                     ),
                 ),
@@ -618,7 +804,165 @@ class AdminResourceServiceTest @Autowired constructor(
         assertThat(unchanged.fields)
             .containsEntry("status", "DRAFT")
             .containsEntry("workflowStatus", "DRAFT")
+            .containsEntry("stage", "UPLOAD")
             .containsEntry("selectionDeadline", null)
+        assertThat(service.search("UPLOAD", setOf(AdminResourceType.GALLERY), 0, 20).contents.map { it.id })
+            .contains(gallery.id)
+    }
+
+    @Test
+    fun `스튜디오 연락처와 소개는 CRUD와 컨텍스트에 노출하고 과거 유입 경로는 조회 전용으로 둔다`() {
+        val actor = adminAccountFixture.관리자("studio-profile-contract")
+        val owner = createUser(actor.requiredId, "studio-profile-owner")
+        assertThatThrownBy {
+            service.create(
+                actor.requiredId,
+                AdminResourceType.STUDIO,
+                CreateAdminResourceRequest(
+                    "과거 유입 경로 생성 차단",
+                    mapOf(
+                        "ownerUserId" to owner.id,
+                        "name" to "잘못된 스튜디오",
+                        "galleryUrl" to "studio-profile-invalid-inflow",
+                        "inflowChannel" to "ADMIN",
+                    ),
+                ),
+                "127.0.0.1",
+            )
+        }.isInstanceOfSatisfying(AdminException::class.java) {
+            assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
+        }
+        val studio = service.create(
+            actor.requiredId,
+            AdminResourceType.STUDIO,
+            CreateAdminResourceRequest(
+                "스튜디오 프로필 생성",
+                mapOf(
+                    "ownerUserId" to owner.id,
+                    "name" to "프로필 스튜디오",
+                    "galleryUrl" to "studio-profile-contract",
+                    "contact" to "02-123-4567",
+                    "description" to "웨딩 사진 전문",
+                ),
+            ),
+            "127.0.0.1",
+        )
+        jdbcClient.sql("UPDATE studios SET inflow_channel = 'LEGACY_BLOG' WHERE workspace_id = :id")
+            .param("id", studio.id).update()
+
+        val detail = service.get(AdminResourceType.STUDIO, studio.id)
+        assertThat(detail.fields)
+            .containsEntry("contact", "02-123-4567")
+            .containsEntry("description", "웨딩 사진 전문")
+            .containsEntry("inflowChannel", "LEGACY_BLOG")
+        assertThat(contextService.get(AdminResourceType.STUDIO, studio.id).resource.fields)
+            .containsEntry("contact", "02-123-4567")
+            .containsEntry("description", "웨딩 사진 전문")
+        assertThat(contextService.get(AdminResourceType.WORKSPACE, studio.id).sections.getValue("studio").single())
+            .containsEntry("contact", "02-123-4567")
+            .containsEntry("description", "웨딩 사진 전문")
+
+        val updated = service.update(
+            actor.requiredId,
+            AdminResourceType.STUDIO,
+            studio.id,
+            UpdateAdminResourceRequest(
+                "스튜디오 프로필 수정",
+                detail.version,
+                mapOf("contact" to "010-9999-0000", "description" to "본식과 리허설 전문"),
+            ),
+            "127.0.0.1",
+        )
+        assertThat(updated.fields)
+            .containsEntry("contact", "010-9999-0000")
+            .containsEntry("description", "본식과 리허설 전문")
+            .containsEntry("inflowChannel", "LEGACY_BLOG")
+
+        assertThatThrownBy {
+            service.update(
+                actor.requiredId,
+                AdminResourceType.STUDIO,
+                studio.id,
+                UpdateAdminResourceRequest("과거 유입 경로 수정 차단", updated.version, mapOf("inflowChannel" to "ADMIN")),
+                "127.0.0.1",
+            )
+        }.isInstanceOfSatisfying(AdminException::class.java) {
+            assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
+        }
+    }
+
+    @Test
+    fun `사용자 알림과 설정은 사용자와 관련 스튜디오 갤러리 컨텍스트에서 읽기만 한다`() {
+        val actor = adminAccountFixture.관리자("user-notification-context")
+        val owner = createUser(actor.requiredId, "notification-owner")
+        val studio = service.create(
+            actor.requiredId,
+            AdminResourceType.STUDIO,
+            CreateAdminResourceRequest(
+                "알림 컨텍스트 스튜디오",
+                mapOf("ownerUserId" to owner.id, "name" to "알림 스튜디오", "galleryUrl" to "notification-context"),
+            ),
+            "127.0.0.1",
+        )
+        val gallery = service.create(
+            actor.requiredId,
+            AdminResourceType.GALLERY,
+            CreateAdminResourceRequest(
+                "알림 컨텍스트 갤러리",
+                mapOf("workspaceId" to studio.id, "title" to "알림 갤러리"),
+            ),
+            "127.0.0.1",
+        )
+        jdbcClient.sql(
+            """
+            INSERT INTO user_notification_settings
+                (user_id, email_enabled, browser_enabled, version, created_at, updated_at)
+            VALUES (:userId, FALSE, TRUE, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """.trimIndent(),
+        ).param("userId", owner.id).update()
+        jdbcClient.sql(
+            """
+            INSERT INTO user_notifications
+                (user_id, type, scope, scope_id, title, message, version, created_at, updated_at)
+            VALUES
+                (:userId, 'WORKSPACE_DELETED', 'STUDIO', :studioId, '스튜디오 알림', '스튜디오 메시지', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                (:userId, 'SELECTION_SUBMITTED', 'GALLERY', :galleryId, '갤러리 알림', '갤러리 메시지', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """.trimIndent(),
+        ).param("userId", owner.id).param("studioId", studio.id).param("galleryId", gallery.id).update()
+
+        val beforeCount = jdbcClient.sql("SELECT COUNT(*) FROM user_notifications")
+            .query { rs, _ -> rs.getLong(1) }.single()
+        val userContext = contextService.get(AdminResourceType.USER, owner.id)
+        val studioContext = contextService.get(AdminResourceType.STUDIO, studio.id)
+        val galleryContext = contextService.get(AdminResourceType.GALLERY, gallery.id)
+
+        assertThat(userContext.sections.getValue("userNotifications")).hasSize(2)
+        assertThat(userContext.sections.getValue("userNotificationSettings").single())
+            .containsEntry("emailEnabled", false)
+            .containsEntry("browserEnabled", true)
+            .containsEntry("settingsPersisted", true)
+        assertThat(studioContext.sections.getValue("userNotifications").single())
+            .containsEntry("scope", "STUDIO")
+        assertThat(galleryContext.sections.getValue("userNotifications").single())
+            .containsEntry("scope", "GALLERY")
+        assertThat(galleryContext.sections.getValue("userNotificationSettings").single())
+            .containsEntry("userId", owner.id)
+        assertThat(jdbcClient.sql("SELECT COUNT(*) FROM user_notifications").query { rs, _ -> rs.getLong(1) }.single())
+            .isEqualTo(beforeCount)
+        assertThat(jdbcClient.sql("SELECT COUNT(*) FROM admin_notification_inbox").query { rs, _ -> rs.getLong(1) }.single())
+            .isZero()
+
+        service.update(
+            actor.requiredId,
+            AdminResourceType.GALLERY,
+            gallery.id,
+            UpdateAdminResourceRequest("관리자 제목 정정", gallery.version, mapOf("title" to "정정된 알림 갤러리")),
+            "127.0.0.1",
+        )
+        assertThat(jdbcClient.sql("SELECT COUNT(*) FROM user_notifications").query { rs, _ -> rs.getLong(1) }.single())
+            .isEqualTo(beforeCount)
+        assertThat(jdbcClient.sql("SELECT COUNT(*) FROM admin_notification_inbox").query { rs, _ -> rs.getLong(1) }.single())
+            .isZero()
     }
 
     private fun createGallery(actorAdminId: Long, slug: String): Long {
@@ -628,14 +972,14 @@ class AdminResourceServiceTest @Autowired constructor(
             AdminResourceType.STUDIO,
             CreateAdminResourceRequest(
                 "테스트 스튜디오 생성",
-                mapOf("userId" to user.id, "name" to slug, "galleryUrl" to slug),
+                mapOf("ownerUserId" to user.id, "name" to slug, "galleryUrl" to slug),
             ),
             "127.0.0.1",
         )
         return service.create(
             actorAdminId,
             AdminResourceType.GALLERY,
-            CreateAdminResourceRequest("테스트 갤러리 생성", mapOf("studioId" to studio.id, "title" to slug)),
+            CreateAdminResourceRequest("테스트 갤러리 생성", mapOf("workspaceId" to studio.id, "title" to slug)),
             "127.0.0.1",
         ).id
     }
@@ -650,6 +994,19 @@ class AdminResourceServiceTest @Autowired constructor(
             ),
             "127.0.0.1",
         )
+
+    private fun createConceptFolder(galleryId: Long, name: String): Long = jdbcClient.sql(
+        """
+        INSERT INTO concept_folders
+            (gallery_id, name, sort_order, created_source, version, created_at, updated_at)
+        VALUES (:galleryId, :name, 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING id
+        """.trimIndent(),
+    )
+        .param("galleryId", galleryId)
+        .param("name", name)
+        .query { rs, _ -> rs.getLong("id") }
+        .single()
 
     private fun userRevisionCount(userId: Long): Long = jdbcClient.sql(
         "SELECT COUNT(*) FROM admin_entity_revisions WHERE target_type = 'USER' AND target_id = :targetId",

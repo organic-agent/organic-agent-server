@@ -50,6 +50,10 @@ class PhotoSelection(
     @Column(name = "submitted_at")
     var submittedAt: ZonedDateTime? = null
 
+    /** 마지막 제출을 수행한 사용자. 철회하면 제출 이력과 함께 비운다. */
+    @Column(name = "submitted_by_user_id")
+    var submittedByUserId: Long? = null
+
     val requiredId: Long
         get() = id ?: error("아직 저장되지 않은 PhotoSelection 이다")
 
@@ -80,7 +84,7 @@ class PhotoSelection(
     }
 
     /** 부부가 고르기를 끝내고 작가에게 넘긴다.*/
-    fun submit(selectedCount: Int, at: ZonedDateTime) {
+    fun submit(selectedCount: Int, submittedByUserId: Long, at: ZonedDateTime) {
         requireEditable()
         if (selectedCount == 0) {
             throw SelectionException(SelectionErrorCode.EMPTY_SELECTION)
@@ -88,6 +92,7 @@ class PhotoSelection(
 
         status = PhotoSelectionStatus.SUBMITTED
         submittedAt = at
+        this.submittedByUserId = submittedByUserId
     }
 
     /** 제출을 되돌려 다시 고를 수 있게 한다. 부를 수 있는 것은 작가뿐이다 — 서비스가 그것을 확인한다. */
@@ -98,5 +103,6 @@ class PhotoSelection(
 
         status = PhotoSelectionStatus.SELECTING
         submittedAt = null
+        submittedByUserId = null
     }
 }

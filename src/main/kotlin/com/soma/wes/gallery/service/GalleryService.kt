@@ -6,6 +6,7 @@ import com.soma.wes.gallery.dto.request.ChangeMaxSelectablePhotoCountRequest
 import com.soma.wes.gallery.dto.request.ChangeSelectionDeadlineRequest
 import com.soma.wes.gallery.dto.request.ChangeShootTypeRequest
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
+import com.soma.wes.gallery.dto.request.ChangeWorkflowStatusRequest
 import com.soma.wes.gallery.dto.request.RenameGalleryRequest
 import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
 import com.soma.wes.gallery.dto.response.GalleryResponse
@@ -15,8 +16,8 @@ import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.studio.exception.StudioErrorCode
 import com.soma.wes.studio.exception.StudioException
 import com.soma.wes.studio.repository.StudioRepository
-import com.soma.wes.studio.repository.StudioMemberRepository
-import com.soma.wes.studio.domain.StudioMemberRole
+import com.soma.wes.workspace.domain.WorkspaceRole
+import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -28,21 +29,23 @@ class GalleryService(
     private val galleryRepository: GalleryRepository,
     private val galleryMemberRepository: GalleryMemberRepository,
     private val studioRepository: StudioRepository,
-    private val studioMemberRepository: StudioMemberRepository,
+    private val workspaceMemberRepository: WorkspaceMemberRepository,
     private val galleryAccessPolicy: GalleryAccessPolicy,
     private val clock: Clock,
 ) {
 
     @Transactional
     fun create(userId: Long, request: CreateGalleryRequest): GalleryResponse {
-        val studio = requireOperatingStudio(userId)
+        requireOperatingWorkspace(request.workspaceId, userId)
 
         val gallery = galleryRepository.save(
             Gallery.create(
-                studioId = studio.requiredId,
+                workspaceId = request.workspaceId,
+                createdByUserId = userId,
                 title = request.title,
                 selectionDeadline = request.selectionDeadline,
                 maxSelectablePhotoCount = request.maxSelectablePhotoCount,
+                maxRetouchRoundCount = request.maxRetouchRoundCount,
                 shootType = request.shootType,
                 at = ZonedDateTime.now(clock),
             ),
@@ -51,19 +54,15 @@ class GalleryService(
     }
 
     @Transactional(readOnly = true)
-    fun findAllVisibleTo(userId: Long): List<GalleryResponse> {
-        val operatingStudioIds = buildSet {
-            studioRepository.findByUserIdAndSuspendedAtIsNull(userId)?.let { add(it.requiredId) }
-            val memberStudioIds = studioMemberRepository.findAllByUserIdAndRoleIn(userId, ACTIVE_STUDIO_ROLES)
-                .map { it.studioId }
-                .distinct()
-            studioRepository.findAllByIdInAndSuspendedAtIsNull(memberStudioIds)
-                .forEach { add(it.requiredId) }
-        }
-        val asPhotographer = if (operatingStudioIds.isEmpty()) {
+    fun findAllVisibleTo(userId: Long, stage: com.soma.wes.gallery.domain.GalleryStage? = null): List<GalleryResponse> {
+        val operatingWorkspaceIds = workspaceMemberRepository
+            .findAllByUserIdAndRoleIn(userId, WorkspaceRole.entries)
+            .map { it.workspaceId }
+            .toSet()
+        val asManager = if (operatingWorkspaceIds.isEmpty()) {
             emptyList()
         } else {
-            galleryRepository.findAllByStudioIdIn(operatingStudioIds)
+            galleryRepository.findAllByStudioIdIn(operatingWorkspaceIds)
         }
 
         val memberGalleryIds = galleryMemberRepository.findAllByUserId(userId).map { it.galleryId }
@@ -72,8 +71,9 @@ class GalleryService(
 
         // 자기 갤러리 초대는 GalleryAccessPolicy.requireNotPhotographer가 막지만,
         // 그 규칙이 생기기 전 데이터까지 같은 갤러리를 두 번 그리게 두지는 않는다.
-        return (asPhotographer + asCouple)
+        return (asManager + asCouple)
             .distinctBy { it.requiredId }
+            .filter { stage == null || it.stage == stage }
             .map(GalleryResponse::from)
     }
 
@@ -155,6 +155,17 @@ class GalleryService(
     }
 
     @Transactional
+    fun changeWorkflowStatus(
+        galleryId: Long,
+        userId: Long,
+        request: ChangeWorkflowStatusRequest,
+    ): GalleryResponse {
+        val gallery = galleryAccessPolicy.requireManager(galleryId, userId)
+        gallery.changeWorkflowStatus(request.workflowStatus)
+        return GalleryResponse.from(gallery)
+    }
+
+    @Transactional
     fun reopen(galleryId: Long, userId: Long, request: ReopenGalleryRequest): GalleryResponse {
         val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
 
@@ -177,19 +188,19 @@ class GalleryService(
         gallery.moveToTrash(ZonedDateTime.now(clock))
     }
 
-    private fun requireOperatingStudio(userId: Long): com.soma.wes.studio.domain.Studio {
-        val studioIds = buildSet {
-            studioRepository.findByUserIdAndSuspendedAtIsNull(userId)?.let { add(it.requiredId) }
-            studioMemberRepository.findAllByUserIdAndRoleIn(userId, ACTIVE_STUDIO_ROLES)
-                .forEach { add(it.studioId) }
+    private fun requireOperatingWorkspace(workspaceId: Long, userId: Long) {
+        if (!workspaceMemberRepository.existsByWorkspaceIdAndUserIdAndRoleIn(
+                workspaceId,
+                userId,
+                WorkspaceRole.entries,
+            )
+        ) {
+            throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
         }
-        val studios = studioRepository.findAllByIdInAndSuspendedAtIsNull(studioIds)
-        if (studios.isEmpty()) throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
-        if (studios.size > 1) throw StudioException(StudioErrorCode.STUDIO_SELECTION_REQUIRED)
-        return studios.single()
-    }
-
-    companion object {
-        private val ACTIVE_STUDIO_ROLES = StudioMemberRole.entries
+        if (studioRepository.existsById(workspaceId) &&
+            !studioRepository.existsByIdAndSuspendedAtIsNull(workspaceId)
+        ) {
+            throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
+        }
     }
 }

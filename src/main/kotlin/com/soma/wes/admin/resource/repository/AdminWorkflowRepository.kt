@@ -5,9 +5,9 @@ import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.support.AdminAlbumTemplateLayout
 import com.soma.wes.admin.resource.support.InvalidAlbumTemplateLayoutException
+import com.soma.wes.gallery.domain.GalleryInviteKind
 import com.soma.wes.gallery.domain.GalleryMember
 import com.soma.wes.global.filter.HttpLoggingFilter
-import com.soma.wes.user.domain.UserType
 import org.slf4j.MDC
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Repository
@@ -110,75 +110,64 @@ class AdminWorkflowRepository(
     fun setStudioOwner(studioId: Long, userId: Long, expectedVersion: Long): StudioOwnerResult {
         requireVersion("studios", studioId, expectedVersion, lock = true)
         val previousOwnerId = jdbcClient.sql(
-            "SELECT user_id FROM studios WHERE id = :studioId AND deleted_at IS NULL",
+            """
+            SELECT user_id FROM workspace_members
+            WHERE workspace_id = :studioId AND role = 'OWNER' AND deleted_at IS NULL
+            ORDER BY id LIMIT 1
+            """.trimIndent(),
         )
             .param("studioId", studioId)
             .query { rs, _ -> rs.getLong(1) }
             .optional()
             .orElseThrow { AdminException(AdminErrorCode.RESOURCE_NOT_FOUND) }
-        if (previousOwnerId == userId) throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-        val userTypeChange = confirmUserType(userId, UserType.PHOTOGRAPHER)
+        val alreadyOwner = jdbcClient.sql(
+            "SELECT COUNT(*) FROM workspace_members WHERE workspace_id = :studioId AND user_id = :userId AND role = 'OWNER' AND deleted_at IS NULL",
+        ).param("studioId", studioId).param("userId", userId)
+            .query { rs, _ -> rs.getLong(1) }.single() > 0
+        if (alreadyOwner) throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
 
         jdbcClient.sql(
             """
-            INSERT INTO studio_members (studio_id, user_id, role, version, created_at, updated_at)
+            INSERT INTO workspace_members (workspace_id, user_id, role, version, created_at, updated_at)
             VALUES (:studioId, :userId, 'OWNER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ON CONFLICT (studio_id, user_id)
+            ON CONFLICT (workspace_id, user_id)
             DO UPDATE SET role = 'OWNER', deleted_at = NULL,
-                          version = studio_members.version + 1, updated_at = CURRENT_TIMESTAMP
+                          version = workspace_members.version + 1, updated_at = CURRENT_TIMESTAMP
             """.trimIndent(),
         ).param("studioId", studioId).param("userId", userId).update()
-        jdbcClient.sql(
-            """
-            INSERT INTO studio_members (studio_id, user_id, role, version, created_at, updated_at)
-            VALUES (:studioId, :previousOwnerId, 'MEMBER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ON CONFLICT (studio_id, user_id)
-            DO UPDATE SET role = 'MEMBER', deleted_at = NULL,
-                          version = studio_members.version + 1, updated_at = CURRENT_TIMESTAMP
-            """.trimIndent(),
-        ).param("studioId", studioId).param("previousOwnerId", previousOwnerId).update()
-        val updated = jdbcClient.sql(
-            """
-            UPDATE studios SET user_id = :userId, version = version + 1, updated_at = CURRENT_TIMESTAMP
-            WHERE id = :studioId AND version = :expectedVersion AND deleted_at IS NULL
-            """.trimIndent(),
-        )
-            .param("userId", userId)
-            .param("studioId", studioId)
-            .param("expectedVersion", expectedVersion)
-            .update()
-        if (updated != 1) throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
-        return StudioOwnerResult(previousOwnerId, userId, userTypeChange)
+        bumpVersion("studios", studioId, expectedVersion)
+        return StudioOwnerResult(previousOwnerId, userId)
     }
 
     fun addStudioMember(studioId: Long, userId: Long, expectedVersion: Long): StudioMemberResult {
         requireVersion("studios", studioId, expectedVersion, lock = true)
-        val userTypeChange = confirmUserType(userId, UserType.PHOTOGRAPHER)
-        val ownerId = jdbcClient.sql("SELECT user_id FROM studios WHERE id = :studioId")
-            .param("studioId", studioId).query { rs, _ -> rs.getLong(1) }.single()
-        if (ownerId == userId) throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
+        val activeMembership = jdbcClient.sql(
+            "SELECT COUNT(*) FROM workspace_members WHERE workspace_id = :studioId AND user_id = :userId AND deleted_at IS NULL",
+        ).param("studioId", studioId).param("userId", userId)
+            .query { rs, _ -> rs.getLong(1) }.single()
+        if (activeMembership != 0L) throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         val memberId = jdbcClient.sql(
             """
-            INSERT INTO studio_members (studio_id, user_id, role, version, created_at, updated_at)
+            INSERT INTO workspace_members (workspace_id, user_id, role, version, created_at, updated_at)
             VALUES (:studioId, :userId, 'MEMBER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ON CONFLICT (studio_id, user_id)
+            ON CONFLICT (workspace_id, user_id)
             DO UPDATE SET role = 'MEMBER', deleted_at = NULL,
-                          version = studio_members.version + 1, updated_at = CURRENT_TIMESTAMP
+                          version = workspace_members.version + 1, updated_at = CURRENT_TIMESTAMP
             RETURNING id
             """.trimIndent(),
         ).param("studioId", studioId).param("userId", userId)
             .query { rs, _ -> rs.getLong(1) }.single()
         bumpVersion("studios", studioId, expectedVersion)
-        return StudioMemberResult(memberId, userTypeChange)
+        return StudioMemberResult(memberId)
     }
 
     fun removeStudioMember(studioId: Long, memberId: Long, expectedVersion: Long) {
         requireVersion("studios", studioId, expectedVersion, lock = true)
         val updated = jdbcClient.sql(
             """
-            UPDATE studio_members m
+            UPDATE workspace_members m
             SET deleted_at = CURRENT_TIMESTAMP, version = version + 1, updated_at = CURRENT_TIMESTAMP
-            WHERE m.id = :memberId AND m.studio_id = :studioId AND m.role = 'MEMBER' AND m.deleted_at IS NULL
+            WHERE m.id = :memberId AND m.workspace_id = :studioId AND m.role = 'MEMBER' AND m.deleted_at IS NULL
             """.trimIndent(),
         ).param("memberId", memberId).param("studioId", studioId).update()
         if (updated != 1) throw AdminException(AdminErrorCode.RESOURCE_NOT_FOUND)
@@ -187,11 +176,10 @@ class AdminWorkflowRepository(
 
     fun addGalleryMember(galleryId: Long, userId: Long, expectedVersion: Long): GalleryMemberResult {
         val gallery = lockGalleryScope(galleryId, expectedVersion)
-        if (gallery.studioOwnerId == userId) throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         val activeStudioMembership = jdbcClient.sql(
             """
-            SELECT COUNT(*) FROM studio_members
-            WHERE studio_id = :studioId AND user_id = :userId AND deleted_at IS NULL
+            SELECT COUNT(*) FROM workspace_members
+            WHERE workspace_id = :studioId AND user_id = :userId AND deleted_at IS NULL
             """.trimIndent(),
         )
             .param("studioId", gallery.studioId)
@@ -226,7 +214,6 @@ class AdminWorkflowRepository(
         }
         // 제품 초대와 같은 정책이다. 다른 스튜디오의 사진작가도 본인 결혼식 갤러리에는
         // 들어올 수 있으므로 기존 PHOTOGRAPHER 타입을 CLIENT로 바꾸거나 거절하지 않는다.
-        val userTypeChange = selectClientTypeIfUnset(userId)
 
         val memberId = if (existing == null) {
             jdbcClient.sql(
@@ -252,7 +239,7 @@ class AdminWorkflowRepository(
             existing.first
         }
         bumpVersion("galleries", galleryId, expectedVersion)
-        return GalleryMemberResult(memberId, userTypeChange)
+        return GalleryMemberResult(memberId)
     }
 
     fun removeGalleryMember(galleryId: Long, memberId: Long, expectedVersion: Long): Int {
@@ -310,13 +297,14 @@ class AdminWorkflowRepository(
         val updated = jdbcClient.sql(
             """
             UPDATE galleries
-            SET status = :publicStatus, workflow_status = :workflowStatus,
+            SET status = :publicStatus, workflow_status = :workflowStatus, stage = :stage,
                 version = version + 1, updated_at = CURRENT_TIMESTAMP
             WHERE id = :galleryId AND version = :expectedVersion AND deleted_at IS NULL
             """.trimIndent(),
         )
             .param("publicStatus", transition.publicStatus)
             .param("workflowStatus", transition.workflowStatus)
+            .param("stage", transition.stage)
             .param("galleryId", galleryId)
             .param("expectedVersion", expectedVersion)
             .update()
@@ -326,10 +314,42 @@ class AdminWorkflowRepository(
     fun reissueGalleryInvite(
         galleryId: Long,
         token: String,
+        requestedKind: GalleryInviteKind?,
+        requestedMaxUses: Int?,
         expiresAt: ZonedDateTime,
         expectedVersion: Long,
-    ): Long {
-        requireVersion("galleries", galleryId, expectedVersion)
+    ): GalleryInviteReissueResult {
+        val previous = jdbcClient.sql(
+            """
+            SELECT g.version, w.type AS workspace_type,
+                   previous.kind AS previous_kind, previous.max_uses AS previous_max_uses
+            FROM galleries g
+            JOIN workspaces w ON w.id = g.workspace_id
+            LEFT JOIN LATERAL (
+                SELECT kind, max_uses
+                FROM gallery_invites
+                WHERE gallery_id = g.id
+                ORDER BY id DESC LIMIT 1
+            ) previous ON TRUE
+            WHERE g.id = :galleryId AND g.deleted_at IS NULL
+            FOR UPDATE OF g
+            """.trimIndent(),
+        ).param("galleryId", galleryId).query { rs, _ ->
+            GalleryInvitePolicy(
+                galleryVersion = rs.getLong("version"),
+                workspaceType = rs.getString("workspace_type"),
+                previousKind = rs.getString("previous_kind")?.let(GalleryInviteKind::valueOf),
+                previousMaxUses = rs.getObject("previous_max_uses")?.let { (it as Number).toInt() },
+            )
+        }.optional().orElseThrow { AdminException(AdminErrorCode.RESOURCE_NOT_FOUND) }
+        if (previous.galleryVersion != expectedVersion) {
+            throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
+        }
+        val kind = requestedKind ?: previous.previousKind ?: GalleryInviteKind.GALLERY_MEMBER
+        val maxUses = requestedMaxUses ?: previous.previousMaxUses ?: DEFAULT_GALLERY_INVITE_MAX_USES
+        if (maxUses !in 1..100 || !isInviteKindValid(kind, previous.workspaceType)) {
+            throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
+        }
         jdbcClient.sql(
             """
             UPDATE gallery_invites
@@ -339,18 +359,27 @@ class AdminWorkflowRepository(
         ).param("galleryId", galleryId).update()
         val inviteId = jdbcClient.sql(
             """
-            INSERT INTO gallery_invites (gallery_id, token, expires_at, version, created_at, updated_at)
-            VALUES (:galleryId, :token, :expiresAt, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            INSERT INTO gallery_invites
+                (gallery_id, token, kind, max_uses, used_count, expires_at, version, created_at, updated_at)
+            VALUES (:galleryId, :token, :kind, :maxUses, 0, :expiresAt, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
             """.trimIndent(),
         )
             .param("galleryId", galleryId)
             .param("token", token)
+            .param("kind", kind.name)
+            .param("maxUses", maxUses)
             .param("expiresAt", expiresAt.toOffsetDateTime())
             .query { rs, _ -> rs.getLong("id") }
             .single()
         bumpVersion("galleries", galleryId, expectedVersion)
-        return inviteId
+        return GalleryInviteReissueResult(inviteId, kind, maxUses)
+    }
+
+    private fun isInviteKindValid(kind: GalleryInviteKind, workspaceType: String): Boolean = when (kind) {
+        GalleryInviteKind.STUDIO_MEMBER -> workspaceType == "STUDIO"
+        GalleryInviteKind.PERSONAL_PARTNER -> workspaceType == "PERSONAL"
+        GalleryInviteKind.GALLERY_MEMBER -> true
     }
 
     fun revokeGalleryInvite(galleryId: Long, inviteId: Long, expectedVersion: Long) {
@@ -411,7 +440,7 @@ class AdminWorkflowRepository(
             """
             UPDATE galleries
             SET status = 'OPEN', workflow_status = 'IN_PROGRESS',
-                selection_deadline = :selectionDeadline,
+                stage = 'SELECTION_IN_PROGRESS', selection_deadline = :selectionDeadline,
                 version = version + 1, updated_at = CURRENT_TIMESTAMP
             WHERE id = :galleryId AND version = :expectedVersion AND deleted_at IS NULL
               AND status = 'CLOSED' AND :selectionDeadline > CURRENT_TIMESTAMP
@@ -805,17 +834,23 @@ class AdminWorkflowRepository(
         .update()
 
     fun bumpResourceVersion(type: AdminResourceType, id: Long, expectedVersion: Long) {
-        val table = when (type) {
-            AdminResourceType.USER -> "users"
-            AdminResourceType.STUDIO -> "studios"
-            AdminResourceType.GALLERY -> "galleries"
-            AdminResourceType.PHOTO -> "photos"
-            AdminResourceType.SELECTION -> "photo_selections"
-            AdminResourceType.COLLABORATION -> "collab_sessions"
-            AdminResourceType.ALBUM -> "photo_folder_groups"
-            AdminResourceType.RETOUCH_REQUEST -> "retouch_rounds"
+        val (table, idColumn) = when (type) {
+            AdminResourceType.USER -> "users" to "id"
+            AdminResourceType.WORKSPACE -> "workspaces" to "id"
+            AdminResourceType.STUDIO -> "studios" to "workspace_id"
+            AdminResourceType.GALLERY -> "galleries" to "id"
+            AdminResourceType.PHOTO -> "photos" to "id"
+            AdminResourceType.CONCEPT_FOLDER -> "concept_folders" to "id"
+            AdminResourceType.DETAIL_FOLDER -> "detail_folders" to "id"
+            AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT -> "photo_category_assignments" to "photo_id"
+            AdminResourceType.CATEGORIZATION_JOB -> "categorization_jobs" to "id"
+            AdminResourceType.PHOTO_RATING -> "photo_ratings" to "photo_id"
+            AdminResourceType.SELECTION -> "photo_selections" to "id"
+            AdminResourceType.COLLABORATION -> "collab_sessions" to "id"
+            AdminResourceType.ALBUM -> "photo_folder_groups" to "id"
+            AdminResourceType.RETOUCH_REQUEST -> "retouch_rounds" to "id"
         }
-        bumpVersion(table, id, expectedVersion)
+        bumpVersion(table, id, expectedVersion, idColumn)
     }
 
     fun createAiSelectionDraft(
@@ -1278,7 +1313,7 @@ class AdminWorkflowRepository(
 
     fun createCollabComment(
         sessionId: Long,
-        collabPhotoId: Long,
+        photoId: Long,
         guestId: Long,
         content: String,
         expectedVersion: Long,
@@ -1287,14 +1322,14 @@ class AdminWorkflowRepository(
         val commentId = jdbcClient.sql(
             """
             INSERT INTO collab_photo_comments
-                (collab_photo_id, collab_guest_id, content, version, created_at, updated_at)
-            SELECT :collabPhotoId, :guestId, :content, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-            WHERE EXISTS (SELECT 1 FROM collab_photos WHERE id = :collabPhotoId AND collab_session_id = :sessionId)
+                (collab_session_id, photo_id, collab_guest_id, content, version, created_at, updated_at)
+            SELECT :sessionId, :photoId, :guestId, :content, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            WHERE ${sharedPhotoExistsSql(":sessionId", ":photoId")}
               AND EXISTS (SELECT 1 FROM collab_guests WHERE id = :guestId AND collab_session_id = :sessionId)
             RETURNING id
             """.trimIndent(),
         )
-            .param("collabPhotoId", collabPhotoId)
+            .param("photoId", photoId)
             .param("guestId", guestId)
             .param("content", content)
             .param("sessionId", sessionId)
@@ -1319,7 +1354,7 @@ class AdminWorkflowRepository(
             SET content = :content, version = version + 1, updated_at = CURRENT_TIMESTAMP
             WHERE c.id = :commentId AND c.deleted_at IS NULL
               AND c.version = :expectedChildVersion
-              AND EXISTS (SELECT 1 FROM collab_photos p WHERE p.id = c.collab_photo_id AND p.collab_session_id = :sessionId)
+              AND c.collab_session_id = :sessionId
             """.trimIndent(),
         )
             .param("content", content)
@@ -1340,7 +1375,7 @@ class AdminWorkflowRepository(
             UPDATE collab_photo_comments c
             SET deleted_at = $deletedValue, version = version + 1, updated_at = CURRENT_TIMESTAMP
             WHERE c.id = :commentId AND $predicate
-              AND EXISTS (SELECT 1 FROM collab_photos p WHERE p.id = c.collab_photo_id AND p.collab_session_id = :sessionId)
+              AND c.collab_session_id = :sessionId
             """.trimIndent(),
         )
             .param("commentId", commentId)
@@ -1352,7 +1387,7 @@ class AdminWorkflowRepository(
 
     fun addCollabLike(
         sessionId: Long,
-        collabPhotoId: Long,
+        photoId: Long,
         guestId: Long,
         expectedVersion: Long,
     ): Long {
@@ -1360,15 +1395,15 @@ class AdminWorkflowRepository(
         val likeId = jdbcClient.sql(
             """
             INSERT INTO collab_photo_likes
-                (collab_photo_id, collab_guest_id, version, created_at, updated_at)
-            SELECT :collabPhotoId, :guestId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-            WHERE EXISTS (SELECT 1 FROM collab_photos WHERE id = :collabPhotoId AND collab_session_id = :sessionId)
+                (collab_session_id, photo_id, collab_guest_id, version, created_at, updated_at)
+            SELECT :sessionId, :photoId, :guestId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            WHERE ${sharedPhotoExistsSql(":sessionId", ":photoId")}
               AND EXISTS (SELECT 1 FROM collab_guests WHERE id = :guestId AND collab_session_id = :sessionId)
-            ON CONFLICT (collab_photo_id, collab_guest_id) WHERE deleted_at IS NULL DO NOTHING
+            ON CONFLICT (collab_session_id, photo_id, collab_guest_id) WHERE deleted_at IS NULL DO NOTHING
             RETURNING id
             """.trimIndent(),
         )
-            .param("collabPhotoId", collabPhotoId)
+            .param("photoId", photoId)
             .param("guestId", guestId)
             .param("sessionId", sessionId)
             .query { rs, _ -> rs.getLong("id") }
@@ -1378,21 +1413,20 @@ class AdminWorkflowRepository(
         return likeId
     }
 
-    fun findActiveCollabLikeId(sessionId: Long, collabPhotoId: Long, guestId: Long): Long =
+    fun findActiveCollabLikeId(sessionId: Long, photoId: Long, guestId: Long): Long =
         jdbcClient.sql(
             """
             SELECT l.id
             FROM collab_photo_likes l
-            JOIN collab_photos p ON p.id = l.collab_photo_id
             JOIN collab_guests g ON g.id = l.collab_guest_id
-            WHERE l.collab_photo_id = :collabPhotoId
+            WHERE l.photo_id = :photoId
               AND l.collab_guest_id = :guestId
               AND l.deleted_at IS NULL
-              AND p.collab_session_id = :sessionId
+              AND l.collab_session_id = :sessionId
               AND g.collab_session_id = :sessionId
             """.trimIndent(),
         )
-            .param("collabPhotoId", collabPhotoId)
+            .param("photoId", photoId)
             .param("guestId", guestId)
             .param("sessionId", sessionId)
             .query { rs, _ -> rs.getLong("id") }
@@ -1408,7 +1442,7 @@ class AdminWorkflowRepository(
         validateAlbumTemplateLayout(layout)
         val scope = jdbcClient.sql(
             """
-            SELECT album.id, gallery.studio_id
+            SELECT album.id, gallery.workspace_id
             FROM photo_folder_groups album
             JOIN galleries gallery ON gallery.id = album.gallery_id
             WHERE album.id = :albumId AND album.version = :expectedVersion
@@ -1419,7 +1453,7 @@ class AdminWorkflowRepository(
         )
             .param("albumId", albumId)
             .param("expectedVersion", expectedVersion)
-            .query { rs, _ -> AlbumScope(rs.getLong("id"), rs.getLong("studio_id")) }
+            .query { rs, _ -> AlbumScope(rs.getLong("id"), rs.getLong("workspace_id")) }
             .optional()
             .orElseThrow { AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT) }
         val templateId = jdbcClient.sql(
@@ -1460,14 +1494,14 @@ class AdminWorkflowRepository(
         validateAlbumTemplateLayout(layout)
         val scope = jdbcClient.sql(
             """
-            SELECT album.id, gallery.studio_id
+            SELECT album.id, gallery.workspace_id
             FROM photo_folder_groups album
             JOIN galleries gallery ON gallery.id = album.gallery_id
             JOIN admin_album_templates template ON template.id = album.template_id
             WHERE album.id = :albumId AND album.version = :expectedVersion
               AND album.deleted_at IS NULL AND gallery.deleted_at IS NULL
               AND template.id = :templateId AND template.version = :templateExpectedVersion
-              AND template.deleted_at IS NULL AND template.studio_id = gallery.studio_id
+              AND template.deleted_at IS NULL AND template.studio_id = gallery.workspace_id
             FOR UPDATE OF album, template
             """.trimIndent(),
         )
@@ -1475,7 +1509,7 @@ class AdminWorkflowRepository(
             .param("templateExpectedVersion", templateExpectedVersion)
             .param("albumId", albumId)
             .param("expectedVersion", expectedVersion)
-            .query { rs, _ -> AlbumScope(rs.getLong("id"), rs.getLong("studio_id")) }
+            .query { rs, _ -> AlbumScope(rs.getLong("id"), rs.getLong("workspace_id")) }
             .optional()
             .orElseThrow { AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT) }
         val updated = jdbcClient.sql(
@@ -1499,7 +1533,7 @@ class AdminWorkflowRepository(
             UPDATE photo_folder_groups album
             SET template_name = :name, version = album.version + 1, updated_at = CURRENT_TIMESTAMP
             FROM galleries gallery
-            WHERE album.gallery_id = gallery.id AND gallery.studio_id = :studioId
+            WHERE album.gallery_id = gallery.id AND gallery.workspace_id = :studioId
               AND album.template_id = :templateId
             """.trimIndent(),
         )
@@ -1520,7 +1554,7 @@ class AdminWorkflowRepository(
         validateAlbumLayoutContract(folders)
         val scope = jdbcClient.sql(
             """
-            SELECT album.gallery_id, gallery.studio_id
+            SELECT album.gallery_id, gallery.workspace_id
             FROM photo_folder_groups album
             JOIN galleries gallery ON gallery.id = album.gallery_id
             WHERE album.id = :albumId AND album.version = :expectedVersion
@@ -1530,7 +1564,7 @@ class AdminWorkflowRepository(
         )
             .param("albumId", albumId)
             .param("expectedVersion", expectedVersion)
-            .query { rs, _ -> AlbumScope(rs.getLong("gallery_id"), rs.getLong("studio_id")) }
+            .query { rs, _ -> AlbumScope(rs.getLong("gallery_id"), rs.getLong("workspace_id")) }
             .optional()
             .orElseThrow { AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT) }
         val photoIds = folders.flatMap { folder -> folder.items.map(AlbumItem::photoId) }
@@ -1825,9 +1859,27 @@ class AdminWorkflowRepository(
         }
     }
 
+    private fun sharedPhotoExistsSql(sessionExpression: String, photoExpression: String): String = """
+        EXISTS (
+            SELECT 1
+            FROM collab_sessions shared_session
+            JOIN concept_folders shared_concept
+              ON shared_concept.id = shared_session.concept_folder_id
+             AND shared_concept.deleted_at IS NULL
+            JOIN detail_folders shared_detail
+              ON shared_detail.concept_folder_id = shared_concept.id
+             AND shared_detail.deleted_at IS NULL
+            JOIN photo_category_assignments shared_assignment
+              ON shared_assignment.detail_folder_id = shared_detail.id
+            WHERE shared_session.id = $sessionExpression
+              AND shared_assignment.photo_id = $photoExpression
+        )
+    """.trimIndent()
+
     private fun requireVersion(table: String, id: Long, expectedVersion: Long, lock: Boolean = false) {
         val lockClause = if (lock) " FOR UPDATE" else ""
-        val current = jdbcClient.sql("SELECT version FROM $table WHERE id = :id$lockClause")
+        val idColumn = if (table == "studios") "workspace_id" else "id"
+        val current = jdbcClient.sql("SELECT version FROM $table WHERE $idColumn = :id$lockClause")
             .param("id", id)
             .query { rs, _ -> rs.getLong("version") }
             .optional()
@@ -1836,7 +1888,8 @@ class AdminWorkflowRepository(
     }
 
     private fun requireActive(table: String, id: Long) {
-        val found = jdbcClient.sql("SELECT COUNT(*) FROM $table WHERE id = :id AND deleted_at IS NULL")
+        val idColumn = if (table == "studios") "workspace_id" else "id"
+        val found = jdbcClient.sql("SELECT COUNT(*) FROM $table WHERE $idColumn = :id AND deleted_at IS NULL")
             .param("id", id)
             .query { rs, _ -> rs.getLong(1) }
             .single()
@@ -1846,19 +1899,20 @@ class AdminWorkflowRepository(
     private fun lockGalleryScope(galleryId: Long, expectedVersion: Long): GalleryScope {
         val gallery = jdbcClient.sql(
             """
-            SELECT g.version, g.studio_id, s.user_id AS studio_owner_id
+            SELECT g.version, g.workspace_id
             FROM galleries g
-            JOIN studios s ON s.id = g.studio_id AND s.deleted_at IS NULL
+            JOIN workspaces w ON w.id = g.workspace_id AND w.deleted_at IS NULL
+            LEFT JOIN studios s ON s.workspace_id = g.workspace_id
             WHERE g.id = :galleryId AND g.deleted_at IS NULL
-            FOR UPDATE OF g, s
+              AND (w.type = 'PERSONAL' OR (s.deleted_at IS NULL AND s.suspended_at IS NULL))
+            FOR UPDATE OF g, w
             """.trimIndent(),
         )
             .param("galleryId", galleryId)
             .query { rs, _ ->
                 GalleryScope(
                     version = rs.getLong("version"),
-                    studioId = rs.getLong("studio_id"),
-                    studioOwnerId = rs.getLong("studio_owner_id"),
+                    studioId = rs.getLong("workspace_id"),
                 )
             }
             .optional()
@@ -1869,54 +1923,10 @@ class AdminWorkflowRepository(
         return gallery
     }
 
-    /** null 타입만 확정하며 반대 타입은 절대 덮어쓰지 않는다. */
-    private fun confirmUserType(userId: Long, requiredType: UserType): AdminUserTypeChange? =
-        selectUserTypeIfUnset(userId, requiredType, rejectDifferentType = true)
-
-    /** 제품 `User.selectClientTypeIfUnset`처럼 기존 PHOTOGRAPHER는 보존한다. */
-    private fun selectClientTypeIfUnset(userId: Long): AdminUserTypeChange? =
-        selectUserTypeIfUnset(userId, UserType.CLIENT, rejectDifferentType = false)
-
-    private fun selectUserTypeIfUnset(
-        userId: Long,
-        requiredType: UserType,
-        rejectDifferentType: Boolean,
-    ): AdminUserTypeChange? {
-        val user = jdbcClient.sql(
-            "SELECT user_type, version FROM users WHERE id = :userId AND deleted_at IS NULL FOR UPDATE",
-        )
-            .param("userId", userId)
-            .query { rs, _ -> UserTypeRow(rs.getString("user_type"), rs.getLong("version")) }
-            .optional()
-            .orElseThrow { AdminException(AdminErrorCode.RESOURCE_NOT_FOUND) }
-        if (rejectDifferentType && user.type != null && user.type != requiredType.name) {
-            throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-        }
-        if (user.type != null) return null
-
-        val before = resourceRepository.find(AdminResourceType.USER, userId)
-            ?: throw AdminException(AdminErrorCode.RESOURCE_NOT_FOUND)
+    private fun bumpVersion(table: String, id: Long, expectedVersion: Long, idColumn: String? = null) {
+        val resolvedIdColumn = idColumn ?: if (table == "studios") "workspace_id" else "id"
         val updated = jdbcClient.sql(
-            """
-            UPDATE users
-            SET user_type = :requiredType, version = version + 1, updated_at = CURRENT_TIMESTAMP
-            WHERE id = :userId AND version = :expectedVersion
-              AND user_type IS NULL AND deleted_at IS NULL
-            """.trimIndent(),
-        )
-            .param("requiredType", requiredType.name)
-            .param("userId", userId)
-            .param("expectedVersion", user.version)
-            .update()
-        if (updated != 1) throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
-        val after = resourceRepository.find(AdminResourceType.USER, userId)
-            ?: throw AdminException(AdminErrorCode.RESOURCE_NOT_FOUND)
-        return AdminUserTypeChange(before, after)
-    }
-
-    private fun bumpVersion(table: String, id: Long, expectedVersion: Long) {
-        val updated = jdbcClient.sql(
-            "UPDATE $table SET version = version + 1, updated_at = CURRENT_TIMESTAMP WHERE id = :id AND version = :expectedVersion",
+            "UPDATE $table SET version = version + 1, updated_at = CURRENT_TIMESTAMP WHERE $resolvedIdColumn = :id AND version = :expectedVersion",
         )
             .param("id", id)
             .param("expectedVersion", expectedVersion)
@@ -1969,10 +1979,14 @@ class AdminWorkflowRepository(
     data class StudioOwnerResult(
         val previousOwnerId: Long,
         val ownerId: Long,
-        val userTypeChange: AdminUserTypeChange?,
     )
-    data class StudioMemberResult(val memberId: Long, val userTypeChange: AdminUserTypeChange?)
-    data class GalleryMemberResult(val memberId: Long, val userTypeChange: AdminUserTypeChange?)
+    data class StudioMemberResult(val memberId: Long)
+    data class GalleryMemberResult(val memberId: Long)
+    data class GalleryInviteReissueResult(
+        val inviteId: Long,
+        val kind: GalleryInviteKind,
+        val maxUses: Int,
+    )
     data class PhotoReplacementResult(
         val revisionId: Long,
         val revisionNumber: Long,
@@ -2017,10 +2031,21 @@ class AdminWorkflowRepository(
         val failureCode: String?,
     )
 
-    enum class GalleryTransition(val publicStatus: String, val workflowStatus: String) {
-        SUBMIT("CLOSED", "IN_PROGRESS"),
-        COMPLETE("CLOSED", "COMPLETED"),
+    enum class GalleryTransition(
+        val publicStatus: String,
+        val workflowStatus: String,
+        val stage: String,
+    ) {
+        SUBMIT("CLOSED", "IN_PROGRESS", "SELECTION_COMPLETED"),
+        COMPLETE("CLOSED", "COMPLETED", "ALBUM"),
     }
+
+    private data class GalleryInvitePolicy(
+        val galleryVersion: Long,
+        val workspaceType: String,
+        val previousKind: GalleryInviteKind?,
+        val previousMaxUses: Int?,
+    )
 
     private data class PendingReplacement(
         val id: Long,
@@ -2037,10 +2062,7 @@ class AdminWorkflowRepository(
     private data class GalleryScope(
         val version: Long,
         val studioId: Long,
-        val studioOwnerId: Long,
     )
-
-    private data class UserTypeRow(val type: String?, val version: Long)
 
     private data class PhotoCurrent(
         val galleryId: Long,
@@ -2065,6 +2087,7 @@ class AdminWorkflowRepository(
         private const val DIVERSITY_WEIGHT = 0.35
         private val PUBLIC_STATUSES = setOf("DRAFT", "OPEN", "CLOSED")
         private val WORKFLOW_STATUSES = setOf("DRAFT", "IN_PROGRESS", "COMPLETED", "ARCHIVED")
+        private const val DEFAULT_GALLERY_INVITE_MAX_USES = 2
         private const val MAX_ALBUM_FOLDERS = 50
         private const val MAX_ALBUM_ITEMS = 1_000
         private const val MAX_ALBUM_FOLDER_NAME_LENGTH = 100

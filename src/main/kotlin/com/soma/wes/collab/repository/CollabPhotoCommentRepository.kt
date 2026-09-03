@@ -11,10 +11,14 @@ import org.springframework.data.repository.query.Param
 interface CollabPhotoCommentRepository : JpaRepository<CollabPhotoComment, Long> {
 
     /** 최근에 쓴 것이 위로. 사진 아래 붙는 목록이라 새 말이 먼저 보여야 한다. */
-    fun findAllByCollabPhotoIdOrderByIdDesc(collabPhotoId: Long, pageable: Pageable): Page<CollabPhotoComment>
+    fun findAllByCollabSessionIdAndPhotoIdOrderByIdDesc(
+        collabSessionId: Long,
+        photoId: Long,
+        pageable: Pageable,
+    ): Page<CollabPhotoComment>
 
-    fun findAllByCollabPhotoIdInOrderByIdDesc(
-        collabPhotoIds: Collection<Long>,
+    fun findAllByCollabSessionIdInOrderByIdDesc(
+        collabSessionIds: Collection<Long>,
         pageable: Pageable,
     ): Page<CollabPhotoComment>
 
@@ -25,13 +29,17 @@ interface CollabPhotoCommentRepository : JpaRepository<CollabPhotoComment, Long>
      */
     @Query(
         """
-        SELECT c.collabPhotoId AS collabPhotoId, COUNT(c) AS count
+        SELECT c.photoId AS photoId, COUNT(c) AS count
         FROM CollabPhotoComment c
-        WHERE c.collabPhotoId IN :collabPhotoIds
-        GROUP BY c.collabPhotoId
+        WHERE c.collabSessionId = :sessionId AND c.photoId IN :photoIds
+        GROUP BY c.photoId
         """,
     )
-    fun countByCollabPhotoIdIn(
-        @Param("collabPhotoIds") collabPhotoIds: Collection<Long>,
+    fun countBySessionAndPhotoIdIn(
+        @Param("sessionId") sessionId: Long,
+        @Param("photoIds") photoIds: Collection<Long>,
     ): List<CollabCommentCountProjection>
+
+    fun deleteAllByCollabSessionIdAndPhotoIdIn(collabSessionId: Long, photoIds: Collection<Long>)
+    fun deleteAllByCollabSessionId(collabSessionId: Long)
 }

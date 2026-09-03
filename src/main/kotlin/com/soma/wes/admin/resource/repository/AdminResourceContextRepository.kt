@@ -12,26 +12,60 @@ class AdminResourceContextRepository(
 
     fun findRelations(type: AdminResourceType, id: Long): Set<ResourceReference> = when (type) {
         AdminResourceType.USER -> linkedSetOf<ResourceReference>().apply {
-            addAll(references(AdminResourceType.STUDIO, "SELECT id FROM studios WHERE user_id = :id", id))
-            addAll(references(AdminResourceType.STUDIO, "SELECT studio_id AS id FROM studio_members WHERE user_id = :id AND deleted_at IS NULL", id))
+            addAll(references(AdminResourceType.WORKSPACE, "SELECT workspace_id AS id FROM workspace_members WHERE user_id = :id AND deleted_at IS NULL", id))
+            addAll(references(AdminResourceType.STUDIO, "SELECT wm.workspace_id AS id FROM workspace_members wm JOIN studios s ON s.workspace_id = wm.workspace_id WHERE wm.user_id = :id AND wm.deleted_at IS NULL", id))
             addAll(references(AdminResourceType.GALLERY, "SELECT gallery_id AS id FROM gallery_members WHERE user_id = :id AND deleted_at IS NULL", id))
         }
+        AdminResourceType.WORKSPACE -> linkedSetOf<ResourceReference>().apply {
+            addAll(references(AdminResourceType.USER, "SELECT user_id AS id FROM workspace_members WHERE workspace_id = :id AND deleted_at IS NULL", id))
+            addAll(references(AdminResourceType.STUDIO, "SELECT workspace_id AS id FROM studios WHERE workspace_id = :id", id))
+            addAll(references(AdminResourceType.GALLERY, "SELECT id FROM galleries WHERE workspace_id = :id", id))
+        }
         AdminResourceType.STUDIO -> linkedSetOf<ResourceReference>().apply {
-            addAll(references(AdminResourceType.USER, "SELECT user_id AS id FROM studios WHERE id = :id", id))
-            addAll(references(AdminResourceType.USER, "SELECT user_id AS id FROM studio_members WHERE studio_id = :id AND deleted_at IS NULL", id))
-            addAll(references(AdminResourceType.GALLERY, "SELECT id FROM galleries WHERE studio_id = :id", id))
+            add(ResourceReference(AdminResourceType.WORKSPACE, id))
+            addAll(references(AdminResourceType.USER, "SELECT user_id AS id FROM workspace_members WHERE workspace_id = :id AND deleted_at IS NULL", id))
+            addAll(references(AdminResourceType.GALLERY, "SELECT id FROM galleries WHERE workspace_id = :id", id))
         }
         AdminResourceType.GALLERY -> linkedSetOf<ResourceReference>().apply {
-            addAll(references(AdminResourceType.STUDIO, "SELECT studio_id AS id FROM galleries WHERE id = :id", id))
+            addAll(references(AdminResourceType.WORKSPACE, "SELECT workspace_id AS id FROM galleries WHERE id = :id", id))
+            addAll(references(AdminResourceType.STUDIO, "SELECT workspace_id AS id FROM galleries WHERE id = :id AND EXISTS (SELECT 1 FROM studios WHERE workspace_id = galleries.workspace_id)", id))
             addAll(references(AdminResourceType.USER, "SELECT user_id AS id FROM gallery_members WHERE gallery_id = :id AND deleted_at IS NULL", id))
             addAll(references(AdminResourceType.PHOTO, "SELECT id FROM photos WHERE gallery_id = :id", id))
             addAll(references(AdminResourceType.SELECTION, "SELECT id FROM photo_selections WHERE gallery_id = :id", id))
             addAll(references(AdminResourceType.COLLABORATION, "SELECT id FROM collab_sessions WHERE gallery_id = :id", id))
             addAll(references(AdminResourceType.ALBUM, "SELECT id FROM photo_folder_groups WHERE gallery_id = :id", id))
             addAll(references(AdminResourceType.RETOUCH_REQUEST, "SELECT id FROM retouch_rounds WHERE gallery_id = :id", id))
+            addAll(references(AdminResourceType.CONCEPT_FOLDER, "SELECT id FROM concept_folders WHERE gallery_id = :id", id))
+            addAll(references(AdminResourceType.CATEGORIZATION_JOB, "SELECT id FROM categorization_jobs WHERE gallery_id = :id", id))
         }
         AdminResourceType.PHOTO -> linkedSetOf<ResourceReference>().apply {
             addAll(references(AdminResourceType.GALLERY, "SELECT gallery_id AS id FROM photos WHERE id = :id", id))
+            addAll(references(AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT, "SELECT photo_id AS id FROM photo_category_assignments WHERE photo_id = :id", id))
+            addAll(references(AdminResourceType.PHOTO_RATING, "SELECT photo_id AS id FROM photo_ratings WHERE photo_id = :id", id))
+            addAll(references(AdminResourceType.CATEGORIZATION_JOB, "SELECT job_id AS id FROM categorization_job_photos WHERE photo_id = :id", id))
+        }
+        AdminResourceType.CONCEPT_FOLDER -> linkedSetOf<ResourceReference>().apply {
+            addAll(references(AdminResourceType.GALLERY, "SELECT gallery_id AS id FROM concept_folders WHERE id = :id", id))
+            addAll(references(AdminResourceType.DETAIL_FOLDER, "SELECT id FROM detail_folders WHERE concept_folder_id = :id", id))
+            addAll(references(AdminResourceType.COLLABORATION, "SELECT id FROM collab_sessions WHERE concept_folder_id = :id", id))
+        }
+        AdminResourceType.DETAIL_FOLDER -> linkedSetOf<ResourceReference>().apply {
+            addAll(references(AdminResourceType.CONCEPT_FOLDER, "SELECT concept_folder_id AS id FROM detail_folders WHERE id = :id", id))
+            addAll(references(AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT, "SELECT photo_id AS id FROM photo_category_assignments WHERE detail_folder_id = :id", id))
+            addAll(references(AdminResourceType.PHOTO, "SELECT photo_id AS id FROM photo_category_assignments WHERE detail_folder_id = :id", id))
+        }
+        AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT -> linkedSetOf<ResourceReference>().apply {
+            add(ResourceReference(AdminResourceType.PHOTO, id))
+            addAll(references(AdminResourceType.DETAIL_FOLDER, "SELECT detail_folder_id AS id FROM photo_category_assignments WHERE photo_id = :id", id))
+            addAll(references(AdminResourceType.USER, "SELECT assigned_by_user_id AS id FROM photo_category_assignments WHERE photo_id = :id AND assigned_by_user_id IS NOT NULL", id))
+        }
+        AdminResourceType.CATEGORIZATION_JOB -> linkedSetOf<ResourceReference>().apply {
+            addAll(references(AdminResourceType.GALLERY, "SELECT gallery_id AS id FROM categorization_jobs WHERE id = :id", id))
+            addAll(references(AdminResourceType.PHOTO, "SELECT photo_id AS id FROM categorization_job_photos WHERE job_id = :id", id))
+        }
+        AdminResourceType.PHOTO_RATING -> linkedSetOf<ResourceReference>().apply {
+            add(ResourceReference(AdminResourceType.PHOTO, id))
+            addAll(references(AdminResourceType.USER, "SELECT rated_by AS id FROM photo_ratings WHERE photo_id = :id", id))
         }
         AdminResourceType.SELECTION -> linkedSetOf<ResourceReference>().apply {
             addAll(references(AdminResourceType.GALLERY, "SELECT gallery_id AS id FROM photo_selections WHERE id = :id", id))
@@ -39,7 +73,13 @@ class AdminResourceContextRepository(
         }
         AdminResourceType.COLLABORATION -> linkedSetOf<ResourceReference>().apply {
             addAll(references(AdminResourceType.GALLERY, "SELECT gallery_id AS id FROM collab_sessions WHERE id = :id", id))
-            addAll(references(AdminResourceType.PHOTO, "SELECT photo_id AS id FROM collab_photos WHERE collab_session_id = :id", id))
+            addAll(references(AdminResourceType.PHOTO, """
+                SELECT a.photo_id AS id
+                FROM collab_sessions s
+                JOIN detail_folders d ON d.concept_folder_id = s.concept_folder_id AND d.deleted_at IS NULL
+                JOIN photo_category_assignments a ON a.detail_folder_id = d.id
+                WHERE s.id = :id
+            """.trimIndent(), id))
         }
         AdminResourceType.ALBUM -> linkedSetOf<ResourceReference>().apply {
             addAll(references(AdminResourceType.GALLERY, "SELECT gallery_id AS id FROM photo_folder_groups WHERE id = :id", id))
@@ -56,8 +96,8 @@ class AdminResourceContextRepository(
             """
                 SELECT
                     (SELECT COUNT(*) FROM refresh_tokens WHERE user_id = :id) AS active_sessions,
-                    (SELECT COUNT(*) FROM studios WHERE user_id = :id) AS owned_studios,
-                    (SELECT COUNT(*) FROM studio_members WHERE user_id = :id AND deleted_at IS NULL) AS studio_memberships,
+                    (SELECT COUNT(*) FROM workspace_members wm JOIN studios s ON s.workspace_id = wm.workspace_id WHERE wm.user_id = :id AND wm.role = 'OWNER' AND wm.deleted_at IS NULL) AS owned_studios,
+                    (SELECT COUNT(*) FROM workspace_members wm JOIN studios s ON s.workspace_id = wm.workspace_id WHERE wm.user_id = :id AND wm.deleted_at IS NULL) AS studio_memberships,
                     (SELECT COUNT(*) FROM gallery_members WHERE user_id = :id AND deleted_at IS NULL) AS joined_galleries,
                     GREATEST(
                         (SELECT MAX(updated_at) FROM refresh_tokens WHERE user_id = :id),
@@ -67,18 +107,36 @@ class AdminResourceContextRepository(
         ) { rs -> linkedMapOf(
             "activeSessions" to rs.getLong("active_sessions"),
             "ownedStudios" to rs.getLong("owned_studios"),
-            "studioMemberships" to rs.getLong("studio_memberships"),
+            "studioWorkspaceMemberships" to rs.getLong("studio_memberships"),
             "joinedGalleries" to rs.getLong("joined_galleries"),
             "lastActivityAt" to rs.getObject("last_activity_at"),
         ) }
+        AdminResourceType.WORKSPACE -> singleFacts(
+            """
+                SELECT w.type,
+                    EXISTS (SELECT 1 FROM studios s WHERE s.workspace_id = w.id) AS studio,
+                    (SELECT COUNT(*) FROM workspace_members m WHERE m.workspace_id = w.id AND m.deleted_at IS NULL) AS members,
+                    (SELECT COUNT(*) FROM workspace_members m WHERE m.workspace_id = w.id AND m.role = 'OWNER' AND m.deleted_at IS NULL) AS owners,
+                    (SELECT COUNT(*) FROM galleries g WHERE g.workspace_id = w.id AND g.deleted_at IS NULL) AS galleries,
+                    (SELECT COUNT(*) FROM photos p JOIN galleries g ON g.id = p.gallery_id WHERE g.workspace_id = w.id AND p.deleted_at IS NULL) AS photos
+                FROM workspaces w WHERE w.id = :id
+            """.trimIndent(), id,
+        ) { rs -> linkedMapOf(
+            "workspaceType" to rs.getString("type"),
+            "studio" to rs.getBoolean("studio"),
+            "members" to rs.getLong("members"),
+            "owners" to rs.getLong("owners"),
+            "galleries" to rs.getLong("galleries"),
+            "photos" to rs.getLong("photos"),
+        ) }
         AdminResourceType.STUDIO -> singleFacts(
             """
-                SELECT s.user_id AS owner_id,
-                    (SELECT COUNT(*) FROM galleries WHERE studio_id = :id) AS galleries,
-                    (SELECT COUNT(*) FROM photos p JOIN galleries g ON g.id = p.gallery_id WHERE g.studio_id = :id) AS photos,
-                    (SELECT COALESCE(SUM(p.byte_size), 0) FROM photos p JOIN galleries g ON g.id = p.gallery_id WHERE g.studio_id = :id) AS storage_bytes,
-                    (SELECT COUNT(*) FROM studio_members WHERE studio_id = :id AND deleted_at IS NULL) AS members
-                FROM studios s WHERE s.id = :id
+                SELECT (SELECT wm.user_id FROM workspace_members wm WHERE wm.workspace_id = :id AND wm.role = 'OWNER' AND wm.deleted_at IS NULL ORDER BY wm.id LIMIT 1) AS owner_id,
+                    (SELECT COUNT(*) FROM galleries WHERE workspace_id = :id) AS galleries,
+                    (SELECT COUNT(*) FROM photos p JOIN galleries g ON g.id = p.gallery_id WHERE g.workspace_id = :id) AS photos,
+                    (SELECT COALESCE(SUM(p.byte_size), 0) FROM photos p JOIN galleries g ON g.id = p.gallery_id WHERE g.workspace_id = :id) AS storage_bytes,
+                    (SELECT COUNT(*) FROM workspace_members WHERE workspace_id = :id AND deleted_at IS NULL) AS members
+                FROM studios s WHERE s.workspace_id = :id
             """.trimIndent(), id,
         ) { rs -> linkedMapOf(
             "ownerId" to rs.getLong("owner_id"),
@@ -89,12 +147,20 @@ class AdminResourceContextRepository(
         ) }
         AdminResourceType.GALLERY -> singleFacts(
             """
-                SELECT g.status AS public_status, g.workflow_status, g.selection_deadline,
+                SELECT g.status AS public_status, g.workflow_status, g.stage, g.selection_deadline,
                     g.max_selectable_photo_count,
                     (SELECT COUNT(*) FROM gallery_members WHERE gallery_id = :id AND deleted_at IS NULL) AS members,
                     (SELECT COUNT(*) FROM photos WHERE gallery_id = :id) AS photos,
+                    (SELECT COUNT(*) FROM concept_folders WHERE gallery_id = :id AND deleted_at IS NULL) AS concept_folders,
+                    (SELECT COUNT(*) FROM detail_folders d JOIN concept_folders c ON c.id = d.concept_folder_id WHERE c.gallery_id = :id AND d.deleted_at IS NULL AND c.deleted_at IS NULL) AS detail_folders,
+                    (SELECT COUNT(*) FROM photo_category_assignments a JOIN detail_folders d ON d.id = a.detail_folder_id JOIN concept_folders c ON c.id = d.concept_folder_id WHERE c.gallery_id = :id) AS category_assignments,
+                    (SELECT COUNT(*) FROM categorization_jobs WHERE gallery_id = :id) AS categorization_jobs,
+                    (SELECT COUNT(*) FROM photo_ratings r JOIN photos p ON p.id = r.photo_id WHERE p.gallery_id = :id) AS ratings,
                     (SELECT COUNT(*) FROM photo_selection_items i JOIN photo_selections s ON s.id = i.selection_id WHERE s.gallery_id = :id) AS selected_photos,
-                    (SELECT CASE WHEN revoked_at IS NOT NULL THEN 'REVOKED' WHEN expires_at < CURRENT_TIMESTAMP THEN 'EXPIRED' ELSE 'ACTIVE' END
+                    (SELECT CASE WHEN revoked_at IS NOT NULL THEN 'REVOKED'
+                                      WHEN expires_at < CURRENT_TIMESTAMP THEN 'EXPIRED'
+                                      WHEN used_count >= max_uses THEN 'FULL'
+                                      ELSE 'ACTIVE' END
                        FROM gallery_invites WHERE gallery_id = :id ORDER BY id DESC LIMIT 1) AS invite_status,
                     (SELECT expires_at FROM gallery_invites WHERE gallery_id = :id ORDER BY id DESC LIMIT 1) AS invite_expires_at,
                     EXISTS (
@@ -106,10 +172,16 @@ class AdminResourceContextRepository(
         ) { rs -> linkedMapOf(
             "publicStatus" to rs.getString("public_status"),
             "workflowStatus" to rs.getString("workflow_status"),
+            "stage" to rs.getString("stage"),
             "selectionDeadline" to rs.getObject("selection_deadline"),
             "targetPhotoCount" to rs.getObject("max_selectable_photo_count"),
             "members" to rs.getLong("members"),
             "photos" to rs.getLong("photos"),
+            "conceptFolders" to rs.getLong("concept_folders"),
+            "detailFolders" to rs.getLong("detail_folders"),
+            "categoryAssignments" to rs.getLong("category_assignments"),
+            "categorizationJobs" to rs.getLong("categorization_jobs"),
+            "ratings" to rs.getLong("ratings"),
             "selectedPhotos" to rs.getLong("selected_photos"),
             "inviteStatus" to rs.getString("invite_status"),
             "inviteExpiresAt" to rs.getObject("invite_expires_at"),
@@ -121,7 +193,11 @@ class AdminResourceContextRepository(
                        EXISTS (SELECT 1 FROM photo_analysis a WHERE a.photo_id = photos.id AND a.embedding IS NOT NULL) AS analyzed,
                        (SELECT COUNT(*) FROM photo_folder_items WHERE photo_id = :id) AS album_references,
                        (SELECT COUNT(*) FROM photo_selection_items WHERE photo_id = :id) AS selection_references,
-                       (SELECT COUNT(*) FROM retouch_photos WHERE photo_id = :id) AS retouch_references
+                       (SELECT COUNT(*) FROM retouch_photos WHERE photo_id = :id) AS retouch_references,
+                       (SELECT detail_folder_id FROM photo_category_assignments WHERE photo_id = :id) AS detail_folder_id,
+                       (SELECT assigned_source FROM photo_category_assignments WHERE photo_id = :id) AS category_source,
+                       (SELECT score FROM photo_ratings WHERE photo_id = :id) AS rating_score,
+                       (SELECT rated_by FROM photo_ratings WHERE photo_id = :id) AS rated_by_user_id
                 FROM photos WHERE id = :id
             """.trimIndent(), id,
         ) { rs -> linkedMapOf(
@@ -135,7 +211,48 @@ class AdminResourceContextRepository(
             "albumReferences" to rs.getLong("album_references"),
             "selectionReferences" to rs.getLong("selection_references"),
             "retouchReferences" to rs.getLong("retouch_references"),
+            "detailFolderId" to rs.getObject("detail_folder_id"),
+            "categorySource" to rs.getString("category_source"),
+            "ratingScore" to rs.getObject("rating_score"),
+            "ratedByUserId" to rs.getObject("rated_by_user_id"),
         ) }
+        AdminResourceType.CONCEPT_FOLDER -> singleFacts(
+            """
+                SELECT
+                    (SELECT COUNT(*) FROM detail_folders WHERE concept_folder_id = :id AND deleted_at IS NULL) AS detail_folders,
+                    (SELECT COUNT(*) FROM photo_category_assignments a JOIN detail_folders d ON d.id = a.detail_folder_id WHERE d.concept_folder_id = :id) AS assigned_photos,
+                    (SELECT COUNT(*) FROM collab_sessions WHERE concept_folder_id = :id AND deleted_at IS NULL) AS collaboration_sessions
+            """.trimIndent(), id,
+        ) { rs -> linkedMapOf(
+            "detailFolders" to rs.getLong("detail_folders"),
+            "assignedPhotos" to rs.getLong("assigned_photos"),
+            "collaborationSessions" to rs.getLong("collaboration_sessions"),
+        ) }
+        AdminResourceType.DETAIL_FOLDER -> singleFacts(
+            "SELECT COUNT(*) AS assigned_photos FROM photo_category_assignments WHERE detail_folder_id = :id",
+            id,
+        ) { rs -> linkedMapOf("assignedPhotos" to rs.getLong("assigned_photos")) }
+        AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT -> singleFacts(
+            """
+                SELECT p.gallery_id, c.id AS concept_folder_id
+                FROM photo_category_assignments a
+                JOIN photos p ON p.id = a.photo_id
+                JOIN detail_folders d ON d.id = a.detail_folder_id
+                JOIN concept_folders c ON c.id = d.concept_folder_id
+                WHERE a.photo_id = :id
+            """.trimIndent(), id,
+        ) { rs -> linkedMapOf(
+            "galleryId" to rs.getLong("gallery_id"),
+            "conceptFolderId" to rs.getLong("concept_folder_id"),
+        ) }
+        AdminResourceType.CATEGORIZATION_JOB -> singleFacts(
+            "SELECT COUNT(*) AS processed_photos FROM categorization_job_photos WHERE job_id = :id",
+            id,
+        ) { rs -> linkedMapOf("processedPhotos" to rs.getLong("processed_photos")) }
+        AdminResourceType.PHOTO_RATING -> singleFacts(
+            "SELECT p.gallery_id FROM photo_ratings r JOIN photos p ON p.id = r.photo_id WHERE r.photo_id = :id",
+            id,
+        ) { rs -> linkedMapOf("galleryId" to rs.getLong("gallery_id")) }
         AdminResourceType.SELECTION -> singleFacts(
             """
                 SELECT COUNT(*) AS selected_photos,
@@ -150,9 +267,9 @@ class AdminResourceContextRepository(
             """
                 SELECT
                     (SELECT COUNT(*) FROM collab_guests WHERE collab_session_id = :id) AS guests,
-                    (SELECT COUNT(*) FROM collab_photos WHERE collab_session_id = :id) AS photos,
-                    (SELECT COUNT(*) FROM collab_photo_comments c JOIN collab_photos p ON p.id = c.collab_photo_id WHERE p.collab_session_id = :id) AS comments,
-                    (SELECT COUNT(*) FROM collab_photo_likes l JOIN collab_photos p ON p.id = l.collab_photo_id WHERE p.collab_session_id = :id AND l.deleted_at IS NULL) AS likes
+                    (SELECT COUNT(*) FROM collab_sessions s JOIN detail_folders d ON d.concept_folder_id = s.concept_folder_id AND d.deleted_at IS NULL JOIN photo_category_assignments a ON a.detail_folder_id = d.id WHERE s.id = :id) AS photos,
+                    (SELECT COUNT(*) FROM collab_photo_comments c WHERE c.collab_session_id = :id) AS comments,
+                    (SELECT COUNT(*) FROM collab_photo_likes l WHERE l.collab_session_id = :id AND l.deleted_at IS NULL) AS likes
             """.trimIndent(), id,
         ) { rs -> linkedMapOf(
             "guests" to rs.getLong("guests"),
@@ -201,19 +318,22 @@ class AdminResourceContextRepository(
 
     fun findSections(type: AdminResourceType, id: Long): Map<String, List<Map<String, Any?>>> = when (type) {
         AdminResourceType.USER -> linkedMapOf(
-            "studioMemberships" to rows(
+            "workspaces" to rows(
                 """
-                    SELECT s.id AS studio_id, s.name, m.id AS member_id, m.role,
-                           m.deleted_at, m.created_at
-                    FROM studio_members m JOIN studios s ON s.id = m.studio_id
-                    WHERE m.user_id = :id ORDER BY m.id DESC
+                    SELECT w.id AS workspace_id, w.type AS workspace_type, w.name AS workspace_name,
+                           m.id AS member_id, m.role AS access_role, m.deleted_at, m.created_at
+                    FROM workspace_members m
+                    JOIN workspaces w ON w.id = m.workspace_id
+                    WHERE m.user_id = :id
+                    ORDER BY w.type, w.id
                 """.trimIndent(),
                 id,
             ) { rs -> linkedMapOf(
-                "studioId" to rs.getLong("studio_id"),
-                "studioName" to rs.getString("name"),
+                "workspaceId" to rs.getLong("workspace_id"),
+                "workspaceType" to rs.getString("workspace_type"),
+                "workspaceName" to rs.getString("workspace_name"),
                 "memberId" to rs.getLong("member_id"),
-                "role" to rs.getString("role"),
+                "accessRole" to rs.getString("access_role"),
                 "deleted" to (rs.getObject("deleted_at") != null),
                 "joinedAt" to rs.getObject("created_at"),
             ) },
@@ -228,7 +348,8 @@ class AdminResourceContextRepository(
             ) },
             "galleryMemberships" to rows(
                 """
-                    SELECT m.id AS member_id, m.gallery_id, g.title, g.status, m.created_at
+                    SELECT m.id AS member_id, m.gallery_id, g.title, g.status, g.workflow_status,
+                           g.stage, m.created_at
                     FROM gallery_members m JOIN galleries g ON g.id = m.gallery_id
                     WHERE m.user_id = :id ORDER BY m.id DESC LIMIT 100
                 """.trimIndent(),
@@ -238,14 +359,98 @@ class AdminResourceContextRepository(
                 "galleryId" to rs.getLong("gallery_id"),
                 "galleryTitle" to rs.getString("title"),
                 "galleryStatus" to rs.getString("status"),
+                "workflowStatus" to rs.getString("workflow_status"),
+                "stage" to rs.getString("stage"),
                 "joinedAt" to rs.getObject("created_at"),
+            ) },
+            "userNotifications" to rows(
+                """
+                    SELECT id, user_id, type, scope, scope_id, title, message, read_at, created_at
+                    FROM user_notifications
+                    WHERE user_id = :id
+                    ORDER BY created_at DESC, id DESC LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> userNotification(rs) },
+            "userNotificationSettings" to rows(
+                """
+                    SELECT u.id AS user_id,
+                           COALESCE(s.email_enabled, TRUE) AS email_enabled,
+                           COALESCE(s.browser_enabled, TRUE) AS browser_enabled,
+                           (s.user_id IS NOT NULL) AS persisted,
+                           COALESCE(s.version, 0) AS version,
+                           s.updated_at
+                    FROM users u
+                    LEFT JOIN user_notification_settings s ON s.user_id = u.id
+                    WHERE u.id = :id
+                """.trimIndent(),
+                id,
+            ) { rs -> userNotificationSettings(rs) },
+        )
+        AdminResourceType.WORKSPACE -> linkedMapOf(
+            "members" to rows(
+                """
+                    SELECT m.id AS member_id, m.user_id, m.role AS access_role, m.version,
+                           m.deleted_at, m.created_at, u.nickname, u.email
+                    FROM workspace_members m
+                    JOIN users u ON u.id = m.user_id
+                    WHERE m.workspace_id = :id
+                    ORDER BY m.role, m.id
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "memberId" to rs.getLong("member_id"),
+                "userId" to rs.getLong("user_id"),
+                "accessRole" to rs.getString("access_role"),
+                "nickname" to rs.getString("nickname"),
+                "email" to rs.getString("email"),
+                "version" to rs.getLong("version"),
+                "deleted" to (rs.getObject("deleted_at") != null),
+                "joinedAt" to rs.getObject("created_at"),
+            ) },
+            "studio" to rows(
+                """
+                    SELECT workspace_id, name, gallery_url, inflow_channel, contact, description,
+                           suspended_at, deleted_at
+                    FROM studios WHERE workspace_id = :id
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "workspaceId" to rs.getLong("workspace_id"),
+                "name" to rs.getString("name"),
+                "galleryUrl" to rs.getString("gallery_url"),
+                "inflowChannel" to rs.getString("inflow_channel"),
+                "contact" to rs.getString("contact"),
+                "description" to rs.getString("description"),
+                "suspended" to (rs.getObject("suspended_at") != null),
+                "deleted" to (rs.getObject("deleted_at") != null),
+            ) },
+            "galleries" to rows(
+                """
+                    SELECT id, created_by_user_id, title, status, workflow_status, stage,
+                           selection_deadline, deleted_at, created_at
+                    FROM galleries WHERE workspace_id = :id ORDER BY id DESC LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "galleryId" to rs.getLong("id"),
+                "createdByUserId" to rs.getObject("created_by_user_id"),
+                "title" to rs.getString("title"),
+                "publicStatus" to rs.getString("status"),
+                "workflowStatus" to rs.getString("workflow_status"),
+                "stage" to rs.getString("stage"),
+                "selectionDeadline" to rs.getObject("selection_deadline"),
+                "deleted" to (rs.getObject("deleted_at") != null),
+                "createdAt" to rs.getObject("created_at"),
             ) },
         )
         AdminResourceType.STUDIO -> linkedMapOf(
             "owner" to rows(
                 """
                     SELECT u.id AS user_id, u.nickname, u.email, u.provider
-                    FROM studios s JOIN users u ON u.id = s.user_id WHERE s.id = :id
+                    FROM workspace_members m JOIN users u ON u.id = m.user_id
+                    WHERE m.workspace_id = :id AND m.role = 'OWNER' AND m.deleted_at IS NULL
+                    ORDER BY m.id
                 """.trimIndent(),
                 id,
             ) { rs -> linkedMapOf(
@@ -258,14 +463,14 @@ class AdminResourceContextRepository(
                 """
                     SELECT m.id AS member_id, m.user_id, m.role, m.deleted_at,
                            u.nickname, u.email, m.created_at
-                    FROM studio_members m JOIN users u ON u.id = m.user_id
-                    WHERE m.studio_id = :id ORDER BY m.role, m.id
+                    FROM workspace_members m JOIN users u ON u.id = m.user_id
+                    WHERE m.workspace_id = :id ORDER BY m.role, m.id
                 """.trimIndent(),
                 id,
             ) { rs -> linkedMapOf(
                 "memberId" to rs.getLong("member_id"),
                 "userId" to rs.getLong("user_id"),
-                "role" to rs.getString("role"),
+                "accessRole" to rs.getString("role"),
                 "nickname" to rs.getString("nickname"),
                 "email" to rs.getString("email"),
                 "deleted" to (rs.getObject("deleted_at") != null),
@@ -284,18 +489,49 @@ class AdminResourceContextRepository(
             ) },
             "galleries" to rows(
                 """
-                    SELECT id, title, status, selection_deadline, deleted_at, created_at
-                    FROM galleries WHERE studio_id = :id ORDER BY id DESC LIMIT 100
+                    SELECT id, workspace_id, created_by_user_id, title, status, workflow_status, stage,
+                           selection_deadline, deleted_at, created_at
+                    FROM galleries WHERE workspace_id = :id ORDER BY id DESC LIMIT 100
                 """.trimIndent(),
                 id,
             ) { rs -> linkedMapOf(
                 "id" to rs.getLong("id"),
+                "workspaceId" to rs.getLong("workspace_id"),
+                "workspaceType" to "STUDIO",
+                "createdByUserId" to rs.getObject("created_by_user_id"),
                 "title" to rs.getString("title"),
-                "status" to rs.getString("status"),
+                "publicStatus" to rs.getString("status"),
+                "workflowStatus" to rs.getString("workflow_status"),
+                "stage" to rs.getString("stage"),
                 "selectionDeadline" to rs.getObject("selection_deadline"),
                 "deleted" to (rs.getObject("deleted_at") != null),
                 "createdAt" to rs.getObject("created_at"),
             ) },
+            "userNotifications" to rows(
+                """
+                    SELECT id, user_id, type, scope, scope_id, title, message, read_at, created_at
+                    FROM user_notifications
+                    WHERE scope = 'STUDIO' AND scope_id = :id
+                    ORDER BY created_at DESC, id DESC LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> userNotification(rs) },
+            "userNotificationSettings" to rows(
+                """
+                    SELECT u.id AS user_id, u.nickname,
+                           COALESCE(s.email_enabled, TRUE) AS email_enabled,
+                           COALESCE(s.browser_enabled, TRUE) AS browser_enabled,
+                           (s.user_id IS NOT NULL) AS persisted,
+                           COALESCE(s.version, 0) AS version,
+                           s.updated_at
+                    FROM workspace_members m
+                    JOIN users u ON u.id = m.user_id
+                    LEFT JOIN user_notification_settings s ON s.user_id = u.id
+                    WHERE m.workspace_id = :id AND m.deleted_at IS NULL
+                    ORDER BY u.id
+                """.trimIndent(),
+                id,
+            ) { rs -> userNotificationSettings(rs, includeNickname = true) },
         )
         AdminResourceType.GALLERY -> linkedMapOf(
             "members" to rows(
@@ -316,19 +552,162 @@ class AdminResourceContextRepository(
             ) },
             "invites" to rows(
                 """
-                    SELECT id, expires_at, revoked_at, created_at,
+                    SELECT id, kind, max_uses, used_count, expires_at, revoked_at, created_at,
                            CASE WHEN revoked_at IS NOT NULL THEN 'REVOKED'
-                                WHEN expires_at < CURRENT_TIMESTAMP THEN 'EXPIRED' ELSE 'ACTIVE' END AS status
+                                WHEN expires_at < CURRENT_TIMESTAMP THEN 'EXPIRED'
+                                WHEN used_count >= max_uses THEN 'FULL'
+                                ELSE 'ACTIVE' END AS status
                     FROM gallery_invites WHERE gallery_id = :id ORDER BY id DESC LIMIT 20
                 """.trimIndent(),
                 id,
             ) { rs -> linkedMapOf(
                 "id" to rs.getLong("id"),
+                "kind" to rs.getString("kind"),
+                "maxUses" to rs.getInt("max_uses"),
+                "usedCount" to rs.getInt("used_count"),
+                "remainingUses" to (rs.getInt("max_uses") - rs.getInt("used_count")).coerceAtLeast(0),
                 "status" to rs.getString("status"),
                 "expiresAt" to rs.getObject("expires_at"),
                 "revokedAt" to rs.getObject("revoked_at"),
                 "createdAt" to rs.getObject("created_at"),
                 "token" to "[MASKED]",
+            ) },
+            "userNotifications" to rows(
+                """
+                    SELECT id, user_id, type, scope, scope_id, title, message, read_at, created_at
+                    FROM user_notifications
+                    WHERE scope = 'GALLERY' AND scope_id = :id
+                    ORDER BY created_at DESC, id DESC LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> userNotification(rs) },
+            "userNotificationSettings" to rows(
+                """
+                    WITH related_users AS (
+                        SELECT wm.user_id
+                        FROM galleries g
+                        JOIN workspace_members wm ON wm.workspace_id = g.workspace_id
+                        WHERE g.id = :id AND wm.deleted_at IS NULL
+                        UNION
+                        SELECT gm.user_id
+                        FROM gallery_members gm
+                        WHERE gm.gallery_id = :id AND gm.deleted_at IS NULL
+                    )
+                    SELECT u.id AS user_id, u.nickname,
+                           COALESCE(s.email_enabled, TRUE) AS email_enabled,
+                           COALESCE(s.browser_enabled, TRUE) AS browser_enabled,
+                           (s.user_id IS NOT NULL) AS persisted,
+                           COALESCE(s.version, 0) AS version,
+                           s.updated_at
+                    FROM related_users r
+                    JOIN users u ON u.id = r.user_id
+                    LEFT JOIN user_notification_settings s ON s.user_id = u.id
+                    ORDER BY u.id
+                """.trimIndent(),
+                id,
+            ) { rs -> userNotificationSettings(rs, includeNickname = true) },
+            "conceptFolders" to rows(
+                """
+                    SELECT c.id, c.name, c.sort_order, c.created_source, c.version, c.deleted_at,
+                           (SELECT COUNT(*) FROM detail_folders d WHERE d.concept_folder_id = c.id AND d.deleted_at IS NULL) AS detail_count,
+                           (SELECT COUNT(*) FROM photo_category_assignments a JOIN detail_folders d ON d.id = a.detail_folder_id WHERE d.concept_folder_id = c.id) AS photo_count,
+                           (SELECT id FROM collab_sessions s WHERE s.concept_folder_id = c.id AND s.deleted_at IS NULL) AS collaboration_id
+                    FROM concept_folders c WHERE c.gallery_id = :id
+                    ORDER BY c.sort_order, c.id LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("id"),
+                "name" to rs.getString("name"),
+                "sortOrder" to rs.getInt("sort_order"),
+                "createdSource" to rs.getString("created_source"),
+                "version" to rs.getLong("version"),
+                "deleted" to (rs.getObject("deleted_at") != null),
+                "detailCount" to rs.getLong("detail_count"),
+                "photoCount" to rs.getLong("photo_count"),
+                "collaborationId" to rs.getObject("collaboration_id"),
+            ) },
+            "detailFolders" to rows(
+                """
+                    SELECT d.id, d.concept_folder_id, d.name, d.sort_order, d.created_source,
+                           d.version, d.deleted_at,
+                           (SELECT COUNT(*) FROM photo_category_assignments a WHERE a.detail_folder_id = d.id) AS photo_count
+                    FROM detail_folders d
+                    JOIN concept_folders c ON c.id = d.concept_folder_id
+                    WHERE c.gallery_id = :id
+                    ORDER BY c.sort_order, d.sort_order, d.id LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("id"),
+                "conceptFolderId" to rs.getLong("concept_folder_id"),
+                "name" to rs.getString("name"),
+                "sortOrder" to rs.getInt("sort_order"),
+                "createdSource" to rs.getString("created_source"),
+                "version" to rs.getLong("version"),
+                "deleted" to (rs.getObject("deleted_at") != null),
+                "photoCount" to rs.getLong("photo_count"),
+            ) },
+            "categoryAssignments" to rows(
+                """
+                    SELECT a.photo_id, a.detail_folder_id, d.concept_folder_id, p.original_file_name,
+                           a.assigned_by_user_id, a.assigned_source, a.confidence, a.assigned_at, a.version
+                    FROM photo_category_assignments a
+                    JOIN photos p ON p.id = a.photo_id
+                    JOIN detail_folders d ON d.id = a.detail_folder_id
+                    JOIN concept_folders c ON c.id = d.concept_folder_id
+                    WHERE c.gallery_id = :id
+                    ORDER BY a.assigned_at DESC, a.photo_id LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "photoId" to rs.getLong("photo_id"),
+                "detailFolderId" to rs.getLong("detail_folder_id"),
+                "conceptFolderId" to rs.getLong("concept_folder_id"),
+                "fileName" to rs.getString("original_file_name"),
+                "assignedByUserId" to rs.getObject("assigned_by_user_id"),
+                "assignedSource" to rs.getString("assigned_source"),
+                "confidence" to rs.getObject("confidence"),
+                "assignedAt" to rs.getObject("assigned_at"),
+                "version" to rs.getLong("version"),
+            ) },
+            "categorizationJobs" to rows(
+                """
+                    SELECT j.id, j.mode, j.status, j.started_at, j.completed_at, j.failure_code,
+                           j.version, COUNT(p.photo_id) AS photo_count
+                    FROM categorization_jobs j
+                    LEFT JOIN categorization_job_photos p ON p.job_id = j.id
+                    WHERE j.gallery_id = :id
+                    GROUP BY j.id
+                    ORDER BY j.id DESC LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("id"),
+                "mode" to rs.getString("mode"),
+                "status" to rs.getString("status"),
+                "startedAt" to rs.getObject("started_at"),
+                "completedAt" to rs.getObject("completed_at"),
+                "failureCode" to rs.getString("failure_code"),
+                "version" to rs.getLong("version"),
+                "photoCount" to rs.getLong("photo_count"),
+            ) },
+            "photoRatings" to rows(
+                """
+                    SELECT r.id, r.photo_id, r.score, r.rated_by, r.version, r.created_at, r.updated_at
+                    FROM photo_ratings r JOIN photos p ON p.id = r.photo_id
+                    WHERE p.gallery_id = :id ORDER BY r.updated_at DESC, r.id DESC LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("photo_id"),
+                "ratingRowId" to rs.getLong("id"),
+                "photoId" to rs.getLong("photo_id"),
+                "score" to rs.getInt("score"),
+                "ratedByUserId" to rs.getLong("rated_by"),
+                "version" to rs.getLong("version"),
+                "createdAt" to rs.getObject("created_at"),
+                "updatedAt" to rs.getObject("updated_at"),
             ) },
             "selections" to rows(
                 "SELECT id, status, submitted_at, created_at FROM photo_selections WHERE gallery_id = :id ORDER BY id DESC",
@@ -397,6 +776,59 @@ class AdminResourceContextRepository(
             ) },
         )
         AdminResourceType.PHOTO -> linkedMapOf(
+            "categoryAssignment" to rows(
+                """
+                    SELECT a.photo_id, a.detail_folder_id, d.concept_folder_id,
+                           a.assigned_by_user_id, a.assigned_source, a.confidence,
+                           a.assigned_at, a.version
+                    FROM photo_category_assignments a
+                    JOIN detail_folders d ON d.id = a.detail_folder_id
+                    WHERE a.photo_id = :id
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "photoId" to rs.getLong("photo_id"),
+                "detailFolderId" to rs.getLong("detail_folder_id"),
+                "conceptFolderId" to rs.getLong("concept_folder_id"),
+                "assignedByUserId" to rs.getObject("assigned_by_user_id"),
+                "assignedSource" to rs.getString("assigned_source"),
+                "confidence" to rs.getObject("confidence"),
+                "assignedAt" to rs.getObject("assigned_at"),
+                "version" to rs.getLong("version"),
+            ) },
+            "categorizationJobs" to rows(
+                """
+                    SELECT j.id, j.gallery_id, j.mode, j.status, j.started_at,
+                           j.completed_at, j.failure_code, j.version
+                    FROM categorization_job_photos p
+                    JOIN categorization_jobs j ON j.id = p.job_id
+                    WHERE p.photo_id = :id ORDER BY j.id DESC LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("id"),
+                "galleryId" to rs.getLong("gallery_id"),
+                "mode" to rs.getString("mode"),
+                "status" to rs.getString("status"),
+                "startedAt" to rs.getObject("started_at"),
+                "completedAt" to rs.getObject("completed_at"),
+                "failureCode" to rs.getString("failure_code"),
+                "version" to rs.getLong("version"),
+            ) },
+            "rating" to rows(
+                """
+                    SELECT photo_id, score, rated_by, version, created_at, updated_at
+                    FROM photo_ratings WHERE photo_id = :id
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "photoId" to rs.getLong("photo_id"),
+                "score" to rs.getInt("score"),
+                "ratedByUserId" to rs.getLong("rated_by"),
+                "version" to rs.getLong("version"),
+                "createdAt" to rs.getObject("created_at"),
+                "updatedAt" to rs.getObject("updated_at"),
+            ) },
             "processingJobs" to rows(
                 """
                     SELECT id, job_type, status, revision_id, attempt_count, failure_code,
@@ -505,6 +937,95 @@ class AdminResourceContextRepository(
                 "resultReady" to rs.getBoolean("result_ready"),
             ) },
         )
+        AdminResourceType.CONCEPT_FOLDER -> linkedMapOf(
+            "detailFolders" to rows(
+                """
+                    SELECT d.id, d.name, d.sort_order, d.created_source, d.version, d.deleted_at,
+                           COUNT(a.photo_id) AS photo_count
+                    FROM detail_folders d
+                    LEFT JOIN photo_category_assignments a ON a.detail_folder_id = d.id
+                    WHERE d.concept_folder_id = :id
+                    GROUP BY d.id ORDER BY d.sort_order, d.id
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("id"),
+                "name" to rs.getString("name"),
+                "sortOrder" to rs.getInt("sort_order"),
+                "createdSource" to rs.getString("created_source"),
+                "version" to rs.getLong("version"),
+                "deleted" to (rs.getObject("deleted_at") != null),
+                "photoCount" to rs.getLong("photo_count"),
+            ) },
+            "collaboration" to rows(
+                """
+                    SELECT id, gallery_id, name, revoked_at, expires_at, version, deleted_at, created_at
+                    FROM collab_sessions WHERE concept_folder_id = :id
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("id"),
+                "galleryId" to rs.getLong("gallery_id"),
+                "name" to rs.getString("name"),
+                "revokedAt" to rs.getObject("revoked_at"),
+                "expiresAt" to rs.getObject("expires_at"),
+                "version" to rs.getLong("version"),
+                "deleted" to (rs.getObject("deleted_at") != null),
+                "createdAt" to rs.getObject("created_at"),
+            ) },
+            "categoryAssignments" to categoryAssignmentRows(
+                "WHERE d.concept_folder_id = :id ORDER BY a.assigned_at DESC, a.photo_id LIMIT 100",
+                id,
+            ),
+        )
+        AdminResourceType.DETAIL_FOLDER -> linkedMapOf(
+            "categoryAssignments" to categoryAssignmentRows(
+                "WHERE a.detail_folder_id = :id ORDER BY a.assigned_at DESC, a.photo_id LIMIT 100",
+                id,
+            ),
+        )
+        AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT -> linkedMapOf(
+            "categorizationJobs" to rows(
+                """
+                    SELECT j.id, j.gallery_id, j.mode, j.status, j.started_at, j.completed_at,
+                           j.failure_code, j.version
+                    FROM categorization_job_photos p
+                    JOIN categorization_jobs j ON j.id = p.job_id
+                    WHERE p.photo_id = :id ORDER BY j.id DESC LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("id"),
+                "galleryId" to rs.getLong("gallery_id"),
+                "mode" to rs.getString("mode"),
+                "status" to rs.getString("status"),
+                "startedAt" to rs.getObject("started_at"),
+                "completedAt" to rs.getObject("completed_at"),
+                "failureCode" to rs.getString("failure_code"),
+                "version" to rs.getLong("version"),
+            ) },
+        )
+        AdminResourceType.CATEGORIZATION_JOB -> linkedMapOf(
+            "photos" to rows(
+                """
+                    SELECT p.photo_id, photo.gallery_id, photo.original_file_name, photo.status,
+                           a.detail_folder_id, a.assigned_source
+                    FROM categorization_job_photos p
+                    JOIN photos photo ON photo.id = p.photo_id
+                    LEFT JOIN photo_category_assignments a ON a.photo_id = p.photo_id
+                    WHERE p.job_id = :id ORDER BY p.photo_id LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "photoId" to rs.getLong("photo_id"),
+                "galleryId" to rs.getLong("gallery_id"),
+                "fileName" to rs.getString("original_file_name"),
+                "photoStatus" to rs.getString("status"),
+                "detailFolderId" to rs.getObject("detail_folder_id"),
+                "assignedSource" to rs.getString("assigned_source"),
+            ) },
+        )
+        AdminResourceType.PHOTO_RATING -> emptyMap()
         AdminResourceType.SELECTION -> linkedMapOf(
             "aiJobs" to rows(
                 """
@@ -576,16 +1097,17 @@ class AdminResourceContextRepository(
         AdminResourceType.COLLABORATION -> linkedMapOf(
             "sharedPhotos" to rows(
                 """
-                    SELECT cp.id AS collab_photo_id, cp.photo_id, p.original_file_name,
-                           p.status, cp.created_at
-                    FROM collab_photos cp
-                    JOIN photos p ON p.id = cp.photo_id
-                    WHERE cp.collab_session_id = :id
-                    ORDER BY cp.id LIMIT 100
+                    SELECT p.id AS photo_id, p.original_file_name,
+                           p.status, a.assigned_at AS created_at
+                    FROM collab_sessions s
+                    JOIN detail_folders d ON d.concept_folder_id = s.concept_folder_id AND d.deleted_at IS NULL
+                    JOIN photo_category_assignments a ON a.detail_folder_id = d.id
+                    JOIN photos p ON p.id = a.photo_id
+                    WHERE s.id = :id
+                    ORDER BY p.id LIMIT 100
                 """.trimIndent(),
                 id,
             ) { rs -> linkedMapOf(
-                "collabPhotoId" to rs.getLong("collab_photo_id"),
                 "photoId" to rs.getLong("photo_id"),
                 "fileName" to rs.getString("original_file_name"),
                 "status" to rs.getString("status"),
@@ -597,17 +1119,15 @@ class AdminResourceContextRepository(
             ) { rs -> linkedMapOf("id" to rs.getLong("id"), "nickname" to rs.getString("nickname"), "createdAt" to rs.getObject("created_at")) },
             "comments" to rows(
                 """
-                    SELECT c.id, p.id AS collab_photo_id, p.photo_id, g.id AS guest_id, g.nickname,
+                    SELECT c.id, c.photo_id, g.id AS guest_id, g.nickname,
                            c.content, c.version, c.deleted_at, c.created_at
                     FROM collab_photo_comments c
-                    JOIN collab_photos p ON p.id = c.collab_photo_id
                     JOIN collab_guests g ON g.id = c.collab_guest_id
-                    WHERE p.collab_session_id = :id ORDER BY c.id DESC LIMIT 100
+                    WHERE c.collab_session_id = :id ORDER BY c.id DESC LIMIT 100
                 """.trimIndent(),
                 id,
             ) { rs -> linkedMapOf(
                 "id" to rs.getLong("id"),
-                "collabPhotoId" to rs.getLong("collab_photo_id"),
                 "photoId" to rs.getLong("photo_id"),
                 "guestId" to rs.getLong("guest_id"),
                 "nickname" to rs.getString("nickname"),
@@ -618,17 +1138,15 @@ class AdminResourceContextRepository(
             ) },
             "likes" to rows(
                 """
-                    SELECT l.id, p.id AS collab_photo_id, p.photo_id, g.id AS guest_id,
+                    SELECT l.id, l.photo_id, g.id AS guest_id,
                            g.nickname, l.version, l.deleted_at, l.created_at
                     FROM collab_photo_likes l
-                    JOIN collab_photos p ON p.id = l.collab_photo_id
                     JOIN collab_guests g ON g.id = l.collab_guest_id
-                    WHERE p.collab_session_id = :id ORDER BY l.id DESC LIMIT 100
+                    WHERE l.collab_session_id = :id ORDER BY l.id DESC LIMIT 100
                 """.trimIndent(),
                 id,
             ) { rs -> linkedMapOf(
                 "id" to rs.getLong("id"),
-                "collabPhotoId" to rs.getLong("collab_photo_id"),
                 "photoId" to rs.getLong("photo_id"),
                 "guestId" to rs.getLong("guest_id"),
                 "nickname" to rs.getString("nickname"),
@@ -645,13 +1163,13 @@ class AdminResourceContextRepository(
                     FROM admin_album_templates t
                     JOIN photo_folder_groups album ON album.id = :id
                     JOIN galleries gallery ON gallery.id = album.gallery_id
-                    WHERE t.studio_id = gallery.studio_id
+                    WHERE t.studio_id = gallery.workspace_id
                     ORDER BY t.name, t.id
                 """.trimIndent(),
                 id,
             ) { rs -> linkedMapOf(
                 "id" to rs.getLong("id"),
-                "studioId" to rs.getLong("studio_id"),
+                "workspaceId" to rs.getLong("studio_id"),
                 "name" to rs.getString("name"),
                 "layout" to rs.getString("layout_json"),
                 "version" to rs.getLong("version"),
@@ -719,7 +1237,60 @@ class AdminResourceContextRepository(
                 "deliveryNote" to rs.getString("delivery_note"),
             ) },
         )
-    }.filterValues { it.isNotEmpty() }
+    }.filter { (name, rows) ->
+        rows.isNotEmpty() || (
+            type in USER_NOTIFICATION_CONTEXT_TYPES && name in USER_NOTIFICATION_SECTION_NAMES
+        )
+    }.toMap(linkedMapOf())
+
+    /** 사용자 알림 조회는 JDBC read model만 사용하며 알림 publisher나 관리자 inbox를 건드리지 않는다. */
+    private fun userNotification(rs: ResultSet): Map<String, Any?> = linkedMapOf(
+        "id" to rs.getLong("id"),
+        "userId" to rs.getLong("user_id"),
+        "type" to rs.getString("type"),
+        "scope" to rs.getString("scope"),
+        "scopeId" to rs.getObject("scope_id"),
+        "title" to rs.getString("title"),
+        "message" to rs.getString("message"),
+        "readAt" to rs.getObject("read_at"),
+        "createdAt" to rs.getObject("created_at"),
+    )
+
+    private fun userNotificationSettings(
+        rs: ResultSet,
+        includeNickname: Boolean = false,
+    ): Map<String, Any?> = linkedMapOf<String, Any?>(
+        "userId" to rs.getLong("user_id"),
+        "emailEnabled" to rs.getBoolean("email_enabled"),
+        "browserEnabled" to rs.getBoolean("browser_enabled"),
+        "settingsPersisted" to rs.getBoolean("persisted"),
+        "version" to rs.getLong("version"),
+        "updatedAt" to rs.getObject("updated_at"),
+    ).apply {
+        if (includeNickname) put("nickname", rs.getString("nickname"))
+    }
+
+    private fun categoryAssignmentRows(predicate: String, id: Long): List<Map<String, Any?>> = rows(
+        """
+            SELECT a.photo_id, a.detail_folder_id, d.concept_folder_id, p.original_file_name,
+                   a.assigned_by_user_id, a.assigned_source, a.confidence, a.assigned_at, a.version
+            FROM photo_category_assignments a
+            JOIN detail_folders d ON d.id = a.detail_folder_id
+            JOIN photos p ON p.id = a.photo_id
+            $predicate
+        """.trimIndent(),
+        id,
+    ) { rs -> linkedMapOf(
+        "photoId" to rs.getLong("photo_id"),
+        "detailFolderId" to rs.getLong("detail_folder_id"),
+        "conceptFolderId" to rs.getLong("concept_folder_id"),
+        "fileName" to rs.getString("original_file_name"),
+        "assignedByUserId" to rs.getObject("assigned_by_user_id"),
+        "assignedSource" to rs.getString("assigned_source"),
+        "confidence" to rs.getObject("confidence"),
+        "assignedAt" to rs.getObject("assigned_at"),
+        "version" to rs.getLong("version"),
+    ) }
 
     private fun references(type: AdminResourceType, sql: String, id: Long): List<ResourceReference> =
         jdbcClient.sql(sql)
@@ -750,6 +1321,15 @@ class AdminResourceContextRepository(
         // 템플릿 최대 1,000 슬롯과 같은 수의 수동 overflow를 한 응답에서 검토한다.
         // 이를 넘으면 응답 sectionPageInfo가 절단 사실과 실제 합계를 명시한다.
         const val ALBUM_SECTION_LIMIT = 2_000
+        val USER_NOTIFICATION_CONTEXT_TYPES = setOf(
+            AdminResourceType.USER,
+            AdminResourceType.STUDIO,
+            AdminResourceType.GALLERY,
+        )
+        val USER_NOTIFICATION_SECTION_NAMES = setOf(
+            "userNotifications",
+            "userNotificationSettings",
+        )
     }
 
     data class ResourceReference(val type: AdminResourceType, val id: Long)

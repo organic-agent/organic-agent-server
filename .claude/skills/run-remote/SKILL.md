@@ -103,13 +103,13 @@ EOF
 
 ```bash
 curl -s -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8080/api/v1/galleries/1/photo-clusters?level=3"
+  "http://localhost:8080/api/v1/galleries/1/concept-folders"
 ```
 
-- 실갤러리: 1(본식 743장), 2(57장) — 둘 다 임베딩·EXIF 완비. 4·5는 목/샘플.
+- 실갤러리: 1(본식 743장), 2(57장) — AI 분석 결과와 Concept/Detail 구조를 확인한다. 4·5는 목/샘플.
 - **GET만 호출한다.** 운영 데이터가 뒤에 있다 — 쓰기 API(업로드·삭제·셀렉 확정 등)는
   이 스킬로 부르지 않는다.
-- 응답이 크면 python으로 요약해서 보라(묶음 수·크기 분포 등).
+- 응답이 크면 python으로 요약해서 보라(Concept/Detail 수·사진 배정 분포 등).
 
 ## Phase 6: 정리
 

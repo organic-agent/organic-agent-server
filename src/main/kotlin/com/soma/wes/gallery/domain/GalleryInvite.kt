@@ -3,6 +3,8 @@ package com.soma.wes.gallery.domain
 import com.soma.wes.global.BaseEntity
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
+import jakarta.persistence.Enumerated
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
@@ -31,6 +33,16 @@ class GalleryInvite(
     @Column(nullable = false, updatable = false, length = 255)
     val token: String,
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, updatable = false, length = 30)
+    val kind: GalleryInviteKind = GalleryInviteKind.GALLERY_MEMBER,
+
+    @Column(name = "max_uses", nullable = false, updatable = false)
+    val maxUses: Int = 2,
+
+    @Column(name = "used_count", nullable = false)
+    var usedCount: Int = 0,
+
     @Column(name = "expires_at", nullable = false)
     var expiresAt: ZonedDateTime,
 
@@ -52,11 +64,15 @@ class GalleryInvite(
 
     fun isExpiredAt(at: ZonedDateTime): Boolean = expiresAt.isBefore(at)
 
-    fun isUsableAt(at: ZonedDateTime): Boolean = !isRevoked && !isExpiredAt(at)
+    val isFull: Boolean
+        get() = usedCount >= maxUses
+
+    fun isUsableAt(at: ZonedDateTime): Boolean = !isRevoked && !isExpiredAt(at) && !isFull
 
     fun statusAt(at: ZonedDateTime): GalleryInviteStatus = when {
         isRevoked -> GalleryInviteStatus.REVOKED
         isExpiredAt(at) -> GalleryInviteStatus.EXPIRED
+        isFull -> GalleryInviteStatus.FULL
         else -> GalleryInviteStatus.ACTIVE
     }
 
@@ -69,5 +85,12 @@ class GalleryInvite(
 
     fun extendExpiry(expiresAt: ZonedDateTime) {
         this.expiresAt = expiresAt
+    }
+
+    fun consume() {
+        if (isFull) {
+            throw IllegalStateException("초대 사용 횟수를 초과했습니다.")
+        }
+        usedCount += 1
     }
 }

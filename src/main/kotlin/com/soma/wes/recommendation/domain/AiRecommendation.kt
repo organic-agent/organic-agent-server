@@ -56,7 +56,7 @@ class AiRecommendation(
 
     /**
      * 추천 당시의 자식 폴더. 세트에 안 들어간 사진(미분류 가상 폴더)은 null. 재현용이다 —
-     * 폴더 화면은 현재 `photo_folder_items` 조인으로 그리므로 사용자가 사진을 옮겨도 안 깨진다.
+     * 현재 세부폴더 id를 재현용으로 남기며, 화면은 사진의 현재 카테고리 배정과 구분해 다룬다.
      */
     @Column(name = "folder_id", updatable = false)
     val folderId: Long? = null

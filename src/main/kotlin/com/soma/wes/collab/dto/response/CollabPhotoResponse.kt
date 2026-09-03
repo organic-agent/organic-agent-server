@@ -6,8 +6,8 @@ import io.swagger.v3.oas.annotations.media.Schema
 @Schema(description = "협업 세션에 담긴 사진 한 장")
 data class CollabPhotoResponse(
 
-    @field:Schema(description = "댓글·좋아요는 이 id로 남긴다. 사진 id가 아니다 — 같은 사진이 다른 세션에 담길 수 있다.")
-    val collabPhotoId: Long,
+    @field:Schema(description = "댓글·좋아요 대상이 되는 사진 id. 세션의 컨셉 카테고리에 현재 배정된 사진이다.")
+    val photoId: Long,
 
     @field:Schema(description = "사진 자체. 하객 화면에도 같은 형태로 나가며 별점(score)은 늘 비어 있다.")
     val photo: PhotoResponse,

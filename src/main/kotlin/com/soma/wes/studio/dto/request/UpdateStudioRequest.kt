@@ -19,4 +19,10 @@ data class UpdateStudioRequest(
         example = "organic-studio",
     )
     val galleryUrl: String,
+
+    @field:Size(max = 100)
+    val contact: String? = null,
+
+    @field:Size(max = 500)
+    val description: String? = null,
 )

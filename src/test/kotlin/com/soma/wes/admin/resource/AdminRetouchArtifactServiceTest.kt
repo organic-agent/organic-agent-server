@@ -508,7 +508,7 @@ class AdminRetouchArtifactServiceTest @Autowired constructor(
             CreateAdminResourceRequest(
                 "[TEST_OPERATION] 산출물 스튜디오",
                 mapOf(
-                    "userId" to user.id,
+                    "ownerUserId" to user.id,
                     "name" to "산출물 스튜디오",
                     "galleryUrl" to "retouch-artifact-gallery",
                 ),
@@ -520,7 +520,7 @@ class AdminRetouchArtifactServiceTest @Autowired constructor(
             AdminResourceType.GALLERY,
             CreateAdminResourceRequest(
                 "[TEST_OPERATION] 산출물 갤러리",
-                mapOf("studioId" to studio.id, "title" to "산출물 갤러리"),
+                mapOf("workspaceId" to studio.id, "title" to "산출물 갤러리"),
             ),
             "127.0.0.1",
         )

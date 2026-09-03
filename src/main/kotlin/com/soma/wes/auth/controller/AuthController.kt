@@ -4,7 +4,9 @@ import com.soma.wes.auth.controller.docs.AuthControllerDocs
 import com.soma.wes.auth.dto.request.ReissueRequest
 import com.soma.wes.auth.dto.response.ReissueResponse
 import com.soma.wes.auth.service.AuthTokenService
+import com.soma.wes.auth.domain.LoginUser
 import org.springframework.http.ResponseEntity
+import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
@@ -29,5 +31,13 @@ class AuthController(
         val result = authTokenService.reissue(request)
 
         return ResponseEntity.ok(result)
+    }
+
+    @PostMapping("/logout")
+    override fun logout(
+        @AuthenticationPrincipal loginUser: LoginUser,
+    ): ResponseEntity<Unit> {
+        authTokenService.logout(loginUser.id)
+        return ResponseEntity.noContent().build()
     }
 }

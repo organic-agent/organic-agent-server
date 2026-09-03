@@ -41,4 +41,13 @@ class GalleryMemberController(
 
         return ResponseEntity.status(status).build()
     }
+
+    @DeleteMapping("/me")
+    override fun leave(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+    ): ResponseEntity<Unit> {
+        galleryMemberService.leave(galleryId, loginUser.id)
+        return ResponseEntity.noContent().build()
+    }
 }

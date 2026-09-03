@@ -47,15 +47,4 @@ enum class FolderErrorCode(
      * 거절하는 것과 같은 이유다.
      */
     DUPLICATE_PHOTO_IN_GROUP(HttpStatus.CONFLICT, "FOLDER_409_1", "이미 같은 부모 폴더에 담긴 사진입니다."),
-
-    /**
-     * AI 폴더를 만들려는데 컨셉 배정이 없는 경우 — 분석(naming)이 끝난 적이 없거나 아직 도는 중이다.
-     *
-     * AI 분석(POST /ai-analysis)이 먼저다. full 잡이 끝에 이름 붙이기까지 이어 돌리므로 보통은
-     * full DONE이면 배정이 있다 — 이름 붙이기만 실패했다면 mode=NAMING으로 다시 요청한다.
-     */
-    ANALYSIS_NOT_COMPLETE(HttpStatus.CONFLICT, "FOLDER_409_2", "AI 분석이 끝나지 않아 폴더를 만들 수 없습니다."),
-
-    /** 정리할 사진이 없는 경우 — 갤러리가 비었거나 분석 행이 있는 사진이 한 장도 없다. */
-    NO_PHOTOS_TO_ORGANIZE(HttpStatus.CONFLICT, "FOLDER_409_3", "정리할 사진이 없습니다."),
 }

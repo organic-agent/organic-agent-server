@@ -39,12 +39,14 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
             "nickname" to "원본 사용자",
         ))
         val studio = create(actor.requiredId, AdminResourceType.STUDIO, mapOf(
-            "userId" to user.id,
+            "ownerUserId" to user.id,
             "name" to "원본 스튜디오",
             "galleryUrl" to "restore-eight",
+            "contact" to "02-111-2222",
+            "description" to "원본 소개",
         ))
         val gallery = create(actor.requiredId, AdminResourceType.GALLERY, mapOf(
-            "studioId" to studio.id,
+            "workspaceId" to studio.id,
             "title" to "원본 갤러리",
         ))
         val photo = create(actor.requiredId, AdminResourceType.PHOTO, mapOf(
@@ -56,6 +58,7 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
         ))
         val collaboration = create(actor.requiredId, AdminResourceType.COLLABORATION, mapOf(
             "galleryId" to gallery.id,
+            "conceptFolderId" to createConceptFolder(gallery.id),
             "name" to "원본 협업",
         ))
         val album = create(actor.requiredId, AdminResourceType.ALBUM, mapOf(
@@ -64,7 +67,7 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
         ))
         val cases = listOf(
             RestoreCase(AdminResourceType.USER, user.id, "nickname", "원본 사용자", "변경 사용자"),
-            RestoreCase(AdminResourceType.STUDIO, studio.id, "name", "원본 스튜디오", "변경 스튜디오"),
+            RestoreCase(AdminResourceType.STUDIO, studio.id, "contact", "02-111-2222", "010-9999-0000"),
             RestoreCase(AdminResourceType.GALLERY, gallery.id, "title", "원본 갤러리", "변경 갤러리"),
             RestoreCase(AdminResourceType.PHOTO, photo.id, "displayOrder", 10, 20),
             RestoreCase(AdminResourceType.COLLABORATION, collaboration.id, "name", "원본 협업", "변경 협업"),
@@ -78,6 +81,17 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
         }
 
         cases.forEach { target ->
+            when (target.type) {
+                AdminResourceType.STUDIO -> jdbcTemplate.update(
+                    "UPDATE studios SET inflow_channel = 'LEGACY_BLOG' WHERE workspace_id = ?",
+                    target.id,
+                )
+                AdminResourceType.GALLERY -> jdbcTemplate.update(
+                    "UPDATE galleries SET stage = 'RETOUCH' WHERE id = ?",
+                    target.id,
+                )
+                else -> Unit
+            }
             val beforeUpdate = resourceService.get(target.type, target.id)
             resourceService.update(
                 actor.requiredId,
@@ -97,6 +111,12 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
 
             val restored = resourceService.get(target.type, target.id)
             assertThat(restored.fields[target.field]).isEqualTo(target.original)
+            if (target.type == AdminResourceType.STUDIO) {
+                assertThat(restored.fields["inflowChannel"]).isEqualTo("LEGACY_BLOG")
+            }
+            if (target.type == AdminResourceType.GALLERY) {
+                assertThat(restored.fields["stage"]).isEqualTo("RETOUCH")
+            }
             assertThat(restored.version).isEqualTo(current.version + 1)
             assertThat(queryService.getDetail(auditId).audit.action).isEqualTo(AdminAuditAction.REVISION_RESTORED)
             assertThat(
@@ -104,12 +124,7 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
                     target.type.auditTargetType,
                     target.id.toString(),
                 ),
-            ).hasSize(if (target.type == AdminResourceType.USER) 4 else 3)
-            if (target.type == AdminResourceType.USER) {
-                // 스튜디오 생성이 남긴 USER 타입 리비전은 별도 증거로 유지하되, 더 오래된
-                // 사용자 생성 리비전을 복원해도 일회성 타입 확정을 되돌리지 않는다.
-                assertThat(restored.fields["userType"]).isEqualTo("PHOTOGRAPHER")
-            }
+            ).hasSize(3)
         }
     }
 
@@ -123,7 +138,7 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
             "provider" to "NAVER", "providerId" to "revision-owner-2", "nickname" to "둘째 소유자",
         ))
         val studio = create(actor.requiredId, AdminResourceType.STUDIO, mapOf(
-            "userId" to firstOwner.id, "name" to "원본 스튜디오", "galleryUrl" to "revision-boundary",
+            "ownerUserId" to firstOwner.id, "name" to "원본 스튜디오", "galleryUrl" to "revision-boundary",
         ))
         val revision = revisionRepository.findAllByTargetTypeAndTargetIdOrderByRevisionNumberDesc(
             AdminResourceType.STUDIO.auditTargetType,
@@ -207,7 +222,7 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
                    before_restore_payload,
                    jsonb_set(
                     CAST(after_restore_payload AS JSONB),
-                    '{userId}',
+                    '{ownerUserId}',
                     to_jsonb(CAST(? AS BIGINT))
                    )::TEXT,
                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
@@ -221,7 +236,7 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
         assertRestoreError(tamperedRelationRevisionId, changed.version, AdminErrorCode.REVISION_RESTORE_UNSUPPORTED)
 
         val unchanged = resourceService.get(AdminResourceType.STUDIO, studio.id)
-        assertThat(unchanged.fields["userId"]).isEqualTo(firstOwner.id)
+        assertThat(unchanged.fields["ownerUserId"]).isEqualTo(firstOwner.id)
         assertThat(unchanged.fields["name"]).isEqualTo("변경 스튜디오")
         assertThat(unchanged.version).isEqualTo(changed.version)
     }
@@ -233,10 +248,10 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
             "provider" to "GOOGLE", "providerId" to "unsupported-restore-user", "nickname" to "사용자",
         ))
         val studio = create(actor.requiredId, AdminResourceType.STUDIO, mapOf(
-            "userId" to user.id, "name" to "스튜디오", "galleryUrl" to "unsupported-restore",
+            "ownerUserId" to user.id, "name" to "스튜디오", "galleryUrl" to "unsupported-restore",
         ))
         val gallery = create(actor.requiredId, AdminResourceType.GALLERY, mapOf(
-            "studioId" to studio.id, "title" to "갤러리",
+            "workspaceId" to studio.id, "title" to "갤러리",
         ))
         val selection = create(actor.requiredId, AdminResourceType.SELECTION, mapOf("galleryId" to gallery.id))
         val retouch = create(actor.requiredId, AdminResourceType.RETOUCH_REQUEST, mapOf(
@@ -286,6 +301,17 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
 
     private fun create(actorId: Long, type: AdminResourceType, fields: Map<String, Any?>) =
         resourceService.create(actorId, type, CreateAdminResourceRequest("리비전 테스트 생성", fields), "127.0.0.1")
+
+    private fun createConceptFolder(galleryId: Long): Long = jdbcTemplate.queryForObject(
+        """
+        INSERT INTO concept_folders
+            (gallery_id, name, sort_order, created_source, version, created_at, updated_at)
+        VALUES (?, '리비전 복원 컨셉', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING id
+        """.trimIndent(),
+        Long::class.java,
+        galleryId,
+    )!!
 
     private data class RestoreCase(
         val type: AdminResourceType,

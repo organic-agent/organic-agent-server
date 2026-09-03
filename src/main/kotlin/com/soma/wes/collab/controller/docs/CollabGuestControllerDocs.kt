@@ -139,7 +139,8 @@ interface CollabGuestControllerDocs {
     @Operation(
         summary = "하객이 보는 사진 목록",
         description = """
-            부부가 담은 사진만 온다. 사진마다 지금까지 모인 좋아요 수와 댓글 수가 함께 온다.
+            링크의 컨셉 아래 상세폴더에 현재 배정된 사진만 온다. 사진마다 지금까지 모인
+            좋아요 수와 댓글 수가 함께 온다.
 
             `X-Guest-Token`을 보내면 자기가 누른 사진의 `liked`가 true로 온다. 없어도
             사진은 그대로 보인다 — 사진을 보기도 전에 닉네임부터 받게 하지 않으려는 것이다.
@@ -207,7 +208,7 @@ interface CollabGuestControllerDocs {
     @SecurityRequirements
     fun listComments(
         collabToken: String,
-        collabPhotoId: Long,
+        photoId: Long,
         guestToken: String?,
         page: Int,
         size: Int,
@@ -281,7 +282,7 @@ interface CollabGuestControllerDocs {
     @SecurityRequirements // 로그인 토큰이 아니라 하객 토큰을 쓰는 API다.
     fun writeComment(
         collabToken: String,
-        collabPhotoId: Long,
+        photoId: Long,
         guestToken: String?,
         request: WriteCollabCommentRequest,
     ): ResponseEntity<CollabCommentResponse>
@@ -390,7 +391,7 @@ interface CollabGuestControllerDocs {
     @SecurityRequirements
     fun like(
         collabToken: String,
-        collabPhotoId: Long,
+        photoId: Long,
         guestToken: String?,
     ): ResponseEntity<Unit>
 
@@ -409,5 +410,5 @@ interface CollabGuestControllerDocs {
     )
     @ApiResponses(ApiResponse(responseCode = "204", description = "취소 성공"))
     @SecurityRequirements
-    fun cancelLike(collabToken: String, collabPhotoId: Long, guestToken: String?): ResponseEntity<Unit>
+    fun cancelLike(collabToken: String, photoId: Long, guestToken: String?): ResponseEntity<Unit>
 }

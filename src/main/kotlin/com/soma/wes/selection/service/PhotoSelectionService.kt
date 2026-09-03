@@ -4,6 +4,9 @@ import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.repository.requireWithLockById
 import com.soma.wes.gallery.support.GalleryAccessPolicy
+import com.soma.wes.notification.domain.UserNotificationScope
+import com.soma.wes.notification.domain.UserNotificationType
+import com.soma.wes.notification.service.UserNotificationPublisher
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoStatus
@@ -21,6 +24,8 @@ import com.soma.wes.selection.exception.SelectionErrorCode
 import com.soma.wes.selection.exception.SelectionException
 import com.soma.wes.selection.repository.PhotoSelectionItemRepository
 import com.soma.wes.selection.repository.PhotoSelectionRepository
+import com.soma.wes.workspace.domain.WorkspaceRole
+import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -41,6 +46,8 @@ class PhotoSelectionService(
     private val photoStorage: PhotoStorage,
     private val properties: StorageProperties,
     private val clock: Clock,
+    private val workspaceMemberRepository: WorkspaceMemberRepository,
+    private val notificationPublisher: UserNotificationPublisher,
 ) {
 
     /**
@@ -59,7 +66,7 @@ class PhotoSelectionService(
      */
     @Transactional
     fun select(galleryId: Long, userId: Long, request: SelectPhotosRequest): PhotoSelectionResponse {
-        galleryAccessPolicy.requireCouple(galleryId, userId)
+        galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
         val gallery = galleryRepository.requireWithLockById(galleryId)
         val selection = loadOrCreate(galleryId)
@@ -107,7 +114,7 @@ class PhotoSelectionService(
      */
     @Transactional
     fun deselect(galleryId: Long, userId: Long, request: DeselectPhotosRequest): PhotoSelectionResponse {
-        galleryAccessPolicy.requireCouple(galleryId, userId)
+        galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
         val gallery = galleryRepository.requireWithLockById(galleryId)
         val selection = photoSelectionRepository.findByGalleryId(galleryId)
@@ -127,7 +134,7 @@ class PhotoSelectionService(
      */
     @Transactional
     fun deselectPhoto(galleryId: Long, photoId: Long, userId: Long) {
-        galleryAccessPolicy.requireCouple(galleryId, userId)
+        galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
         galleryRepository.requireWithLockById(galleryId)
         val selection = photoSelectionRepository.findByGalleryId(galleryId)
@@ -144,7 +151,7 @@ class PhotoSelectionService(
      */
     @Transactional
     fun submit(galleryId: Long, userId: Long): PhotoSelectionResponse {
-        galleryAccessPolicy.requireCouple(galleryId, userId)
+        galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
         val gallery = galleryRepository.requireWithLockById(galleryId)
         val selection = photoSelectionRepository.findByGalleryId(galleryId)
@@ -154,7 +161,18 @@ class PhotoSelectionService(
         // "몇 장을 제출했는지"를 두 값이 다르게 말하지 않는다.
         val items = photoSelectionItemRepository.findAllBySelectionId(selection.requiredId)
         val photos = selectedPhotoResponses(selection.galleryId, items)
-        selection.submit(photos.size, ZonedDateTime.now(clock))
+        selection.submit(photos.size, userId, ZonedDateTime.now(clock))
+        gallery.markSelectionCompleted()
+        notificationPublisher.publish(
+            userIds = workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId)
+                .filter { it.role == WorkspaceRole.OWNER }
+                .map { it.userId },
+            type = UserNotificationType.SELECTION_SUBMITTED,
+            scope = UserNotificationScope.GALLERY,
+            scopeId = galleryId,
+            title = "사진 선택이 제출되었습니다",
+            message = "${gallery.title}의 사진 선택이 완료되었습니다.",
+        )
 
         return PhotoSelectionResponse.of(
             selection = selection,
@@ -176,6 +194,7 @@ class PhotoSelectionService(
             ?: throw SelectionException(SelectionErrorCode.SELECTION_NOT_SUBMITTED)
 
         selection.withdraw()
+        gallery.markSelectionInProgress()
         return responseOf(gallery, selection)
     }
 

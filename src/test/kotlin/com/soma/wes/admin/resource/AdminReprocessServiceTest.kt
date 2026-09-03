@@ -89,7 +89,7 @@ class AdminReprocessServiceTest @Autowired constructor(
             AdminResourceType.STUDIO,
             CreateAdminResourceRequest(
                 "재처리 테스트 스튜디오",
-                mapOf("userId" to user.id, "name" to "재처리", "galleryUrl" to "reprocess-$actorAdminId"),
+                mapOf("ownerUserId" to user.id, "name" to "재처리", "galleryUrl" to "reprocess-$actorAdminId"),
             ),
             "127.0.0.1",
         )
@@ -98,7 +98,7 @@ class AdminReprocessServiceTest @Autowired constructor(
             AdminResourceType.GALLERY,
             CreateAdminResourceRequest(
                 "재처리 테스트 갤러리",
-                mapOf("studioId" to studio.id, "title" to "재처리 갤러리"),
+                mapOf("workspaceId" to studio.id, "title" to "재처리 갤러리"),
             ),
             "127.0.0.1",
         )

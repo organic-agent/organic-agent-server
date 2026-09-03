@@ -5,6 +5,9 @@ import com.soma.wes.collab.config.CollabProperties
 import com.soma.wes.collab.service.CollabSessionQueryService
 import com.soma.wes.collab.support.CollabLinkResolver
 import com.soma.wes.collab.support.CollabPhotoViewAssembler
+import com.soma.wes.category.service.CategorizationService
+import com.soma.wes.category.service.AiCategoryFolderService
+import com.soma.wes.category.support.AiCategoryFolderPlanner
 import com.soma.wes.global.config.AwsLambdaConfig
 import com.soma.wes.embedding.config.EmbeddingProperties
 import com.soma.wes.embedding.infrastructure.LambdaEmbeddingInvoker
@@ -25,6 +28,8 @@ import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.infrastructure.S3PhotoStorage
 import com.soma.wes.photo.service.PhotoService
 import com.soma.wes.photo.support.PhotoViewAssembler
+import com.soma.wes.notification.service.UserNotificationPublisher
+import com.soma.wes.recommendation.support.AiConceptAssignmentLoader
 import com.soma.wes.retouch.service.RetouchService
 import com.soma.wes.retouch.support.RetouchPhotoLoader
 import com.soma.wes.retouch.support.RetouchResultLoader
@@ -37,6 +42,7 @@ import com.soma.wes.trash.repository.ProductChildTrashRepository
 import com.soma.wes.trash.service.ProductChildTrashService
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Configuration
+import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 
 /**
@@ -86,5 +92,16 @@ import org.springframework.context.annotation.Import
     RetouchViewAssembler::class,
     ProductChildTrashRepository::class,
     ProductChildTrashService::class,
+    AiCategoryFolderPlanner::class,
+    AiConceptAssignmentLoader::class,
+    AiCategoryFolderService::class,
+    CategorizationService::class,
 )
-class AdminDomainDependenciesConfiguration
+class AdminDomainDependenciesConfiguration {
+    /**
+     * BackOffice는 사용자 알림과 설정을 읽기 전용 운영 정보로만 노출한다. 관리자 mutation은
+     * 관리자 감사/inbox에만 기록하며 제품 사용자 알림을 자동 생성하지 않는다.
+     */
+    @Bean
+    fun userNotificationPublisher(): UserNotificationPublisher = UserNotificationPublisher { _, _, _, _, _, _ -> }
+}

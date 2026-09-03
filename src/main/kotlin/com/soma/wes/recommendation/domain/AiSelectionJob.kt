@@ -30,7 +30,7 @@ class AiSelectionJob(
     val mode: AiSelectionMode,
 
     /**
-     * 요청 시점에 기준으로 삼은 AI 폴더 세트([AiAnalysisJob]의 id = `photo_folder_groups.analysis_job_id`).
+     * 요청 시점에 기준으로 삼은 AI 카테고리 세트([AiAnalysisJob]의 id = `concept_folders.analysis_job_id`).
      * 프론트가 현재 보는 세트와 다르면 "추천을 다시 받으세요"를 띄우는 재현용 값이다.
      */
     @Column(name = "folder_set_job_id", updatable = false)

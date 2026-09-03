@@ -9,9 +9,9 @@ import org.springframework.data.jpa.repository.Lock
 
 interface GalleryRepository : JpaRepository<Gallery, Long> {
 
-    fun findAllByStudioId(studioId: Long): List<Gallery>
+    fun findAllByStudioId(workspaceId: Long): List<Gallery>
 
-    fun findAllByStudioIdIn(studioIds: Collection<Long>): List<Gallery>
+    fun findAllByStudioIdIn(workspaceIds: Collection<Long>): List<Gallery>
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     fun findWithLockById(id: Long): Gallery?

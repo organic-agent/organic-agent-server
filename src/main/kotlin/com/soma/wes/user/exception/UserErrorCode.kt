@@ -9,6 +9,5 @@ enum class UserErrorCode(
     override val message: String,
 ) : ErrorCode {
 
-    USER_TYPE_ALREADY_SELECTED(HttpStatus.CONFLICT, "USER_409_1", "이미 사용자 종류가 정해졌습니다."),
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "USER_404_1", "존재하지 않는 사용자입니다."),
 }

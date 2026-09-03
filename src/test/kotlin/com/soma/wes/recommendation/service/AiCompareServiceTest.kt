@@ -1,6 +1,6 @@
 package com.soma.wes.recommendation.service
 
-import com.soma.wes.gallery.domain.GalleryMember
+import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoAnalysis
@@ -163,7 +163,7 @@ class AiCompareServiceTest {
     }
 
     private fun stubAccess() {
-        whenever(galleryAccessPolicy.requireCouple(GALLERY_ID, USER_ID)).thenReturn(mock<GalleryMember>())
+        whenever(galleryAccessPolicy.requireCouple(GALLERY_ID, USER_ID)).thenReturn(mock<Gallery>())
     }
 
     private fun stubComparablePhotos() {

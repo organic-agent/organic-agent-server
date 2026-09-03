@@ -23,18 +23,16 @@ class AdminChildTrashRepository(
         val key = when (type) {
             AdminChildTrashType.COLLAB_COMMENT -> jdbcClient.sql(
                 """
-                SELECT 'PHOTO' AS resource_type, item.photo_id AS resource_id
+                SELECT 'PHOTO' AS resource_type, child.photo_id AS resource_id
                 FROM collab_photo_comments child
-                JOIN collab_photos item ON item.id = child.collab_photo_id
-                WHERE child.id = :resourceId AND item.collab_session_id = :parentId
+                WHERE child.id = :resourceId AND child.collab_session_id = :parentId
                 """.trimIndent(),
             )
             AdminChildTrashType.COLLAB_LIKE -> jdbcClient.sql(
                 """
-                SELECT 'PHOTO' AS resource_type, item.photo_id AS resource_id
+                SELECT 'PHOTO' AS resource_type, child.photo_id AS resource_id
                 FROM collab_photo_likes child
-                JOIN collab_photos item ON item.id = child.collab_photo_id
-                WHERE child.id = :resourceId AND item.collab_session_id = :parentId
+                WHERE child.id = :resourceId AND child.collab_session_id = :parentId
                 """.trimIndent(),
             )
             AdminChildTrashType.ALBUM_TEMPLATE -> jdbcClient.sql(
@@ -135,14 +133,12 @@ class AdminChildTrashRepository(
                         (:resourceType = 'COLLAB_COMMENT' AND EXISTS (
                             SELECT 1
                             FROM collab_photo_comments child
-                            JOIN collab_photos item ON item.id = child.collab_photo_id
-                            WHERE child.id = :resourceId AND item.photo_id = claim.resource_id
+                            WHERE child.id = :resourceId AND child.photo_id = claim.resource_id
                         ))
                         OR (:resourceType = 'COLLAB_LIKE' AND EXISTS (
                             SELECT 1
                             FROM collab_photo_likes child
-                            JOIN collab_photos item ON item.id = child.collab_photo_id
-                            WHERE child.id = :resourceId AND item.photo_id = claim.resource_id
+                            WHERE child.id = :resourceId AND child.photo_id = claim.resource_id
                         ))
                         OR (:resourceType = 'RETOUCH_ITEM' AND EXISTS (
                             SELECT 1 FROM retouch_photos child
@@ -296,7 +292,8 @@ class AdminChildTrashRepository(
                 FROM collab_photo_likes active
                 JOIN collab_photo_likes trashed ON trashed.id = :resourceId
                 WHERE active.id <> trashed.id
-                  AND active.collab_photo_id = trashed.collab_photo_id
+                  AND active.collab_session_id = trashed.collab_session_id
+                  AND active.photo_id = trashed.photo_id
                   AND active.collab_guest_id = trashed.collab_guest_id
                   AND active.deleted_at IS NULL
             )
@@ -317,9 +314,9 @@ class AdminChildTrashRepository(
             """
             SELECT p.id
             FROM collab_photo_likes trashed
-            JOIN collab_photos p ON p.id = trashed.collab_photo_id
+            JOIN photos p ON p.id = trashed.photo_id
             WHERE trashed.id = :resourceId
-              AND p.collab_session_id = :parentId
+              AND trashed.collab_session_id = :parentId
             FOR UPDATE OF p
             """.trimIndent(),
         )
@@ -579,14 +576,12 @@ class AdminChildTrashRepository(
         AdminChildTrashType.COLLAB_COMMENT -> Mapping(
             childTable = "collab_photo_comments",
             parentTable = "collab_sessions",
-            childParentPredicate =
-                "EXISTS (SELECT 1 FROM collab_photos p WHERE p.id = r.collab_photo_id AND p.collab_session_id = :parentId)",
+            childParentPredicate = "r.collab_session_id = :parentId",
         )
         AdminChildTrashType.COLLAB_LIKE -> Mapping(
             childTable = "collab_photo_likes",
             parentTable = "collab_sessions",
-            childParentPredicate =
-                "EXISTS (SELECT 1 FROM collab_photos p WHERE p.id = r.collab_photo_id AND p.collab_session_id = :parentId)",
+            childParentPredicate = "r.collab_session_id = :parentId",
         )
         AdminChildTrashType.ALBUM_TEMPLATE -> Mapping(
             childTable = "admin_album_templates",
@@ -597,7 +592,7 @@ class AdminChildTrashRepository(
                     SELECT 1
                     FROM photo_folder_groups parent
                     JOIN galleries gallery ON gallery.id = parent.gallery_id
-                    WHERE parent.id = :parentId AND gallery.studio_id = r.studio_id
+                    WHERE parent.id = :parentId AND gallery.workspace_id = r.studio_id
                 )
                 AND NOT EXISTS (
                     SELECT 1 FROM photo_folder_groups reference WHERE reference.template_id = r.id

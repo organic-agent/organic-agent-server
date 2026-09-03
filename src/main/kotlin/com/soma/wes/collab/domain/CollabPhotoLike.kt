@@ -8,7 +8,6 @@ import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Index
 import jakarta.persistence.Table
-import jakarta.persistence.UniqueConstraint
 import org.hibernate.annotations.SQLRestriction
 import java.time.ZonedDateTime
 
@@ -16,27 +15,25 @@ import java.time.ZonedDateTime
 /**
  * 하객이 사진에 누른 좋아요. 행의 존재가 곧 좋아요라 값이 될 열이 따로 없다.
  *
- * (collab_photo_id, collab_guest_id) 유니크가 이 도메인의 전부다 — 같은 하객이 몇 번을
- * 눌러도 행이 늘지 않아야 "좋아요 40"이 사람 40명으로 남는다.
+ * 활성 행의 (collab_session_id, photo_id, collab_guest_id) 부분 유니크가 같은 하객의
+ * 중복 좋아요를 막는다. 관리자 휴지통으로 soft delete된 행은 제외해 다시
+ * 좋아요를 누를 수 있게 한다.
  */
 @Entity
 @SQLRestriction("deleted_at is null")
 @Table(
     name = "collab_photo_likes",
-    uniqueConstraints = [
-        UniqueConstraint(
-            name = "uk_collab_photo_likes_photo_guest",
-            columnNames = ["collab_photo_id", "collab_guest_id"],
-        ),
-    ],
     indexes = [
-        Index(name = "idx_collab_photo_likes_collab_photo_id", columnList = "collab_photo_id"),
+        Index(name = "idx_collab_photo_likes_session_photo", columnList = "collab_session_id, photo_id"),
     ],
 )
 class CollabPhotoLike(
 
-    @Column(name = "collab_photo_id", nullable = false, updatable = false)
-    val collabPhotoId: Long,
+    @Column(name = "collab_session_id", nullable = false, updatable = false)
+    val collabSessionId: Long,
+
+    @Column(name = "photo_id", nullable = false, updatable = false)
+    val photoId: Long,
 
     @Column(name = "collab_guest_id", nullable = false, updatable = false)
     val collabGuestId: Long,

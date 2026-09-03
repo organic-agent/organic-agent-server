@@ -1,6 +1,7 @@
 package com.soma.wes.gallery.dto.response
 
 import com.soma.wes.gallery.domain.GalleryMember
+import com.soma.wes.gallery.domain.GalleryInviteKind
 import io.swagger.v3.oas.annotations.media.Schema
 
 /**
@@ -11,14 +12,27 @@ import io.swagger.v3.oas.annotations.media.Schema
 data class GalleryInviteAcceptResponse(
     val galleryId: Long,
 
+    val workspaceId: Long,
+
+    val kind: GalleryInviteKind,
+
     @field:Schema(description = "이 사용자의 갤러리 멤버 id. 이미 들어와 있었다면 그때 만들어진 값이다.")
-    val memberId: Long,
+    val memberId: Long?,
 ) {
 
     companion object {
-        fun from(member: GalleryMember) = GalleryInviteAcceptResponse(
+        fun from(member: GalleryMember, workspaceId: Long, kind: GalleryInviteKind) = GalleryInviteAcceptResponse(
             galleryId = member.galleryId,
+            workspaceId = workspaceId,
+            kind = kind,
             memberId = member.requiredId,
+        )
+
+        fun workspace(galleryId: Long, workspaceId: Long, kind: GalleryInviteKind) = GalleryInviteAcceptResponse(
+            galleryId = galleryId,
+            workspaceId = workspaceId,
+            kind = kind,
+            memberId = null,
         )
     }
 }

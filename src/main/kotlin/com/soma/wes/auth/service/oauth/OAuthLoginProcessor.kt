@@ -6,6 +6,7 @@ import com.soma.wes.auth.dto.response.LoginResponse
 import com.soma.wes.auth.service.AuthTokenProvider
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
+import com.soma.wes.workspace.service.WorkspaceService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -15,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional
 class OAuthLoginProcessor(
     private val userRepository: UserRepository,
     private val authTokenProvider: AuthTokenProvider,
+    private val workspaceService: WorkspaceService,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -22,6 +24,7 @@ class OAuthLoginProcessor(
     @Transactional
     fun process(userInfo: OAuthUserInfo): OAuthLoginResult {
         val user = findOrCreateUser(userInfo)
+        workspaceService.ensurePersonalWorkspace(user)
 
         val accessToken = authTokenProvider.generateAccessToken(user)
         val refreshToken = authTokenProvider.generateRefreshToken(user)
@@ -36,8 +39,8 @@ class OAuthLoginProcessor(
         val user = userRepository.findByProviderAndProviderId(userInfo.provider, userInfo.providerId)
 
         if (user != null) {
-            // provider 쪽에서 닉네임이나 이메일을 바꿨을 수 있으므로 로그인할 때마다 맞춘다.
-            user.updateProfile(nickname = userInfo.nickname, email = userInfo.email)
+            // 서비스에서 사용자가 바꾼 닉네임은 유지하고 provider 이메일만 동기화한다.
+            user.syncProviderEmail(email = userInfo.email)
             return user
         }
 

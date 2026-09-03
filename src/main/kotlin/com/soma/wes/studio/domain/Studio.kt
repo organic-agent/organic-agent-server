@@ -5,8 +5,6 @@ import com.soma.wes.studio.exception.StudioErrorCode
 import com.soma.wes.studio.exception.StudioException
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
-import jakarta.persistence.GeneratedValue
-import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
@@ -20,13 +18,17 @@ import java.util.Locale
 @Table(
     name = "studios",
     uniqueConstraints = [
-        UniqueConstraint(name = "uk_studios_user_id", columnNames = ["user_id"]),
         UniqueConstraint(name = "uk_studios_gallery_url", columnNames = ["gallery_url"]),
     ],
 )
 class Studio(
 
-    @Column(name = "user_id", nullable = false, updatable = false)
+    /**
+     * STUDIO 작업공간과 같은 식별자를 쓰는 공유 PK다. 기존 호출부의 이름만 한시적으로
+     * [userId]로 남아 있으며 값의 의미는 사용자 id가 아니라 workspace id다.
+     */
+    @Id
+    @Column(name = "workspace_id", nullable = false, updatable = false)
     val userId: Long,
 
     @Column(nullable = false, length = 255)
@@ -38,6 +40,12 @@ class Studio(
     @Column(name = "inflow_channel", length = 255)
     var inflowChannel: String? = null,
 
+    @Column(length = 100)
+    var contact: String? = null,
+
+    @Column(length = 500)
+    var description: String? = null,
+
 ) : BaseEntity() {
 
     @Column(name = "deleted_at")
@@ -46,26 +54,37 @@ class Studio(
     @Column(name = "suspended_at")
     var suspendedAt: ZonedDateTime? = null
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    val id: Long? = null
+    val workspaceId: Long
+        get() = userId
+
+    val id: Long
+        get() = workspaceId
 
     val requiredId: Long
-        get() = checkNotNull(id) { "저장되지 않은 스튜디오입니다." }
+        get() = workspaceId
 
-    fun update(name: String, galleryUrl: String) {
+    fun update(name: String, galleryUrl: String, contact: String?, description: String?) {
         this.name = name
         this.galleryUrl = validateGalleryUrl(galleryUrl)
+        this.contact = contact
+        this.description = description
     }
 
     companion object {
 
-        fun create(userId: Long, name: String, galleryUrl: String, inflowChannel: String? = null) =
+        fun create(
+            userId: Long,
+            name: String,
+            galleryUrl: String,
+            contact: String?,
+            description: String?,
+        ) =
             Studio(
                 userId = userId,
                 name = name,
                 galleryUrl = validateGalleryUrl(galleryUrl),
-                inflowChannel = inflowChannel
+                contact = contact,
+                description = description,
             )
 
         /**

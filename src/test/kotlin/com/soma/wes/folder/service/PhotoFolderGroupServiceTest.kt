@@ -2,7 +2,7 @@ package com.soma.wes.folder.service
 
 import com.soma.wes.folder.dto.request.CreateFolderGroupRequest
 import com.soma.wes.folder.dto.request.RenameFolderGroupRequest
-import com.soma.wes.folder.dto.request.UpdatePhotoFolderRequest
+import com.soma.wes.folder.dto.request.RenamePhotoFolderRequest
 import com.soma.wes.folder.exception.FolderErrorCode
 import com.soma.wes.folder.exception.FolderException
 import com.soma.wes.folder.repository.PhotoFolderGroupRepository
@@ -184,8 +184,8 @@ class PhotoFolderGroupServiceTest @Autowired constructor(
             val renamedGroup = photoFolderGroupService.rename(
                 fixture.galleryId, groupId, fixture.member.id!!, RenameFolderGroupRequest("본식 (최종)"),
             )
-            val renamedFolder = photoFolderService.update(
-                fixture.galleryId, groupId, folderId, fixture.member.id!!, UpdatePhotoFolderRequest(name = "신부 단독"),
+            val renamedFolder = photoFolderService.rename(
+                fixture.galleryId, groupId, folderId, fixture.member.id!!, RenamePhotoFolderRequest("신부 단독"),
             )
 
             // then

@@ -3,7 +3,7 @@ package com.soma.wes.admin.impersonation.repository
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.impersonation.dto.AdminImpersonationGalleryViewResponse
-import com.soma.wes.admin.impersonation.dto.AdminImpersonationStudioViewResponse
+import com.soma.wes.admin.impersonation.dto.AdminImpersonationWorkspaceViewResponse
 import com.soma.wes.admin.impersonation.dto.AdminImpersonationViewResponse
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import org.springframework.jdbc.core.simple.JdbcClient
@@ -25,54 +25,58 @@ class AdminImpersonationViewRepository(
         }
         AdminResourceType.STUDIO -> {
             val ownerId = jdbcClient.sql(
-                "SELECT user_id FROM studios WHERE id = :id AND deleted_at IS NULL AND suspended_at IS NULL",
-            ).param("id", targetId).query { rs, _ -> rs.getLong(1) }.optional().orElseThrow(::invalidTarget)
-            val viewerId = requestedViewerUserId ?: ownerId
-            requireActiveUser(viewerId)
-            if (viewerId == ownerId) {
-                Viewer(viewerId, "OWNER")
-            } else {
-                val role = studioMemberRole(targetId, viewerId) ?: invalidTarget()
-                Viewer(viewerId, role)
-            }
-        }
-        AdminResourceType.GALLERY -> {
-            val ownerId = jdbcClient.sql(
                 """
-                SELECT s.user_id
-                FROM galleries g
-                JOIN studios s ON s.id = g.studio_id
-                WHERE g.id = :id AND g.deleted_at IS NULL
-                  AND s.deleted_at IS NULL AND s.suspended_at IS NULL
+                SELECT wm.user_id
+                FROM studios s
+                JOIN workspace_members wm ON wm.workspace_id = s.workspace_id
+                WHERE s.workspace_id = :id AND s.deleted_at IS NULL AND s.suspended_at IS NULL
+                  AND wm.role = 'OWNER' AND wm.deleted_at IS NULL
+                ORDER BY wm.id LIMIT 1
                 """.trimIndent(),
             ).param("id", targetId).query { rs, _ -> rs.getLong(1) }.optional().orElseThrow(::invalidTarget)
             val viewerId = requestedViewerUserId ?: ownerId
             requireActiveUser(viewerId)
-            val role = if (viewerId == ownerId) {
-                "OWNER"
-            } else {
-                val studioId = jdbcClient.sql("SELECT studio_id FROM galleries WHERE id = :id")
-                    .param("id", targetId).query { rs, _ -> rs.getLong(1) }.single()
-                studioMemberRole(studioId, viewerId) ?: galleryMemberRole(targetId, viewerId) ?: invalidTarget()
-            }
-            Viewer(viewerId, role)
+            Viewer(viewerId, workspaceAccessRole(targetId, viewerId) ?: invalidTarget())
+        }
+        AdminResourceType.GALLERY -> {
+            val ownerId = jdbcClient.sql(
+                """
+                SELECT wm.user_id
+                FROM galleries g
+                JOIN workspaces w ON w.id = g.workspace_id
+                JOIN workspace_members wm ON wm.workspace_id = w.id
+                LEFT JOIN studios s ON s.workspace_id = w.id
+                WHERE g.id = :id AND g.deleted_at IS NULL
+                  AND wm.role = 'OWNER' AND wm.deleted_at IS NULL
+                  AND (w.type = 'PERSONAL' OR (s.deleted_at IS NULL AND s.suspended_at IS NULL))
+                ORDER BY wm.id LIMIT 1
+                """.trimIndent(),
+            ).param("id", targetId).query { rs, _ -> rs.getLong(1) }.optional().orElseThrow(::invalidTarget)
+            val viewerId = requestedViewerUserId ?: ownerId
+            requireActiveUser(viewerId)
+            val workspaceId = jdbcClient.sql("SELECT workspace_id FROM galleries WHERE id = :id")
+                .param("id", targetId).query { rs, _ -> rs.getLong(1) }.single()
+            val accessRole = workspaceAccessRole(workspaceId, viewerId)
+                ?: galleryMemberAccessRole(targetId, viewerId)
+                ?: invalidTarget()
+            Viewer(viewerId, accessRole)
         }
         else -> invalidTarget()
     }
 
     fun view(type: AdminResourceType, targetId: Long, viewer: Viewer): AdminImpersonationViewResponse {
         val resolved = resolveViewer(type, targetId, viewer.userId)
-        if (resolved.role != viewer.role) invalidTarget()
+        if (resolved.accessRole != viewer.accessRole) invalidTarget()
         return AdminImpersonationViewResponse(
             profile = profile(viewer.userId),
-            studios = studios(viewer.userId, type, targetId),
+            workspaces = workspaces(viewer.userId, type, targetId),
             galleries = galleries(viewer.userId, type, targetId),
         )
     }
 
     private fun profile(userId: Long): Map<String, Any?> = jdbcClient.sql(
         """
-        SELECT id, nickname, user_type
+        SELECT id, nickname
         FROM users
         WHERE id = :id AND deleted_at IS NULL AND suspended_at IS NULL
         """.trimIndent(),
@@ -80,34 +84,40 @@ class AdminImpersonationViewRepository(
         linkedMapOf(
             "id" to rs.getLong("id"),
             "nickname" to rs.getString("nickname"),
-            "userType" to rs.getString("user_type"),
         )
     }.optional().orElseThrow(::invalidTarget)
 
-    private fun studios(
+    private fun workspaces(
         viewerUserId: Long,
         type: AdminResourceType,
         targetId: Long,
-    ): List<AdminImpersonationStudioViewResponse> {
-        val scope = if (type == AdminResourceType.STUDIO) "AND s.id = :targetId" else ""
+    ): List<AdminImpersonationWorkspaceViewResponse> {
+        val scope = if (type == AdminResourceType.STUDIO) "AND w.id = :targetId" else ""
         var statement = jdbcClient.sql(
             """
-            SELECT s.id, s.name, s.gallery_url
-            FROM studios s
-            LEFT JOIN studio_members sm
-              ON sm.studio_id = s.id AND sm.user_id = :viewerUserId AND sm.deleted_at IS NULL
-            WHERE (s.user_id = :viewerUserId OR sm.id IS NOT NULL)
-              AND s.deleted_at IS NULL AND s.suspended_at IS NULL
+            SELECT w.id AS workspace_id, w.type AS workspace_type, w.name,
+                   s.gallery_url, s.contact, s.description,
+                   'WORKSPACE_' || wm.role AS access_role
+            FROM workspace_members wm
+            JOIN workspaces w ON w.id = wm.workspace_id
+            LEFT JOIN studios s ON s.workspace_id = w.id
+            WHERE wm.user_id = :viewerUserId AND wm.deleted_at IS NULL
+              AND w.deleted_at IS NULL
+              AND (w.type = 'PERSONAL' OR (s.deleted_at IS NULL AND s.suspended_at IS NULL))
             $scope
-            ORDER BY s.id
+            ORDER BY w.type, w.id
             """.trimIndent(),
         ).param("viewerUserId", viewerUserId)
         if (type == AdminResourceType.STUDIO) statement = statement.param("targetId", targetId)
         return statement.query { rs, _ ->
-            AdminImpersonationStudioViewResponse(
-                id = rs.getLong("id"),
+            AdminImpersonationWorkspaceViewResponse(
+                workspaceId = rs.getLong("workspace_id"),
+                workspaceType = rs.getString("workspace_type"),
                 name = rs.getString("name"),
+                accessRole = rs.getString("access_role"),
                 galleryUrl = rs.getString("gallery_url"),
+                contact = rs.getString("contact"),
+                description = rs.getString("description"),
             )
         }.list()
     }
@@ -118,17 +128,17 @@ class AdminImpersonationViewRepository(
         targetId: Long,
     ): List<AdminImpersonationGalleryViewResponse> {
         val scope = when (type) {
-            AdminResourceType.STUDIO -> "AND g.studio_id = :targetId"
+            AdminResourceType.STUDIO -> "AND g.workspace_id = :targetId"
             AdminResourceType.GALLERY -> "AND g.id = :targetId"
             else -> ""
         }
         var statement = jdbcClient.sql(
             """
-            SELECT g.id, g.studio_id, g.title, g.status, g.selection_deadline,
+            SELECT g.id, g.workspace_id, w.type AS workspace_type, g.created_by_user_id,
+                   g.title, g.status, g.workflow_status, g.stage, g.selection_deadline,
                    CASE
-                       WHEN s.user_id = :viewerUserId THEN 'OWNER'
-                       WHEN sm.id IS NOT NULL THEN sm.role
-                       ELSE 'MEMBER'
+                       WHEN wm.id IS NOT NULL THEN 'WORKSPACE_' || wm.role
+                       ELSE 'GALLERY_MEMBER'
                    END AS access_role,
                    (SELECT COUNT(*) FROM photos p WHERE p.gallery_id = g.id AND p.deleted_at IS NULL) AS photo_count,
                    (SELECT ps.status FROM photo_selections ps
@@ -137,20 +147,19 @@ class AdminImpersonationViewRepository(
                     WHERE cs.gallery_id = g.id AND cs.deleted_at IS NULL AND cs.revoked_at IS NULL) AS collaboration_count,
                    (SELECT COUNT(*)
                     FROM collab_photo_comments c
-                    JOIN collab_photos cp ON cp.id = c.collab_photo_id
-                    JOIN collab_sessions cs ON cs.id = cp.collab_session_id
+                    JOIN collab_sessions cs ON cs.id = c.collab_session_id
                     WHERE cs.gallery_id = g.id AND c.deleted_at IS NULL) AS comment_count
             FROM galleries g
-            JOIN studios s ON s.id = g.studio_id
-            LEFT JOIN studio_members sm
-              ON sm.studio_id = g.studio_id AND sm.user_id = :viewerUserId AND sm.deleted_at IS NULL
+            JOIN workspaces w ON w.id = g.workspace_id
+            LEFT JOIN studios s ON s.workspace_id = g.workspace_id
+            LEFT JOIN workspace_members wm
+              ON wm.workspace_id = g.workspace_id AND wm.user_id = :viewerUserId AND wm.deleted_at IS NULL
             LEFT JOIN gallery_members gm
               ON gm.gallery_id = g.id AND gm.user_id = :viewerUserId AND gm.deleted_at IS NULL
             WHERE g.deleted_at IS NULL
-              AND s.deleted_at IS NULL AND s.suspended_at IS NULL
+              AND (w.type = 'PERSONAL' OR (s.deleted_at IS NULL AND s.suspended_at IS NULL))
               AND (
-                  s.user_id = :viewerUserId
-                  OR sm.id IS NOT NULL
+                  wm.id IS NOT NULL
                   OR (gm.id IS NOT NULL AND g.status <> 'DRAFT')
               )
               $scope
@@ -165,9 +174,13 @@ class AdminImpersonationViewRepository(
 
     private fun gallery(rs: ResultSet) = AdminImpersonationGalleryViewResponse(
         id = rs.getLong("id"),
-        studioId = rs.getLong("studio_id"),
+        workspaceId = rs.getLong("workspace_id"),
+        workspaceType = rs.getString("workspace_type"),
+        createdByUserId = rs.getLong("created_by_user_id").takeUnless { rs.wasNull() },
         title = rs.getString("title"),
-        status = rs.getString("status"),
+        publicStatus = rs.getString("status"),
+        workflowStatus = rs.getString("workflow_status"),
+        stage = rs.getString("stage"),
         selectionDeadline = rs.getObject("selection_deadline", OffsetDateTime::class.java)?.toZonedDateTime(),
         accessRole = rs.getString("access_role"),
         photoCount = rs.getLong("photo_count"),
@@ -183,18 +196,18 @@ class AdminImpersonationViewRepository(
         if (!exists) invalidTarget()
     }
 
-    private fun studioMemberRole(studioId: Long, userId: Long): String? = jdbcClient.sql(
+    private fun workspaceAccessRole(workspaceId: Long, userId: Long): String? = jdbcClient.sql(
         """
-        SELECT role
-        FROM studio_members
-        WHERE studio_id = :studioId AND user_id = :userId AND deleted_at IS NULL
+        SELECT 'WORKSPACE_' || role AS access_role
+        FROM workspace_members
+        WHERE workspace_id = :workspaceId AND user_id = :userId AND deleted_at IS NULL
         """.trimIndent(),
-    ).param("studioId", studioId).param("userId", userId)
-        .query { rs, _ -> rs.getString("role") }.optional().orElse(null)
+    ).param("workspaceId", workspaceId).param("userId", userId)
+        .query { rs, _ -> rs.getString("access_role") }.optional().orElse(null)
 
-    private fun galleryMemberRole(galleryId: Long, userId: Long): String? = jdbcClient.sql(
+    private fun galleryMemberAccessRole(galleryId: Long, userId: Long): String? = jdbcClient.sql(
         """
-        SELECT 'MEMBER'
+        SELECT 'GALLERY_MEMBER'
         FROM gallery_members gm
         JOIN galleries g ON g.id = gm.gallery_id
         WHERE gm.gallery_id = :galleryId
@@ -208,5 +221,5 @@ class AdminImpersonationViewRepository(
 
     private fun invalidTarget(): Nothing = throw AdminException(AdminErrorCode.INVALID_IMPERSONATION_TARGET)
 
-    data class Viewer(val userId: Long, val role: String)
+    data class Viewer(val userId: Long, val accessRole: String)
 }

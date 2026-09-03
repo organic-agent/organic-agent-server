@@ -31,6 +31,19 @@ class AuthTokenServiceTest @Autowired constructor(
         User(provider = OAuthProvider.KAKAO, providerId = providerId, nickname = "테스터"),
     )
 
+    @Test
+    fun `로그아웃하면 저장된 refresh token이 무효가 된다`() {
+        val user = signUp("kakao-logout")
+        val refreshToken = authTokenProvider.generateRefreshToken(user)
+
+        authTokenService.logout(user.requiredId)
+
+        assertThatThrownBy { authTokenService.reissue(ReissueRequest(refreshToken.value)) }
+            .isInstanceOf(TokenException::class.java)
+            .extracting("errorCode")
+            .isEqualTo(AuthErrorCode.REFRESH_TOKEN_INVALID)
+    }
+
     @Nested
     @DisplayName("재발급에 성공할 때")
     inner class ReissueSucceeds {

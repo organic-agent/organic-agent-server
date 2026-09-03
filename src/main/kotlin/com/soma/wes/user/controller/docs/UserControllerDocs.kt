@@ -3,6 +3,8 @@ package com.soma.wes.user.controller.docs
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.global.exception.ErrorResponse
 import com.soma.wes.user.dto.response.UserResponse
+import com.soma.wes.user.dto.request.UpdateUserRequest
+import com.soma.wes.user.dto.response.UserWorkspaceResponse
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.media.Content
 import io.swagger.v3.oas.annotations.media.ExampleObject
@@ -69,4 +71,19 @@ interface UserControllerDocs {
         ),
     )
     fun getMe(loginUser: LoginUser): ResponseEntity<UserResponse>
+
+    @Operation(summary = "내 닉네임 수정", description = "OAuth 제공자의 닉네임과 별개로 서비스 닉네임을 저장한다.")
+    fun updateMe(loginUser: LoginUser, request: UpdateUserRequest): ResponseEntity<UserResponse>
+
+    @Operation(
+        summary = "내 스튜디오·갤러리 소속 조회",
+        description = "실제로 이동할 수 있는 스튜디오와 고객 갤러리를 최근 활동순으로 반환한다. 비어 있는 개인 작업공간은 제외한다.",
+    )
+    fun listMyWorkspaces(loginUser: LoginUser): ResponseEntity<List<UserWorkspaceResponse>>
+
+    @Operation(
+        summary = "회원 탈퇴",
+        description = "소유 스튜디오는 하위 갤러리와 함께 삭제하고, 단순 소속과 고객 갤러리 멤버십은 해제한다.",
+    )
+    fun deleteMe(loginUser: LoginUser): ResponseEntity<Unit>
 }

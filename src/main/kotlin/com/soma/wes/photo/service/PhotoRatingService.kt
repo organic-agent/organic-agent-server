@@ -29,7 +29,7 @@ class PhotoRatingService(
         userId: Long,
         request: RatePhotoRequest
     ): PhotoRatingResponse {
-        galleryAccessPolicy.requirePhotographerOrCouple(galleryId, userId)
+        galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
         val photo = photoRepository.findWithLockByIdAndGalleryId(photoId, galleryId)
             ?: throw PhotoException(PhotoErrorCode.PHOTO_NOT_FOUND)
@@ -50,7 +50,7 @@ class PhotoRatingService(
      */
     @Transactional
     fun clear(galleryId: Long, photoId: Long, userId: Long) {
-        galleryAccessPolicy.requirePhotographerOrCouple(galleryId, userId)
+        galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
         val photo = photoRepository.findByIdAndGalleryId(photoId, galleryId)
             ?: throw PhotoException(PhotoErrorCode.PHOTO_NOT_FOUND)

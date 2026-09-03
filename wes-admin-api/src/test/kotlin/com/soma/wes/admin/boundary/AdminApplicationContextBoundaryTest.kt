@@ -11,6 +11,9 @@ import com.soma.wes.auth.service.AuthTokenProvider
 import com.soma.wes.auth.support.OAuthRegistrations
 import com.soma.wes.auth.support.OAuthStateCleaner
 import com.soma.wes.auth.token.config.JwtProperties
+import com.soma.wes.category.service.CategorizationService
+import com.soma.wes.category.service.AiCategoryFolderService
+import com.soma.wes.category.support.AiCategoryFolderPlanner
 import com.soma.wes.collab.config.CollabProperties
 import com.soma.wes.collab.repository.CollabSessionRepository
 import com.soma.wes.collab.service.CollabSessionQueryService
@@ -41,6 +44,7 @@ import com.soma.wes.photo.infrastructure.S3PhotoStorage
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.service.PhotoService
 import com.soma.wes.photo.support.PhotoViewAssembler
+import com.soma.wes.recommendation.support.AiConceptAssignmentLoader
 import com.soma.wes.retouch.repository.RetouchRoundRepository
 import com.soma.wes.retouch.service.RetouchService
 import com.soma.wes.retouch.support.RetouchPhotoLoader
@@ -134,6 +138,10 @@ class AdminApplicationContextBoundaryTest @Autowired constructor(
             RetouchViewAssembler::class.java,
             ProductChildTrashRepository::class.java,
             ProductChildTrashService::class.java,
+            AiCategoryFolderPlanner::class.java,
+            AiConceptAssignmentLoader::class.java,
+            AiCategoryFolderService::class.java,
+            CategorizationService::class.java,
         )
 
         assertAbsent(

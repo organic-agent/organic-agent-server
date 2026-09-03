@@ -21,6 +21,7 @@ import org.hibernate.annotations.SQLRestriction
     name = "collab_sessions",
     uniqueConstraints = [
         UniqueConstraint(name = "uk_collab_sessions_collab_token", columnNames = ["collab_token"]),
+        UniqueConstraint(name = "uk_collab_sessions_concept_folder", columnNames = ["concept_folder_id"]),
     ],
     indexes = [
         Index(name = "idx_collab_sessions_gallery_id", columnList = "gallery_id"),
@@ -30,6 +31,9 @@ class CollabSession(
 
     @Column(name = "gallery_id", nullable = false, updatable = false)
     val galleryId: Long,
+
+    @Column(name = "concept_folder_id", nullable = false, updatable = false)
+    val conceptFolderId: Long,
 
     /** 부부가 링크를 구분하려고 붙인 이름. 하객에게도 첫 화면에 보인다. */
     @Column(nullable = false, length = MAX_NAME_LENGTH)
@@ -66,8 +70,9 @@ class CollabSession(
             return trimmed
         }
 
-        fun of(galleryId: Long, name: String, collabToken: String) = CollabSession(
+        fun of(galleryId: Long, conceptFolderId: Long, name: String, collabToken: String) = CollabSession(
             galleryId = galleryId,
+            conceptFolderId = conceptFolderId,
             name = requireValidName(name),
             collabToken = collabToken,
         )

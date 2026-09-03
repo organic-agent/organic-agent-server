@@ -6,10 +6,12 @@ import com.soma.wes.gallery.dto.request.ChangeMaxRetouchRoundCountRequest
 import com.soma.wes.gallery.dto.request.ChangeMaxSelectablePhotoCountRequest
 import com.soma.wes.gallery.dto.request.ChangeSelectionDeadlineRequest
 import com.soma.wes.gallery.dto.request.ChangeShootTypeRequest
+import com.soma.wes.gallery.dto.request.ChangeWorkflowStatusRequest
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.dto.request.RenameGalleryRequest
 import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
 import com.soma.wes.gallery.dto.response.GalleryResponse
+import com.soma.wes.gallery.domain.GalleryStage
 import com.soma.wes.gallery.service.GalleryService
 import com.soma.wes.gallery.service.MockGalleryService
 import jakarta.validation.Valid
@@ -24,6 +26,7 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.bind.annotation.RequestParam
 
 
 @RestController
@@ -47,7 +50,7 @@ class GalleryController(
     @PostMapping("/mock")
     override fun createMock(
         @AuthenticationPrincipal loginUser: LoginUser,
-        @Valid @RequestBody(required = false) request: CreateGalleryRequest?,
+        @Valid @RequestBody request: CreateGalleryRequest,
     ): ResponseEntity<GalleryResponse> {
         val result = mockGalleryService.create(loginUser.id, request)
         val status = HttpStatus.CREATED
@@ -58,8 +61,9 @@ class GalleryController(
     @GetMapping
     override fun list(
         @AuthenticationPrincipal loginUser: LoginUser,
+        @RequestParam(name = "stage", required = false) stage: GalleryStage?,
     ): ResponseEntity<List<GalleryResponse>> {
-        val result = galleryService.findAllVisibleTo(loginUser.id)
+        val result = galleryService.findAllVisibleTo(loginUser.id, stage)
 
         return ResponseEntity.ok(result)
     }
@@ -147,6 +151,15 @@ class GalleryController(
         val result = galleryService.close(galleryId, loginUser.id)
 
         return ResponseEntity.ok(result)
+    }
+
+    @PatchMapping("/{galleryId}/workflow-status")
+    fun changeWorkflowStatus(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @Valid @RequestBody request: ChangeWorkflowStatusRequest,
+    ): ResponseEntity<GalleryResponse> {
+        return ResponseEntity.ok(galleryService.changeWorkflowStatus(galleryId, loginUser.id, request))
     }
 
     @PostMapping("/{galleryId}/reopen")

@@ -1,8 +1,13 @@
 package com.soma.wes.gallery.service
 
+import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryInvite
+import com.soma.wes.gallery.domain.GalleryInviteKind
+import com.soma.wes.gallery.domain.GalleryInviteStatus
 import com.soma.wes.gallery.domain.GalleryMember
+import com.soma.wes.gallery.dto.request.IssueGalleryInviteRequest
 import com.soma.wes.gallery.dto.response.GalleryInviteAcceptResponse
+import com.soma.wes.gallery.dto.response.GalleryInvitePreviewResponse
 import com.soma.wes.gallery.dto.response.GalleryInviteResponse
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
@@ -10,44 +15,62 @@ import com.soma.wes.gallery.repository.GalleryInviteRepository
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.repository.requireByIdAndGalleryId
+import com.soma.wes.gallery.repository.requireById
 import com.soma.wes.gallery.repository.requireWithLockById
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.gallery.support.GalleryInviteUrlResolver
 import com.soma.wes.global.SecureTokenGenerator
-import com.soma.wes.user.repository.UserRepository
-import com.soma.wes.user.repository.requireById
+import com.soma.wes.studio.repository.StudioRepository
+import com.soma.wes.workspace.domain.Workspace
+import com.soma.wes.workspace.domain.WorkspaceMember
+import com.soma.wes.workspace.domain.WorkspaceRole
+import com.soma.wes.workspace.domain.WorkspaceType
+import com.soma.wes.workspace.repository.WorkspaceMemberRepository
+import com.soma.wes.workspace.repository.WorkspaceRepository
 import java.time.Clock
 import java.time.Duration
 import java.time.ZonedDateTime
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
-
 @Service
 class GalleryInviteService(
     private val galleryRepository: GalleryRepository,
     private val galleryInviteRepository: GalleryInviteRepository,
     private val galleryMemberRepository: GalleryMemberRepository,
-    private val userRepository: UserRepository,
+    private val workspaceRepository: WorkspaceRepository,
+    private val workspaceMemberRepository: WorkspaceMemberRepository,
+    private val studioRepository: StudioRepository,
     private val galleryAccessPolicy: GalleryAccessPolicy,
     private val tokenGenerator: SecureTokenGenerator,
     private val urlResolver: GalleryInviteUrlResolver,
     private val clock: Clock,
 ) {
-
     companion object {
         val VALIDITY: Duration = Duration.ofDays(7)
     }
 
-    /**
-     * 링크를 발급한다. 재발급이다 — 갤러리에 살아 있던 링크는 이 자리에서 폐기된다.
-     */
     @Transactional
-    fun issue(galleryId: Long, userId: Long): GalleryInviteResponse {
+    fun issue(
+        galleryId: Long,
+        userId: Long,
+        request: IssueGalleryInviteRequest = IssueGalleryInviteRequest(),
+    ): GalleryInviteResponse {
         galleryAccessPolicy.requirePhotographer(galleryId, userId)
-        galleryRepository.requireWithLockById(galleryId)
+        val gallery = galleryRepository.requireWithLockById(galleryId)
+        val workspace = workspaceRepository.findById(gallery.workspaceId).orElseThrow {
+            GalleryException(GalleryErrorCode.GALLERY_NOT_FOUND)
+        }
+        validateKind(request.kind, workspace)
+        if (request.maxUses !in 1..100) {
+            throw GalleryException(GalleryErrorCode.INVALID_INVITE_MAX_USES)
+        }
 
         val now = ZonedDateTime.now(clock)
+        val expiresAt = request.expiresAt ?: now.plus(VALIDITY)
+        if (!expiresAt.isAfter(now)) {
+            throw GalleryException(GalleryErrorCode.INVALID_INVITE_EXPIRY)
+        }
         galleryInviteRepository.findByGalleryIdAndRevokedAtIsNull(galleryId)?.let { previous ->
             previous.revoke(now)
             galleryInviteRepository.flush()
@@ -57,81 +80,122 @@ class GalleryInviteService(
             GalleryInvite(
                 galleryId = galleryId,
                 token = tokenGenerator.generate(),
-                expiresAt = now.plus(VALIDITY),
+                kind = request.kind,
+                maxUses = request.maxUses,
+                expiresAt = expiresAt,
             ),
         )
         return toResponse(invite, now)
     }
 
-    /**
-     * 갤러리의 현재 링크. 아직 발급한 적이 없으면 404다.
-     */
     @Transactional(readOnly = true)
     fun getCurrent(galleryId: Long, userId: Long): GalleryInviteResponse {
         galleryAccessPolicy.requirePhotographer(galleryId, userId)
-
         val invite = galleryInviteRepository.findByGalleryIdAndRevokedAtIsNull(galleryId)
             ?: throw GalleryException(GalleryErrorCode.INVITE_NOT_FOUND)
         return toResponse(invite, ZonedDateTime.now(clock))
     }
 
-    private fun toResponse(invite: GalleryInvite, at: ZonedDateTime): GalleryInviteResponse =
-        GalleryInviteResponse.of(
-            invite = invite,
-            inviteUrl = urlResolver.resolve(invite.token),
-            at = at,
+    @Transactional(readOnly = true)
+    fun preview(token: String, userId: Long): GalleryInvitePreviewResponse {
+        val invite = galleryInviteRepository.findByToken(token)
+            ?: throw GalleryException(GalleryErrorCode.INVITE_INVALID)
+        val gallery = galleryRepository.requireById(invite.galleryId)
+        val workspace = workspaceRepository.findById(gallery.workspaceId).orElseThrow {
+            GalleryException(GalleryErrorCode.INVITE_INVALID)
+        }
+        val now = ZonedDateTime.now(clock)
+        val status = when {
+            invite.isRevoked -> GalleryInviteStatus.REVOKED
+            invite.isExpiredAt(now) -> GalleryInviteStatus.EXPIRED
+            isAlreadyMember(invite, gallery, userId) -> GalleryInviteStatus.ALREADY_MEMBER
+            invite.isFull || isGalleryCapacityFull(invite) -> GalleryInviteStatus.FULL
+            else -> GalleryInviteStatus.ACTIVE
+        }
+        return GalleryInvitePreviewResponse(
+            kind = invite.kind,
+            status = status,
+            workspaceId = workspace.requiredId,
+            studioName = studioRepository.findById(workspace.requiredId).orElse(null)?.name,
+            galleryId = gallery.requiredId,
+            galleryTitle = gallery.title,
+            maxUses = invite.maxUses,
+            usedCount = invite.usedCount,
+            remainingUses = (invite.maxUses - invite.usedCount).coerceAtLeast(0),
+            expiresAt = invite.expiresAt,
         )
+    }
 
-    /**
-     * 링크를 거둬들인다. 링크가 엉뚱한 곳에 퍼졌을 때 쓰며, 이미 들어온 멤버는 그대로 남는다.
-     */
+    private fun toResponse(invite: GalleryInvite, at: ZonedDateTime): GalleryInviteResponse =
+        GalleryInviteResponse.of(invite, urlResolver.resolve(invite.token), at)
+
     @Transactional
     fun revoke(galleryId: Long, inviteId: Long, userId: Long) {
         galleryAccessPolicy.requirePhotographer(galleryId, userId)
-
-        val invite = galleryInviteRepository.requireByIdAndGalleryId(inviteId, galleryId)
-
-        invite.revoke(ZonedDateTime.now(clock))
+        galleryInviteRepository.requireByIdAndGalleryId(inviteId, galleryId)
+            .revoke(ZonedDateTime.now(clock))
     }
 
-    /**
-     * 링크를 눌러 갤러리에 들어온다. 같은 사람이 여러 번 눌러도 멤버는 하나이며 매번 성공한다.
-     */
     @Transactional
     fun accept(token: String, userId: Long): GalleryInviteAcceptResponse {
-        val invite = galleryInviteRepository.findByToken(token)
-            ?: throw GalleryException(GalleryErrorCode.INVITE_NOT_FOUND)
+        val invite = galleryInviteRepository.findWithLockByToken(token)
+            ?: throw GalleryException(GalleryErrorCode.INVITE_INVALID)
+        val now = ZonedDateTime.now(clock)
+        if (invite.isRevoked) throw GalleryException(GalleryErrorCode.INVITE_REVOKED)
+        if (invite.isExpiredAt(now)) throw GalleryException(GalleryErrorCode.INVITE_EXPIRED)
 
-        // 폐기와 만료를 나눠 알려준다. 만료라면 작가에게 재발급을 요청하면 되는 일이다.
-        if (invite.isRevoked) {
-            throw GalleryException(GalleryErrorCode.INVITE_REVOKED)
-        }
-        if (invite.isExpiredAt(ZonedDateTime.now(clock))) {
-            throw GalleryException(GalleryErrorCode.INVITE_EXPIRED)
-        }
-
+        val gallery = galleryRepository.requireWithLockById(invite.galleryId)
+        existingMembershipResponse(invite, gallery, userId)?.let { return it }
         galleryAccessPolicy.requireNotPhotographer(invite.galleryId, userId)
-        galleryRepository.requireWithLockById(invite.galleryId)
-
-        galleryMemberRepository.findByGalleryIdAndUserId(invite.galleryId, userId)
-            ?.let { return GalleryInviteAcceptResponse.from(it) }
-
-        if (galleryMemberRepository.countByGalleryId(invite.galleryId) >= GalleryMember.MAX_PER_GALLERY) {
-            throw GalleryException(GalleryErrorCode.GALLERY_MEMBER_LIMIT_EXCEEDED)
+        if (invite.isFull || isGalleryCapacityFull(invite)) {
+            throw GalleryException(GalleryErrorCode.INVITE_FULL)
         }
 
-        confirmClient(userId)
-
-        val member = galleryMemberRepository.save(
-            GalleryMember(galleryId = invite.galleryId, userId = userId),
-        )
-        return GalleryInviteAcceptResponse.from(member)
+        val response = when (invite.kind) {
+            GalleryInviteKind.GALLERY_MEMBER -> {
+                val member = galleryMemberRepository.save(GalleryMember(gallery.requiredId, userId))
+                GalleryInviteAcceptResponse.from(member, gallery.workspaceId, invite.kind)
+            }
+            GalleryInviteKind.STUDIO_MEMBER,
+            GalleryInviteKind.PERSONAL_PARTNER,
+            -> {
+                workspaceMemberRepository.save(
+                    WorkspaceMember(gallery.workspaceId, userId, WorkspaceRole.MEMBER),
+                )
+                GalleryInviteAcceptResponse.workspace(gallery.requiredId, gallery.workspaceId, invite.kind)
+            }
+        }
+        invite.consume()
+        return response
     }
 
-    /**
-     * 예비 부부의 온보딩. 초대 링크로만 가입할 수 있으므로 수락이 곧 종류 확정이다.
-     */
-    private fun confirmClient(userId: Long) {
-        userRepository.requireById(userId).selectClientTypeIfUnset()
+    private fun existingMembershipResponse(
+        invite: GalleryInvite,
+        gallery: Gallery,
+        userId: Long,
+    ): GalleryInviteAcceptResponse? = when (invite.kind) {
+        GalleryInviteKind.GALLERY_MEMBER -> galleryMemberRepository
+            .findByGalleryIdAndUserId(gallery.requiredId, userId)
+            ?.let { GalleryInviteAcceptResponse.from(it, gallery.workspaceId, invite.kind) }
+        GalleryInviteKind.STUDIO_MEMBER,
+        GalleryInviteKind.PERSONAL_PARTNER,
+        -> workspaceMemberRepository.findByWorkspaceIdAndUserId(gallery.workspaceId, userId)
+            ?.let { GalleryInviteAcceptResponse.workspace(gallery.requiredId, gallery.workspaceId, invite.kind) }
+    }
+
+    private fun isAlreadyMember(invite: GalleryInvite, gallery: Gallery, userId: Long): Boolean =
+        existingMembershipResponse(invite, gallery, userId) != null
+
+    private fun isGalleryCapacityFull(invite: GalleryInvite): Boolean =
+        invite.kind == GalleryInviteKind.GALLERY_MEMBER &&
+            galleryMemberRepository.countByGalleryId(invite.galleryId) >= GalleryMember.MAX_PER_GALLERY
+
+    private fun validateKind(kind: GalleryInviteKind, workspace: Workspace) {
+        val valid = when (kind) {
+            GalleryInviteKind.STUDIO_MEMBER -> workspace.type == WorkspaceType.STUDIO
+            GalleryInviteKind.PERSONAL_PARTNER -> workspace.type == WorkspaceType.PERSONAL
+            GalleryInviteKind.GALLERY_MEMBER -> true
+        }
+        if (!valid) throw GalleryException(GalleryErrorCode.INVALID_INVITE_KIND)
     }
 }

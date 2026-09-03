@@ -51,8 +51,7 @@ class AdminResourceSuspensionService(
         if (repository.setSuspended(type, id, request.expectedVersion, suspended) != 1) {
             throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
         }
-        val ownerUserId = repository.ownerUserId(type, id)
-        if (suspended) repository.revokeRefreshToken(ownerUserId)
+        if (suspended) repository.affectedUserIds(type, id).forEach(repository::revokeRefreshToken)
         val after = repository.find(type, id) ?: throw AdminException(AdminErrorCode.RESOURCE_NOT_FOUND)
         auditService.recordMutation(
             action = if (suspended) AdminAuditAction.RESOURCE_SUSPENDED else AdminAuditAction.RESOURCE_ACTIVATED,

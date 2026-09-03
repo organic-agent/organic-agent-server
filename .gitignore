@@ -53,5 +53,6 @@ postgres-data-local
 # 작업 계획(docs/plans)과 해결한 작업의 기록은 개인 노트라 올리지 않는다.
 # 운영자가 따라야 하는 공용 runbook만 저장소에서 함께 버전 관리한다.
 /docs/*
+!/docs/data-model-v1.md
 !/docs/runbooks/
 !/docs/runbooks/**

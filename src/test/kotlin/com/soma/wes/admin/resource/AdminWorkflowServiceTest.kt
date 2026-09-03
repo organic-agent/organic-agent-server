@@ -69,6 +69,51 @@ class AdminWorkflowServiceTest @Autowired constructor(
     }
 
     @Test
+    fun `관리자 분류 실행은 사용자 위임 없이 초기 증분 작업을 만들고 갤러리 버전을 올린다`() {
+        val actor = adminAccountFixture.관리자("workflow-categorization")
+        val graph = createGraph(actor.requiredId, "categorization", withPhoto = true)
+        prepareAiCategoryAnalysis(graph.gallery.id, graph.photo!!.id)
+
+        val initial = execute(
+            actor.requiredId,
+            AdminResourceType.GALLERY,
+            graph.gallery.id,
+            AdminWorkflowAction.RUN_CATEGORIZATION,
+            graph.gallery.version,
+            "categorization-initial-001",
+        )
+
+        assertThat(initial.details)
+            .containsEntry("mode", "INITIAL")
+            .containsEntry("jobStatus", "SUCCEEDED")
+            .containsEntry("processedPhotoCount", 1)
+        val initialJobId = (initial.details.getValue("jobId") as Number).toLong()
+        assertThat(resourceService.get(AdminResourceType.CATEGORIZATION_JOB, initialJobId).fields)
+            .containsEntry("galleryId", graph.gallery.id)
+            .containsEntry("status", "SUCCEEDED")
+        assertThat(
+            contextService.get(AdminResourceType.GALLERY, graph.gallery.id)
+                .sections.getValue("categorizationJobs").map { it["id"] },
+        )
+            .contains(initialJobId)
+
+        val incremental = execute(
+            actor.requiredId,
+            AdminResourceType.GALLERY,
+            graph.gallery.id,
+            AdminWorkflowAction.RUN_CATEGORIZATION,
+            expectedVersion = 1,
+            idempotencyKey = "categorization-incremental-001",
+        )
+
+        assertThat(incremental.details)
+            .containsEntry("mode", "INCREMENTAL")
+            .containsEntry("jobStatus", "SUCCEEDED")
+            .containsEntry("processedPhotoCount", 0)
+        assertThat(resourceService.get(AdminResourceType.GALLERY, graph.gallery.id).version).isEqualTo(2)
+    }
+
+    @Test
     fun `액션 계약은 잘못된 대상과 필드를 예약 전에 거절하고 완료 응답을 멱등 재생한다`() {
         val actor = adminAccountFixture.관리자("workflow-contract-owner")
         val graph = createGraph(actor.requiredId, "contract")
@@ -95,6 +140,23 @@ class AdminWorkflowServiceTest @Autowired constructor(
                 graph.studio.version,
                 "unknown-field-001",
                 mapOf("capability" to "AI_RETOUCH", "enabled" to true, "typo" to true),
+            )
+        }.isInstanceOfSatisfying(AdminException::class.java) {
+            assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
+        }
+        assertThatThrownBy {
+            execute(
+                actor.requiredId,
+                AdminResourceType.GALLERY,
+                graph.gallery.id,
+                AdminWorkflowAction.UPDATE_GALLERY_STATES,
+                graph.gallery.version,
+                "gallery-stage-bypass-001",
+                mapOf(
+                    "publicStatus" to "OPEN",
+                    "workflowStatus" to "IN_PROGRESS",
+                    "stage" to "RETOUCH",
+                ),
             )
         }.isInstanceOfSatisfying(AdminException::class.java) {
             assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
@@ -225,30 +287,11 @@ class AdminWorkflowServiceTest @Autowired constructor(
         val memberId = (addedStudioMember.details.getValue("memberId") as Number).toLong()
 
         val roles = jdbcClient.sql(
-            "SELECT user_id, role FROM studio_members WHERE studio_id = :studioId AND deleted_at IS NULL ORDER BY user_id",
+            "SELECT user_id, role FROM workspace_members WHERE workspace_id = :studioId AND deleted_at IS NULL ORDER BY user_id",
         ).param("studioId", graph.studio.id)
             .query { rs, _ -> rs.getLong("user_id") to rs.getString("role") }.list().toMap()
-        assertThat(roles).containsEntry(graph.user.id, "MEMBER").containsEntry(nextOwner.id, "OWNER")
+        assertThat(roles).containsEntry(graph.user.id, "OWNER").containsEntry(nextOwner.id, "OWNER")
         assertThat(memberId).isPositive()
-        assertThat(
-            jdbcClient.sql("SELECT user_id FROM studios WHERE id = :studioId")
-                .param("studioId", graph.studio.id).query { rs, _ -> rs.getLong(1) }.single(),
-        ).isEqualTo(nextOwner.id)
-        val previousOwnerMemberId = jdbcClient.sql(
-            "SELECT id FROM studio_members WHERE studio_id = :studioId AND user_id = :userId",
-        )
-            .param("studioId", graph.studio.id)
-            .param("userId", graph.user.id)
-            .query { rs, _ -> rs.getLong(1) }.single()
-        execute(
-            actor.requiredId,
-            AdminResourceType.STUDIO,
-            graph.studio.id,
-            AdminWorkflowAction.REMOVE_STUDIO_MEMBER,
-            2,
-            "studio-member-remove-001",
-            mapOf("memberId" to previousOwnerMemberId),
-        )
 
         val galleryMember = execute(
             actor.requiredId,
@@ -271,7 +314,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
         val studioUserRelations = contextService.get(AdminResourceType.STUDIO, graph.studio.id).relations
             .filter { relation -> relation.type == AdminResourceType.USER }
             .map { relation -> relation.id }
-        assertThat(studioUserRelations).contains(nextOwner.id).doesNotContain(graph.user.id)
+        assertThat(studioUserRelations).contains(graph.user.id, nextOwner.id)
         val galleryContextAfterRemoval = contextService.get(AdminResourceType.GALLERY, graph.gallery.id)
         assertThat(
             galleryContextAfterRemoval.relations
@@ -279,18 +322,10 @@ class AdminWorkflowServiceTest @Autowired constructor(
                 .map { relation -> relation.id },
         ).isEmpty()
         assertThat(galleryContextAfterRemoval.facts["members"]).isEqualTo(0L)
-        assertThat(
-            jdbcClient.sql("SELECT user_type FROM users WHERE id = :userId")
-                .param("userId", nextOwner.id).query { rs, _ -> rs.getString(1) }.single(),
-        ).isEqualTo("PHOTOGRAPHER")
-        assertThat(
-            jdbcClient.sql("SELECT user_type FROM users WHERE id = :userId")
-                .param("userId", galleryClient.id).query { rs, _ -> rs.getString(1) }.single(),
-        ).isEqualTo("CLIENT")
-        assertThat(userRevisionCount(nextOwner.id)).isEqualTo(nextOwnerRevisionCountBefore + 1)
-        assertThat(userAuditCount(nextOwner.id)).isEqualTo(nextOwnerAuditCountBefore + 1)
-        assertThat(userRevisionCount(galleryClient.id)).isEqualTo(galleryClientRevisionCountBefore + 1)
-        assertThat(userAuditCount(galleryClient.id)).isEqualTo(galleryClientAuditCountBefore + 1)
+        assertThat(userRevisionCount(nextOwner.id)).isEqualTo(nextOwnerRevisionCountBefore)
+        assertThat(userAuditCount(nextOwner.id)).isEqualTo(nextOwnerAuditCountBefore)
+        assertThat(userRevisionCount(galleryClient.id)).isEqualTo(galleryClientRevisionCountBefore)
+        assertThat(userAuditCount(galleryClient.id)).isEqualTo(galleryClientAuditCountBefore)
         execute(
             actor.requiredId,
             AdminResourceType.GALLERY,
@@ -304,6 +339,26 @@ class AdminWorkflowServiceTest @Autowired constructor(
                 "selectionDeadline" to ZonedDateTime.now().plusDays(30).toOffsetDateTime().toString(),
             ),
         )
+        val reissueStartedAt = ZonedDateTime.now()
+        jdbcClient.sql(
+            """
+            INSERT INTO gallery_invites
+                (gallery_id, token, kind, max_uses, used_count, expires_at, version, created_at, updated_at)
+            VALUES
+                (:galleryId, 'previous-policy-token', 'STUDIO_MEMBER', 5, 5,
+                 CURRENT_TIMESTAMP + INTERVAL '3 days', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """.trimIndent(),
+        ).param("galleryId", graph.gallery.id).update()
+        val fullInviteContext = contextService.get(AdminResourceType.GALLERY, graph.gallery.id)
+        assertThat(fullInviteContext.facts)
+            .containsEntry("stage", "UPLOAD")
+            .containsEntry("inviteStatus", "FULL")
+        assertThat(fullInviteContext.sections.getValue("invites").single())
+            .containsEntry("kind", "STUDIO_MEMBER")
+            .containsEntry("maxUses", 5)
+            .containsEntry("usedCount", 5)
+            .containsEntry("remainingUses", 0)
+            .containsEntry("status", "FULL")
         val inviteRequest = AdminWorkflowRequest(
             AdminWorkflowAction.REISSUE_GALLERY_INVITE,
             "만료된 초대 재발급",
@@ -327,7 +382,13 @@ class AdminWorkflowServiceTest @Autowired constructor(
         )
 
         assertThat(invite.details["inviteUrl"]?.toString()).contains("/invite/")
+        assertThat(invite.details)
+            .containsEntry("kind", "STUDIO_MEMBER")
+            .containsEntry("maxUses", 5)
+            .containsEntry("usedCount", 0)
         assertThat(invite.details["revealed"]).isEqualTo(true)
+        val defaultExpiry = invite.details.getValue("expiresAt") as ZonedDateTime
+        assertThat(defaultExpiry).isAfter(reissueStartedAt.plusDays(6)).isBefore(reissueStartedAt.plusDays(8))
         assertThat(inviteReplay.replayed).isTrue()
         assertThat(inviteReplay.details).doesNotContainKey("inviteUrl")
         assertThat(inviteReplay.details["revealed"]).isEqualTo(false)
@@ -350,13 +411,72 @@ class AdminWorkflowServiceTest @Autowired constructor(
                 "SELECT COUNT(*) FROM gallery_invites WHERE gallery_id = :galleryId AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP",
             ).param("galleryId", graph.gallery.id).query { rs, _ -> rs.getLong(1) }.single(),
         ).isOne()
+        assertThat(
+            jdbcClient.sql(
+                "SELECT kind, max_uses, used_count FROM gallery_invites WHERE id = :inviteId",
+            ).param("inviteId", (invite.details.getValue("inviteId") as Number).toLong())
+                .query { rs, _ -> listOf(rs.getString("kind"), rs.getInt("max_uses"), rs.getInt("used_count")) }
+                .single(),
+        ).containsExactly("STUDIO_MEMBER", 5, 0)
+
+        assertThatThrownBy {
+            execute(
+                actor.requiredId,
+                AdminResourceType.GALLERY,
+                graph.gallery.id,
+                AdminWorkflowAction.REISSUE_GALLERY_INVITE,
+                4,
+                "gallery-invite-invalid-kind-001",
+                mapOf("kind" to "PERSONAL_PARTNER"),
+            )
+        }.isInstanceOfSatisfying(AdminException::class.java) {
+            assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
+        }
+        assertThatThrownBy {
+            execute(
+                actor.requiredId,
+                AdminResourceType.GALLERY,
+                graph.gallery.id,
+                AdminWorkflowAction.REISSUE_GALLERY_INVITE,
+                4,
+                "gallery-invite-expired-001",
+                mapOf("expiresAt" to ZonedDateTime.now().minusMinutes(1).toOffsetDateTime().toString()),
+            )
+        }.isInstanceOfSatisfying(AdminException::class.java) {
+            assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
+        }
+
+        val explicitExpiry = ZonedDateTime.now().plusDays(2).truncatedTo(ChronoUnit.MICROS).toOffsetDateTime()
+        val explicitInvite = execute(
+            actor.requiredId,
+            AdminResourceType.GALLERY,
+            graph.gallery.id,
+            AdminWorkflowAction.REISSUE_GALLERY_INVITE,
+            4,
+            "gallery-invite-explicit-001",
+            mapOf(
+                "kind" to "GALLERY_MEMBER",
+                "maxUses" to 3,
+                "expiresAt" to explicitExpiry.toString(),
+            ),
+        )
+        assertThat(explicitInvite.details)
+            .containsEntry("kind", "GALLERY_MEMBER")
+            .containsEntry("maxUses", 3)
+            .containsEntry("usedCount", 0)
+        assertThat((explicitInvite.details.getValue("expiresAt") as ZonedDateTime).toInstant())
+            .isEqualTo(explicitExpiry.toInstant())
 
         val collaboration = resourceService.create(
             actor.requiredId,
             AdminResourceType.COLLABORATION,
             CreateAdminResourceRequest(
                 "협업 링크 생성",
-                mapOf("galleryId" to graph.gallery.id, "name" to "가족 협업"),
+                mapOf(
+                    "galleryId" to graph.gallery.id,
+                    "conceptFolderId" to createConceptFolder(graph.gallery.id, "가족 협업"),
+                    "name" to "가족 협업",
+                ),
             ),
             "127.0.0.1",
         )
@@ -376,16 +496,8 @@ class AdminWorkflowServiceTest @Autowired constructor(
                 "SELECT expires_at > CURRENT_TIMESTAMP AND revoked_at IS NULL FROM collab_sessions WHERE id = :id",
             ).param("id", collaboration.id).query { rs, _ -> rs.getBoolean(1) }.single(),
         ).isTrue()
-        val collabPhotoId = jdbcClient.sql(
-            """
-            INSERT INTO collab_photos (collab_session_id, photo_id, version, created_at, updated_at)
-            VALUES (:sessionId, :photoId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            RETURNING id
-            """.trimIndent(),
-        )
-            .param("sessionId", collaboration.id)
-            .param("photoId", createPhoto(actor.requiredId, graph.gallery.id, "collab-content").id)
-            .query { rs, _ -> rs.getLong(1) }.single()
+        val photoId = createPhoto(actor.requiredId, graph.gallery.id, "collab-content").id
+        assignPhotoToSession(collaboration.id, photoId)
         val guestId = jdbcClient.sql(
             """
             INSERT INTO collab_guests (collab_session_id, guest_token, nickname, version, created_at, updated_at)
@@ -400,7 +512,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             AdminWorkflowAction.CREATE_COLLAB_COMMENT,
             1,
             "collab-comment-create-001",
-            mapOf("collabPhotoId" to collabPhotoId, "guestId" to guestId, "content" to "첫 의견"),
+            mapOf("photoId" to photoId, "guestId" to guestId, "content" to "첫 의견"),
         )
         val commentId = (comment.details.getValue("commentId") as Number).toLong()
         execute(
@@ -439,7 +551,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             AdminWorkflowAction.ADD_COLLAB_LIKE,
             5,
             "collab-like-add-001",
-            mapOf("collabPhotoId" to collabPhotoId, "guestId" to guestId),
+            mapOf("photoId" to photoId, "guestId" to guestId),
         )
         val likeId = (addedLike.details.getValue("likeId") as Number).toLong()
         val removedLike = execute(
@@ -449,7 +561,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             AdminWorkflowAction.REMOVE_COLLAB_LIKE,
             6,
             "collab-like-remove-001",
-            mapOf("collabPhotoId" to collabPhotoId, "guestId" to guestId, "likeExpectedVersion" to 0),
+            mapOf("photoId" to photoId, "guestId" to guestId, "likeExpectedVersion" to 0),
         )
         assertThat(removedLike.details["trashStatus"]).isEqualTo("ACTIVE")
         assertThat(
@@ -473,9 +585,9 @@ class AdminWorkflowServiceTest @Autowired constructor(
         ).isEqualTo("수정된 의견")
         assertThat(
             jdbcClient.sql(
-                "SELECT COUNT(*) FROM collab_photo_likes WHERE collab_photo_id = :photoId AND deleted_at IS NULL",
+                "SELECT COUNT(*) FROM collab_photo_likes WHERE photo_id = :photoId AND deleted_at IS NULL",
             )
-                .param("photoId", collabPhotoId).query { rs, _ -> rs.getLong(1) }.single(),
+                .param("photoId", photoId).query { rs, _ -> rs.getLong(1) }.single(),
         ).isOne()
         assertThat(
             jdbcClient.sql(
@@ -492,21 +604,21 @@ class AdminWorkflowServiceTest @Autowired constructor(
         val sharedPhoto = (collaborationContext.getValue("sharedPhotos") as List<Map<String, Any?>>).single()
         val contextComment = (collaborationContext.getValue("comments") as List<Map<String, Any?>>).single()
         val contextLike = (collaborationContext.getValue("likes") as List<Map<String, Any?>>).single()
-        assertThat(sharedPhoto["collabPhotoId"]).isEqualTo(collabPhotoId)
+        assertThat(sharedPhoto["photoId"]).isEqualTo(photoId)
         assertThat(contextComment["version"]).isEqualTo(3L)
-        assertThat(contextLike["collabPhotoId"]).isEqualTo(collabPhotoId)
+        assertThat(contextLike["photoId"]).isEqualTo(photoId)
         assertThat(contextLike["version"]).isEqualTo(2L)
         val studioContext = contextService.get(AdminResourceType.STUDIO, graph.studio.id)
-        assertThat(studioContext.facts["ownerId"]).isEqualTo(nextOwner.id)
+        assertThat(studioContext.facts["ownerId"]).isEqualTo(graph.user.id)
     }
 
     @Test
-    fun `스튜디오 소유자 변경은 null 타입만 PHOTOGRAPHER로 확정하고 CLIENT는 거절한다`() {
+    fun `스튜디오는 기존 소유자를 유지한 채 공동 소유자를 추가한다`() {
         val actor = adminAccountFixture.관리자("workflow-studio-owner-policy")
         val graph = createGraph(actor.requiredId, "studio-owner-policy")
-        val untypedOwner = createUser(actor.requiredId, "studio-owner-untyped")
-        val untypedRevisionCountBefore = userRevisionCount(untypedOwner.id)
-        val untypedAuditCountBefore = userAuditCount(untypedOwner.id)
+        val nextOwner = createUser(actor.requiredId, "studio-next-owner")
+        val revisionCountBefore = userRevisionCount(nextOwner.id)
+        val auditCountBefore = userAuditCount(nextOwner.id)
 
         execute(
             actor.requiredId,
@@ -515,57 +627,29 @@ class AdminWorkflowServiceTest @Autowired constructor(
             AdminWorkflowAction.SET_STUDIO_OWNER,
             graph.studio.version,
             "studio-owner-policy-set-001",
-            mapOf("userId" to untypedOwner.id),
+            mapOf("userId" to nextOwner.id),
         )
-        assertThat(
-            jdbcClient.sql("SELECT user_type FROM users WHERE id = :userId")
-                .param("userId", untypedOwner.id).query { rs, _ -> rs.getString(1) }.single(),
-        ).isEqualTo("PHOTOGRAPHER")
-        assertThat(userRevisionCount(untypedOwner.id)).isEqualTo(untypedRevisionCountBefore + 1)
-        assertThat(userAuditCount(untypedOwner.id)).isEqualTo(untypedAuditCountBefore + 1)
 
-        val clientOwner = resourceService.create(
-            actor.requiredId,
-            AdminResourceType.USER,
-            CreateAdminResourceRequest(
-                "CLIENT 소유자 후보",
-                mapOf(
-                    "provider" to "GOOGLE",
-                    "providerId" to "workflow-studio-owner-client",
-                    "nickname" to "CLIENT 후보",
-                    "userType" to "CLIENT",
-                ),
-            ),
-            "127.0.0.1",
-        )
-        val clientRevisionCountBefore = userRevisionCount(clientOwner.id)
-        val clientAuditCountBefore = userAuditCount(clientOwner.id)
+        val owners = jdbcClient.sql(
+            "SELECT user_id FROM workspace_members WHERE workspace_id = :workspaceId AND role = 'OWNER' AND deleted_at IS NULL ORDER BY user_id",
+        ).param("workspaceId", graph.studio.id).query { rs, _ -> rs.getLong(1) }.list()
+        assertThat(owners).containsExactlyInAnyOrder(graph.user.id, nextOwner.id)
+        assertThat(resourceService.get(AdminResourceType.USER, nextOwner.id).version).isEqualTo(nextOwner.version)
+        assertThat(userRevisionCount(nextOwner.id)).isEqualTo(revisionCountBefore)
+        assertThat(userAuditCount(nextOwner.id)).isEqualTo(auditCountBefore)
         assertThatThrownBy {
             execute(
-                actor.requiredId,
-                AdminResourceType.STUDIO,
-                graph.studio.id,
-                AdminWorkflowAction.SET_STUDIO_OWNER,
-                1,
-                "studio-owner-policy-client-001",
-                mapOf("userId" to clientOwner.id),
+                actor.requiredId, AdminResourceType.STUDIO, graph.studio.id,
+                AdminWorkflowAction.SET_STUDIO_OWNER, 1, "studio-owner-policy-duplicate-001",
+                mapOf("userId" to nextOwner.id),
             )
         }.isInstanceOfSatisfying(AdminException::class.java) {
             assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         }
-        val ownerAndVersion = jdbcClient.sql("SELECT user_id, version FROM studios WHERE id = :studioId")
-            .param("studioId", graph.studio.id)
-            .query { rs, _ -> rs.getLong("user_id") to rs.getLong("version") }
-            .single()
-        assertThat(ownerAndVersion).isEqualTo(untypedOwner.id to 1L)
-        assertThat(resourceService.get(AdminResourceType.USER, clientOwner.id).fields["userType"])
-            .isEqualTo("CLIENT")
-        assertThat(userRevisionCount(clientOwner.id)).isEqualTo(clientRevisionCountBefore)
-        assertThat(userAuditCount(clientOwner.id)).isEqualTo(clientAuditCountBefore)
     }
 
     @Test
-    fun `갤러리 멤버는 최대 둘이고 현재 작가와 스튜디오 구성원만 거절하며 외부 사진작가 타입은 보존한다`() {
+    fun `갤러리 초대 멤버는 최대 둘이고 현재 워크스페이스 구성원만 거절한다`() {
         val actor = adminAccountFixture.관리자("workflow-gallery-member-policy")
         val graph = createGraph(actor.requiredId, "gallery-member-policy")
         val firstClient = createUser(actor.requiredId, "gallery-member-first")
@@ -591,7 +675,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
         }.isInstanceOfSatisfying(AdminException::class.java) {
             assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         }
-        assertThat(resourceService.get(AdminResourceType.USER, thirdClient.id).fields["userType"]).isNull()
+        assertThat(resourceService.get(AdminResourceType.USER, thirdClient.id).version).isEqualTo(thirdClient.version)
 
         assertThatThrownBy {
             execute(
@@ -612,8 +696,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             mapOf("userId" to graph.user.id),
         )
         assertThat((admittedPhotographer.details.getValue("memberId") as Number).toLong()).isPositive()
-        assertThat(resourceService.get(AdminResourceType.USER, graph.user.id).fields["userType"])
-            .isEqualTo("PHOTOGRAPHER")
+        assertThat(resourceService.get(AdminResourceType.USER, graph.user.id).version).isEqualTo(graph.user.version)
         assertThat(userRevisionCount(graph.user.id)).isEqualTo(photographerRevisionCountBefore)
         assertThat(userAuditCount(graph.user.id)).isEqualTo(photographerAuditCountBefore)
 
@@ -650,12 +733,8 @@ class AdminWorkflowServiceTest @Autowired constructor(
                 "SELECT COUNT(*) FROM gallery_members WHERE gallery_id = :galleryId AND deleted_at IS NULL",
             ).param("galleryId", graph.gallery.id).query { rs, _ -> rs.getLong(1) }.single(),
         ).isEqualTo(2)
-        assertThat(
-            jdbcClient.sql("SELECT user_type FROM users WHERE id IN (:firstId, :secondId) ORDER BY id")
-                .param("firstId", firstClient.id)
-                .param("secondId", secondClient.id)
-                .query { rs, _ -> rs.getString(1) }.list(),
-        ).containsOnly("CLIENT")
+        assertThat(resourceService.get(AdminResourceType.USER, firstClient.id).version).isEqualTo(firstClient.version)
+        assertThat(resourceService.get(AdminResourceType.USER, secondClient.id).version).isEqualTo(secondClient.version)
     }
 
     @Test
@@ -724,6 +803,9 @@ class AdminWorkflowServiceTest @Autowired constructor(
         assertThat(state.first).isEqualTo("OPEN")
         assertThat(state.second).isEqualTo("IN_PROGRESS")
         assertThat(state.third.toInstant()).isEqualTo(renewedDeadline.toInstant())
+        assertThat(reopened.details["stage"]).isEqualTo("SELECTION_IN_PROGRESS")
+        assertThat(resourceService.get(AdminResourceType.GALLERY, graph.gallery.id).fields["stage"])
+            .isEqualTo("SELECTION_IN_PROGRESS")
     }
 
     @Test
@@ -733,16 +815,18 @@ class AdminWorkflowServiceTest @Autowired constructor(
         val collaboration = resourceService.create(
             actor.requiredId,
             AdminResourceType.COLLABORATION,
-            CreateAdminResourceRequest("좋아요 충돌 협업", mapOf("galleryId" to graph.gallery.id, "name" to "가족")),
+            CreateAdminResourceRequest(
+                "좋아요 충돌 협업",
+                mapOf(
+                    "galleryId" to graph.gallery.id,
+                    "conceptFolderId" to createConceptFolder(graph.gallery.id, "좋아요 충돌"),
+                    "name" to "가족",
+                ),
+            ),
             "127.0.0.1",
         )
-        val collabPhotoId = jdbcClient.sql(
-            """
-            INSERT INTO collab_photos (collab_session_id, photo_id, version, created_at, updated_at)
-            VALUES (:sessionId, :photoId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING id
-            """.trimIndent(),
-        ).param("sessionId", collaboration.id).param("photoId", requireNotNull(graph.photo).id)
-            .query { rs, _ -> rs.getLong(1) }.single()
+        val photoId = requireNotNull(graph.photo).id
+        assignPhotoToSession(collaboration.id, photoId)
         val guestId = jdbcClient.sql(
             """
             INSERT INTO collab_guests (collab_session_id, guest_token, nickname, version, created_at, updated_at)
@@ -752,20 +836,22 @@ class AdminWorkflowServiceTest @Autowired constructor(
         val added = execute(
             actor.requiredId, AdminResourceType.COLLABORATION, collaboration.id,
             AdminWorkflowAction.ADD_COLLAB_LIKE, 0, "collab-like-conflict-add-001",
-            mapOf("collabPhotoId" to collabPhotoId, "guestId" to guestId),
+            mapOf("photoId" to photoId, "guestId" to guestId),
         )
         val likeId = (added.details.getValue("likeId") as Number).toLong()
         execute(
             actor.requiredId, AdminResourceType.COLLABORATION, collaboration.id,
             AdminWorkflowAction.REMOVE_COLLAB_LIKE, 1, "collab-like-conflict-remove-001",
-            mapOf("collabPhotoId" to collabPhotoId, "guestId" to guestId, "likeExpectedVersion" to 0),
+            mapOf("photoId" to photoId, "guestId" to guestId, "likeExpectedVersion" to 0),
         )
         jdbcClient.sql(
             """
-            INSERT INTO collab_photo_likes (collab_photo_id, collab_guest_id, version, created_at, updated_at)
-            VALUES (:photoId, :guestId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            INSERT INTO collab_photo_likes
+                (collab_session_id, photo_id, collab_guest_id, version, created_at, updated_at)
+            VALUES (:sessionId, :photoId, :guestId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """.trimIndent(),
-        ).param("photoId", collabPhotoId).param("guestId", guestId).update()
+        ).param("sessionId", collaboration.id).param("photoId", photoId)
+            .param("guestId", guestId).update()
 
         assertThatThrownBy {
             execute(
@@ -778,8 +864,8 @@ class AdminWorkflowServiceTest @Autowired constructor(
         }
         assertThat(
             jdbcClient.sql(
-                "SELECT COUNT(*) FROM collab_photo_likes WHERE collab_photo_id=:photoId AND deleted_at IS NULL",
-            ).param("photoId", collabPhotoId).query { rs, _ -> rs.getLong(1) }.single(),
+                "SELECT COUNT(*) FROM collab_photo_likes WHERE photo_id=:photoId AND deleted_at IS NULL",
+            ).param("photoId", photoId).query { rs, _ -> rs.getLong(1) }.single(),
         ).isOne()
         assertThat(
             jdbcClient.sql("SELECT deleted_at IS NOT NULL FROM collab_photo_likes WHERE id=:id")
@@ -1245,7 +1331,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             jdbcClient.sql("SELECT status FROM photo_selections WHERE id = :id")
                 .param("id", selection.id).query { rs, _ -> rs.getString(1) }.single(),
         ).isEqualTo("SUBMITTED")
-        execute(
+        val gallerySubmitted = execute(
             actor.requiredId,
             AdminResourceType.GALLERY,
             graph.gallery.id,
@@ -1253,7 +1339,8 @@ class AdminWorkflowServiceTest @Autowired constructor(
             0,
             "gallery-submit-001",
         )
-        execute(
+        assertThat(gallerySubmitted.details["stage"]).isEqualTo("SELECTION_COMPLETED")
+        val galleryCompleted = execute(
             actor.requiredId,
             AdminResourceType.GALLERY,
             graph.gallery.id,
@@ -1261,7 +1348,8 @@ class AdminWorkflowServiceTest @Autowired constructor(
             1,
             "gallery-complete-001",
         )
-        execute(
+        assertThat(galleryCompleted.details["stage"]).isEqualTo("ALBUM")
+        val galleryReopened = execute(
             actor.requiredId,
             AdminResourceType.GALLERY,
             graph.gallery.id,
@@ -1270,10 +1358,13 @@ class AdminWorkflowServiceTest @Autowired constructor(
             "gallery-reopen-001",
             mapOf("selectionDeadline" to ZonedDateTime.now().plusDays(30).toOffsetDateTime().toString()),
         )
+        assertThat(galleryReopened.details["stage"]).isEqualTo("SELECTION_IN_PROGRESS")
         val reopened = jdbcClient.sql("SELECT status, workflow_status FROM galleries WHERE id = :id")
             .param("id", graph.gallery.id)
             .query { rs, _ -> rs.getString("status") to rs.getString("workflow_status") }.single()
         assertThat(reopened).isEqualTo("OPEN" to "IN_PROGRESS")
+        assertThat(resourceService.get(AdminResourceType.GALLERY, graph.gallery.id).fields["stage"])
+            .isEqualTo("SELECTION_IN_PROGRESS")
 
         val emptyGraph = createGraph(actor.requiredId, "selection-empty")
         val emptySelection = resourceService.create(
@@ -1374,7 +1465,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             )
                 .param("photoId", photoId)
                 .param("score", rating)
-                .param("ratedBy", actor.requiredId)
+                .param("ratedBy", graph.user.id)
                 .update()
         }
 
@@ -2371,7 +2462,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             AdminResourceType.STUDIO,
             CreateAdminResourceRequest(
                 "워크플로 스튜디오 생성",
-                mapOf("userId" to user.id, "name" to "$suffix 스튜디오", "galleryUrl" to "workflow-$suffix"),
+                mapOf("ownerUserId" to user.id, "name" to "$suffix 스튜디오", "galleryUrl" to "workflow-$suffix"),
             ),
             "127.0.0.1",
         )
@@ -2380,7 +2471,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             AdminResourceType.GALLERY,
             CreateAdminResourceRequest(
                 "워크플로 갤러리 생성",
-                mapOf("studioId" to studio.id, "title" to "$suffix 갤러리"),
+                mapOf("workspaceId" to studio.id, "title" to "$suffix 갤러리"),
             ),
             "127.0.0.1",
         )
@@ -2441,6 +2532,44 @@ class AdminWorkflowServiceTest @Autowired constructor(
             .query { rs, _ -> rs.getLong(1) }
             .single()
 
+    private fun prepareAiCategoryAnalysis(galleryId: Long, photoId: Long) {
+        jdbcClient.sql(
+            """
+            INSERT INTO photo_analysis (
+                photo_id, embed_group_id, subjects, technical_pct, aesthetic_pct,
+                cluster_id, cluster_rank, model_version, analyzed_at, created_at, updated_at
+            )
+            VALUES (:photoId, 1, 'couple', 80.0, 70.0, 1, 0, 'test-v1',
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (photo_id) DO UPDATE
+            SET embed_group_id = 1, subjects = 'couple', technical_pct = 80.0,
+                aesthetic_pct = 70.0, cluster_id = 1, cluster_rank = 0,
+                model_version = 'test-v1', analyzed_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            """.trimIndent(),
+        ).param("photoId", photoId).update()
+        val jobId = jdbcClient.sql(
+            """
+            INSERT INTO ai_analysis_jobs (
+                gallery_id, mode, status, started_at, finished_at, created_at, updated_at
+            )
+            VALUES (:galleryId, 'FULL', 'DONE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            RETURNING id
+            """.trimIndent(),
+        ).param("galleryId", galleryId).query { rs, _ -> rs.getLong("id") }.single()
+        jdbcClient.sql(
+            """
+            INSERT INTO ai_concept_assignments (
+                job_id, gallery_id, embed_group_id, parent_name, concept_name,
+                confidence, assigned_by, needs_review, created_at, updated_at
+            )
+            VALUES (:jobId, :galleryId, 1, '웨딩', '본식', 0.9, 'vlm', false,
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """.trimIndent(),
+        ).param("jobId", jobId).param("galleryId", galleryId).update()
+    }
+
     private fun albumRows(albumId: Long): List<AlbumLayoutRow> = jdbcClient.sql(
         """
         SELECT folder.name, item.photo_id, item.sort_order, item.crop_json::TEXT
@@ -2458,6 +2587,37 @@ class AdminWorkflowServiceTest @Autowired constructor(
             cropJson = rs.getString("crop_json"),
         ) }
         .list()
+
+    private fun createConceptFolder(galleryId: Long, name: String): Long = jdbcClient.sql(
+        """
+        INSERT INTO concept_folders
+            (gallery_id, name, sort_order, created_source, version, created_at, updated_at)
+        VALUES (:galleryId, :name, 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING id
+        """.trimIndent(),
+    ).param("galleryId", galleryId).param("name", name)
+        .query { rs, _ -> rs.getLong("id") }.single()
+
+    private fun assignPhotoToSession(sessionId: Long, photoId: Long) {
+        val detailId = jdbcClient.sql(
+            """
+            INSERT INTO detail_folders
+                (concept_folder_id, name, sort_order, created_source, version, created_at, updated_at)
+            SELECT concept_folder_id, '관리자 워크플로 상세', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            FROM collab_sessions WHERE id = :sessionId
+            RETURNING id
+            """.trimIndent(),
+        ).param("sessionId", sessionId).query { rs, _ -> rs.getLong("id") }.single()
+        jdbcClient.sql(
+            """
+            INSERT INTO photo_category_assignments
+                (photo_id, detail_folder_id, assigned_source, assigned_at, version, created_at, updated_at)
+            VALUES (:photoId, :detailId, 'USER', CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (photo_id) DO UPDATE SET detail_folder_id = EXCLUDED.detail_folder_id,
+                assigned_source = 'USER', assigned_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            """.trimIndent(),
+        ).param("photoId", photoId).param("detailId", detailId).update()
+    }
 
     private fun userRevisionCount(userId: Long): Long = jdbcClient.sql(
         "SELECT COUNT(*) FROM admin_entity_revisions WHERE target_type = 'USER' AND target_id = :targetId",

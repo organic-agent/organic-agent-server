@@ -117,10 +117,12 @@ fi
 TABLES="collab_photo_likes, collab_photo_comments, collab_guests, collab_photos, collab_sessions"
 TABLES="$TABLES, admin_photo_replacement_uploads, admin_photo_revisions"
 TABLES="$TABLES, ai_pair_verdicts, ai_recommendations, ai_selection_jobs, ai_concept_assignments, ai_analysis_jobs, photo_analysis"
+TABLES="$TABLES, categorization_job_photos, categorization_jobs, photo_category_assignments, detail_folders, concept_folders"
 TABLES="$TABLES, admin_selection_revisions, photo_selection_items, photo_selections, photo_ratings"
 TABLES="$TABLES, retouch_photos, retouch_rounds"
 TABLES="$TABLES, photo_folder_items, photo_folders, photo_folder_groups, photos"
 TABLES="$TABLES, gallery_invites, gallery_members, galleries"
+TABLES="$TABLES, user_notifications, user_notification_settings"
 TABLES="$TABLES, studio_retouch_capabilities"
 if [ "$SCOPE" = "all" ]; then
   TABLES="$TABLES, admin_impersonation_sessions, admin_auth_events, admin_sessions, admin_accounts"

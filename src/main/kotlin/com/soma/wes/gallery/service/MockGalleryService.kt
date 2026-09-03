@@ -34,7 +34,7 @@ class MockGalleryService(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    fun create(userId: Long, request: CreateGalleryRequest?): GalleryResponse {
+    fun create(userId: Long, request: CreateGalleryRequest): GalleryResponse {
         if (!properties.isConfigured) {
             throw GalleryException(GalleryErrorCode.MOCK_GALLERY_NOT_READY)
         }

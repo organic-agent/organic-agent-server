@@ -2,6 +2,7 @@ package com.soma.wes.gallery.dto.response
 
 import com.soma.wes.gallery.domain.GalleryInvite
 import com.soma.wes.gallery.domain.GalleryInviteStatus
+import com.soma.wes.gallery.domain.GalleryInviteKind
 import io.swagger.v3.oas.annotations.media.Schema
 import java.time.ZonedDateTime
 
@@ -9,6 +10,9 @@ import java.time.ZonedDateTime
 data class GalleryInviteResponse(
     val id: Long,
     val galleryId: Long,
+    val kind: GalleryInviteKind,
+    val maxUses: Int,
+    val usedCount: Int,
 
     @field:Schema(description = "예비 부부에게 그대로 전달하는 링크. 토큰이 아니라 완성된 URL이다.")
     val inviteUrl: String,
@@ -28,6 +32,9 @@ data class GalleryInviteResponse(
         fun of(invite: GalleryInvite, inviteUrl: String, at: ZonedDateTime) = GalleryInviteResponse(
             id = invite.requiredId,
             galleryId = invite.galleryId,
+            kind = invite.kind,
+            maxUses = invite.maxUses,
+            usedCount = invite.usedCount,
             inviteUrl = inviteUrl,
             status = invite.statusAt(at),
             expiresAt = invite.expiresAt,

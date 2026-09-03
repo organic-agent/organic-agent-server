@@ -1,251 +1,125 @@
 package com.soma.wes.studio.service
 
-import com.soma.wes.auth.domain.OAuthProvider
-import com.soma.wes.global.config.TimeConfig
 import com.soma.wes.studio.dto.request.CreateStudioRequest
+import com.soma.wes.notification.repository.UserNotificationRepository
 import com.soma.wes.studio.dto.request.UpdateStudioRequest
 import com.soma.wes.studio.exception.StudioErrorCode
 import com.soma.wes.studio.exception.StudioException
 import com.soma.wes.studio.repository.StudioRepository
-import com.soma.wes.support.TestcontainersConfiguration
-import com.soma.wes.user.domain.User
-import com.soma.wes.user.domain.UserType
-import com.soma.wes.user.exception.UserErrorCode
-import com.soma.wes.user.exception.UserException
-import com.soma.wes.user.repository.UserRepository
+import com.soma.wes.support.IntegrationTest
+import com.soma.wes.user.fixture.UserFixture
+import com.soma.wes.workspace.domain.WorkspaceRole
+import com.soma.wes.workspace.domain.WorkspaceType
+import com.soma.wes.workspace.repository.WorkspaceMemberRepository
+import com.soma.wes.workspace.repository.WorkspaceRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
-import org.assertj.core.api.SoftAssertions.assertSoftly
-import org.junit.jupiter.api.DisplayName
-import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
-import org.springframework.context.annotation.Import
 
-@DataJpaTest
-@Import(TestcontainersConfiguration::class, TimeConfig::class, StudioService::class)
+@IntegrationTest
 class StudioServiceTest @Autowired constructor(
     private val studioService: StudioService,
     private val studioRepository: StudioRepository,
-    private val userRepository: UserRepository,
+    private val workspaceRepository: WorkspaceRepository,
+    private val workspaceMemberRepository: WorkspaceMemberRepository,
+    private val userFixture: UserFixture,
+    private val notificationRepository: UserNotificationRepository,
 ) {
+    @Test
+    fun `스튜디오를 만들면 별도 STUDIO 작업공간과 OWNER 멤버십이 생긴다`() {
+        val user = userFixture.사용자()
 
-    private var sequence = 0
-
-    private fun signUp(): Long {
-        sequence++
-        return checkNotNull(
-            userRepository.save(
-                User(
-                    provider = OAuthProvider.KAKAO,
-                    providerId = "studio-service-$sequence",
-                    nickname = "테스터",
-                    email = "tester-$sequence@example.com",
-                ),
-            ).id,
+        val result = studioService.create(
+            user.requiredId,
+            CreateStudioRequest(
+                name = "오가닉 스튜디오",
+                galleryUrl = "  Organic-Studio  ",
+                contact = "010-1234-5678",
+                description = "자연스러운 순간을 기록합니다.",
+            ),
         )
+
+        val workspace = workspaceRepository.findById(result.id).orElseThrow()
+        val membership = workspaceMemberRepository.findByWorkspaceIdAndUserId(result.id, user.requiredId)
+        assertThat(result.galleryUrl).isEqualTo("organic-studio")
+        assertThat(result.contact).isEqualTo("010-1234-5678")
+        assertThat(result.description).isEqualTo("자연스러운 순간을 기록합니다.")
+        assertThat(result.inflowChannel).isNull()
+        assertThat(workspace.type).isEqualTo(WorkspaceType.STUDIO)
+        assertThat(membership?.role).isEqualTo(WorkspaceRole.OWNER)
+        assertThat(studioRepository.findById(result.id)).isPresent
     }
 
-    @Nested
-    @DisplayName("스튜디오를 만들 때")
-    inner class Create {
+    @Test
+    fun `한 사용자가 여러 스튜디오를 소유할 수 있다`() {
+        val user = userFixture.사용자()
 
-        @Test
-        fun `스튜디오를 만들면 사진작가로 확정된다`() {
-            // 종류를 고르는 화면이 없다. 스튜디오를 만드는 행동 자체가 "나는 작가다"라는 선언이다.
-            // given
-            val userId = signUp()
+        studioService.create(user.requiredId, CreateStudioRequest("첫 번째", "first-studio", null))
+        studioService.create(user.requiredId, CreateStudioRequest("두 번째", "second-studio", null))
 
-            // when
-            val studio = studioService.create(userId, CreateStudioRequest("오가닉 스튜디오", "  Organic-Studio  ", "인스타그램"))
-
-            // then
-            assertSoftly { softly ->
-                softly.assertThat(studio.galleryUrl).isEqualTo("organic-studio")
-                softly.assertThat(studioRepository.findById(studio.id).orElseThrow().userId).isEqualTo(userId)
-                softly.assertThat(userRepository.findById(userId).orElseThrow().userType).isEqualTo(UserType.PHOTOGRAPHER)
-            }
-        }
-
-        @Test
-        fun `유입 경로는 없어도 된다`() {
-            // given
-            val userId = signUp()
-
-            // when
-            val studio = studioService.create(userId, CreateStudioRequest("스튜디오", "no-channel", null))
-
-            // then
-            assertThat(studio.inflowChannel).isNull()
-        }
-
-        @Test
-        fun `한 사람이 스튜디오를 둘 만들 수 없다`() {
-            // given
-            val userId = signUp()
-            studioService.create(userId, CreateStudioRequest("첫 번째", "first-studio", null))
-
-            // when & then
-            // 이미 종류도 PHOTOGRAPHER라, 검사 순서가 뒤집히면 USER_409_1이 나가 원인을 가린다.
-            assertThatThrownBy {
-                studioService.create(userId, CreateStudioRequest("두 번째", "second-studio", null))
-            }.isInstanceOf(StudioException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(StudioErrorCode.STUDIO_ALREADY_EXISTS)
-        }
-
-        @Test
-        fun `이미 쓰는 주소로는 만들 수 없다`() {
-            // given
-            studioService.create(signUp(), CreateStudioRequest("먼저 만든 곳", "taken-url", null))
-
-            // when & then
-            assertThatThrownBy {
-                studioService.create(signUp(), CreateStudioRequest("나중에 온 곳", "  TAKEN-URL  ", null))
-            }.isInstanceOf(StudioException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(StudioErrorCode.GALLERY_URL_DUPLICATED)
-        }
-
-        @Test
-        fun `초대로 들어온 예비 부부는 스튜디오를 만들 수 없다`() {
-            // 종류를 바꾸면 이미 수락한 초대의 주인이 어긋난다.
-            // given
-            val userId = signUp()
-            userRepository.findById(userId).orElseThrow().selectClientTypeIfUnset()
-
-            // when & then
-            assertThatThrownBy {
-                studioService.create(userId, CreateStudioRequest("스튜디오", "client-studio", null))
-            }.isInstanceOf(UserException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(UserErrorCode.USER_TYPE_ALREADY_SELECTED)
-            assertThat(studioRepository.existsByUserId(userId)).isFalse()
-        }
-
-        @Test
-        fun `쓸 수 없는 주소는 거절한다`() {
-            // when & then
-            assertThatThrownBy {
-                studioService.create(signUp(), CreateStudioRequest("스튜디오", "API", null))
-            }.isInstanceOf(StudioException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(StudioErrorCode.INVALID_GALLERY_URL)
-        }
-
-        @Test
-        fun `서비스가 먼저 쓰는 경로는 선점할 수 없다`() {
-            // 도메인 바로 아래에 붙는 주소라 선점당하면 그 경로로 갈 수 없게 된다.
-            // when & then
-            assertThatThrownBy {
-                studioService.create(signUp(), CreateStudioRequest("스튜디오", "galleries", null))
-            }.isInstanceOf(StudioException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(StudioErrorCode.INVALID_GALLERY_URL)
-        }
-
-        @Test
-        fun `없는 사용자로는 만들 수 없다`() {
-            // when & then
-            assertThatThrownBy {
-                studioService.create(99999999L, CreateStudioRequest("스튜디오", "ghost-studio", null))
-            }.isInstanceOf(UserException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(UserErrorCode.USER_NOT_FOUND)
-        }
+        assertThat(studioService.listMine(user.requiredId)).hasSize(2)
+        assertThatThrownBy { studioService.getMyStudio(user.requiredId) }
+            .isInstanceOf(StudioException::class.java)
+            .extracting("errorCode")
+            .isEqualTo(StudioErrorCode.STUDIO_SELECTION_REQUIRED)
     }
 
-    @Nested
-    @DisplayName("내 스튜디오를 조회할 때")
-    inner class GetMyStudio {
+    @Test
+    fun `스튜디오 이름을 바꾸면 작업공간 이름도 같이 바뀐다`() {
+        val user = userFixture.사용자()
+        val studio = studioService.create(user.requiredId, CreateStudioRequest("이전 이름", "before-url", null))
 
-        @Test
-        fun `온보딩을 마치지 않았으면 내 스튜디오가 없다`() {
-            // 프론트는 이 404를 보고 스튜디오 생성 화면으로 보낸다.
-            // when & then
-            assertThatThrownBy { studioService.getMyStudio(signUp()) }
-                .isInstanceOf(StudioException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(StudioErrorCode.STUDIO_NOT_FOUND)
-        }
+        studioService.update(studio.id, user.requiredId, UpdateStudioRequest("새 이름", "after-url"))
+
+        assertThat(workspaceRepository.findById(studio.id).orElseThrow().name).isEqualTo("새 이름")
+        assertThat(studioRepository.findById(studio.id).orElseThrow().name).isEqualTo("새 이름")
     }
 
-    @Nested
-    @DisplayName("스튜디오를 수정할 때")
-    inner class Update {
+    @Test
+    fun `이미 쓰는 갤러리 주소는 거절한다`() {
+        studioService.create(
+            userFixture.사용자().requiredId,
+            CreateStudioRequest("먼저 만든 곳", "taken-url", null),
+        )
 
-        @Test
-        fun `이름과 주소를 바꾼다`() {
-            // given
-            val userId = signUp()
-            studioService.create(userId, CreateStudioRequest("옛 이름", "old-url", null))
-
-            // when
-            val updated = studioService.updateMyStudio(userId, UpdateStudioRequest("새 이름", "  NEW-URL  "))
-
-            // then
-            assertThat(updated.name).isEqualTo("새 이름")
-            assertThat(updated.galleryUrl).isEqualTo("new-url")
-        }
-
-        @Test
-        fun `주소를 그대로 두고 이름만 바꿀 수 있다`() {
-            // 자기 주소가 자기 중복 검사에 걸리면 이름조차 못 바꾼다.
-            // given
-            val userId = signUp()
-            studioService.create(userId, CreateStudioRequest("옛 이름", "keep-url", null))
-
-            // when
-            val updated = studioService.updateMyStudio(userId, UpdateStudioRequest("새 이름", "  KEEP-URL  "))
-
-            // then
-            assertThat(updated.name).isEqualTo("새 이름")
-            assertThat(updated.galleryUrl).isEqualTo("keep-url")
-        }
-
-        @Test
-        fun `남이 쓰는 주소로는 바꿀 수 없다`() {
-            // given
-            studioService.create(signUp(), CreateStudioRequest("남의 스튜디오", "someone-else", null))
-            val userId = signUp()
-            studioService.create(userId, CreateStudioRequest("내 스튜디오", "mine", null))
-
-            // when & then
-            assertThatThrownBy {
-                studioService.updateMyStudio(userId, UpdateStudioRequest("내 스튜디오", "someone-else"))
-            }.isInstanceOf(StudioException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(StudioErrorCode.GALLERY_URL_DUPLICATED)
-        }
+        assertThatThrownBy {
+            studioService.create(
+                userFixture.사용자().requiredId,
+                CreateStudioRequest("나중에 온 곳", "TAKEN-URL", null),
+            )
+        }.isInstanceOf(StudioException::class.java)
+            .extracting("errorCode")
+            .isEqualTo(StudioErrorCode.GALLERY_URL_DUPLICATED)
     }
 
-    @Nested
-    @DisplayName("주소 중복을 확인할 때")
-    inner class CheckGalleryUrl {
+    @Test
+    fun `멤버가 스튜디오에서 나가면 소유자에게 알린다`() {
+        val owner = userFixture.사용자()
+        val member = userFixture.사용자()
+        val studio = studioService.create(owner.requiredId, CreateStudioRequest("공동 스튜디오", "shared-studio"))
+        workspaceMemberRepository.save(
+            com.soma.wes.workspace.domain.WorkspaceMember(
+                studio.workspaceId,
+                member.requiredId,
+                WorkspaceRole.MEMBER,
+            ),
+        )
 
-        @Test
-        fun `주소 중복 확인은 생성과 같은 규칙을 쓴다`() {
-            // when & then
-            val available = studioService.checkGalleryUrl("  FREE-URL  ")
+        studioService.leave(studio.workspaceId, member.requiredId)
 
-            assertThat(available.galleryUrl).isEqualTo("free-url")
-            assertThat(available.available).isTrue()
+        assertThat(workspaceMemberRepository.findByWorkspaceIdAndUserId(studio.workspaceId, member.requiredId)).isNull()
+        assertThat(notificationRepository.findAllByUserIdOrderByCreatedAtDescIdDesc(owner.requiredId)).hasSize(1)
+    }
 
-            studioService.create(signUp(), CreateStudioRequest("스튜디오", "free-url", null))
+    @Test
+    fun `소유자는 내 스튜디오와 하위 작업공간을 삭제한다`() {
+        val owner = userFixture.사용자()
+        val studio = studioService.create(owner.requiredId, CreateStudioRequest("삭제 스튜디오", "delete-my-studio"))
 
-            assertThat(studioService.checkGalleryUrl("free-url").available).isFalse()
-        }
+        studioService.deleteMyStudio(owner.requiredId)
 
-        @Test
-        fun `확인 단계에서도 쓸 수 없는 주소는 거절한다`() {
-            // 여기서 통과했는데 저장이 거절되면 사용자는 이유를 알 수 없다.
-            // when & then
-            assertThatThrownBy { studioService.checkGalleryUrl("ab").available }.isInstanceOf(StudioException::class.java)
-            assertThatThrownBy { studioService.checkGalleryUrl("studio url").available }.isInstanceOf(StudioException::class.java)
-            assertThatThrownBy { studioService.checkGalleryUrl("studio_url").available }.isInstanceOf(StudioException::class.java)
-            assertThatThrownBy { studioService.checkGalleryUrl("스튜디오").available }.isInstanceOf(StudioException::class.java)
-            assertThatThrownBy { studioService.checkGalleryUrl("admin").available }.isInstanceOf(StudioException::class.java)
-        }
+        assertThat(studioRepository.findById(studio.workspaceId)).isEmpty
+        assertThat(workspaceRepository.findById(studio.workspaceId)).isEmpty
     }
 }

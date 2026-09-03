@@ -42,12 +42,12 @@ class ProductChildTrashService(
         )
 
     @Transactional(propagation = Propagation.MANDATORY)
-    fun cancelGuestLike(sessionId: Long, collabPhotoId: Long, guestId: Long): Boolean {
+    fun cancelGuestLike(sessionId: Long, photoId: Long, guestId: Long): Boolean {
         if (!repository.lockActiveCollaboration(sessionId)) return false
-        if (!repository.lockCollabPhoto(sessionId, collabPhotoId)) return false
+        if (!repository.lockCollabPhoto(sessionId, photoId)) return false
 
         val deletedAt = ZonedDateTime.now(clock)
-        val likeId = repository.softDeleteLike(sessionId, collabPhotoId, guestId, deletedAt) ?: return false
+        val likeId = repository.softDeleteLike(sessionId, photoId, guestId, deletedAt) ?: return false
         completeCollaborationDelete(
             sessionId = sessionId,
             resourceType = RESOURCE_LIKE,

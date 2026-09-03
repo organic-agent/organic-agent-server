@@ -8,13 +8,18 @@ import com.soma.wes.admin.resource.dto.AdminResourceSectionPageInfo
 import com.soma.wes.admin.resource.dto.AdminResourceSummaryResponse
 import com.soma.wes.admin.resource.repository.AdminResourceContextRepository
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
+import com.soma.wes.admin.resource.repository.AdminCascadeTrashRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Clock
+import java.time.ZonedDateTime
 
 @Service
 class AdminResourceContextService(
     private val resourceRepository: AdminResourceRepository,
     private val contextRepository: AdminResourceContextRepository,
+    private val trashRepository: AdminCascadeTrashRepository,
+    private val clock: Clock,
 ) {
 
     @Transactional(readOnly = true)
@@ -34,7 +39,7 @@ class AdminResourceContextService(
                     updatedAt = related.updatedAt,
                 )
             }
-        val facts = contextRepository.findFacts(type, id)
+        val facts = contextRepository.findFacts(type, id) + restoreFacts(type, id)
         val sections = contextRepository.findSections(type, id)
         return AdminResourceContextResponse(
             resource = resource,
@@ -42,6 +47,17 @@ class AdminResourceContextService(
             facts = facts,
             sections = sections,
             sectionPageInfo = sectionPageInfo(type, facts, sections),
+        )
+    }
+
+    private fun restoreFacts(type: AdminResourceType, id: Long): Map<String, Any?> {
+        val rootBatch = trashRepository.findActiveByRoot(type, id)
+        val activeBatch = rootBatch ?: trashRepository.findActiveContaining(type, id)
+        return linkedMapOf(
+            "trashBatchId" to activeBatch?.id,
+            "canRestoreDirectly" to (
+                rootBatch?.status == "ACTIVE" && ZonedDateTime.now(clock).isBefore(rootBatch.restoreUntil)
+            ),
         )
     }
 

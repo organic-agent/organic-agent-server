@@ -10,6 +10,8 @@ import com.soma.wes.support.IntegrationTest
 import com.soma.wes.trash.RecordingTrashPhotoStorage
 import com.soma.wes.trash.config.TrashProperties
 import com.soma.wes.trash.repository.TrashRepository
+import com.soma.wes.workspace.domain.Workspace
+import com.soma.wes.workspace.repository.WorkspaceRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -38,6 +40,7 @@ class TrashPurgeSchedulerTest @Autowired constructor(
     private val jdbcTemplate: JdbcTemplate,
     private val photoStorage: RecordingTrashPhotoStorage,
     private val trashProperties: TrashProperties,
+    private val workspaceRepository: WorkspaceRepository,
 ) {
 
     private val sequence = AtomicLong(System.nanoTime())
@@ -72,14 +75,15 @@ class TrashPurgeSchedulerTest @Autowired constructor(
     // --- helpers ---
 
     private fun createGallery(): Long {
+        val workspace = workspaceRepository.save(Workspace.studio("테스트 스튜디오"))
         val studio = studioRepository.save(
             Studio(
-                userId = sequence.incrementAndGet(),
+                userId = workspace.requiredId,
                 name = "테스트 스튜디오",
                 galleryUrl = "purge-scheduler-${sequence.incrementAndGet()}",
             ),
         )
-        return checkNotNull(galleryRepository.save(Gallery(studioId = checkNotNull(studio.id), title = "본식")).id)
+        return checkNotNull(galleryRepository.save(Gallery(studioId = studio.id, title = "본식")).id)
     }
 
     private fun savePhoto(galleryId: Long): Photo =

@@ -86,4 +86,7 @@ interface GalleryMemberControllerDocs {
         ),
     )
     fun remove(loginUser: LoginUser, galleryId: Long, memberId: Long): ResponseEntity<Unit>
+
+    @Operation(summary = "갤러리에서 나가기", description = "현재 사용자의 갤러리 멤버십을 해제하고 담당 스튜디오에 알린다.")
+    fun leave(loginUser: LoginUser, galleryId: Long): ResponseEntity<Unit>
 }

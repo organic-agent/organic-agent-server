@@ -6,7 +6,12 @@ import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.repository.requireByIdAndGalleryId
 import com.soma.wes.gallery.repository.requireWithLockById
 import com.soma.wes.gallery.support.GalleryAccessPolicy
+import com.soma.wes.notification.domain.UserNotificationScope
+import com.soma.wes.notification.domain.UserNotificationType
+import com.soma.wes.notification.service.UserNotificationPublisher
 import com.soma.wes.user.repository.UserRepository
+import com.soma.wes.workspace.domain.WorkspaceRole
+import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -17,6 +22,8 @@ class GalleryMemberService(
     private val galleryMemberRepository: GalleryMemberRepository,
     private val userRepository: UserRepository,
     private val galleryAccessPolicy: GalleryAccessPolicy,
+    private val workspaceMemberRepository: WorkspaceMemberRepository,
+    private val notificationPublisher: UserNotificationPublisher,
 ) {
 
     /**
@@ -44,8 +51,36 @@ class GalleryMemberService(
         // 정원을 바꾸는 경로는 전부 갤러리 행을 잠그고 시작한다.
         galleryRepository.requireWithLockById(galleryId)
 
-        galleryMemberRepository.delete(
-            galleryMemberRepository.requireByIdAndGalleryId(memberId, galleryId),
+        val member = galleryMemberRepository.requireByIdAndGalleryId(memberId, galleryId)
+        galleryMemberRepository.delete(member)
+        notificationPublisher.publish(
+            userIds = listOf(member.userId),
+            type = UserNotificationType.MEMBERSHIP_REMOVED,
+            scope = UserNotificationScope.GALLERY,
+            scopeId = galleryId,
+            title = "갤러리 소속이 해제되었습니다",
+            message = "작가가 갤러리 멤버십을 해제했습니다.",
+        )
+    }
+
+    @Transactional
+    fun leave(galleryId: Long, userId: Long) {
+        val gallery = galleryRepository.requireWithLockById(galleryId)
+        val member = galleryMemberRepository.findByGalleryIdAndUserId(galleryId, userId)
+            ?: throw com.soma.wes.gallery.exception.GalleryException(
+                com.soma.wes.gallery.exception.GalleryErrorCode.MEMBER_NOT_FOUND,
+            )
+        galleryMemberRepository.delete(member)
+        val owners = workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId)
+            .filter { it.role == WorkspaceRole.OWNER }
+            .map { it.userId }
+        notificationPublisher.publish(
+            userIds = owners,
+            type = UserNotificationType.GALLERY_MEMBER_LEFT,
+            scope = UserNotificationScope.GALLERY,
+            scopeId = galleryId,
+            title = "갤러리 멤버가 나갔습니다",
+            message = "${gallery.title}에서 고객 한 명이 나갔습니다.",
         )
     }
 }

@@ -14,7 +14,7 @@ data class CollabLandingResponse(
     @field:Schema(description = "화면 제목으로 그대로 쓴다.")
     val galleryTitle: String,
 
-    @field:Schema(description = "부부가 하객에게 보여주는 사진 수.")
+    @field:Schema(description = "세션 컨셉 아래 상세폴더에 현재 배정된 사진 수.")
     val photoCount: Long,
 
     @field:Schema(

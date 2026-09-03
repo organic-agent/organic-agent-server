@@ -16,10 +16,11 @@ import com.soma.wes.admin.resource.dto.AdminRetouchArtifactType
 import com.soma.wes.admin.resource.repository.AdminRetouchArtifactRepository
 import com.soma.wes.admin.resource.repository.AdminResourceContextRepository
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
-import com.soma.wes.admin.resource.repository.AdminUserTypeChange
 import com.soma.wes.admin.resource.repository.AdminWorkflowRepository
 import com.soma.wes.admin.resource.repository.AdminNotificationInboxRepository
+import com.soma.wes.category.service.CategorizationService
 import com.soma.wes.collab.support.CollabLinkResolver
+import com.soma.wes.gallery.domain.GalleryInviteKind
 import com.soma.wes.gallery.service.GalleryInviteService
 import com.soma.wes.gallery.support.GalleryInviteUrlResolver
 import com.soma.wes.global.SecureTokenGenerator
@@ -57,6 +58,7 @@ class AdminWorkflowService(
     private val tokenGenerator: SecureTokenGenerator,
     private val galleryInviteUrlResolver: GalleryInviteUrlResolver,
     private val collabLinkResolver: CollabLinkResolver,
+    private val categorizationService: CategorizationService,
     private val objectMapper: ObjectMapper,
     private val transactionTemplate: TransactionTemplate,
     private val clock: Clock,
@@ -130,9 +132,6 @@ class AdminWorkflowService(
                     "workflowDetails" to execution.details.toAuditDetails(),
                 )
                 audit(actorAdminId, type, id, initial.label, request, sourceAddress, before, after)
-                execution.userTypeChange?.let { change ->
-                    auditUserTypeChange(actorAdminId, request, sourceAddress, change)
-                }
                 workflowRepository.completeWorkflow(
                     actionKey,
                     request.idempotencyKey,
@@ -285,7 +284,6 @@ class AdminWorkflowService(
                     "previousOwnerId" to result.previousOwnerId,
                     "ownerId" to result.ownerId,
                 ),
-                userTypeChange = result.userTypeChange,
             )
         }
         AdminWorkflowAction.ADD_STUDIO_MEMBER -> {
@@ -293,7 +291,6 @@ class AdminWorkflowService(
             val result = workflowRepository.addStudioMember(id, request.long("userId"), request.expectedVersion)
             WorkflowExecution(
                 details = mapOf("memberId" to result.memberId),
-                userTypeChange = result.userTypeChange,
             )
         }
         AdminWorkflowAction.REMOVE_STUDIO_MEMBER -> {
@@ -307,7 +304,6 @@ class AdminWorkflowService(
             val result = workflowRepository.addGalleryMember(id, request.long("userId"), request.expectedVersion)
             WorkflowExecution(
                 details = mapOf("memberId" to result.memberId),
-                userTypeChange = result.userTypeChange,
             )
         }
         AdminWorkflowAction.REMOVE_GALLERY_MEMBER -> {
@@ -331,15 +327,40 @@ class AdminWorkflowService(
                 "selectionDeadline" to deadline,
             ))
         }
+        AdminWorkflowAction.RUN_CATEGORIZATION -> {
+            requireType(type, AdminResourceType.GALLERY)
+            val result = categorizationService.runAsAdmin(id)
+            workflowRepository.bumpResourceVersion(type, id, request.expectedVersion)
+            WorkflowExecution(details = mapOf(
+                "jobId" to result.id,
+                "mode" to result.mode.name,
+                "jobStatus" to result.status.name,
+                "processedPhotoCount" to result.processedPhotoCount,
+            ))
+        }
         AdminWorkflowAction.REISSUE_GALLERY_INVITE -> {
             requireType(type, AdminResourceType.GALLERY)
-            val expiresAt = ZonedDateTime.now(clock).plus(GalleryInviteService.VALIDITY)
+            val now = ZonedDateTime.now(clock)
+            val expiresAt = request.optionalOffsetDateTime("expiresAt")?.toZonedDateTime()
+                ?: now.plus(GalleryInviteService.VALIDITY)
+            if (!expiresAt.isAfter(now)) throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
+            val kind = request.optionalText("kind", 30)?.uppercase()?.let { value ->
+                runCatching { GalleryInviteKind.valueOf(value) }
+                    .getOrElse { throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS) }
+            }
+            val maxUses = request.optionalInt("maxUses")
+            if (maxUses != null && maxUses !in 1..100) {
+                throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
+            }
             val token = tokenGenerator.generate()
-            val inviteId = workflowRepository.reissueGalleryInvite(
-                id, token, expiresAt, request.expectedVersion,
+            val invite = workflowRepository.reissueGalleryInvite(
+                id, token, kind, maxUses, expiresAt, request.expectedVersion,
             )
             WorkflowExecution(details = mapOf(
-                "inviteId" to inviteId,
+                "inviteId" to invite.inviteId,
+                "kind" to invite.kind.name,
+                "maxUses" to invite.maxUses,
+                "usedCount" to 0,
                 "expiresAt" to expiresAt,
                 "inviteUrl" to galleryInviteUrlResolver.resolve(token),
                 "revealed" to true,
@@ -473,7 +494,7 @@ class AdminWorkflowService(
             WorkflowExecution(details = mapOf(
                 "commentId" to workflowRepository.createCollabComment(
                     id,
-                    request.long("collabPhotoId"),
+                    request.long("photoId"),
                     request.long("guestId"),
                     request.text("content", 500),
                     request.expectedVersion,
@@ -523,7 +544,7 @@ class AdminWorkflowService(
             requireType(type, AdminResourceType.COLLABORATION)
             val likeId = workflowRepository.addCollabLike(
                 id,
-                request.long("collabPhotoId"),
+                request.long("photoId"),
                 request.long("guestId"),
                 request.expectedVersion,
             )
@@ -533,7 +554,7 @@ class AdminWorkflowService(
             requireType(type, AdminResourceType.COLLABORATION)
             val likeId = workflowRepository.findActiveCollabLikeId(
                 id,
-                request.long("collabPhotoId"),
+                request.long("photoId"),
                 request.long("guestId"),
             )
             val result = childTrashService.delete(
@@ -703,6 +724,7 @@ class AdminWorkflowService(
         return WorkflowExecution(details = mapOf(
             "publicStatus" to transition.publicStatus,
             "workflowStatus" to transition.workflowStatus,
+            "stage" to transition.stage,
         ))
     }
 
@@ -721,6 +743,7 @@ class AdminWorkflowService(
         return WorkflowExecution(details = mapOf(
             "publicStatus" to "OPEN",
             "workflowStatus" to "IN_PROGRESS",
+            "stage" to "SELECTION_IN_PROGRESS",
             "selectionDeadline" to selectionDeadline,
         ))
     }
@@ -987,25 +1010,6 @@ class AdminWorkflowService(
             sourceAddress,
             before,
             after,
-        )
-    }
-
-    private fun auditUserTypeChange(
-        actorAdminId: Long,
-        request: AdminWorkflowRequest,
-        sourceAddress: String?,
-        change: AdminUserTypeChange,
-    ) {
-        auditService.recordMutation(
-            action = AdminAuditAction.RESOURCE_UPDATED,
-            actorAdminId = actorAdminId,
-            targetType = AdminResourceType.USER.auditTargetType,
-            targetId = change.after.id.toString(),
-            targetLabel = change.after.label,
-            reason = durableReason(request),
-            sourceAddress = sourceAddress,
-            before = change.before.auditSnapshot(),
-            after = change.after.auditSnapshot(),
         )
     }
 
@@ -1362,7 +1366,6 @@ class AdminWorkflowService(
     private data class WorkflowExecution(
         val status: String = "COMPLETED",
         val details: Map<String, Any?> = emptyMap(),
-        val userTypeChange: AdminUserTypeChange? = null,
     )
 
     companion object {

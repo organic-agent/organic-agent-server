@@ -1,6 +1,7 @@
 package com.soma.wes.gallery.service
 
 import com.soma.wes.gallery.domain.GalleryStatus
+import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.repository.GalleryRepository
@@ -79,11 +80,11 @@ class MockGalleryServiceTest @Autowired constructor(
             val photographer = studioFixture.작가()
 
             // when
-            val result = mockGalleryService.create(photographer.id!!, null)
+            val result = mockGalleryService.create(photographer.id!!, requestFor(photographer))
 
             // then
             assertSoftly { softly ->
-                softly.assertThat(result.title).isEqualTo(MockGallerySeeder.DEFAULT_TITLE)
+                softly.assertThat(result.title).isEqualTo("샘플 갤러리")
                 softly.assertThat(result.status).isEqualTo(GalleryStatus.DRAFT)
                 softly.assertThat(result.id).isNotEqualTo(TEMPLATE_GALLERY_ID)
             }
@@ -115,7 +116,7 @@ class MockGalleryServiceTest @Autowired constructor(
             val photographer = studioFixture.작가()
 
             // when
-            val result = mockGalleryService.create(photographer.id!!, null)
+            val result = mockGalleryService.create(photographer.id!!, requestFor(photographer))
 
             // then
             val photo = photoRepository.findAllByGalleryIdOrderByDisplayOrderAsc(result.id).single()
@@ -132,7 +133,7 @@ class MockGalleryServiceTest @Autowired constructor(
             val photographer = studioFixture.작가()
 
             // when
-            val result = mockGalleryService.create(photographer.id!!, null)
+            val result = mockGalleryService.create(photographer.id!!, requestFor(photographer))
 
             // then
             assertThat(photoRepository.findAllByGalleryIdOrderByDisplayOrderAsc(result.id)).hasSize(1)
@@ -147,8 +148,8 @@ class MockGalleryServiceTest @Autowired constructor(
             val photographer = studioFixture.작가()
 
             // when
-            val first = mockGalleryService.create(photographer.id!!, null).id
-            val second = mockGalleryService.create(photographer.id!!, null).id
+            val first = mockGalleryService.create(photographer.id!!, requestFor(photographer)).id
+            val second = mockGalleryService.create(photographer.id!!, requestFor(photographer)).id
 
             // then
             assertThat(first).isNotEqualTo(second)
@@ -169,7 +170,7 @@ class MockGalleryServiceTest @Autowired constructor(
             val photographer = studioFixture.작가()
 
             // when & then
-            assertThatThrownBy { mockGalleryService.create(photographer.id!!, null) }
+            assertThatThrownBy { mockGalleryService.create(photographer.id!!, requestFor(photographer)) }
                 .isInstanceOf(GalleryException::class.java)
                 .extracting("errorCode")
                 .isEqualTo(GalleryErrorCode.MOCK_GALLERY_NOT_READY)
@@ -186,7 +187,7 @@ class MockGalleryServiceTest @Autowired constructor(
             val photographer = studioFixture.작가()
 
             // when & then
-            assertThatThrownBy { mockGalleryService.create(photographer.id!!, null) }
+            assertThatThrownBy { mockGalleryService.create(photographer.id!!, requestFor(photographer)) }
                 .isInstanceOf(GalleryException::class.java)
                 .extracting("errorCode")
                 .isEqualTo(GalleryErrorCode.MOCK_GALLERY_NOT_READY)
@@ -202,7 +203,7 @@ class MockGalleryServiceTest @Autowired constructor(
             val photographer = studioFixture.작가()
 
             // when & then
-            assertThatThrownBy { mockGalleryService.create(photographer.id!!, null) }
+            assertThatThrownBy { mockGalleryService.create(photographer.id!!, requestFor(photographer)) }
                 .isInstanceOf(PhotoException::class.java)
                 .extracting("errorCode")
                 .isEqualTo(PhotoErrorCode.STORAGE_COPY_FAILED)
@@ -222,11 +223,14 @@ class MockGalleryServiceTest @Autowired constructor(
      */
     private fun seedTemplate(photoCount: Int, withPreview: Boolean = true): List<Photo> {
         val operator = studioFixture.작가()
+        val workspaceId = studioFixture.소유_스튜디오(operator).workspaceId
         jdbcTemplate.update(
-            "INSERT INTO galleries (id, studio_id, title, status, created_at, updated_at) " +
-                "VALUES (?, ?, '샘플 템플릿', 'DRAFT', now(), now())",
+            "INSERT INTO galleries " +
+                "(id, workspace_id, created_by_user_id, title, status, workflow_status, created_at, updated_at) " +
+                "VALUES (?, ?, ?, '샘플 템플릿', 'DRAFT', 'DRAFT', now(), now())",
             TEMPLATE_GALLERY_ID,
-            studioRepository.findByUserId(operator.id!!)!!.requiredId,
+            workspaceId,
+            operator.requiredId,
         )
         return (0 until photoCount).map { index ->
             val photo = photoRepository.save(
@@ -245,6 +249,11 @@ class MockGalleryServiceTest @Autowired constructor(
             photo
         }
     }
+
+    private fun requestFor(photographer: com.soma.wes.user.domain.User) = CreateGalleryRequest(
+        workspaceId = studioFixture.소유_스튜디오(photographer).workspaceId,
+        title = "샘플 갤러리",
+    )
 
     private fun vectorOf(photo: Photo): FloatArray? =
         photoAnalysisRepository.findById(photo.requiredId).orElseThrow().embedding

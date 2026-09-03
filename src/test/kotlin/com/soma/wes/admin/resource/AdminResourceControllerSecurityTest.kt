@@ -108,6 +108,11 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             status { isOk() }
             jsonPath("$.resource.id") { value(createdId) }
             jsonPath("$.facts.activeSessions") { value(0) }
+            jsonPath("$.sections.userNotifications.length()") { value(0) }
+            jsonPath("$.sections.userNotificationSettings[0].userId") { value(createdId) }
+            jsonPath("$.sections.userNotificationSettings[0].emailEnabled") { value(true) }
+            jsonPath("$.sections.userNotificationSettings[0].browserEnabled") { value(true) }
+            jsonPath("$.sections.userNotificationSettings[0].settingsPersisted") { value(false) }
             jsonPath("$.relations") { isArray() }
         }
 
@@ -287,11 +292,11 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
         )
         val studio = create(
             AdminResourceType.STUDIO,
-            mapOf("userId" to user.id, "name" to "마스킹 스튜디오", "galleryUrl" to "context-mask"),
+            mapOf("ownerUserId" to user.id, "name" to "마스킹 스튜디오", "galleryUrl" to "context-mask"),
         )
         val gallery = create(
             AdminResourceType.GALLERY,
-            mapOf("studioId" to studio.id, "title" to "마스킹 갤러리"),
+            mapOf("workspaceId" to studio.id, "title" to "마스킹 갤러리"),
         )
         val photo = create(
             AdminResourceType.PHOTO,
@@ -483,7 +488,13 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             AdminResourceType.STUDIO,
             CreateAdminResourceRequest(
                 "[TEST_OPERATION] 대리보기 스튜디오 준비",
-                mapOf("userId" to userId, "name" to "대리보기 스튜디오", "galleryUrl" to "impersonation-view"),
+                mapOf(
+                    "ownerUserId" to userId,
+                    "name" to "대리보기 스튜디오",
+                    "galleryUrl" to "impersonation-view",
+                    "contact" to "02-123-4567",
+                    "description" to "대리보기 소개",
+                ),
             ),
             "127.0.0.1",
         )
@@ -492,7 +503,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             AdminResourceType.GALLERY,
             CreateAdminResourceRequest(
                 "[TEST_OPERATION] 대리보기 갤러리 준비",
-                mapOf("studioId" to studio.id, "title" to "대리보기 갤러리"),
+                mapOf("workspaceId" to studio.id, "title" to "대리보기 갤러리"),
             ),
             "127.0.0.1",
         )
@@ -521,7 +532,11 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             AdminResourceType.COLLABORATION,
             CreateAdminResourceRequest(
                 "[TEST_OPERATION] 협업 준비",
-                mapOf("galleryId" to gallery.id, "name" to "가족 의견"),
+                mapOf(
+                    "galleryId" to gallery.id,
+                    "conceptFolderId" to createConceptFolder(gallery.id),
+                    "name" to "가족 의견",
+                ),
             ),
             "127.0.0.1",
         )
@@ -543,14 +558,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             ),
             "127.0.0.1",
         )
-        val collabPhotoId = jdbcClient.sql(
-            """
-            INSERT INTO collab_photos (collab_session_id, photo_id, version, created_at, updated_at)
-            VALUES (:sessionId, :photoId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            RETURNING id
-            """.trimIndent(),
-        ).param("sessionId", collaboration.id).param("photoId", photo.id)
-            .query { rs, _ -> rs.getLong("id") }.single()
+        assignPhotoToSession(collaboration.id, photo.id)
         val collabGuestId = jdbcClient.sql(
             """
             INSERT INTO collab_guests (collab_session_id, guest_token, nickname, version, created_at, updated_at)
@@ -561,11 +569,12 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
         jdbcClient.sql(
             """
             INSERT INTO collab_photo_comments
-                (collab_photo_id, collab_guest_id, content, version, created_at, updated_at)
-            VALUES (:collabPhotoId, :guestId,
+                (collab_session_id, photo_id, collab_guest_id, content, version, created_at, updated_at)
+            VALUES (:sessionId, :photoId, :guestId,
                     '확인 private@example.com token=must-not-leak', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """.trimIndent(),
-        ).param("collabPhotoId", collabPhotoId).param("guestId", collabGuestId).update()
+        ).param("sessionId", collaboration.id).param("photoId", photo.id)
+            .param("guestId", collabGuestId).update()
 
         val sessionResponse = mockMvc.post("/internal/admin/v1/impersonations") {
             mutationHeaders()
@@ -581,6 +590,18 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             jsonPath("$.readOnly") { value(true) }
             jsonPath("$.view.profile.id") { value(userId) }
             jsonPath("$.viewer.userId") { value(userId) }
+            jsonPath("$.viewer.accessRole") { value("SELF") }
+            jsonPath("$.view.workspaces.length()") { value(2) }
+            jsonPath("$.view.workspaces[0].workspaceType") { value("PERSONAL") }
+            jsonPath("$.view.workspaces[1].workspaceId") { value(studio.id) }
+            jsonPath("$.view.workspaces[1].workspaceType") { value("STUDIO") }
+            jsonPath("$.view.workspaces[1].contact") { value("02-123-4567") }
+            jsonPath("$.view.workspaces[1].description") { value("대리보기 소개") }
+            jsonPath("$.view.galleries[0].workspaceId") { value(studio.id) }
+            jsonPath("$.view.galleries[0].workspaceType") { value("STUDIO") }
+            jsonPath("$.view.galleries[0].publicStatus") { value("DRAFT") }
+            jsonPath("$.view.galleries[0].workflowStatus") { value("DRAFT") }
+            jsonPath("$.view.galleries[0].stage") { value("UPLOAD") }
             jsonPath("$.blockedCapabilities") { isArray() }
             jsonPath("$.view.sections.photos[0].photoId") { value(photo.id) }
             jsonPath("$.view.sections.selections[0].galleryId") { value(gallery.id) }
@@ -822,7 +843,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             AdminResourceType.STUDIO,
             CreateAdminResourceRequest(
                 "[TEST_OPERATION] 구성원 대리보기 스튜디오 준비",
-                mapOf("userId" to owner.id, "name" to "공동 운영 스튜디오", "galleryUrl" to "member-view"),
+                mapOf("ownerUserId" to owner.id, "name" to "공동 운영 스튜디오", "galleryUrl" to "member-view"),
             ),
             "127.0.0.1",
         )
@@ -831,14 +852,14 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             AdminResourceType.GALLERY,
             CreateAdminResourceRequest(
                 "[TEST_OPERATION] 구성원 대리보기 갤러리 준비",
-                mapOf("studioId" to studio.id, "title" to "구성원 접근 갤러리"),
+                mapOf("workspaceId" to studio.id, "title" to "구성원 접근 갤러리"),
             ),
             "127.0.0.1",
         )
         val membershipId = jdbcClient.sql(
             """
-            INSERT INTO studio_members
-                (studio_id, user_id, role, version, created_at, updated_at)
+            INSERT INTO workspace_members
+                (workspace_id, user_id, role, version, created_at, updated_at)
             VALUES (:studioId, :userId, 'MEMBER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
             """.trimIndent(),
@@ -860,10 +881,13 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
         }.andExpect {
             status { isCreated() }
             jsonPath("$.viewer.userId") { value(member.id) }
-            jsonPath("$.viewer.role") { value("MEMBER") }
-            jsonPath("$.view.studios[0].id") { value(studio.id) }
+            jsonPath("$.viewer.accessRole") { value("WORKSPACE_MEMBER") }
+            jsonPath("$.view.workspaces[0].workspaceId") { value(studio.id) }
+            jsonPath("$.view.workspaces[0].workspaceType") { value("STUDIO") }
             jsonPath("$.view.galleries[0].id") { value(gallery.id) }
-            jsonPath("$.view.galleries[0].accessRole") { value("MEMBER") }
+            jsonPath("$.view.galleries[0].workspaceId") { value(studio.id) }
+            jsonPath("$.view.galleries[0].workspaceType") { value("STUDIO") }
+            jsonPath("$.view.galleries[0].accessRole") { value("WORKSPACE_MEMBER") }
             jsonPath("$.view.sections.photos") { isArray() }
         }
 
@@ -871,7 +895,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             cookie(cookie)
             header(AdminMutationHeaderFilter.HEADER_NAME, AdminMutationHeaderFilter.HEADER_VALUE)
         }.andExpect { status { isNoContent() } }
-        jdbcClient.sql("UPDATE studio_members SET deleted_at = CURRENT_TIMESTAMP WHERE id = :id")
+        jdbcClient.sql("UPDATE workspace_members SET deleted_at = CURRENT_TIMESTAMP WHERE id = :id")
             .param("id", membershipId).update()
 
         mockMvc.post("/internal/admin/v1/impersonations") {
@@ -981,7 +1005,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
 
         val expiredSessionId = start()
         jdbcClient.sql(
-            "UPDATE admin_impersonation_sessions SET expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second' " +
+            "UPDATE admin_impersonation_sessions SET expires_at = CURRENT_TIMESTAMP - INTERVAL '1 minute' " +
                 "WHERE id = CAST(:id AS UUID)",
         ).param("id", expiredSessionId).update()
 
@@ -1021,6 +1045,34 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             header(AdminMutationHeaderFilter.HEADER_NAME, AdminMutationHeaderFilter.HEADER_VALUE)
         }.andExpect { status { isNotFound() } }
         assertThat(impersonationEndAuditCount(manualSessionId)).isOne()
+    }
+
+    private fun createConceptFolder(galleryId: Long): Long = jdbcClient.sql(
+        """
+        INSERT INTO concept_folders
+            (gallery_id, name, sort_order, created_source, version, created_at, updated_at)
+        VALUES (:galleryId, '대리보기 컨셉', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING id
+        """.trimIndent(),
+    ).param("galleryId", galleryId).query { rs, _ -> rs.getLong("id") }.single()
+
+    private fun assignPhotoToSession(sessionId: Long, photoId: Long) {
+        val detailId = jdbcClient.sql(
+            """
+            INSERT INTO detail_folders
+                (concept_folder_id, name, sort_order, created_source, version, created_at, updated_at)
+            SELECT concept_folder_id, '대리보기 상세', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            FROM collab_sessions WHERE id = :sessionId
+            RETURNING id
+            """.trimIndent(),
+        ).param("sessionId", sessionId).query { rs, _ -> rs.getLong("id") }.single()
+        jdbcClient.sql(
+            """
+            INSERT INTO photo_category_assignments
+                (photo_id, detail_folder_id, assigned_source, assigned_at, version, created_at, updated_at)
+            VALUES (:photoId, :detailId, 'USER', CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """.trimIndent(),
+        ).param("photoId", photoId).param("detailId", detailId).update()
     }
 
     companion object {

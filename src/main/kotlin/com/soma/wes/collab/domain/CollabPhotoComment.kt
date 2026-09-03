@@ -19,13 +19,16 @@ import java.time.ZonedDateTime
 @Table(
     name = "collab_photo_comments",
     indexes = [
-        Index(name = "idx_collab_photo_comments_collab_photo_id", columnList = "collab_photo_id"),
+        Index(name = "idx_collab_photo_comments_session_photo", columnList = "collab_session_id, photo_id"),
     ],
 )
 class CollabPhotoComment(
 
-    @Column(name = "collab_photo_id", nullable = false, updatable = false)
-    val collabPhotoId: Long,
+    @Column(name = "collab_session_id", nullable = false, updatable = false)
+    val collabSessionId: Long,
+
+    @Column(name = "photo_id", nullable = false, updatable = false)
+    val photoId: Long,
 
     @Column(name = "collab_guest_id", nullable = false, updatable = false)
     val collabGuestId: Long,

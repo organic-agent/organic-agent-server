@@ -24,11 +24,8 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.core.io.ClassPathResource
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.mock.web.MockHttpServletRequest
-import org.springframework.transaction.PlatformTransactionManager
-import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.request.ServletRequestAttributes
-import org.testcontainers.containers.PostgreSQLContainer
 
 @IntegrationTest
 class AdminAuditServiceTest @Autowired constructor(
@@ -42,8 +39,6 @@ class AdminAuditServiceTest @Autowired constructor(
     private val snapshotCodec: AdminAuditSnapshotCodec,
     private val adminAccountFixture: AdminAccountFixture,
     private val jdbcTemplate: JdbcTemplate,
-    private val transactionManager: PlatformTransactionManager,
-    private val postgresContainer: PostgreSQLContainer<*>,
 ) {
 
     @Test
@@ -327,250 +322,15 @@ class AdminAuditServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `V40은 과거 영구 감사와 휴지통 원문을 exact key로 비가역 정리한다`() {
-        if (!legacyRevisionExpiryColumnExists()) {
-            V40AuditHardeningMigrationVerifier.verify(postgresContainer, snapshotCodec)
-            return
-        }
-        val actor = adminAccountFixture.관리자("legacy-redaction-actor")
-        val beforeSnapshot =
-            """{"type":"GALLERY","id":987654,"version":2,"title":"이전 본식 제목","status":"DRAFT","deleted":false,"createdAt":"2026-08-27T13:10:00Z","updatedAt":"2026-99-99T99:99:99+99:99","private@example.com":"ACTIVE","fields":{"status":"DRAFT","customerName-private@example.com":"OPEN"}}"""
-        val afterSnapshot =
-            """{"type":"GALLERY","id":987654,"version":3,"label":"홍길동 본식","title":"private@example.com 본식 password=top-secret","status":"OPEN","deleted":false,"content":"삭제된 고객 본문","accountNumber":1234567890}"""
-        jdbcTemplate.update(
-            """
-            INSERT INTO admin_audit_logs
-                (action, outcome, actor_admin_id, actor_username_snapshot, target_type, target_id,
-                 target_label, source_address, reason, changed_fields, revision_number, created_at)
-            VALUES
-                ('RESOURCE_UPDATED', 'SUCCESS', ?, '홍길동 운영자', 'GALLERY', '987654',
-                 'private@example.com 본식 제목', '203.0.113.41',
-                 '[DATA_CORRECTION] 고객 이름과 제목 정정',
-                 'status,title, updatedAt,private@example.com,accountId,label,status', 100, CURRENT_TIMESTAMP),
-                ('RESOURCE_UPDATED', 'SUCCESS', ?, 'Alice', 'GALLERY', '987656',
-                 'Hong wedding', '203.0.113.44',
-                 'note=Alice customerName=Hong memo=01012345678', NULL, NULL, CURRENT_TIMESTAMP)
-            """.trimIndent(),
-            actor.requiredId,
-            actor.requiredId,
+    fun `단일 V1 베이스라인은 감사 리비전 보존 불변식을 포함한다`() {
+        assertThat(legacyRevisionExpiryColumnExists()).isFalse()
+        val baseline = ClassPathResource("db/migration/V1__baseline.sql")
+            .inputStream.bufferedReader().use { it.readText() }
+        assertThat(baseline).contains(
+            "ck_admin_entity_revisions_restore_window",
+            "trg_admin_audit_logs_immutable",
+            "trg_admin_entity_revisions_immutable",
         )
-        jdbcTemplate.update(
-            """
-            INSERT INTO admin_auth_events
-                (event_type, actor_admin_id, target_admin_id, username_snapshot,
-                 source_address, reason, successful, created_at)
-            VALUES
-                ('ACCOUNT_STATUS_CHANGED', ?, ?, '홍길동 운영자', '203.0.113.42',
-                 '[SECURITY_RESPONSE] 개인정보 노출 대응', TRUE, CURRENT_TIMESTAMP),
-                ('LOGIN_FAILED', NULL, NULL, 'unknown-private@example.com', '203.0.113.43',
-                 NULL, FALSE, CURRENT_TIMESTAMP)
-            """.trimIndent(),
-            actor.requiredId,
-            actor.requiredId,
-        )
-        jdbcTemplate.update(
-            """
-            INSERT INTO admin_trash_batches
-                (root_type, root_id, root_label, actor_admin_id, actor_username, reason, status,
-                 deleted_at, restore_until, created_at, updated_at)
-            VALUES
-                ('GALLERY', 88001, 'private@example.com wedding', ?, '홍길동',
-                 '[CUSTOMER_REQUEST] 고객 원문', 'ACTIVE', CURRENT_TIMESTAMP,
-                 CURRENT_TIMESTAMP + INTERVAL '7 days', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                ('PHOTO', 88002, 'Alice photo', ?, 'Alice', 'private@example.com', 'PURGED',
-                 CURRENT_TIMESTAMP - INTERVAL '8 days', CURRENT_TIMESTAMP - INTERVAL '1 day',
-                 CURRENT_TIMESTAMP - INTERVAL '8 days', CURRENT_TIMESTAMP)
-            """.trimIndent(),
-            actor.requiredId,
-            actor.requiredId,
-        )
-        jdbcTemplate.update(
-            """
-            INSERT INTO admin_child_trash_records
-                (resource_type, resource_id, parent_type, parent_id, actor_admin_id, actor_username,
-                 reason, status, deleted_at, restore_until, created_at, updated_at)
-            VALUES
-                ('COLLAB_COMMENT', 88101, 'COLLABORATION', 88100, ?, '홍길동',
-                 '[DATA_CORRECTION] 댓글 원문', 'ACTIVE', CURRENT_TIMESTAMP,
-                 CURRENT_TIMESTAMP + INTERVAL '7 days', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                ('COLLAB_COMMENT', 88102, 'COLLABORATION', 88100, ?, 'Alice',
-                 'private@example.com', 'PURGED', CURRENT_TIMESTAMP - INTERVAL '8 days',
-                 CURRENT_TIMESTAMP - INTERVAL '1 day', CURRENT_TIMESTAMP - INTERVAL '8 days',
-                 CURRENT_TIMESTAMP)
-            """.trimIndent(),
-            actor.requiredId,
-            actor.requiredId,
-        )
-
-        val migration = ClassPathResource(
-            "db/migration/V40__harden_permanent_audit_invariants.sql",
-        ).inputStream.bufferedReader().use { it.readText() }
-        TransactionTemplate(transactionManager).executeWithoutResult {
-            jdbcTemplate.execute(
-                "ALTER TABLE admin_entity_revisions " +
-                    "DROP CONSTRAINT IF EXISTS ck_admin_entity_revisions_restore_window",
-            )
-            jdbcTemplate.update(
-                """
-                INSERT INTO admin_entity_revisions
-                    (target_type, target_id, revision_number, operation, before_snapshot, after_snapshot,
-                     restore_expires_at, snapshot_schema_version, target_version,
-                     before_restore_payload, after_restore_payload, created_at)
-                VALUES
-                    ('GALLERY', '987654', 100, 'RESOURCE_UPDATED', ?, ?,
-                     CURRENT_TIMESTAMP + INTERVAL '8 days', 1, NULL, ?, ?, CURRENT_TIMESTAMP),
-                    ('GALLERY', '987655', 101, 'RESOURCE_UPDATED', ?, ?,
-                     CURRENT_TIMESTAMP - INTERVAL '1 second', 1, NULL, ?, ?, CURRENT_TIMESTAMP)
-                """.trimIndent(),
-                beforeSnapshot,
-                afterSnapshot,
-                beforeSnapshot,
-                afterSnapshot,
-                beforeSnapshot.replace("987654", "987655"),
-                afterSnapshot.replace("987654", "987655"),
-                beforeSnapshot.replace("987654", "987655"),
-                afterSnapshot.replace("987654", "987655"),
-            )
-            jdbcTemplate.execute(migration)
-        }
-
-        val permanent = jdbcTemplate.queryForMap(
-            """
-            SELECT target_id, target_version, snapshot_schema_version,
-                   before_snapshot, after_snapshot, before_restore_payload, after_restore_payload,
-                   restore_expires_at = created_at + INTERVAL '7 days' AS restore_window_clamped,
-                   expires_at = restore_expires_at AS legacy_expiry_synchronized
-            FROM admin_entity_revisions
-            WHERE target_type = 'GALLERY' AND revision_number = 100
-            """.trimIndent(),
-        )
-        val permanentText = permanent["before_snapshot"].toString() + permanent["after_snapshot"].toString()
-        assertThat(permanent["target_id"]).isEqualTo("987654")
-        assertThat(permanent["target_version"]).isEqualTo(3L)
-        assertThat(permanent["snapshot_schema_version"]).isEqualTo(3)
-        assertThat(permanent["restore_window_clamped"]).isEqualTo(true)
-        assertThat(permanent["legacy_expiry_synchronized"]).isEqualTo(true)
-        val permanentBefore = requireNotNull(snapshotCodec.decode(permanent["before_snapshot"] as String))
-        assertThat(permanentBefore.get("createdAt").stringValue()).isEqualTo("2026-08-27T13:10:00Z")
-        assertThat(permanentBefore.get("updatedAt").stringValue()).isEqualTo("[REDACTED]")
-        assertThat(permanentText)
-            .contains(
-                "GALLERY",
-                "987654",
-                "version",
-                "status",
-                "DRAFT",
-                "OPEN",
-                "[REDACTED]",
-                "createdAt",
-                "2026-08-27T13:10:00Z",
-                "updatedAt",
-            )
-            .doesNotContain(
-                "이전 본식 제목",
-                "홍길동 본식",
-                "private@example.com",
-                "top-secret",
-                "삭제된 고객 본문",
-                "1234567890",
-                "private@example.com\":\"ACTIVE",
-                "customerName-private@example.com",
-                "accountId",
-            )
-        val restoreText = permanent["before_restore_payload"].toString() +
-            permanent["after_restore_payload"].toString()
-        assertThat(restoreText)
-            .contains("이전 본식 제목", "private@example.com 본식", "password=[REDACTED]")
-            .doesNotContain("top-secret", "삭제된 고객 본문", "accountNumber", "label")
-
-        val expiredPayloads = jdbcTemplate.queryForMap(
-            """
-            SELECT before_restore_payload, after_restore_payload
-            FROM admin_entity_revisions
-            WHERE target_type = 'GALLERY' AND revision_number = 101
-            """.trimIndent(),
-        )
-        assertThat(expiredPayloads["before_restore_payload"]).isNull()
-        assertThat(expiredPayloads["after_restore_payload"]).isNull()
-
-        val audit = jdbcTemplate.queryForMap(
-            """
-            SELECT actor_username_snapshot, target_id, target_label, source_address, reason, changed_fields
-            FROM admin_audit_logs
-            WHERE target_type = 'GALLERY' AND target_id = '987654'
-            """.trimIndent(),
-        )
-        assertThat(audit["actor_username_snapshot"]).isEqualTo("ADMIN #${actor.requiredId}")
-        assertThat(audit["target_label"]).isEqualTo("GALLERY #987654")
-        assertThat(audit["source_address"]).isNull()
-        assertThat(audit["reason"])
-            .isEqualTo("reasonCategory=DATA_CORRECTION operatorReasonProvided=true")
-        assertThat(audit["changed_fields"]).isEqualTo("status,title")
-
-        val disguisedPiiAudit = jdbcTemplate.queryForMap(
-            """
-            SELECT actor_username_snapshot, target_label, source_address, reason
-            FROM admin_audit_logs
-            WHERE target_type = 'GALLERY' AND target_id = '987656'
-            """.trimIndent(),
-        )
-        assertThat(disguisedPiiAudit["actor_username_snapshot"]).isEqualTo("ADMIN #${actor.requiredId}")
-        assertThat(disguisedPiiAudit["target_label"]).isEqualTo("GALLERY #987656")
-        assertThat(disguisedPiiAudit["source_address"]).isNull()
-        assertThat(disguisedPiiAudit["reason"])
-            .isEqualTo("reasonCategory=UNSPECIFIED operatorReasonProvided=true")
-
-        val authRows = jdbcTemplate.queryForList(
-            """
-            SELECT username_snapshot, source_address, reason
-            FROM admin_auth_events
-            ORDER BY id
-            """.trimIndent(),
-        )
-        assertThat(authRows[0]["username_snapshot"]).isEqualTo("ADMIN #${actor.requiredId}")
-        assertThat(authRows[0]["source_address"]).isNull()
-        assertThat(authRows[0]["reason"])
-            .isEqualTo("reasonCategory=SECURITY_RESPONSE operatorReasonProvided=true")
-        assertThat(authRows[1]["username_snapshot"]).isNull()
-        assertThat(authRows[1]["source_address"]).isNull()
-        assertThat(authRows[1]["reason"])
-            .isEqualTo("reasonCategory=UNSPECIFIED operatorReasonProvided=false")
-
-        val batches = jdbcTemplate.queryForList(
-            """
-            SELECT root_id, root_label, actor_username, reason
-            FROM admin_trash_batches
-            WHERE root_id IN (88001, 88002)
-            ORDER BY root_id
-            """.trimIndent(),
-        )
-        assertThat(batches[0]["root_label"]).isEqualTo("GALLERY #88001")
-        assertThat(batches[0]["actor_username"]).isEqualTo("ADMIN #${actor.requiredId}")
-        assertThat(batches[0]["reason"])
-            .isEqualTo("reasonCategory=CUSTOMER_REQUEST operatorReasonProvided=true")
-        assertThat(batches[1]["root_label"]).isEqualTo("PHOTO #88002")
-        assertThat(batches[1]["actor_username"]).isNull()
-        assertThat(batches[1]["reason"])
-            .isEqualTo("reasonCategory=UNSPECIFIED operatorReasonProvided=false")
-
-        val children = jdbcTemplate.queryForList(
-            """
-            SELECT resource_id, actor_username, reason
-            FROM admin_child_trash_records
-            WHERE resource_id IN (88101, 88102)
-            ORDER BY resource_id
-            """.trimIndent(),
-        )
-        assertThat(children[0]["actor_username"]).isEqualTo("ADMIN #${actor.requiredId}")
-        assertThat(children[0]["reason"])
-            .isEqualTo("reasonCategory=DATA_CORRECTION operatorReasonProvided=true")
-        assertThat(children[1]["actor_username"]).isNull()
-        assertThat(children[1]["reason"])
-            .isEqualTo("reasonCategory=UNSPECIFIED operatorReasonProvided=false")
-
-        assertThatThrownBy {
-            jdbcTemplate.update("UPDATE admin_audit_logs SET reason = 'tampered'")
-        }
     }
 
     private fun legacyRevisionExpiryColumnExists(): Boolean = jdbcTemplate.queryForObject(
@@ -669,7 +429,7 @@ class AdminAuditServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `V44는 구 expiry 호환 계약을 제거하고 restore expiry만 유지한다`() {
+    fun `기준선 스키마는 구 expiry 호환 계약 없이 restore expiry만 유지한다`() {
         val legacyArtifacts = jdbcTemplate.queryForObject(
             """
             SELECT
@@ -757,7 +517,10 @@ class AdminAuditServiceTest @Autowired constructor(
                 "deleted" to false,
                 "fields" to mapOf(
                     "status" to "OPEN",
+                    "stage" to "SELECTION_IN_PROGRESS",
                     "name" to "고객 실명",
+                    "contact" to "010-1234-5678",
+                    "description" to "개인정보가 포함된 스튜디오 소개",
                     "score" to 0.987,
                     "accountNumber" to 1234567890L,
                     "residentNumber" to 9001011234567L,
@@ -772,12 +535,24 @@ class AdminAuditServiceTest @Autowired constructor(
                             "status" to "ACTIVE",
                         ),
                     ),
+                    "userNotifications" to listOf(
+                        mapOf(
+                            "notificationId" to 101,
+                            "type" to "SELECTION_SUBMITTED",
+                            "scope" to "GALLERY",
+                            "scopeId" to 17,
+                            "message" to "고객에게 보낸 원문",
+                        ),
+                    ),
                 ),
             ),
         )
 
         assertThat(encoded)
-            .contains("GALLERY", "17", "version", "4", "OPEN", "commentId", "99", "ACTIVE")
+            .contains(
+                "GALLERY", "17", "version", "4", "OPEN", "SELECTION_IN_PROGRESS",
+                "commentId", "99", "ACTIVE", "userNotifications", "SELECTION_SUBMITTED", "scopeId",
+            )
             .doesNotContain(
                 "김민수 이영희 본식",
                 "서울 강남 웨딩",
@@ -787,7 +562,39 @@ class AdminAuditServiceTest @Autowired constructor(
                 "9001011234567",
                 "삭제된 댓글 원문",
                 "private@example.com",
+                "010-1234-5678",
+                "개인정보가 포함된 스튜디오 소개",
+                "고객에게 보낸 원문",
             )
+    }
+
+    @Test
+    fun `복원 payload는 스튜디오 새 프로필과 읽기 전용 stage 증거를 보존하고 과거 유입 경로는 제외한다`() {
+        val studioPayload = snapshotCodec.encodeRestorePayload(
+            AdminAuditTargetType.STUDIO,
+            mapOf(
+                "type" to "STUDIO",
+                "id" to 7,
+                "version" to 2,
+                "contact" to "02-123-4567",
+                "description" to "스튜디오 소개",
+                "inflowChannel" to "LEGACY_BLOG",
+            ),
+        )
+        val galleryPayload = snapshotCodec.encodeRestorePayload(
+            AdminAuditTargetType.GALLERY,
+            mapOf(
+                "type" to "GALLERY",
+                "id" to 9,
+                "version" to 3,
+                "stage" to "RETOUCH",
+            ),
+        )
+
+        assertThat(studioPayload)
+            .contains("contact", "02-123-4567", "description", "스튜디오 소개")
+            .doesNotContain("inflowChannel", "LEGACY_BLOG")
+        assertThat(galleryPayload).contains("stage", "RETOUCH")
     }
 
     @Test
@@ -892,7 +699,7 @@ class AdminAuditServiceTest @Autowired constructor(
                 "id" to 7,
                 "version" to 3,
                 "deleted" to false,
-                "userId" to 2,
+                "ownerUserId" to 2,
                 "name" to "private@example.com password=top-secret Bearer live-access-token",
                 "storageKey" to "must-never-enter-payload",
             ),
