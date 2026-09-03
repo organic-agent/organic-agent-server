@@ -19,7 +19,9 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
                 statement.execute("DROP ROLE IF EXISTS embedder")
                 statement.execute("CREATE ROLE embedder NOLOGIN")
                 try {
+                    statement.execute("SET search_path TO ''")
                     statement.execute(embedderGrantBlock())
+                    statement.execute("RESET search_path")
                     statement.execute("SET ROLE embedder")
                     try {
                         statementsUsedByWorker.forEach { sql -> statement.execute(sql) }
@@ -27,8 +29,39 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
                         statement.execute("RESET ROLE")
                     }
                 } finally {
+                    statement.execute("RESET search_path")
                     statement.execute("DROP OWNED BY embedder")
                     statement.execute("DROP ROLE embedder")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `photoselect 권한 부여는 빈 search path에서도 public 테이블에 적용된다`() {
+        dataSource.connection.use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute("DROP ROLE IF EXISTS photoselect")
+                statement.execute("CREATE ROLE photoselect NOLOGIN")
+                try {
+                    statement.execute("SET search_path TO ''")
+                    statement.execute(photoselectGrantBlock())
+                    statement.execute("RESET search_path")
+                    statement.executeQuery(
+                        """
+                        SELECT
+                            has_table_privilege('photoselect', 'public.galleries', 'SELECT'),
+                            has_table_privilege('photoselect', 'public.photo_analysis', 'INSERT'),
+                            has_table_privilege('photoselect', 'public.ai_analysis_jobs', 'UPDATE')
+                        """.trimIndent(),
+                    ).use { result ->
+                        check(result.next())
+                        check(result.getBoolean(1) && result.getBoolean(2) && result.getBoolean(3))
+                    }
+                } finally {
+                    statement.execute("RESET search_path")
+                    statement.execute("DROP OWNED BY photoselect")
+                    statement.execute("DROP ROLE photoselect")
                 }
             }
         }
@@ -44,6 +77,19 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
         val start = contract.indexOf("DO \$\$")
         val end = contract.indexOf("\$\$;", start)
         check(start >= 0 && end >= 0) { "V1 embedder grant block not found" }
+        return contract.substring(start, end + 3)
+    }
+
+    private fun photoselectGrantBlock(): String {
+        val migration = ClassPathResource("db/migration/V1__baseline.sql")
+            .inputStream.bufferedReader().use { it.readText() }
+        val contractStart = migration.indexOf("-- PHOTOSELECT_GRANT_CONTRACT_BEGIN")
+        val contractEnd = migration.indexOf("-- PHOTOSELECT_GRANT_CONTRACT_END", contractStart)
+        check(contractStart >= 0 && contractEnd >= 0) { "V1 photoselect grant contract not found" }
+        val contract = migration.substring(contractStart, contractEnd)
+        val start = contract.indexOf("DO \$\$")
+        val end = contract.indexOf("\$\$;", start)
+        check(start >= 0 && end >= 0) { "V1 photoselect grant block not found" }
         return contract.substring(start, end + 3)
     }
 
