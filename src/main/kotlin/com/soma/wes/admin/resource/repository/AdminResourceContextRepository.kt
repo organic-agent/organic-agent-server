@@ -147,7 +147,7 @@ class AdminResourceContextRepository(
         ) }
         AdminResourceType.GALLERY -> singleFacts(
             """
-                SELECT g.status AS public_status, g.workflow_status, g.selection_deadline,
+                SELECT g.status AS public_status, g.workflow_status, g.stage, g.selection_deadline,
                     g.max_selectable_photo_count,
                     (SELECT COUNT(*) FROM gallery_members WHERE gallery_id = :id AND deleted_at IS NULL) AS members,
                     (SELECT COUNT(*) FROM photos WHERE gallery_id = :id) AS photos,
@@ -157,7 +157,10 @@ class AdminResourceContextRepository(
                     (SELECT COUNT(*) FROM categorization_jobs WHERE gallery_id = :id) AS categorization_jobs,
                     (SELECT COUNT(*) FROM photo_ratings r JOIN photos p ON p.id = r.photo_id WHERE p.gallery_id = :id) AS ratings,
                     (SELECT COUNT(*) FROM photo_selection_items i JOIN photo_selections s ON s.id = i.selection_id WHERE s.gallery_id = :id) AS selected_photos,
-                    (SELECT CASE WHEN revoked_at IS NOT NULL THEN 'REVOKED' WHEN expires_at < CURRENT_TIMESTAMP THEN 'EXPIRED' ELSE 'ACTIVE' END
+                    (SELECT CASE WHEN revoked_at IS NOT NULL THEN 'REVOKED'
+                                      WHEN expires_at < CURRENT_TIMESTAMP THEN 'EXPIRED'
+                                      WHEN used_count >= max_uses THEN 'FULL'
+                                      ELSE 'ACTIVE' END
                        FROM gallery_invites WHERE gallery_id = :id ORDER BY id DESC LIMIT 1) AS invite_status,
                     (SELECT expires_at FROM gallery_invites WHERE gallery_id = :id ORDER BY id DESC LIMIT 1) AS invite_expires_at,
                     EXISTS (
@@ -169,6 +172,7 @@ class AdminResourceContextRepository(
         ) { rs -> linkedMapOf(
             "publicStatus" to rs.getString("public_status"),
             "workflowStatus" to rs.getString("workflow_status"),
+            "stage" to rs.getString("stage"),
             "selectionDeadline" to rs.getObject("selection_deadline"),
             "targetPhotoCount" to rs.getObject("max_selectable_photo_count"),
             "members" to rs.getLong("members"),
@@ -344,7 +348,8 @@ class AdminResourceContextRepository(
             ) },
             "galleryMemberships" to rows(
                 """
-                    SELECT m.id AS member_id, m.gallery_id, g.title, g.status, m.created_at
+                    SELECT m.id AS member_id, m.gallery_id, g.title, g.status, g.workflow_status,
+                           g.stage, m.created_at
                     FROM gallery_members m JOIN galleries g ON g.id = m.gallery_id
                     WHERE m.user_id = :id ORDER BY m.id DESC LIMIT 100
                 """.trimIndent(),
@@ -354,8 +359,33 @@ class AdminResourceContextRepository(
                 "galleryId" to rs.getLong("gallery_id"),
                 "galleryTitle" to rs.getString("title"),
                 "galleryStatus" to rs.getString("status"),
+                "workflowStatus" to rs.getString("workflow_status"),
+                "stage" to rs.getString("stage"),
                 "joinedAt" to rs.getObject("created_at"),
             ) },
+            "userNotifications" to rows(
+                """
+                    SELECT id, user_id, type, scope, scope_id, title, message, read_at, created_at
+                    FROM user_notifications
+                    WHERE user_id = :id
+                    ORDER BY created_at DESC, id DESC LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> userNotification(rs) },
+            "userNotificationSettings" to rows(
+                """
+                    SELECT u.id AS user_id,
+                           COALESCE(s.email_enabled, TRUE) AS email_enabled,
+                           COALESCE(s.browser_enabled, TRUE) AS browser_enabled,
+                           (s.user_id IS NOT NULL) AS persisted,
+                           COALESCE(s.version, 0) AS version,
+                           s.updated_at
+                    FROM users u
+                    LEFT JOIN user_notification_settings s ON s.user_id = u.id
+                    WHERE u.id = :id
+                """.trimIndent(),
+                id,
+            ) { rs -> userNotificationSettings(rs) },
         )
         AdminResourceType.WORKSPACE -> linkedMapOf(
             "members" to rows(
@@ -380,7 +410,8 @@ class AdminResourceContextRepository(
             ) },
             "studio" to rows(
                 """
-                    SELECT workspace_id, name, gallery_url, inflow_channel, suspended_at, deleted_at
+                    SELECT workspace_id, name, gallery_url, inflow_channel, contact, description,
+                           suspended_at, deleted_at
                     FROM studios WHERE workspace_id = :id
                 """.trimIndent(),
                 id,
@@ -389,12 +420,14 @@ class AdminResourceContextRepository(
                 "name" to rs.getString("name"),
                 "galleryUrl" to rs.getString("gallery_url"),
                 "inflowChannel" to rs.getString("inflow_channel"),
+                "contact" to rs.getString("contact"),
+                "description" to rs.getString("description"),
                 "suspended" to (rs.getObject("suspended_at") != null),
                 "deleted" to (rs.getObject("deleted_at") != null),
             ) },
             "galleries" to rows(
                 """
-                    SELECT id, created_by_user_id, title, status, workflow_status,
+                    SELECT id, created_by_user_id, title, status, workflow_status, stage,
                            selection_deadline, deleted_at, created_at
                     FROM galleries WHERE workspace_id = :id ORDER BY id DESC LIMIT 100
                 """.trimIndent(),
@@ -405,6 +438,7 @@ class AdminResourceContextRepository(
                 "title" to rs.getString("title"),
                 "publicStatus" to rs.getString("status"),
                 "workflowStatus" to rs.getString("workflow_status"),
+                "stage" to rs.getString("stage"),
                 "selectionDeadline" to rs.getObject("selection_deadline"),
                 "deleted" to (rs.getObject("deleted_at") != null),
                 "createdAt" to rs.getObject("created_at"),
@@ -455,7 +489,7 @@ class AdminResourceContextRepository(
             ) },
             "galleries" to rows(
                 """
-                    SELECT id, workspace_id, created_by_user_id, title, status, workflow_status,
+                    SELECT id, workspace_id, created_by_user_id, title, status, workflow_status, stage,
                            selection_deadline, deleted_at, created_at
                     FROM galleries WHERE workspace_id = :id ORDER BY id DESC LIMIT 100
                 """.trimIndent(),
@@ -468,10 +502,36 @@ class AdminResourceContextRepository(
                 "title" to rs.getString("title"),
                 "publicStatus" to rs.getString("status"),
                 "workflowStatus" to rs.getString("workflow_status"),
+                "stage" to rs.getString("stage"),
                 "selectionDeadline" to rs.getObject("selection_deadline"),
                 "deleted" to (rs.getObject("deleted_at") != null),
                 "createdAt" to rs.getObject("created_at"),
             ) },
+            "userNotifications" to rows(
+                """
+                    SELECT id, user_id, type, scope, scope_id, title, message, read_at, created_at
+                    FROM user_notifications
+                    WHERE scope = 'STUDIO' AND scope_id = :id
+                    ORDER BY created_at DESC, id DESC LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> userNotification(rs) },
+            "userNotificationSettings" to rows(
+                """
+                    SELECT u.id AS user_id, u.nickname,
+                           COALESCE(s.email_enabled, TRUE) AS email_enabled,
+                           COALESCE(s.browser_enabled, TRUE) AS browser_enabled,
+                           (s.user_id IS NOT NULL) AS persisted,
+                           COALESCE(s.version, 0) AS version,
+                           s.updated_at
+                    FROM workspace_members m
+                    JOIN users u ON u.id = m.user_id
+                    LEFT JOIN user_notification_settings s ON s.user_id = u.id
+                    WHERE m.workspace_id = :id AND m.deleted_at IS NULL
+                    ORDER BY u.id
+                """.trimIndent(),
+                id,
+            ) { rs -> userNotificationSettings(rs, includeNickname = true) },
         )
         AdminResourceType.GALLERY -> linkedMapOf(
             "members" to rows(
@@ -492,20 +552,60 @@ class AdminResourceContextRepository(
             ) },
             "invites" to rows(
                 """
-                    SELECT id, expires_at, revoked_at, created_at,
+                    SELECT id, kind, max_uses, used_count, expires_at, revoked_at, created_at,
                            CASE WHEN revoked_at IS NOT NULL THEN 'REVOKED'
-                                WHEN expires_at < CURRENT_TIMESTAMP THEN 'EXPIRED' ELSE 'ACTIVE' END AS status
+                                WHEN expires_at < CURRENT_TIMESTAMP THEN 'EXPIRED'
+                                WHEN used_count >= max_uses THEN 'FULL'
+                                ELSE 'ACTIVE' END AS status
                     FROM gallery_invites WHERE gallery_id = :id ORDER BY id DESC LIMIT 20
                 """.trimIndent(),
                 id,
             ) { rs -> linkedMapOf(
                 "id" to rs.getLong("id"),
+                "kind" to rs.getString("kind"),
+                "maxUses" to rs.getInt("max_uses"),
+                "usedCount" to rs.getInt("used_count"),
+                "remainingUses" to (rs.getInt("max_uses") - rs.getInt("used_count")).coerceAtLeast(0),
                 "status" to rs.getString("status"),
                 "expiresAt" to rs.getObject("expires_at"),
                 "revokedAt" to rs.getObject("revoked_at"),
                 "createdAt" to rs.getObject("created_at"),
                 "token" to "[MASKED]",
             ) },
+            "userNotifications" to rows(
+                """
+                    SELECT id, user_id, type, scope, scope_id, title, message, read_at, created_at
+                    FROM user_notifications
+                    WHERE scope = 'GALLERY' AND scope_id = :id
+                    ORDER BY created_at DESC, id DESC LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> userNotification(rs) },
+            "userNotificationSettings" to rows(
+                """
+                    WITH related_users AS (
+                        SELECT wm.user_id
+                        FROM galleries g
+                        JOIN workspace_members wm ON wm.workspace_id = g.workspace_id
+                        WHERE g.id = :id AND wm.deleted_at IS NULL
+                        UNION
+                        SELECT gm.user_id
+                        FROM gallery_members gm
+                        WHERE gm.gallery_id = :id AND gm.deleted_at IS NULL
+                    )
+                    SELECT u.id AS user_id, u.nickname,
+                           COALESCE(s.email_enabled, TRUE) AS email_enabled,
+                           COALESCE(s.browser_enabled, TRUE) AS browser_enabled,
+                           (s.user_id IS NOT NULL) AS persisted,
+                           COALESCE(s.version, 0) AS version,
+                           s.updated_at
+                    FROM related_users r
+                    JOIN users u ON u.id = r.user_id
+                    LEFT JOIN user_notification_settings s ON s.user_id = u.id
+                    ORDER BY u.id
+                """.trimIndent(),
+                id,
+            ) { rs -> userNotificationSettings(rs, includeNickname = true) },
             "conceptFolders" to rows(
                 """
                     SELECT c.id, c.name, c.sort_order, c.created_source, c.version, c.deleted_at,
@@ -1137,7 +1237,38 @@ class AdminResourceContextRepository(
                 "deliveryNote" to rs.getString("delivery_note"),
             ) },
         )
-    }.filterValues { it.isNotEmpty() }
+    }.filter { (name, rows) ->
+        rows.isNotEmpty() || (
+            type in USER_NOTIFICATION_CONTEXT_TYPES && name in USER_NOTIFICATION_SECTION_NAMES
+        )
+    }.toMap(linkedMapOf())
+
+    /** 사용자 알림 조회는 JDBC read model만 사용하며 알림 publisher나 관리자 inbox를 건드리지 않는다. */
+    private fun userNotification(rs: ResultSet): Map<String, Any?> = linkedMapOf(
+        "id" to rs.getLong("id"),
+        "userId" to rs.getLong("user_id"),
+        "type" to rs.getString("type"),
+        "scope" to rs.getString("scope"),
+        "scopeId" to rs.getObject("scope_id"),
+        "title" to rs.getString("title"),
+        "message" to rs.getString("message"),
+        "readAt" to rs.getObject("read_at"),
+        "createdAt" to rs.getObject("created_at"),
+    )
+
+    private fun userNotificationSettings(
+        rs: ResultSet,
+        includeNickname: Boolean = false,
+    ): Map<String, Any?> = linkedMapOf<String, Any?>(
+        "userId" to rs.getLong("user_id"),
+        "emailEnabled" to rs.getBoolean("email_enabled"),
+        "browserEnabled" to rs.getBoolean("browser_enabled"),
+        "settingsPersisted" to rs.getBoolean("persisted"),
+        "version" to rs.getLong("version"),
+        "updatedAt" to rs.getObject("updated_at"),
+    ).apply {
+        if (includeNickname) put("nickname", rs.getString("nickname"))
+    }
 
     private fun categoryAssignmentRows(predicate: String, id: Long): List<Map<String, Any?>> = rows(
         """
@@ -1190,6 +1321,15 @@ class AdminResourceContextRepository(
         // 템플릿 최대 1,000 슬롯과 같은 수의 수동 overflow를 한 응답에서 검토한다.
         // 이를 넘으면 응답 sectionPageInfo가 절단 사실과 실제 합계를 명시한다.
         const val ALBUM_SECTION_LIMIT = 2_000
+        val USER_NOTIFICATION_CONTEXT_TYPES = setOf(
+            AdminResourceType.USER,
+            AdminResourceType.STUDIO,
+            AdminResourceType.GALLERY,
+        )
+        val USER_NOTIFICATION_SECTION_NAMES = setOf(
+            "userNotifications",
+            "userNotificationSettings",
+        )
     }
 
     data class ResourceReference(val type: AdminResourceType, val id: Long)

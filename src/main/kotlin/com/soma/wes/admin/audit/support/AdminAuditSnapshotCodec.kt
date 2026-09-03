@@ -157,7 +157,7 @@ class AdminAuditSnapshotCodec(
             "resultRevisionId", "previousRevisionId", "replacementId", "uploadId", "commentId",
             "likeId", "folderId", "ownerId", "previousOwnerId", "actorAdminId", "parentId",
             "childId", "trashBatchId", "childTrashId", "resourceId", "itemId", "groupId",
-            "guestId", "notificationOutboxId", "previousJobId",
+            "guestId", "notificationOutboxId", "previousJobId", "scopeId",
             "mockRecalculationJobId", "sessionId", "photoIds", "processingJobIds",
         )
         private val ENUM_KEYS = setOf(
@@ -167,13 +167,14 @@ class AdminAuditSnapshotCodec(
             "processingStatus", "reprocessStatus", "jobType", "jobStatus", "mockRecalculationStatus",
             "deliveryStatus", "inviteStatus", "artifactType", "notificationType", "trashStatus",
             "failureCode", "capability", "workspaceType", "createdSource", "assignedSource", "mode",
+            "stage", "kind", "scope",
         )
         private val TIMESTAMP_KEYS = setOf(
             "lockedUntil", "selectionDeadline", "uploadUrlExpiresAt", "submittedAt", "expiresAt",
             "requestedAt", "completedAt", "restoreUntil", "createdAt", "updatedAt", "deletedAt",
             "lastRunAt", "suspendedAt", "revokedAt", "startedAt", "deliveredAt", "selectedAt",
             "takenAt", "joinedAt", "lastActivityAt", "customerConsentedAt", "inviteExpiresAt",
-            "purgeEligibleAt", "assignedAt",
+            "purgeEligibleAt", "assignedAt", "readAt",
         )
         private val NUMERIC_KEYS = setOf(
             "version", "targetVersion", "restoredSnapshotVersion", "failedLoginAttempts", "attemptCount",
@@ -187,12 +188,13 @@ class AdminAuditSnapshotCodec(
             "byteSize", "storageBytes", "width", "height", "sortOrder", "roundVersion",
             "retouchPhotoVersion", "revisionNumber", "expectedVersion", "restoreWindowDays",
             "detailCount", "processedPhotos", "assignedPhotos", "owners", "ratings",
+            "maxUses", "usedCount", "remainingUses",
         )
         private val BOOLEAN_KEYS = setOf(
             "deleted", "revoked", "suspended", "purged", "assigned", "revealed", "reissued", "force",
             "enabled", "present", "submitted", "analyzed", "annotated", "hasResult", "resultReady",
             "previewReady", "requiresEmbedding", "restorable", "oneTimeReveal",
-            "canRestoreDirectly",
+            "canRestoreDirectly", "emailEnabled", "browserEnabled", "settingsPersisted",
         )
         private val CONTAINER_KEYS = setOf(
             "resource", "fields", "facts", "sections", "workflowDetails", "affectedCounts",
@@ -205,6 +207,7 @@ class AdminAuditSnapshotCodec(
             "galleryMemberships", "joinedGalleries", "ownedStudios", "notifications",
             "aiJobs", "activeSessions", "workspaces", "conceptFolders", "detailFolders",
             "categoryAssignments", "categorizationJobs", "photoRatings", "categoryAssignment", "rating",
+            "userNotifications", "userNotificationSettings",
         )
         private val STRUCTURAL_COUNT_KEYS = setOf(
             "ADMIN_ACCOUNT", "USER", "STUDIO", "GALLERY", "PHOTO", "SELECTION", "COLLABORATION",
@@ -222,7 +225,7 @@ class AdminAuditSnapshotCodec(
             "folderName", "templateName", "studioName", "galleryTitle", "token", "embedding", "author",
             "message", "cameraMake", "cameraModel", "layout", "crop", "algorithm", "contentType",
             "resultContentType", "replacement_upload_url", "structured_ai_metadata", "recipient_reference",
-            "score", "confidence",
+            "score", "confidence", "contact", "description",
         )
         private val SAFE_IDENTIFIER_VALUE = Regex(
             "(?:[0-9]+|[0-9a-fA-F]{16}|[0-9a-fA-F]{8}-[0-9a-fA-F-]{27})",
@@ -243,10 +246,10 @@ class AdminAuditSnapshotCodec(
                 "type", "id", "version", "deleted", "name", "personalOwnerUserId",
             ),
             AdminAuditTargetType.STUDIO to setOf(
-                "type", "id", "version", "deleted", "workspaceId", "ownerUserId", "name", "galleryUrl", "inflowChannel",
+                "type", "id", "version", "deleted", "workspaceId", "ownerUserId", "name", "galleryUrl", "contact", "description",
             ),
             AdminAuditTargetType.GALLERY to setOf(
-                "type", "id", "version", "deleted", "workspaceId", "createdByUserId", "title", "status", "workflowStatus",
+                "type", "id", "version", "deleted", "workspaceId", "createdByUserId", "title", "status", "workflowStatus", "stage",
                 "selectionDeadline", "maxSelectablePhotoCount", "maxRetouchRoundCount",
             ),
             AdminAuditTargetType.PHOTO to setOf(

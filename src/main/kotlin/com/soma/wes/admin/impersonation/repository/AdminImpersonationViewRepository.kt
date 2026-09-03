@@ -96,7 +96,7 @@ class AdminImpersonationViewRepository(
         var statement = jdbcClient.sql(
             """
             SELECT w.id AS workspace_id, w.type AS workspace_type, w.name,
-                   s.gallery_url,
+                   s.gallery_url, s.contact, s.description,
                    'WORKSPACE_' || wm.role AS access_role
             FROM workspace_members wm
             JOIN workspaces w ON w.id = wm.workspace_id
@@ -116,6 +116,8 @@ class AdminImpersonationViewRepository(
                 name = rs.getString("name"),
                 accessRole = rs.getString("access_role"),
                 galleryUrl = rs.getString("gallery_url"),
+                contact = rs.getString("contact"),
+                description = rs.getString("description"),
             )
         }.list()
     }
@@ -133,7 +135,7 @@ class AdminImpersonationViewRepository(
         var statement = jdbcClient.sql(
             """
             SELECT g.id, g.workspace_id, w.type AS workspace_type, g.created_by_user_id,
-                   g.title, g.status, g.workflow_status, g.selection_deadline,
+                   g.title, g.status, g.workflow_status, g.stage, g.selection_deadline,
                    CASE
                        WHEN wm.id IS NOT NULL THEN 'WORKSPACE_' || wm.role
                        ELSE 'GALLERY_MEMBER'
@@ -178,6 +180,7 @@ class AdminImpersonationViewRepository(
         title = rs.getString("title"),
         publicStatus = rs.getString("status"),
         workflowStatus = rs.getString("workflow_status"),
+        stage = rs.getString("stage"),
         selectionDeadline = rs.getObject("selection_deadline", OffsetDateTime::class.java)?.toZonedDateTime(),
         accessRole = rs.getString("access_role"),
         photoCount = rs.getLong("photo_count"),

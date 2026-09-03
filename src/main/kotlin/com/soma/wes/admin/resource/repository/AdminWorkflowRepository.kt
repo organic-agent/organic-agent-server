@@ -5,6 +5,7 @@ import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.support.AdminAlbumTemplateLayout
 import com.soma.wes.admin.resource.support.InvalidAlbumTemplateLayoutException
+import com.soma.wes.gallery.domain.GalleryInviteKind
 import com.soma.wes.gallery.domain.GalleryMember
 import com.soma.wes.global.filter.HttpLoggingFilter
 import org.slf4j.MDC
@@ -296,13 +297,14 @@ class AdminWorkflowRepository(
         val updated = jdbcClient.sql(
             """
             UPDATE galleries
-            SET status = :publicStatus, workflow_status = :workflowStatus,
+            SET status = :publicStatus, workflow_status = :workflowStatus, stage = :stage,
                 version = version + 1, updated_at = CURRENT_TIMESTAMP
             WHERE id = :galleryId AND version = :expectedVersion AND deleted_at IS NULL
             """.trimIndent(),
         )
             .param("publicStatus", transition.publicStatus)
             .param("workflowStatus", transition.workflowStatus)
+            .param("stage", transition.stage)
             .param("galleryId", galleryId)
             .param("expectedVersion", expectedVersion)
             .update()
@@ -312,10 +314,42 @@ class AdminWorkflowRepository(
     fun reissueGalleryInvite(
         galleryId: Long,
         token: String,
+        requestedKind: GalleryInviteKind?,
+        requestedMaxUses: Int?,
         expiresAt: ZonedDateTime,
         expectedVersion: Long,
-    ): Long {
-        requireVersion("galleries", galleryId, expectedVersion)
+    ): GalleryInviteReissueResult {
+        val previous = jdbcClient.sql(
+            """
+            SELECT g.version, w.type AS workspace_type,
+                   previous.kind AS previous_kind, previous.max_uses AS previous_max_uses
+            FROM galleries g
+            JOIN workspaces w ON w.id = g.workspace_id
+            LEFT JOIN LATERAL (
+                SELECT kind, max_uses
+                FROM gallery_invites
+                WHERE gallery_id = g.id
+                ORDER BY id DESC LIMIT 1
+            ) previous ON TRUE
+            WHERE g.id = :galleryId AND g.deleted_at IS NULL
+            FOR UPDATE OF g
+            """.trimIndent(),
+        ).param("galleryId", galleryId).query { rs, _ ->
+            GalleryInvitePolicy(
+                galleryVersion = rs.getLong("version"),
+                workspaceType = rs.getString("workspace_type"),
+                previousKind = rs.getString("previous_kind")?.let(GalleryInviteKind::valueOf),
+                previousMaxUses = rs.getObject("previous_max_uses")?.let { (it as Number).toInt() },
+            )
+        }.optional().orElseThrow { AdminException(AdminErrorCode.RESOURCE_NOT_FOUND) }
+        if (previous.galleryVersion != expectedVersion) {
+            throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
+        }
+        val kind = requestedKind ?: previous.previousKind ?: GalleryInviteKind.GALLERY_MEMBER
+        val maxUses = requestedMaxUses ?: previous.previousMaxUses ?: DEFAULT_GALLERY_INVITE_MAX_USES
+        if (maxUses !in 1..100 || !isInviteKindValid(kind, previous.workspaceType)) {
+            throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
+        }
         jdbcClient.sql(
             """
             UPDATE gallery_invites
@@ -325,18 +359,27 @@ class AdminWorkflowRepository(
         ).param("galleryId", galleryId).update()
         val inviteId = jdbcClient.sql(
             """
-            INSERT INTO gallery_invites (gallery_id, token, expires_at, version, created_at, updated_at)
-            VALUES (:galleryId, :token, :expiresAt, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            INSERT INTO gallery_invites
+                (gallery_id, token, kind, max_uses, used_count, expires_at, version, created_at, updated_at)
+            VALUES (:galleryId, :token, :kind, :maxUses, 0, :expiresAt, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
             """.trimIndent(),
         )
             .param("galleryId", galleryId)
             .param("token", token)
+            .param("kind", kind.name)
+            .param("maxUses", maxUses)
             .param("expiresAt", expiresAt.toOffsetDateTime())
             .query { rs, _ -> rs.getLong("id") }
             .single()
         bumpVersion("galleries", galleryId, expectedVersion)
-        return inviteId
+        return GalleryInviteReissueResult(inviteId, kind, maxUses)
+    }
+
+    private fun isInviteKindValid(kind: GalleryInviteKind, workspaceType: String): Boolean = when (kind) {
+        GalleryInviteKind.STUDIO_MEMBER -> workspaceType == "STUDIO"
+        GalleryInviteKind.PERSONAL_PARTNER -> workspaceType == "PERSONAL"
+        GalleryInviteKind.GALLERY_MEMBER -> true
     }
 
     fun revokeGalleryInvite(galleryId: Long, inviteId: Long, expectedVersion: Long) {
@@ -397,7 +440,7 @@ class AdminWorkflowRepository(
             """
             UPDATE galleries
             SET status = 'OPEN', workflow_status = 'IN_PROGRESS',
-                selection_deadline = :selectionDeadline,
+                stage = 'SELECTION_IN_PROGRESS', selection_deadline = :selectionDeadline,
                 version = version + 1, updated_at = CURRENT_TIMESTAMP
             WHERE id = :galleryId AND version = :expectedVersion AND deleted_at IS NULL
               AND status = 'CLOSED' AND :selectionDeadline > CURRENT_TIMESTAMP
@@ -1939,6 +1982,11 @@ class AdminWorkflowRepository(
     )
     data class StudioMemberResult(val memberId: Long)
     data class GalleryMemberResult(val memberId: Long)
+    data class GalleryInviteReissueResult(
+        val inviteId: Long,
+        val kind: GalleryInviteKind,
+        val maxUses: Int,
+    )
     data class PhotoReplacementResult(
         val revisionId: Long,
         val revisionNumber: Long,
@@ -1983,10 +2031,21 @@ class AdminWorkflowRepository(
         val failureCode: String?,
     )
 
-    enum class GalleryTransition(val publicStatus: String, val workflowStatus: String) {
-        SUBMIT("CLOSED", "IN_PROGRESS"),
-        COMPLETE("CLOSED", "COMPLETED"),
+    enum class GalleryTransition(
+        val publicStatus: String,
+        val workflowStatus: String,
+        val stage: String,
+    ) {
+        SUBMIT("CLOSED", "IN_PROGRESS", "SELECTION_COMPLETED"),
+        COMPLETE("CLOSED", "COMPLETED", "ALBUM"),
     }
+
+    private data class GalleryInvitePolicy(
+        val galleryVersion: Long,
+        val workspaceType: String,
+        val previousKind: GalleryInviteKind?,
+        val previousMaxUses: Int?,
+    )
 
     private data class PendingReplacement(
         val id: Long,
@@ -2028,6 +2087,7 @@ class AdminWorkflowRepository(
         private const val DIVERSITY_WEIGHT = 0.35
         private val PUBLIC_STATUSES = setOf("DRAFT", "OPEN", "CLOSED")
         private val WORKFLOW_STATUSES = setOf("DRAFT", "IN_PROGRESS", "COMPLETED", "ARCHIVED")
+        private const val DEFAULT_GALLERY_INVITE_MAX_USES = 2
         private const val MAX_ALBUM_FOLDERS = 50
         private const val MAX_ALBUM_ITEMS = 1_000
         private const val MAX_ALBUM_FOLDER_NAME_LENGTH = 100

@@ -108,6 +108,11 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             status { isOk() }
             jsonPath("$.resource.id") { value(createdId) }
             jsonPath("$.facts.activeSessions") { value(0) }
+            jsonPath("$.sections.userNotifications.length()") { value(0) }
+            jsonPath("$.sections.userNotificationSettings[0].userId") { value(createdId) }
+            jsonPath("$.sections.userNotificationSettings[0].emailEnabled") { value(true) }
+            jsonPath("$.sections.userNotificationSettings[0].browserEnabled") { value(true) }
+            jsonPath("$.sections.userNotificationSettings[0].settingsPersisted") { value(false) }
             jsonPath("$.relations") { isArray() }
         }
 
@@ -483,7 +488,13 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             AdminResourceType.STUDIO,
             CreateAdminResourceRequest(
                 "[TEST_OPERATION] 대리보기 스튜디오 준비",
-                mapOf("ownerUserId" to userId, "name" to "대리보기 스튜디오", "galleryUrl" to "impersonation-view"),
+                mapOf(
+                    "ownerUserId" to userId,
+                    "name" to "대리보기 스튜디오",
+                    "galleryUrl" to "impersonation-view",
+                    "contact" to "02-123-4567",
+                    "description" to "대리보기 소개",
+                ),
             ),
             "127.0.0.1",
         )
@@ -584,10 +595,13 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             jsonPath("$.view.workspaces[0].workspaceType") { value("PERSONAL") }
             jsonPath("$.view.workspaces[1].workspaceId") { value(studio.id) }
             jsonPath("$.view.workspaces[1].workspaceType") { value("STUDIO") }
+            jsonPath("$.view.workspaces[1].contact") { value("02-123-4567") }
+            jsonPath("$.view.workspaces[1].description") { value("대리보기 소개") }
             jsonPath("$.view.galleries[0].workspaceId") { value(studio.id) }
             jsonPath("$.view.galleries[0].workspaceType") { value("STUDIO") }
             jsonPath("$.view.galleries[0].publicStatus") { value("DRAFT") }
             jsonPath("$.view.galleries[0].workflowStatus") { value("DRAFT") }
+            jsonPath("$.view.galleries[0].stage") { value("UPLOAD") }
             jsonPath("$.blockedCapabilities") { isArray() }
             jsonPath("$.view.sections.photos[0].photoId") { value(photo.id) }
             jsonPath("$.view.sections.selections[0].galleryId") { value(gallery.id) }

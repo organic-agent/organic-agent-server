@@ -42,6 +42,8 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
             "ownerUserId" to user.id,
             "name" to "원본 스튜디오",
             "galleryUrl" to "restore-eight",
+            "contact" to "02-111-2222",
+            "description" to "원본 소개",
         ))
         val gallery = create(actor.requiredId, AdminResourceType.GALLERY, mapOf(
             "workspaceId" to studio.id,
@@ -65,7 +67,7 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
         ))
         val cases = listOf(
             RestoreCase(AdminResourceType.USER, user.id, "nickname", "원본 사용자", "변경 사용자"),
-            RestoreCase(AdminResourceType.STUDIO, studio.id, "name", "원본 스튜디오", "변경 스튜디오"),
+            RestoreCase(AdminResourceType.STUDIO, studio.id, "contact", "02-111-2222", "010-9999-0000"),
             RestoreCase(AdminResourceType.GALLERY, gallery.id, "title", "원본 갤러리", "변경 갤러리"),
             RestoreCase(AdminResourceType.PHOTO, photo.id, "displayOrder", 10, 20),
             RestoreCase(AdminResourceType.COLLABORATION, collaboration.id, "name", "원본 협업", "변경 협업"),
@@ -79,6 +81,17 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
         }
 
         cases.forEach { target ->
+            when (target.type) {
+                AdminResourceType.STUDIO -> jdbcTemplate.update(
+                    "UPDATE studios SET inflow_channel = 'LEGACY_BLOG' WHERE workspace_id = ?",
+                    target.id,
+                )
+                AdminResourceType.GALLERY -> jdbcTemplate.update(
+                    "UPDATE galleries SET stage = 'RETOUCH' WHERE id = ?",
+                    target.id,
+                )
+                else -> Unit
+            }
             val beforeUpdate = resourceService.get(target.type, target.id)
             resourceService.update(
                 actor.requiredId,
@@ -98,6 +111,12 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
 
             val restored = resourceService.get(target.type, target.id)
             assertThat(restored.fields[target.field]).isEqualTo(target.original)
+            if (target.type == AdminResourceType.STUDIO) {
+                assertThat(restored.fields["inflowChannel"]).isEqualTo("LEGACY_BLOG")
+            }
+            if (target.type == AdminResourceType.GALLERY) {
+                assertThat(restored.fields["stage"]).isEqualTo("RETOUCH")
+            }
             assertThat(restored.version).isEqualTo(current.version + 1)
             assertThat(queryService.getDetail(auditId).audit.action).isEqualTo(AdminAuditAction.REVISION_RESTORED)
             assertThat(

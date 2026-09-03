@@ -303,14 +303,15 @@ class AdminResourceRepository(
         jdbcClient.sql(
             """
             INSERT INTO studios
-                (workspace_id, name, gallery_url, inflow_channel, version, created_at, updated_at)
-            VALUES (:workspaceId, :name, :galleryUrl, :inflowChannel, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                (workspace_id, name, gallery_url, contact, description, version, created_at, updated_at)
+            VALUES (:workspaceId, :name, :galleryUrl, :contact, :description, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """.trimIndent(),
         )
             .param("workspaceId", workspaceId)
             .param("name", normalized.getValue("name"))
             .param("galleryUrl", normalized.getValue("galleryUrl"))
-            .param("inflowChannel", normalized["inflowChannel"])
+            .param("contact", normalized["contact"])
+            .param("description", normalized["description"])
             .update()
         return workspaceId
     }
@@ -882,7 +883,7 @@ class AdminResourceRepository(
                 table = "studios",
                 idColumn = "workspace_id",
                 labelExpression = "name",
-                searchExpression = "CONCAT_WS(' ', name, gallery_url, inflow_channel, workspace_id)",
+                searchExpression = "CONCAT_WS(' ', name, gallery_url, inflow_channel, contact, description, workspace_id)",
                 fields = listOf(
                     FieldDefinition("workspaceId", "workspace_id", FieldKind.LONG, createAllowed = false, updateAllowed = false, minNumber = 1),
                     FieldDefinition(
@@ -896,18 +897,29 @@ class AdminResourceRepository(
                     ),
                     FieldDefinition("name", "name", FieldKind.STRING, requiredOnCreate = true, maxLength = 255),
                     FieldDefinition("galleryUrl", "gallery_url", FieldKind.GALLERY_URL, requiredOnCreate = true, maxLength = 255),
-                    FieldDefinition("inflowChannel", "inflow_channel", FieldKind.STRING, nullable = true, maxLength = 255),
+                    // 기존 유입 경로는 과거 데이터 확인용이며 BackOffice에서 새로 기록하거나 고치지 않는다.
+                    FieldDefinition(
+                        "inflowChannel",
+                        "inflow_channel",
+                        FieldKind.STRING,
+                        createAllowed = false,
+                        updateAllowed = false,
+                        nullable = true,
+                        maxLength = 255,
+                    ),
+                    FieldDefinition("contact", "contact", FieldKind.STRING, nullable = true, maxLength = 100),
+                    FieldDefinition("description", "description", FieldKind.STRING, nullable = true, maxLength = 500),
                     FieldDefinition("suspendedAt", "suspended_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                     FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                 ),
                 softDeleteColumn = "deleted_at",
-                defaults = mapOf("inflowChannel" to null),
+                defaults = mapOf("contact" to null, "description" to null),
             ),
             ResourceDefinition(
                 type = AdminResourceType.GALLERY,
                 table = "galleries",
                 labelExpression = "title",
-                searchExpression = "CONCAT_WS(' ', title, status, workflow_status, workspace_id)",
+                searchExpression = "CONCAT_WS(' ', title, status, workflow_status, stage, workspace_id)",
                 fields = listOf(
                     FieldDefinition("workspaceId", "workspace_id", FieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
                     FieldDefinition("createdByUserId", "created_by_user_id", FieldKind.LONG, updateAllowed = false, nullable = true, minNumber = 1),
@@ -929,6 +941,22 @@ class AdminResourceRepository(
                         updateAllowed = false,
                         allowedValues = setOf("DRAFT", "IN_PROGRESS", "COMPLETED", "ARCHIVED"),
                     ),
+                    // 제품 workflow만 전이시키는 6단계 화면 상태다. 일반 관리자 CRUD에는 열지 않는다.
+                    FieldDefinition(
+                        "stage",
+                        "stage",
+                        FieldKind.ENUM,
+                        createAllowed = false,
+                        updateAllowed = false,
+                        allowedValues = setOf(
+                            "UPLOAD",
+                            "SELECTION_IN_PROGRESS",
+                            "SELECTION_COMPLETED",
+                            "RETOUCH",
+                            "ALBUM",
+                            "ARCHIVED",
+                        ),
+                    ),
                     FieldDefinition(
                         "selectionDeadline",
                         "selection_deadline",
@@ -945,6 +973,7 @@ class AdminResourceRepository(
                 defaults = mapOf(
                     "status" to "DRAFT",
                     "workflowStatus" to "DRAFT",
+                    "stage" to "UPLOAD",
                     "selectionDeadline" to null,
                     "maxSelectablePhotoCount" to null,
                     "maxRetouchRoundCount" to null,

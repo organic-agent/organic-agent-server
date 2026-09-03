@@ -107,7 +107,7 @@ class AdminRevisionRestorePolicy(
         private val MUTABLE_FIELDS = mapOf(
             AdminResourceType.USER to setOf("nickname", "email"),
             AdminResourceType.WORKSPACE to setOf("name"),
-            AdminResourceType.STUDIO to setOf("name", "galleryUrl", "inflowChannel"),
+            AdminResourceType.STUDIO to setOf("name", "galleryUrl", "contact", "description"),
             AdminResourceType.GALLERY to setOf("title", "maxSelectablePhotoCount", "maxRetouchRoundCount"),
             AdminResourceType.PHOTO to setOf("displayOrder", "status", "uploadUrlExpiresAt"),
             AdminResourceType.CONCEPT_FOLDER to setOf("name", "sortOrder"),

@@ -517,7 +517,10 @@ class AdminAuditServiceTest @Autowired constructor(
                 "deleted" to false,
                 "fields" to mapOf(
                     "status" to "OPEN",
+                    "stage" to "SELECTION_IN_PROGRESS",
                     "name" to "고객 실명",
+                    "contact" to "010-1234-5678",
+                    "description" to "개인정보가 포함된 스튜디오 소개",
                     "score" to 0.987,
                     "accountNumber" to 1234567890L,
                     "residentNumber" to 9001011234567L,
@@ -532,12 +535,24 @@ class AdminAuditServiceTest @Autowired constructor(
                             "status" to "ACTIVE",
                         ),
                     ),
+                    "userNotifications" to listOf(
+                        mapOf(
+                            "notificationId" to 101,
+                            "type" to "SELECTION_SUBMITTED",
+                            "scope" to "GALLERY",
+                            "scopeId" to 17,
+                            "message" to "고객에게 보낸 원문",
+                        ),
+                    ),
                 ),
             ),
         )
 
         assertThat(encoded)
-            .contains("GALLERY", "17", "version", "4", "OPEN", "commentId", "99", "ACTIVE")
+            .contains(
+                "GALLERY", "17", "version", "4", "OPEN", "SELECTION_IN_PROGRESS",
+                "commentId", "99", "ACTIVE", "userNotifications", "SELECTION_SUBMITTED", "scopeId",
+            )
             .doesNotContain(
                 "김민수 이영희 본식",
                 "서울 강남 웨딩",
@@ -547,7 +562,39 @@ class AdminAuditServiceTest @Autowired constructor(
                 "9001011234567",
                 "삭제된 댓글 원문",
                 "private@example.com",
+                "010-1234-5678",
+                "개인정보가 포함된 스튜디오 소개",
+                "고객에게 보낸 원문",
             )
+    }
+
+    @Test
+    fun `복원 payload는 스튜디오 새 프로필과 읽기 전용 stage 증거를 보존하고 과거 유입 경로는 제외한다`() {
+        val studioPayload = snapshotCodec.encodeRestorePayload(
+            AdminAuditTargetType.STUDIO,
+            mapOf(
+                "type" to "STUDIO",
+                "id" to 7,
+                "version" to 2,
+                "contact" to "02-123-4567",
+                "description" to "스튜디오 소개",
+                "inflowChannel" to "LEGACY_BLOG",
+            ),
+        )
+        val galleryPayload = snapshotCodec.encodeRestorePayload(
+            AdminAuditTargetType.GALLERY,
+            mapOf(
+                "type" to "GALLERY",
+                "id" to 9,
+                "version" to 3,
+                "stage" to "RETOUCH",
+            ),
+        )
+
+        assertThat(studioPayload)
+            .contains("contact", "02-123-4567", "description", "스튜디오 소개")
+            .doesNotContain("inflowChannel", "LEGACY_BLOG")
+        assertThat(galleryPayload).contains("stage", "RETOUCH")
     }
 
     @Test

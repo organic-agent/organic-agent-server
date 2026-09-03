@@ -96,7 +96,10 @@ import org.springframework.context.annotation.Import
     CategorizationService::class,
 )
 class AdminDomainDependenciesConfiguration {
-    /** 관리자 조회 재사용 경로에서는 사용자 알림을 발행하지 않는다. */
+    /**
+     * BackOffice는 사용자 알림과 설정을 읽기 전용 운영 정보로만 노출한다. 관리자 mutation은
+     * 관리자 감사/inbox에만 기록하며 제품 사용자 알림을 자동 생성하지 않는다.
+     */
     @Bean
     fun userNotificationPublisher(): UserNotificationPublisher = UserNotificationPublisher { _, _, _, _, _, _ -> }
 }

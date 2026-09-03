@@ -20,6 +20,7 @@ import com.soma.wes.admin.resource.repository.AdminWorkflowRepository
 import com.soma.wes.admin.resource.repository.AdminNotificationInboxRepository
 import com.soma.wes.category.service.CategorizationService
 import com.soma.wes.collab.support.CollabLinkResolver
+import com.soma.wes.gallery.domain.GalleryInviteKind
 import com.soma.wes.gallery.service.GalleryInviteService
 import com.soma.wes.gallery.support.GalleryInviteUrlResolver
 import com.soma.wes.global.SecureTokenGenerator
@@ -339,13 +340,27 @@ class AdminWorkflowService(
         }
         AdminWorkflowAction.REISSUE_GALLERY_INVITE -> {
             requireType(type, AdminResourceType.GALLERY)
-            val expiresAt = ZonedDateTime.now(clock).plus(GalleryInviteService.VALIDITY)
+            val now = ZonedDateTime.now(clock)
+            val expiresAt = request.optionalOffsetDateTime("expiresAt")?.toZonedDateTime()
+                ?: now.plus(GalleryInviteService.VALIDITY)
+            if (!expiresAt.isAfter(now)) throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
+            val kind = request.optionalText("kind", 30)?.uppercase()?.let { value ->
+                runCatching { GalleryInviteKind.valueOf(value) }
+                    .getOrElse { throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS) }
+            }
+            val maxUses = request.optionalInt("maxUses")
+            if (maxUses != null && maxUses !in 1..100) {
+                throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
+            }
             val token = tokenGenerator.generate()
-            val inviteId = workflowRepository.reissueGalleryInvite(
-                id, token, expiresAt, request.expectedVersion,
+            val invite = workflowRepository.reissueGalleryInvite(
+                id, token, kind, maxUses, expiresAt, request.expectedVersion,
             )
             WorkflowExecution(details = mapOf(
-                "inviteId" to inviteId,
+                "inviteId" to invite.inviteId,
+                "kind" to invite.kind.name,
+                "maxUses" to invite.maxUses,
+                "usedCount" to 0,
                 "expiresAt" to expiresAt,
                 "inviteUrl" to galleryInviteUrlResolver.resolve(token),
                 "revealed" to true,
@@ -709,6 +724,7 @@ class AdminWorkflowService(
         return WorkflowExecution(details = mapOf(
             "publicStatus" to transition.publicStatus,
             "workflowStatus" to transition.workflowStatus,
+            "stage" to transition.stage,
         ))
     }
 
@@ -727,6 +743,7 @@ class AdminWorkflowService(
         return WorkflowExecution(details = mapOf(
             "publicStatus" to "OPEN",
             "workflowStatus" to "IN_PROGRESS",
+            "stage" to "SELECTION_IN_PROGRESS",
             "selectionDeadline" to selectionDeadline,
         ))
     }

@@ -1,6 +1,7 @@
 package com.soma.wes.admin.impersonation.dto
 
 import com.soma.wes.admin.resource.domain.AdminResourceType
+import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.Size
@@ -78,6 +79,10 @@ data class AdminImpersonationWorkspaceViewResponse(
     val name: String,
     val accessRole: String,
     val galleryUrl: String?,
+    @field:Schema(description = "스튜디오 연락처. 개인 작업공간은 null", maxLength = 100)
+    val contact: String?,
+    @field:Schema(description = "스튜디오 소개. 개인 작업공간은 null", maxLength = 500)
+    val description: String?,
 )
 
 data class AdminImpersonationGalleryViewResponse(
@@ -88,6 +93,18 @@ data class AdminImpersonationGalleryViewResponse(
     val title: String,
     val publicStatus: String,
     val workflowStatus: String,
+    @field:Schema(
+        description = "status 및 workflowStatus와 분리된 읽기 전용 6단계 제품 진행 상태",
+        allowableValues = [
+            "UPLOAD",
+            "SELECTION_IN_PROGRESS",
+            "SELECTION_COMPLETED",
+            "RETOUCH",
+            "ALBUM",
+            "ARCHIVED",
+        ],
+    )
+    val stage: String,
     val selectionDeadline: ZonedDateTime?,
     val accessRole: String,
     val photoCount: Long,

@@ -26,7 +26,10 @@ enum class AdminWorkflowAction(
         setOf("selectionDeadline"),
     ),
     RUN_CATEGORIZATION(setOf(AdminResourceType.GALLERY)),
-    REISSUE_GALLERY_INVITE(setOf(AdminResourceType.GALLERY)),
+    REISSUE_GALLERY_INVITE(
+        setOf(AdminResourceType.GALLERY),
+        optionalFields = setOf("kind", "maxUses", "expiresAt"),
+    ),
     REVOKE_GALLERY_INVITE(setOf(AdminResourceType.GALLERY), setOf("inviteId")),
     REISSUE_COLLAB_LINK(setOf(AdminResourceType.COLLABORATION), optionalFields = setOf("ttlSeconds")),
     REVOKE_COLLAB_LINK(setOf(AdminResourceType.COLLABORATION)),

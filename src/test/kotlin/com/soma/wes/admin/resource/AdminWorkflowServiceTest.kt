@@ -143,6 +143,23 @@ class AdminWorkflowServiceTest @Autowired constructor(
         }.isInstanceOfSatisfying(AdminException::class.java) {
             assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         }
+        assertThatThrownBy {
+            execute(
+                actor.requiredId,
+                AdminResourceType.GALLERY,
+                graph.gallery.id,
+                AdminWorkflowAction.UPDATE_GALLERY_STATES,
+                graph.gallery.version,
+                "gallery-stage-bypass-001",
+                mapOf(
+                    "publicStatus" to "OPEN",
+                    "workflowStatus" to "IN_PROGRESS",
+                    "stage" to "RETOUCH",
+                ),
+            )
+        }.isInstanceOfSatisfying(AdminException::class.java) {
+            assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
+        }
         assertThat(
             jdbcClient.sql("SELECT COUNT(*) FROM admin_idempotency_keys")
                 .query { rs, _ -> rs.getLong(1) }.single(),
@@ -321,6 +338,26 @@ class AdminWorkflowServiceTest @Autowired constructor(
                 "selectionDeadline" to ZonedDateTime.now().plusDays(30).toOffsetDateTime().toString(),
             ),
         )
+        val reissueStartedAt = ZonedDateTime.now()
+        jdbcClient.sql(
+            """
+            INSERT INTO gallery_invites
+                (gallery_id, token, kind, max_uses, used_count, expires_at, version, created_at, updated_at)
+            VALUES
+                (:galleryId, 'previous-policy-token', 'STUDIO_MEMBER', 5, 5,
+                 CURRENT_TIMESTAMP + INTERVAL '3 days', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """.trimIndent(),
+        ).param("galleryId", graph.gallery.id).update()
+        val fullInviteContext = contextService.get(AdminResourceType.GALLERY, graph.gallery.id)
+        assertThat(fullInviteContext.facts)
+            .containsEntry("stage", "UPLOAD")
+            .containsEntry("inviteStatus", "FULL")
+        assertThat(fullInviteContext.sections.getValue("invites").single())
+            .containsEntry("kind", "STUDIO_MEMBER")
+            .containsEntry("maxUses", 5)
+            .containsEntry("usedCount", 5)
+            .containsEntry("remainingUses", 0)
+            .containsEntry("status", "FULL")
         val inviteRequest = AdminWorkflowRequest(
             AdminWorkflowAction.REISSUE_GALLERY_INVITE,
             "만료된 초대 재발급",
@@ -344,7 +381,13 @@ class AdminWorkflowServiceTest @Autowired constructor(
         )
 
         assertThat(invite.details["inviteUrl"]?.toString()).contains("/invite/")
+        assertThat(invite.details)
+            .containsEntry("kind", "STUDIO_MEMBER")
+            .containsEntry("maxUses", 5)
+            .containsEntry("usedCount", 0)
         assertThat(invite.details["revealed"]).isEqualTo(true)
+        val defaultExpiry = invite.details.getValue("expiresAt") as ZonedDateTime
+        assertThat(defaultExpiry).isAfter(reissueStartedAt.plusDays(6)).isBefore(reissueStartedAt.plusDays(8))
         assertThat(inviteReplay.replayed).isTrue()
         assertThat(inviteReplay.details).doesNotContainKey("inviteUrl")
         assertThat(inviteReplay.details["revealed"]).isEqualTo(false)
@@ -367,6 +410,61 @@ class AdminWorkflowServiceTest @Autowired constructor(
                 "SELECT COUNT(*) FROM gallery_invites WHERE gallery_id = :galleryId AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP",
             ).param("galleryId", graph.gallery.id).query { rs, _ -> rs.getLong(1) }.single(),
         ).isOne()
+        assertThat(
+            jdbcClient.sql(
+                "SELECT kind, max_uses, used_count FROM gallery_invites WHERE id = :inviteId",
+            ).param("inviteId", (invite.details.getValue("inviteId") as Number).toLong())
+                .query { rs, _ -> listOf(rs.getString("kind"), rs.getInt("max_uses"), rs.getInt("used_count")) }
+                .single(),
+        ).containsExactly("STUDIO_MEMBER", 5, 0)
+
+        assertThatThrownBy {
+            execute(
+                actor.requiredId,
+                AdminResourceType.GALLERY,
+                graph.gallery.id,
+                AdminWorkflowAction.REISSUE_GALLERY_INVITE,
+                4,
+                "gallery-invite-invalid-kind-001",
+                mapOf("kind" to "PERSONAL_PARTNER"),
+            )
+        }.isInstanceOfSatisfying(AdminException::class.java) {
+            assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
+        }
+        assertThatThrownBy {
+            execute(
+                actor.requiredId,
+                AdminResourceType.GALLERY,
+                graph.gallery.id,
+                AdminWorkflowAction.REISSUE_GALLERY_INVITE,
+                4,
+                "gallery-invite-expired-001",
+                mapOf("expiresAt" to ZonedDateTime.now().minusMinutes(1).toOffsetDateTime().toString()),
+            )
+        }.isInstanceOfSatisfying(AdminException::class.java) {
+            assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
+        }
+
+        val explicitExpiry = ZonedDateTime.now().plusDays(2).truncatedTo(ChronoUnit.MICROS).toOffsetDateTime()
+        val explicitInvite = execute(
+            actor.requiredId,
+            AdminResourceType.GALLERY,
+            graph.gallery.id,
+            AdminWorkflowAction.REISSUE_GALLERY_INVITE,
+            4,
+            "gallery-invite-explicit-001",
+            mapOf(
+                "kind" to "GALLERY_MEMBER",
+                "maxUses" to 3,
+                "expiresAt" to explicitExpiry.toString(),
+            ),
+        )
+        assertThat(explicitInvite.details)
+            .containsEntry("kind", "GALLERY_MEMBER")
+            .containsEntry("maxUses", 3)
+            .containsEntry("usedCount", 0)
+        assertThat((explicitInvite.details.getValue("expiresAt") as ZonedDateTime).toInstant())
+            .isEqualTo(explicitExpiry.toInstant())
 
         val collaboration = resourceService.create(
             actor.requiredId,
@@ -704,6 +802,9 @@ class AdminWorkflowServiceTest @Autowired constructor(
         assertThat(state.first).isEqualTo("OPEN")
         assertThat(state.second).isEqualTo("IN_PROGRESS")
         assertThat(state.third.toInstant()).isEqualTo(renewedDeadline.toInstant())
+        assertThat(reopened.details["stage"]).isEqualTo("SELECTION_IN_PROGRESS")
+        assertThat(resourceService.get(AdminResourceType.GALLERY, graph.gallery.id).fields["stage"])
+            .isEqualTo("SELECTION_IN_PROGRESS")
     }
 
     @Test
@@ -1229,7 +1330,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             jdbcClient.sql("SELECT status FROM photo_selections WHERE id = :id")
                 .param("id", selection.id).query { rs, _ -> rs.getString(1) }.single(),
         ).isEqualTo("SUBMITTED")
-        execute(
+        val gallerySubmitted = execute(
             actor.requiredId,
             AdminResourceType.GALLERY,
             graph.gallery.id,
@@ -1237,7 +1338,8 @@ class AdminWorkflowServiceTest @Autowired constructor(
             0,
             "gallery-submit-001",
         )
-        execute(
+        assertThat(gallerySubmitted.details["stage"]).isEqualTo("SELECTION_COMPLETED")
+        val galleryCompleted = execute(
             actor.requiredId,
             AdminResourceType.GALLERY,
             graph.gallery.id,
@@ -1245,7 +1347,8 @@ class AdminWorkflowServiceTest @Autowired constructor(
             1,
             "gallery-complete-001",
         )
-        execute(
+        assertThat(galleryCompleted.details["stage"]).isEqualTo("ALBUM")
+        val galleryReopened = execute(
             actor.requiredId,
             AdminResourceType.GALLERY,
             graph.gallery.id,
@@ -1254,10 +1357,13 @@ class AdminWorkflowServiceTest @Autowired constructor(
             "gallery-reopen-001",
             mapOf("selectionDeadline" to ZonedDateTime.now().plusDays(30).toOffsetDateTime().toString()),
         )
+        assertThat(galleryReopened.details["stage"]).isEqualTo("SELECTION_IN_PROGRESS")
         val reopened = jdbcClient.sql("SELECT status, workflow_status FROM galleries WHERE id = :id")
             .param("id", graph.gallery.id)
             .query { rs, _ -> rs.getString("status") to rs.getString("workflow_status") }.single()
         assertThat(reopened).isEqualTo("OPEN" to "IN_PROGRESS")
+        assertThat(resourceService.get(AdminResourceType.GALLERY, graph.gallery.id).fields["stage"])
+            .isEqualTo("SELECTION_IN_PROGRESS")
 
         val emptyGraph = createGraph(actor.requiredId, "selection-empty")
         val emptySelection = resourceService.create(
