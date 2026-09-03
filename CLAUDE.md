@@ -36,8 +36,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 객체 키는 `galleries/{galleryId}/…`이고 미리보기는 `previews/` + 원본 키다. 환경은 키가 아니라
   버킷으로 갈린다 — prod는 운영 버킷, local 프로필은 인프라 `module.storage_dev`의 dev 버킷
   (`/wes/local/app.storage.bucket`). 키 조립은 `PhotoStorage.galleryPrefix`를 지난다.
-- `embedder/`가 그 Lambda다 (Python, DINOv3 ViT-B/16, ECR 컨테이너 이미지). 같은 repo지만 Gradle이
-  빌드하지 않는 별도 배포 경로이고, 자체 README를 따른다.
+- 그 Lambda(embedder — Python, DINOv3 ViT-B/16, ECR 컨테이너 이미지)는 sibling repo
+  `../../organic-agent-ai/embedder`에 있다(#123에서 이관). 이 repo는 트리거(잡·인보커)와
+  스키마만 소유한다.
 - 인프라는 sibling repo `../../organic-agent-infra` (Terraform: VPC/ALB/EC2/RDS, 사진 S3 버킷
   + 로컬 개발용 dev 버킷, 임베딩 Lambda). `EMBEDDING_DIMENSION`은 이 repo 두 곳과 인프라 repo까지 세 곳이 일치해야
   한다 (`.claude/rules/migration.md`).

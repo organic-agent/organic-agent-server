@@ -7,6 +7,7 @@ import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.global.page.PageRequests
+import com.soma.wes.photo.domain.PhotoAnalysis
 import com.soma.wes.photo.domain.PhotoMetadata
 import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.dto.request.CompleteUploadRequest
@@ -15,6 +16,7 @@ import com.soma.wes.photo.dto.response.PhotoPageResponse
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
 import com.soma.wes.photo.fixture.PhotoFixture
+import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.studio.fixture.StudioFixture
 import com.soma.wes.support.IntegrationTest
@@ -46,6 +48,7 @@ class PhotoServiceTest @Autowired constructor(
     private val studioFixture: StudioFixture,
     private val userFixture: UserFixture,
     private val photoRepository: PhotoRepository,
+    private val photoAnalysisRepository: PhotoAnalysisRepository,
     private val galleryRepository: GalleryRepository,
 ) {
 
@@ -164,6 +167,47 @@ class PhotoServiceTest @Autowired constructor(
                 softly.assertThat(after.uploaded).isEqualTo(3L)
                 softly.assertThat(after.embedded).isEqualTo(0L)
             }
+        }
+
+        @Test
+        fun `완료 통보가 분석 행을 함께 만든다`() {
+            // 행의 존재는 이 서버 소유, 컬럼 값은 Lambda 소유 — 사진은 빈 분석 행과 함께 태어난다.
+            // given
+            val photoIds = issueUploadUrls(count = 2)
+            assertThat(photoAnalysisRepository.findAllByPhotoIdIn(photoIds)).isEmpty()
+
+            // when
+            photoService.completeUpload(
+                fixture.galleryId, fixture.photographer.id!!, CompleteUploadRequest(photoIds),
+            )
+
+            // then
+            val rows = photoAnalysisRepository.findAllByPhotoIdIn(photoIds)
+            assertThat(rows).hasSize(2)
+            assertThat(rows).allSatisfy { row ->
+                assertThat(row.embedding).isNull()
+                assertThat(row.isAnalyzed).isFalse()
+            }
+        }
+
+        @Test
+        fun `이미 있는 분석 행은 건드리지 않는다`() {
+            // 재통보(markUploaded처럼 멱등)가 임베딩이 적힌 행을 빈 행으로 되돌리면 안 된다.
+            // given — 분석 행에 벡터가 먼저 적재된 상태
+            val photoIds = issueUploadUrls(count = 1)
+            photoFixture.벡터_적재(
+                photoIds.first(),
+                FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also { it[0] = 1f },
+            )
+
+            // when
+            photoService.completeUpload(
+                fixture.galleryId, fixture.photographer.id!!, CompleteUploadRequest(photoIds),
+            )
+
+            // then
+            val row = photoAnalysisRepository.findAllByPhotoIdIn(photoIds).single()
+            assertThat(row.embedding).isNotNull()
         }
 
         @Test

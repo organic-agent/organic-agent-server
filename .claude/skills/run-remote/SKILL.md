@@ -70,13 +70,8 @@ export SPRING_DATASOURCE_PASSWORD=$(aws ssm get-parameter --region ap-northeast-
 
 `nc -z localhost 8080`이 열릴 때까지 대기(30초 내외).
 
-실험용 파라미터가 필요하면 `--args`에 커맨드라인 프로퍼티를 추가한다(우선순위 최상).
-예: 클러스터 레벨 3과 같은 번들에 kNN만 끈 임시 레벨 6으로 전/후 비교 —
-
-```
---app.cluster.levels.6.strict-threshold=0.92 --app.cluster.levels.6.lenient-threshold=0.82
---app.cluster.levels.6.window-seconds=90 --app.cluster.levels.6.knn-k=0
-```
+실험용 파라미터가 필요하면 `--args`에 `--app.*` 커맨드라인 프로퍼티를 추가한다(우선순위 최상).
+설정값을 바꿔 가며 전/후를 비교할 때 application-variable.yml을 고치지 않고 쓸 수 있다.
 
 ## Phase 4: JWT 직접 발급
 
@@ -108,13 +103,13 @@ EOF
 
 ```bash
 curl -s -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8080/api/v1/galleries/1/photo-clusters?level=3"
+  "http://localhost:8080/api/v1/galleries/1/concept-folders"
 ```
 
-- 실갤러리: 1(본식 743장), 2(57장) — 둘 다 임베딩·EXIF 완비. 4·5는 목/샘플.
+- 실갤러리: 1(본식 743장), 2(57장) — AI 분석 결과와 Concept/Detail 구조를 확인한다. 4·5는 목/샘플.
 - **GET만 호출한다.** 운영 데이터가 뒤에 있다 — 쓰기 API(업로드·삭제·셀렉 확정 등)는
   이 스킬로 부르지 않는다.
-- 응답이 크면 python으로 요약해서 보라(묶음 수·크기 분포 등).
+- 응답이 크면 python으로 요약해서 보라(Concept/Detail 수·사진 배정 분포 등).
 
 ## Phase 6: 정리
 

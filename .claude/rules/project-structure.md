@@ -11,7 +11,7 @@ paths:
 
 ## 도메인 단위 패키지
 
-`auth`, `user`, `studio`, `gallery`, `photo`, `embedding`, `cluster`, `folder`,
+`auth`, `user`, `studio`, `gallery`, `photo`, `embedding`, `folder`,
 `selection`, `collab`, `trash`, `retouch`, `recommendation`, `admin` + 횡단 관심사 `global`/`security`.
 
 - `embedding`~`recommendation`은 전부 사진에 *관한* 도메인이지만 `photo`의 하위 패키지가

@@ -98,7 +98,7 @@ class GalleryAccessPolicy(
     }
 
     /**
-     * 클러스터 조회, 폴더 전반, 사진 상세, 별점 주기/지우기.
+     * 폴더 전반, 사진 상세, 별점 주기/지우기.
      */
     @Transactional(readOnly = true)
     fun requireManagerOrSelectionEditor(galleryId: Long, userId: Long): Gallery {

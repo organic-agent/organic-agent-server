@@ -50,6 +50,15 @@ class AiCategoryFolderService(
     @Transactional
     fun createFromAnalysis(galleryId: Long, userId: Long): List<ConceptFolderResponse> {
         galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        return createFromAnalysisLocked(galleryId)
+    }
+
+    /** 관리자 API가 사용자 신원을 가장하지 않고 같은 분석 결과를 물질화하는 진입점. */
+    @Transactional
+    fun createFromAnalysisAsAdmin(galleryId: Long): List<ConceptFolderResponse> =
+        createFromAnalysisLocked(galleryId)
+
+    private fun createFromAnalysisLocked(galleryId: Long): List<ConceptFolderResponse> {
         galleryRepository.requireWithLockById(galleryId)
 
         val latest = aiConceptAssignmentLoader.loadLatest(galleryId)

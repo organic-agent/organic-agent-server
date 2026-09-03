@@ -69,10 +69,10 @@ interface PhotoRepository : JpaRepository<Photo, Long> {
     ): Page<Photo>
 
     /**
-     * 벡터가 적재된 사진. 클러스터링 대상이자 Mock 갤러리의 복제 원본이다.
+     * 벡터가 적재된 사진. Mock 갤러리의 복제 원본이다.
      *
      * `status = EMBEDDED`가 아니라 `photo_analysis.embedding`의 존재로 판정한다. 상태는 사진 쪽
-     * 표식일 뿐이고 실제로 벡터를 읽는 질의(pgvector pair)가 보는 것은 분석 행이다.
+     * 표식일 뿐이고 벡터의 실제 소유자는 분석 행이다.
      */
     @Query(
         """
@@ -96,16 +96,6 @@ interface PhotoRepository : JpaRepository<Photo, Long> {
     fun countByGalleryId(galleryId: Long): Long
 
     fun countByGalleryIdAndStatus(galleryId: Long, status: PhotoStatus): Long
-
-    /** 클러스터 준비 여부 확인용. 아직 업로드되지 않은 사진도 미완료로 센다. */
-    @Query(
-        """
-            SELECT COUNT(p) FROM Photo p
-            WHERE p.galleryId = :galleryId
-              AND NOT EXISTS (SELECT 1 FROM PhotoAnalysis a WHERE a.photoId = p.id AND a.embedding IS NOT NULL)
-        """,
-    )
-    fun countNotEmbeddedByGalleryId(@Param("galleryId") galleryId: Long): Long
 
     /** 벡터가 적재된 사진 수. AI 분석을 시작할 수 있는지 볼 때 쓴다. */
     @Query(

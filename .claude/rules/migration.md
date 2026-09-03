@@ -34,7 +34,7 @@ paths:
 
 - `photo_analysis`·`ai_analysis_jobs`·`ai_selection_jobs`·`ai_recommendations`는 이 서버 밖
   (임베더 Lambda, AI 분석 배치, 추천 Lambda)이 직접 INSERT/UPDATE 한다. 엔티티의 그 컬럼은
-  읽기 전용 `val`이고, 컬럼을 바꾸면 AI repo(`photoselect/store.py`)와 임베더(`embedder/db.py`)도
+  읽기 전용 `val`이고, 컬럼을 바꾸면 AI repo(`photoselect/store.py`·`embedder/db.py`)도
   함께 바꾼다. 전용 DB 유저(`embedder`, `photoselect`)의 GRANT도 새 테이블마다 필요하다.
 
 ## 새 테이블의 부수 작업

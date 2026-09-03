@@ -104,24 +104,6 @@ app:
     # prod는 시드를 마친 뒤 Parameter Store(app.mock-gallery.template-gallery-id)가 덮어쓴다.
     template-gallery-id: 0
 
-  cluster:
-    # 프론트가 level을 넘기지 않았을 때 쓰는 레벨. 첫 화면의 묶음 입도를 정하는 값이라
-    # 바꾸면 사용자가 처음 보는 결과가 통째로 달라진다.
-    default-level: 3
-    # 레벨(1 = 크게 묶기 … 5 = 잘게 묶기)별 파라미터 번들. strict는 시간 무관 유사도 하한,
-    # lenient는 촬영 시각이 window-seconds 안인 쌍에만 허용하는 느슨한 하한, knn-k는 촬영 시각이
-    # 실측으로 창 밖인 간선에만 요구하는 상호 kNN의 k다(0 = 필터 끔, EXIF 없는 간선은 면제).
-    # 레벨 5는 창이 45초로 좁아 창 밖 간선도 대개 같은 장면이라 필터가 recall만 깎으므로 끈다.
-    # 값은 평가 하네스(PhotoClusterEvalTest) 스윕의 운영점 — docs/notes/clustering-eval-phase{2,3}.md.
-    # 레벨이 오르면 strict·lenient는 오르고 window는 줄어야 한다. kNN 필터가 끼면 간선 중첩이
-    # 엄밀히 보장되지는 않으므로, "올리면 더 잘게"의 단조성은 하네스가 실측으로 지킨다.
-    levels:
-      1: { strict-threshold: 0.86, lenient-threshold: 0.78, window-seconds: 150, knn-k: 1 }
-      2: { strict-threshold: 0.90, lenient-threshold: 0.80, window-seconds: 150, knn-k: 1 }
-      3: { strict-threshold: 0.92, lenient-threshold: 0.82, window-seconds: 90, knn-k: 1 }
-      4: { strict-threshold: 0.94, lenient-threshold: 0.82, window-seconds: 90, knn-k: 1 }
-      5: { strict-threshold: 0.96, lenient-threshold: 0.84, window-seconds: 45, knn-k: 0 }
-
   invite:
     # 초대 링크의 앞부분. 뒤에 토큰이 붙어 완성된 링크가 된다.
     # 서버 주소가 아니라 프론트 주소다 — 링크를 받은 사람이 여는 것은 API가 아니라 수락 화면이고,

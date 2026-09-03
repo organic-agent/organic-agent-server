@@ -6,8 +6,8 @@ import com.soma.wes.collab.service.CollabSessionQueryService
 import com.soma.wes.collab.support.CollabLinkResolver
 import com.soma.wes.collab.support.CollabPhotoViewAssembler
 import com.soma.wes.category.service.CategorizationService
-import com.soma.wes.cluster.config.ClusterProperties
-import com.soma.wes.cluster.repository.PhotoSimilarityRepository
+import com.soma.wes.category.service.AiCategoryFolderService
+import com.soma.wes.category.support.AiCategoryFolderPlanner
 import com.soma.wes.global.config.AwsLambdaConfig
 import com.soma.wes.embedding.config.EmbeddingProperties
 import com.soma.wes.embedding.infrastructure.LambdaEmbeddingInvoker
@@ -29,6 +29,7 @@ import com.soma.wes.photo.infrastructure.S3PhotoStorage
 import com.soma.wes.photo.service.PhotoService
 import com.soma.wes.photo.support.PhotoViewAssembler
 import com.soma.wes.notification.service.UserNotificationPublisher
+import com.soma.wes.recommendation.support.AiConceptAssignmentLoader
 import com.soma.wes.retouch.service.RetouchService
 import com.soma.wes.retouch.support.RetouchPhotoLoader
 import com.soma.wes.retouch.support.RetouchResultLoader
@@ -61,7 +62,6 @@ import org.springframework.context.annotation.Import
     MockGalleryProperties::class,
     GalleryInviteProperties::class,
     CollabProperties::class,
-    ClusterProperties::class,
 )
 @Import(
     TimeConfig::class,
@@ -92,7 +92,9 @@ import org.springframework.context.annotation.Import
     RetouchViewAssembler::class,
     ProductChildTrashRepository::class,
     ProductChildTrashService::class,
-    PhotoSimilarityRepository::class,
+    AiCategoryFolderPlanner::class,
+    AiConceptAssignmentLoader::class,
+    AiCategoryFolderService::class,
     CategorizationService::class,
 )
 class AdminDomainDependenciesConfiguration {

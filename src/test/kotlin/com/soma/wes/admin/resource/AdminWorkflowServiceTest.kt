@@ -71,7 +71,8 @@ class AdminWorkflowServiceTest @Autowired constructor(
     @Test
     fun `관리자 분류 실행은 사용자 위임 없이 초기 증분 작업을 만들고 갤러리 버전을 올린다`() {
         val actor = adminAccountFixture.관리자("workflow-categorization")
-        val graph = createGraph(actor.requiredId, "categorization")
+        val graph = createGraph(actor.requiredId, "categorization", withPhoto = true)
+        prepareAiCategoryAnalysis(graph.gallery.id, graph.photo!!.id)
 
         val initial = execute(
             actor.requiredId,
@@ -85,7 +86,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
         assertThat(initial.details)
             .containsEntry("mode", "INITIAL")
             .containsEntry("jobStatus", "SUCCEEDED")
-            .containsEntry("processedPhotoCount", 0)
+            .containsEntry("processedPhotoCount", 1)
         val initialJobId = (initial.details.getValue("jobId") as Number).toLong()
         assertThat(resourceService.get(AdminResourceType.CATEGORIZATION_JOB, initialJobId).fields)
             .containsEntry("galleryId", graph.gallery.id)
@@ -2530,6 +2531,44 @@ class AdminWorkflowServiceTest @Autowired constructor(
             .param("actorAdminId", actorAdminId)
             .query { rs, _ -> rs.getLong(1) }
             .single()
+
+    private fun prepareAiCategoryAnalysis(galleryId: Long, photoId: Long) {
+        jdbcClient.sql(
+            """
+            INSERT INTO photo_analysis (
+                photo_id, embed_group_id, subjects, technical_pct, aesthetic_pct,
+                cluster_id, cluster_rank, model_version, analyzed_at, created_at, updated_at
+            )
+            VALUES (:photoId, 1, 'couple', 80.0, 70.0, 1, 0, 'test-v1',
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (photo_id) DO UPDATE
+            SET embed_group_id = 1, subjects = 'couple', technical_pct = 80.0,
+                aesthetic_pct = 70.0, cluster_id = 1, cluster_rank = 0,
+                model_version = 'test-v1', analyzed_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            """.trimIndent(),
+        ).param("photoId", photoId).update()
+        val jobId = jdbcClient.sql(
+            """
+            INSERT INTO ai_analysis_jobs (
+                gallery_id, mode, status, started_at, finished_at, created_at, updated_at
+            )
+            VALUES (:galleryId, 'FULL', 'DONE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            RETURNING id
+            """.trimIndent(),
+        ).param("galleryId", galleryId).query { rs, _ -> rs.getLong("id") }.single()
+        jdbcClient.sql(
+            """
+            INSERT INTO ai_concept_assignments (
+                job_id, gallery_id, embed_group_id, parent_name, concept_name,
+                confidence, assigned_by, needs_review, created_at, updated_at
+            )
+            VALUES (:jobId, :galleryId, 1, '웨딩', '본식', 0.9, 'vlm', false,
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """.trimIndent(),
+        ).param("jobId", jobId).param("galleryId", galleryId).update()
+    }
 
     private fun albumRows(albumId: Long): List<AlbumLayoutRow> = jdbcClient.sql(
         """
