@@ -53,10 +53,10 @@ ai_python() {
 
 # uv 로 만든 venv 에는 pip 이 없다 — uv pip 을 쓰고, 없으면 python -m pip.
 _ai_pip() {
-  local py="$1"; shift
+  local py="$1" sub="$2"; shift 2
   if command -v uv >/dev/null 2>&1; then
-    uv pip -q --python "$py" "$@"
+    uv pip "$sub" -q --python "$py" "$@"
   else
-    "$py" -m pip install -q "${@:2}"
+    "$py" -m pip "$sub" -q "$@"
   fi
 }
