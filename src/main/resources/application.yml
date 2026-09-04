@@ -20,10 +20,10 @@ spring:
     import: aws-parameterstore:/wes/local/
 
 app:
-  embedding:
-    # 로컬에는 Lambda가 없다. "임베딩 실행"·"AI 분석" 버튼이 이 스크립트를 단계별(--stage)로 띄운다
-    # (AI repo venv·S3 버킷은 스크립트가 정한다).
-    local-script: scripts/local-ai.sh
+  analysis:
+    # 로컬에는 Lambda가 없다. "임베딩 실행"·"AI 분석" 버튼이 이 디렉토리의 <함수>.sh(embedder·score·categorize)를
+    # 운영의 Lambda EVENT 자리에서 띄운다 (AI repo venv·S3 버킷은 스크립트가 정한다).
+    local-script-dir: scripts/lambda
 
 ---
 spring:

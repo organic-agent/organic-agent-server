@@ -56,12 +56,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     Parameter Store에서 읽는다.
   - `reset-test-data.sh [local|remote] [--all] [--with-s3]` — 수동 테스트 데이터 초기화.
     계정은 기본 보존(토큰 유지). TRUNCATE 목록 규칙은 `.claude/rules/migration.md` 참조.
-  - `local-ai.sh <galleryId> [--stage embed|score|categorize --job-id J] [--force] [--only-embed]` —
-    로컬 wes(local 프로필)의 `analysis` 도메인이 웹 "임베딩 실행"·"AI 분석" 버튼에서 단계마다 이 스크립트를
-    서브프로세스로 띄운다(`LocalProcessStageInvoker`, 운영의 Lambda EVENT 자리). `--stage` 없이 부르면 잡 없이
-    세 단계를 일괄 실행한다(배정은 저장되지 않음). 로컬 pg + dev 버킷(`/wes/local/app.storage.bucket`)을 쓴다.
-  - `local-worker.sh [--once]` — (선택) AI repo 폴링 워커. 정식 경로는 위의 잡 경로이고, 워커가 먼저 집은 잡은
-    wes가 다시 부르지 않아 둘을 함께 켜도 겹치지 않는다.
+  - `lambda/{embedder,score,categorize}.sh --gallery-id G [--job-id J] [--force]` — **로컬 Lambda 대역.** 운영 Lambda 함수
+    하나 = 스크립트 하나(AI repo 최상위 모듈과 같은 이름), 인자는 Lambda 페이로드 키 그대로. 로컬 wes(local 프로필)의
+    `analysis` 도메인이 "임베딩 실행"·"AI 분석" 버튼에서 단계마다 이것을 띄운다(`LocalProcessStageInvoker`, 운영의
+    EVENT 자리). score는 `--job-id`가 있으면 AI repo 계약대로 categorize.sh를 이어 부른다. 접속 정보는 `lib/ai-env.sh`.
+  - `local-ai.sh <galleryId> [--force] [--only-embed]` — 위 셋을 잡 없이 순서대로 도는 지름길(배정은 저장되지 않음).
+    로컬 pg + dev 버킷(`/wes/local/app.storage.bucket`)을 쓴다.
   - AI venv는 `scripts/lib/ai-venv.sh`가 `<모듈>/.venv`에 만든다(score venv에 categorize 포함).
 
 ## 규칙 참조

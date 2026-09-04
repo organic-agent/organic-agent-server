@@ -88,15 +88,15 @@ app:
     # prod는 Parameter Store(app.embedding.function-name)가 덮어쓴다.
     # 로컬·테스트에는 Lambda가 없으므로 빈 값이 정상이다 — 기동이 아니라 호출 시점에 실패한다.
     function-name: ""
-    # local 프로필만: Lambda 대신 서브프로세스로 띄울 스크립트(작업 디렉토리 기준). 프로필 블록(application.yml)이 채운다.
-    # 임베딩뿐 아니라 분석 세 단계(--stage embed|score|categorize) 전부 이 스크립트가 맡는다.
-    local-script: ""
 
   analysis:
     # 분석 파이프라인(EMBED → SCORE → CATEGORIZE) 오케스트레이션. 임베더 함수는 app.embedding.function-name.
     # prod는 Parameter Store(app.analysis.score-function-name, categorize-function-name)가 덮어쓴다. 비면 호출 시점에 503.
     score-function-name: ""
     categorize-function-name: ""
+    # local 프로필만: Lambda 대신 띄울 대역 스크립트 디렉토리(작업 디렉토리 기준). 함수 하나 = <디렉토리>/<함수>.sh.
+    # 프로필 블록(application.yml)이 채운다.
+    local-script-dir: ""
     # Lambda가 ai_analysis_jobs.stage_status·heartbeat_at을 쓰는가(AI repo Phase 0 이후 true). false면 옛 계약 —
     # score가 status를 RUNNING으로 올리고 categorize를 직접 체인 호출하며 DONE을 찍는다. 이 서버는 SCORE만 보내고 맡긴다.
     lambda-reports-stage: false
