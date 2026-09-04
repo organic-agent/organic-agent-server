@@ -1,18 +1,17 @@
 #!/usr/bin/env bash
-# 로컬 AI 파이프라인을 한 번에 돌린다: 임베딩(DINOv3) → 분석(그룹·피사체·점수·클러스터, VLM은 Ollama).
+# 로컬 AI 파이프라인을 한 번에 돌린다: 임베딩(미리보기 PUT → DINOv3) → 폴더화(SCORE 점수 → CATEGORIZE 그룹 + Bedrock 이름).
 #
-# 운영에서 Lambda·배치가 하는 일을 노트북이 대신한다. 로컬 wes(local 프로필)에는 Lambda가 없어
-# POST /embeddings/run 이 503으로 끝나므로, 사진을 올린 뒤 이 스크립트를 부른다.
-# (추천 draft 단계는 추천 기능 재설계로 제거했다 — docs/plans/ai-folder-structure.md)
+# 운영에서 Lambda·워커가 하는 일을 노트북이 대신한다. 로컬 wes(local 프로필)는 "임베딩 실행" 버튼에서 이 스크립트를
+# `--only-embed` 로 서브프로세스로 띄운다(LocalProcessEmbeddingInvoker). 폴더화는 웹의 "AI 분석" 버튼 → local-worker.sh 가
+# 정식 경로이고, 이 스크립트의 분석 단계는 잡 없이 한 번에 돌려 보는 지름길이다. 추천·비교샷은 wes 안에서 돈다.
 #
-#   scripts/local-ai.sh <galleryId> [--force] [--no-vlm]
-#                       [--skip-embed] [--skip-analyze] [--only-embed]
+#   scripts/local-ai.sh <galleryId> [--force] [--skip-embed] [--skip-analyze] [--only-embed]
 #
-#   --force         이미 벡터가 있는 사진도 다시 계산한다 (임베더 --force)
-#   --no-vlm        분석에서 VLM 태그를 뺀다. Ollama를 띄우지 않는다
+#   --force         이미 벡터·점수가 있는 사진도 다시 계산한다 (임베더 --force, SCORE --force)
 #   --only-embed    = --skip-analyze
 #
-# 전제: docker(pg), python3, 호스트 Ollama(VLM, --no-vlm이면 불필요), AWS 자격증명(dev 버킷 + /wes/local/ 읽기).
+# 전제: docker(pg), python3, AWS 자격증명(dev 버킷 + /wes/local/ 읽기 + Bedrock — 분석 단계의 naming).
+# AI repo venv 는 embedder/.venv · photoselect/.venv 에 이 스크립트가 만든다. VLM(Ollama)은 더 이상 쓰지 않는다.
 # DB는 docker-compose.local.yml의 pg(localhost:5432 wes/wes/wes)가 기본이고 DB_* 환경변수로 덮어쓴다.
 # S3_BUCKET은 환경변수 → /wes/local/app.storage.bucket(인프라 apply가 기록) 순으로 정한다.
 # 운영 RDS를 가리키게 하지 마라 — 미확정 스키마 시험은 부술 수 있는 DB에서만 한다.
@@ -23,21 +22,18 @@ AI_ROOT="${AI_ROOT:-$WES_ROOT/../../organic-agent-ai}"
 COMPOSE=(docker compose -f "$WES_ROOT/docker-compose.local.yml")
 REGION="${AWS_REGION:-ap-northeast-2}"
 BUCKET_PARAM="/wes/local/app.storage.bucket"
-VLM_MODEL="${VLM_MODEL:-gemma3:12b}"   # AI repo config.py의 vlm_model과 같아야 한다
-VLM_HOST="http://127.0.0.1:11434"
 
 GALLERY_ID=""
-FORCE=false; NO_VLM=false
+FORCE=false
 SKIP_EMBED=false; SKIP_ANALYZE=false
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --force) FORCE=true ;;
-    --no-vlm) NO_VLM=true ;;
     --skip-embed) SKIP_EMBED=true ;;
     --skip-analyze) SKIP_ANALYZE=true ;;
     --only-embed) SKIP_ANALYZE=true ;;
-    -h|--help) sed -n 2,18p "$0"; exit 0 ;;
+    -h|--help) sed -n 2,15p "$0"; exit 0 ;;
     -*) echo "모르는 옵션: $1" >&2; exit 1 ;;
     *) GALLERY_ID="$1" ;;
   esac
@@ -96,49 +92,23 @@ if [ "$SKIP_EMBED" = false ]; then
   (cd "$EMBEDDER_DIR" && "$EMBEDDER_PY" -m embedder "${EMBED_ARGS[@]}")
 fi
 
-# --- AI repo CLI ---------------------------------------------------------------------------------
+# --- AI repo CLI (photoselect/, 평탄 패키지) ------------------------------------------------------
 if [ "$SKIP_ANALYZE" = true ]; then
   echo "끝. 임베딩만 돌렸다."
   exit 0
 fi
 
-if [ ! -d "$AI_ROOT/photoselect" ]; then
-  echo "AI repo를 찾지 못했다: $AI_ROOT (AI_ROOT 환경변수로 지정)" >&2
-  exit 1
-fi
-AI_PY="$AI_ROOT/photoselect/scripts/spike/.venv/bin/python"
-[ -x "$AI_PY" ] || AI_PY="python3"
+# shellcheck source=scripts/lib/ai-venv.sh
+. "$WES_ROOT/scripts/lib/ai-venv.sh"
+AI_PY="$(photoselect_python "$AI_ROOT")"
 
-# AI repo의 --db 스위치(DbStore)는 AI repo 쪽 작업이다. 없으면 여기서 멈춘다 —
-# 로컬 파일 모드로 돌리면 결과가 out/에만 남고 wes API가 읽는 photo_analysis에는 아무것도 안 들어간다.
-if ! (cd "$AI_ROOT" && "$AI_PY" -m photoselect analyze --help 2>/dev/null | grep -q -- '--db'); then
-  echo "AI repo의 'photoselect analyze --db'가 아직 없다(DbStore 미구현). 임베딩까지만 끝났다." >&2
-  echo "  $AI_ROOT/photoselect — e2e-test-plan.md 1단계(DbStore·--db)가 끝나면 다시 부른다." >&2
-  exit 2
-fi
+# --- 2. 폴더화 (SCORE → CATEGORIZE → naming, Bedrock) ---------------------------------------------
+# `analyze` 는 wes FULL 잡과 같은 순서(score → categorize)의 alias 다. --llm 이 있어야 naming 까지 간다 —
+# 없으면 그룹까지만 만들고 naming 은 skipped 로 남아 폴더 세트가 생기지 않는다.
+ANALYZE_ARGS=(--gallery "$GALLERY_ID" --db --llm)
+[ "$FORCE" = true ] && ANALYZE_ARGS+=(--force)
+echo "[analyze] python -m photoselect analyze ${ANALYZE_ARGS[*]}"
+"$AI_PY" -m photoselect analyze "${ANALYZE_ARGS[@]}"
 
-# --- 2. 분석 (VLM은 Ollama) ----------------------------------------------------------------------
-if [ "$SKIP_ANALYZE" = false ]; then
-  ANALYZE_ARGS=(--gallery "$GALLERY_ID" --db)
-  [ "$FORCE" = true ] && ANALYZE_ARGS+=(--force)
-  if [ "$NO_VLM" = true ]; then
-    ANALYZE_ARGS+=(--no-vlm)
-  else
-    # 호스트 Ollama(맥은 GPU/MPS를 잡는다 -- Docker Ollama는 못 잡아 쓰지 않는다). 안 떠 있으면 띄운다.
-    if ! curl -sf "$VLM_HOST/api/tags" >/dev/null; then
-      command -v ollama >/dev/null || { echo "ollama가 없다. brew install ollama 또는 --no-vlm" >&2; exit 1; }
-      echo "[vlm] ollama serve 기동 (로그: /tmp/ollama-local.log)"
-      nohup ollama serve >/tmp/ollama-local.log 2>&1 &
-      for _ in $(seq 1 30); do curl -sf "$VLM_HOST/api/tags" >/dev/null && break; sleep 1; done
-    fi
-    if ! ollama list 2>/dev/null | grep -q "^$VLM_MODEL"; then
-      echo "[vlm] 모델 pull: $VLM_MODEL (첫 실행은 수 GB)"
-      ollama pull "$VLM_MODEL"
-    fi
-  fi
-  echo "[analyze] python -m photoselect analyze ${ANALYZE_ARGS[*]}"
-  (cd "$AI_ROOT" && "$AI_PY" -m photoselect analyze "${ANALYZE_ARGS[@]}")
-fi
-
-echo "확인(API): POST /api/v1/galleries/$GALLERY_ID/folder-groups/ai (작가 토큰) — 배정이 있으면 AI 폴더 세트가 생긴다"
-echo "끝. 확인: psql -h $DB_HOST -p $DB_PORT -U $DB_USER $DB_NAME -c \"SELECT count(*) FILTER (WHERE embedding IS NOT NULL) AS embedded, count(model_version) AS analyzed FROM photo_analysis a JOIN photos p ON p.id = a.photo_id WHERE p.gallery_id = $GALLERY_ID\""
+echo "확인(API): POST /api/v1/galleries/$GALLERY_ID/concept-folders/ai (작가 토큰) — 배정이 있으면 AI 폴더 세트가 생긴다"
+echo "끝. 확인: psql -h $DB_HOST -p $DB_PORT -U $DB_USER $DB_NAME -c \"SELECT count(*) FILTER (WHERE embedding IS NOT NULL) AS embedded, count(embed_group_id) AS categorized FROM photo_analysis a JOIN photos p ON p.id = a.photo_id WHERE p.gallery_id = $GALLERY_ID\""
