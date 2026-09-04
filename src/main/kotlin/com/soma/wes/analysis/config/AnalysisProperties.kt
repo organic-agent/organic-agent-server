@@ -25,8 +25,8 @@ data class AnalysisProperties(
     /**
      * Lambda가 `ai_analysis_jobs.stage_status`·`heartbeat_at`을 쓰는가(AI repo Phase 0 이후).
      *
-     * false면 옛 계약이다 — score가 `status`를 RUNNING으로 올리고 끝에서 categorize를 직접 체인 호출하며 categorize가
-     * DONE을 찍는다. 이 서버는 SCORE를 한 번 보내고 그 뒤는 AI 쪽에 맡긴다(단계 전이·정체 감지 없음).
+     * false면 옛 계약이다 — score가 끝에서 categorize를 직접 체인 호출하고 categorize가 `status`를 DONE으로 닫는다.
+     * 이 서버는 SCORE를 한 번 보내고 그 뒤는 AI 쪽에 맡긴다(재전송·단계 전이·정체 감지 없음).
      * true면 이 서버가 단계마다 부르고, 하트비트로 정체를 잡고, DONE·FAILED를 닫는다.
      */
     val lambdaReportsStage: Boolean = false,

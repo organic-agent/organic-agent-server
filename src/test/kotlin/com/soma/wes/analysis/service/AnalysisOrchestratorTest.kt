@@ -91,7 +91,7 @@ class AnalysisOrchestratorTest @Autowired constructor(
                 softly.assertThat(job.stage).isEqualTo(AnalysisStage.SCORE)
                 softly.assertThat(job.stageStatus).isEqualTo(AnalysisStatus.PENDING)
                 softly.assertThat(job.stageAttempts).isEqualTo(1)
-                softly.assertThat(job.status).isEqualTo(AnalysisStatus.PENDING)
+                softly.assertThat(job.status).isEqualTo(AnalysisStatus.RUNNING)
             }
         }
 
@@ -107,7 +107,7 @@ class AnalysisOrchestratorTest @Autowired constructor(
             // then
             val job = job(jobId)
             assertSoftly { softly ->
-                softly.assertThat(job.status).isEqualTo(AnalysisStatus.PENDING)
+                softly.assertThat(job.status).isEqualTo(AnalysisStatus.RUNNING)
                 softly.assertThat(job.stage).isEqualTo(AnalysisStage.SCORE)
                 softly.assertThat(job.stageStatus).isEqualTo(AnalysisStatus.PENDING)
                 softly.assertThat(stages(jobId)).containsExactly(AnalysisStage.EMBED, AnalysisStage.SCORE)
@@ -172,58 +172,26 @@ class AnalysisOrchestratorTest @Autowired constructor(
     inner class LegacyLambda {
 
         @Test
-        fun `SCORE를 보낸 뒤 Lambda가 RUNNING으로 올리면 더 부르지 않고 DONE은 그대로 받아들인다`() {
+        fun `SCORE를 한 번 보낸 뒤에는 다시 보내지 않고 Lambda가 닫은 DONE을 그대로 받아들인다`() {
             // given — 임베딩이 끝난 갤러리라 EMBED는 첫 스윕에서 닫힌다
             photoFixture.임베딩된_사진(fixture.galleryId, count = 1)
             val jobId = requestFull()
             orchestrator.sweep()
             assertThat(stages(jobId)).containsExactly(AnalysisStage.EMBED, AnalysisStage.SCORE)
+            assertThat(job(jobId).status).isEqualTo(AnalysisStatus.RUNNING)
 
-            // when — score가 잡을 열었다(status RUNNING). 스윕은 손대지 않는다
-            jdbcTemplate.update("UPDATE ai_analysis_jobs SET status = 'RUNNING', started_at = now() WHERE id = ?", jobId)
+            // when — 옛 Lambda는 집힘을 알리지 않는다. 재시도 창이 지나도 다시 보내면 같은 갤러리를 두 번 돌리므로 기다린다
             jdbcTemplate.update("UPDATE ai_analysis_jobs SET dispatched_at = now() - interval '1 hour' WHERE id = ?", jobId)
             orchestrator.sweep()
             assertThat(stages(jobId)).hasSize(2)
 
-            // categorize가 체인 끝에서 DONE을 찍는다
+            // categorize가 체인 끝에서 DONE을 찍는다 — 종료 상태는 그대로다
             jdbcTemplate.update("UPDATE ai_analysis_jobs SET status = 'DONE', finished_at = now() WHERE id = ?", jobId)
             orchestrator.sweep()
 
             // then
             assertThat(job(jobId).status).isEqualTo(AnalysisStatus.DONE)
             assertThat(stages(jobId)).hasSize(2)
-        }
-
-        @Test
-        fun `보낸 뒤 아무도 집지 않으면 재시도 창이 지난 뒤 다시 보내고 상한을 넘기면 실패다`() {
-            // given
-            photoFixture.임베딩된_사진(fixture.galleryId, count = 1)
-            val jobId = requestFull()
-            orchestrator.sweep()
-            assertThat(stages(jobId).last()).isEqualTo(AnalysisStage.SCORE)
-
-            // when — 창 안에는 기다린다
-            orchestrator.sweep()
-            assertThat(stages(jobId)).hasSize(2)
-
-            // 창이 지나면 다시 보낸다
-            expireDispatch(jobId)
-            orchestrator.sweep()
-            assertThat(stages(jobId)).hasSize(3)
-            assertThat(job(jobId).stageAttempts).isEqualTo(2)
-
-            expireDispatch(jobId)
-            orchestrator.sweep()
-            expireDispatch(jobId)
-            orchestrator.sweep()
-
-            // then — 3회를 넘긴 네 번째는 포기
-            val job = job(jobId)
-            assertSoftly { softly ->
-                softly.assertThat(stages(jobId)).hasSize(4)
-                softly.assertThat(job.status).isEqualTo(AnalysisStatus.FAILED)
-                softly.assertThat(job.error).contains("SCORE")
-            }
         }
 
         @Test
@@ -256,7 +224,7 @@ class AnalysisOrchestratorTest @Autowired constructor(
             val job = job(jobId)
             assertSoftly { softly ->
                 softly.assertThat(stages(jobId)).containsExactly(AnalysisStage.EMBED)
-                softly.assertThat(job.status).isEqualTo(AnalysisStatus.PENDING)
+                softly.assertThat(job.status).isEqualTo(AnalysisStatus.RUNNING)
                 softly.assertThat(job.stageAttempts).isEqualTo(2)
             }
         }
@@ -288,9 +256,6 @@ class AnalysisOrchestratorTest @Autowired constructor(
             assertThat(job(jobId).status).isEqualTo(AnalysisStatus.PENDING)
         }
 
-        private fun expireDispatch(jobId: Long) {
-            jdbcTemplate.update("UPDATE ai_analysis_jobs SET dispatched_at = now() - interval '10 minutes' WHERE id = ?", jobId)
-        }
     }
 
     @Nested
@@ -339,6 +304,38 @@ class AnalysisOrchestratorTest @Autowired constructor(
         }
 
         @Test
+        fun `보낸 뒤 아무도 집지 않으면 재시도 창이 지난 뒤 다시 보내고 상한을 넘기면 실패다`() {
+            // given
+            photoFixture.임베딩된_사진(fixture.galleryId, count = 1)
+            val jobId = requestFull()
+            reporting.sweep()
+            assertThat(stages(jobId).last()).isEqualTo(AnalysisStage.SCORE)
+
+            // when — 창 안에는 기다린다
+            reporting.sweep()
+            assertThat(stages(jobId)).hasSize(2)
+
+            // 창이 지나면 다시 보낸다
+            expireDispatch(jobId)
+            reporting.sweep()
+            assertThat(stages(jobId)).hasSize(3)
+            assertThat(job(jobId).stageAttempts).isEqualTo(2)
+
+            expireDispatch(jobId)
+            reporting.sweep()
+            expireDispatch(jobId)
+            reporting.sweep()
+
+            // then — 3회를 넘긴 네 번째는 포기
+            val job = job(jobId)
+            assertSoftly { softly ->
+                softly.assertThat(stages(jobId)).hasSize(4)
+                softly.assertThat(job.status).isEqualTo(AnalysisStatus.FAILED)
+                softly.assertThat(job.error).contains("SCORE")
+            }
+        }
+
+        @Test
         fun `단계 FAILED는 잡 FAILED로 닫고, 하트비트가 끊기면 다시 보낸다`() {
             // given
             photoFixture.임베딩된_사진(fixture.galleryId, count = 1)
@@ -360,6 +357,10 @@ class AnalysisOrchestratorTest @Autowired constructor(
             val job = job(jobId)
             assertThat(job.status).isEqualTo(AnalysisStatus.FAILED)
             assertThat(job.error).isEqualTo("model load failed")
+        }
+
+        private fun expireDispatch(jobId: Long) {
+            jdbcTemplate.update("UPDATE ai_analysis_jobs SET dispatched_at = now() - interval '10 minutes' WHERE id = ?", jobId)
         }
 
         private fun claimStage(jobId: Long) {

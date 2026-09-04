@@ -124,7 +124,6 @@ class AnalysisOrchestrator(
         if (job.stageStatus == AnalysisStatus.PENDING) {
             return dispatchOrGiveUp(job, AnalysisStage.EMBED, now) { job.openStageByObserver(progress.done.toInt(), now) }
         }
-        if (properties.lambdaReportsStage) job.markRunning(now)
         job.observeProgress(progress.done.toInt(), now)
         if (progress.isComplete) {
             job.completeStage(now)
@@ -151,20 +150,19 @@ class AnalysisOrchestrator(
     }
 
     /**
-     * SCORE·CATEGORIZE. 누가 잡을 집었는지 보는 방법이 Lambda 세대에 따라 다르다([AnalysisProperties.lambdaReportsStage]):
-     * 단계 상태를 쓰는 Lambda는 `stage_status`로, 옛 Lambda는 `status`를 RUNNING으로 올리는 것으로 알린다.
-     * 옛 Lambda는 끝(DONE·FAILED)도 직접 찍으므로 그 뒤는 맡긴다 — 정체 감지도 다음 단계 전이도 없다.
+     * SCORE·CATEGORIZE. 단계 상태를 쓰는 Lambda([AnalysisProperties.lambdaReportsStage])면 `stage_status`로 집힘·정체를 보고
+     * 안 집히면 다시 보낸다. 옛 Lambda는 단계 상태를 쓰지 않아 집힘을 알 수 없으므로 한 번 보낸 뒤 손을 뗀다 — 재전송·정체
+     * 감지 없이 AI 쪽이 `status`를 DONE·FAILED로 닫을 때까지 기다린다(다시 보내면 같은 갤러리를 두 번 돌린다).
      */
     private fun stepLambdaStage(job: AnalysisJob, stage: AnalysisStage, now: ZonedDateTime): Outcome {
-        val claimed = if (properties.lambdaReportsStage) job.isStageClaimed else job.isClaimedByStatus
-        if (claimed) {
-            if (properties.lambdaReportsStage) {
-                job.markRunning(now)
-                if (isStalled(job, now)) {
-                    log.warn("{} 정체: jobId={}, galleryId={}", stage, job.requiredId, job.galleryId)
-                    job.requeueStage()
-                    return Outcome.Changed
-                }
+        if (!properties.lambdaReportsStage) {
+            return if (job.dispatchedAt == null) dispatchOrGiveUp(job, stage, now) {} else Outcome.Wait
+        }
+        if (job.isStageClaimed) {
+            if (isStalled(job, now)) {
+                log.warn("{} 정체: jobId={}, galleryId={}", stage, job.requiredId, job.galleryId)
+                job.requeueStage()
+                return Outcome.Changed
             }
             return Outcome.Wait
         }

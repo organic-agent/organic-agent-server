@@ -103,7 +103,7 @@ class AnalysisServiceTest @Autowired constructor(
                 .extracting("errorCode")
                 .isEqualTo(AnalysisErrorCode.ANALYSIS_JOB_ALREADY_ACTIVE)
             assertThat(analysisJobRepository.count()).isEqualTo(1L)
-            assertThat(analysisJobRepository.findById(first.jobId).orElseThrow().status).isEqualTo(AnalysisStatus.PENDING)
+            assertThat(analysisJobRepository.findById(first.jobId).orElseThrow().status).isEqualTo(AnalysisStatus.RUNNING)
         }
 
         @Test

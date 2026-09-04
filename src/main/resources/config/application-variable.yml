@@ -98,7 +98,7 @@ app:
     # 프로필 블록(application.yml)이 채운다.
     local-script-dir: ""
     # Lambda가 ai_analysis_jobs.stage_status·heartbeat_at을 쓰는가(AI repo Phase 0 이후 true). false면 옛 계약 —
-    # score가 status를 RUNNING으로 올리고 categorize를 직접 체인 호출하며 DONE을 찍는다. 이 서버는 SCORE만 보내고 맡긴다.
+    # score가 categorize를 직접 체인 호출하고 categorize가 status를 DONE으로 닫는다. 이 서버는 SCORE를 한 번만 보내고 맡긴다.
     lambda-reports-stage: false
     # EVENT를 보낸 뒤 이 시간 안에 단계가 잡히지 않으면 다시 보낸다. 컨테이너 Lambda의 콜드 스타트보다 길어야 한다.
     dispatch-retry-after: PT5M

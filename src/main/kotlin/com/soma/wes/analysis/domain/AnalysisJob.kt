@@ -16,11 +16,12 @@ import org.hibernate.type.SqlTypes
 /**
  * 갤러리 전수 분석 잡 — Lambda 셋(embedder → score → categorize)을 한 줄로 묶는 상태 기계. DB 행이 곧 큐 항목이다.
  *
- * 상태는 두 층이다. 바깥 [status]는 프론트가 보는 잡의 생애이고, 안쪽 [stage]·[stageStatus]는 지금 어느 Lambda 차례이며
- * 그 단계가 어디까지 왔는지다. 누가 무엇을 쓰는지가 계약이다:
- * - 이 서버: [stage]·[stageAttempts]·[dispatchedAt]·[observedProgress], 잡을 닫는 [finish]·[fail].
+ * 진실은 [stage]·[stageStatus](지금 어느 Lambda 차례이며 그 단계가 어디까지 왔는지)다. 바깥 [status]는 그 **투영**이다 —
+ * 첫 단계를 보내면 RUNNING, 마지막 단계가 끝나면 DONE, 단계 실패·시도 소진이면 FAILED. 컬럼으로 두는 이유는 갤러리당 활성 잡
+ * 하나를 지키는 부분 유니크 인덱스와 프론트 계약이다. 누가 무엇을 쓰는지가 계약이다:
+ * - 이 서버: [status]·[stage]·[stageAttempts]·[dispatchedAt]·[observedProgress]·[startedAt]·[finishedAt].
  * - Lambda: [stageStatus]의 시작(claim)·끝, [heartbeatAt], [result]의 단계별 키, [error]. 아직 단계 상태를 쓰지 않는
- *   Lambda(AI repo Phase 0 이전)는 [status]를 직접 RUNNING·DONE으로 옮긴다 — 오케스트레이터가 그 경우를 함께 다룬다.
+ *   Lambda(AI repo Phase 0 이전)는 [status]를 직접 DONE·FAILED로 닫는다 — 종료 상태는 그대로 받아들인다(살아 있는 잡만 스윕한다).
  * - [AnalysisStage.EMBED]는 예외로 이 서버가 `photo_analysis`를 관측해 단계를 열고 닫는다. 임베더는 잡을 모른다.
  *
  * 갤러리당 살아 있는 잡이 하나뿐이라는 규칙은 DB의 부분 유니크(`uk_ai_analysis_jobs_active`)가 최종적으로 지킨다.
@@ -107,16 +108,16 @@ class AnalysisJob(
         get() = stageStatus != AnalysisStatus.PENDING
 
     /**
-     * 단계 상태를 아직 쓰지 않는 Lambda가 잡을 집었는가. 그 Lambda는 `status`를 RUNNING으로 올리는 것으로 시작을 알린다 —
-     * 이 서버는 그 모드에서 `status`를 건드리지 않으므로 RUNNING은 곧 "AI 쪽이 돌고 있다"다.
+     * EVENT를 보내기 직전. 호출이 실패하면 [dispatchFailed]로 되돌린다.
+     * 첫 단계를 보내는 순간 잡은 "진행 중"이다 — [status]는 단계 필드의 투영이라 여기서 RUNNING으로 올린다.
      */
-    val isClaimedByStatus: Boolean
-        get() = status == AnalysisStatus.RUNNING
-
-    /** EVENT를 보내기 직전. 호출이 실패하면 [dispatchFailed]로 되돌린다. */
     fun dispatch(now: ZonedDateTime) {
         dispatchedAt = now
         stageAttempts += 1
+        if (status == AnalysisStatus.PENDING) {
+            status = AnalysisStatus.RUNNING
+            startedAt = now
+        }
     }
 
     /**
@@ -132,7 +133,6 @@ class AnalysisJob(
         stageStatus = AnalysisStatus.RUNNING
         observedProgress = progress
         heartbeatAt = now
-        if (startedAt == null) startedAt = now
     }
 
     /** 관측한 진행이 늘었으면 살아 있다는 신호로 친다. */
@@ -145,13 +145,6 @@ class AnalysisJob(
     fun completeStage(now: ZonedDateTime) {
         stageStatus = AnalysisStatus.DONE
         heartbeatAt = now
-    }
-
-    /** 단계 상태를 쓰는 Lambda가 잡을 집었을 때 프론트에도 RUNNING을 보인다. */
-    fun markRunning(now: ZonedDateTime) {
-        if (status == AnalysisStatus.RUNNING) return
-        status = AnalysisStatus.RUNNING
-        if (startedAt == null) startedAt = now
     }
 
     /** 다음 단계로. 시도·시각·관측은 단계의 것이라 전부 초기화한다. */
