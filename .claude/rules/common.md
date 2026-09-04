@@ -19,14 +19,14 @@ support가 service를, infrastructure가 service·repository를 참조하면 안
   `require`·`check`·표준 예외를 던지고 나중에 번역하는 방식은 쓰지 않는다.
 - 에러코드 형식: `ERROR_NAME(HttpStatus.XXX, "{DOMAIN}_{HTTP상태}_{N}", "한글 메시지")` —
   `ErrorCodeFormatTest`가 형식을 강제하므로 새 enum은 그 테스트 목록에 추가한다.
-- 자명하지 않은 에러코드에는 KDoc으로 "언제, 왜"를 남긴다 (`FolderErrorCode` 참조).
+- 자명하지 않은 에러코드에는 KDoc으로 "언제, 왜"를 남긴다 (`RecommendationErrorCode` 참조).
 
 ## 객체 생성
 
 - 외부 입력으로 만드는 엔티티·값객체는 companion의 정적 팩토리(`of`)로만 만들고 검증을 거기 둔다
   (domain.md 참조).
-- 검증이 필요 없는 단순 연결 행(`PhotoFolderItem`)과 DTO는 생성자를 직접 써도 된다.
-  이때 **인자 2개 이상이면 named argument로 쓴다** — `PhotoFolderItem(groupId = ..., folderId = ..., photoId = ...)`.
+- 검증이 필요 없는 단순 연결 행(`CategorizationJobPhoto`)과 DTO는 생성자를 직접 써도 된다.
+  이때 **인자 2개 이상이면 named argument로 쓴다** — `CategorizationJobPhoto(jobId = ..., photoId = ...)`.
 
 ## 상수
 
@@ -39,13 +39,12 @@ support가 service를, infrastructure가 service·repository를 참조하면 안
 
 - 파라미터가 길어지면 한 줄에 하나씩, 닫는 괄호는 내어쓰고, **trailing comma를 쓴다**:
   ```kotlin
-  fun movePhotos(
+  fun createDetail(
       galleryId: Long,
-      groupId: Long,
-      folderId: Long,
+      conceptId: Long,
       userId: Long,
-      request: MovePhotosRequest,
-  ): PhotoFolderDetailResponse {
+      request: CreateDetailFolderRequest,
+  ): DetailFolderResponse {
   ```
 - 생성자 주입 필드도 같은 형태로 한 줄에 하나씩.
 - import는 와일드카드 없이 전부 나열한다.
@@ -56,43 +55,44 @@ support가 service를, infrastructure가 service·repository를 참조하면 안
 인가 → 조회·잠금 → 검증 → 저장 → 응답 조립의 단계가 빈 줄로 보여야 한다:
 
 ```kotlin
-galleryAccessPolicy.requirePhotographerOrCouple(galleryId, userId)
+galleryAccessPolicy.requireManager(galleryId, userId)
+galleryRepository.requireWithLockById(galleryId)
 
-val group = lockGroup(galleryId, groupId)
-val folder = photoFolderRepository.findByIdAndGroupId(folderId, group.requiredId)
-    ?: throw FolderException(FolderErrorCode.FOLDER_NOT_FOUND)
+val concept = conceptRepository.findByIdAndGalleryId(conceptId, galleryId)
+    ?: throw CategoryException(CategoryErrorCode.CONCEPT_NOT_FOUND)
 
-val photos = folderPhotoLoader.loadPhotos(galleryId, request.photoIds)
-folderPhotoLoader.validateNoneInGroup(group.requiredId, request.photoIds)
+val detail = detailRepository.save(
+    DetailFolder(concept.requiredId, request.name.trim(), sortOrder, CategorySource.USER),
+)
 
-return folderViewAssembler.detailOf(folder, photos)
+return detailResponse(detail, emptyList())
 ```
 
 ## 검증 로직의 추출
 
 - 특정 개념을 검증하는 로직이 커지거나, 반복되거나, 조건이 얽혀 복잡해지면 **개념이 드러나는
-  이름의 private 메서드로 뽑는다** (`validateMinScore`, `lockGroup`, `findFolder`).
+  이름의 private 메서드로 뽑는다** (`validateMinScore`, `requireConcept`, `validateEmbeddingComplete`).
   호출부에는 검증의 이름만 남고, 세부 조건은 메서드 안으로 들어간다.
 - private 헬퍼는 부르는 메서드 바로 아래에 둔다 (service.md의 배치 규칙).
 - 여러 서비스가 같은 검증을 반복하면 private 추출을 넘어 support로 옮길 신호다
-  (`FolderPhotoLoader`, support.md 참조).
+  (`RetouchPhotoLoader`, support.md 참조).
 
 ## 네이밍
 
-- 패키지는 도메인 단위로 나눈다 (`gallery`, `photo`, `folder`, `collab`).
+- 패키지는 도메인 단위로 나눈다 (`gallery`, `photo`, `category`, `collab`).
   전부 소문자 한 단어 — 도메인 이름이 두 단어가 되면 이름을 다시 생각하라.
-- 클래스는 PascalCase (`PhotoFolderGroupService`, `GalleryAccessPolicy`).
+- 클래스는 PascalCase (`AiCategoryFolderService`, `GalleryAccessPolicy`).
 - 메서드는 camelCase + 역할이 드러나는 동사 접두사:
   - 조회: `find...`(nullable 반환) / `get...`(유스케이스) / `load...`(검증을 겸한 조회)
   - 강제: `require...`(아니면 예외) / `validate...`(검증만) / `lock...`(잠그고 조회)
-- API 경로는 kebab-case 복수형 (`/api/v1/galleries`, `/folder-groups`, `/collab-sessions`).
+- API 경로는 kebab-case 복수형 (`/api/v1/galleries`, `/concept-folders`, `/collab-sessions`).
 
 ## 주석
 
 - 코드가 이미 말하는 것을 반복하는 주석은 달지 마라 — 무엇을 하는지는 이름과 구조로 드러낸다.
 - **코드가 보여줄 수 없는 것은 KDoc으로 남긴다**: 정책의 이유, 버린 대안, 어기면 무엇이 깨지는지
-  (`PhotoFolderItem.groupId`의 역정규화 근거, `FolderErrorCode.DUPLICATE_PHOTO_IN_GROUP`의
-  전체-거절 근거). 이 저장소의 주석은 한국어로 쓴다.
+  (`RetouchPhoto.galleryId`의 역정규화 근거, `AiConceptAssignment`의 읽기 전용 근거).
+  이 저장소의 주석은 한국어로 쓴다.
 - 리뷰어에게 말하는 주석("이 변경이 맞는 이유", "다음 줄이 하는 일")은 금지 — 머지되는 순간
   소음이 된다.
 - 배경·정책이 문서 분량이면 주석이 아니라 CLAUDE.md 또는 `.claude/rules/`의 해당 파일에 남긴다.

@@ -3,8 +3,6 @@ package com.soma.wes.admin.resource.repository
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.domain.AdminResourceType
-import com.soma.wes.admin.resource.support.AdminAlbumTemplateLayout
-import com.soma.wes.admin.resource.support.InvalidAlbumTemplateLayoutException
 import com.soma.wes.gallery.domain.GalleryInviteKind
 import com.soma.wes.gallery.domain.GalleryMember
 import com.soma.wes.global.filter.HttpLoggingFilter
@@ -847,7 +845,6 @@ class AdminWorkflowRepository(
             AdminResourceType.PHOTO_RATING -> "photo_ratings" to "photo_id"
             AdminResourceType.SELECTION -> "photo_selections" to "id"
             AdminResourceType.COLLABORATION -> "collab_sessions" to "id"
-            AdminResourceType.ALBUM -> "photo_folder_groups" to "id"
             AdminResourceType.RETOUCH_REQUEST -> "retouch_rounds" to "id"
         }
         bumpVersion(table, id, expectedVersion, idColumn)
@@ -1053,19 +1050,9 @@ class AdminWorkflowRepository(
             actorAdminId = actorAdminId,
             reason = reason,
         )
-        val mockJobId = createProcessingJob(
-            jobType = "MOCK_RECALCULATION",
-            targetType = AdminResourceType.SELECTION,
-            targetId = selectionId,
-            revisionId = submittedRevisionId,
-            payload = mapOf("galleryId" to galleryId, "selectionRevisionId" to submittedRevisionId),
-            actorAdminId = actorAdminId,
-            reason = reason,
-        )
         return SelectionRevisionResult(
             revisionId = submittedRevisionId,
             photoIds = items.map(SelectionItem::photoId),
-            mockJobId = mockJobId,
             previousRevisionId = previousRevisionId,
         )
     }
@@ -1175,21 +1162,6 @@ class AdminWorkflowRepository(
             WHERE s.id = :selectionId AND r.gallery_id = s.gallery_id
               AND r.selection_revision_id IS NULL
               AND r.status IN ('REQUESTED', 'COMPLETED')
-            """.trimIndent(),
-        )
-            .param("revisionId", revisionId)
-            .param("selectionId", selectionId)
-            .update()
-        jdbcClient.sql(
-            """
-            UPDATE photo_folder_groups g
-            SET selection_revision_id = :revisionId,
-                version = g.version + 1,
-                updated_at = CURRENT_TIMESTAMP
-            FROM photo_selections s
-            WHERE s.id = :selectionId AND g.gallery_id = s.gallery_id
-              AND g.selection_revision_id IS NULL
-              AND EXISTS (SELECT 1 FROM photo_folder_items i WHERE i.group_id = g.id)
             """.trimIndent(),
         )
             .param("revisionId", revisionId)
@@ -1433,219 +1405,6 @@ class AdminWorkflowRepository(
             .optional()
             .orElseThrow { AdminException(AdminErrorCode.RESOURCE_NOT_FOUND) }
 
-    fun createAlbumTemplate(
-        albumId: Long,
-        name: String,
-        layout: Map<String, Any?>,
-        expectedVersion: Long,
-    ): Long {
-        validateAlbumTemplateLayout(layout)
-        val scope = jdbcClient.sql(
-            """
-            SELECT album.id, gallery.workspace_id
-            FROM photo_folder_groups album
-            JOIN galleries gallery ON gallery.id = album.gallery_id
-            WHERE album.id = :albumId AND album.version = :expectedVersion
-              AND album.deleted_at IS NULL AND gallery.deleted_at IS NULL
-              AND album.template_id IS NULL
-            FOR UPDATE OF album
-            """.trimIndent(),
-        )
-            .param("albumId", albumId)
-            .param("expectedVersion", expectedVersion)
-            .query { rs, _ -> AlbumScope(rs.getLong("id"), rs.getLong("workspace_id")) }
-            .optional()
-            .orElseThrow { AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT) }
-        val templateId = jdbcClient.sql(
-            """
-            INSERT INTO admin_album_templates (studio_id, name, layout_json, version, created_at, updated_at)
-            VALUES (:studioId, :name, CAST(:layout AS JSONB), 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            RETURNING id
-            """.trimIndent(),
-        ).param("studioId", scope.studioId).param("name", name)
-            .param("layout", objectMapper.writeValueAsString(layout))
-            .query { rs, _ -> rs.getLong(1) }.single()
-        val assigned = jdbcClient.sql(
-            """
-            UPDATE photo_folder_groups
-            SET template_id = :templateId, template_name = :name,
-                version = version + 1, updated_at = CURRENT_TIMESTAMP
-            WHERE id = :albumId AND version = :expectedVersion
-              AND deleted_at IS NULL AND template_id IS NULL
-            """.trimIndent(),
-        )
-            .param("templateId", templateId)
-            .param("name", name)
-            .param("albumId", albumId)
-            .param("expectedVersion", expectedVersion)
-            .update()
-        if (assigned != 1) throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
-        return templateId
-    }
-
-    fun updateAlbumTemplate(
-        albumId: Long,
-        templateId: Long,
-        templateExpectedVersion: Long,
-        name: String,
-        layout: Map<String, Any?>,
-        expectedVersion: Long,
-    ) {
-        validateAlbumTemplateLayout(layout)
-        val scope = jdbcClient.sql(
-            """
-            SELECT album.id, gallery.workspace_id
-            FROM photo_folder_groups album
-            JOIN galleries gallery ON gallery.id = album.gallery_id
-            JOIN admin_album_templates template ON template.id = album.template_id
-            WHERE album.id = :albumId AND album.version = :expectedVersion
-              AND album.deleted_at IS NULL AND gallery.deleted_at IS NULL
-              AND template.id = :templateId AND template.version = :templateExpectedVersion
-              AND template.deleted_at IS NULL AND template.studio_id = gallery.workspace_id
-            FOR UPDATE OF album, template
-            """.trimIndent(),
-        )
-            .param("templateId", templateId)
-            .param("templateExpectedVersion", templateExpectedVersion)
-            .param("albumId", albumId)
-            .param("expectedVersion", expectedVersion)
-            .query { rs, _ -> AlbumScope(rs.getLong("id"), rs.getLong("workspace_id")) }
-            .optional()
-            .orElseThrow { AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT) }
-        val updated = jdbcClient.sql(
-            """
-            UPDATE admin_album_templates
-            SET name = :name, layout_json = CAST(:layout AS JSONB),
-                version = version + 1, updated_at = CURRENT_TIMESTAMP
-            WHERE id = :templateId AND version = :templateExpectedVersion
-              AND studio_id = :studioId AND deleted_at IS NULL
-            """.trimIndent(),
-        )
-            .param("name", name)
-            .param("layout", objectMapper.writeValueAsString(layout))
-            .param("templateId", templateId)
-            .param("templateExpectedVersion", templateExpectedVersion)
-            .param("studioId", scope.studioId)
-            .update()
-        if (updated != 1) throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
-        val referencesUpdated = jdbcClient.sql(
-            """
-            UPDATE photo_folder_groups album
-            SET template_name = :name, version = album.version + 1, updated_at = CURRENT_TIMESTAMP
-            FROM galleries gallery
-            WHERE album.gallery_id = gallery.id AND gallery.workspace_id = :studioId
-              AND album.template_id = :templateId
-            """.trimIndent(),
-        )
-            .param("name", name)
-            .param("studioId", scope.studioId)
-            .param("templateId", templateId)
-            .update()
-        if (referencesUpdated < 1) throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
-    }
-
-    fun replaceAlbumLayout(
-        albumId: Long,
-        templateId: Long?,
-        selectionRevisionId: Long?,
-        folders: List<AlbumFolder>,
-        expectedVersion: Long,
-    ): Int {
-        validateAlbumLayoutContract(folders)
-        val scope = jdbcClient.sql(
-            """
-            SELECT album.gallery_id, gallery.workspace_id
-            FROM photo_folder_groups album
-            JOIN galleries gallery ON gallery.id = album.gallery_id
-            WHERE album.id = :albumId AND album.version = :expectedVersion
-              AND album.deleted_at IS NULL AND gallery.deleted_at IS NULL
-            FOR UPDATE OF album
-            """.trimIndent(),
-        )
-            .param("albumId", albumId)
-            .param("expectedVersion", expectedVersion)
-            .query { rs, _ -> AlbumScope(rs.getLong("gallery_id"), rs.getLong("workspace_id")) }
-            .optional()
-            .orElseThrow { AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT) }
-        val photoIds = folders.flatMap { folder -> folder.items.map(AlbumItem::photoId) }
-        if (photoIds.size != photoIds.distinct().size) throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-        if (photoIds.isNotEmpty()) validatePhotosInGallery(scope.albumOrGalleryId, photoIds)
-        if (selectionRevisionId != null) {
-            val valid = jdbcClient.sql(
-                """
-                SELECT COUNT(*) FROM admin_selection_revisions r
-                JOIN photo_selections s ON s.id = r.selection_id
-                WHERE r.id = :revisionId AND s.gallery_id = :galleryId
-                """.trimIndent(),
-            ).param("revisionId", selectionRevisionId).param("galleryId", scope.albumOrGalleryId)
-                .query { rs, _ -> rs.getLong(1) }.single()
-            if (valid != 1L) throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-        }
-        val templateName = templateId?.let { selectedTemplateId ->
-            jdbcClient.sql(
-                """
-                SELECT t.name
-                FROM admin_album_templates t
-                WHERE t.id = :templateId AND t.studio_id = :studioId AND t.deleted_at IS NULL
-                FOR SHARE OF t
-                """.trimIndent(),
-            ).param("templateId", selectedTemplateId).param("studioId", scope.studioId)
-                .query { rs, _ -> rs.getString(1) }
-                .optional()
-                .orElseThrow { AdminException(AdminErrorCode.RESOURCE_NOT_FOUND) }
-        }
-        jdbcClient.sql("DELETE FROM photo_folders WHERE group_id = :albumId")
-            .param("albumId", albumId).update()
-        var itemCount = 0
-        folders.forEach { folder ->
-            val folderId = jdbcClient.sql(
-                """
-                INSERT INTO photo_folders (group_id, gallery_id, name, version, created_at, updated_at)
-                VALUES (:albumId, :galleryId, :name, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                RETURNING id
-                """.trimIndent(),
-            )
-                .param("albumId", albumId)
-                .param("galleryId", scope.albumOrGalleryId)
-                .param("name", folder.name)
-                .query { rs, _ -> rs.getLong("id") }.single()
-            folder.items.forEach { item ->
-                jdbcClient.sql(
-                    """
-                    INSERT INTO photo_folder_items
-                        (group_id, folder_id, photo_id, sort_order, crop_json, version, created_at, updated_at)
-                    VALUES
-                        (:albumId, :folderId, :photoId, :sortOrder, CAST(:cropJson AS JSONB), 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    """.trimIndent(),
-                )
-                    .param("albumId", albumId)
-                    .param("folderId", folderId)
-                    .param("photoId", item.photoId)
-                    .param("sortOrder", item.sortOrder)
-                    .param("cropJson", item.crop?.let(objectMapper::writeValueAsString) ?: "null")
-                    .update()
-                itemCount++
-            }
-        }
-        val updated = jdbcClient.sql(
-            """
-            UPDATE photo_folder_groups
-            SET template_id = :templateId, template_name = :templateName,
-                selection_revision_id = :selectionRevisionId,
-                version = version + 1, updated_at = CURRENT_TIMESTAMP
-            WHERE id = :albumId AND version = :expectedVersion
-            """.trimIndent(),
-        )
-            .param("templateName", templateName)
-            .param("templateId", templateId)
-            .param("selectionRevisionId", selectionRevisionId)
-            .param("albumId", albumId)
-            .param("expectedVersion", expectedVersion)
-            .update()
-        if (updated != 1) throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
-        return itemCount
-    }
-
     fun createRetouchItem(
         roundId: Long,
         photoId: Long,
@@ -1851,14 +1610,6 @@ class AdminWorkflowRepository(
         bumpVersion("studios", studioId, expectedVersion)
     }
 
-    private fun validateAlbumTemplateLayout(layout: Map<String, Any?>) {
-        try {
-            AdminAlbumTemplateLayout.parse(layout)
-        } catch (_: InvalidAlbumTemplateLayoutException) {
-            throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-        }
-    }
-
     private fun sharedPhotoExistsSql(sessionExpression: String, photoExpression: String): String = """
         EXISTS (
             SELECT 1
@@ -1934,47 +1685,6 @@ class AdminWorkflowRepository(
         if (updated != 1) throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
     }
 
-    /** 오케스트레이터 외 내부 호출도 동일한 앨범 저장 계약을 우회하지 못하게 한다. */
-    private fun validateAlbumLayoutContract(folders: List<AlbumFolder>) {
-        if (folders.size > MAX_ALBUM_FOLDERS || folders.sumOf { it.items.size } > MAX_ALBUM_ITEMS) {
-            throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-        }
-        val photoIds = mutableSetOf<Long>()
-        folders.forEach { folder ->
-            if (folder.name.isBlank() || folder.name.length > MAX_ALBUM_FOLDER_NAME_LENGTH) {
-                throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-            }
-            val sortOrders = mutableSetOf<Int>()
-            folder.items.forEach { item ->
-                if (
-                    item.photoId <= 0 || item.sortOrder < 0 ||
-                    !photoIds.add(item.photoId) || !sortOrders.add(item.sortOrder)
-                ) {
-                    throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-                }
-                item.crop?.let(::validateNormalizedCrop)
-            }
-        }
-    }
-
-    private fun validateNormalizedCrop(crop: Map<String, Any?>) {
-        if (crop.keys != NORMALIZED_CROP_KEYS) {
-            throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-        }
-        val values = NORMALIZED_CROP_KEYS_IN_ORDER.map { name ->
-            (crop[name] as? Number)?.toDouble()?.takeIf { candidate -> candidate.isFinite() }
-                ?: throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-        }
-        val (x, y, width, height) = values
-        if (
-            x < 0 || y < 0 || width <= 0 || height <= 0 ||
-            x + width > 1 + NORMALIZED_CROP_EPSILON ||
-            y + height > 1 + NORMALIZED_CROP_EPSILON
-        ) {
-            throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-        }
-    }
-
     data class WorkflowReservation(val requestHash: String?, val status: String?, val resultPayload: String?)
     data class StudioOwnerResult(
         val previousOwnerId: Long,
@@ -1998,7 +1708,6 @@ class AdminWorkflowRepository(
     data class SelectionRevisionResult(
         val revisionId: Long,
         val photoIds: List<Long>,
-        val mockJobId: Long? = null,
         val previousRevisionId: Long? = null,
     )
     data class AiSelectionDraftResult(
@@ -2009,8 +1718,6 @@ class AdminWorkflowRepository(
         val failureCode: String?,
     )
     data class SelectionItem(val photoId: Long, val retouchPhotoId: Long?, val sortOrder: Int)
-    data class AlbumFolder(val name: String, val items: List<AlbumItem>)
-    data class AlbumItem(val photoId: Long, val sortOrder: Int, val crop: Map<String, Any?>?)
     data class OperationRow(
         val id: Long,
         val action: String,
@@ -2054,11 +1761,6 @@ class AdminWorkflowRepository(
         val contentType: String,
     )
 
-    private data class AlbumScope(
-        val albumOrGalleryId: Long,
-        val studioId: Long,
-    )
-
     private data class GalleryScope(
         val version: Long,
         val studioId: Long,
@@ -2088,11 +1790,5 @@ class AdminWorkflowRepository(
         private val PUBLIC_STATUSES = setOf("DRAFT", "OPEN", "CLOSED")
         private val WORKFLOW_STATUSES = setOf("DRAFT", "IN_PROGRESS", "COMPLETED", "ARCHIVED")
         private const val DEFAULT_GALLERY_INVITE_MAX_USES = 2
-        private const val MAX_ALBUM_FOLDERS = 50
-        private const val MAX_ALBUM_ITEMS = 1_000
-        private const val MAX_ALBUM_FOLDER_NAME_LENGTH = 100
-        private const val NORMALIZED_CROP_EPSILON = 0.000_001
-        private val NORMALIZED_CROP_KEYS_IN_ORDER = listOf("x", "y", "width", "height")
-        private val NORMALIZED_CROP_KEYS = NORMALIZED_CROP_KEYS_IN_ORDER.toSet()
     }
 }

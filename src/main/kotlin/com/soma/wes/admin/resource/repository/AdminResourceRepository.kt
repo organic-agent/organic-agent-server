@@ -829,7 +829,6 @@ class AdminResourceRepository(
             AdminResourceType.PHOTO_RATING to setOf("photoId"),
             AdminResourceType.SELECTION to setOf("galleryId"),
             AdminResourceType.COLLABORATION to setOf("galleryId", "conceptFolderId"),
-            AdminResourceType.ALBUM to setOf("galleryId"),
             AdminResourceType.RETOUCH_REQUEST to setOf("galleryId"),
         )
 
@@ -1155,18 +1154,6 @@ class AdminResourceRepository(
                 ),
                 softDeleteColumn = "deleted_at",
                 generatedSecretField = "collabToken",
-            ),
-            ResourceDefinition(
-                type = AdminResourceType.ALBUM,
-                table = "photo_folder_groups",
-                labelExpression = "name",
-                searchExpression = "CONCAT_WS(' ', name, gallery_id)",
-                fields = listOf(
-                    FieldDefinition("galleryId", "gallery_id", FieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
-                    FieldDefinition("name", "name", FieldKind.STRING, requiredOnCreate = true, maxLength = 100),
-                    FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
-                ),
-                softDeleteColumn = "deleted_at",
             ),
             ResourceDefinition(
                 type = AdminResourceType.RETOUCH_REQUEST,

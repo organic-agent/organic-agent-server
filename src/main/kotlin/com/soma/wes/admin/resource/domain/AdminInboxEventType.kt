@@ -31,7 +31,6 @@ enum class AdminInboxEventType(private val description: String) {
             AdminResourceType.PHOTO_RATING -> "사진 별점"
             AdminResourceType.SELECTION -> "셀렉"
             AdminResourceType.COLLABORATION -> "협업"
-            AdminResourceType.ALBUM -> "앨범"
             AdminResourceType.RETOUCH_REQUEST -> "보정 요청"
         }
 }

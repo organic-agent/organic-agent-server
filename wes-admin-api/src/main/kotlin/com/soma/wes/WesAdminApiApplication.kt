@@ -9,8 +9,6 @@ import com.soma.wes.category.repository.DetailFolderRepository
 import com.soma.wes.category.repository.PhotoCategoryAssignmentRepository
 import com.soma.wes.collab.domain.CollabSession
 import com.soma.wes.collab.repository.CollabSessionRepository
-import com.soma.wes.folder.domain.PhotoFolderGroup
-import com.soma.wes.folder.repository.PhotoFolderGroupRepository
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.photo.domain.Photo
@@ -45,7 +43,6 @@ import java.util.TimeZone
         AiAnalysisJob::class,
         PhotoSelection::class,
         CollabSession::class,
-        PhotoFolderGroup::class,
         RetouchRound::class,
     ],
 )
@@ -63,7 +60,6 @@ import java.util.TimeZone
         AiAnalysisJobRepository::class,
         PhotoSelectionRepository::class,
         CollabSessionRepository::class,
-        PhotoFolderGroupRepository::class,
         RetouchRoundRepository::class,
     ],
 )

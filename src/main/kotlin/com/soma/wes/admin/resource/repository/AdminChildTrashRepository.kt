@@ -35,13 +35,6 @@ class AdminChildTrashRepository(
                 WHERE child.id = :resourceId AND child.collab_session_id = :parentId
                 """.trimIndent(),
             )
-            AdminChildTrashType.ALBUM_TEMPLATE -> jdbcClient.sql(
-                """
-                SELECT 'GALLERY' AS resource_type, parent.gallery_id AS resource_id
-                FROM photo_folder_groups parent
-                WHERE parent.id = :parentId AND :resourceId IS NOT NULL
-                """.trimIndent(),
-            )
             AdminChildTrashType.RETOUCH_ITEM -> jdbcClient.sql(
                 """
                 SELECT 'PHOTO' AS resource_type, child.photo_id AS resource_id
@@ -115,10 +108,6 @@ class AdminChildTrashRepository(
                     AND (
                         (:resourceType IN ('COLLAB_COMMENT', 'COLLAB_LIKE') AND EXISTS (
                             SELECT 1 FROM collab_sessions parent
-                            WHERE parent.id = :parentId AND parent.gallery_id = claim.resource_id
-                        ))
-                        OR (:resourceType = 'ALBUM_TEMPLATE' AND EXISTS (
-                            SELECT 1 FROM photo_folder_groups parent
                             WHERE parent.id = :parentId AND parent.gallery_id = claim.resource_id
                         ))
                         OR (:resourceType = 'RETOUCH_ITEM' AND EXISTS (
@@ -224,25 +213,6 @@ class AdminChildTrashRepository(
         deletedAt: ZonedDateTime,
     ): Int {
         val mapping = mapping(type)
-        // Layout replacement takes a shared lock on the selected template. Take the
-        // matching exclusive row lock before checking the zero-reference predicate so
-        // a concurrent replacement cannot attach a template after this check and just
-        // before the soft delete.
-        if (type == AdminChildTrashType.ALBUM_TEMPLATE) {
-            val locked = jdbcClient.sql(
-                """
-                SELECT id
-                FROM admin_album_templates
-                WHERE id = :resourceId AND deleted_at IS NULL
-                FOR UPDATE
-                """.trimIndent(),
-            )
-                .param("resourceId", resourceId)
-                .query { rs, _ -> rs.getLong("id") }
-                .optional()
-                .isPresent
-            if (!locked) return 0
-        }
         val versionPredicate = expectedChildVersion?.let { "AND r.version = :expectedChildVersion" }.orEmpty()
         var statement = jdbcClient.sql(
             """
@@ -582,22 +552,6 @@ class AdminChildTrashRepository(
             childTable = "collab_photo_likes",
             parentTable = "collab_sessions",
             childParentPredicate = "r.collab_session_id = :parentId",
-        )
-        AdminChildTrashType.ALBUM_TEMPLATE -> Mapping(
-            childTable = "admin_album_templates",
-            parentTable = "photo_folder_groups",
-            childParentPredicate =
-                """
-                EXISTS (
-                    SELECT 1
-                    FROM photo_folder_groups parent
-                    JOIN galleries gallery ON gallery.id = parent.gallery_id
-                    WHERE parent.id = :parentId AND gallery.workspace_id = r.studio_id
-                )
-                AND NOT EXISTS (
-                    SELECT 1 FROM photo_folder_groups reference WHERE reference.template_id = r.id
-                )
-                """.trimIndent(),
         )
         AdminChildTrashType.RETOUCH_ITEM -> Mapping(
             childTable = "retouch_photos",
