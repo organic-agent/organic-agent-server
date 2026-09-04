@@ -2,6 +2,7 @@ package com.soma.wes.photo.repository
 
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoStatus
+import java.time.ZonedDateTime
 import jakarta.persistence.LockModeType
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
@@ -125,5 +126,26 @@ interface PhotoRepository : JpaRepository<Photo, Long> {
     fun countByGalleryIdAndStatusNotAndNotEmbedded(
         @Param("galleryId") galleryId: Long,
         @Param("status") status: PhotoStatus,
+    ): Long
+
+    /**
+     * [since] 이후 벡터가 다시 적재된 사진 수. force 임베딩은 이미 있던 벡터를 덮어쓰므로 "벡터가 있다"로는 진행을
+     * 알 수 없다 — 임베더가 ON CONFLICT DO UPDATE로 갱신하는 `updated_at`을 본다.
+     */
+    @Query(
+        """
+            SELECT COUNT(p) FROM Photo p
+            WHERE p.galleryId = :galleryId
+              AND p.status <> :status
+              AND EXISTS (
+                  SELECT 1 FROM PhotoAnalysis a
+                  WHERE a.photoId = p.id AND a.embedding IS NOT NULL AND a.updatedAt >= :since
+              )
+        """,
+    )
+    fun countByGalleryIdAndStatusNotAndEmbeddedSince(
+        @Param("galleryId") galleryId: Long,
+        @Param("status") status: PhotoStatus,
+        @Param("since") since: ZonedDateTime,
     ): Long
 }
