@@ -11,12 +11,15 @@ import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
 import java.time.ZonedDateTime
+import org.hibernate.annotations.JdbcTypeCode
+import org.hibernate.type.SqlTypes
 
 /**
- * 폴더별 AI 추천 잡. [AiAnalysisJob]과 같은 규약이다 — 이 서버는 [AiJobStatus.PENDING] 행을
- * 만드는 것까지만 하고, AI 워커가 집어가 상태·시각·[round]·오류를 직접 UPDATE 하므로 그 컬럼들은
- * 읽기 전용 `val`이다. 셀렉당 살아 있는 잡 하나는 DB의 부분 유니크(`uk_ai_selection_jobs_active`)가
- * 최종적으로 지킨다. `result`(jsonb)는 이 서버가 아직 읽지 않아 매핑하지 않았다.
+ * 폴더별 AI 추천 잡. 요청이 [AiJobStatus.PENDING] 행을 만들고, 이 서버의 실행기
+ * ([com.soma.wes.recommendation.service.AiSelectionJobRunner])가 집어([claim]) 계산한 뒤 닫는다([finish]·[fail]).
+ * 셀렉당 살아 있는 잡 하나는 DB의 부분 유니크(`uk_ai_selection_jobs_active`)가 최종적으로 지킨다.
+ *
+ * 잡 행은 큐이자 프론트 폴링용 상태다 — 추천 표시(1단계)는 DONE 전에 먼저 생기고 이유 문장(2단계)이 뒤따른다.
  */
 @Entity
 @Table(name = "ai_selection_jobs")
@@ -42,23 +45,61 @@ class AiSelectionJob(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null
 
-    /** 워커가 이 잡으로 만든 추천 라운드 번호. 끝나기 전에는 null이다. */
+    /** 이 잡이 만든 추천 라운드 번호. 1단계(추천 INSERT)에서 정해진다 — 그 전에는 null이다. */
     @Column(name = "round")
-    val round: Int? = null
+    var round: Int? = null
+        protected set
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
-    val status: AiJobStatus = AiJobStatus.PENDING
+    var status: AiJobStatus = AiJobStatus.PENDING
+        protected set
 
     @Column(name = "started_at")
-    val startedAt: ZonedDateTime? = null
+    var startedAt: ZonedDateTime? = null
+        protected set
 
     @Column(name = "finished_at")
-    val finishedAt: ZonedDateTime? = null
+    var finishedAt: ZonedDateTime? = null
+        protected set
 
     @Column(name = "error")
-    val error: String? = null
+    var error: String? = null
+        protected set
+
+    /** 끝난 잡의 요약(라운드·장수·폴더별 추천 수·이유 분포·소요). 운영 확인용이고 화면은 읽지 않는다. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "result", columnDefinition = "jsonb")
+    var result: Map<String, Any?>? = null
+        protected set
 
     val requiredId: Long
         get() = id ?: kotlin.error("아직 저장되지 않은 AiSelectionJob 이다")
+
+    /** 1단계에서 라운드가 정해진 잡. 실행 중 죽었다가 다시 집으면 추천은 두지 않고 이유만 다시 채운다. */
+    fun assignRound(round: Int) {
+        this.round = round
+    }
+
+    fun finish(result: Map<String, Any?>, at: ZonedDateTime) {
+        status = AiJobStatus.DONE
+        finishedAt = at
+        this.result = result
+    }
+
+    fun fail(error: String, at: ZonedDateTime) {
+        status = AiJobStatus.FAILED
+        finishedAt = at
+        this.error = error.take(MAX_ERROR_LENGTH)
+    }
+
+    /** 실행 중 프로세스가 죽어 RUNNING으로 남은 잡을 다시 줄에 세운다. 기동 복구가 부른다. */
+    fun requeue() {
+        status = AiJobStatus.PENDING
+        startedAt = null
+    }
+
+    companion object {
+        private const val MAX_ERROR_LENGTH = 4000
+    }
 }

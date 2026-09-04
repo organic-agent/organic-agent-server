@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# 로컬 AI 워커를 띄운다 — 웹의 "AI 분석"·"AI 추천" 버튼이 만든 잡(ai_analysis_jobs·ai_selection_jobs)을
-# 집어 AI repo의 analyze(A)·draft(B)를 돌린다. 운영에서 GPU EC2가 하는 일을 노트북 터미널 하나가 대신한다.
+# 로컬 AI 워커를 띄운다 — 웹의 "AI 분석" 버튼이 만든 잡(ai_analysis_jobs)을 집어 AI repo의 analyze(A)를 돌린다.
+# 운영에서 GPU EC2가 하는 일을 노트북 터미널 하나가 대신한다. "AI 추천"(ai_selection_jobs)은 이제 wes 안에서 돈다 —
+# 이 워커가 집지 않는다(AI repo 쪽 폴링 제거 전까지는 --once 없이 켜 두면 둘이 경쟁한다).
 #
 #   scripts/local-worker.sh [--no-vlm] [--llm] [--poll N] [--once]
 #
 #   --no-vlm   분석에서 VLM 태그를 뺀다. Ollama를 띄우지 않는다
-#   --llm      추천 이유 문장·피드백 번역을 Bedrock으로 (노트북 AWS 자격증명, 텍스트만 전송)
+#   --llm      naming(폴더 이름·배정)을 Bedrock으로 (노트북 AWS 자격증명). 추천 이유 문장은 wes의 app.llm이 맡는다
 #   --poll N   빈 큐일 때 대기 초 (기본 2)
 #   --once     쌓인 잡만 처리하고 종료
 #
@@ -85,5 +86,5 @@ if [ "$NO_VLM" = false ]; then
 fi
 
 echo "worker  db=$DB_USER@$DB_HOST:$DB_PORT/$DB_NAME  bucket=$S3_BUCKET  args=${WORKER_ARGS[*]:-}"
-echo "        웹에서 AI 분석 / AI 추천 버튼을 누르면 여기서 처리된다. Ctrl-C 로 종료."
+echo "        웹에서 AI 분석 버튼을 누르면 여기서 처리된다(AI 추천은 wes가 직접 돈다). Ctrl-C 로 종료."
 exec "$AI_PY" -m photoselect worker "${WORKER_ARGS[@]}"
