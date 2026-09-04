@@ -3,17 +3,16 @@ package com.soma.wes.admin.config
 import com.soma.wes.admin.resource.config.AdminWorkflowExecutorProperties
 import com.soma.wes.collab.config.CollabProperties
 import com.soma.wes.collab.service.CollabSessionQueryService
+import com.soma.wes.collab.support.CollabCategoryReactionCleaner
 import com.soma.wes.collab.support.CollabLinkResolver
 import com.soma.wes.collab.support.CollabPhotoViewAssembler
 import com.soma.wes.category.service.CategorizationService
+import com.soma.wes.category.service.CategoryService
 import com.soma.wes.category.service.AiCategoryFolderService
 import com.soma.wes.category.support.AiCategoryFolderPlanner
 import com.soma.wes.global.config.AwsLambdaConfig
 import com.soma.wes.embedding.config.EmbeddingProperties
 import com.soma.wes.embedding.infrastructure.LambdaEmbeddingInvoker
-import com.soma.wes.folder.service.PhotoFolderGroupService
-import com.soma.wes.folder.support.FolderPhotoLoader
-import com.soma.wes.folder.support.FolderViewAssembler
 import com.soma.wes.gallery.config.GalleryInviteProperties
 import com.soma.wes.gallery.config.MockGalleryProperties
 import com.soma.wes.gallery.service.GalleryService
@@ -81,12 +80,11 @@ import org.springframework.context.annotation.Import
     PhotoService::class,
     PhotoSelectionService::class,
     CollabSessionQueryService::class,
-    PhotoFolderGroupService::class,
+    CategoryService::class,
+    CollabCategoryReactionCleaner::class,
     RetouchService::class,
     PhotoViewAssembler::class,
     CollabPhotoViewAssembler::class,
-    FolderPhotoLoader::class,
-    FolderViewAssembler::class,
     RetouchPhotoLoader::class,
     RetouchResultLoader::class,
     RetouchViewAssembler::class,

@@ -473,12 +473,10 @@ class AdminWorkflowService(
                 durableReason(request),
                 request.expectedVersion,
             )
-            WorkflowExecution(status = "PENDING", details = mapOf(
+            WorkflowExecution(details = mapOf(
                 "previousRevisionId" to result.previousRevisionId,
                 "revisionId" to result.revisionId,
                 "photoCount" to result.photoIds.size,
-                "mockRecalculationJobId" to result.mockJobId,
-                "mockRecalculationStatus" to "PENDING",
             ))
         }
         AdminWorkflowAction.WITHDRAW_SELECTION -> {
@@ -579,40 +577,6 @@ class AdminWorkflowService(
                 expectedChildVersion = request.long("likeExpectedVersion"),
             )
             WorkflowExecution(details = result.workflowDetails() + ("likeId" to likeId))
-        }
-        AdminWorkflowAction.CREATE_ALBUM_TEMPLATE -> {
-            requireType(type, AdminResourceType.ALBUM)
-            val templateId = workflowRepository.createAlbumTemplate(
-                id, request.text("name", 100), request.map("layout"), request.expectedVersion,
-            )
-            WorkflowExecution(details = mapOf("templateId" to templateId, "albumId" to id, "assigned" to true))
-        }
-        AdminWorkflowAction.UPDATE_ALBUM_TEMPLATE -> {
-            requireType(type, AdminResourceType.ALBUM)
-            val templateId = request.long("templateId")
-            workflowRepository.updateAlbumTemplate(
-                id,
-                templateId,
-                request.long("templateExpectedVersion"),
-                request.text("name", 100),
-                request.map("layout"),
-                request.expectedVersion,
-            )
-            WorkflowExecution(details = mapOf("templateId" to templateId, "albumId" to id))
-        }
-        AdminWorkflowAction.DELETE_ALBUM_TEMPLATE,
-        AdminWorkflowAction.RESTORE_ALBUM_TEMPLATE,
-        -> albumTemplateDeletion(actorAdminId, type, id, request)
-        AdminWorkflowAction.REPLACE_ALBUM_LAYOUT -> {
-            requireType(type, AdminResourceType.ALBUM)
-            val itemCount = workflowRepository.replaceAlbumLayout(
-                id,
-                request.optionalLong("templateId"),
-                request.optionalLong("selectionRevisionId"),
-                request.albumFolders(),
-                request.expectedVersion,
-            )
-            WorkflowExecution(details = mapOf("itemCount" to itemCount))
         }
         AdminWorkflowAction.CREATE_RETOUCH_ITEM -> {
             requireType(type, AdminResourceType.RETOUCH_REQUEST)
@@ -812,37 +776,6 @@ class AdminWorkflowService(
             "photoIds" to result.photoIds,
             "failureCode" to result.failureCode,
         ))
-    }
-
-    private fun albumTemplateDeletion(
-        actorAdminId: Long,
-        type: AdminResourceType,
-        id: Long,
-        request: AdminWorkflowRequest,
-    ): WorkflowExecution {
-        requireType(type, AdminResourceType.ALBUM)
-        val templateId = request.long("templateId")
-        val templateExpectedVersion = request.long("templateExpectedVersion")
-        val result = if (request.action == AdminWorkflowAction.DELETE_ALBUM_TEMPLATE) {
-            childTrashService.delete(
-                actorAdminId = actorAdminId,
-                type = AdminChildTrashType.ALBUM_TEMPLATE,
-                resourceId = templateId,
-                parentId = id,
-                expectedParentVersion = request.expectedVersion,
-                expectedChildVersion = templateExpectedVersion,
-                reason = durableReason(request),
-            )
-        } else {
-            childTrashService.restore(
-                type = AdminChildTrashType.ALBUM_TEMPLATE,
-                resourceId = templateId,
-                parentId = id,
-                expectedParentVersion = request.expectedVersion,
-                expectedChildVersion = templateExpectedVersion,
-            )
-        }
-        return WorkflowExecution(details = result.workflowDetails() + ("templateId" to templateId))
     }
 
     private fun retouchItemDeletion(
@@ -1046,9 +979,6 @@ class AdminWorkflowService(
             throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         }
         validateRetouchArtifactReferences(request)
-        if (request.action == AdminWorkflowAction.REPLACE_ALBUM_LAYOUT) {
-            request.albumFolders()
-        }
     }
 
     /**
@@ -1249,95 +1179,6 @@ class AdminWorkflowService(
         }
     }
 
-    private fun AdminWorkflowRequest.albumFolders(): List<AdminWorkflowRepository.AlbumFolder> {
-        val rawFolders = fields["folders"] as? Collection<*>
-            ?: throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-        if (rawFolders.size > MAX_ALBUM_FOLDERS) {
-            throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-        }
-        val photoIds = mutableSetOf<Long>()
-        var itemCount = 0
-        return rawFolders.map { rawFolder ->
-            val folder = rawFolder as? Map<*, *> ?: throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-            val name = folder["name"]?.toString()?.trim()?.takeIf { it.isNotEmpty() && it.length <= 100 }
-                ?: throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-            val rawItems = when (val value = folder["items"]) {
-                null -> if (folder.containsKey("items")) {
-                    throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-                } else {
-                    emptyList<Any?>()
-                }
-                is Collection<*> -> value
-                else -> throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-            }
-            itemCount += rawItems.size
-            if (itemCount > MAX_ALBUM_ITEMS) {
-                throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-            }
-            val sortOrders = mutableSetOf<Int>()
-            val items = rawItems.mapIndexed { index, rawItem ->
-                val item = rawItem as? Map<*, *> ?: throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-                val photoId = strictPositiveLong(item["photoId"])
-                if (!photoIds.add(photoId)) throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-                val sortOrder = if (item.containsKey("sortOrder")) {
-                    strictNonNegativeInt(item["sortOrder"])
-                } else {
-                    index
-                }
-                if (!sortOrders.add(sortOrder)) throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-                AdminWorkflowRepository.AlbumItem(
-                    photoId = photoId,
-                    sortOrder = sortOrder,
-                    crop = normalizedCrop(item["crop"]),
-                )
-            }
-            AdminWorkflowRepository.AlbumFolder(name, items)
-        }
-    }
-
-    private fun strictPositiveLong(value: Any?): Long {
-        val integer = exactInteger(value)
-        if (integer <= java.math.BigInteger.ZERO || integer > LONG_MAX) {
-            throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-        }
-        return integer.toLong()
-    }
-
-    private fun strictNonNegativeInt(value: Any?): Int {
-        val integer = exactInteger(value)
-        if (integer < java.math.BigInteger.ZERO || integer > INT_MAX) {
-            throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-        }
-        return integer.toInt()
-    }
-
-    private fun exactInteger(value: Any?): java.math.BigInteger {
-        val number = value as? Number ?: throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-        return runCatching { number.toString().toBigDecimal().toBigIntegerExact() }
-            .getOrElse { throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS) }
-    }
-
-    private fun normalizedCrop(value: Any?): Map<String, Any?>? {
-        if (value == null) return null
-        val raw = value as? Map<*, *> ?: throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-        if (raw.keys.any { it !is String } || raw.keys != NORMALIZED_CROP_KEYS) {
-            throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-        }
-        val values = NORMALIZED_CROP_KEYS_IN_ORDER.map { name ->
-            (raw[name] as? Number)?.toDouble()?.takeIf { candidate -> candidate.isFinite() }
-                ?: throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-        }
-        val (x, y, width, height) = values
-        if (
-            x < 0 || y < 0 || width <= 0 || height <= 0 ||
-            x + width > 1 + NORMALIZED_CROP_EPSILON ||
-            y + height > 1 + NORMALIZED_CROP_EPSILON
-        ) {
-            throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-        }
-        return NORMALIZED_CROP_KEYS_IN_ORDER.zip(values).toMap(LinkedHashMap())
-    }
-
     private sealed interface PreparedExternalWork {
         data object None : PreparedExternalWork
         data class Upload(
@@ -1377,7 +1218,6 @@ class AdminWorkflowService(
         private val CHILD_RESTORE_ACTIONS = setOf(
             AdminWorkflowAction.RESTORE_COLLAB_COMMENT,
             AdminWorkflowAction.RESTORE_COLLAB_LIKE,
-            AdminWorkflowAction.RESTORE_ALBUM_TEMPLATE,
             AdminWorkflowAction.RESTORE_RETOUCH_ITEM,
         )
         private val ONE_TIME_REVEAL_ACTIONS = setOf(
@@ -1406,12 +1246,5 @@ class AdminWorkflowService(
             "roundVersion",
             "retouchPhotoVersion",
         )
-        private const val MAX_ALBUM_FOLDERS = 50
-        private const val MAX_ALBUM_ITEMS = 1_000
-        private const val NORMALIZED_CROP_EPSILON = 0.000_001
-        private val NORMALIZED_CROP_KEYS_IN_ORDER = listOf("x", "y", "width", "height")
-        private val NORMALIZED_CROP_KEYS = NORMALIZED_CROP_KEYS_IN_ORDER.toSet()
-        private val INT_MAX = java.math.BigInteger.valueOf(Int.MAX_VALUE.toLong())
-        private val LONG_MAX = java.math.BigInteger.valueOf(Long.MAX_VALUE)
     }
 }

@@ -152,19 +152,19 @@ class AdminAuditSnapshotCodec(
             "id", "userId", "ownerUserId", "workspaceId", "studioId", "galleryId", "photoId", "selectionId",
             "conceptFolderId", "detailFolderId", "createdByUserId", "personalOwnerUserId",
             "assignedByUserId", "ratedByUserId",
-            "collaborationId", "albumId", "roundId", "retouchPhotoId", "templateId", "memberId",
+            "collaborationId", "roundId", "retouchPhotoId", "templateId", "memberId",
             "inviteId", "jobId", "revisionId", "selectedRevisionId", "selectionRevisionId",
             "resultRevisionId", "previousRevisionId", "replacementId", "uploadId", "commentId",
             "likeId", "folderId", "ownerId", "previousOwnerId", "actorAdminId", "parentId",
             "childId", "trashBatchId", "childTrashId", "resourceId", "itemId", "groupId",
             "guestId", "notificationOutboxId", "previousJobId", "scopeId",
-            "mockRecalculationJobId", "sessionId", "photoIds", "processingJobIds",
+            "sessionId", "photoIds", "processingJobIds",
         )
         private val ENUM_KEYS = setOf(
             "type", "status", "state", "role", "source", "action", "operation", "outcome",
             "provider", "rootType", "childType", "parentType", "resourceType",
             "workflowAction", "workflowStatus", "publicStatus", "galleryStatus", "selectionStatus",
-            "processingStatus", "reprocessStatus", "jobType", "jobStatus", "mockRecalculationStatus",
+            "processingStatus", "reprocessStatus", "jobType", "jobStatus", 
             "deliveryStatus", "inviteStatus", "artifactType", "notificationType", "trashStatus",
             "failureCode", "capability", "workspaceType", "createdSource", "assignedSource", "mode",
             "stage", "kind", "scope",
@@ -180,7 +180,7 @@ class AdminAuditSnapshotCodec(
             "version", "targetVersion", "restoredSnapshotVersion", "failedLoginAttempts", "attemptCount",
             "displayOrder", "maxSelectablePhotoCount", "maxRetouchRoundCount", "roundNo", "itemCount",
             "templateCount", "returnedCount", "totalCount", "restoredCount", "entryCount",
-            "rootEntryCount", "commentCount", "albumTemplateReferenceCount", "templateMetadataCount",
+            "rootEntryCount", "commentCount", "templateMetadataCount",
             "photoRevisionCount", "selectionRevisionCount", "photoStorageMetadataCount",
             "retouchStorageMetadataCount", "entityRevisionCount", "purgeAttemptCount",
             "uploadUrlTtlSeconds", "terminatedCount", "removedCount", "photoCount", "fieldCount",
@@ -199,11 +199,11 @@ class AdminAuditSnapshotCodec(
         private val CONTAINER_KEYS = setOf(
             "resource", "fields", "facts", "sections", "workflowDetails", "affectedCounts",
             "relationshipFacts", "payloadSummary", "notification", "inputConditions", "comments", "photos",
-            "items", "members", "invites", "galleries", "albums", "selections", "collaborations", "folders",
+            "items", "members", "invites", "galleries", "selections", "collaborations", "folders",
             "rounds", "templates", "likes", "guests", "sessions", "processingJobs", "replacementUploads",
             "revisions", "retouchRounds", "selectedPhotos", "retouchedPhotos", "completedResults",
             "pendingResults", "photoItems", "owner", "mockGallery", "delivery", "retouchCapabilities",
-            "albumReferences", "collaborationLinks", "selectionReferences", "retouchReferences",
+            "collaborationLinks", "selectionReferences", "retouchReferences",
             "galleryMemberships", "joinedGalleries", "ownedStudios", "notifications",
             "aiJobs", "activeSessions", "workspaces", "conceptFolders", "detailFolders",
             "categoryAssignments", "categorizationJobs", "photoRatings", "categoryAssignment", "rating",
@@ -211,10 +211,10 @@ class AdminAuditSnapshotCodec(
         )
         private val STRUCTURAL_COUNT_KEYS = setOf(
             "ADMIN_ACCOUNT", "USER", "STUDIO", "GALLERY", "PHOTO", "SELECTION", "COLLABORATION",
-            "ALBUM", "RETOUCH_REQUEST", "WORKSPACE", "CONCEPT_FOLDER", "DETAIL_FOLDER",
+            "RETOUCH_REQUEST", "WORKSPACE", "CONCEPT_FOLDER", "DETAIL_FOLDER",
             "PHOTO_CATEGORY_ASSIGNMENT", "CATEGORIZATION_JOB", "PHOTO_RATING", "WORKSPACE_MEMBER",
             "GALLERY_MEMBER", "COLLAB_COMMENT", "COLLAB_LIKE",
-            "ALBUM_TEMPLATE", "RETOUCH_ITEM",
+            "RETOUCH_ITEM",
         )
         private val REDACTED_KEYS = setOf(
             "username", "displayName", "nickname", "email", "name", "title", "label", "content",
@@ -273,9 +273,6 @@ class AdminAuditSnapshotCodec(
             ),
             AdminAuditTargetType.COLLABORATION to setOf(
                 "type", "id", "version", "deleted", "galleryId", "conceptFolderId", "name", "revoked", "expiresAt",
-            ),
-            AdminAuditTargetType.ALBUM to setOf(
-                "type", "id", "version", "deleted", "galleryId", "name",
             ),
             AdminAuditTargetType.RETOUCH_REQUEST to setOf(
                 "type", "id", "version", "deleted", "galleryId", "status", "requestedAt", "completedAt",

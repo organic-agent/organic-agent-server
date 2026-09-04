@@ -31,7 +31,7 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
 ) {
 
     @Test
-    fun `일반 수정 가능한 주요 6개 리소스는 허용 필드를 이전 리비전으로 복원하고 복원 감사와 새 버전을 남긴다`() {
+    fun `일반 수정 가능한 주요 5개 리소스는 허용 필드를 이전 리비전으로 복원하고 복원 감사와 새 버전을 남긴다`() {
         val actor = adminAccountFixture.관리자("six-resource-restore")
         val user = create(actor.requiredId, AdminResourceType.USER, mapOf(
             "provider" to "GOOGLE",
@@ -61,17 +61,12 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
             "conceptFolderId" to createConceptFolder(gallery.id),
             "name" to "원본 협업",
         ))
-        val album = create(actor.requiredId, AdminResourceType.ALBUM, mapOf(
-            "galleryId" to gallery.id,
-            "name" to "원본 앨범",
-        ))
         val cases = listOf(
             RestoreCase(AdminResourceType.USER, user.id, "nickname", "원본 사용자", "변경 사용자"),
             RestoreCase(AdminResourceType.STUDIO, studio.id, "contact", "02-111-2222", "010-9999-0000"),
             RestoreCase(AdminResourceType.GALLERY, gallery.id, "title", "원본 갤러리", "변경 갤러리"),
             RestoreCase(AdminResourceType.PHOTO, photo.id, "displayOrder", 10, 20),
             RestoreCase(AdminResourceType.COLLABORATION, collaboration.id, "name", "원본 협업", "변경 협업"),
-            RestoreCase(AdminResourceType.ALBUM, album.id, "name", "원본 앨범", "변경 앨범"),
         )
         val selectedRevisions = cases.associateWith { target ->
             revisionRepository.findAllByTargetTypeAndTargetIdOrderByRevisionNumberDesc(

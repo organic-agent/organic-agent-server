@@ -11,21 +11,20 @@ import com.soma.wes.auth.service.AuthTokenProvider
 import com.soma.wes.auth.support.OAuthRegistrations
 import com.soma.wes.auth.support.OAuthStateCleaner
 import com.soma.wes.auth.token.config.JwtProperties
+import com.soma.wes.category.repository.ConceptFolderRepository
 import com.soma.wes.category.service.CategorizationService
+import com.soma.wes.category.service.CategoryService
 import com.soma.wes.category.service.AiCategoryFolderService
 import com.soma.wes.category.support.AiCategoryFolderPlanner
 import com.soma.wes.collab.config.CollabProperties
 import com.soma.wes.collab.repository.CollabSessionRepository
 import com.soma.wes.collab.service.CollabSessionQueryService
+import com.soma.wes.collab.support.CollabCategoryReactionCleaner
 import com.soma.wes.collab.support.CollabLinkResolver
 import com.soma.wes.collab.support.CollabPhotoViewAssembler
 import com.soma.wes.global.config.AwsLambdaConfig
 import com.soma.wes.embedding.config.EmbeddingProperties
 import com.soma.wes.embedding.infrastructure.LambdaEmbeddingInvoker
-import com.soma.wes.folder.repository.PhotoFolderGroupRepository
-import com.soma.wes.folder.service.PhotoFolderGroupService
-import com.soma.wes.folder.support.FolderPhotoLoader
-import com.soma.wes.folder.support.FolderViewAssembler
 import com.soma.wes.gallery.config.GalleryInviteProperties
 import com.soma.wes.gallery.config.MockGalleryProperties
 import com.soma.wes.gallery.repository.GalleryRepository
@@ -108,7 +107,7 @@ class AdminApplicationContextBoundaryTest @Autowired constructor(
             PhotoRepository::class.java,
             PhotoSelectionRepository::class.java,
             CollabSessionRepository::class.java,
-            PhotoFolderGroupRepository::class.java,
+            ConceptFolderRepository::class.java,
             RetouchRoundRepository::class.java,
             TimeConfig::class.java,
             SchedulingConfig::class.java,
@@ -127,12 +126,11 @@ class AdminApplicationContextBoundaryTest @Autowired constructor(
             PhotoService::class.java,
             PhotoSelectionService::class.java,
             CollabSessionQueryService::class.java,
-            PhotoFolderGroupService::class.java,
+            CategoryService::class.java,
+            CollabCategoryReactionCleaner::class.java,
             RetouchService::class.java,
             PhotoViewAssembler::class.java,
             CollabPhotoViewAssembler::class.java,
-            FolderPhotoLoader::class.java,
-            FolderViewAssembler::class.java,
             RetouchPhotoLoader::class.java,
             RetouchResultLoader::class.java,
             RetouchViewAssembler::class.java,

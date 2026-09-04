@@ -15,7 +15,6 @@ enum class AdminAuditTargetType {
     PHOTO_RATING,
     SELECTION,
     COLLABORATION,
-    ALBUM,
     RETOUCH_REQUEST,
     SYSTEM_SETTING,
     TRASH_BATCH,

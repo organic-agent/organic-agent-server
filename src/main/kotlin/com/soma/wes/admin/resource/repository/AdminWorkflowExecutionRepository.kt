@@ -1,8 +1,6 @@
 package com.soma.wes.admin.resource.repository
 
 import com.soma.wes.admin.resource.domain.AdminResourceType
-import com.soma.wes.admin.resource.support.AdminAlbumTemplateLayout
-import com.soma.wes.admin.resource.support.InvalidAlbumTemplateLayoutException
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
@@ -37,11 +35,6 @@ class AdminWorkflowExecutionRepository(
               )
               OR (
                 status = 'DISPATCHING' AND failure_code = :claimedNotSent
-                AND last_run_at <= CURRENT_TIMESTAMP - make_interval(secs => :staleSeconds)
-              )
-              OR (
-                status = 'DISPATCHING' AND job_type = 'MOCK_RECALCULATION'
-                AND failure_code IS NULL
                 AND last_run_at <= CURRENT_TIMESTAMP - make_interval(secs => :staleSeconds)
               )
             ORDER BY created_at, id
@@ -219,29 +212,6 @@ class AdminWorkflowExecutionRepository(
         .param("claimedNotSent", CLAIMED_NOT_SENT)
         .update()
 
-    /** 로컬 실행 시작 뒤에는 현재 attempt와 send-start 상태가 모두 일치해야만 terminal 전이한다. */
-    fun markStartedProcessingJob(
-        id: Long,
-        attemptCount: Int,
-        status: String,
-        failureCode: String? = null,
-    ): Int {
-        require(status in LOCAL_PROCESSING_TERMINAL_STATUSES)
-        return jdbcClient.sql(
-            """
-            UPDATE admin_processing_jobs
-            SET status = :status, failure_code = :failureCode, updated_at = CURRENT_TIMESTAMP
-            WHERE id = :id AND status = 'DISPATCHING' AND attempt_count = :attemptCount
-              AND failure_code IS NULL
-            """.trimIndent(),
-        )
-            .param("status", status)
-            .param("failureCode", failureCode?.take(80))
-            .param("id", id)
-            .param("attemptCount", attemptCount)
-            .update()
-    }
-
     /** lease가 그대로이고 대상이 실제 삭제된 경우에만 미실행 claim을 취소한다. */
     fun cancelClaimedProcessingJobIfTargetDeleted(
         id: Long,
@@ -300,234 +270,10 @@ class AdminWorkflowExecutionRepository(
         .param("attemptCount", attemptCount)
         .update()
 
-    /** 제출 리비전의 사진 순서를 현재 템플릿 목업에 한 트랜잭션으로 반영한다. */
-    @Transactional
-    fun rebuildMock(job: ProcessingExecutionJob): MockRecalculationResult {
-        val revisionId = job.revisionId ?: throw WorkflowExecutionException("REVISION_ID_REQUIRED")
-        val revision = jdbcClient.sql(
-            """
-            SELECT s.gallery_id, r.photo_items::TEXT
-            FROM admin_selection_revisions r
-            JOIN photo_selections s ON s.id = r.selection_id
-            WHERE r.id = :revisionId AND r.selection_id = :selectionId
-              AND r.status = 'SUBMITTED' AND s.deleted_at IS NULL
-            FOR UPDATE OF s
-            """.trimIndent(),
-        )
-            .param("revisionId", revisionId)
-            .param("selectionId", job.targetId)
-            .query { rs, _ -> SubmittedRevision(
-                galleryId = rs.getLong("gallery_id"),
-                items = selectionItems(rs.getString("photo_items")),
-            ) }
-            .optional()
-            .orElseThrow { WorkflowExecutionException("INVALID_SUBMITTED_REVISION") }
-        if (revision.items.isEmpty() || revision.items.map { it.photoId }.distinct().size != revision.items.size) {
-            throw WorkflowExecutionException("INVALID_REVISION_ITEMS")
-        }
-        val activePhotoCount = jdbcClient.sql(
-            """
-            SELECT COUNT(*) FROM photos
-            WHERE gallery_id = :galleryId AND id IN (:photoIds)
-              AND deleted_at IS NULL AND status <> 'PENDING'
-            """.trimIndent(),
-        )
-            .param("galleryId", revision.galleryId)
-            .param("photoIds", revision.items.map { it.photoId })
-            .query { rs, _ -> rs.getLong(1) }
-            .single()
-        if (activePhotoCount != revision.items.size.toLong()) {
-            throw WorkflowExecutionException("REVISION_PHOTO_NOT_ACTIVE")
-        }
-        val albums = jdbcClient.sql(
-            """
-            SELECT album.id, template.layout_json::TEXT
-            FROM photo_folder_groups album
-            JOIN admin_album_templates template ON template.id = album.template_id
-            WHERE album.gallery_id = :galleryId AND album.deleted_at IS NULL
-              AND template.deleted_at IS NULL
-            ORDER BY album.id
-            FOR UPDATE OF album, template
-            """.trimIndent(),
-        )
-            .param("galleryId", revision.galleryId)
-            .query { rs, _ -> TemplateAlbum(
-                id = rs.getLong("id"),
-                layout = templateLayout(rs.getString("layout_json")),
-            ) }
-            .list()
-        if (albums.isEmpty()) throw WorkflowExecutionException("NO_TEMPLATE_ALBUM")
-
-        val revisionItems = revision.items.withIndex()
-            .sortedWith(compareBy<IndexedValue<SelectionRevisionItem>> { it.value.sortOrder }.thenBy { it.index })
-            .map(IndexedValue<SelectionRevisionItem>::value)
-        albums.forEach { album ->
-            val existingRows = existingAlbumRows(album.id)
-            val plan = buildAlbumPlan(existingRows, album.layout, revisionItems)
-            jdbcClient.sql("DELETE FROM photo_folders WHERE group_id = :albumId")
-                .param("albumId", album.id)
-                .update()
-            plan.forEach { folder ->
-                val folderId = jdbcClient.sql(
-                    """
-                    INSERT INTO photo_folders (group_id, gallery_id, name, version, created_at, updated_at)
-                    VALUES (:albumId, :galleryId, :name, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    RETURNING id
-                    """.trimIndent(),
-                )
-                    .param("albumId", album.id)
-                    .param("galleryId", revision.galleryId)
-                    .param("name", folder.name)
-                    .query { rs, _ -> rs.getLong(1) }
-                    .single()
-                folder.items.forEachIndexed { index, item ->
-                    jdbcClient.sql(
-                        """
-                        INSERT INTO photo_folder_items
-                            (group_id, folder_id, photo_id, sort_order, crop_json,
-                             version, created_at, updated_at)
-                        VALUES
-                            (:albumId, :folderId, :photoId, :sortOrder, CAST(:cropJson AS JSONB),
-                             0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                        """.trimIndent(),
-                    )
-                        .param("albumId", album.id)
-                        .param("folderId", folderId)
-                        .param("photoId", item.photoId)
-                        .param("sortOrder", index)
-                        .param("cropJson", item.cropJson)
-                        .update()
-                }
-            }
-            jdbcClient.sql(
-                """
-                UPDATE photo_folder_groups
-                SET selection_revision_id = :revisionId, version = version + 1,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = :albumId AND deleted_at IS NULL
-                """.trimIndent(),
-            )
-                .param("revisionId", revisionId)
-                .param("albumId", album.id)
-                .update()
-        }
-        if (markStartedProcessingJob(job.id, job.attemptCount, "SUCCEEDED") != 1) {
-            throw WorkflowExecutionException("JOB_STATE_CONFLICT")
-        }
-        return MockRecalculationResult(albums.size, revision.items.size)
-    }
-
-    private fun existingAlbumRows(albumId: Long): List<ExistingAlbumRow> = jdbcClient.sql(
-        """
-        SELECT folder.id AS folder_id, folder.name, item.id AS item_id,
-               item.photo_id, item.sort_order, item.crop_json::TEXT
-        FROM photo_folders folder
-        LEFT JOIN photo_folder_items item ON item.folder_id = folder.id
-        WHERE folder.group_id = :albumId
-        ORDER BY folder.id, item.sort_order, item.id
-        """.trimIndent(),
-    )
-        .param("albumId", albumId)
-        .query { rs, _ -> ExistingAlbumRow(
-            folderId = rs.getLong("folder_id"),
-            folderName = rs.getString("name"),
-            itemId = rs.getObject("item_id", java.lang.Long::class.java)?.toLong(),
-            photoId = rs.getObject("photo_id", java.lang.Long::class.java)?.toLong(),
-            sortOrder = rs.getObject("sort_order", Integer::class.java)?.toInt(),
-            cropJson = rs.getString("crop_json"),
-        ) }
-        .list()
-
-    /**
-     * 기존 수동 배치는 살아 있는 선택 사진에 대해 우선 보존한다. 템플릿 슬롯은 기존 배치가
-     * 차지하지 않은 자리부터 새 사진에만 적용한다. 따라서 재실행해도 같은 입력은 같은
-     * 폴더·상대 순서·crop을 만들고, 템플릿이 없는 legacy `{}`도 기존 목업을 잃지 않는다.
-     */
-    private fun buildAlbumPlan(
-        existingRows: List<ExistingAlbumRow>,
-        template: AdminAlbumTemplateLayout.Layout,
-        revisionItems: List<SelectionRevisionItem>,
-    ): List<PlannedFolder> {
-        val selectedIds = revisionItems.map(SelectionRevisionItem::photoId).toSet()
-        val folders = linkedMapOf<Long, PlannedFolder>()
-        existingRows.forEach { row ->
-            val folder = folders.getOrPut(row.folderId) { PlannedFolder(row.folderName) }
-            if (row.photoId != null && row.itemId != null && row.photoId in selectedIds) {
-                folder.items += PlannedItem(
-                    photoId = row.photoId,
-                    cropJson = row.cropJson,
-                    previousItemId = row.itemId,
-                    previousSortOrder = row.sortOrder ?: Int.MAX_VALUE,
-                )
-            }
-        }
-        folders.values.forEach { folder ->
-            folder.items.sortWith(compareBy<PlannedItem> { it.previousSortOrder }.thenBy { it.previousItemId })
-        }
-
-        val foldersByName = folders.values.associateByTo(linkedMapOf(), PlannedFolder::name)
-        template.folders.forEach { templateFolder ->
-            foldersByName.getOrPut(templateFolder.name) {
-                PlannedFolder(templateFolder.name).also { folders[-(folders.size + 1L)] = it }
-            }
-        }
-        if (folders.isEmpty()) {
-            val fallback = PlannedFolder("선택본")
-            folders[-1L] = fallback
-            foldersByName[fallback.name] = fallback
-        }
-
-        val occupiedPhotoIds = folders.values.flatMap { folder -> folder.items.map(PlannedItem::photoId) }.toSet()
-        val availableSlots = mutableListOf<TemplateSlot>()
-        template.folders.forEach { templateFolder ->
-            val folder = checkNotNull(foldersByName[templateFolder.name])
-            templateFolder.slots.forEachIndexed { index, slot ->
-                val existing = folder.items.getOrNull(index)
-                if (existing == null) {
-                    availableSlots += TemplateSlot(folder, slot.crop?.let(objectMapper::writeValueAsString))
-                }
-            }
-        }
-
-        val overflowFolder = template.folders.lastOrNull()?.let { foldersByName[it.name] }
-            ?: folders.values.first()
-        val newPhotoIds = revisionItems.map(SelectionRevisionItem::photoId).filterNot(occupiedPhotoIds::contains)
-        newPhotoIds.forEachIndexed { index, photoId ->
-            val slot = availableSlots.getOrNull(index)
-            val target = slot?.folder ?: overflowFolder
-            target.items += PlannedItem(
-                photoId = photoId,
-                cropJson = slot?.cropJson,
-                previousItemId = Long.MAX_VALUE,
-                previousSortOrder = Int.MAX_VALUE,
-            )
-        }
-        return folders.values.toList()
-    }
-
-    private fun templateLayout(value: String): AdminAlbumTemplateLayout.Layout = try {
-        AdminAlbumTemplateLayout.parse(jsonMap(value))
-    } catch (_: InvalidAlbumTemplateLayoutException) {
-        throw WorkflowExecutionException("INVALID_TEMPLATE_LAYOUT")
-    }
-
     @Suppress("UNCHECKED_CAST")
     private fun jsonMap(value: String): Map<String, Any?> =
         objectMapper.readValue(value, Map::class.java).entries
             .associate { it.key.toString() to it.value }
-
-    @Suppress("UNCHECKED_CAST")
-    private fun selectionItems(value: String): List<SelectionRevisionItem> =
-        objectMapper.readValue(value, List::class.java).mapIndexed { index, raw ->
-            val item = raw as? Map<*, *> ?: throw WorkflowExecutionException("INVALID_REVISION_ITEMS")
-            val photoId = (item["photoId"] as? Number)?.toLong()
-                ?: item["photoId"]?.toString()?.toLongOrNull()
-                ?: throw WorkflowExecutionException("INVALID_REVISION_ITEMS")
-            val sortOrder = (item["sortOrder"] as? Number)?.toInt()
-                ?: item["sortOrder"]?.toString()?.toIntOrNull()
-                ?: index
-            SelectionRevisionItem(photoId, sortOrder)
-        }
 
     data class ProcessingExecutionJob(
         val id: Long,
@@ -541,36 +287,11 @@ class AdminWorkflowExecutionRepository(
         val reason: String,
     )
 
-    data class MockRecalculationResult(val albumCount: Int, val photoCount: Int)
-    private data class SubmittedRevision(val galleryId: Long, val items: List<SelectionRevisionItem>)
-    private data class SelectionRevisionItem(val photoId: Long, val sortOrder: Int)
-    private data class TemplateAlbum(val id: Long, val layout: AdminAlbumTemplateLayout.Layout)
-    private data class ExistingAlbumRow(
-        val folderId: Long,
-        val folderName: String,
-        val itemId: Long?,
-        val photoId: Long?,
-        val sortOrder: Int?,
-        val cropJson: String?,
-    )
-    private data class PlannedFolder(
-        val name: String,
-        val items: MutableList<PlannedItem> = mutableListOf(),
-    )
-    private data class PlannedItem(
-        val photoId: Long,
-        val cropJson: String?,
-        val previousItemId: Long,
-        val previousSortOrder: Int,
-    )
-    private data class TemplateSlot(val folder: PlannedFolder, val cropJson: String?)
-
     companion object {
         const val CLAIMED_NOT_SENT = "CLAIMED_NOT_SENT"
         const val DISPATCH_OUTCOME_UNKNOWN = "DISPATCH_OUTCOME_UNKNOWN"
         const val MAX_ATTEMPTS_EXHAUSTED = "MAX_ATTEMPTS_EXHAUSTED"
         const val DISPATCH_RESULT_TIMEOUT = "DISPATCH_RESULT_TIMEOUT"
-        private val LOCAL_PROCESSING_TERMINAL_STATUSES = setOf("SUCCEEDED", "FAILED")
     }
 
     private fun targetTable(type: AdminResourceType): String = when (type) {
@@ -580,7 +301,6 @@ class AdminWorkflowExecutionRepository(
         AdminResourceType.PHOTO -> "photos"
         AdminResourceType.SELECTION -> "photo_selections"
         AdminResourceType.COLLABORATION -> "collab_sessions"
-        AdminResourceType.ALBUM -> "photo_folder_groups"
         AdminResourceType.RETOUCH_REQUEST -> "retouch_rounds"
         else -> throw IllegalArgumentException("processing workflow target is unsupported: $type")
     }
