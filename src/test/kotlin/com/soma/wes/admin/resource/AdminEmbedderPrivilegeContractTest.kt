@@ -1,10 +1,10 @@
 package com.soma.wes.admin.resource
 
 import com.soma.wes.support.IntegrationTest
+import javax.sql.DataSource
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.core.io.ClassPathResource
-import javax.sql.DataSource
 
 /** 단일 V1 baseline의 column grant가 worker의 실제 SET/WHERE 표현식을 실행할 수 있는지 검증한다. */
 @IntegrationTest

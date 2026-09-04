@@ -1,7 +1,7 @@
 package com.soma.wes.admin.resource
 
-import com.soma.wes.admin.dto.request.ChangeAdminPasswordRequest
 import com.soma.wes.admin.dto.request.AdminLoginRequest
+import com.soma.wes.admin.dto.request.ChangeAdminPasswordRequest
 import com.soma.wes.admin.fixture.AdminAccountFixture
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.dto.CreateAdminResourceRequest

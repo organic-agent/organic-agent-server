@@ -24,7 +24,7 @@ import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
-import com.soma.wes.recommendation.support.AiConceptAssignmentLoader
+import com.soma.wes.analysis.support.AiConceptAssignmentLoader
 import java.time.Clock
 import java.time.ZonedDateTime
 import org.springframework.stereotype.Service

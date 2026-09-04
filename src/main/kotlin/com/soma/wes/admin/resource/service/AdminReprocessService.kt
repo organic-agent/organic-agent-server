@@ -7,10 +7,10 @@ import com.soma.wes.admin.resource.dto.AdminReprocessRequest
 import com.soma.wes.admin.resource.dto.AdminReprocessResponse
 import com.soma.wes.admin.resource.repository.AdminIdempotencyStore
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
-import com.soma.wes.embedding.service.EmbeddingInvoker
+import com.soma.wes.analysis.exception.AnalysisErrorCode
+import com.soma.wes.analysis.exception.AnalysisException
+import com.soma.wes.analysis.service.EmbeddingInvoker
 import com.soma.wes.photo.domain.PhotoStatus
-import com.soma.wes.photo.exception.PhotoErrorCode
-import com.soma.wes.photo.exception.PhotoException
 import org.slf4j.LoggerFactory
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Service
@@ -46,7 +46,7 @@ class AdminReprocessService(
             throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
         }
         if (!embeddingInvoker.isAvailable) {
-            throw PhotoException(PhotoErrorCode.EMBEDDING_NOT_CONFIGURED)
+            throw AnalysisException(AnalysisErrorCode.STAGE_NOT_CONFIGURED)
         }
 
         val targets = countTargets(id, request.force)

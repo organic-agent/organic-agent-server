@@ -38,7 +38,7 @@ import java.time.LocalDateTime
  *
  * S3에 실제로 올리는 단계는 여기 없다. 그 단계는 프론트가 서명 URL로 직접 하고 서버는 관여하지
  * 않으므로, 서버 쪽에서 검증할 수 있는 것은 "서명이 붙은 URL을 제대로 내주는가"까지다.
- * 임베딩 실행은 EmbeddingService의 몫이라 그쪽 테스트가 맡는다.
+ * 임베딩 실행은 analysis 도메인(AnalysisService)의 몫이라 그쪽 테스트가 맡는다.
  */
 @IntegrationTest
 class PhotoServiceTest @Autowired constructor(

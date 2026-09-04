@@ -32,10 +32,15 @@ paths:
 
 ## AI가 쓰는 테이블
 
-- `photo_analysis`(임베딩·분석 컬럼)·`ai_analysis_jobs`·`ai_concept_assignments`는 이 서버 밖
-  (임베더 Lambda, AI 분석·naming 배치)이 직접 INSERT/UPDATE 한다. 엔티티의 그 컬럼은
-  읽기 전용 `val`이고, 컬럼을 바꾸면 AI repo(`photoselect/store.py`·`embedder/db.py`)도
-  함께 바꾼다. 전용 DB 유저(`embedder`, `photoselect`)의 GRANT도 새 테이블마다 필요하다.
+- `photo_analysis`(임베딩·분석 컬럼)·`ai_concept_assignments`는 이 서버 밖(AI repo Lambda 셋
+  embedder·score·categorize)이 직접 INSERT/UPDATE 한다. 엔티티의 그 컬럼은 읽기 전용 `val`이고,
+  컬럼을 바꾸면 AI repo(`score/store.py`·`categorize/store.py`·`embedder/db.py`)도 함께 바꾼다.
+  전용 DB 유저(`embedder`, `photoselect`)의 GRANT도 새 테이블마다 필요하다.
+- `ai_analysis_jobs`는 이 서버(`analysis` 도메인)와 Lambda가 나눠 쓴다(V4). 이 서버: `stage`·`stage_attempts`·
+  `dispatched_at`·`observed_progress`·`force`와 잡을 닫는 `status` DONE/FAILED. Lambda: `stage_status`의 시작(claim)·끝,
+  `heartbeat_at`, `result`의 단계별 키(`||` 병합), `error`. 단계 상태를 아직 쓰지 않는 Lambda(AI Phase 0 이전,
+  `app.analysis.lambda-reports-stage=false`)는 `status`를 직접 RUNNING·DONE으로 옮기고 이 서버가 그 경우를 함께 다룬다.
+  EMBED 단계는 임베더가 잡을 모른다 — 이 서버가 `photo_analysis`를 관측해 열고 닫는다.
 - `photo_analysis`는 세 주체가 나눠 쓴다 — 임베더가 `embedding·embedding_model`, SCORE 잡이
   `subjects·sub_scores·clip_embedding·model_version`, CATEGORIZE 잡이 `technical_pct·aesthetic_pct·cluster_*·
   embed_group_id`. 두 잡 사이에 `model_version`만 있고 백분위가 없는 창이 있으므로 "분석 완료"는

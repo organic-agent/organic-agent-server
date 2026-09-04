@@ -299,7 +299,7 @@ interface PhotoControllerDocs {
     @Operation(
         summary = "사진 상태 집계",
         description = """
-            임베딩 실행은 비동기라 응답을 기다릴 수 없다. 진행 상황은 이 집계의 embedded 수가
+            AI 분석(임베딩 단계)은 비동기라 응답을 기다릴 수 없다. 진행 상황은 이 집계의 embedded 수가
             늘어나는 것으로 확인한다. total과 embedded가 같아지면 클러스터링을 시작할 수 있다.
         """,
     )

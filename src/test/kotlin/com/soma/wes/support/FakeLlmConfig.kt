@@ -19,4 +19,8 @@ class FakeLlmConfig {
     @Bean
     @Primary
     fun manualAiJobExecutor(): ManualAiJobExecutor = ManualAiJobExecutor()
+
+    @Bean
+    @Primary
+    fun fakeStageInvoker(): FakeStageInvoker = FakeStageInvoker()
 }
