@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# 로컬 AI 워커를 띄운다 — 웹의 "AI 분석" 버튼이 만든 잡(ai_analysis_jobs)을 집어 AI repo 의 score → categorize 체인을 돌린다.
-# 운영은 wes 가 score Lambda 를 EVENT 로 부르고 score 가 끝에서 categorize Lambda 를 부른다. 로컬 wes 에는 Lambda 도
-# 분석 invoker 도 아직 없어, AI repo 의 `python -m score worker` 가 PENDING 을 폴링해 같은 체인을 돈다:
+# (선택) 로컬 AI 폴링 워커 — 웹의 "AI 분석" 버튼이 만든 잡(ai_analysis_jobs)을 집어 AI repo 의 score → categorize 체인을 돌린다.
+# 정식 경로는 이제 wes analysis 도메인이다: 로컬 wes 가 단계마다 `scripts/local-ai.sh --stage … --job-id …` 를 띄운다
+# (LocalProcessStageInvoker). 이 워커는 그 경로 없이 AI repo 만으로 잡을 돌려 볼 때 쓴다 — 워커가 먼저 집으면(status
+# RUNNING) wes 는 그 잡을 다시 부르지 않으므로 둘을 함께 켜도 겹치지 않는다:
 #   FULL   = score(사진별 점수, torch) → categorize(그룹 + Bedrock naming) 서브프로세스
 #   NAMING = categorize 만
 # "AI 추천"(ai_selection_jobs)과 비교샷은 wes 안에서 돈다 — 이 워커는 집지 않는다(#133·#131).

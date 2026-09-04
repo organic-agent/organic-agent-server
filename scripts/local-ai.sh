@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
-# 로컬 AI 파이프라인을 한 번에 돌린다: 임베딩(미리보기 PUT → DINOv3) → 점수(score) → 그룹·이름(categorize).
+# 로컬 AI 파이프라인: 임베딩(미리보기 PUT → DINOv3) → 점수(score) → 그룹·이름(categorize).
 #
-# 운영에서 Lambda 셋(embedder → score → categorize)이 체인으로 하는 일을 노트북이 순서대로 대신한다. 로컬 wes(local
-# 프로필)는 "임베딩 실행" 버튼에서 이 스크립트를 `--only-embed` 로 서브프로세스로 띄운다(LocalProcessEmbeddingInvoker).
-# 폴더화의 정식 경로는 웹의 "AI 분석" 버튼 → local-worker.sh(잡)다. 이 스크립트의 점수·그룹 단계는 잡 없이 한 번에
-# 돌려 보는 지름길이라 **배정(ai_concept_assignments)은 저장되지 않는다** — 폴더 세트가 필요하면 워커 경로를 쓴다.
+# 두 가지 모양으로 쓴다.
+#  1) 잡 경로(정식) — 로컬 wes(local 프로필)의 analysis 도메인이 웹 "임베딩 실행"·"AI 분석" 버튼에서 단계마다 이 스크립트를
+#     `--stage <embed|score|categorize> --job-id J` 로 서브프로세스로 띄운다(LocalProcessStageInvoker). 운영에서 wes 가
+#     Lambda 셋을 EVENT 로 부르는 것과 같은 자리다. AI repo CLI 가 Lambda 와 같은 코드로 잡 행(ai_analysis_jobs)을 쓴다.
+#  2) 일괄 경로(지름길) — `--stage` 없이 부르면 잡 없이 세 단계를 순서대로 돌린다. 이때 배정(ai_concept_assignments)은
+#     잡이 없어 저장되지 않는다. 폴더 세트가 필요하면 웹 버튼(잡 경로)을 쓴다.
 # 추천·비교샷은 wes 안에서 돈다.
 #
-#   scripts/local-ai.sh <galleryId> [--force] [--skip-embed] [--skip-analyze] [--only-embed]
+#   scripts/local-ai.sh <galleryId> [--stage embed|score|categorize] [--job-id J] [--force]
+#                       [--skip-embed] [--skip-analyze] [--only-embed]
 #
+#   --stage S       그 단계 하나만 돌리고 끝낸다. score 는 --job-id 가 있으면 끝에서 categorize 를 이어 부른다(AI repo 계약)
+#   --job-id J      ai_analysis_jobs.id — AI repo CLI 가 잡 상태를 기록한다
 #   --force         이미 벡터·점수가 있는 사진도 다시 계산한다 (embedder --force, score --force)
-#   --only-embed    = --skip-analyze
+#   --only-embed    = --skip-analyze (관리자 재처리 경로가 쓴다)
 #
 # 전제: docker(pg), python3, AWS 자격증명(dev 버킷 + /wes/local/ 읽기 + Bedrock — categorize 의 naming).
 # AI repo venv 는 embedder/.venv · score/.venv(categorize 포함)에 이 스크립트가 만든다(scripts/lib/ai-venv.sh).
@@ -28,14 +33,17 @@ BUCKET_PARAM="/wes/local/app.storage.bucket"
 GALLERY_ID=""
 FORCE=false
 SKIP_EMBED=false; SKIP_ANALYZE=false
+STAGE=""; JOB_ID=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --force) FORCE=true ;;
+    --stage) STAGE="$2"; shift ;;
+    --job-id) JOB_ID="$2"; shift ;;
     --skip-embed) SKIP_EMBED=true ;;
     --skip-analyze) SKIP_ANALYZE=true ;;
     --only-embed) SKIP_ANALYZE=true ;;
-    -h|--help) sed -n 2,18p "$0"; exit 0 ;;
+    -h|--help) sed -n 2,22p "$0"; exit 0 ;;
     -*) echo "모르는 옵션: $1" >&2; exit 1 ;;
     *) GALLERY_ID="$1" ;;
   esac
@@ -45,6 +53,12 @@ if [ -z "$GALLERY_ID" ]; then
   echo "사용법: scripts/local-ai.sh <galleryId> [옵션]  (--help)" >&2
   exit 1
 fi
+case "$STAGE" in
+  "") ;;
+  embed) SKIP_EMBED=false; SKIP_ANALYZE=true ;;
+  score|categorize) SKIP_EMBED=true; SKIP_ANALYZE=false ;;
+  *) echo "모르는 단계: $STAGE (embed|score|categorize)" >&2; exit 1 ;;
+esac
 
 # --- 접속 정보 ---------------------------------------------------------------------------------
 export DB_HOST="${DB_HOST:-localhost}"
@@ -90,16 +104,25 @@ if [ "$SKIP_ANALYZE" = true ]; then
 fi
 
 # --- 2. 점수 (AI repo score/, torch) → 3. 그룹·이름 (categorize/, Bedrock) ---------------------------
-# 운영은 score Lambda 가 끝에서 categorize 를 EVENT 로 부른다. 여기서는 잡 없이 둘을 순서대로 직접 부른다 —
-# categorize 는 --llm 으로 naming 까지 가지만, 잡이 없어 배정은 저장하지 않는다(로그·결과 payload 로만 확인).
+# 잡 경로(--stage score --job-id J): score 가 잡을 열고, 끝에서 CATEGORIZE_COMMAND 로 categorize 를 이어 부르며 categorize 가
+# 잡을 닫는다(AI repo 계약 — 운영에서 score Lambda 가 categorize Lambda 를 부르는 것과 같다). --stage categorize 는 NAMING 잡.
+# 일괄 경로(--stage 없음): 잡 없이 둘을 순서대로 직접 부른다 — 배정은 잡이 없어 저장하지 않는다.
 SCORE_PY="$(ai_python "$AI_ROOT" score)"
-SCORE_ARGS=(--gallery-id "$GALLERY_ID")
-[ "$FORCE" = true ] && SCORE_ARGS+=(--force)
-echo "[score] python -m score ${SCORE_ARGS[*]}"
-"$SCORE_PY" -m score "${SCORE_ARGS[@]}"
+export CATEGORIZE_COMMAND="${CATEGORIZE_COMMAND:-$SCORE_PY -m categorize}"
+if [ "$STAGE" != "categorize" ]; then
+  SCORE_ARGS=(--gallery-id "$GALLERY_ID")
+  [ "$FORCE" = true ] && SCORE_ARGS+=(--force)
+  [ -n "$JOB_ID" ] && SCORE_ARGS+=(--job-id "$JOB_ID")
+  echo "[score] python -m score ${SCORE_ARGS[*]}"
+  "$SCORE_PY" -m score "${SCORE_ARGS[@]}"
+fi
+if [ "$STAGE" = "categorize" ] || [ -z "$STAGE" ]; then
+  CATEGORIZE_ARGS=(--gallery-id "$GALLERY_ID" --llm)
+  [ -n "$JOB_ID" ] && CATEGORIZE_ARGS+=(--job-id "$JOB_ID")
+  echo "[categorize] python -m categorize ${CATEGORIZE_ARGS[*]}"
+  "$SCORE_PY" -m categorize "${CATEGORIZE_ARGS[@]}"
+fi
+[ -n "$STAGE" ] && { echo "끝. 단계 $STAGE (job=$JOB_ID)"; exit 0; }
 
-echo "[categorize] python -m categorize --gallery-id $GALLERY_ID --llm"
-"$SCORE_PY" -m categorize --gallery-id "$GALLERY_ID" --llm
-
-echo "폴더 세트까지 가려면: 웹 \"AI 분석\" 버튼(잡) + scripts/local-worker.sh — 배정은 잡에 매달린다"
+echo "폴더 세트까지 가려면: 웹 \"AI 분석\" 버튼(잡 경로) — 배정은 잡에 매달린다"
 echo "끝. 확인: psql -h $DB_HOST -p $DB_PORT -U $DB_USER $DB_NAME -c \"SELECT count(*) FILTER (WHERE embedding IS NOT NULL) AS embedded, count(model_version) AS scored, count(embed_group_id) AS categorized FROM photo_analysis a JOIN photos p ON p.id = a.photo_id WHERE p.gallery_id = $GALLERY_ID\""
