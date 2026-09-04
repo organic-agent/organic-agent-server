@@ -16,10 +16,11 @@ data class ComparablePhotoDto(
 
     companion object {
 
+        /** 호출 전에 [PhotoAnalysis.isAnalyzed]로 걸러야 한다 — 백분위 없는 행을 기본값으로 메꾸지 않는다. */
         fun from(analysis: PhotoAnalysis) = ComparablePhotoDto(
             photoId = analysis.photoId,
-            technicalPct = analysis.technicalPct?.toDouble() ?: 0.0,
-            aestheticPct = analysis.aestheticPct?.toDouble() ?: 0.0,
+            technicalPct = requireNotNull(analysis.technicalPct) { "분석되지 않은 사진: ${analysis.photoId}" }.toDouble(),
+            aestheticPct = requireNotNull(analysis.aestheticPct) { "분석되지 않은 사진: ${analysis.photoId}" }.toDouble(),
             sharpness = analysis.subScore("sharpness"),
             highlightClip = analysis.subScore("highlight_clip"),
             clusterId = analysis.clusterId,

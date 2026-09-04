@@ -171,5 +171,19 @@ class PairVerdictJudgeTest @Autowired constructor(
                 .extracting("errorCode")
                 .isEqualTo(RecommendationErrorCode.COMPARE_NOT_ANALYZED)
         }
+
+        @Test
+        fun `SCORE만 끝나 백분위가 없는 사진은 분석되지 않은 것으로 거절한다`() {
+            // given — model_version은 있지만 CATEGORIZE 전이라 백분위가 비어 있다
+            llm.isEnabled = false
+            recommendationFixture.분석_결과(photoA)
+            recommendationFixture.점수만(photoB)
+
+            // when & then — 0점으로 메꿔 photoA를 이기게 두지 않는다
+            assertThatThrownBy { judge.judge(selectionId, galleryId, photoA, photoB) }
+                .isInstanceOf(RecommendationException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(RecommendationErrorCode.COMPARE_NOT_ANALYZED)
+        }
     }
 }

@@ -36,6 +36,19 @@ class RecommendationFixture(
         )
     }
 
+    /** SCORE 잡만 끝난 상태 — `model_version`은 있지만 CATEGORIZE가 채우는 백분위·그룹은 아직 비어 있다. */
+    fun 점수만(photoId: Long, subjects: String = "couple") {
+        jdbcTemplate.update(
+            """
+            UPDATE photo_analysis
+            SET subjects = ?, sub_scores = '{"sharpness": 120.0}'::jsonb,
+                model_version = 'test-v1', analyzed_at = now(), updated_at = now()
+            WHERE photo_id = ?
+            """.trimIndent(),
+            subjects, photoId,
+        )
+    }
+
     /** 임베더가 미리보기를 만들고 photos.preview_key를 채운 상태. 판정·이유가 LLM에 사진을 보내는 전제다. */
     fun 미리보기(photoId: Long, previewKey: String = "previews/$photoId.jpg") {
         jdbcTemplate.update("UPDATE photos SET preview_key = ?, updated_at = now() WHERE id = ?", previewKey, photoId)
