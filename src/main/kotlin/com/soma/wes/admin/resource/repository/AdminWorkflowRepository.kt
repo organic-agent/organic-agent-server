@@ -965,12 +965,14 @@ class AdminWorkflowRepository(
             jdbcClient.sql(
                 """
                 INSERT INTO photo_selection_items
-                    (selection_id, photo_id, version, created_at, updated_at)
-                VALUES (:selectionId, :photoId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    (selection_id, gallery_id, photo_id, sort_order, version, created_at, updated_at)
+                VALUES (:selectionId, :galleryId, :photoId, :sortOrder, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """.trimIndent(),
             )
                 .param("selectionId", selectionId)
+                .param("galleryId", galleryId)
                 .param("photoId", photoId)
+                .param("sortOrder", index)
                 .update()
         }
         jdbcClient.sql(
@@ -1017,17 +1019,21 @@ class AdminWorkflowRepository(
         if (revisionId != null) {
             jdbcClient.sql("DELETE FROM photo_selection_items WHERE selection_id = :selectionId")
                 .param("selectionId", selectionId).update()
-            items.forEach { item ->
+            items.forEachIndexed { index, item ->
                 jdbcClient.sql(
                     """
                     INSERT INTO photo_selection_items
-                        (selection_id, photo_id, retouch_photo_id, version, created_at, updated_at)
-                    VALUES (:selectionId, :photoId, :retouchPhotoId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        (selection_id, gallery_id, photo_id, retouch_photo_id, sort_order,
+                         version, created_at, updated_at)
+                    VALUES (:selectionId, :galleryId, :photoId, :retouchPhotoId, :sortOrder,
+                            0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     """.trimIndent(),
                 )
                     .param("selectionId", selectionId)
+                    .param("galleryId", galleryId)
                     .param("photoId", item.photoId)
                     .param("retouchPhotoId", item.retouchPhotoId)
+                    .param("sortOrder", index)
                     .update()
             }
         }
@@ -1286,7 +1292,7 @@ class AdminWorkflowRepository(
     fun createCollabComment(
         sessionId: Long,
         photoId: Long,
-        guestId: Long,
+        participantId: Long,
         content: String,
         expectedVersion: Long,
     ): Long {
@@ -1294,15 +1300,15 @@ class AdminWorkflowRepository(
         val commentId = jdbcClient.sql(
             """
             INSERT INTO collab_photo_comments
-                (collab_session_id, photo_id, collab_guest_id, content, version, created_at, updated_at)
-            SELECT :sessionId, :photoId, :guestId, :content, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                (collab_session_id, photo_id, participant_id, content, version, created_at, updated_at)
+            SELECT :sessionId, :photoId, :participantId, :content, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             WHERE ${sharedPhotoExistsSql(":sessionId", ":photoId")}
-              AND EXISTS (SELECT 1 FROM collab_guests WHERE id = :guestId AND collab_session_id = :sessionId)
+              AND EXISTS (SELECT 1 FROM collab_participants WHERE id = :participantId AND collab_session_id = :sessionId)
             RETURNING id
             """.trimIndent(),
         )
             .param("photoId", photoId)
-            .param("guestId", guestId)
+            .param("participantId", participantId)
             .param("content", content)
             .param("sessionId", sessionId)
             .query { rs, _ -> rs.getLong("id") }
@@ -1360,23 +1366,23 @@ class AdminWorkflowRepository(
     fun addCollabLike(
         sessionId: Long,
         photoId: Long,
-        guestId: Long,
+        participantId: Long,
         expectedVersion: Long,
     ): Long {
         requireVersion("collab_sessions", sessionId, expectedVersion)
         val likeId = jdbcClient.sql(
             """
             INSERT INTO collab_photo_likes
-                (collab_session_id, photo_id, collab_guest_id, version, created_at, updated_at)
-            SELECT :sessionId, :photoId, :guestId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                (collab_session_id, photo_id, participant_id, version, created_at, updated_at)
+            SELECT :sessionId, :photoId, :participantId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             WHERE ${sharedPhotoExistsSql(":sessionId", ":photoId")}
-              AND EXISTS (SELECT 1 FROM collab_guests WHERE id = :guestId AND collab_session_id = :sessionId)
-            ON CONFLICT (collab_session_id, photo_id, collab_guest_id) WHERE deleted_at IS NULL DO NOTHING
+              AND EXISTS (SELECT 1 FROM collab_participants WHERE id = :participantId AND collab_session_id = :sessionId)
+            ON CONFLICT (collab_session_id, photo_id, participant_id) WHERE deleted_at IS NULL DO NOTHING
             RETURNING id
             """.trimIndent(),
         )
             .param("photoId", photoId)
-            .param("guestId", guestId)
+            .param("participantId", participantId)
             .param("sessionId", sessionId)
             .query { rs, _ -> rs.getLong("id") }
             .optional()
@@ -1385,21 +1391,21 @@ class AdminWorkflowRepository(
         return likeId
     }
 
-    fun findActiveCollabLikeId(sessionId: Long, photoId: Long, guestId: Long): Long =
+    fun findActiveCollabLikeId(sessionId: Long, photoId: Long, participantId: Long): Long =
         jdbcClient.sql(
             """
             SELECT l.id
             FROM collab_photo_likes l
-            JOIN collab_guests g ON g.id = l.collab_guest_id
+            JOIN collab_participants participant ON participant.id = l.participant_id
             WHERE l.photo_id = :photoId
-              AND l.collab_guest_id = :guestId
+              AND l.participant_id = :participantId
               AND l.deleted_at IS NULL
               AND l.collab_session_id = :sessionId
-              AND g.collab_session_id = :sessionId
+              AND participant.collab_session_id = :sessionId
             """.trimIndent(),
         )
             .param("photoId", photoId)
-            .param("guestId", guestId)
+            .param("participantId", participantId)
             .param("sessionId", sessionId)
             .query { rs, _ -> rs.getLong("id") }
             .optional()
@@ -1744,7 +1750,7 @@ class AdminWorkflowRepository(
         val stage: String,
     ) {
         SUBMIT("CLOSED", "IN_PROGRESS", "SELECTION_COMPLETED"),
-        COMPLETE("CLOSED", "COMPLETED", "ALBUM"),
+        COMPLETE("CLOSED", "COMPLETED", "DELIVERY"),
     }
 
     private data class GalleryInvitePolicy(

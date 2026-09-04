@@ -369,7 +369,7 @@ class PhotoServiceTest @Autowired constructor(
         @Test
         fun `마감이 지나도 부부는 목록을 볼 수 있다`() {
             // 목록은 고르는 동작이 아니라 보는 동작이다. 마감됐다고 자기 갤러리의 사진이
-            // 통째로 사라지면 안 된다 -- requirePhotographerOrCouple이었다면 여기서 막혔다.
+            // 통째로 사라지면 안 된다 -- requireManagerOrSelectionEditor이었다면 여기서 막혔다.
             // given
             photoFixture.업로드된_사진(fixture.galleryId, count = 1)
             galleryFixture.마감_지남(fixture.galleryId)

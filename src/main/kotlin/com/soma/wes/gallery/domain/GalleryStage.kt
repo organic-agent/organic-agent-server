@@ -11,6 +11,6 @@ enum class GalleryStage {
     SELECTION_IN_PROGRESS,
     SELECTION_COMPLETED,
     RETOUCH,
-    ALBUM,
+    DELIVERY,
     ARCHIVED,
 }

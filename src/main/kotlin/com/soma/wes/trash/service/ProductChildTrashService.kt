@@ -22,42 +22,48 @@ class ProductChildTrashService(
 ) {
 
     @Transactional(propagation = Propagation.MANDATORY)
-    fun deleteGuestComment(sessionId: Long, commentId: Long, guestId: Long): Boolean =
+    fun deleteParticipantComment(sessionId: Long, commentId: Long, participantId: Long): Boolean =
         deleteCollabComment(
             sessionId = sessionId,
             commentId = commentId,
-            authorGuestId = guestId,
-            actorLabel = ACTOR_GUEST,
-            reasonCode = REASON_GUEST_COMMENT_DELETE,
+            authorParticipantId = participantId,
+            actorLabel = ACTOR_PARTICIPANT,
+            reasonCode = REASON_PARTICIPANT_COMMENT_DELETE,
         )
+
+    fun deleteGuestComment(sessionId: Long, commentId: Long, participantId: Long): Boolean =
+        deleteParticipantComment(sessionId, commentId, participantId)
 
     @Transactional(propagation = Propagation.MANDATORY)
     fun deleteUserComment(sessionId: Long, commentId: Long): Boolean =
         deleteCollabComment(
             sessionId = sessionId,
             commentId = commentId,
-            authorGuestId = null,
+            authorParticipantId = null,
             actorLabel = ACTOR_USER,
             reasonCode = REASON_USER_COMMENT_DELETE,
         )
 
     @Transactional(propagation = Propagation.MANDATORY)
-    fun cancelGuestLike(sessionId: Long, photoId: Long, guestId: Long): Boolean {
+    fun cancelParticipantLike(sessionId: Long, photoId: Long, participantId: Long): Boolean {
         if (!repository.lockActiveCollaboration(sessionId)) return false
         if (!repository.lockCollabPhoto(sessionId, photoId)) return false
 
         val deletedAt = ZonedDateTime.now(clock)
-        val likeId = repository.softDeleteLike(sessionId, photoId, guestId, deletedAt) ?: return false
+        val likeId = repository.softDeleteLike(sessionId, photoId, participantId, deletedAt) ?: return false
         completeCollaborationDelete(
             sessionId = sessionId,
             resourceType = RESOURCE_LIKE,
             resourceId = likeId,
-            actorLabel = ACTOR_GUEST,
-            reasonCode = REASON_GUEST_LIKE_CANCEL,
+            actorLabel = ACTOR_PARTICIPANT,
+            reasonCode = REASON_PARTICIPANT_LIKE_CANCEL,
             deletedAt = deletedAt,
         )
         return true
     }
+
+    fun cancelGuestLike(sessionId: Long, photoId: Long, participantId: Long): Boolean =
+        cancelParticipantLike(sessionId, photoId, participantId)
 
     @Transactional(propagation = Propagation.MANDATORY)
     fun removeUserRetouchItem(roundId: Long, photoId: Long): Boolean {
@@ -84,14 +90,14 @@ class ProductChildTrashService(
     private fun deleteCollabComment(
         sessionId: Long,
         commentId: Long,
-        authorGuestId: Long?,
+        authorParticipantId: Long?,
         actorLabel: String,
         reasonCode: String,
     ): Boolean {
         if (!repository.lockActiveCollaboration(sessionId)) return false
 
         val deletedAt = ZonedDateTime.now(clock)
-        val deletedId = repository.softDeleteComment(sessionId, commentId, authorGuestId, deletedAt) ?: return false
+        val deletedId = repository.softDeleteComment(sessionId, commentId, authorParticipantId, deletedAt) ?: return false
         completeCollaborationDelete(
             sessionId = sessionId,
             resourceType = RESOURCE_COMMENT,
@@ -135,11 +141,11 @@ class ProductChildTrashService(
 
         // 제품 행위자는 admin_accounts FK 대상이 아니므로 actor_admin_id는 NULL이다.
         // 토큰·닉네임·사용자 이름·본문 대신 불변의 비식별 코드만 남긴다.
-        const val ACTOR_GUEST = "PRODUCT_GUEST"
+        const val ACTOR_PARTICIPANT = "PRODUCT_PARTICIPANT"
         const val ACTOR_USER = "PRODUCT_USER"
-        const val REASON_GUEST_COMMENT_DELETE = "PRODUCT_GUEST_SELF_DELETE"
+        const val REASON_PARTICIPANT_COMMENT_DELETE = "PRODUCT_PARTICIPANT_SELF_DELETE"
         const val REASON_USER_COMMENT_DELETE = "PRODUCT_USER_COMMENT_MODERATION"
-        const val REASON_GUEST_LIKE_CANCEL = "PRODUCT_GUEST_LIKE_CANCEL"
+        const val REASON_PARTICIPANT_LIKE_CANCEL = "PRODUCT_PARTICIPANT_LIKE_CANCEL"
         const val REASON_USER_RETOUCH_REMOVE = "PRODUCT_USER_RETOUCH_REMOVE"
     }
 }

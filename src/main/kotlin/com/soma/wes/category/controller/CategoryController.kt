@@ -54,8 +54,7 @@ class CategoryController(
         return ResponseEntity.ok(categoryService.list(galleryId, loginUser.id))
     }
 
-    /** `/folder-groups/ai`는 origin/main 클라이언트 호환 경로이며 응답은 최종 카테고리 계약이다. */
-    @PostMapping(value = ["/concept-folders/ai", "/folder-groups/ai"])
+    @PostMapping("/concept-folders/ai")
     @Operation(
         summary = "AI 분석 결과로 카테고리 생성",
         description = "클러스터 공개 API를 복원하지 않고 분석 결과를 Concept/Detail 카테고리로 materialize한다.",

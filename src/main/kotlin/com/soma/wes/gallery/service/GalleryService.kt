@@ -18,6 +18,8 @@ import com.soma.wes.studio.exception.StudioException
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
+import com.soma.wes.selection.domain.PhotoSelection
+import com.soma.wes.selection.repository.PhotoSelectionRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -31,6 +33,7 @@ class GalleryService(
     private val studioRepository: StudioRepository,
     private val workspaceMemberRepository: WorkspaceMemberRepository,
     private val galleryAccessPolicy: GalleryAccessPolicy,
+    private val photoSelectionRepository: PhotoSelectionRepository,
     private val clock: Clock,
 ) {
 
@@ -50,6 +53,7 @@ class GalleryService(
                 at = ZonedDateTime.now(clock),
             ),
         )
+        photoSelectionRepository.save(PhotoSelection(galleryId = gallery.requiredId))
         return GalleryResponse.from(gallery)
     }
 
@@ -62,14 +66,14 @@ class GalleryService(
         val asManager = if (operatingWorkspaceIds.isEmpty()) {
             emptyList()
         } else {
-            galleryRepository.findAllByStudioIdIn(operatingWorkspaceIds)
+            galleryRepository.findAllByWorkspaceIdIn(operatingWorkspaceIds)
         }
 
         val memberGalleryIds = galleryMemberRepository.findAllByUserId(userId).map { it.galleryId }
         val asCouple = galleryRepository.findAllById(memberGalleryIds)
             .filter { it.isVisibleToMember }
 
-        // 자기 갤러리 초대는 GalleryAccessPolicy.requireNotPhotographer가 막지만,
+        // 자기 갤러리 초대는 GalleryAccessPolicy.requireNotManager가 막지만,
         // 그 규칙이 생기기 전 데이터까지 같은 갤러리를 두 번 그리게 두지는 않는다.
         return (asManager + asCouple)
             .distinctBy { it.requiredId }
@@ -87,7 +91,7 @@ class GalleryService(
         userId: Long,
         request: ChangeMaxSelectablePhotoCountRequest,
     ): GalleryResponse {
-        val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        val gallery = galleryAccessPolicy.requireManager(galleryId, userId)
 
         gallery.changeMaxSelectablePhotoCount(request.maxSelectablePhotoCount)
         return GalleryResponse.from(gallery)
@@ -99,7 +103,7 @@ class GalleryService(
         userId: Long,
         request: ChangeMaxRetouchRoundCountRequest,
     ): GalleryResponse {
-        val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        val gallery = galleryAccessPolicy.requireManager(galleryId, userId)
 
         gallery.changeMaxRetouchRoundCount(request.maxRetouchRoundCount)
         return GalleryResponse.from(gallery)
@@ -108,7 +112,7 @@ class GalleryService(
     /** 촬영 종류만 바꾼다. 이미 만든 AI 폴더는 그대로다 — 새 목록은 다음 NAMING 잡부터 반영된다. */
     @Transactional
     fun changeShootType(galleryId: Long, userId: Long, request: ChangeShootTypeRequest): GalleryResponse {
-        val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        val gallery = galleryAccessPolicy.requireManager(galleryId, userId)
 
         gallery.changeShootType(request.shootType)
         return GalleryResponse.from(gallery)
@@ -116,7 +120,7 @@ class GalleryService(
 
     @Transactional
     fun rename(galleryId: Long, userId: Long, request: RenameGalleryRequest): GalleryResponse {
-        val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        val gallery = galleryAccessPolicy.requireManager(galleryId, userId)
 
         gallery.rename(request.title)
         return GalleryResponse.from(gallery)
@@ -132,7 +136,7 @@ class GalleryService(
         userId: Long,
         request: ChangeSelectionDeadlineRequest,
     ): GalleryResponse {
-        val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        val gallery = galleryAccessPolicy.requireManager(galleryId, userId)
 
         gallery.changeSelectionDeadline(request.selectionDeadline, ZonedDateTime.now(clock))
         return GalleryResponse.from(gallery)
@@ -140,7 +144,7 @@ class GalleryService(
 
     @Transactional
     fun open(galleryId: Long, userId: Long): GalleryResponse {
-        val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        val gallery = galleryAccessPolicy.requireManager(galleryId, userId)
 
         gallery.open()
         return GalleryResponse.from(gallery)
@@ -148,7 +152,7 @@ class GalleryService(
 
     @Transactional
     fun close(galleryId: Long, userId: Long): GalleryResponse {
-        val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        val gallery = galleryAccessPolicy.requireManager(galleryId, userId)
 
         gallery.close()
         return GalleryResponse.from(gallery)
@@ -167,7 +171,7 @@ class GalleryService(
 
     @Transactional
     fun reopen(galleryId: Long, userId: Long, request: ReopenGalleryRequest): GalleryResponse {
-        val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        val gallery = galleryAccessPolicy.requireManager(galleryId, userId)
 
         gallery.reopen(request.selectionDeadline, ZonedDateTime.now(clock))
         return GalleryResponse.from(gallery)
@@ -183,7 +187,7 @@ class GalleryService(
      */
     @Transactional
     fun moveToTrash(galleryId: Long, userId: Long) {
-        val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        val gallery = galleryAccessPolicy.requireManager(galleryId, userId)
 
         gallery.moveToTrash(ZonedDateTime.now(clock))
     }

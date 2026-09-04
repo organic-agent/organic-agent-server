@@ -8,8 +8,10 @@ import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.studio.dto.request.CreateStudioRequest
 import com.soma.wes.studio.dto.request.UpdateStudioRequest
+import com.soma.wes.studio.dto.request.ChangeStudioMemberRoleRequest
 import com.soma.wes.studio.dto.response.GalleryUrlAvailabilityResponse
 import com.soma.wes.studio.dto.response.StudioResponse
+import com.soma.wes.studio.dto.response.StudioMemberResponse
 import com.soma.wes.studio.exception.StudioErrorCode
 import com.soma.wes.studio.exception.StudioException
 import com.soma.wes.studio.repository.StudioRepository
@@ -133,10 +135,11 @@ class StudioService(
     fun leave(workspaceId: Long, userId: Long) {
         val studio = studioRepository.findById(workspaceId).orElse(null)
             ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
-        val membership = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
+        val members = workspaceMemberRepository.findAllWithLockByWorkspaceId(workspaceId)
+        val membership = members.find { it.userId == userId }
             ?: throw StudioException(StudioErrorCode.STUDIO_ACCESS_DENIED)
-        if (membership.role == WorkspaceRole.OWNER) {
-            throw StudioException(StudioErrorCode.STUDIO_OWNER_CANNOT_LEAVE)
+        if (membership.role == WorkspaceRole.OWNER && members.count { it.role == WorkspaceRole.OWNER } == 1) {
+            throw StudioException(StudioErrorCode.LAST_OWNER_PROTECTED)
         }
 
         workspaceMemberRepository.delete(membership)
@@ -153,13 +156,55 @@ class StudioService(
         )
     }
 
+    @Transactional(readOnly = true)
+    fun listMembers(workspaceId: Long, userId: Long): List<StudioMemberResponse> {
+        requireStudioMember(workspaceId, userId)
+        val members = workspaceMemberRepository.findAllByWorkspaceId(workspaceId)
+        val users = userRepository.findAllById(members.map { it.userId }).associateBy { it.requiredId }
+        return members.mapNotNull { member -> users[member.userId]?.let { StudioMemberResponse.from(member, it) } }
+            .sortedWith(compareBy<StudioMemberResponse> { it.role != WorkspaceRole.OWNER }.thenBy { it.memberId })
+    }
+
+    @Transactional
+    fun changeMemberRole(
+        workspaceId: Long,
+        memberId: Long,
+        userId: Long,
+        request: ChangeStudioMemberRoleRequest,
+    ): StudioMemberResponse {
+        if (!studioRepository.existsByIdAndSuspendedAtIsNull(workspaceId)) {
+            throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
+        }
+        val members = workspaceMemberRepository.findAllWithLockByWorkspaceId(workspaceId)
+        if (members.none { it.userId == userId && it.role == WorkspaceRole.OWNER }) {
+            throw StudioException(StudioErrorCode.NOT_STUDIO_OWNER)
+        }
+        val target = members.find { it.requiredId == memberId }
+            ?: throw StudioException(StudioErrorCode.STUDIO_ACCESS_DENIED)
+        if (target.role == WorkspaceRole.OWNER && request.role == WorkspaceRole.MEMBER &&
+            members.count { it.role == WorkspaceRole.OWNER } == 1
+        ) {
+            throw StudioException(StudioErrorCode.LAST_OWNER_PROTECTED)
+        }
+        target.role = request.role
+        return StudioMemberResponse.from(target, userRepository.requireById(target.userId))
+    }
+
+    private fun requireStudioMember(workspaceId: Long, userId: Long) {
+        if (!studioRepository.existsByIdAndSuspendedAtIsNull(workspaceId) ||
+            workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, userId) == null
+        ) {
+            throw StudioException(StudioErrorCode.STUDIO_ACCESS_DENIED)
+        }
+    }
+
     @Transactional
     fun deleteMyStudio(userId: Long) {
         val studios = findOwnedStudiosFor(userId)
         if (studios.isEmpty()) throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
         if (studios.size > 1) throw StudioException(StudioErrorCode.STUDIO_SELECTION_REQUIRED)
         val studio = studios.single()
-        val galleryRecipients = galleryRepository.findAllByStudioId(studio.workspaceId)
+        val galleryRecipients = galleryRepository.findAllByWorkspaceId(studio.workspaceId)
             .flatMap { gallery -> galleryMemberRepository.findAllByGalleryId(gallery.requiredId) }
             .map { it.userId }
         val recipients = (workspaceMemberRepository.findAllByWorkspaceId(studio.workspaceId)

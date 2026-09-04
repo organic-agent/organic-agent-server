@@ -38,7 +38,7 @@ class AiCompareService(
      * 제출된 앨범에도 허용한다 — 비교는 앨범을 바꾸지 않는 조회성 도움이다.
      */
     fun compare(galleryId: Long, userId: Long, request: ComparePhotosRequest): PairVerdictResponse {
-        galleryAccessPolicy.requireCouple(galleryId, userId)
+        galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
         if (request.photoA == request.photoB) {
             throw RecommendationException(RecommendationErrorCode.COMPARE_SAME_PHOTO)

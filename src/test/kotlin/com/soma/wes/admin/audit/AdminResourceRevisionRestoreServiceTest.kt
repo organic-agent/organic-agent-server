@@ -237,7 +237,7 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `전용 역전 로직이 없는 셀렉과 보정 요청 리비전은 복원 가능으로 광고하지 않는다`() {
+    fun `자동 생성 셀렉은 생성 리비전을 만들지 않고 보정 요청 리비전은 복원 가능으로 광고하지 않는다`() {
         val actor = adminAccountFixture.관리자("unsupported-revision-restore")
         val user = create(actor.requiredId, AdminResourceType.USER, mapOf(
             "provider" to "GOOGLE", "providerId" to "unsupported-restore-user", "nickname" to "사용자",
@@ -253,10 +253,8 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
             "galleryId" to gallery.id, "roundNo" to 1,
         ))
 
-        assertThat(
-            queryService.getRevisions(AdminResourceType.SELECTION.auditTargetType, selection.id.toString())
-                .single().restorable,
-        ).isFalse()
+        assertThat(queryService.getRevisions(AdminResourceType.SELECTION.auditTargetType, selection.id.toString()))
+            .isEmpty()
         assertThat(
             queryService.getRevisions(AdminResourceType.RETOUCH_REQUEST.auditTargetType, retouch.id.toString())
                 .single().restorable,
@@ -295,7 +293,17 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
     }
 
     private fun create(actorId: Long, type: AdminResourceType, fields: Map<String, Any?>) =
-        resourceService.create(actorId, type, CreateAdminResourceRequest("리비전 테스트 생성", fields), "127.0.0.1")
+        if (type == AdminResourceType.SELECTION) {
+            val galleryId = (fields.getValue("galleryId") as Number).toLong()
+            val selectionId = jdbcTemplate.queryForObject(
+                "SELECT id FROM photo_selections WHERE gallery_id = ?",
+                Long::class.java,
+                galleryId,
+            )!!
+            resourceService.get(type, selectionId)
+        } else {
+            resourceService.create(actorId, type, CreateAdminResourceRequest("리비전 테스트 생성", fields), "127.0.0.1")
+        }
 
     private fun createConceptFolder(galleryId: Long): Long = jdbcTemplate.queryForObject(
         """

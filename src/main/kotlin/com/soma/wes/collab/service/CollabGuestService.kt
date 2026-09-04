@@ -1,6 +1,6 @@
 package com.soma.wes.collab.service
 
-import com.soma.wes.collab.domain.CollabGuest
+import com.soma.wes.collab.domain.CollabParticipant
 import com.soma.wes.collab.domain.CollabPhotoComment
 import com.soma.wes.collab.domain.CollabPhotoLike
 import com.soma.wes.collab.dto.request.EnterCollabRequest
@@ -9,7 +9,7 @@ import com.soma.wes.collab.dto.response.CollabCommentResponse
 import com.soma.wes.collab.dto.response.CollabGuestResponse
 import com.soma.wes.collab.exception.CollabErrorCode
 import com.soma.wes.collab.exception.CollabException
-import com.soma.wes.collab.repository.CollabGuestRepository
+import com.soma.wes.collab.repository.CollabParticipantRepository
 import com.soma.wes.collab.repository.CollabPhotoCommentRepository
 import com.soma.wes.collab.repository.CollabPhotoLikeRepository
 import com.soma.wes.collab.support.CollabPhotoViewAssembler
@@ -22,7 +22,7 @@ import org.springframework.transaction.annotation.Transactional
 @Service
 class CollabGuestService(
     private val sessionAccess: CollabSessionAccess,
-    private val guestRepository: CollabGuestRepository,
+    private val participantRepository: CollabParticipantRepository,
     private val commentRepository: CollabPhotoCommentRepository,
     private val likeRepository: CollabPhotoLikeRepository,
     private val photoViewAssembler: CollabPhotoViewAssembler,
@@ -33,8 +33,8 @@ class CollabGuestService(
     fun enter(collabToken: String, request: EnterCollabRequest): CollabGuestResponse {
         val access = sessionAccess.requireWritable(collabToken)
         return CollabGuestResponse.from(
-            guestRepository.save(
-                CollabGuest(access.sessionId, tokenGenerator.generate(), CollabGuest.requireValidNickname(request.nickname)),
+            participantRepository.save(
+                CollabParticipant.guest(access.sessionId, tokenGenerator.generate(), request.nickname),
             ),
         )
     }
@@ -43,58 +43,75 @@ class CollabGuestService(
     fun writeComment(
         collabToken: String,
         photoId: Long,
+        userId: Long?,
         guestToken: String?,
         request: WriteCollabCommentRequest,
     ): CollabCommentResponse {
         val access = sessionAccess.requireWritable(collabToken)
-        val guest = sessionAccess.requireGuest(access, guestToken)
+        val participant = sessionAccess.requireParticipant(access, userId, guestToken)
         requireSharedPhoto(access.session.conceptFolderId, photoId)
         val comment = commentRepository.save(
             CollabPhotoComment(
                 collabSessionId = access.sessionId,
                 photoId = photoId,
-                collabGuestId = guest.requiredId,
+                participantId = participant.requiredId,
                 content = CollabPhotoComment.requireValidContent(request.content),
             ),
         )
-        return CollabCommentResponse(comment.requiredId, guest.nickname, comment.content, comment.createdAt, true)
+        return CollabCommentResponse(comment.requiredId, participant.nickname, comment.content, comment.createdAt, true)
     }
 
+    fun writeComment(
+        collabToken: String,
+        photoId: Long,
+        guestToken: String?,
+        request: WriteCollabCommentRequest,
+    ): CollabCommentResponse = writeComment(collabToken, photoId, null, guestToken, request)
+
     @Transactional
-    fun deleteComment(collabToken: String, commentId: Long, guestToken: String?) {
+    fun deleteComment(collabToken: String, commentId: Long, userId: Long?, guestToken: String?) {
         val access = sessionAccess.requireWritable(collabToken)
-        val guest = sessionAccess.requireGuest(access, guestToken)
+        val participant = sessionAccess.requireParticipant(access, userId, guestToken)
         val comment = commentRepository.findById(commentId)
             .orElseThrow { CollabException(CollabErrorCode.COMMENT_NOT_FOUND) }
-        if (comment.collabSessionId != access.sessionId || !comment.isWrittenBy(guest.requiredId)) {
+        if (comment.collabSessionId != access.sessionId || !comment.isWrittenBy(participant.requiredId)) {
             throw CollabException(CollabErrorCode.COMMENT_NOT_OWNED)
         }
-        if (!productChildTrashService.deleteGuestComment(access.sessionId, commentId, guest.requiredId)) {
+        if (!productChildTrashService.deleteParticipantComment(access.sessionId, commentId, participant.requiredId)) {
             throw CollabException(CollabErrorCode.COMMENT_NOT_FOUND)
         }
     }
 
-    @Transactional
-    fun like(collabToken: String, photoId: Long, guestToken: String?) {
-        val access = sessionAccess.requireWritable(collabToken)
-        val guest = sessionAccess.requireGuest(access, guestToken)
-        requireSharedPhoto(access.session.conceptFolderId, photoId)
-        if (likeRepository.existsByCollabSessionIdAndPhotoIdAndCollabGuestId(
-                access.sessionId,
-                photoId,
-                guest.requiredId,
-            )
-        ) return
-        likeRepository.save(CollabPhotoLike(access.sessionId, photoId, guest.requiredId))
-    }
+    fun deleteComment(collabToken: String, commentId: Long, guestToken: String?) =
+        deleteComment(collabToken, commentId, null, guestToken)
 
     @Transactional
-    fun cancelLike(collabToken: String, photoId: Long, guestToken: String?) {
+    fun like(collabToken: String, photoId: Long, userId: Long?, guestToken: String?) {
         val access = sessionAccess.requireWritable(collabToken)
-        val guest = sessionAccess.requireGuest(access, guestToken)
+        val participant = sessionAccess.requireParticipant(access, userId, guestToken)
         requireSharedPhoto(access.session.conceptFolderId, photoId)
-        productChildTrashService.cancelGuestLike(access.sessionId, photoId, guest.requiredId)
+        if (likeRepository.existsByCollabSessionIdAndPhotoIdAndParticipantId(
+                access.sessionId,
+                photoId,
+                participant.requiredId,
+            )
+        ) return
+        likeRepository.save(CollabPhotoLike(access.sessionId, photoId, participant.requiredId))
     }
+
+    fun like(collabToken: String, photoId: Long, guestToken: String?) =
+        like(collabToken, photoId, null, guestToken)
+
+    @Transactional
+    fun cancelLike(collabToken: String, photoId: Long, userId: Long?, guestToken: String?) {
+        val access = sessionAccess.requireWritable(collabToken)
+        val participant = sessionAccess.requireParticipant(access, userId, guestToken)
+        requireSharedPhoto(access.session.conceptFolderId, photoId)
+        productChildTrashService.cancelParticipantLike(access.sessionId, photoId, participant.requiredId)
+    }
+
+    fun cancelLike(collabToken: String, photoId: Long, guestToken: String?) =
+        cancelLike(collabToken, photoId, null, guestToken)
 
     private fun requireSharedPhoto(conceptFolderId: Long, photoId: Long) {
         if (!photoViewAssembler.contains(conceptFolderId, photoId)) {

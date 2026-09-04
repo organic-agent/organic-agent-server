@@ -493,7 +493,7 @@ class AdminWorkflowService(
                 "commentId" to workflowRepository.createCollabComment(
                     id,
                     request.long("photoId"),
-                    request.long("guestId"),
+                    request.long("participantId"),
                     request.text("content", 500),
                     request.expectedVersion,
                 ),
@@ -543,7 +543,7 @@ class AdminWorkflowService(
             val likeId = workflowRepository.addCollabLike(
                 id,
                 request.long("photoId"),
-                request.long("guestId"),
+                request.long("participantId"),
                 request.expectedVersion,
             )
             WorkflowExecution(details = mapOf("likeId" to likeId))
@@ -553,7 +553,7 @@ class AdminWorkflowService(
             val likeId = workflowRepository.findActiveCollabLikeId(
                 id,
                 request.long("photoId"),
-                request.long("guestId"),
+                request.long("participantId"),
             )
             val result = childTrashService.delete(
                 actorAdminId = actorAdminId,

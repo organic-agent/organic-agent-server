@@ -35,7 +35,7 @@ class SwaggerDocsTest @Autowired constructor(
                 jsonPath("$.paths['/api/v1/users/me'].delete") { exists() }
                 jsonPath("$.paths['/api/v1/users/me/workspaces'].get") { exists() }
                 jsonPath("$.paths['/api/v1/studios/me'].delete") { exists() }
-                jsonPath("$.paths['/api/v1/studios/{studioId}/members/me'].delete") { exists() }
+                jsonPath("$.paths['/api/v1/studios/{workspaceId}/members/me'].delete") { exists() }
                 jsonPath("$.paths['/api/v1/invites/{token}'].get") { exists() }
                 jsonPath("$.paths['/api/v1/invites/{token}/accept'].post") { exists() }
                 jsonPath("$.paths['/api/v1/notifications'].get") { exists() }

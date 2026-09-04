@@ -39,7 +39,7 @@ class AnalysisService(
      */
     @Transactional
     fun request(galleryId: Long, userId: Long, mode: AnalysisMode, force: Boolean = false): AnalysisJobResponse {
-        galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
 
         val job = createJob(galleryId, mode, force)
 
@@ -102,7 +102,7 @@ class AnalysisService(
     /** 가장 최근 잡. 프론트가 "AI 분석" 버튼 옆에 상태를 보여 주는 데 쓴다. */
     @Transactional(readOnly = true)
     fun latest(galleryId: Long, userId: Long): AnalysisJobResponse {
-        galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
 
         val job = analysisJobRepository.findFirstByGalleryIdOrderByIdDesc(galleryId)
             ?: throw AnalysisException(AnalysisErrorCode.ANALYSIS_JOB_NOT_FOUND)

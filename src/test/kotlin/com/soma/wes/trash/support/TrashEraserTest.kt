@@ -453,7 +453,7 @@ class TrashEraserTest @Autowired constructor(
                 galleryUrl = "eraser-${sequence.incrementAndGet()}",
             ),
         )
-        return checkNotNull(galleryRepository.save(Gallery(studioId = studio.id, title = "본식")).id)
+        return checkNotNull(galleryRepository.save(Gallery(workspaceId = studio.id, title = "본식")).id)
     }
 
     private fun savePhoto(galleryId: Long): Photo =

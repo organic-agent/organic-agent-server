@@ -259,13 +259,13 @@ class AdminResourceContextRepository(
         AdminResourceType.COLLABORATION -> singleFacts(
             """
                 SELECT
-                    (SELECT COUNT(*) FROM collab_guests WHERE collab_session_id = :id) AS guests,
+                    (SELECT COUNT(*) FROM collab_participants WHERE collab_session_id = :id AND deleted_at IS NULL) AS participants,
                     (SELECT COUNT(*) FROM collab_sessions s JOIN detail_folders d ON d.concept_folder_id = s.concept_folder_id AND d.deleted_at IS NULL JOIN photo_category_assignments a ON a.detail_folder_id = d.id WHERE s.id = :id) AS photos,
                     (SELECT COUNT(*) FROM collab_photo_comments c WHERE c.collab_session_id = :id) AS comments,
                     (SELECT COUNT(*) FROM collab_photo_likes l WHERE l.collab_session_id = :id AND l.deleted_at IS NULL) AS likes
             """.trimIndent(), id,
         ) { rs -> linkedMapOf(
-            "guests" to rs.getLong("guests"),
+            "participants" to rs.getLong("participants"),
             "photos" to rs.getLong("photos"),
             "comments" to rs.getLong("comments"),
             "likes" to rs.getLong("likes"),
@@ -967,7 +967,9 @@ class AdminResourceContextRepository(
         AdminResourceType.CATEGORIZATION_JOB -> linkedMapOf(
             "photos" to rows(
                 """
-                    SELECT p.photo_id, photo.gallery_id, photo.original_file_name, photo.status,
+                    SELECT p.photo_id, p.gallery_id, photo.original_file_name,
+                           photo.status AS upload_status, p.status AS categorization_status,
+                           p.failure_code, p.processed_at,
                            a.detail_folder_id, a.assigned_source
                     FROM categorization_job_photos p
                     JOIN photos photo ON photo.id = p.photo_id
@@ -979,7 +981,10 @@ class AdminResourceContextRepository(
                 "photoId" to rs.getLong("photo_id"),
                 "galleryId" to rs.getLong("gallery_id"),
                 "fileName" to rs.getString("original_file_name"),
-                "photoStatus" to rs.getString("status"),
+                "photoStatus" to rs.getString("upload_status"),
+                "categorizationStatus" to rs.getString("categorization_status"),
+                "failureCode" to rs.getString("failure_code"),
+                "processedAt" to rs.getObject("processed_at"),
                 "detailFolderId" to rs.getObject("detail_folder_id"),
                 "assignedSource" to rs.getString("assigned_source"),
             ) },
@@ -1022,16 +1027,20 @@ class AdminResourceContextRepository(
             ) },
             "items" to rows(
                 """
-                    SELECT i.id, i.photo_id, p.original_file_name, i.retouch_photo_id, i.created_at
+                    SELECT i.id, i.gallery_id, i.photo_id, p.original_file_name,
+                           i.retouch_photo_id, i.added_by_user_id, i.sort_order, i.created_at
                     FROM photo_selection_items i JOIN photos p ON p.id = i.photo_id
                     WHERE i.selection_id = :id ORDER BY i.id LIMIT 100
                 """.trimIndent(),
                 id,
             ) { rs -> linkedMapOf(
                 "id" to rs.getLong("id"),
+                "galleryId" to rs.getLong("gallery_id"),
                 "photoId" to rs.getLong("photo_id"),
                 "fileName" to rs.getString("original_file_name"),
                 "retouchPhotoId" to rs.getObject("retouch_photo_id"),
+                "addedByUserId" to rs.getObject("added_by_user_id"),
+                "sortOrder" to rs.getInt("sort_order"),
                 "selectedAt" to rs.getObject("created_at"),
             ) },
         )
@@ -1054,23 +1063,32 @@ class AdminResourceContextRepository(
                 "status" to rs.getString("status"),
                 "createdAt" to rs.getObject("created_at"),
             ) },
-            "guests" to rows(
-                "SELECT id, nickname, created_at FROM collab_guests WHERE collab_session_id = :id ORDER BY id LIMIT 100",
+            "participants" to rows(
+                "SELECT id, participant_type, user_id, nickname, created_at FROM collab_participants WHERE collab_session_id = :id ORDER BY id LIMIT 100",
                 id,
-            ) { rs -> linkedMapOf("id" to rs.getLong("id"), "nickname" to rs.getString("nickname"), "createdAt" to rs.getObject("created_at")) },
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("id"),
+                "participantType" to rs.getString("participant_type"),
+                "userId" to rs.getLong("user_id").takeUnless { rs.wasNull() },
+                "nickname" to rs.getString("nickname"),
+                "createdAt" to rs.getObject("created_at"),
+            ) },
             "comments" to rows(
                 """
-                    SELECT c.id, c.photo_id, g.id AS guest_id, g.nickname,
+                    SELECT c.id, c.photo_id, participant.id AS participant_id,
+                           participant.participant_type, participant.user_id, participant.nickname,
                            c.content, c.version, c.deleted_at, c.created_at
                     FROM collab_photo_comments c
-                    JOIN collab_guests g ON g.id = c.collab_guest_id
+                    JOIN collab_participants participant ON participant.id = c.participant_id
                     WHERE c.collab_session_id = :id ORDER BY c.id DESC LIMIT 100
                 """.trimIndent(),
                 id,
             ) { rs -> linkedMapOf(
                 "id" to rs.getLong("id"),
                 "photoId" to rs.getLong("photo_id"),
-                "guestId" to rs.getLong("guest_id"),
+                "participantId" to rs.getLong("participant_id"),
+                "participantType" to rs.getString("participant_type"),
+                "userId" to rs.getLong("user_id").takeUnless { rs.wasNull() },
                 "nickname" to rs.getString("nickname"),
                 "content" to rs.getString("content"),
                 "version" to rs.getLong("version"),
@@ -1079,17 +1097,20 @@ class AdminResourceContextRepository(
             ) },
             "likes" to rows(
                 """
-                    SELECT l.id, l.photo_id, g.id AS guest_id,
-                           g.nickname, l.version, l.deleted_at, l.created_at
+                    SELECT l.id, l.photo_id, participant.id AS participant_id,
+                           participant.participant_type, participant.user_id,
+                           participant.nickname, l.version, l.deleted_at, l.created_at
                     FROM collab_photo_likes l
-                    JOIN collab_guests g ON g.id = l.collab_guest_id
+                    JOIN collab_participants participant ON participant.id = l.participant_id
                     WHERE l.collab_session_id = :id ORDER BY l.id DESC LIMIT 100
                 """.trimIndent(),
                 id,
             ) { rs -> linkedMapOf(
                 "id" to rs.getLong("id"),
                 "photoId" to rs.getLong("photo_id"),
-                "guestId" to rs.getLong("guest_id"),
+                "participantId" to rs.getLong("participant_id"),
+                "participantType" to rs.getString("participant_type"),
+                "userId" to rs.getLong("user_id").takeUnless { rs.wasNull() },
                 "nickname" to rs.getString("nickname"),
                 "version" to rs.getLong("version"),
                 "deleted" to (rs.getObject("deleted_at") != null),

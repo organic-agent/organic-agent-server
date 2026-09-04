@@ -12,6 +12,9 @@ import java.time.ZonedDateTime
 @Entity
 @Table(name = "photo_category_assignments")
 class PhotoCategoryAssignment(
+    @Column(name = "gallery_id", nullable = false, updatable = false)
+    val galleryId: Long,
+
     @Id
     @Column(name = "photo_id", updatable = false)
     val photoId: Long,

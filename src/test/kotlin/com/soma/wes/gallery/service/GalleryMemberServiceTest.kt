@@ -82,7 +82,7 @@ class GalleryMemberServiceTest @Autowired constructor(
         )
         return galleryRepository.save(
             Gallery(
-                studioId = studio.requiredId,
+                workspaceId = studio.requiredId,
                 createdByUserId = ownerUserId,
                 title = "본식",
                 status = GalleryStatus.OPEN,

@@ -49,7 +49,7 @@ class AiCategoryFolderService(
 
     @Transactional
     fun createFromAnalysis(galleryId: Long, userId: Long): List<ConceptFolderResponse> {
-        galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
         return createFromAnalysisLocked(galleryId)
     }
 
@@ -100,6 +100,7 @@ class AiCategoryFolderService(
             plan.details.forEachIndexed { detailIndex, detailPlan ->
                 val detail = detailRepository.save(
                     DetailFolder(
+                        galleryId = galleryId,
                         conceptFolderId = concept.requiredId,
                         name = detailPlan.name,
                         sortOrder = detailIndex,
@@ -111,6 +112,7 @@ class AiCategoryFolderService(
                 assignmentRepository.saveAll(
                     detailPlan.photoIds.map { photoId ->
                         PhotoCategoryAssignment(
+                            galleryId = galleryId,
                             photoId = photoId,
                             detailFolderId = detail.requiredId,
                             assignedByUserId = null,
@@ -124,7 +126,11 @@ class AiCategoryFolderService(
             concept
         }
 
-        recordCategorization(galleryId, members.map { it.photoId })
+        val processedPhotoIds = members.map { it.photoId }
+        val assignedPhotoIds = assignmentRepository.findAllByGalleryIdAndPhotoIdIn(galleryId, processedPhotoIds)
+            .map { it.photoId }
+            .toSet()
+        recordCategorization(galleryId, processedPhotoIds, assignedPhotoIds)
         return responsesOf(concepts)
     }
 
@@ -144,7 +150,7 @@ class AiCategoryFolderService(
             }
     }
 
-    private fun recordCategorization(galleryId: Long, photoIds: List<Long>) {
+    private fun recordCategorization(galleryId: Long, photoIds: List<Long>, assignedPhotoIds: Set<Long>) {
         val initialCompleted = categorizationJobRepository.existsByGalleryIdAndModeAndStatus(
             galleryId,
             CategorizationMode.INITIAL,
@@ -153,8 +159,13 @@ class AiCategoryFolderService(
         val mode = if (initialCompleted) CategorizationMode.INCREMENTAL else CategorizationMode.INITIAL
         val now = ZonedDateTime.now(clock)
         val job = categorizationJobRepository.save(CategorizationJob(galleryId, mode).also { it.startedAt = now })
-        categorizationJobPhotoRepository.saveAll(photoIds.map { CategorizationJobPhoto(job.requiredId, it) })
-        job.complete(ZonedDateTime.now(clock))
+        val completedAt = ZonedDateTime.now(clock)
+        categorizationJobPhotoRepository.saveAll(photoIds.map { photoId ->
+            CategorizationJobPhoto(galleryId, job.requiredId, photoId).also { row ->
+                if (photoId in assignedPhotoIds) row.assigned(completedAt) else row.unclassified(completedAt)
+            }
+        })
+        job.complete(completedAt)
     }
 
     private fun responsesOf(concepts: List<ConceptFolder>): List<ConceptFolderResponse> {
@@ -171,6 +182,7 @@ class AiCategoryFolderService(
                     .map { detail ->
                         DetailFolderResponse(
                             id = detail.requiredId,
+                            galleryId = detail.galleryId,
                             conceptFolderId = detail.conceptFolderId,
                             name = detail.name,
                             sortOrder = detail.sortOrder,

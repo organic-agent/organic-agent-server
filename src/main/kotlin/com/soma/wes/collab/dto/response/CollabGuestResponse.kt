@@ -1,6 +1,7 @@
 package com.soma.wes.collab.dto.response
 
-import com.soma.wes.collab.domain.CollabGuest
+import com.soma.wes.collab.domain.CollabParticipant
+import com.soma.wes.collab.domain.CollabParticipantType
 import io.swagger.v3.oas.annotations.media.Schema
 
 @Schema(description = "입장한 하객")
@@ -14,12 +15,18 @@ data class CollabGuestResponse(
     val guestToken: String,
 
     val nickname: String,
+    val participantId: Long,
+    val participantType: CollabParticipantType,
+    val userId: Long?,
 ) {
 
     companion object {
-        fun from(guest: CollabGuest) = CollabGuestResponse(
-            guestToken = guest.guestToken,
-            nickname = guest.nickname,
+        fun from(participant: CollabParticipant) = CollabGuestResponse(
+            guestToken = checkNotNull(participant.guestToken),
+            nickname = participant.nickname,
+            participantId = participant.requiredId,
+            participantType = participant.participantType,
+            userId = participant.userId,
         )
     }
 }

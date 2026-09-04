@@ -33,9 +33,8 @@ import java.time.ZonedDateTime
 )
 class Gallery(
 
-    /** 기존 호출부의 이름만 studioId이며 실제 저장 의미는 PERSONAL/STUDIO 공통 workspace id다. */
     @Column(name = "workspace_id", nullable = false, updatable = false)
-    val studioId: Long,
+    val workspaceId: Long,
 
     @Column(name = "created_by_user_id", updatable = false)
     val createdByUserId: Long? = null,
@@ -78,9 +77,6 @@ class Gallery(
 
     val requiredId: Long
         get() = checkNotNull(id) { "저장되지 않은 갤러리입니다." }
-
-    val workspaceId: Long
-        get() = studioId
 
     /** 휴지통에 들어간 시각. null이면 살아 있는 갤러리다. 자세한 규칙은 클래스 KDoc에. */
     @Column(name = "deleted_at")
@@ -173,8 +169,8 @@ class Gallery(
         stage = GalleryStage.RETOUCH
     }
 
-    fun markAlbumReady() {
-        stage = GalleryStage.ALBUM
+    fun markDeliveryReady() {
+        stage = GalleryStage.DELIVERY
     }
 
     companion object {
@@ -201,7 +197,7 @@ class Gallery(
             validateMaxSelectablePhotoCount(maxSelectablePhotoCount)
             validateMaxRetouchRoundCount(maxRetouchRoundCount)
             return Gallery(
-                studioId = workspaceId,
+                workspaceId = workspaceId,
                 createdByUserId = createdByUserId,
                 title = title,
                 selectionDeadline = selectionDeadline,

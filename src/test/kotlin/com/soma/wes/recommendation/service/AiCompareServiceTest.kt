@@ -148,7 +148,7 @@ class AiCompareServiceTest {
     }
 
     private fun stubAccess() {
-        whenever(galleryAccessPolicy.requireCouple(GALLERY_ID, USER_ID)).thenReturn(mock<Gallery>())
+        whenever(galleryAccessPolicy.requireSelectionEditor(GALLERY_ID, USER_ID)).thenReturn(mock<Gallery>())
     }
 
     private fun stubComparablePhotos() {

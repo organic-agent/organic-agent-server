@@ -5,7 +5,7 @@ import com.soma.wes.collab.dto.response.CollabLandingResponse
 import com.soma.wes.collab.dto.response.CollabPhotoPageResponse
 import com.soma.wes.collab.exception.CollabErrorCode
 import com.soma.wes.collab.exception.CollabException
-import com.soma.wes.collab.repository.CollabGuestRepository
+import com.soma.wes.collab.repository.CollabParticipantRepository
 import com.soma.wes.collab.repository.CollabPhotoCommentRepository
 import com.soma.wes.collab.support.CollabPhotoViewAssembler
 import com.soma.wes.collab.support.CollabSessionAccess
@@ -17,7 +17,7 @@ import org.springframework.transaction.annotation.Transactional
 @Service
 class CollabGuestQueryService(
     private val sessionAccess: CollabSessionAccess,
-    private val guestRepository: CollabGuestRepository,
+    private val participantRepository: CollabParticipantRepository,
     private val commentRepository: CollabPhotoCommentRepository,
     private val photoViewAssembler: CollabPhotoViewAssembler,
 ) {
@@ -32,21 +32,25 @@ class CollabGuestQueryService(
     }
 
     @Transactional(readOnly = true)
-    fun listPhotos(collabToken: String, guestToken: String?, page: Int, size: Int): CollabPhotoPageResponse {
+    fun listPhotos(collabToken: String, userId: Long?, guestToken: String?, page: Int, size: Int): CollabPhotoPageResponse {
         val access = sessionAccess.requireReadable(collabToken)
         return photoViewAssembler.toPage(
             access.sessionId,
             access.session.conceptFolderId,
             page,
             size,
-            sessionAccess.findGuest(access, guestToken)?.requiredId,
+            sessionAccess.findParticipant(access, userId, guestToken)?.requiredId,
         )
     }
+
+    fun listPhotos(collabToken: String, guestToken: String?, page: Int, size: Int): CollabPhotoPageResponse =
+        listPhotos(collabToken, null, guestToken, page, size)
 
     @Transactional(readOnly = true)
     fun listComments(
         collabToken: String,
         photoId: Long,
+        userId: Long?,
         guestToken: String?,
         page: Int,
         size: Int,
@@ -60,17 +64,25 @@ class CollabGuestQueryService(
             photoId,
             PageRequests.of(page, size),
         )
-        val nicknames = guestRepository.findAllByIdIn(found.content.map { it.collabGuestId })
+        val nicknames = participantRepository.findAllByIdIn(found.content.map { it.participantId })
             .associate { it.requiredId to it.nickname }
-        val mine = sessionAccess.findGuest(access, guestToken)?.requiredId
+        val mine = sessionAccess.findParticipant(access, userId, guestToken)?.requiredId
         return PageResponse.of(found, found.content.map { comment ->
             CollabCommentResponse(
                 comment.requiredId,
-                nicknames[comment.collabGuestId] ?: "알 수 없음",
+                nicknames[comment.participantId] ?: "알 수 없음",
                 comment.content,
                 comment.createdAt,
-                mine == comment.collabGuestId,
+                mine == comment.participantId,
             )
         })
     }
+
+    fun listComments(
+        collabToken: String,
+        photoId: Long,
+        guestToken: String?,
+        page: Int,
+        size: Int,
+    ): PageResponse<CollabCommentResponse> = listComments(collabToken, photoId, null, guestToken, page, size)
 }

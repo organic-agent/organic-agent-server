@@ -19,8 +19,17 @@ class SelectionFixture(
 
     /** 원본으로 담은 항목. 정원·중복 검사를 지나지 않으므로 배경으로만 쓴다. */
     fun 담긴_사진(selectionId: Long, photoIds: Collection<Long>) {
+        val selection = photoSelectionRepository.findById(selectionId).orElseThrow()
         photoSelectionItemRepository.saveAll(
-            photoIds.map { PhotoSelectionItem(selectionId = selectionId, photoId = it) },
+            photoIds.mapIndexed { index, photoId ->
+                PhotoSelectionItem(
+                    galleryId = selection.galleryId,
+                    selectionId = selectionId,
+                    photoId = photoId,
+                    addedByUserId = null,
+                    sortOrder = index,
+                )
+            },
         )
     }
 }

@@ -100,7 +100,7 @@ class TrashService(
 
     @Transactional(readOnly = true)
     fun listPhotos(galleryId: Long, userId: Long): TrashedPhotoListResponse {
-        galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
 
         val photos = trashRepository.findTrashedPhotos(galleryId).map { row ->
             TrashedPhotoResponse.of(
@@ -126,7 +126,7 @@ class TrashService(
      */
     @Transactional
     fun restorePhotos(galleryId: Long, userId: Long, request: RestorePhotosRequest) {
-        galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
 
         val photoIds = requireBatchSize(request.photoIds)
         if (trashRepository.restorePhotos(galleryId, photoIds) != photoIds.size) {
@@ -136,7 +136,7 @@ class TrashService(
 
     /** 사진들을 원본·미리보기와 함께 즉시 물리 삭제한다. 거절 규칙은 [eraseGallery]와 같다. */
     fun erasePhotos(galleryId: Long, userId: Long, request: EraseTrashedPhotosRequest) {
-        galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
 
         val photoIds = requireBatchSize(request.photoIds)
         val targets = trashRepository.findTrashedPhotoTargets(galleryId, photoIds)

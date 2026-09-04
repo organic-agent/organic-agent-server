@@ -4,8 +4,10 @@ import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.studio.controller.docs.StudioControllerDocs
 import com.soma.wes.studio.dto.request.CreateStudioRequest
 import com.soma.wes.studio.dto.request.UpdateStudioRequest
+import com.soma.wes.studio.dto.request.ChangeStudioMemberRoleRequest
 import com.soma.wes.studio.dto.response.GalleryUrlAvailabilityResponse
 import com.soma.wes.studio.dto.response.StudioResponse
+import com.soma.wes.studio.dto.response.StudioMemberResponse
 import com.soma.wes.studio.service.StudioService
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
@@ -65,6 +67,22 @@ class StudioController(
         return ResponseEntity.ok(studioService.update(workspaceId, loginUser.id, request))
     }
 
+    @GetMapping("/{workspaceId}/members")
+    fun listMembers(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable workspaceId: Long,
+    ): ResponseEntity<List<StudioMemberResponse>> =
+        ResponseEntity.ok(studioService.listMembers(workspaceId, loginUser.id))
+
+    @PatchMapping("/{workspaceId}/members/{memberId}/role")
+    fun changeMemberRole(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable workspaceId: Long,
+        @PathVariable memberId: Long,
+        @Valid @RequestBody request: ChangeStudioMemberRoleRequest,
+    ): ResponseEntity<StudioMemberResponse> =
+        ResponseEntity.ok(studioService.changeMemberRole(workspaceId, memberId, loginUser.id, request))
+
     @GetMapping("/me")
     override fun getMyStudio(
         @AuthenticationPrincipal loginUser: LoginUser,
@@ -84,12 +102,12 @@ class StudioController(
         return ResponseEntity.ok(result)
     }
 
-    @DeleteMapping("/{studioId}/members/me")
+    @DeleteMapping("/{workspaceId}/members/me")
     override fun leave(
         @AuthenticationPrincipal loginUser: LoginUser,
-        @PathVariable studioId: Long,
+        @PathVariable workspaceId: Long,
     ): ResponseEntity<Unit> {
-        studioService.leave(studioId, loginUser.id)
+        studioService.leave(workspaceId, loginUser.id)
         return ResponseEntity.noContent().build()
     }
 

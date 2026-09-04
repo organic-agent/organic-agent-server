@@ -34,7 +34,7 @@ data class AdminResourceResponse(
     val label: String,
     val deleted: Boolean,
     @field:Schema(
-        description = "리소스별 필드. STUDIO는 contact/description과 읽기 전용 inflowChannel, GALLERY는 status/workflowStatus와 분리된 읽기 전용 stage(UPLOAD/SELECTION_IN_PROGRESS/SELECTION_COMPLETED/RETOUCH/ALBUM/ARCHIVED)를 포함한다.",
+        description = "리소스별 필드. STUDIO는 contact/description과 읽기 전용 inflowChannel, GALLERY는 status/workflowStatus와 분리된 읽기 전용 stage(UPLOAD/SELECTION_IN_PROGRESS/SELECTION_COMPLETED/RETOUCH/DELIVERY/ARCHIVED)를 포함한다.",
     )
     val fields: Map<String, Any?>,
     val createdAt: ZonedDateTime?,

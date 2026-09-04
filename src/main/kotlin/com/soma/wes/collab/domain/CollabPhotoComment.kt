@@ -30,8 +30,8 @@ class CollabPhotoComment(
     @Column(name = "photo_id", nullable = false, updatable = false)
     val photoId: Long,
 
-    @Column(name = "collab_guest_id", nullable = false, updatable = false)
-    val collabGuestId: Long,
+    @Column(name = "participant_id", nullable = false, updatable = false)
+    val participantId: Long,
 
     @Column(nullable = false, length = MAX_CONTENT_LENGTH)
     val content: String,
@@ -61,5 +61,5 @@ class CollabPhotoComment(
     val requiredId: Long
         get() = checkNotNull(id) { "저장되지 않은 댓글입니다." }
 
-    fun isWrittenBy(collabGuestId: Long): Boolean = this.collabGuestId == collabGuestId
+    fun isWrittenBy(participantId: Long): Boolean = this.participantId == participantId
 }

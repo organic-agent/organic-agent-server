@@ -56,7 +56,7 @@ enum class AdminWorkflowAction(
     WITHDRAW_SELECTION(setOf(AdminResourceType.SELECTION)),
     CREATE_COLLAB_COMMENT(
         setOf(AdminResourceType.COLLABORATION),
-        setOf("photoId", "guestId", "content"),
+        setOf("photoId", "participantId", "content"),
     ),
     UPDATE_COLLAB_COMMENT(
         setOf(AdminResourceType.COLLABORATION),
@@ -70,10 +70,10 @@ enum class AdminWorkflowAction(
         setOf(AdminResourceType.COLLABORATION),
         setOf("commentId", "commentExpectedVersion"),
     ),
-    ADD_COLLAB_LIKE(setOf(AdminResourceType.COLLABORATION), setOf("photoId", "guestId")),
+    ADD_COLLAB_LIKE(setOf(AdminResourceType.COLLABORATION), setOf("photoId", "participantId")),
     REMOVE_COLLAB_LIKE(
         setOf(AdminResourceType.COLLABORATION),
-        setOf("photoId", "guestId", "likeExpectedVersion"),
+        setOf("photoId", "participantId", "likeExpectedVersion"),
     ),
     RESTORE_COLLAB_LIKE(
         setOf(AdminResourceType.COLLABORATION),

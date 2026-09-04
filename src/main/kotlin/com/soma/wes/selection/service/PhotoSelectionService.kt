@@ -76,20 +76,24 @@ class PhotoSelectionService(
         val photos = loadSelectablePhotos(galleryId, request.photoIds + retouchPhotoIdByPhotoId.keys)
         retouchResultLoader.validateSelectable(galleryId, retouchPhotoIdByPhotoId)
         val alreadySelected = photoSelectionItemRepository.findAllBySelectionId(selection.requiredId)
-            .map { it.photoId }
-            .toSet()
+        val alreadySelectedPhotoIds = alreadySelected.map { it.photoId }.toSet()
 
         // 중복이 먼저다. 겹친 채로 장수를 세면 "몇 장이 넘쳤다"가 실제와 다르고, 사용자는
         // 담기지도 않은 사진 때문에 계약 장수를 넘겼다는 말을 듣는다.
-        selection.requireNotSelected(alreadySelected, photos.map { it.requiredId })
-        selection.requireWithinMax(gallery.maxSelectablePhotoCount, alreadySelected.size + photos.size)
+        selection.requireNotSelected(alreadySelectedPhotoIds, photos.map { it.requiredId })
+        selection.requireWithinMax(gallery.maxSelectablePhotoCount, alreadySelectedPhotoIds.size + photos.size)
+
+        val firstSortOrder = (alreadySelected.maxOfOrNull { it.sortOrder } ?: -1) + 1
 
         photoSelectionItemRepository.saveAll(
-            photos.map {
+            photos.mapIndexed { index, photo ->
                 PhotoSelectionItem(
+                    galleryId = galleryId,
                     selectionId = selection.requiredId,
-                    photoId = it.requiredId,
-                    retouchPhotoId = retouchPhotoIdByPhotoId[it.requiredId],
+                    photoId = photo.requiredId,
+                    addedByUserId = userId,
+                    sortOrder = firstSortOrder + index,
+                    retouchPhotoId = retouchPhotoIdByPhotoId[photo.requiredId],
                 )
             },
         )
@@ -187,7 +191,7 @@ class PhotoSelectionService(
      */
     @Transactional
     fun withdraw(galleryId: Long, userId: Long): PhotoSelectionResponse {
-        galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
 
         val gallery = galleryRepository.requireWithLockById(galleryId)
         val selection = photoSelectionRepository.findByGalleryId(galleryId)
@@ -198,7 +202,7 @@ class PhotoSelectionService(
         return responseOf(gallery, selection)
     }
 
-    /** 첫 한 장을 담을 때 앨범이 만들어진다. 갤러리 행이 잠겨 있어 두 요청이 겹치지 않는다. */
+    /** V5 이전 갤러리까지 안전하게 읽기 위한 호환 경로다. 신규 갤러리는 생성 트랜잭션에서 함께 만든다. */
     private fun loadOrCreate(galleryId: Long): PhotoSelection =
         photoSelectionRepository.findByGalleryId(galleryId)
             ?: photoSelectionRepository.save(PhotoSelection(galleryId = galleryId))
@@ -254,17 +258,18 @@ class PhotoSelectionService(
         }
 
         val photos = photoRepository.findAllByGalleryIdAndIdIn(galleryId, items.map { it.photoId })
-            .sortedWith(Photo.DISPLAY_ORDER)
-        val photoResponses = photoViewAssembler.toResponses(photos)
+        val photoResponsesById = photoViewAssembler.toResponses(photos).associateBy { it.photoId }
         val resultKeyByRetouchPhotoId = retouchResultLoader
             .findResults(galleryId, items.mapNotNull { it.retouchPhotoId })
             .associate { it.requiredId to it.resultKey }
-        val itemsByPhotoId = items.associateBy { it.photoId }
-
-        return photoResponses.mapNotNull { photoResponse ->
-            itemsByPhotoId[photoResponse.photoId]?.let { item ->
+        return items.sortedWith(compareBy({ it.sortOrder }, { it.requiredId })).mapNotNull { item ->
+            photoResponsesById[item.photoId]?.let { photoResponse ->
                 val resultKey = item.retouchPhotoId?.let { resultKeyByRetouchPhotoId[it] }
                 SelectedPhotoResponse(
+                    itemId = item.requiredId,
+                    galleryId = item.galleryId,
+                    addedByUserId = item.addedByUserId,
+                    sortOrder = item.sortOrder,
                     photo = photoResponse,
                     retouchPhotoId = item.retouchPhotoId,
                     resultUrl = resultKey?.let { photoStorage.presignView(it) },

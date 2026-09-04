@@ -6,6 +6,14 @@ import io.swagger.v3.oas.annotations.media.Schema
 @Schema(description = "선택 앨범의 항목 하나. 원본으로 담았는지 보정본으로 담았는지를 함께 든다")
 data class SelectedPhotoResponse(
 
+    val itemId: Long,
+
+    val galleryId: Long,
+
+    val addedByUserId: Long?,
+
+    val sortOrder: Int,
+
     @field:Schema(description = "담은 컷의 원본 사진. 보정본으로 담았어도 원본 정보가 실린다")
     val photo: PhotoResponse,
 

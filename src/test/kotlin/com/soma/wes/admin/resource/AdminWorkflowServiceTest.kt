@@ -496,8 +496,9 @@ class AdminWorkflowServiceTest @Autowired constructor(
         assignPhotoToSession(collaboration.id, photoId)
         val guestId = jdbcClient.sql(
             """
-            INSERT INTO collab_guests (collab_session_id, guest_token, nickname, version, created_at, updated_at)
-            VALUES (:sessionId, 'guest-token', '하객', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            INSERT INTO collab_participants
+                (collab_session_id, participant_type, guest_token, nickname, version, created_at, updated_at)
+            VALUES (:sessionId, 'GUEST', 'guest-token', '하객', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
             """.trimIndent(),
         ).param("sessionId", collaboration.id).query { rs, _ -> rs.getLong(1) }.single()
@@ -508,7 +509,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             AdminWorkflowAction.CREATE_COLLAB_COMMENT,
             1,
             "collab-comment-create-001",
-            mapOf("photoId" to photoId, "guestId" to guestId, "content" to "첫 의견"),
+            mapOf("photoId" to photoId, "participantId" to guestId, "content" to "첫 의견"),
         )
         val commentId = (comment.details.getValue("commentId") as Number).toLong()
         execute(
@@ -547,7 +548,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             AdminWorkflowAction.ADD_COLLAB_LIKE,
             5,
             "collab-like-add-001",
-            mapOf("photoId" to photoId, "guestId" to guestId),
+            mapOf("photoId" to photoId, "participantId" to guestId),
         )
         val likeId = (addedLike.details.getValue("likeId") as Number).toLong()
         val removedLike = execute(
@@ -557,7 +558,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             AdminWorkflowAction.REMOVE_COLLAB_LIKE,
             6,
             "collab-like-remove-001",
-            mapOf("photoId" to photoId, "guestId" to guestId, "likeExpectedVersion" to 0),
+            mapOf("photoId" to photoId, "participantId" to guestId, "likeExpectedVersion" to 0),
         )
         assertThat(removedLike.details["trashStatus"]).isEqualTo("ACTIVE")
         assertThat(
@@ -825,25 +826,26 @@ class AdminWorkflowServiceTest @Autowired constructor(
         assignPhotoToSession(collaboration.id, photoId)
         val guestId = jdbcClient.sql(
             """
-            INSERT INTO collab_guests (collab_session_id, guest_token, nickname, version, created_at, updated_at)
-            VALUES (:sessionId, 'like-conflict-guest', '하객', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING id
+            INSERT INTO collab_participants
+                (collab_session_id, participant_type, guest_token, nickname, version, created_at, updated_at)
+            VALUES (:sessionId, 'GUEST', 'like-conflict-guest', '하객', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING id
             """.trimIndent(),
         ).param("sessionId", collaboration.id).query { rs, _ -> rs.getLong(1) }.single()
         val added = execute(
             actor.requiredId, AdminResourceType.COLLABORATION, collaboration.id,
             AdminWorkflowAction.ADD_COLLAB_LIKE, 0, "collab-like-conflict-add-001",
-            mapOf("photoId" to photoId, "guestId" to guestId),
+            mapOf("photoId" to photoId, "participantId" to guestId),
         )
         val likeId = (added.details.getValue("likeId") as Number).toLong()
         execute(
             actor.requiredId, AdminResourceType.COLLABORATION, collaboration.id,
             AdminWorkflowAction.REMOVE_COLLAB_LIKE, 1, "collab-like-conflict-remove-001",
-            mapOf("photoId" to photoId, "guestId" to guestId, "likeExpectedVersion" to 0),
+            mapOf("photoId" to photoId, "participantId" to guestId, "likeExpectedVersion" to 0),
         )
         jdbcClient.sql(
             """
             INSERT INTO collab_photo_likes
-                (collab_session_id, photo_id, collab_guest_id, version, created_at, updated_at)
+                (collab_session_id, photo_id, participant_id, version, created_at, updated_at)
             VALUES (:sessionId, :photoId, :guestId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """.trimIndent(),
         ).param("sessionId", collaboration.id).param("photoId", photoId)
@@ -1280,12 +1282,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
     fun `AI 초안은 임베딩과 품질로 결정적으로 다양화하고 제출 리비전을 남긴다`() {
         val actor = adminAccountFixture.관리자("workflow-selection-owner")
         val graph = createGraph(actor.requiredId, "selection")
-        val selection = resourceService.create(
-            actor.requiredId,
-            AdminResourceType.SELECTION,
-            CreateAdminResourceRequest("AI 선택 생성", mapOf("galleryId" to graph.gallery.id)),
-            "127.0.0.1",
-        )
+        val selection = selectionForGallery(graph.gallery.id)
         val photos = (1..3).map { index -> createPhoto(actor.requiredId, graph.gallery.id, "selection-$index") }
         setEmbedded(photos[0].id, unitVector(0), 2400, 1600)
         setEmbedded(photos[1].id, nearVector(0, 1), 2400, 1600)
@@ -1339,7 +1336,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             1,
             "gallery-complete-001",
         )
-        assertThat(galleryCompleted.details["stage"]).isEqualTo("ALBUM")
+        assertThat(galleryCompleted.details["stage"]).isEqualTo("DELIVERY")
         val galleryReopened = execute(
             actor.requiredId,
             AdminResourceType.GALLERY,
@@ -1358,12 +1355,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             .isEqualTo("SELECTION_IN_PROGRESS")
 
         val emptyGraph = createGraph(actor.requiredId, "selection-empty")
-        val emptySelection = resourceService.create(
-            actor.requiredId,
-            AdminResourceType.SELECTION,
-            CreateAdminResourceRequest("후보 없는 AI 선택", mapOf("galleryId" to emptyGraph.gallery.id)),
-            "127.0.0.1",
-        )
+        val emptySelection = selectionForGallery(emptyGraph.gallery.id)
         val failed = execute(
             actor.requiredId,
             AdminResourceType.SELECTION,
@@ -1408,12 +1400,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
     fun `AI 초안 품질은 분석 점수를 우선 쓰고 미분석 사진은 별점과 해상도로 계산한다`() {
         val actor = adminAccountFixture.관리자("workflow-quality-selection-owner")
         val graph = createGraph(actor.requiredId, "quality-selection")
-        val selection = resourceService.create(
-            actor.requiredId,
-            AdminResourceType.SELECTION,
-            CreateAdminResourceRequest("기술 품질 선택 생성", mapOf("galleryId" to graph.gallery.id)),
-            "127.0.0.1",
-        )
+        val selection = selectionForGallery(graph.gallery.id)
         val analyzedHigh = createPhoto(actor.requiredId, graph.gallery.id, "quality-analyzed-high")
         val analyzedLow = createPhoto(actor.requiredId, graph.gallery.id, "quality-analyzed-low")
         val legacyHigh = createPhoto(actor.requiredId, graph.gallery.id, "quality-legacy-high")
@@ -1487,12 +1474,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
         val actor = adminAccountFixture.관리자("workflow-revision-link-owner")
         val graph = createGraph(actor.requiredId, "revision-link", withPhoto = true)
         val photo = requireNotNull(graph.photo)
-        val selection = resourceService.create(
-            actor.requiredId,
-            AdminResourceType.SELECTION,
-            CreateAdminResourceRequest("리비전 연결 선택", mapOf("galleryId" to graph.gallery.id)),
-            "127.0.0.1",
-        )
+        val selection = selectionForGallery(graph.gallery.id)
         execute(
             actor.requiredId,
             AdminResourceType.SELECTION,
@@ -1855,6 +1837,14 @@ private fun createGraph(actorAdminId: Long, suffix: String, withPhoto: Boolean =
         "127.0.0.1",
     )
 
+    private fun selectionForGallery(galleryId: Long): AdminResourceResponse {
+        val selectionId = jdbcClient.sql("SELECT id FROM photo_selections WHERE gallery_id = :galleryId")
+            .param("galleryId", galleryId)
+            .query { rs, _ -> rs.getLong(1) }
+            .single()
+        return resourceService.get(AdminResourceType.SELECTION, selectionId)
+    }
+
     private fun createPhoto(actorAdminId: Long, galleryId: Long, suffix: String): AdminResourceResponse =
         resourceService.create(
             actorAdminId,
@@ -1946,8 +1936,8 @@ private fun createConceptFolder(galleryId: Long, name: String): Long = jdbcClien
         val detailId = jdbcClient.sql(
             """
             INSERT INTO detail_folders
-                (concept_folder_id, name, sort_order, created_source, version, created_at, updated_at)
-            SELECT concept_folder_id, '관리자 워크플로 상세', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                (gallery_id, concept_folder_id, name, sort_order, created_source, version, created_at, updated_at)
+            SELECT gallery_id, concept_folder_id, '관리자 워크플로 상세', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             FROM collab_sessions WHERE id = :sessionId
             RETURNING id
             """.trimIndent(),
@@ -1955,10 +1945,12 @@ private fun createConceptFolder(galleryId: Long, name: String): Long = jdbcClien
         jdbcClient.sql(
             """
             INSERT INTO photo_category_assignments
-                (photo_id, detail_folder_id, assigned_source, assigned_at, version, created_at, updated_at)
-            VALUES (:photoId, :detailId, 'USER', CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                (gallery_id, photo_id, detail_folder_id, assigned_source, assigned_at, version, created_at, updated_at)
+            SELECT gallery_id, id, :detailId, 'USER', CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            FROM photos WHERE id = :photoId
             ON CONFLICT (photo_id) DO UPDATE SET detail_folder_id = EXCLUDED.detail_folder_id,
-                assigned_source = 'USER', assigned_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                gallery_id = EXCLUDED.gallery_id, assigned_source = 'USER',
+                assigned_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
             """.trimIndent(),
         ).param("photoId", photoId).param("detailId", detailId).update()
     }

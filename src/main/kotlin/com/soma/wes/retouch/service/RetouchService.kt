@@ -102,7 +102,7 @@ class RetouchService(
      */
     @Transactional
     fun addPhotos(galleryId: Long, userId: Long, request: AddRetouchPhotosRequest): RetouchOverviewResponse {
-        galleryAccessPolicy.requireCouple(galleryId, userId)
+        galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
         val gallery = galleryRepository.requireWithLockById(galleryId)
         val round = loadOrCreateDraftingRound(gallery)
@@ -156,7 +156,7 @@ class RetouchService(
      */
     @Transactional
     fun removePhoto(galleryId: Long, photoId: Long, userId: Long) {
-        galleryAccessPolicy.requireCouple(galleryId, userId)
+        galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
         galleryRepository.requireWithLockById(galleryId)
         val round = requireDraftingRound(galleryId, RetouchErrorCode.PHOTO_NOT_IN_ROUND)
@@ -177,7 +177,7 @@ class RetouchService(
         userId: Long,
         request: UpdateRetouchPhotoRequest,
     ): RetouchPhotoResponse {
-        galleryAccessPolicy.requireCouple(galleryId, userId)
+        galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
         // 항목 하나의 갱신이지만 갤러리 행을 잠근다 — 제출과 겹치면 잠긴 회차에 요청이 적힌다.
         galleryRepository.requireWithLockById(galleryId)
@@ -203,7 +203,7 @@ class RetouchService(
      */
     @Transactional(readOnly = true)
     fun issueAnnotationUploadUrl(galleryId: Long, userId: Long): IssueAnnotationUploadUrlResponse {
-        galleryAccessPolicy.requireCouple(galleryId, userId)
+        galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
         val key = "${annotationKeyPrefix(galleryId)}${UUID.randomUUID()}.png"
         val presigned = photoStorage.presignUpload(key, ANNOTATION_CONTENT_TYPE)
@@ -220,7 +220,7 @@ class RetouchService(
      */
     @Transactional
     fun submitRound(galleryId: Long, userId: Long): RetouchOverviewResponse {
-        galleryAccessPolicy.requireCouple(galleryId, userId)
+        galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
         val gallery = galleryRepository.requireWithLockById(galleryId)
         val round = requireDraftingRound(galleryId, RetouchErrorCode.EMPTY_ROUND)
@@ -283,7 +283,7 @@ class RetouchService(
         userId: Long,
         request: IssueResultUploadUrlsRequest,
     ): IssueResultUploadUrlsResponse {
-        galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        galleryAccessPolicy.requireRetouchProcessor(galleryId, userId)
 
         val round = findRequestedRound(galleryId, roundNo)
         loadItemsInRound(round.requiredId, request.files.map { it.photoId })
@@ -317,7 +317,7 @@ class RetouchService(
         userId: Long,
         request: CompleteResultsRequest,
     ): RetouchRoundDetailResponse {
-        galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        galleryAccessPolicy.requireRetouchProcessor(galleryId, userId)
 
         val round = lockRequestedRound(galleryId, roundNo)
         val items = loadItemsInRound(round.requiredId, request.results.map { it.photoId })
@@ -371,7 +371,7 @@ class RetouchService(
      */
     @Transactional
     fun completeRound(galleryId: Long, roundNo: Int, userId: Long): RetouchOverviewResponse {
-        val gallery = galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        val gallery = galleryAccessPolicy.requireRetouchProcessor(galleryId, userId)
 
         val round = lockRequestedRound(galleryId, roundNo)
         val items = retouchPhotoRepository.findAllByRoundId(round.requiredId)
@@ -380,7 +380,7 @@ class RetouchService(
         }
 
         round.complete(ZonedDateTime.now(clock))
-        gallery.markAlbumReady()
+        gallery.markDeliveryReady()
         notificationPublisher.publish(
             userIds = galleryMemberRepository.findAllByGalleryId(galleryId).map { it.userId },
             type = UserNotificationType.RETOUCH_COMPLETED,

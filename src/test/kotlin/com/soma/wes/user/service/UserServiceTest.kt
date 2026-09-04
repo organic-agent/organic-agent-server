@@ -3,8 +3,9 @@ package com.soma.wes.user.service
 import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.repository.GalleryRepository
-import com.soma.wes.notification.repository.UserNotificationRepository
 import com.soma.wes.studio.domain.Studio
+import com.soma.wes.studio.exception.StudioErrorCode
+import com.soma.wes.studio.exception.StudioException
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.TestcontainersConfiguration
 import com.soma.wes.user.domain.Role
@@ -34,7 +35,6 @@ class UserServiceTest @Autowired constructor(
     private val workspaceMemberRepository: WorkspaceMemberRepository,
     private val studioRepository: StudioRepository,
     private val galleryRepository: GalleryRepository,
-    private val notificationRepository: UserNotificationRepository,
 ) {
 
     @Test
@@ -93,23 +93,39 @@ class UserServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `회원 탈퇴는 소유 스튜디오를 지우고 다른 멤버에게 알린다`() {
+    fun `다른 OWNER가 있으면 회원 탈퇴해도 스튜디오와 갤러리는 유지한다`() {
         val owner = saveUser("delete-owner")
-        val member = saveUser("delete-member")
-        val workspace = workspaceRepository.save(Workspace.studio("삭제될 스튜디오"))
+        val otherOwner = saveUser("remaining-owner")
+        val workspace = workspaceRepository.save(Workspace.studio("유지될 스튜디오"))
         workspaceMemberRepository.save(WorkspaceMember(workspace.requiredId, owner.requiredId, WorkspaceRole.OWNER))
-        workspaceMemberRepository.save(WorkspaceMember(workspace.requiredId, member.requiredId, WorkspaceRole.MEMBER))
-        studioRepository.save(Studio(workspace.requiredId, "삭제될 스튜디오", "delete-studio"))
-        galleryRepository.save(Gallery(workspace.requiredId, owner.requiredId, "삭제될 갤러리"))
+        workspaceMemberRepository.save(WorkspaceMember(workspace.requiredId, otherOwner.requiredId, WorkspaceRole.OWNER))
+        studioRepository.save(Studio(workspace.requiredId, "유지될 스튜디오", "kept-studio"))
+        val gallery = galleryRepository.save(Gallery(workspace.requiredId, owner.requiredId, "유지될 갤러리"))
 
         userService.delete(owner.requiredId)
 
         assertThat(userRepository.findById(owner.requiredId)).isEmpty
-        assertThat(workspaceRepository.findById(workspace.requiredId)).isEmpty
-        assertThat(notificationRepository.findAllByUserIdOrderByCreatedAtDescIdDesc(member.requiredId))
-            .singleElement()
-            .extracting("type")
-            .isEqualTo(com.soma.wes.notification.domain.UserNotificationType.WORKSPACE_DELETED)
+        assertThat(workspaceRepository.findById(workspace.requiredId)).isPresent
+        assertThat(studioRepository.findById(workspace.requiredId)).isPresent
+        assertThat(galleryRepository.findById(gallery.requiredId)).isPresent
+        assertThat(workspaceMemberRepository.findByWorkspaceIdAndUserId(workspace.requiredId, owner.requiredId)).isNull()
+        assertThat(workspaceMemberRepository.findByWorkspaceIdAndUserId(workspace.requiredId, otherOwner.requiredId)).isNotNull
+    }
+
+    @Test
+    fun `유일한 스튜디오 OWNER는 회원 탈퇴할 수 없다`() {
+        val owner = saveUser("last-owner")
+        val workspace = workspaceRepository.save(Workspace.studio("마지막 OWNER 스튜디오"))
+        workspaceMemberRepository.save(WorkspaceMember(workspace.requiredId, owner.requiredId, WorkspaceRole.OWNER))
+        studioRepository.save(Studio(workspace.requiredId, "마지막 OWNER 스튜디오", "last-owner-studio"))
+
+        assertThatThrownBy { userService.delete(owner.requiredId) }
+            .isInstanceOf(StudioException::class.java)
+            .extracting("errorCode")
+            .isEqualTo(StudioErrorCode.LAST_OWNER_PROTECTED)
+
+        assertThat(userRepository.findById(owner.requiredId)).isPresent
+        assertThat(workspaceRepository.findById(workspace.requiredId)).isPresent
     }
 
     private fun saveUser(providerId: String): User = userRepository.save(
