@@ -28,17 +28,17 @@ class AiCompareServiceTest {
     private val photoRepository = mock<PhotoRepository>()
     private val photoAnalysisRepository = mock<PhotoAnalysisRepository>()
     private val photoSelectionRepository = mock<PhotoSelectionRepository>()
-    private val pairCompareInvoker = mock<PairCompareInvoker>()
+    private val pairVerdictJudge = mock<PairVerdictJudge>()
     private val service = AiCompareService(
         galleryAccessPolicy,
         photoRepository,
         photoAnalysisRepository,
         photoSelectionRepository,
-        pairCompareInvoker,
+        pairVerdictJudge,
     )
 
     @Test
-    fun `검증을 지나면 실행기의 판정을 그대로 돌려준다`() {
+    fun `검증을 지나면 판정기의 판정을 그대로 돌려준다`() {
         // given
         stubComparablePhotos()
         whenever(photoSelectionRepository.findByGalleryId(GALLERY_ID)).thenReturn(selection())
@@ -49,7 +49,7 @@ class AiCompareServiceTest {
             source = "llm",
             cached = false,
         )
-        whenever(pairCompareInvoker.compare(SELECTION_ID, PHOTO_A, PHOTO_B)).thenReturn(verdict)
+        whenever(pairVerdictJudge.judge(SELECTION_ID, GALLERY_ID, PHOTO_A, PHOTO_B)).thenReturn(verdict)
 
         // when
         val response = service.compare(GALLERY_ID, USER_ID, request())
@@ -61,7 +61,7 @@ class AiCompareServiceTest {
             softly.assertThat(response.source).isEqualTo("llm")
             softly.assertThat(response.cached).isFalse()
         }
-        verify(pairCompareInvoker).compare(SELECTION_ID, PHOTO_A, PHOTO_B)
+        verify(pairVerdictJudge).judge(SELECTION_ID, GALLERY_ID, PHOTO_A, PHOTO_B)
     }
 
     @Test
@@ -71,7 +71,7 @@ class AiCompareServiceTest {
         stubComparablePhotos()
         whenever(photoSelectionRepository.findByGalleryId(GALLERY_ID)).thenReturn(null)
         whenever(photoSelectionRepository.save(any())).thenReturn(selection())
-        whenever(pairCompareInvoker.compare(SELECTION_ID, PHOTO_A, PHOTO_B)).thenReturn(anyVerdict())
+        whenever(pairVerdictJudge.judge(SELECTION_ID, GALLERY_ID, PHOTO_A, PHOTO_B)).thenReturn(anyVerdict())
 
         // when
         val response = service.compare(GALLERY_ID, USER_ID, request())
@@ -93,27 +93,13 @@ class AiCompareServiceTest {
             .isInstanceOf(RecommendationException::class.java)
             .extracting("errorCode")
             .isEqualTo(RecommendationErrorCode.COMPARE_SAME_PHOTO)
-        verify(pairCompareInvoker, never()).compare(any(), any(), any())
-    }
-
-    @Test
-    fun `실행기가 설정되지 않았으면 호출 시점에 실패한다`() {
-        // given
-        stubAccess()
-        whenever(pairCompareInvoker.isAvailable).thenReturn(false)
-
-        // when & then
-        assertThatThrownBy { service.compare(GALLERY_ID, USER_ID, request()) }
-            .isInstanceOf(RecommendationException::class.java)
-            .extracting("errorCode")
-            .isEqualTo(RecommendationErrorCode.COMPARE_NOT_CONFIGURED)
+        verify(pairVerdictJudge, never()).judge(any(), any(), any(), any())
     }
 
     @Test
     fun `이 갤러리에 없는 사진은 404다`() {
         // given — 갤러리 스코프 조회라 휴지통·남의 갤러리 사진은 조회에서 빠진다.
         stubAccess()
-        whenever(pairCompareInvoker.isAvailable).thenReturn(true)
         whenever(photoRepository.findAllByGalleryIdAndIdIn(GALLERY_ID, listOf(PHOTO_A, PHOTO_B)))
             .thenReturn(listOf(mock<Photo>()))
 
@@ -126,10 +112,9 @@ class AiCompareServiceTest {
 
     @Test
     fun `분석이 끝나지 않은 사진은 거절한다`() {
-        // 판정 재료가 분석 컬럼이다 — 5초를 기다리게 한 뒤 AI 쪽에서 죽는 것보다 여기서 거절한다.
+        // 판정 재료가 분석 컬럼이다 — 셀렉을 만들고 판정기를 부르기 전에 여기서 거절한다.
         // given
         stubAccess()
-        whenever(pairCompareInvoker.isAvailable).thenReturn(true)
         whenever(photoRepository.findAllByGalleryIdAndIdIn(GALLERY_ID, listOf(PHOTO_A, PHOTO_B)))
             .thenReturn(listOf(mock<Photo>(), mock<Photo>()))
         val embeddedOnly = mock<PhotoAnalysis> { on { isAnalyzed }.thenReturn(false) }
@@ -142,7 +127,7 @@ class AiCompareServiceTest {
             .isInstanceOf(RecommendationException::class.java)
             .extracting("errorCode")
             .isEqualTo(RecommendationErrorCode.COMPARE_NOT_ANALYZED)
-        verify(pairCompareInvoker, never()).compare(any(), any(), any())
+        verify(pairVerdictJudge, never()).judge(any(), any(), any(), any())
     }
 
     private fun request() = ComparePhotosRequest(photoA = PHOTO_A, photoB = PHOTO_B)
@@ -168,7 +153,6 @@ class AiCompareServiceTest {
 
     private fun stubComparablePhotos() {
         stubAccess()
-        whenever(pairCompareInvoker.isAvailable).thenReturn(true)
         whenever(photoRepository.findAllByGalleryIdAndIdIn(GALLERY_ID, listOf(PHOTO_A, PHOTO_B)))
             .thenReturn(listOf(mock<Photo>(), mock<Photo>()))
         val analyzed = mock<PhotoAnalysis> { on { isAnalyzed }.thenReturn(true) }

@@ -23,9 +23,6 @@ app:
   embedding:
     # 로컬에는 Lambda가 없다. 임베딩 실행 버튼이 이 스크립트를 띄운다(임베더 venv·S3 버킷은 스크립트가 정한다).
     local-script: scripts/local-ai.sh
-  compare:
-    # 비교샷도 같다 — 경량 Lambda 대신 AI repo CLI를 동기로 띄운다(stdout이 판정 JSON).
-    local-script: scripts/local-compare.sh
 
 ---
 spring:

@@ -19,17 +19,26 @@ class RecommendationFixture(
         subjects: String = "couple",
         clusterId: Int = 1,
         clusterRank: Int = 0,
+        technicalPct: Double = 80.0,
+        aestheticPct: Double = 70.0,
+        sharpness: Double? = null,
     ) {
+        val subScores = if (sharpness == null) "{}" else "{\"sharpness\": $sharpness}"
         jdbcTemplate.update(
             """
             UPDATE photo_analysis
-            SET embed_group_id = ?, subjects = ?, technical_pct = 80.0, aesthetic_pct = 70.0,
-                cluster_id = ?, cluster_rank = ?,
+            SET embed_group_id = ?, subjects = ?, technical_pct = ?, aesthetic_pct = ?,
+                cluster_id = ?, cluster_rank = ?, sub_scores = ?::jsonb,
                 model_version = 'test-v1', analyzed_at = now(), updated_at = now()
             WHERE photo_id = ?
             """.trimIndent(),
-            embedGroupId, subjects, clusterId, clusterRank, photoId,
+            embedGroupId, subjects, technicalPct, aestheticPct, clusterId, clusterRank, subScores, photoId,
         )
+    }
+
+    /** 임베더가 미리보기를 만들고 photos.preview_key를 채운 상태. 판정·이유가 LLM에 사진을 보내는 전제다. */
+    fun 미리보기(photoId: Long, previewKey: String = "previews/$photoId.jpg") {
+        jdbcTemplate.update("UPDATE photos SET preview_key = ?, updated_at = now() WHERE id = ?", previewKey, photoId)
     }
 
     /** 분석 배치가 남긴 갤러리 분석 잡. 기본은 DONE — 폴더 생성의 전제다. */
