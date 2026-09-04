@@ -23,8 +23,8 @@ import com.soma.wes.collab.support.CollabCategoryReactionCleaner
 import com.soma.wes.collab.support.CollabLinkResolver
 import com.soma.wes.collab.support.CollabPhotoViewAssembler
 import com.soma.wes.global.config.AwsLambdaConfig
-import com.soma.wes.embedding.config.EmbeddingProperties
-import com.soma.wes.embedding.infrastructure.LambdaEmbeddingInvoker
+import com.soma.wes.analysis.config.EmbeddingProperties
+import com.soma.wes.analysis.infrastructure.LambdaEmbeddingInvoker
 import com.soma.wes.gallery.config.GalleryInviteProperties
 import com.soma.wes.gallery.config.MockGalleryProperties
 import com.soma.wes.gallery.repository.GalleryRepository
@@ -43,7 +43,7 @@ import com.soma.wes.photo.infrastructure.S3PhotoStorage
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.service.PhotoService
 import com.soma.wes.photo.support.PhotoViewAssembler
-import com.soma.wes.recommendation.support.AiConceptAssignmentLoader
+import com.soma.wes.analysis.support.AiConceptAssignmentLoader
 import com.soma.wes.retouch.repository.RetouchRoundRepository
 import com.soma.wes.retouch.service.RetouchService
 import com.soma.wes.retouch.support.RetouchPhotoLoader

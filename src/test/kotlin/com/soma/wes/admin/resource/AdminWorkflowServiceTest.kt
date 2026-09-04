@@ -15,7 +15,7 @@ import com.soma.wes.admin.resource.service.AdminObservabilityLinkService
 import com.soma.wes.admin.resource.service.AdminOperationsOverviewService
 import com.soma.wes.admin.resource.service.AdminWorkflowService
 import com.soma.wes.admin.resource.repository.AdminChildTrashRepository
-import com.soma.wes.embedding.service.EmbeddingInvoker
+import com.soma.wes.analysis.service.EmbeddingInvoker
 import com.soma.wes.photo.dto.PresignedUploadDto
 import com.soma.wes.photo.service.PhotoStorage
 import com.soma.wes.support.IntegrationTest

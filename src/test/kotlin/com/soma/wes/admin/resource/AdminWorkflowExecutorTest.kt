@@ -10,8 +10,8 @@ import com.soma.wes.admin.resource.repository.AdminWorkflowExecutionRepository
 import com.soma.wes.admin.resource.repository.AdminWorkflowRepository
 import com.soma.wes.admin.resource.service.AdminResourceService
 import com.soma.wes.admin.resource.service.AdminWorkflowExecutor
-import com.soma.wes.embedding.service.EmbeddingInvoker
-import com.soma.wes.embedding.service.ExactPhotoProcessingRequest
+import com.soma.wes.analysis.service.EmbeddingInvoker
+import com.soma.wes.analysis.service.ExactPhotoProcessingRequest
 import com.soma.wes.support.IntegrationTest
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy

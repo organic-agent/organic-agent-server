@@ -4,7 +4,7 @@ import com.soma.wes.admin.audit.service.AdminAuditService
 import com.soma.wes.admin.config.AdminAuthProperties
 import com.soma.wes.admin.config.AdminObservabilityProperties
 import com.soma.wes.admin.resource.dto.AdminSystemSettingsResponse
-import com.soma.wes.embedding.config.EmbeddingProperties
+import com.soma.wes.analysis.config.EmbeddingProperties
 import com.soma.wes.gallery.config.MockGalleryProperties
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.trash.config.TrashProperties

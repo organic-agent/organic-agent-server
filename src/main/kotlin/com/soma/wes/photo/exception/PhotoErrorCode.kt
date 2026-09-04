@@ -37,8 +37,6 @@ enum class PhotoErrorCode(
     /** 요청에 다른 갤러리의 사진 id가 섞여 있는 경우. */
     PHOTO_NOT_FOUND(HttpStatus.NOT_FOUND, "PHOTO_404_1", "존재하지 않는 사진입니다."),
 
-    /** Lambda 호출 자체가 실패한 경우(권한·스로틀링 등). 임베딩 계산 실패와는 다르다. */
-    EMBEDDING_INVOCATION_FAILED(HttpStatus.BAD_GATEWAY, "PHOTO_502_1", "임베딩 실행을 시작하지 못했습니다."),
 
     /** 운영자 승인 삭제에서 S3 원본 또는 미리보기를 모두 지우지 못한 경우. */
     STORAGE_DELETE_FAILED(HttpStatus.BAD_GATEWAY, "PHOTO_502_2", "사진 원본 또는 미리보기 삭제를 완료하지 못했습니다."),
@@ -52,11 +50,4 @@ enum class PhotoErrorCode(
     /** AI 호출 재료로 미리보기를 읽지 못한 경우. 호출자(판정·이유)는 사진 없는 경로로 폴백한다. */
     STORAGE_READ_FAILED(HttpStatus.BAD_GATEWAY, "PHOTO_502_5", "사진 미리보기를 읽지 못했습니다."),
 
-    /**
-     * 임베딩 함수 이름이 설정되지 않은 경우.
-     *
-     * 로컬·테스트에는 Lambda가 없는 것이 정상이라 기동을 막지 않는다. 대신 실제로 부르려는
-     * 순간에 여기서 멈춘다 — "설정이 비어 있다"와 "함수가 죽었다"는 대응이 다르므로 구분한다.
-     */
-    EMBEDDING_NOT_CONFIGURED(HttpStatus.SERVICE_UNAVAILABLE, "PHOTO_503_1", "임베딩 실행이 설정되지 않았습니다."),
 }

@@ -12,7 +12,7 @@ import software.amazon.awssdk.services.lambda.LambdaClient
  * 자격증명·리전은 다른 AWS 클라이언트와 같은 소스를 써야 하므로 직접 만들지 않고,
  * Spring Cloud AWS가 이미 노출한 프로바이더 빈을 그대로 받아 넘긴다.
  *
- * `embedding/config`에서 여기로 온 이유: 처음에는 [com.soma.wes.embedding.infrastructure.LambdaEmbeddingInvoker]
+ * `embedding/config`에서 여기로 온 이유: 처음에는 [com.soma.wes.analysis.infrastructure.LambdaEmbeddingInvoker]
  * 하나만 쓰다가, 비교샷의 [com.soma.wes.recommendation.infrastructure.LambdaCompareInvoker]가
  * 두 번째 사용처가 되면서 도메인 공용 규칙(두 번째 도메인이 필요로 하는 날 `global`로)을 따랐다.
  */

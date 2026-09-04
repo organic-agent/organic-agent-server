@@ -11,8 +11,8 @@ import com.soma.wes.category.service.CategoryService
 import com.soma.wes.category.service.AiCategoryFolderService
 import com.soma.wes.category.support.AiCategoryFolderPlanner
 import com.soma.wes.global.config.AwsLambdaConfig
-import com.soma.wes.embedding.config.EmbeddingProperties
-import com.soma.wes.embedding.infrastructure.LambdaEmbeddingInvoker
+import com.soma.wes.analysis.config.EmbeddingProperties
+import com.soma.wes.analysis.infrastructure.LambdaEmbeddingInvoker
 import com.soma.wes.gallery.config.GalleryInviteProperties
 import com.soma.wes.gallery.config.MockGalleryProperties
 import com.soma.wes.gallery.service.GalleryService
@@ -28,7 +28,7 @@ import com.soma.wes.photo.infrastructure.S3PhotoStorage
 import com.soma.wes.photo.service.PhotoService
 import com.soma.wes.photo.support.PhotoViewAssembler
 import com.soma.wes.notification.service.UserNotificationPublisher
-import com.soma.wes.recommendation.support.AiConceptAssignmentLoader
+import com.soma.wes.analysis.support.AiConceptAssignmentLoader
 import com.soma.wes.retouch.service.RetouchService
 import com.soma.wes.retouch.support.RetouchPhotoLoader
 import com.soma.wes.retouch.support.RetouchResultLoader

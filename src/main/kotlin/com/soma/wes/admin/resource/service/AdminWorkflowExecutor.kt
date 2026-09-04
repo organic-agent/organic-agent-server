@@ -8,8 +8,8 @@ import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.repository.AdminWorkflowExecutionRepository
 import com.soma.wes.admin.resource.repository.AdminWorkflowExecutionRepository.ProcessingExecutionJob
 import com.soma.wes.admin.resource.repository.WorkflowExecutionException
-import com.soma.wes.embedding.service.EmbeddingInvoker
-import com.soma.wes.embedding.service.ExactPhotoProcessingRequest
+import com.soma.wes.analysis.service.EmbeddingInvoker
+import com.soma.wes.analysis.service.ExactPhotoProcessingRequest
 import com.soma.wes.global.exception.BusinessException
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
