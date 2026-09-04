@@ -14,10 +14,8 @@ ALTER TABLE ai_analysis_jobs
     ADD COLUMN observed_progress integer NOT NULL DEFAULT 0,
     ADD COLUMN force             boolean NOT NULL DEFAULT false;
 
--- "임베딩만"(POST /embeddings/run)도 같은 잡의 한 모드가 된다.
-ALTER TABLE ai_analysis_jobs DROP CONSTRAINT ck_ai_analysis_jobs_mode;
+-- mode 는 FULL·NAMING 그대로다 — 임베딩만 따로 도는 모드는 없다. FULL 이 EMBED 부터 시작한다.
 ALTER TABLE ai_analysis_jobs
-    ADD CONSTRAINT ck_ai_analysis_jobs_mode CHECK (mode IN ('FULL', 'EMBED', 'NAMING')),
     ADD CONSTRAINT ck_ai_analysis_jobs_stage CHECK (stage IS NULL OR stage IN ('EMBED', 'SCORE', 'CATEGORIZE')),
     ADD CONSTRAINT ck_ai_analysis_jobs_stage_status CHECK (
         stage_status IS NULL OR stage_status IN ('PENDING', 'RUNNING', 'DONE', 'FAILED')

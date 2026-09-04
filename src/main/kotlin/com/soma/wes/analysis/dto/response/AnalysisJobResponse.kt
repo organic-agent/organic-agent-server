@@ -11,7 +11,7 @@ import java.time.ZonedDateTime
 data class AnalysisJobResponse(
     val jobId: Long,
     val galleryId: Long,
-    @field:Schema(description = "FULL(전체) · EMBED(미리보기·임베딩만) · NAMING(이름·배정만).", example = "FULL")
+    @field:Schema(description = "FULL(미리보기·임베딩 → 점수 → 그룹·이름 전체) · NAMING(이름·배정만).", example = "FULL")
     val mode: AnalysisMode,
     @field:Schema(
         description = "PENDING(대기) → RUNNING → DONE 또는 FAILED. DONE이면 모드의 마지막 단계까지 적재된 것이다.",

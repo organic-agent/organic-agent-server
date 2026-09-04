@@ -96,10 +96,10 @@ class AnalysisOrchestratorTest @Autowired constructor(
         }
 
         @Test
-        fun `이미 임베딩된 갤러리의 EMBED 모드 잡은 다음 스윕에서 DONE이 된다`() {
+        fun `이미 임베딩된 갤러리는 다음 스윕에서 EMBED를 닫고 바로 SCORE로 넘어간다`() {
             // given
             photoFixture.임베딩된_사진(fixture.galleryId, count = 2)
-            val jobId = analysisService.requestEmbedding(fixture.galleryId, fixture.photographer.id!!, force = false).jobId
+            val jobId = requestFull()
 
             // when
             orchestrator.sweep()
@@ -107,10 +107,10 @@ class AnalysisOrchestratorTest @Autowired constructor(
             // then
             val job = job(jobId)
             assertSoftly { softly ->
-                softly.assertThat(job.status).isEqualTo(AnalysisStatus.DONE)
-                softly.assertThat(job.stage).isEqualTo(AnalysisStage.EMBED)
-                softly.assertThat(job.finishedAt).isNotNull()
-                softly.assertThat(stages(jobId)).containsExactly(AnalysisStage.EMBED)
+                softly.assertThat(job.status).isEqualTo(AnalysisStatus.PENDING)
+                softly.assertThat(job.stage).isEqualTo(AnalysisStage.SCORE)
+                softly.assertThat(job.stageStatus).isEqualTo(AnalysisStatus.PENDING)
+                softly.assertThat(stages(jobId)).containsExactly(AnalysisStage.EMBED, AnalysisStage.SCORE)
             }
         }
 
@@ -118,19 +118,21 @@ class AnalysisOrchestratorTest @Autowired constructor(
         fun `force는 보낸 뒤 갱신된 벡터만 진행으로 센다`() {
             // given — 벡터가 이미 있어도 force면 다시 써야 끝이다
             val photos = photoFixture.임베딩된_사진(fixture.galleryId, count = 2)
-            val jobId = analysisService.requestEmbedding(fixture.galleryId, fixture.photographer.id!!, force = true).jobId
+            val jobId = requestFull(force = true)
             jdbcTemplate.update("UPDATE photo_analysis SET updated_at = now() - interval '1 hour' WHERE photo_id IN (?, ?)", photos[0], photos[1])
 
-            // when — 아무것도 갱신되지 않았다
+            // when — 아무것도 갱신되지 않았다: EMBED에 머문다
             orchestrator.sweep()
-            assertThat(job(jobId).status).isEqualTo(AnalysisStatus.PENDING)
+            assertThat(job(jobId).stage).isEqualTo(AnalysisStage.EMBED)
+            assertThat(stages(jobId)).containsExactly(AnalysisStage.EMBED)
 
             // 임베더가 다시 적재한 것처럼 갱신 시각을 올린다
             jdbcTemplate.update("UPDATE photo_analysis SET updated_at = now() WHERE photo_id IN (?, ?)", photos[0], photos[1])
             orchestrator.sweep()
 
-            // then
-            assertThat(job(jobId).status).isEqualTo(AnalysisStatus.DONE)
+            // then — EMBED가 닫히고 SCORE로 (force는 score에도 전달된다)
+            assertThat(job(jobId).stage).isEqualTo(AnalysisStage.SCORE)
+            assertThat(stageInvoker.callsOf(jobId).last().force).isTrue()
         }
 
         @Test

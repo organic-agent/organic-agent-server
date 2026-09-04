@@ -4,7 +4,6 @@ import com.soma.wes.analysis.domain.AnalysisJob
 import com.soma.wes.analysis.domain.AnalysisMode
 import com.soma.wes.analysis.domain.AnalysisStatus
 import com.soma.wes.analysis.dto.response.AnalysisJobResponse
-import com.soma.wes.analysis.dto.response.EmbeddingRunResponse
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
 import com.soma.wes.analysis.repository.AnalysisJobRepository
@@ -19,7 +18,7 @@ import org.springframework.transaction.support.TransactionSynchronization
 import org.springframework.transaction.support.TransactionSynchronizationManager
 
 /**
- * 작가의 "AI 분석"·"임베딩 실행" 버튼. 잡 행을 만들고 커밋 뒤 [AnalysisOrchestrator]에 넘기는 것까지가 이 서비스의 일이다 —
+ * 작가의 "AI 분석" 버튼. 잡 행을 만들고 커밋 뒤 [AnalysisOrchestrator]에 넘기는 것까지가 이 서비스의 일이다 —
  * 어느 Lambda를 어떤 순서로 부르고 언제 닫는지는 오케스트레이터의 일이다.
  */
 @Service
@@ -34,7 +33,7 @@ class AnalysisService(
     private val log = LoggerFactory.getLogger(javaClass)
 
     /**
-     * FULL·EMBED는 업로드가 끝난 사진이 있어야 하고, NAMING은 FULL이 DONE인 적이 있어야 한다.
+     * FULL은 업로드가 끝난 사진이 있어야 하고, NAMING은 FULL이 DONE인 적이 있어야 한다.
      * 모드와 무관하게 살아 있는 잡이 없어야 한다 — 두 검사 사이의 경쟁은 DB의 부분 유니크가
      * 잡고, 그 위반을 같은 409로 번역해 두 경로가 같은 코드로 보이게 한다.
      */
@@ -49,33 +48,12 @@ class AnalysisService(
         return AnalysisJobResponse.from(job)
     }
 
-    /**
-     * `POST /embeddings/run` — 같은 잡의 EMBED 모드다. 응답의 대상 수는 실제 실행기와 똑같이 PENDING을 제외한다.
-     * URL만 발급된 사진은 S3 객체가 아직 없을 수 있어 실행기가 읽지 않으므로, 여기서 포함하면 응답의 대상 수와
-     * 실제 처리 수가 어긋난다.
-     */
-    @Transactional
-    fun requestEmbedding(galleryId: Long, userId: Long, force: Boolean): EmbeddingRunResponse {
-        galleryAccessPolicy.requirePhotographer(galleryId, userId)
-
-        val targets = if (force) {
-            photoRepository.countByGalleryIdAndStatusNot(galleryId, PhotoStatus.PENDING)
-        } else {
-            photoRepository.countByGalleryIdAndStatusNotAndNotEmbedded(galleryId, PhotoStatus.PENDING)
-        }
-        val job = createJob(galleryId, AnalysisMode.EMBED, force)
-
-        log.info("임베딩 실행 요청: galleryId={}, jobId={}, force={}, 대상={}장", galleryId, job.requiredId, force, targets)
-
-        return EmbeddingRunResponse(galleryId = galleryId, jobId = job.requiredId, targets = targets)
-    }
-
     private fun createJob(galleryId: Long, mode: AnalysisMode, force: Boolean): AnalysisJob {
         // 기동이 아니라 여기서 실패한다. 로컬·테스트에는 실행기가 없는 것이 정상이라
         // 설정이 비어 있다고 앱을 못 뜨게 만들면 개발이 막힌다.
         validateInvokerConfigured(mode)
         when (mode) {
-            AnalysisMode.FULL, AnalysisMode.EMBED -> validateHasUploadedPhotos(galleryId)
+            AnalysisMode.FULL -> validateHasUploadedPhotos(galleryId)
             AnalysisMode.NAMING -> validateFullAnalysisDone(galleryId)
         }
         if (analysisJobRepository.existsByGalleryIdAndStatusIn(galleryId, AnalysisStatus.ACTIVE)) {

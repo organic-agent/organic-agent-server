@@ -74,8 +74,10 @@ def main() -> int:
         {"photoIds": [u["photoId"] for u in uploads]},
     )
 
-    run = api.post(f"/api/v1/galleries/{gallery_id}/embeddings/run", None)
-    print(f"임베딩 실행 접수: targets={run['targets']}")
+    # 임베딩만 따로 도는 API 는 없다 — AI 분석(FULL)의 첫 단계가 임베딩이다. 템플릿은 벡터까지만 필요하므로
+    # summary 의 embedded 로 기다리고, 점수·그룹 단계는 그 뒤에 알아서 이어진다.
+    run = api.post(f"/api/v1/galleries/{gallery_id}/ai-analysis", {"mode": "FULL"})
+    print(f"AI 분석 접수: jobId={run['jobId']} stage={run['stage']}")
 
     wait_until_embedded(api, gallery_id)
     print()
@@ -118,7 +120,7 @@ def wait_until_embedded(api: "Api", gallery_id: int) -> None:
         if time.monotonic() > deadline:
             raise RuntimeError(
                 "임베딩 완료 대기 시간 초과. Lambda 로그를 확인하고, 남은 사진은 "
-                "embeddings/run을 다시 호출하면 이어서 처리된다(force 불필요)."
+                "ai-analysis(FULL)를 다시 호출하면 이어서 처리된다(force 불필요)."
             )
         time.sleep(POLL_INTERVAL_SECONDS)
 

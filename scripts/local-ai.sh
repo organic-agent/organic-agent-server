@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 로컬 AI 파이프라인을 잡 없이 한 번에 돌린다: embedder → score → categorize (scripts/lambda/*.sh 를 순서대로).
 #
-# 정식 경로는 웹 버튼이다 — 로컬 wes(local 프로필)의 analysis 도메인이 "임베딩 실행"·"AI 분석"에서 scripts/lambda/<단계>.sh 를
+# 정식 경로는 웹 버튼이다 — 로컬 wes(local 프로필)의 analysis 도메인이 "AI 분석"에서 scripts/lambda/<단계>.sh 를
 # 운영의 Lambda EVENT 자리에서 띄운다. 이 스크립트는 그 경로 없이 갤러리 하나를 CLI 로 끝까지 밀어 보는 지름길이라
 # 잡이 없고, 따라서 배정(ai_concept_assignments)은 저장되지 않는다. 폴더 세트가 필요하면 웹 버튼을 쓴다.
 #

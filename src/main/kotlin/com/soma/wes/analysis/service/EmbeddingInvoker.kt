@@ -2,7 +2,7 @@ package com.soma.wes.analysis.service
 
 /**
  * 임베더 Lambda를 갤러리 잡 밖에서 직접 부르는 포트. 관리자 경로(갤러리 재처리, 사진 교체 뒤 한 장 재처리)가 쓴다.
- * 작가의 "임베딩 실행"·"AI 분석"은 이 포트가 아니라 [AnalysisService]의 잡을 지난다 — [StageInvoker] 참조.
+ * 작가의 "AI 분석"은 이 포트가 아니라 [AnalysisService]의 잡을 지난다 — [StageInvoker] 참조.
  */
 interface EmbeddingInvoker {
 

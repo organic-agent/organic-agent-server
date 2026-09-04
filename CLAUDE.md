@@ -58,7 +58,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     계정은 기본 보존(토큰 유지). TRUNCATE 목록 규칙은 `.claude/rules/migration.md` 참조.
   - `lambda/{embedder,score,categorize}.sh --gallery-id G [--job-id J] [--force]` — **로컬 Lambda 대역.** 운영 Lambda 함수
     하나 = 스크립트 하나(AI repo 최상위 모듈과 같은 이름), 인자는 Lambda 페이로드 키 그대로. 로컬 wes(local 프로필)의
-    `analysis` 도메인이 "임베딩 실행"·"AI 분석" 버튼에서 단계마다 이것을 띄운다(`LocalProcessStageInvoker`, 운영의
+    `analysis` 도메인이 "AI 분석" 버튼에서 단계마다 이것을 띄운다(`LocalProcessStageInvoker`, 운영의
     EVENT 자리). score는 `--job-id`가 있으면 AI repo 계약대로 categorize.sh를 이어 부른다. 접속 정보는 `lib/ai-env.sh`.
   - `local-ai.sh <galleryId> [--force] [--only-embed]` — 위 셋을 잡 없이 순서대로 도는 지름길(배정은 저장되지 않음).
     로컬 pg + dev 버킷(`/wes/local/app.storage.bucket`)을 쓴다.

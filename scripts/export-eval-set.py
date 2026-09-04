@@ -115,7 +115,7 @@ def export_fixture(args: argparse.Namespace) -> int:
     for photo_id in sorted(by_id):
         _, file_name, taken_at, embedding_text = by_id[photo_id]
         if embedding_text is None:
-            print(f"오류: photo {photo_id} 는 아직 임베딩이 없다. embeddings/run 후 재시도.", file=sys.stderr)
+            print(f"오류: photo {photo_id} 는 아직 임베딩이 없다. AI 분석(ai-analysis) 후 재시도.", file=sys.stderr)
             return 1
         embedding = json.loads(embedding_text)  # pgvector 텍스트 표현 "[0.1,...]"은 JSON과 호환된다
         if len(embedding) != EMBEDDING_DIMENSION:

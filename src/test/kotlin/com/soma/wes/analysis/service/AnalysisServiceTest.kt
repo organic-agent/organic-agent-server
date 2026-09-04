@@ -98,7 +98,7 @@ class AnalysisServiceTest @Autowired constructor(
             val first = analysisService.request(fixture.galleryId, fixture.photographer.id!!, AnalysisMode.FULL)
 
             // when & then
-            assertThatThrownBy { analysisService.request(fixture.galleryId, fixture.photographer.id!!, AnalysisMode.EMBED) }
+            assertThatThrownBy { analysisService.request(fixture.galleryId, fixture.photographer.id!!, AnalysisMode.FULL) }
                 .isInstanceOf(AnalysisException::class.java)
                 .extracting("errorCode")
                 .isEqualTo(AnalysisErrorCode.ANALYSIS_JOB_ALREADY_ACTIVE)
@@ -132,45 +132,6 @@ class AnalysisServiceTest @Autowired constructor(
                 .isInstanceOf(GalleryException::class.java)
                 .extracting("errorCode")
                 .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
-        }
-    }
-
-    @Nested
-    @DisplayName("임베딩만(EMBED)을 요청할 때")
-    inner class RequestEmbedding {
-
-        @Test
-        fun `PENDING을 제외한 미완료 사진 수와 잡 id를 돌려준다`() {
-            // given
-            photoFixture.임베딩된_사진(fixture.galleryId, count = 1)
-            photoFixture.업로드된_사진(fixture.galleryId, count = 2)
-            photoFixture.대기중_사진(fixture.galleryId, count = 1)
-
-            // when
-            val response = analysisService.requestEmbedding(fixture.galleryId, fixture.photographer.id!!, force = false)
-
-            // then
-            val job = analysisJobRepository.findById(response.jobId).orElseThrow()
-            assertSoftly { softly ->
-                softly.assertThat(response.targets).isEqualTo(2L)
-                softly.assertThat(job.mode).isEqualTo(AnalysisMode.EMBED)
-                softly.assertThat(job.stage).isEqualTo(AnalysisStage.EMBED)
-            }
-            assertThat(stageInvoker.callsOf(response.jobId).map { it.stage }).containsExactly(AnalysisStage.EMBED)
-        }
-
-        @Test
-        fun `force면 업로드 완료 사진 전부가 대상이다`() {
-            // given
-            photoFixture.임베딩된_사진(fixture.galleryId, count = 2)
-            photoFixture.업로드된_사진(fixture.galleryId, count = 1)
-
-            // when
-            val response = analysisService.requestEmbedding(fixture.galleryId, fixture.photographer.id!!, force = true)
-
-            // then
-            assertThat(response.targets).isEqualTo(3L)
-            assertThat(stageInvoker.callsOf(response.jobId).single().force).isTrue()
         }
     }
 
