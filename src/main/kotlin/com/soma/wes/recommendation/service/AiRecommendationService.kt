@@ -24,13 +24,15 @@ import org.slf4j.LoggerFactory
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 
 /**
  * 폴더별 AI 추천을 요청하고 읽는다.
  *
- * 추천 계산(폴더마다 목표 비례 n장, 연사 클러스터당 1장, 이유 문장)은 전부 AI 워커의 일이다 —
- * 이 서버는 [AiAnalysisService]와 같은 규약으로 `ai_selection_jobs`에 PENDING 행을 넣는 것까지만
- * 하고(워커가 폴링해 집어간다), 읽을 때는 최신 라운드에 사진·담김 여부를 붙여 돌려줄 뿐이다.
+ * 요청은 `ai_selection_jobs`에 PENDING 행을 넣고 커밋 뒤 실행기에 넘긴다 — 계산(폴더마다 목표 비례 n장,
+ * 연사 클러스터당 1장, 이유 문장)은 [AiSelectionJobRunner]가 요청 스레드 밖에서 한다. 읽을 때는 최신
+ * 라운드에 사진·담김 여부를 붙여 돌려준다.
  */
 @Service
 class AiRecommendationService(
@@ -43,6 +45,7 @@ class AiRecommendationService(
     private val photoRepository: PhotoRepository,
     private val photoViewAssembler: PhotoViewAssembler,
     private val properties: StorageProperties,
+    private val jobLauncher: AiSelectionJobLauncher,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -92,6 +95,13 @@ class AiRecommendationService(
         log.info(
             "AI 추천 요청: galleryId={}, selectionId={}, mode={}, folderSetJobId={}, jobId={}",
             galleryId, selectionId, mode, folderSetJobId, job.requiredId,
+        )
+        // 커밋 뒤에 넘긴다 — 실행기가 아직 안 보이는 행을 집으려다 실패하면 안 된다.
+        val jobId = job.requiredId
+        TransactionSynchronizationManager.registerSynchronization(
+            object : TransactionSynchronization {
+                override fun afterCommit() = jobLauncher.launch(jobId)
+            },
         )
 
         return AiSelectionJobResponse.from(job)

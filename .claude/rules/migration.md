@@ -32,10 +32,12 @@ paths:
 
 ## AI가 쓰는 테이블
 
-- `photo_analysis`·`ai_analysis_jobs`·`ai_selection_jobs`·`ai_recommendations`는 이 서버 밖
-  (임베더 Lambda, AI 분석 배치, 추천 Lambda)이 직접 INSERT/UPDATE 한다. 엔티티의 그 컬럼은
+- `photo_analysis`(임베딩·분석 컬럼)·`ai_analysis_jobs`·`ai_concept_assignments`는 이 서버 밖
+  (임베더 Lambda, AI 분석·naming 배치)이 직접 INSERT/UPDATE 한다. 엔티티의 그 컬럼은
   읽기 전용 `val`이고, 컬럼을 바꾸면 AI repo(`photoselect/store.py`·`embedder/db.py`)도
   함께 바꾼다. 전용 DB 유저(`embedder`, `photoselect`)의 GRANT도 새 테이블마다 필요하다.
+- `ai_selection_jobs`·`ai_recommendations`·`ai_pair_verdicts`는 2026-09-04부터 이 서버가 쓴다
+  (추천 실행기 `AiSelectionJobRunner`, 비교샷 `PairVerdictJudge`). AI repo는 더 이상 이 테이블을 쓰지 않는다.
 
 ## 새 테이블의 부수 작업
 
