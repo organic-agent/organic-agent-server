@@ -53,9 +53,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     Parameter Store에서 읽는다.
   - `reset-test-data.sh [local|remote] [--all] [--with-s3]` — 수동 테스트 데이터 초기화.
     계정은 기본 보존(토큰 유지). TRUNCATE 목록 규칙은 `.claude/rules/migration.md` 참조.
-  - `local-ai.sh <galleryId> [--force] [--no-vlm]` — 로컬에서 Lambda·배치 대신
-    임베딩(DINOv3) → AI 분석(VLM은 호스트 Ollama)을 한 번에 돌린다. 로컬 pg +
-    dev 버킷(`/wes/local/app.storage.bucket`, 인프라 `module.storage_dev`)을 쓴다.
+  - `local-ai.sh <galleryId> [--force] [--only-embed]` — 로컬에서 Lambda 셋 대신
+    임베딩(embedder, DINOv3) → 점수(score, torch) → 그룹·이름(categorize, Bedrock)을 순서대로 돌린다.
+    잡이 없어 배정은 저장되지 않는다(폴더 세트는 워커 경로). 로컬 pg + dev 버킷
+    (`/wes/local/app.storage.bucket`, 인프라 `module.storage_dev`)을 쓴다. local 프로필의
+    "임베딩 실행" 버튼이 `--only-embed`로 이 스크립트를 띄운다(LocalProcessEmbeddingInvoker).
+  - `local-worker.sh [--once]` — 웹 "AI 분석" 버튼의 잡(`ai_analysis_jobs`)을 집는 로컬 워커
+    (AI repo `python -m score worker`: FULL = score → categorize 서브프로세스, NAMING = categorize).
+    운영은 wes → score Lambda → categorize Lambda 체인이라 이 워커가 없다(AI repo #35).
+  - AI venv는 `scripts/lib/ai-venv.sh`가 `<모듈>/.venv`에 만든다(score venv에 categorize 포함).
 
 ## 규칙 참조
 

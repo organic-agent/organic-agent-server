@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
-# 로컬 AI 파이프라인을 한 번에 돌린다: 임베딩(DINOv3) → 분석(그룹·피사체·점수·클러스터, VLM은 Ollama).
+# 로컬 AI 파이프라인을 한 번에 돌린다: 임베딩(미리보기 PUT → DINOv3) → 점수(score) → 그룹·이름(categorize).
 #
-# 운영에서 Lambda·배치가 하는 일을 노트북이 대신한다. 로컬 wes(local 프로필)에는 Lambda가 없어
-# POST /embeddings/run 이 503으로 끝나므로, 사진을 올린 뒤 이 스크립트를 부른다.
-# (추천 draft 단계는 추천 기능 재설계로 제거했다 — docs/plans/ai-folder-structure.md)
+# 운영에서 Lambda 셋(embedder → score → categorize)이 체인으로 하는 일을 노트북이 순서대로 대신한다. 로컬 wes(local
+# 프로필)는 "임베딩 실행" 버튼에서 이 스크립트를 `--only-embed` 로 서브프로세스로 띄운다(LocalProcessEmbeddingInvoker).
+# 폴더화의 정식 경로는 웹의 "AI 분석" 버튼 → local-worker.sh(잡)다. 이 스크립트의 점수·그룹 단계는 잡 없이 한 번에
+# 돌려 보는 지름길이라 **배정(ai_concept_assignments)은 저장되지 않는다** — 폴더 세트가 필요하면 워커 경로를 쓴다.
+# 추천·비교샷은 wes 안에서 돈다.
 #
-#   scripts/local-ai.sh <galleryId> [--force] [--no-vlm]
-#                       [--skip-embed] [--skip-analyze] [--only-embed]
+#   scripts/local-ai.sh <galleryId> [--force] [--skip-embed] [--skip-analyze] [--only-embed]
 #
-#   --force         이미 벡터가 있는 사진도 다시 계산한다 (임베더 --force)
-#   --no-vlm        분석에서 VLM 태그를 뺀다. Ollama를 띄우지 않는다
+#   --force         이미 벡터·점수가 있는 사진도 다시 계산한다 (embedder --force, score --force)
 #   --only-embed    = --skip-analyze
 #
-# 전제: docker(pg), python3, 호스트 Ollama(VLM, --no-vlm이면 불필요), AWS 자격증명(dev 버킷 + /wes/local/ 읽기).
+# 전제: docker(pg), python3, AWS 자격증명(dev 버킷 + /wes/local/ 읽기 + Bedrock — categorize 의 naming).
+# AI repo venv 는 embedder/.venv · score/.venv(categorize 포함)에 이 스크립트가 만든다(scripts/lib/ai-venv.sh).
 # DB는 docker-compose.local.yml의 pg(localhost:5432 wes/wes/wes)가 기본이고 DB_* 환경변수로 덮어쓴다.
 # S3_BUCKET은 환경변수 → /wes/local/app.storage.bucket(인프라 apply가 기록) 순으로 정한다.
 # 운영 RDS를 가리키게 하지 마라 — 미확정 스키마 시험은 부술 수 있는 DB에서만 한다.
@@ -23,17 +24,14 @@ AI_ROOT="${AI_ROOT:-$WES_ROOT/../../organic-agent-ai}"
 COMPOSE=(docker compose -f "$WES_ROOT/docker-compose.local.yml")
 REGION="${AWS_REGION:-ap-northeast-2}"
 BUCKET_PARAM="/wes/local/app.storage.bucket"
-VLM_MODEL="${VLM_MODEL:-gemma3:12b}"   # AI repo config.py의 vlm_model과 같아야 한다
-VLM_HOST="http://127.0.0.1:11434"
 
 GALLERY_ID=""
-FORCE=false; NO_VLM=false
+FORCE=false
 SKIP_EMBED=false; SKIP_ANALYZE=false
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --force) FORCE=true ;;
-    --no-vlm) NO_VLM=true ;;
     --skip-embed) SKIP_EMBED=true ;;
     --skip-analyze) SKIP_ANALYZE=true ;;
     --only-embed) SKIP_ANALYZE=true ;;
@@ -74,71 +72,34 @@ if [ "$DB_HOST" = "localhost" ] && [ "$DB_PORT" = "5432" ]; then
   "${COMPOSE[@]}" up -d postgres >/dev/null
 fi
 
+# shellcheck source=scripts/lib/ai-venv.sh
+. "$WES_ROOT/scripts/lib/ai-venv.sh"
+
 # --- 1. 임베딩 (AI repo embedder/, DINOv3) ------------------------------------------------------
-# embedder는 organic-agent-ai repo로 이관됐다(#123). venv는 embedder/.venv 에 한 번 만든다.
-# 리눅스에서는 CUDA 빌드가 딸려오지 않게 CPU 인덱스로, 맥은 pypi 기본 빌드가 MPS를 잡는다.
-EMBEDDER_DIR="$AI_ROOT/embedder"
-EMBEDDER_PY="$EMBEDDER_DIR/.venv/bin/python"
 if [ "$SKIP_EMBED" = false ]; then
-  if [ ! -x "$EMBEDDER_PY" ]; then
-    echo "[embed] venv 생성: $EMBEDDER_DIR/.venv"
-    python3 -m venv "$EMBEDDER_DIR/.venv"
-    if [ "$(uname -s)" = "Linux" ]; then
-      "$EMBEDDER_PY" -m pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cpu
-    else
-      "$EMBEDDER_PY" -m pip install -q torch torchvision
-    fi
-    "$EMBEDDER_PY" -m pip install -q -r "$EMBEDDER_DIR/requirements.txt"
-  fi
+  EMBEDDER_PY="$(ai_python "$AI_ROOT" embedder)"
   EMBED_ARGS=(--gallery-id "$GALLERY_ID")
   [ "$FORCE" = true ] && EMBED_ARGS+=(--force)
   echo "[embed] python -m embedder ${EMBED_ARGS[*]}"
-  (cd "$EMBEDDER_DIR" && "$EMBEDDER_PY" -m embedder "${EMBED_ARGS[@]}")
+  (cd "$AI_ROOT/embedder" && "$EMBEDDER_PY" -m embedder "${EMBED_ARGS[@]}")
 fi
 
-# --- AI repo CLI ---------------------------------------------------------------------------------
 if [ "$SKIP_ANALYZE" = true ]; then
   echo "끝. 임베딩만 돌렸다."
   exit 0
 fi
 
-if [ ! -d "$AI_ROOT/photoselect" ]; then
-  echo "AI repo를 찾지 못했다: $AI_ROOT (AI_ROOT 환경변수로 지정)" >&2
-  exit 1
-fi
-AI_PY="$AI_ROOT/photoselect/scripts/spike/.venv/bin/python"
-[ -x "$AI_PY" ] || AI_PY="python3"
+# --- 2. 점수 (AI repo score/, torch) → 3. 그룹·이름 (categorize/, Bedrock) ---------------------------
+# 운영은 score Lambda 가 끝에서 categorize 를 EVENT 로 부른다. 여기서는 잡 없이 둘을 순서대로 직접 부른다 —
+# categorize 는 --llm 으로 naming 까지 가지만, 잡이 없어 배정은 저장하지 않는다(로그·결과 payload 로만 확인).
+SCORE_PY="$(ai_python "$AI_ROOT" score)"
+SCORE_ARGS=(--gallery-id "$GALLERY_ID")
+[ "$FORCE" = true ] && SCORE_ARGS+=(--force)
+echo "[score] python -m score ${SCORE_ARGS[*]}"
+"$SCORE_PY" -m score "${SCORE_ARGS[@]}"
 
-# AI repo의 --db 스위치(DbStore)는 AI repo 쪽 작업이다. 없으면 여기서 멈춘다 —
-# 로컬 파일 모드로 돌리면 결과가 out/에만 남고 wes API가 읽는 photo_analysis에는 아무것도 안 들어간다.
-if ! (cd "$AI_ROOT" && "$AI_PY" -m photoselect analyze --help 2>/dev/null | grep -q -- '--db'); then
-  echo "AI repo의 'photoselect analyze --db'가 아직 없다(DbStore 미구현). 임베딩까지만 끝났다." >&2
-  echo "  $AI_ROOT/photoselect — e2e-test-plan.md 1단계(DbStore·--db)가 끝나면 다시 부른다." >&2
-  exit 2
-fi
+echo "[categorize] python -m categorize --gallery-id $GALLERY_ID --llm"
+"$SCORE_PY" -m categorize --gallery-id "$GALLERY_ID" --llm
 
-# --- 2. 분석 (VLM은 Ollama) ----------------------------------------------------------------------
-if [ "$SKIP_ANALYZE" = false ]; then
-  ANALYZE_ARGS=(--gallery "$GALLERY_ID" --db)
-  [ "$FORCE" = true ] && ANALYZE_ARGS+=(--force)
-  if [ "$NO_VLM" = true ]; then
-    ANALYZE_ARGS+=(--no-vlm)
-  else
-    # 호스트 Ollama(맥은 GPU/MPS를 잡는다 -- Docker Ollama는 못 잡아 쓰지 않는다). 안 떠 있으면 띄운다.
-    if ! curl -sf "$VLM_HOST/api/tags" >/dev/null; then
-      command -v ollama >/dev/null || { echo "ollama가 없다. brew install ollama 또는 --no-vlm" >&2; exit 1; }
-      echo "[vlm] ollama serve 기동 (로그: /tmp/ollama-local.log)"
-      nohup ollama serve >/tmp/ollama-local.log 2>&1 &
-      for _ in $(seq 1 30); do curl -sf "$VLM_HOST/api/tags" >/dev/null && break; sleep 1; done
-    fi
-    if ! ollama list 2>/dev/null | grep -q "^$VLM_MODEL"; then
-      echo "[vlm] 모델 pull: $VLM_MODEL (첫 실행은 수 GB)"
-      ollama pull "$VLM_MODEL"
-    fi
-  fi
-  echo "[analyze] python -m photoselect analyze ${ANALYZE_ARGS[*]}"
-  (cd "$AI_ROOT" && "$AI_PY" -m photoselect analyze "${ANALYZE_ARGS[@]}")
-fi
-
-echo "확인(API): POST /api/v1/galleries/$GALLERY_ID/folder-groups/ai (작가 토큰) — 배정이 있으면 AI 폴더 세트가 생긴다"
-echo "끝. 확인: psql -h $DB_HOST -p $DB_PORT -U $DB_USER $DB_NAME -c \"SELECT count(*) FILTER (WHERE embedding IS NOT NULL) AS embedded, count(model_version) AS analyzed FROM photo_analysis a JOIN photos p ON p.id = a.photo_id WHERE p.gallery_id = $GALLERY_ID\""
+echo "폴더 세트까지 가려면: 웹 \"AI 분석\" 버튼(잡) + scripts/local-worker.sh — 배정은 잡에 매달린다"
+echo "끝. 확인: psql -h $DB_HOST -p $DB_PORT -U $DB_USER $DB_NAME -c \"SELECT count(*) FILTER (WHERE embedding IS NOT NULL) AS embedded, count(model_version) AS scored, count(embed_group_id) AS categorized FROM photo_analysis a JOIN photos p ON p.id = a.photo_id WHERE p.gallery_id = $GALLERY_ID\""
