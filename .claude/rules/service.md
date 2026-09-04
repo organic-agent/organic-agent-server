@@ -39,7 +39,7 @@ paths:
    거절한다 (중복 409, 남의 갤러리 사진 400). 부분 성공은 성공처럼 보이는데 무엇이 빠졌는지
    아무도 말할 수 없다.
 5. **검증이 저장보다 먼저다.** 거절될 요청이 부산물(빈 부모폴더, 이름 없는 세션)을 남기지 않게,
-   저장 전에 전부 검증한다 (`PhotoFolderGroupService.create`, `CollabSessionService.open` 전례).
+   저장 전에 전부 검증한다 (`CategoryService.movePhotos`, `CollabSessionService.open` 전례).
 
 ## 예외
 

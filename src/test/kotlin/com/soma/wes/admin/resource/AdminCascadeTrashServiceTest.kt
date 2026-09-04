@@ -74,9 +74,6 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             "conceptFolderId" to createConceptFolder(gallery.id),
             "name" to "가족 의견",
         ))
-        val album = create(actor.requiredId, AdminResourceType.ALBUM, mapOf(
-            "galleryId" to gallery.id, "name" to "후보 앨범",
-        ))
         val retouch = create(actor.requiredId, AdminResourceType.RETOUCH_REQUEST, mapOf(
             "galleryId" to gallery.id, "roundNo" to 1,
         ))
@@ -97,16 +94,6 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             """.trimIndent(),
         ).param("sessionId", collaboration.id).param("photoId", activePhoto.id)
             .param("guestId", collabGuestId).update()
-        val templateId = jdbcClient.sql(
-            """
-            INSERT INTO admin_album_templates (studio_id, name, layout_json, version, created_at, updated_at)
-            VALUES (:studioId, 'trash-template', '{}'::JSONB, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            RETURNING id
-            """.trimIndent(),
-        ).param("studioId", studio.id).query { rs, _ -> rs.getLong("id") }.single()
-        jdbcClient.sql(
-            "UPDATE photo_folder_groups SET template_id = :templateId, template_name = 'trash-template' WHERE id = :albumId",
-        ).param("templateId", templateId).param("albumId", album.id).update()
         jdbcClient.sql(
             """
             INSERT INTO admin_photo_revisions
@@ -143,7 +130,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         assertThat(batch.affectedCounts).containsEntry("GALLERY", 1L).containsEntry("PHOTO", 1L)
             .containsEntry("GALLERY_MEMBER", 1L)
             .containsEntry("SELECTION", 1L).containsEntry("COLLABORATION", 1L)
-            .containsEntry("ALBUM", 1L).containsEntry("RETOUCH_REQUEST", 1L)
+            .containsEntry("RETOUCH_REQUEST", 1L)
             .containsEntry("COLLAB_COMMENT", 1L)
         assertThat(contextService.get(AdminResourceType.GALLERY, gallery.id).facts)
             .containsEntry("trashBatchId", batch.id)
@@ -171,13 +158,11 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             .containsEntry("entryCount", batch.affectedCounts.values.sum())
             .containsEntry("rootEntryCount", 1L)
             .containsEntry("commentCount", 1L)
-            .containsEntry("albumTemplateReferenceCount", 1L)
-            .containsEntry("templateMetadataCount", 1L)
             .containsEntry("photoRevisionCount", 1L)
             .containsEntry("selectionRevisionCount", 1L)
             .containsEntry("photoStorageMetadataCount", 2L)
             .containsEntry("retouchStorageMetadataCount", 2L)
-        assertThat(batch.relationshipFacts.getValue("entityRevisionCount")).isGreaterThanOrEqualTo(7)
+        assertThat(batch.relationshipFacts.getValue("entityRevisionCount")).isGreaterThanOrEqualTo(6)
         assertThat(deletedAt("photos", activePhoto.id)).isNotNull()
         assertThat(deletedAt("gallery_members", galleryMemberId)).isNotNull()
         val preexistingDeletedAt = deletedAt("photos", alreadyTrashedPhoto.id)
@@ -204,7 +189,6 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         listOf(
             "photo_selections" to selection.id,
             "collab_sessions" to collaboration.id,
-            "photo_folder_groups" to album.id,
             "retouch_rounds" to retouch.id,
         ).forEach { (table, id) -> assertThat(deletedAt(table, id)).isNull() }
         assertThat(contextService.get(AdminResourceType.GALLERY, gallery.id).facts)
@@ -330,7 +314,6 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         val personalWorkspaceId = jdbcClient.sql(
             "SELECT id FROM workspaces WHERE type = 'PERSONAL' AND personal_owner_user_id = :userId",
         ).param("userId", target.id).query { rs, _ -> rs.getLong(1) }.single()
-        val targetTemplateId = insertAlbumTemplate(targetStudio.id, "target-user")
         create(actor.requiredId, AdminResourceType.GALLERY, mapOf(
             "workspaceId" to targetStudio.id, "title" to "대상 갤러리",
         ))
@@ -340,7 +323,6 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         val otherStudio = create(actor.requiredId, AdminResourceType.STUDIO, mapOf(
             "ownerUserId" to other.id, "name" to "다른 스튜디오", "galleryUrl" to "other-gallery",
         ))
-        val otherTemplateId = insertAlbumTemplate(otherStudio.id, "other-user")
         val otherGallery = create(actor.requiredId, AdminResourceType.GALLERY, mapOf(
             "workspaceId" to otherStudio.id, "title" to "외부 갤러리",
         ))
@@ -414,10 +396,8 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         assertThat(count("studios", "id", targetStudio.id)).isZero()
         assertThat(count("workspace_members", "id", externalStudioMemberId)).isZero()
         assertThat(count("workspace_members", "id", ownedStudioMemberId)).isZero()
-        assertThat(count("admin_album_templates", "id", targetTemplateId)).isZero()
         assertThat(count("users", "id", ownedStudioMember.id)).isOne()
         assertThat(count("studios", "id", otherStudio.id)).isOne()
-        assertThat(count("admin_album_templates", "id", otherTemplateId)).isOne()
     }
 
     @Test
@@ -464,7 +444,6 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         val studio = create(actor.requiredId, AdminResourceType.STUDIO, mapOf(
             "ownerUserId" to owner.id, "name" to "구성원 대상 스튜디오", "galleryUrl" to "studio-member-cascade",
         ))
-        val templateId = insertAlbumTemplate(studio.id, "target-studio")
         val member = create(actor.requiredId, AdminResourceType.USER, mapOf(
             "provider" to "KAKAO", "providerId" to "studio-member-user", "nickname" to "스튜디오 구성원",
         ))
@@ -476,7 +455,6 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         val unrelatedStudio = create(actor.requiredId, AdminResourceType.STUDIO, mapOf(
             "ownerUserId" to unrelatedOwner.id, "name" to "무관 스튜디오", "galleryUrl" to "studio-member-unrelated",
         ))
-        val unrelatedTemplateId = insertAlbumTemplate(unrelatedStudio.id, "unrelated-studio")
         val unrelatedRelationId = insertStudioMember(unrelatedStudio.id, member.id)
 
         val batch = service.delete(
@@ -526,12 +504,10 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
 
         assertThat(count("studios", "id", studio.id)).isZero()
         assertThat(count("workspace_members", "id", memberRelationId)).isZero()
-        assertThat(count("admin_album_templates", "id", templateId)).isZero()
         assertThat(count("users", "id", owner.id)).isOne()
         assertThat(count("users", "id", member.id)).isOne()
         assertThat(count("studios", "id", unrelatedStudio.id)).isOne()
         assertThat(count("workspace_members", "id", unrelatedRelationId)).isOne()
-        assertThat(count("admin_album_templates", "id", unrelatedTemplateId)).isOne()
     }
 
     @Test
@@ -546,7 +522,6 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         val gallery = create(actor.requiredId, AdminResourceType.GALLERY, mapOf(
             "workspaceId" to studio.id, "title" to "영구 삭제 갤러리",
         ))
-        val reusableTemplateId = insertAlbumTemplate(studio.id, "gallery-shared")
         val member = create(actor.requiredId, AdminResourceType.USER, mapOf(
             "provider" to "NAVER", "providerId" to "purge-member", "nickname" to "남아야 할 멤버",
         ))
@@ -605,7 +580,6 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         assertThat(count("galleries", "id", gallery.id)).isZero()
         assertThat(count("users", "id", member.id)).isOne()
         assertThat(count("gallery_members", "id", memberRelationId)).isZero()
-        assertThat(count("admin_album_templates", "id", reusableTemplateId)).isOne()
         assertThat(count("admin_processing_jobs", "target_id", photo.id)).isZero()
         assertThat(count("admin_notification_outbox", "source_id", photo.id)).isZero()
         assertThat(idempotencyStatuses(photo.id)).isEmpty()
@@ -894,19 +868,6 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         """.trimIndent(),
     ).param("studioId", studioId).param("userId", userId)
         .query { rs, _ -> rs.getLong("id") }.single()
-
-    private fun insertAlbumTemplate(studioId: Long, suffix: String): Long = jdbcClient.sql(
-        """
-        INSERT INTO admin_album_templates
-            (studio_id, name, layout_json, version, created_at, updated_at)
-        VALUES (:studioId, :name, '{"folders":[]}'::JSONB, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        RETURNING id
-        """.trimIndent(),
-    )
-        .param("studioId", studioId)
-        .param("name", "purge-template-$suffix")
-        .query { rs, _ -> rs.getLong("id") }
-        .single()
 
     private fun insertRetouchArtifact(galleryId: Long, photoId: Long, suffix: String): String {
         val roundId = jdbcClient.sql(

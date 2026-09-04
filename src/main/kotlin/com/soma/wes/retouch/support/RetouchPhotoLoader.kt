@@ -10,7 +10,7 @@ import com.soma.wes.retouch.repository.RetouchPhotoRepository
 import org.springframework.stereotype.Component
 
 /**
- * 보정 회차에 담을 사진 요청을 검증한다 ([com.soma.wes.folder.support.FolderPhotoLoader] 전례).
+ * 보정 회차에 담을 사진 요청을 검증한다.
  * 잘못된 항목이 하나라도 섞이면 전체를 거절한다.
  */
 @Component

@@ -3,7 +3,6 @@ package com.soma.wes.admin.resource
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.fixture.AdminAccountFixture
-import com.soma.wes.admin.resource.domain.AdminChildTrashType
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.dto.AdminResourceResponse
 import com.soma.wes.admin.resource.dto.AdminWorkflowAction
@@ -40,9 +39,6 @@ import org.springframework.transaction.support.TransactionTemplate
 import java.time.Instant
 import java.time.ZonedDateTime
 import java.time.temporal.ChronoUnit
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 @IntegrationTest
 class AdminWorkflowServiceTest @Autowired constructor(
@@ -1281,7 +1277,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `AI 초안은 임베딩과 품질로 결정적으로 다양화하고 제출 리비전과 mock 작업을 남긴다`() {
+    fun `AI 초안은 임베딩과 품질로 결정적으로 다양화하고 제출 리비전을 남긴다`() {
         val actor = adminAccountFixture.관리자("workflow-selection-owner")
         val graph = createGraph(actor.requiredId, "selection")
         val selection = resourceService.create(
@@ -1321,12 +1317,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             "selection-submit-001",
             mapOf("revisionId" to revisionId),
         )
-        val mockJobId = (submitted.details.getValue("mockRecalculationJobId") as Number).toLong()
-        assertThat(submitted.status).isEqualTo("PENDING")
-        assertThat(
-            jdbcClient.sql("SELECT status FROM admin_processing_jobs WHERE id = :id")
-                .param("id", mockJobId).query { rs, _ -> rs.getString(1) }.single(),
-        ).isEqualTo("PENDING")
+        assertThat(submitted.status).isEqualTo("COMPLETED")
         assertThat(
             jdbcClient.sql("SELECT status FROM photo_selections WHERE id = :id")
                 .param("id", selection.id).query { rs, _ -> rs.getString(1) }.single(),
@@ -1492,460 +1483,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `스튜디오 템플릿은 같은 스튜디오 앨범에 공유되고 참조를 끊은 뒤에만 삭제된다`() {
-        val actor = adminAccountFixture.관리자("workflow-content-owner")
-        val graph = createGraph(actor.requiredId, "content", withPhoto = true)
-        val photo = requireNotNull(graph.photo)
-        val album = resourceService.create(
-            actor.requiredId,
-            AdminResourceType.ALBUM,
-            CreateAdminResourceRequest(
-                "앨범 생성",
-                mapOf("galleryId" to graph.gallery.id, "name" to "본식 앨범"),
-            ),
-            "127.0.0.1",
-        )
-        val retouch = resourceService.create(
-            actor.requiredId,
-            AdminResourceType.RETOUCH_REQUEST,
-            CreateAdminResourceRequest(
-                "보정 라운드 생성",
-                mapOf("galleryId" to graph.gallery.id, "roundNo" to 1),
-            ),
-            "127.0.0.1",
-        )
-        val unrelatedAlbum = resourceService.create(
-            actor.requiredId,
-            AdminResourceType.ALBUM,
-            CreateAdminResourceRequest(
-                "무관 앨범 생성",
-                mapOf("galleryId" to graph.gallery.id, "name" to "무관 앨범"),
-            ),
-            "127.0.0.1",
-        )
-        val foreignGraph = createGraph(actor.requiredId, "content-foreign")
-        val foreignAlbum = resourceService.create(
-            actor.requiredId,
-            AdminResourceType.ALBUM,
-            CreateAdminResourceRequest(
-                "다른 스튜디오 앨범 생성",
-                mapOf("galleryId" to foreignGraph.gallery.id, "name" to "다른 스튜디오 앨범"),
-            ),
-            "127.0.0.1",
-        )
-
-        val template = execute(
-            actor.requiredId,
-            AdminResourceType.ALBUM,
-            album.id,
-            AdminWorkflowAction.CREATE_ALBUM_TEMPLATE,
-            0,
-            "album-template-create-001",
-            mapOf("name" to "12x12 클래식", "layout" to mapOf("columns" to 2, "gutter" to 16)),
-        )
-        val templateId = (template.details.getValue("templateId") as Number).toLong()
-        val foreignTemplateId = jdbcClient.sql(
-            """
-            INSERT INTO admin_album_templates (studio_id,name,layout_json,version,created_at,updated_at)
-            VALUES (:studioId,'다른 스튜디오 전용','{}'::JSONB,0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
-            RETURNING id
-            """.trimIndent(),
-        ).param("studioId", foreignGraph.studio.id).query { rs, _ -> rs.getLong(1) }.single()
-        assertThat(template.details).containsEntry("albumId", album.id).containsEntry("assigned", true)
-        assertThat(
-            jdbcClient.sql("SELECT template_id FROM photo_folder_groups WHERE id = :id")
-                .param("id", album.id).query { rs, _ -> rs.getLong(1) }.single(),
-        ).isEqualTo(templateId)
-        assertThat(
-            jdbcClient.sql("SELECT studio_id FROM admin_album_templates WHERE id = :id")
-                .param("id", templateId).query { rs, _ -> rs.getLong(1) }.single(),
-        ).isEqualTo(graph.studio.id)
-        assertThat(
-            contextService.get(AdminResourceType.ALBUM, album.id).sections.getValue("templates")
-                .map { row -> (row.getValue("id") as Number).toLong() },
-        ).contains(templateId).doesNotContain(foreignTemplateId)
-        execute(
-            actor.requiredId,
-            AdminResourceType.ALBUM,
-            album.id,
-            AdminWorkflowAction.UPDATE_ALBUM_TEMPLATE,
-            1,
-            "album-template-update-001",
-            mapOf(
-                "templateId" to templateId,
-                "templateExpectedVersion" to 0,
-                "name" to "12x12 클래식 v2",
-                "layout" to mapOf("columns" to 3, "gutter" to 12),
-            ),
-        )
-        execute(
-            actor.requiredId,
-            AdminResourceType.ALBUM,
-            unrelatedAlbum.id,
-            AdminWorkflowAction.REPLACE_ALBUM_LAYOUT,
-            0,
-            "album-template-shared-owner-001",
-            mapOf("templateId" to templateId, "folders" to emptyList<Map<String, Any?>>()),
-        )
-        assertThat(
-            jdbcClient.sql("SELECT template_id FROM photo_folder_groups WHERE id = :id")
-                .param("id", unrelatedAlbum.id).query { rs, _ -> rs.getLong(1) }.single(),
-        ).isEqualTo(templateId)
-        assertThatThrownBy {
-            execute(
-                actor.requiredId,
-                AdminResourceType.ALBUM,
-                foreignAlbum.id,
-                AdminWorkflowAction.REPLACE_ALBUM_LAYOUT,
-                0,
-                "album-template-cross-studio-001",
-                mapOf("templateId" to templateId, "folders" to emptyList<Map<String, Any?>>()),
-            )
-        }.isInstanceOf(AdminException::class.java)
-        assertThat(resourceService.get(AdminResourceType.ALBUM, foreignAlbum.id).version).isZero()
-        execute(
-            actor.requiredId,
-            AdminResourceType.ALBUM,
-            album.id,
-            AdminWorkflowAction.UPDATE_ALBUM_TEMPLATE,
-            2,
-            "album-template-shared-update-001",
-            mapOf(
-                "templateId" to templateId,
-                "templateExpectedVersion" to 1,
-                "name" to "12x12 공유 클래식",
-                "layout" to mapOf("columns" to 4, "gutter" to 10),
-            ),
-        )
-        val sharedReferences = jdbcClient.sql(
-            "SELECT id, template_name, version FROM photo_folder_groups WHERE id IN (:ids) ORDER BY id",
-        ).param("ids", listOf(album.id, unrelatedAlbum.id))
-            .query { rs, _ -> Triple(rs.getLong("id"), rs.getString("template_name"), rs.getLong("version")) }
-            .list()
-        assertThat(sharedReferences.map { it.second }).containsOnly("12x12 공유 클래식")
-        assertThat(sharedReferences.associate { it.first to it.third })
-            .containsEntry(album.id, 3L)
-            .containsEntry(unrelatedAlbum.id, 2L)
-        assertThatThrownBy {
-            execute(
-                actor.requiredId,
-                AdminResourceType.ALBUM,
-                album.id,
-                AdminWorkflowAction.DELETE_ALBUM_TEMPLATE,
-                3,
-                "album-template-referenced-delete-001",
-                mapOf("templateId" to templateId, "templateExpectedVersion" to 2),
-            )
-        }.isInstanceOf(AdminException::class.java)
-        execute(
-            actor.requiredId,
-            AdminResourceType.ALBUM,
-            album.id,
-            AdminWorkflowAction.REPLACE_ALBUM_LAYOUT,
-            3,
-            "album-template-detach-primary-001",
-            mapOf("folders" to emptyList<Map<String, Any?>>()),
-        )
-        execute(
-            actor.requiredId,
-            AdminResourceType.ALBUM,
-            unrelatedAlbum.id,
-            AdminWorkflowAction.REPLACE_ALBUM_LAYOUT,
-            2,
-            "album-template-detach-shared-001",
-            mapOf("folders" to emptyList<Map<String, Any?>>()),
-        )
-        execute(
-            actor.requiredId,
-            AdminResourceType.ALBUM,
-            album.id,
-            AdminWorkflowAction.DELETE_ALBUM_TEMPLATE,
-            4,
-            "album-template-delete-001",
-            mapOf("templateId" to templateId, "templateExpectedVersion" to 2),
-        )
-        execute(
-            actor.requiredId,
-            AdminResourceType.ALBUM,
-            album.id,
-            AdminWorkflowAction.RESTORE_ALBUM_TEMPLATE,
-            5,
-            "album-template-restore-001",
-            mapOf("templateId" to templateId, "templateExpectedVersion" to 3),
-        )
-        val layout = execute(
-            actor.requiredId,
-            AdminResourceType.ALBUM,
-            album.id,
-            AdminWorkflowAction.REPLACE_ALBUM_LAYOUT,
-            6,
-            "album-layout-replace-001",
-            mapOf(
-                "templateId" to templateId,
-                "folders" to listOf(
-                    mapOf(
-                        "name" to "첫 장",
-                        "items" to listOf(
-                            mapOf(
-                                "photoId" to photo.id,
-                                "sortOrder" to 0,
-                                "crop" to mapOf("x" to 0.1, "y" to 0.2, "width" to 0.8, "height" to 0.7),
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-        )
-        assertThat(layout.status).isEqualTo("COMPLETED")
-        assertThat(layout.details["itemCount"]).isEqualTo(1)
-        assertThat(
-            jdbcClient.sql("SELECT COUNT(*) FROM photo_folder_items WHERE group_id = :albumId")
-                .param("albumId", album.id).query { rs, _ -> rs.getLong(1) }.single(),
-        ).isOne()
-
-        val createdItem = execute(
-            actor.requiredId,
-            AdminResourceType.RETOUCH_REQUEST,
-            retouch.id,
-            AdminWorkflowAction.CREATE_RETOUCH_ITEM,
-            0,
-            "retouch-item-create-001",
-            mapOf(
-                "photoId" to photo.id,
-                "requestText" to "인물 피부만 자연스럽게",
-                "structuredAiMetadata" to mapOf(
-                    "provider" to "operator-assist",
-                    "suggestions" to listOf(mapOf("kind" to "SKIN", "strength" to 0.25)),
-                ),
-            ),
-        )
-        val retouchPhotoId = (createdItem.details.getValue("retouchPhotoId") as Number).toLong()
-        execute(
-            actor.requiredId,
-            AdminResourceType.RETOUCH_REQUEST,
-            retouch.id,
-            AdminWorkflowAction.UPDATE_RETOUCH_ITEM,
-            1,
-            "retouch-item-update-001",
-            mapOf(
-                "retouchPhotoId" to retouchPhotoId,
-                "retouchPhotoExpectedVersion" to 0,
-                "structuredAiMetadata" to mapOf("approved" to true, "strength" to 0.2),
-            ),
-        )
-        val item = jdbcClient.sql(
-            "SELECT request_text, structured_ai_metadata::TEXT FROM retouch_photos WHERE id = :id",
-        ).param("id", retouchPhotoId)
-            .query { rs, _ -> rs.getString("request_text") to rs.getString("structured_ai_metadata") }.single()
-        assertThat(item.first).isEqualTo("인물 피부만 자연스럽게")
-        assertThat(item.second).contains("approved", "true")
-
-        assertThatThrownBy {
-            execute(
-                actor.requiredId,
-                AdminResourceType.RETOUCH_REQUEST,
-                retouch.id,
-                AdminWorkflowAction.DELETE_RETOUCH_ITEM,
-                2,
-                "retouch-item-delete-stale-001",
-                mapOf("retouchPhotoId" to retouchPhotoId, "retouchPhotoExpectedVersion" to 0),
-            )
-        }.isInstanceOfSatisfying(AdminException::class.java) {
-            assertThat(it.errorCode).isEqualTo(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
-        }
-        execute(
-            actor.requiredId,
-            AdminResourceType.RETOUCH_REQUEST,
-            retouch.id,
-            AdminWorkflowAction.DELETE_RETOUCH_ITEM,
-            2,
-            "retouch-item-delete-001",
-            mapOf("retouchPhotoId" to retouchPhotoId, "retouchPhotoExpectedVersion" to 1),
-        )
-        execute(
-            actor.requiredId,
-            AdminResourceType.RETOUCH_REQUEST,
-            retouch.id,
-            AdminWorkflowAction.RESTORE_RETOUCH_ITEM,
-            3,
-            "retouch-item-restore-001",
-            mapOf("retouchPhotoId" to retouchPhotoId, "retouchPhotoExpectedVersion" to 2),
-        )
-        execute(
-            actor.requiredId,
-            AdminResourceType.RETOUCH_REQUEST,
-            retouch.id,
-            AdminWorkflowAction.UPDATE_RETOUCH_DELIVERY,
-            4,
-            "retouch-delivery-update-001",
-            mapOf(
-                "consented" to true,
-                "delivered" to true,
-                "deliveryNote" to "고객 확인 후 납품",
-            ),
-        )
-        assertThat(
-            jdbcClient.sql("SELECT deleted_at IS NULL FROM retouch_photos WHERE id = :id")
-                .param("id", retouchPhotoId).query { rs, _ -> rs.getBoolean(1) }.single(),
-        ).isTrue()
-        assertThat(
-            jdbcClient.sql(
-                "SELECT COUNT(*) FROM admin_child_trash_records WHERE status = 'RESTORED' AND resource_type IN ('ALBUM_TEMPLATE', 'RETOUCH_ITEM')",
-            ).query { rs, _ -> rs.getLong(1) }.single(),
-        ).isEqualTo(2)
-        assertThat(
-            jdbcClient.sql(
-                "SELECT customer_consented_at IS NOT NULL AND delivered_at IS NOT NULL FROM retouch_rounds WHERE id = :id",
-            ).param("id", retouch.id).query { rs, _ -> rs.getBoolean(1) }.single(),
-        ).isTrue()
-        val context = contextService.get(AdminResourceType.RETOUCH_REQUEST, retouch.id)
-        assertThat(context.sections.keys).contains("items")
-        @Suppress("UNCHECKED_CAST")
-        val contextItem = (context.sections.getValue("items") as List<Map<String, Any?>>).single()
-        assertThat(contextItem["version"]).isEqualTo(3L)
-    }
-
-    @Test
-    fun `템플릿 삭제와 동시 레이아웃 배치는 같은 행 잠금으로 직렬화된다`() {
-        val actor = adminAccountFixture.관리자("workflow-template-race-owner")
-        val graph = createGraph(actor.requiredId, "template-race")
-        val deleteParent = resourceService.create(
-            actor.requiredId,
-            AdminResourceType.ALBUM,
-            CreateAdminResourceRequest(
-                "삭제 기준 앨범 생성",
-                mapOf("galleryId" to graph.gallery.id, "name" to "삭제 기준 앨범"),
-            ),
-            "127.0.0.1",
-        )
-        val attachTarget = resourceService.create(
-            actor.requiredId,
-            AdminResourceType.ALBUM,
-            CreateAdminResourceRequest(
-                "배치 대상 앨범 생성",
-                mapOf("galleryId" to graph.gallery.id, "name" to "배치 대상 앨범"),
-            ),
-            "127.0.0.1",
-        )
-        val templateId = jdbcClient.sql(
-            """
-            INSERT INTO admin_album_templates (studio_id,name,layout_json,version,created_at,updated_at)
-            VALUES (:studioId,'동시성 템플릿','{}'::JSONB,0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
-            RETURNING id
-            """.trimIndent(),
-        ).param("studioId", graph.studio.id).query { rs, _ -> rs.getLong(1) }.single()
-
-        val deleteHasRowLock = CountDownLatch(1)
-        val allowDeleteCommit = CountDownLatch(1)
-        val pool = Executors.newFixedThreadPool(2)
-        try {
-            val deleteFuture = pool.submit<Int> {
-                transactionTemplate.execute {
-                    val updated = childTrashRepository.softDeleteChild(
-                        type = AdminChildTrashType.ALBUM_TEMPLATE,
-                        resourceId = templateId,
-                        parentId = deleteParent.id,
-                        expectedChildVersion = 0,
-                        deletedAt = ZonedDateTime.now(),
-                    )
-                    deleteHasRowLock.countDown()
-                    check(allowDeleteCommit.await(30, TimeUnit.SECONDS))
-                    updated
-                } ?: error("delete transaction returned null")
-            }
-            assertThat(deleteHasRowLock.await(10, TimeUnit.SECONDS)).isTrue()
-
-            val attachFuture = pool.submit<Throwable?> {
-                runCatching {
-                    execute(
-                        actor.requiredId,
-                        AdminResourceType.ALBUM,
-                        attachTarget.id,
-                        AdminWorkflowAction.REPLACE_ALBUM_LAYOUT,
-                        0,
-                        "album-template-race-attach-001",
-                        mapOf("templateId" to templateId, "folders" to emptyList<Map<String, Any?>>()),
-                    )
-                }.exceptionOrNull()
-            }
-            assertThat(waitForTemplateLockWait()).isTrue()
-
-            allowDeleteCommit.countDown()
-            assertThat(deleteFuture.get(10, TimeUnit.SECONDS)).isOne()
-            val attachFailure = attachFuture.get(10, TimeUnit.SECONDS)
-            assertThat(attachFailure).isInstanceOfSatisfying(AdminException::class.java) {
-                assertThat(it.errorCode).isEqualTo(AdminErrorCode.RESOURCE_NOT_FOUND)
-            }
-            assertThat(
-                jdbcClient.sql("SELECT template_id FROM photo_folder_groups WHERE id=:id")
-                    .param("id", attachTarget.id)
-                    .query { rs, _ -> rs.getLong(1).takeUnless { rs.wasNull() } }
-                    .list().single(),
-            ).isNull()
-            assertThat(
-                jdbcClient.sql("SELECT deleted_at IS NOT NULL FROM admin_album_templates WHERE id=:id")
-                    .param("id", templateId).query { rs, _ -> rs.getBoolean(1) }.single(),
-            ).isTrue()
-        } finally {
-            allowDeleteCommit.countDown()
-            pool.shutdownNow()
-            pool.awaitTermination(10, TimeUnit.SECONDS)
-        }
-    }
-
-    @Test
-    fun `앨범 컨텍스트는 100개 뒤 항목도 반환하고 안전 상한 초과를 명시한다`() {
-        val actor = adminAccountFixture.관리자("workflow-album-context-limit")
-        val graph = createGraph(actor.requiredId, "album-context-limit")
-        val album = resourceService.create(
-            actor.requiredId,
-            AdminResourceType.ALBUM,
-            CreateAdminResourceRequest(
-                "대용량 앨범 컨텍스트 생성",
-                mapOf("galleryId" to graph.gallery.id, "name" to "대용량 앨범"),
-            ),
-            "127.0.0.1",
-        )
-        val folderId = jdbcClient.sql(
-            """
-            INSERT INTO photo_folders (group_id,gallery_id,name,version,created_at,updated_at)
-            VALUES (:albumId,:galleryId,'대용량 폴더',0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
-            RETURNING id
-            """.trimIndent(),
-        ).param("albumId", album.id).param("galleryId", graph.gallery.id)
-            .query { rs, _ -> rs.getLong("id") }.single()
-        jdbcClient.sql(
-            """
-            WITH inserted_photos AS (
-                INSERT INTO photos
-                    (gallery_id,storage_key,original_file_name,display_order,status,content_type,
-                     version,created_at,updated_at)
-                SELECT :galleryId,
-                       'album-context-' || :albumId || '-' || n || '.jpg',
-                       'album-context-' || n || '.jpg',
-                       n,'UPLOADED','image/jpeg',0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
-                FROM generate_series(1, 2001) AS n
-                RETURNING id,display_order
-            )
-            INSERT INTO photo_folder_items
-                (group_id,folder_id,photo_id,sort_order,version,created_at,updated_at)
-            SELECT :albumId,:folderId,id,display_order,0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
-            FROM inserted_photos
-            """.trimIndent(),
-        ).param("galleryId", graph.gallery.id).param("albumId", album.id).param("folderId", folderId).update()
-
-        val context = contextService.get(AdminResourceType.ALBUM, album.id)
-
-        assertThat(context.sections.getValue("items")).hasSize(2_000)
-        assertThat(context.sections.getValue("items")[100]["sortOrder"]).isEqualTo(101)
-        assertThat(context.sectionPageInfo.getValue("items").totalCount).isEqualTo(2_001)
-        assertThat(context.sectionPageInfo.getValue("items").returnedCount).isEqualTo(2_000)
-        assertThat(context.sectionPageInfo.getValue("items").truncated).isTrue()
-        assertThat(context.sectionPageInfo.getValue("folders").truncated).isFalse()
-    }
-
-    @Test
-    fun `선택 변경 전 리비전은 기존 보정과 앨범에 고정하고 새 mock 작업은 새 제출 리비전을 참조한다`() {
+    fun `선택 변경 전 리비전은 기존 보정에 고정된다`() {
         val actor = adminAccountFixture.관리자("workflow-revision-link-owner")
         val graph = createGraph(actor.requiredId, "revision-link", withPhoto = true)
         val photo = requireNotNull(graph.photo)
@@ -1963,28 +1501,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
             0,
             "revision-link-items-001",
             mapOf("photoIds" to listOf(photo.id)),
-        )
-        val album = resourceService.create(
-            actor.requiredId,
-            AdminResourceType.ALBUM,
-            CreateAdminResourceRequest(
-                "리비전 연결 앨범",
-                mapOf("galleryId" to graph.gallery.id, "name" to "리비전 앨범"),
-            ),
-            "127.0.0.1",
-        )
-        execute(
-            actor.requiredId,
-            AdminResourceType.ALBUM,
-            album.id,
-            AdminWorkflowAction.REPLACE_ALBUM_LAYOUT,
-            0,
-            "revision-link-album-001",
-            mapOf(
-                "folders" to listOf(
-                    mapOf("name" to "선택 원본", "items" to listOf(mapOf("photoId" to photo.id))),
-                ),
-            ),
         )
         val retouch = resourceService.create(
             actor.requiredId,
@@ -2017,20 +1533,11 @@ class AdminWorkflowServiceTest @Autowired constructor(
         )
         val previousRevisionId = (submitted.details.getValue("previousRevisionId") as Number).toLong()
         val submittedRevisionId = (submitted.details.getValue("revisionId") as Number).toLong()
-        val mockJobId = (submitted.details.getValue("mockRecalculationJobId") as Number).toLong()
         assertThat(previousRevisionId).isNotEqualTo(submittedRevisionId)
         assertThat(
             jdbcClient.sql("SELECT selection_revision_id FROM retouch_rounds WHERE id = :id")
                 .param("id", retouch.id).query { rs, _ -> rs.getLong(1) }.single(),
         ).isEqualTo(previousRevisionId)
-        assertThat(
-            jdbcClient.sql("SELECT selection_revision_id FROM photo_folder_groups WHERE id = :id")
-                .param("id", album.id).query { rs, _ -> rs.getLong(1) }.single(),
-        ).isEqualTo(previousRevisionId)
-        assertThat(
-            jdbcClient.sql("SELECT revision_id FROM admin_processing_jobs WHERE id = :id")
-                .param("id", mockJobId).query { rs, _ -> rs.getLong(1) }.single(),
-        ).isEqualTo(submittedRevisionId)
 
         execute(
             actor.requiredId,
@@ -2045,130 +1552,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
             jdbcClient.sql("SELECT selection_revision_id FROM retouch_rounds WHERE id = :id")
                 .param("id", retouch.id).query { rs, _ -> rs.getLong(1) }.single(),
         ).isEqualTo(previousRevisionId)
-        assertThat(
-            jdbcClient.sql("SELECT selection_revision_id FROM photo_folder_groups WHERE id = :id")
-                .param("id", album.id).query { rs, _ -> rs.getLong(1) }.single(),
-        ).isEqualTo(previousRevisionId)
-    }
-
-    @Test
-    fun `앨범 교체는 sortOrder와 crop 계약 위반을 거절하고 기존 레이아웃을 보존한다`() {
-        val actor = adminAccountFixture.관리자("workflow-album-contract-owner")
-        val graph = createGraph(actor.requiredId, "album-contract", withPhoto = true)
-        val firstPhoto = requireNotNull(graph.photo)
-        val secondPhoto = createPhoto(actor.requiredId, graph.gallery.id, "album-contract-second")
-        val album = resourceService.create(
-            actor.requiredId,
-            AdminResourceType.ALBUM,
-            CreateAdminResourceRequest(
-                "앨범 계약 기준 레이아웃",
-                mapOf("galleryId" to graph.gallery.id, "name" to "앨범 계약 검증"),
-            ),
-            "127.0.0.1",
-        )
-        execute(
-            actor.requiredId,
-            AdminResourceType.ALBUM,
-            album.id,
-            AdminWorkflowAction.REPLACE_ALBUM_LAYOUT,
-            0,
-            "album-contract-baseline-001",
-            mapOf(
-                "folders" to listOf(
-                    mapOf(
-                        "name" to "기준",
-                        "items" to listOf(
-                            mapOf(
-                                "photoId" to firstPhoto.id,
-                                "sortOrder" to 0,
-                                "crop" to mapOf("x" to 0.1, "y" to 0.2, "width" to 0.8, "height" to 0.7),
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-        )
-        val baseline = albumRows(album.id)
-
-        val invalidLayouts = listOf(
-            listOf(
-                mapOf("name" to "소수 순서", "items" to listOf(
-                    mapOf("photoId" to secondPhoto.id, "sortOrder" to 0.5),
-                )),
-            ),
-            listOf(
-                mapOf("name" to "null 순서", "items" to listOf(
-                    mapOf("photoId" to secondPhoto.id, "sortOrder" to null),
-                )),
-            ),
-            listOf(
-                mapOf("name" to "음수 순서", "items" to listOf(
-                    mapOf("photoId" to secondPhoto.id, "sortOrder" to -1),
-                )),
-            ),
-            listOf(
-                mapOf("name" to "범위 초과 순서", "items" to listOf(
-                    mapOf("photoId" to secondPhoto.id, "sortOrder" to Int.MAX_VALUE.toLong() + 1),
-                )),
-            ),
-            listOf(
-                mapOf("name" to "중복 순서", "items" to listOf(
-                    mapOf("photoId" to firstPhoto.id, "sortOrder" to 0),
-                    mapOf("photoId" to secondPhoto.id, "sortOrder" to 0),
-                )),
-            ),
-            listOf(
-                mapOf("name" to "추가 crop key", "items" to listOf(
-                    mapOf(
-                        "photoId" to secondPhoto.id,
-                        "crop" to mapOf("x" to 0, "y" to 0, "width" to 1, "height" to 1, "rotate" to 90),
-                    ),
-                )),
-            ),
-            listOf(
-                mapOf("name" to "유한하지 않은 crop", "items" to listOf(
-                    mapOf(
-                        "photoId" to secondPhoto.id,
-                        "crop" to mapOf("x" to Double.NaN, "y" to 0, "width" to 1, "height" to 1),
-                    ),
-                )),
-            ),
-            listOf(
-                mapOf("name" to "정규 범위 밖 crop", "items" to listOf(
-                    mapOf(
-                        "photoId" to secondPhoto.id,
-                        "crop" to mapOf("x" to 0.8, "y" to 0, "width" to 0.3, "height" to 1),
-                    ),
-                )),
-            ),
-            List(51) { index -> mapOf("name" to "폴더-$index", "items" to emptyList<Map<String, Any?>>()) },
-            listOf(
-                mapOf(
-                    "name" to "항목 상한 초과",
-                    "items" to (1..1_001).map { index ->
-                        mapOf("photoId" to 1_000_000L + index, "sortOrder" to index - 1)
-                    },
-                ),
-            ),
-        )
-        invalidLayouts.forEachIndexed { index, folders ->
-            assertThatThrownBy {
-                execute(
-                    actor.requiredId,
-                    AdminResourceType.ALBUM,
-                    album.id,
-                    AdminWorkflowAction.REPLACE_ALBUM_LAYOUT,
-                    1,
-                    "album-invalid-${index.toString().padStart(3, '0')}",
-                    mapOf("folders" to folders),
-                )
-            }.isInstanceOfSatisfying(AdminException::class.java) {
-                assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-            }
-        }
-
-        assertThat(albumRows(album.id)).isEqualTo(baseline)
-        assertThat(resourceService.get(AdminResourceType.ALBUM, album.id).version).isEqualTo(1)
     }
 
     @Test
@@ -2434,28 +1817,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
         "127.0.0.1",
     )
 
-    private fun waitForTemplateLockWait(): Boolean {
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
-        while (System.nanoTime() < deadline) {
-            val waiting = jdbcClient.sql(
-                """
-                SELECT EXISTS (
-                    SELECT 1
-                    FROM pg_stat_activity
-                    WHERE datname = current_database()
-                      AND pid <> pg_backend_pid()
-                      AND wait_event_type = 'Lock'
-                      AND query LIKE '%FROM admin_album_templates t%'
-                )
-                """.trimIndent(),
-            ).query { rs, _ -> rs.getBoolean(1) }.single()
-            if (waiting) return true
-            Thread.sleep(25)
-        }
-        return false
-    }
-
-    private fun createGraph(actorAdminId: Long, suffix: String, withPhoto: Boolean = false): Graph {
+private fun createGraph(actorAdminId: Long, suffix: String, withPhoto: Boolean = false): Graph {
         val user = createUser(actorAdminId, "$suffix-owner")
         val studio = resourceService.create(
             actorAdminId,
@@ -2570,25 +1932,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
         ).param("jobId", jobId).param("galleryId", galleryId).update()
     }
 
-    private fun albumRows(albumId: Long): List<AlbumLayoutRow> = jdbcClient.sql(
-        """
-        SELECT folder.name, item.photo_id, item.sort_order, item.crop_json::TEXT
-        FROM photo_folders folder
-        JOIN photo_folder_items item ON item.folder_id = folder.id
-        WHERE folder.group_id = :albumId
-        ORDER BY folder.id, item.sort_order, item.id
-        """.trimIndent(),
-    )
-        .param("albumId", albumId)
-        .query { rs, _ -> AlbumLayoutRow(
-            folderName = rs.getString("name"),
-            photoId = rs.getLong("photo_id"),
-            sortOrder = rs.getInt("sort_order"),
-            cropJson = rs.getString("crop_json"),
-        ) }
-        .list()
-
-    private fun createConceptFolder(galleryId: Long, name: String): Long = jdbcClient.sql(
+private fun createConceptFolder(galleryId: Long, name: String): Long = jdbcClient.sql(
         """
         INSERT INTO concept_folders
             (gallery_id, name, sort_order, created_source, version, created_at, updated_at)
@@ -2672,11 +2016,4 @@ class AdminWorkflowServiceTest @Autowired constructor(
         val studio: AdminResourceResponse,
         val gallery: AdminResourceResponse,
         val photo: AdminResourceResponse?,
-    )
-    private data class AlbumLayoutRow(
-        val folderName: String,
-        val photoId: Long,
-        val sortOrder: Int,
-        val cropJson: String?,
-    )
-}
+    )}

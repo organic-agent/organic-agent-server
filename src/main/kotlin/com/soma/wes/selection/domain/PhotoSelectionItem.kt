@@ -14,7 +14,7 @@ import jakarta.persistence.UniqueConstraint
  *
  * 사진을 `@ManyToOne`으로 잡지 않고 id만 든다. `open-in-view`가 false라 연관을 걸면 서비스
  * 트랜잭션 밖에서 지연 로딩이 터지고, 앨범을 읽을 때 필요한 것은 사진을 한 번에 가져오는 질의
- * 하나뿐이라 연관이 주는 것이 없다. [com.soma.wes.folder.domain.PhotoFolderItem]과 같은 이유다.
+ * 하나뿐이라 연관이 주는 것이 없다. [com.soma.wes.category.domain.PhotoCategoryAssignment]도 같은 이유로 id만 든다.
  *
  * 담긴 순서를 저장하지 않는 것도 같다 — 화면 순서는 갤러리에서 정한 `displayOrder`를 따른다.
  */

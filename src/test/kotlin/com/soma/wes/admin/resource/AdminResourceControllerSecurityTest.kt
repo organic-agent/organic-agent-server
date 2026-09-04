@@ -527,6 +527,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             CreateAdminResourceRequest("[TEST_OPERATION] 셀렉 준비", mapOf("galleryId" to gallery.id)),
             "127.0.0.1",
         )
+        val conceptFolderId = createConceptFolder(gallery.id)
         val collaboration = adminResourceService.create(
             account.requiredId,
             AdminResourceType.COLLABORATION,
@@ -534,18 +535,9 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
                 "[TEST_OPERATION] 협업 준비",
                 mapOf(
                     "galleryId" to gallery.id,
-                    "conceptFolderId" to createConceptFolder(gallery.id),
+                    "conceptFolderId" to conceptFolderId,
                     "name" to "가족 의견",
                 ),
-            ),
-            "127.0.0.1",
-        )
-        val album = adminResourceService.create(
-            account.requiredId,
-            AdminResourceType.ALBUM,
-            CreateAdminResourceRequest(
-                "[TEST_OPERATION] 앨범 준비",
-                mapOf("galleryId" to gallery.id, "name" to "대표 앨범"),
             ),
             "127.0.0.1",
         )
@@ -607,7 +599,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             jsonPath("$.view.sections.selections[0].galleryId") { value(gallery.id) }
             jsonPath("$.view.sections.collaborations[0].sessionId") { value(collaboration.id) }
             jsonPath("$.view.sections.comments[0].photoId") { value(photo.id) }
-            jsonPath("$.view.sections.album[0].groupId") { value(album.id) }
+            jsonPath("$.view.sections.categories[0].conceptFolderId") { value(conceptFolderId) }
             jsonPath("$.view.sections.retouch[0].galleryId") { value(gallery.id) }
             jsonPath("$.view.sectionCounts.photos") { value(1) }
             jsonPath("$.view.sectionFields.photos") { isArray() }
