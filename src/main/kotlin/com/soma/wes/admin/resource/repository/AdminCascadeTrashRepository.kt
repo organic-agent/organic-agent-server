@@ -91,6 +91,7 @@ class AdminCascadeTrashRepository(
                 .param("rootId", rootId)
                 .query { rs, _ -> rs.getLong("id") }
                 .list()
+            AdminResourceType.ALBUM -> relatedPhotoIds("photo_folder_items", "group_id", rootId)
             AdminResourceType.RETOUCH_REQUEST -> jdbcClient.sql(
                 "SELECT photo_id AS id FROM retouch_photos WHERE round_id = :rootId ORDER BY photo_id",
             )
@@ -239,6 +240,10 @@ class AdminCascadeTrashRepository(
                               JOIN collab_sessions s ON s.id = x.collab_session_id
                               WHERE x.id = e.resource_id AND s.gallery_id = claim.resource_id
                           ))
+                          OR (e.resource_type = 'ALBUM' AND EXISTS (
+                              SELECT 1 FROM photo_folder_groups x
+                              WHERE x.id = e.resource_id AND x.gallery_id = claim.resource_id
+                          ))
                           OR (e.resource_type = 'RETOUCH_REQUEST' AND EXISTS (
                               SELECT 1 FROM retouch_rounds x
                               WHERE x.id = e.resource_id AND x.gallery_id = claim.resource_id
@@ -321,6 +326,10 @@ class AdminCascadeTrashRepository(
                               FROM photo_category_assignments a
                               WHERE a.detail_folder_id = e.resource_id
                                 AND a.photo_id = claim.resource_id
+                          ))
+                          OR (e.resource_type = 'ALBUM' AND EXISTS (
+                              SELECT 1 FROM photo_folder_items x
+                              WHERE x.group_id = e.resource_id AND x.photo_id = claim.resource_id
                           ))
                           OR (e.resource_type = 'RETOUCH_REQUEST' AND EXISTS (
                               SELECT 1 FROM retouch_photos x
@@ -406,6 +415,26 @@ class AdminCascadeTrashRepository(
             ),
             "commentCount" to scalar(
                 "SELECT COUNT(*) FROM admin_trash_entries WHERE batch_id = :batchId AND resource_type = 'COLLAB_COMMENT'",
+                batchId,
+            ),
+            "albumTemplateReferenceCount" to scalar(
+                """
+                SELECT COUNT(*)
+                FROM admin_trash_entries e
+                JOIN photo_folder_groups a ON a.id = e.resource_id
+                WHERE e.batch_id = :batchId AND e.resource_type = 'ALBUM'
+                  AND (a.template_id IS NOT NULL OR a.template_name IS NOT NULL)
+                """.trimIndent(),
+                batchId,
+            ),
+            "templateMetadataCount" to scalar(
+                """
+                SELECT COUNT(DISTINCT t.id)
+                FROM admin_trash_entries e
+                JOIN photo_folder_groups a ON a.id = e.resource_id
+                JOIN admin_album_templates t ON t.id = a.template_id
+                WHERE e.batch_id = :batchId AND e.resource_type = 'ALBUM'
+                """.trimIndent(),
                 batchId,
             ),
             "entityRevisionCount" to scalar(
@@ -771,6 +800,7 @@ class AdminCascadeTrashRepository(
         AdminResourceType.PHOTO -> deleteById("photos", batch.rootId)
         AdminResourceType.SELECTION -> deleteById("photo_selections", batch.rootId)
         AdminResourceType.COLLABORATION -> deleteById("collab_sessions", batch.rootId)
+        AdminResourceType.ALBUM -> deleteById("photo_folder_groups", batch.rootId)
         AdminResourceType.RETOUCH_REQUEST -> deleteById("retouch_rounds", batch.rootId)
         AdminResourceType.CONCEPT_FOLDER -> deleteById("concept_folders", batch.rootId)
         AdminResourceType.DETAIL_FOLDER -> deleteById("detail_folders", batch.rootId)
@@ -1027,6 +1057,7 @@ class AdminCascadeTrashRepository(
             "COLLAB_COMMENT" -> "r.collab_session_id = :rootId"
             else -> null
         }
+        AdminResourceType.ALBUM -> if (target == "ALBUM") "r.id = :rootId" else null
         AdminResourceType.RETOUCH_REQUEST -> if (target == "RETOUCH_REQUEST") "r.id = :rootId" else null
         AdminResourceType.CONCEPT_FOLDER -> when (target) {
             "CONCEPT_FOLDER" -> "r.id = :rootId"
@@ -1042,7 +1073,7 @@ class AdminCascadeTrashRepository(
     private fun childGalleryPredicate(target: String, galleryPredicate: String): String? = when (target) {
         "GALLERY_MEMBER" ->
             "r.gallery_id IN (SELECT g.id FROM galleries g WHERE $galleryPredicate)"
-        "PHOTO", "SELECTION", "COLLABORATION", "RETOUCH_REQUEST", "CONCEPT_FOLDER" ->
+        "PHOTO", "SELECTION", "COLLABORATION", "ALBUM", "RETOUCH_REQUEST", "CONCEPT_FOLDER" ->
             "r.gallery_id IN (SELECT g.id FROM galleries g WHERE $galleryPredicate)"
         "DETAIL_FOLDER" ->
             "r.concept_folder_id IN (SELECT c.id FROM concept_folders c WHERE c.gallery_id IN (SELECT g.id FROM galleries g WHERE $galleryPredicate))"
@@ -1060,6 +1091,7 @@ class AdminCascadeTrashRepository(
             OR (b.root_type = 'PHOTO' AND b.root_id IN (SELECT p.id FROM photos p JOIN galleries g ON g.id = p.gallery_id WHERE g.workspace_id IN ($USER_OWNED_WORKSPACES_SQL)))
             OR (b.root_type = 'SELECTION' AND b.root_id IN (SELECT x.id FROM photo_selections x JOIN galleries g ON g.id = x.gallery_id WHERE g.workspace_id IN ($USER_OWNED_WORKSPACES_SQL)))
             OR (b.root_type = 'COLLABORATION' AND b.root_id IN (SELECT x.id FROM collab_sessions x JOIN galleries g ON g.id = x.gallery_id WHERE g.workspace_id IN ($USER_OWNED_WORKSPACES_SQL)))
+            OR (b.root_type = 'ALBUM' AND b.root_id IN (SELECT x.id FROM photo_folder_groups x JOIN galleries g ON g.id = x.gallery_id WHERE g.workspace_id IN ($USER_OWNED_WORKSPACES_SQL)))
             OR (b.root_type = 'RETOUCH_REQUEST' AND b.root_id IN (SELECT x.id FROM retouch_rounds x JOIN galleries g ON g.id = x.gallery_id WHERE g.workspace_id IN ($USER_OWNED_WORKSPACES_SQL)))
             OR (b.root_type = 'CONCEPT_FOLDER' AND b.root_id IN (SELECT x.id FROM concept_folders x JOIN galleries g ON g.id = x.gallery_id WHERE g.workspace_id IN ($USER_OWNED_WORKSPACES_SQL)))
             OR (b.root_type = 'DETAIL_FOLDER' AND b.root_id IN (SELECT d.id FROM detail_folders d JOIN concept_folders c ON c.id = d.concept_folder_id JOIN galleries g ON g.id = c.gallery_id WHERE g.workspace_id IN ($USER_OWNED_WORKSPACES_SQL)))
@@ -1077,6 +1109,7 @@ class AdminCascadeTrashRepository(
         add("(b.root_type = 'PHOTO' AND b.root_id IN (SELECT p.id FROM photos p WHERE p.gallery_id IN (SELECT g.id FROM galleries g WHERE $galleryPredicate)))")
         add("(b.root_type = 'SELECTION' AND b.root_id IN (SELECT x.id FROM photo_selections x WHERE x.gallery_id IN (SELECT g.id FROM galleries g WHERE $galleryPredicate)))")
         add("(b.root_type = 'COLLABORATION' AND b.root_id IN (SELECT x.id FROM collab_sessions x WHERE x.gallery_id IN (SELECT g.id FROM galleries g WHERE $galleryPredicate)))")
+        add("(b.root_type = 'ALBUM' AND b.root_id IN (SELECT x.id FROM photo_folder_groups x WHERE x.gallery_id IN (SELECT g.id FROM galleries g WHERE $galleryPredicate)))")
         add("(b.root_type = 'RETOUCH_REQUEST' AND b.root_id IN (SELECT x.id FROM retouch_rounds x WHERE x.gallery_id IN (SELECT g.id FROM galleries g WHERE $galleryPredicate)))")
         add("(b.root_type = 'CONCEPT_FOLDER' AND b.root_id IN (SELECT x.id FROM concept_folders x WHERE x.gallery_id IN (SELECT g.id FROM galleries g WHERE $galleryPredicate)))")
         add("(b.root_type = 'DETAIL_FOLDER' AND b.root_id IN (SELECT d.id FROM detail_folders d JOIN concept_folders c ON c.id = d.concept_folder_id WHERE c.gallery_id IN (SELECT g.id FROM galleries g WHERE $galleryPredicate)))")
@@ -1150,6 +1183,8 @@ class AdminCascadeTrashRepository(
             "entryCount",
             "rootEntryCount",
             "commentCount",
+            "albumTemplateReferenceCount",
+            "templateMetadataCount",
             "entityRevisionCount",
             "photoRevisionCount",
             "selectionRevisionCount",
@@ -1169,6 +1204,7 @@ class AdminCascadeTrashRepository(
             SoftTarget("SELECTION", "photo_selections"),
             SoftTarget("COLLABORATION", "collab_sessions"),
             SoftTarget("COLLAB_COMMENT", "collab_photo_comments"),
+            SoftTarget("ALBUM", "photo_folder_groups"),
             SoftTarget("RETOUCH_REQUEST", "retouch_rounds"),
         )
     }

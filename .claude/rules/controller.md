@@ -36,7 +36,7 @@ paths:
 - `@Tag`·`@Operation`·`@ApiResponses`는 **docs 인터페이스에만** 둔다. 컨트롤러에는 매핑 애노테이션
   (`@PostMapping` 등)과 파라미터 바인딩 애노테이션만 남는다.
 - 두 파일의 시그니처는 항상 함께 바뀐다. `@Operation.description`에는 필드 나열이 아니라 **정책**을
-  적는다 — 누가 쓸 수 있고, 왜 409가 나는지 (`CollabSessionControllerDocs.open` 참조).
+  적는다 — 누가 쓸 수 있고, 왜 409가 나는지 (`PhotoFolderControllerDocs.create` 참조).
 
 ## 공개 경로
 

@@ -261,6 +261,7 @@ class AdminCascadeTrashService(
             AdminResourceType.DETAIL_FOLDER,
             AdminResourceType.SELECTION,
             AdminResourceType.COLLABORATION,
+            AdminResourceType.ALBUM,
             AdminResourceType.RETOUCH_REQUEST,
         )
         private val LEGACY_TRASH_TYPES = setOf(AdminResourceType.GALLERY, AdminResourceType.PHOTO)

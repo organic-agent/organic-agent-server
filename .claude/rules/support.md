@@ -11,8 +11,8 @@ paths:
 ## 무엇이 여기 사는가
 
 - 인가 정책: `gallery/support/GalleryAccessPolicy`, `collab/support/CollabSessionAccess`
-- 응답 조립자: `photo/support/PhotoViewAssembler`, `retouch/support/RetouchViewAssembler`
-- 공용 로더/검증자: `retouch/support/RetouchPhotoLoader`, `recommendation/support/AiConceptAssignmentLoader`
+- 응답 조립자: `photo/support/PhotoViewAssembler`, `folder/support/FolderViewAssembler`
+- 공용 로더/검증자: `folder/support/FolderPhotoLoader`
 - 토큰 생성기·설정 리더: `gallery/support/GalleryInviteTokenGenerator`, `auth/support/OAuthRegistrations`
 
 트랜잭션이 필요하면 support 클래스도 `@Service`를 붙인다 — **애노테이션은 Spring 사정이고,
@@ -34,12 +34,12 @@ paths:
 - 화면 규칙의 단일 소유자다: "PENDING이면 URL은 null", "게스트에게 별점을 숨긴다" 같은 규칙이
   모든 화면에 같게 적용되는 곳 (`PhotoViewAssembler`).
 - **단건 API와 배치 API를 함께 제공하고, 목록은 반드시 배치로 간다.** `toResponse`는 호출당
-  쿼리 1회 — 루프에서 부르면 N+1이다. 사진 여러 장을 한 번에 조립하는 `PhotoViewAssembler.toResponses`,
-  회차 항목을 한 번에 조립하는 `RetouchViewAssembler.toResponses`가 기준 형태다.
+  쿼리 1회 — 루프에서 부르면 N+1이다. 폴더 여러 개를 요약할 때 항목·사진·별점을 각각 한 번씩만
+  조회하는 `FolderViewAssembler.summariesByFolderId`가 기준 형태다.
 
 ## 로더/검증자
 
-- 여러 서비스가 공유하는 검증 묶음은 support로 모은다. `RetouchPhotoLoader.loadPhotos`는
+- 여러 서비스가 공유하는 검증 묶음은 support로 모은다. `FolderPhotoLoader.loadPhotos`는
   "이 갤러리의 사진인가, 상한을 넘지 않는가, 비어 있지 않은가"를 한 곳에서 지키고 정렬까지
   책임진다 — 서비스마다 반쯤 복제된 검증이 생기면 이리로 옮길 신호다.
 - 검증 메서드 이름은 `validate...`/`require...`로 시작하고, 실패는 도메인 예외로 던진다.

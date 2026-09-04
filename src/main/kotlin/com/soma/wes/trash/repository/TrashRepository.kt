@@ -156,6 +156,7 @@ class TrashRepository(
                 ORDER BY l.id
                 FOR UPDATE OF l
             """.trimIndent(),
+            "SELECT id FROM photo_folder_groups WHERE gallery_id = :galleryId ORDER BY id FOR UPDATE",
             "SELECT id FROM retouch_rounds WHERE gallery_id = :galleryId ORDER BY id FOR UPDATE",
             "SELECT id FROM retouch_photos WHERE gallery_id = :galleryId ORDER BY id FOR UPDATE",
         ).forEach { sql ->
@@ -362,6 +363,16 @@ class TrashRepository(
                 ORDER BY l.id FOR UPDATE OF l
             """.trimIndent(),
             """
+                SELECT a.id
+                FROM photo_folder_groups a
+                WHERE EXISTS (
+                    SELECT 1 FROM photo_folder_items i
+                    WHERE i.group_id = a.id AND i.photo_id IN (:photoIds)
+                )
+                ORDER BY a.id FOR UPDATE OF a
+            """.trimIndent(),
+            "SELECT id FROM photo_folder_items WHERE photo_id IN (:photoIds) ORDER BY id FOR UPDATE",
+            """
                 SELECT r.id
                 FROM retouch_rounds r
                 WHERE EXISTS (
@@ -548,6 +559,8 @@ class TrashRepository(
             UNION ALL
             SELECT 'COLLABORATION', c.id FROM collab_sessions c WHERE c.gallery_id = :galleryId
             UNION ALL
+            SELECT 'ALBUM', a.id FROM photo_folder_groups a WHERE a.gallery_id = :galleryId
+            UNION ALL
             SELECT 'RETOUCH_REQUEST', r.id FROM retouch_rounds r WHERE r.gallery_id = :galleryId
         ), deleted_idempotency AS (
             DELETE FROM admin_idempotency_keys k
@@ -698,6 +711,13 @@ class TrashRepository(
                       )
                   )
                   OR (
+                      e.resource_type = 'ALBUM'
+                      AND EXISTS (
+                          SELECT 1 FROM photo_folder_groups a
+                          WHERE a.id = e.resource_id AND a.gallery_id = $galleryIdExpression
+                      )
+                  )
+                  OR (
                       e.resource_type = 'RETOUCH_REQUEST'
                       AND EXISTS (
                           SELECT 1 FROM retouch_rounds r
@@ -748,6 +768,14 @@ class TrashRepository(
                       )
                   )
                   OR (
+                      child.resource_type = 'ALBUM_TEMPLATE'
+                      AND EXISTS (
+                          SELECT 1 FROM photo_folder_groups album
+                          WHERE album.id = child.parent_id
+                            AND album.gallery_id = $galleryIdExpression
+                      )
+                  )
+                  OR (
                       child.resource_type = 'RETOUCH_ITEM'
                       AND EXISTS (
                           SELECT 1 FROM retouch_rounds round
@@ -791,6 +819,13 @@ class TrashRepository(
                           SELECT 1
                           FROM collab_photo_comments comment
                           WHERE comment.id = e.resource_id AND comment.photo_id = $photoIdExpression
+                      )
+                  )
+                  OR (
+                      e.resource_type = 'ALBUM'
+                      AND EXISTS (
+                          SELECT 1 FROM photo_folder_items item
+                          WHERE item.group_id = e.resource_id AND item.photo_id = $photoIdExpression
                       )
                   )
                   OR (

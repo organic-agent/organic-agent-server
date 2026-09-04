@@ -55,6 +55,7 @@ class AdminWorkflowExecutor(
         }
         when (job.jobType) {
             "DERIVATIVE", "EMBEDDING", "QUALITY_ANALYSIS" -> executeExactPhotoProcessing(job)
+            "MOCK_RECALCULATION" -> executeMockRecalculation(job)
             else -> failBeforeSend(job, "UNKNOWN_JOB_TYPE")
         }
     }
@@ -173,6 +174,26 @@ class AdminWorkflowExecutor(
         }
     }
 
+    private fun executeMockRecalculation(job: ProcessingExecutionJob) {
+        val startedAttempt = repository.markProcessingExecutionStarted(
+            jobId = job.id,
+            attemptCount = job.attemptCount,
+            targetType = job.targetType,
+            targetId = job.targetId,
+        )
+        if (startedAttempt == null) {
+            cancelDeletedTarget(job)
+            log.info("로컬 실행 직전 claim 또는 대상 검증에 실패해 실행하지 않음: jobId={}", job.id)
+            return
+        }
+        val startedJob = job.copy(attemptCount = startedAttempt)
+        try {
+            repository.rebuildMock(startedJob)
+        } catch (error: Exception) {
+            failAfterStart(startedJob, failureCode(error))
+        }
+    }
+
     /** 외부 호출 전에 확정된 오류만 FAILED와 실패 감사로 한 트랜잭션에 남긴다. */
     private fun failBeforeSend(job: ProcessingExecutionJob, failureCode: String) {
         try {
@@ -198,6 +219,34 @@ class AdminWorkflowExecutor(
             log.info("관리자 처리 작업 claim이 해제되어 실패 상태를 저장하지 않음: jobId={}", job.id)
         } catch (error: Exception) {
             log.error("관리자 처리 작업 실패 상태와 감사를 원자 저장하지 못함: jobId={}", job.id, error)
+        }
+    }
+
+    /** 로컬 실행이 시작된 뒤 확정된 오류는 send-start attempt에 대해 terminal 처리한다. */
+    private fun failAfterStart(job: ProcessingExecutionJob, failureCode: String) {
+        try {
+            transactionTemplate.executeWithoutResult {
+                requireClaim(
+                    repository.markStartedProcessingJob(job.id, job.attemptCount, "FAILED", failureCode),
+                    job,
+                )
+                auditService.recordEvent(
+                    action = AdminAuditAction.REPROCESS_DISPATCH_FAILED,
+                    outcome = AdminAuditOutcome.FAILURE,
+                    actorAdminId = job.actorAdminId,
+                    targetType = job.targetType.auditTargetType,
+                    targetId = job.targetId.toString(),
+                    targetLabel = null,
+                    reason = job.reason,
+                    sourceAddress = null,
+                    changedFields = listOf("jobStatus", "failureCode"),
+                )
+            }
+            log.warn("관리자 로컬 처리 작업 실행 실패: jobId={}, type={}, code={}", job.id, job.jobType, failureCode)
+        } catch (error: ProcessingClaimLostException) {
+            log.info("관리자 로컬 처리 작업 claim이 해제되어 실패 상태를 저장하지 않음: jobId={}", job.id)
+        } catch (error: Exception) {
+            log.error("관리자 로컬 처리 작업 실패 상태와 감사를 원자 저장하지 못함: jobId={}", job.id, error)
         }
     }
 

@@ -90,6 +90,7 @@ class AdminRevisionRestorePolicy(
             AdminAuditTargetType.DETAIL_FOLDER to AdminResourceType.DETAIL_FOLDER,
             AdminAuditTargetType.PHOTO_RATING to AdminResourceType.PHOTO_RATING,
             AdminAuditTargetType.COLLABORATION to AdminResourceType.COLLABORATION,
+            AdminAuditTargetType.ALBUM to AdminResourceType.ALBUM,
         )
         private val RELATION_FIELDS = mapOf(
             AdminResourceType.USER to emptySet(),
@@ -101,6 +102,7 @@ class AdminRevisionRestorePolicy(
             AdminResourceType.DETAIL_FOLDER to setOf("conceptFolderId"),
             AdminResourceType.PHOTO_RATING to setOf("photoId"),
             AdminResourceType.COLLABORATION to setOf("galleryId", "conceptFolderId"),
+            AdminResourceType.ALBUM to setOf("galleryId"),
         )
         private val MUTABLE_FIELDS = mapOf(
             AdminResourceType.USER to setOf("nickname", "email"),
@@ -112,6 +114,7 @@ class AdminRevisionRestorePolicy(
             AdminResourceType.DETAIL_FOLDER to setOf("name", "sortOrder"),
             AdminResourceType.PHOTO_RATING to setOf("score", "ratedByUserId"),
             AdminResourceType.COLLABORATION to setOf("name"),
+            AdminResourceType.ALBUM to setOf("name"),
         )
     }
 }

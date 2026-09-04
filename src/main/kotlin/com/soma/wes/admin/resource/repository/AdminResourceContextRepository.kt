@@ -33,6 +33,7 @@ class AdminResourceContextRepository(
             addAll(references(AdminResourceType.PHOTO, "SELECT id FROM photos WHERE gallery_id = :id", id))
             addAll(references(AdminResourceType.SELECTION, "SELECT id FROM photo_selections WHERE gallery_id = :id", id))
             addAll(references(AdminResourceType.COLLABORATION, "SELECT id FROM collab_sessions WHERE gallery_id = :id", id))
+            addAll(references(AdminResourceType.ALBUM, "SELECT id FROM photo_folder_groups WHERE gallery_id = :id", id))
             addAll(references(AdminResourceType.RETOUCH_REQUEST, "SELECT id FROM retouch_rounds WHERE gallery_id = :id", id))
             addAll(references(AdminResourceType.CONCEPT_FOLDER, "SELECT id FROM concept_folders WHERE gallery_id = :id", id))
             addAll(references(AdminResourceType.CATEGORIZATION_JOB, "SELECT id FROM categorization_jobs WHERE gallery_id = :id", id))
@@ -79,6 +80,10 @@ class AdminResourceContextRepository(
                 JOIN photo_category_assignments a ON a.detail_folder_id = d.id
                 WHERE s.id = :id
             """.trimIndent(), id))
+        }
+        AdminResourceType.ALBUM -> linkedSetOf<ResourceReference>().apply {
+            addAll(references(AdminResourceType.GALLERY, "SELECT gallery_id AS id FROM photo_folder_groups WHERE id = :id", id))
+            addAll(references(AdminResourceType.PHOTO, "SELECT photo_id AS id FROM photo_folder_items WHERE group_id = :id", id))
         }
         AdminResourceType.RETOUCH_REQUEST -> linkedSetOf<ResourceReference>().apply {
             addAll(references(AdminResourceType.GALLERY, "SELECT gallery_id AS id FROM retouch_rounds WHERE id = :id", id))
@@ -186,6 +191,7 @@ class AdminResourceContextRepository(
             """
                 SELECT byte_size, width, height, camera_make, camera_model, taken_at,
                        EXISTS (SELECT 1 FROM photo_analysis a WHERE a.photo_id = photos.id AND a.embedding IS NOT NULL) AS analyzed,
+                       (SELECT COUNT(*) FROM photo_folder_items WHERE photo_id = :id) AS album_references,
                        (SELECT COUNT(*) FROM photo_selection_items WHERE photo_id = :id) AS selection_references,
                        (SELECT COUNT(*) FROM retouch_photos WHERE photo_id = :id) AS retouch_references,
                        (SELECT detail_folder_id FROM photo_category_assignments WHERE photo_id = :id) AS detail_folder_id,
@@ -202,6 +208,7 @@ class AdminResourceContextRepository(
             "cameraModel" to rs.getString("camera_model"),
             "takenAt" to rs.getObject("taken_at"),
             "analyzed" to rs.getBoolean("analyzed"),
+            "albumReferences" to rs.getLong("album_references"),
             "selectionReferences" to rs.getLong("selection_references"),
             "retouchReferences" to rs.getLong("retouch_references"),
             "detailFolderId" to rs.getObject("detail_folder_id"),
@@ -269,6 +276,23 @@ class AdminResourceContextRepository(
             "photos" to rs.getLong("photos"),
             "comments" to rs.getLong("comments"),
             "likes" to rs.getLong("likes"),
+        ) }
+        AdminResourceType.ALBUM -> singleFacts(
+            """
+                SELECT
+                    g.template_name,
+                    g.template_id,
+                    g.selection_revision_id,
+                    (SELECT COUNT(*) FROM photo_folders WHERE group_id = :id) AS folders,
+                    (SELECT COUNT(*) FROM photo_folder_items WHERE group_id = :id) AS photos
+                FROM photo_folder_groups g WHERE g.id = :id
+            """.trimIndent(), id,
+        ) { rs -> linkedMapOf(
+            "templateName" to rs.getString("template_name"),
+            "templateId" to rs.getObject("template_id"),
+            "selectionRevisionId" to rs.getObject("selection_revision_id"),
+            "folders" to rs.getLong("folders"),
+            "photos" to rs.getLong("photos"),
         ) }
         AdminResourceType.RETOUCH_REQUEST -> singleFacts(
             """
@@ -713,6 +737,10 @@ class AdminResourceContextRepository(
                 "expiresAt" to rs.getObject("expires_at"),
                 "createdAt" to rs.getObject("created_at"),
             ) },
+            "albums" to rows(
+                "SELECT id, name, created_at FROM photo_folder_groups WHERE gallery_id = :id ORDER BY id DESC LIMIT 100",
+                id,
+            ) { rs -> linkedMapOf("id" to rs.getLong("id"), "name" to rs.getString("name"), "createdAt" to rs.getObject("created_at")) },
             "retouchRounds" to rows(
                 """
                     SELECT id, round_no, status, requested_at, completed_at
@@ -881,6 +909,19 @@ class AdminResourceContextRepository(
                 "selectionStatus" to rs.getString("status"),
                 "retouchPhotoId" to rs.getObject("retouch_photo_id"),
             ) },
+            "albumReferences" to rows(
+                """
+                    SELECT i.id AS item_id, i.group_id, i.folder_id, f.name AS folder_name
+                    FROM photo_folder_items i JOIN photo_folders f ON f.id = i.folder_id
+                    WHERE i.photo_id = :id ORDER BY i.id DESC LIMIT 100
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "itemId" to rs.getLong("item_id"),
+                "albumId" to rs.getLong("group_id"),
+                "folderId" to rs.getLong("folder_id"),
+                "folderName" to rs.getString("folder_name"),
+            ) },
             "retouchReferences" to rows(
                 """
                     SELECT id, round_id, request_text, annotation_key IS NOT NULL AS annotated,
@@ -1004,6 +1045,24 @@ class AdminResourceContextRepository(
                 "startedAt" to rs.getObject("started_at"),
                 "completedAt" to rs.getObject("completed_at"),
             ) },
+            "mockRecalculationJobs" to rows(
+                """
+                    SELECT id, status, revision_id, attempt_count, failure_code, created_at, updated_at
+                    FROM admin_processing_jobs
+                    WHERE target_type = 'SELECTION' AND target_id = :id
+                      AND job_type = 'MOCK_RECALCULATION'
+                    ORDER BY id DESC
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("id"),
+                "status" to rs.getString("status"),
+                "revisionId" to rs.getObject("revision_id"),
+                "attemptCount" to rs.getInt("attempt_count"),
+                "failureCode" to rs.getString("failure_code"),
+                "createdAt" to rs.getObject("created_at"),
+                "updatedAt" to rs.getObject("updated_at"),
+            ) },
             "revisions" to rows(
                 """
                     SELECT id, revision_number, source, status, photo_items, actor_admin_id, reason, created_at
@@ -1094,6 +1153,52 @@ class AdminResourceContextRepository(
                 "version" to rs.getLong("version"),
                 "deleted" to (rs.getObject("deleted_at") != null),
                 "createdAt" to rs.getObject("created_at"),
+            ) },
+        )
+        AdminResourceType.ALBUM -> linkedMapOf(
+            "templates" to rows(
+                """
+                    SELECT t.id, t.studio_id, t.name, t.layout_json, t.version,
+                           t.deleted_at, t.created_at, t.updated_at
+                    FROM admin_album_templates t
+                    JOIN photo_folder_groups album ON album.id = :id
+                    JOIN galleries gallery ON gallery.id = album.gallery_id
+                    WHERE t.studio_id = gallery.workspace_id
+                    ORDER BY t.name, t.id
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("id"),
+                "workspaceId" to rs.getLong("studio_id"),
+                "name" to rs.getString("name"),
+                "layout" to rs.getString("layout_json"),
+                "version" to rs.getLong("version"),
+                "deleted" to (rs.getObject("deleted_at") != null),
+                "createdAt" to rs.getObject("created_at"),
+                "updatedAt" to rs.getObject("updated_at"),
+            ) },
+            "folders" to rows(
+                "SELECT id, name, created_at FROM photo_folders WHERE group_id = :id ORDER BY id LIMIT $ALBUM_SECTION_LIMIT",
+                id,
+            ) { rs -> linkedMapOf("id" to rs.getLong("id"), "name" to rs.getString("name"), "createdAt" to rs.getObject("created_at")) },
+            "items" to rows(
+                """
+                    SELECT i.id, i.folder_id, f.name AS folder_name, i.photo_id, p.original_file_name,
+                           i.sort_order, i.crop_json
+                    FROM photo_folder_items i
+                    JOIN photo_folders f ON f.id = i.folder_id
+                    JOIN photos p ON p.id = i.photo_id
+                    WHERE i.group_id = :id ORDER BY i.sort_order, i.id LIMIT $ALBUM_SECTION_LIMIT
+                """.trimIndent(),
+                id,
+            ) { rs -> linkedMapOf(
+                "id" to rs.getLong("id"),
+                "folderId" to rs.getLong("folder_id"),
+                "folderName" to rs.getString("folder_name"),
+                "photoId" to rs.getLong("photo_id"),
+                "fileName" to rs.getString("original_file_name"),
+                "sortOrder" to rs.getInt("sort_order"),
+                "crop" to rs.getString("crop_json"),
             ) },
         )
         AdminResourceType.RETOUCH_REQUEST -> linkedMapOf(
@@ -1213,6 +1318,9 @@ class AdminResourceContextRepository(
         .list()
 
     private companion object {
+        // 템플릿 최대 1,000 슬롯과 같은 수의 수동 overflow를 한 응답에서 검토한다.
+        // 이를 넘으면 응답 sectionPageInfo가 절단 사실과 실제 합계를 명시한다.
+        const val ALBUM_SECTION_LIMIT = 2_000
         val USER_NOTIFICATION_CONTEXT_TYPES = setOf(
             AdminResourceType.USER,
             AdminResourceType.STUDIO,

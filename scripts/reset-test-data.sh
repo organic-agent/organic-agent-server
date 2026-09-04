@@ -76,7 +76,7 @@ SELECT 'users' AS 테이블, count(*) FROM users
 UNION ALL SELECT 'studios', count(*) FROM studios
 UNION ALL SELECT 'galleries', count(*) FROM galleries
 UNION ALL SELECT 'photos', count(*) FROM photos
-UNION ALL SELECT 'concept_folders', count(*) FROM concept_folders;"
+UNION ALL SELECT 'photo_folders', count(*) FROM photo_folders;"
 
 if [ "$SCOPE" = "all" ]; then
   echo "범위: 갤러리·사진·폴더·협업 세션 + 계정(users·studios·토큰)"
@@ -120,7 +120,7 @@ TABLES="$TABLES, ai_pair_verdicts, ai_recommendations, ai_selection_jobs, ai_con
 TABLES="$TABLES, categorization_job_photos, categorization_jobs, photo_category_assignments, detail_folders, concept_folders"
 TABLES="$TABLES, admin_selection_revisions, photo_selection_items, photo_selections, photo_ratings"
 TABLES="$TABLES, retouch_photos, retouch_rounds"
-TABLES="$TABLES, photos"
+TABLES="$TABLES, photo_folder_items, photo_folders, photo_folder_groups, photos"
 TABLES="$TABLES, gallery_invites, gallery_members, galleries"
 TABLES="$TABLES, user_notifications, user_notification_settings"
 TABLES="$TABLES, studio_retouch_capabilities"
@@ -154,4 +154,4 @@ SELECT 'users' AS 테이블, count(*) FROM users
 UNION ALL SELECT 'studios', count(*) FROM studios
 UNION ALL SELECT 'galleries', count(*) FROM galleries
 UNION ALL SELECT 'photos', count(*) FROM photos
-UNION ALL SELECT 'concept_folders', count(*) FROM concept_folders;"
+UNION ALL SELECT 'photo_folders', count(*) FROM photo_folders;"

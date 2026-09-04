@@ -217,7 +217,7 @@ class AdminResourceServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `현재 비즈니스 리소스 일곱 종류를 생성하고 통합 검색한다`() {
+    fun `현재 비즈니스 리소스 여덟 종류를 생성하고 통합 검색한다`() {
         val actor = adminAccountFixture.관리자("all-resource-owner")
         val user = createUser(actor.requiredId, "all-resource-user")
         val studio = service.create(
@@ -262,6 +262,12 @@ class AdminResourceServiceTest @Autowired constructor(
             ),
             "127.0.0.1",
         )
+        val album = service.create(
+            actor.requiredId,
+            AdminResourceType.ALBUM,
+            CreateAdminResourceRequest("앨범 복구", mapOf("galleryId" to gallery.id, "name" to "전체 리소스 앨범")),
+            "127.0.0.1",
+        )
         val retouch = service.create(
             actor.requiredId,
             AdminResourceType.RETOUCH_REQUEST,
@@ -272,6 +278,7 @@ class AdminResourceServiceTest @Autowired constructor(
         assertThat(photo.fields["storageKey"]).isEqualTo("[MASKED]")
         assertThat(selection.fields["status"]).isEqualTo("SELECTING")
         assertThat(collaboration.fields["collabToken"]).isEqualTo("[MASKED]")
+        assertThat(album.fields["name"]).isEqualTo("전체 리소스 앨범")
         assertThat(retouch.fields["status"]).isEqualTo("DRAFTING")
 
         val found = service.search("전체 리소스", emptySet(), page = 0, size = 100)
@@ -281,6 +288,7 @@ class AdminResourceServiceTest @Autowired constructor(
                 AdminResourceType.GALLERY,
                 AdminResourceType.PHOTO,
                 AdminResourceType.COLLABORATION,
+                AdminResourceType.ALBUM,
             )
     }
 

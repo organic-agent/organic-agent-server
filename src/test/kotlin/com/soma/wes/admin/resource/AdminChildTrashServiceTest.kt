@@ -111,7 +111,7 @@ class AdminChildTrashServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `댓글 독립 삭제는 삭제자 사유와 7일 창을 남기고 복원한다`() {
+    fun `댓글과 앨범 템플릿 독립 삭제는 삭제자 사유와 7일 창을 남기고 같은 부모에서만 복원한다`() {
         val graph = graph("child-restore")
         val collaboration = create(
             graph.actorId,
@@ -119,6 +119,17 @@ class AdminChildTrashServiceTest @Autowired constructor(
             mapOf("galleryId" to graph.galleryId, "name" to "복원 의견"),
         )
         val commentId = createComment(collaboration.id, graph.photoId, "복원할 댓글")
+        val album = create(
+            graph.actorId,
+            AdminResourceType.ALBUM,
+            mapOf("galleryId" to graph.galleryId, "name" to "복원 앨범"),
+        )
+        val unrelatedAlbum = create(
+            graph.actorId,
+            AdminResourceType.ALBUM,
+            mapOf("galleryId" to graph.galleryId, "name" to "무관 앨범"),
+        )
+        val templateId = createTemplate("restore-template", graph.galleryId)
 
         val commentTrash = service.delete(
             actorAdminId = graph.actorId,
@@ -129,8 +140,17 @@ class AdminChildTrashServiceTest @Autowired constructor(
             expectedChildVersion = null,
             reason = "[CUSTOMER_REQUEST] 문의 private@example.com 댓글 삭제",
         )
+        val templateTrash = service.delete(
+            actorAdminId = graph.actorId,
+            type = AdminChildTrashType.ALBUM_TEMPLATE,
+            resourceId = templateId,
+            parentId = album.id,
+            expectedParentVersion = album.version,
+            expectedChildVersion = 0,
+            reason = "사용 종료로 템플릿 삭제",
+        )
 
-        listOf(commentTrash).forEach { trash ->
+        listOf(commentTrash, templateTrash).forEach { trash ->
             assertThat(Duration.between(trash.deletedAt, trash.restoreUntil)).isEqualTo(Duration.ofDays(7))
             assertThat(trash.purgeEligibleAt).isEqualTo(trash.restoreUntil)
             assertThat(trash.restoreWindowDays).isEqualTo(7)
@@ -152,6 +172,8 @@ class AdminChildTrashServiceTest @Autowired constructor(
             .isEqualTo(commentTrash.restoreUntil.toInstant().toEpochMilli())
         assertThat(listed.restorable).isTrue()
         assertThat(deleted("collab_photo_comments", commentId)).isTrue()
+        assertThat(deleted("admin_album_templates", templateId)).isTrue()
+        assertThat(albumTemplateId(album.id)).isNull()
 
         val restoredComment = service.restore(
             type = AdminChildTrashType.COLLAB_COMMENT,
@@ -160,10 +182,47 @@ class AdminChildTrashServiceTest @Autowired constructor(
             expectedParentVersion = resourceService.get(AdminResourceType.COLLABORATION, collaboration.id).version,
             expectedChildVersion = null,
         )
+        assertThatThrownBy {
+            service.restore(
+                type = AdminChildTrashType.ALBUM_TEMPLATE,
+                resourceId = templateId,
+                parentId = unrelatedAlbum.id,
+                expectedParentVersion = unrelatedAlbum.version,
+                expectedChildVersion = 1,
+            )
+        }.isInstanceOfSatisfying(AdminException::class.java) {
+            assertThat(it.errorCode).isEqualTo(AdminErrorCode.TRASH_CHILD_RESTORE_FORBIDDEN)
+        }
+        jdbcClient.sql("UPDATE photo_folder_groups SET deleted_at = CURRENT_TIMESTAMP WHERE id = :albumId")
+            .param("albumId", album.id).update()
+        assertThatThrownBy {
+            service.restore(
+                type = AdminChildTrashType.ALBUM_TEMPLATE,
+                resourceId = templateId,
+                parentId = album.id,
+                expectedParentVersion = resourceService.get(AdminResourceType.ALBUM, album.id).version,
+                expectedChildVersion = 1,
+            )
+        }.hasMessageContaining("루트 배치")
+        assertThat(albumTemplateId(album.id)).isNull()
+        jdbcClient.sql("UPDATE photo_folder_groups SET deleted_at = NULL WHERE id = :albumId")
+            .param("albumId", album.id).update()
+
+        val restoredTemplate = service.restore(
+            type = AdminChildTrashType.ALBUM_TEMPLATE,
+            resourceId = templateId,
+            parentId = album.id,
+            expectedParentVersion = resourceService.get(AdminResourceType.ALBUM, album.id).version,
+            expectedChildVersion = 1,
+        )
 
         assertThat(restoredComment.status).isEqualTo("RESTORED")
+        assertThat(restoredTemplate.status).isEqualTo("RESTORED")
         assertThat(deleted("collab_photo_comments", commentId)).isFalse()
+        assertThat(deleted("admin_album_templates", templateId)).isFalse()
+        assertThat(albumTemplateId(album.id)).isNull()
         assertThat(childTrashStatus(commentTrash.trashId)).isEqualTo("RESTORED")
+        assertThat(childTrashStatus(templateTrash.trashId)).isEqualTo("RESTORED")
     }
 
     @Test
@@ -204,6 +263,41 @@ class AdminChildTrashServiceTest @Autowired constructor(
             )
         }.hasMessageContaining("루트 배치")
         assertThat(deleted("collab_photo_comments", commentId)).isTrue()
+    }
+
+    @Test
+    fun `참조 없는 스튜디오 템플릿은 8일차 purge 때 영구 삭제된다`() {
+        val graph = graph("template-purge")
+        val album = create(
+            graph.actorId,
+            AdminResourceType.ALBUM,
+            mapOf("galleryId" to graph.galleryId, "name" to "영구 삭제 앨범"),
+        )
+        val templateId = createTemplate("template-purge", graph.galleryId)
+
+        val trash = service.delete(
+            actorAdminId = graph.actorId,
+            type = AdminChildTrashType.ALBUM_TEMPLATE,
+            resourceId = templateId,
+            parentId = album.id,
+            expectedParentVersion = album.version,
+            expectedChildVersion = 0,
+            reason = "사용 종료 템플릿 영구 삭제",
+        )
+        val versionAfterDelete = resourceService.get(AdminResourceType.ALBUM, album.id).version
+        assertThat(albumTemplateId(album.id)).isNull()
+
+        jdbcClient.sql(
+            "UPDATE admin_child_trash_records SET restore_until = CURRENT_TIMESTAMP - INTERVAL '1 minute' WHERE id = :id",
+        ).param("id", trash.trashId).update()
+        purgeService.purgeExpired()
+
+        assertThat(count("admin_album_templates", templateId)).isZero()
+        assertThat(albumTemplateId(album.id)).isNull()
+        assertThat(albumTemplateName(album.id)).isNull()
+        assertThat(resourceService.get(AdminResourceType.ALBUM, album.id).version)
+            .isEqualTo(versionAfterDelete)
+        assertThat(childTrashStatus(trash.trashId)).isEqualTo("PURGED")
     }
 
     @Test
@@ -676,6 +770,19 @@ class AdminChildTrashServiceTest @Autowired constructor(
         return false
     }
 
+    private fun createTemplate(name: String, galleryId: Long): Long = jdbcClient.sql(
+        """
+        INSERT INTO admin_album_templates (studio_id, name, layout_json, version, created_at, updated_at)
+        SELECT gallery.workspace_id, :name, '{}'::JSONB, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        FROM galleries gallery WHERE gallery.id = :galleryId
+        RETURNING id
+        """.trimIndent(),
+    )
+        .param("name", name)
+        .param("galleryId", galleryId)
+        .query { rs, _ -> rs.getLong("id") }
+        .single()
+
     private fun create(actorId: Long, type: AdminResourceType, fields: Map<String, Any?>): com.soma.wes.admin.resource.dto.AdminResourceResponse {
         val normalized = if (type == AdminResourceType.COLLABORATION && "conceptFolderId" !in fields) {
             fields + ("conceptFolderId" to createConceptFolder((fields.getValue("galleryId") as Number).toLong()))
@@ -744,6 +851,14 @@ class AdminChildTrashServiceTest @Autowired constructor(
     private fun count(table: String, id: Long): Long = jdbcClient.sql(
         "SELECT COUNT(*) FROM $table WHERE id = :id",
     ).param("id", id).query { rs, _ -> rs.getLong(1) }.single()
+
+    private fun albumTemplateId(albumId: Long): Long? = jdbcClient.sql(
+        "SELECT template_id FROM photo_folder_groups WHERE id = :albumId",
+    ).param("albumId", albumId).query { rs, _ -> rs.getLong(1).takeUnless { rs.wasNull() } }.list().single()
+
+    private fun albumTemplateName(albumId: Long): String? = jdbcClient.sql(
+        "SELECT template_name FROM photo_folder_groups WHERE id = :albumId",
+    ).param("albumId", albumId).query { rs, _ -> rs.getString(1) }.list().single()
 
     private data class Graph(
         val actorId: Long,

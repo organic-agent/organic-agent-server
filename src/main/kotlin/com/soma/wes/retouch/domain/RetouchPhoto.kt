@@ -27,7 +27,7 @@ class RetouchPhoto(
 
     /**
      * [roundId]로도 알 수 있는 값이지만 행에 함께 둔다 — 갤러리 스코프 조회(그리드·정리)가
-     * 회차를 거치지 않고 항목을 읽는다.
+     * 회차를 거치지 않고 항목을 읽는다 ([com.soma.wes.folder.domain.PhotoFolderItem] 전례).
      */
     @Column(name = "gallery_id", nullable = false, updatable = false)
     val galleryId: Long,

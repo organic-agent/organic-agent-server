@@ -30,12 +30,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 임베딩과 인프라
 
-- **클라이언트의 이미지 업로드·다운로드는 이 서버를 지나지 않는다.** 서버는 presigned S3 URL만
-  발급하고 브라우저가 직접 올리고 받는다. 대용량 원본이 서버 메모리·대역폭을 먹지 않게 하려는
-  원칙이지, 서버가 S3를 읽지 말라는 뜻이 아니다 — AI 호출(Bedrock 이미지 블록 등)을 위해
-  미리보기(`previews/`) 몇 장을 읽는 것은 무방하다. 임베딩·프리뷰·EXIF·분석 점수처럼 모델이
-  사진을 봐야 하는 일은 갤러리당 한 번(`InvocationType.EVENT`) 호출되는 Lambda의 일이다 —
-  사진당 호출은 없다.
+- **이미지 바이트는 이 서버를 지나지 않는다.** 서버는 presigned S3 URL만 발급하고 브라우저가
+  직접 업로드한다. 임베딩·프리뷰·EXIF는 갤러리당 한 번(`InvocationType.EVENT`) 호출되는
+  Lambda의 일이다 — 사진당 호출은 없다.
 - 객체 키는 `galleries/{galleryId}/…`이고 미리보기는 `previews/` + 원본 키다. 환경은 키가 아니라
   버킷으로 갈린다 — prod는 운영 버킷, local 프로필은 인프라 `module.storage_dev`의 dev 버킷
   (`/wes/local/app.storage.bucket`). 키 조립은 `PhotoStorage.galleryPrefix`를 지난다.

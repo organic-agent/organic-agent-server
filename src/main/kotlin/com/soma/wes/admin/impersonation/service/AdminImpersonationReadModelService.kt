@@ -4,9 +4,9 @@ import com.soma.wes.admin.audit.support.AdminAuditSanitizer
 import com.soma.wes.admin.impersonation.dto.AdminImpersonationViewResponse
 import com.soma.wes.admin.impersonation.repository.AdminImpersonationViewRepository
 import com.soma.wes.admin.resource.domain.AdminResourceType
-import com.soma.wes.category.service.CategoryService
 import com.soma.wes.collab.dto.response.CollabSessionResponse
 import com.soma.wes.collab.service.CollabSessionQueryService
+import com.soma.wes.folder.service.PhotoFolderGroupService
 import com.soma.wes.gallery.service.GalleryService
 import com.soma.wes.global.exception.BusinessException
 import com.soma.wes.photo.dto.response.PhotoResponse
@@ -24,7 +24,7 @@ class AdminImpersonationReadModelService(
     private val photoService: PhotoService,
     private val selectionService: PhotoSelectionService,
     private val collabSessionQueryService: CollabSessionQueryService,
-    private val categoryService: CategoryService,
+    private val folderGroupService: PhotoFolderGroupService,
     private val retouchService: RetouchService,
     private val sanitizer: AdminAuditSanitizer,
 ) {
@@ -48,7 +48,7 @@ class AdminImpersonationReadModelService(
         val selections = mutableListOf<Map<String, Any?>>()
         val collaborations = mutableListOf<Map<String, Any?>>()
         val comments = mutableListOf<Map<String, Any?>>()
-        val categories = mutableListOf<Map<String, Any?>>()
+        val albums = mutableListOf<Map<String, Any?>>()
         val retouch = mutableListOf<Map<String, Any?>>()
         var photoTotal = 0L
 
@@ -90,20 +90,19 @@ class AdminImpersonationReadModelService(
                     )
                 }
 
-            readable { categoryService.list(gallery.id, viewer.userId) }.orEmpty().mapTo(categories) { concept ->
+            readable { folderGroupService.list(gallery.id, viewer.userId) }.orEmpty().mapTo(albums) { group ->
                 linkedMapOf(
                     "galleryId" to gallery.id,
-                    "conceptFolderId" to concept.id,
-                    "name" to sanitizer.sanitizeText(concept.name),
-                    "createdSource" to concept.createdSource.name,
-                    "analysisJobId" to concept.analysisJobId,
-                    "details" to concept.details.map { detail ->
+                    "groupId" to group.groupId,
+                    "name" to sanitizer.sanitizeText(group.name),
+                    "createdAt" to group.createdAt,
+                    "updatedAt" to group.updatedAt,
+                    "folders" to group.folders.map { folder ->
                         linkedMapOf(
-                            "detailFolderId" to detail.id,
-                            "name" to sanitizer.sanitizeText(detail.name),
-                            "category" to detail.category?.name,
-                            "needsReview" to detail.needsReview,
-                            "photoCount" to detail.photoIds.size,
+                            "folderId" to folder.folderId,
+                            "name" to sanitizer.sanitizeText(folder.name),
+                            "photoCount" to folder.photoCount,
+                            "coverPhotoId" to folder.coverPhoto?.photoId,
                         )
                     },
                 )
@@ -148,7 +147,7 @@ class AdminImpersonationReadModelService(
             "selections" to selections,
             "collaborations" to collaborations,
             "comments" to comments,
-            "categories" to categories,
+            "album" to albums,
             "retouch" to retouch,
         )
         val counts = sections.mapValues { (_, rows) -> rows.size }.toMutableMap()

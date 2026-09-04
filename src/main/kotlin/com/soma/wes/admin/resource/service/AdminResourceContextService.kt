@@ -4,6 +4,7 @@ import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.dto.AdminResourceContextResponse
+import com.soma.wes.admin.resource.dto.AdminResourceSectionPageInfo
 import com.soma.wes.admin.resource.dto.AdminResourceSummaryResponse
 import com.soma.wes.admin.resource.repository.AdminResourceContextRepository
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
@@ -45,7 +46,7 @@ class AdminResourceContextService(
             relations = relations,
             facts = facts,
             sections = sections,
-            sectionPageInfo = emptyMap(),
+            sectionPageInfo = sectionPageInfo(type, facts, sections),
         )
     }
 
@@ -60,4 +61,29 @@ class AdminResourceContextService(
         )
     }
 
+    /**
+     * 앨범 컨텍스트는 운영 화면의 안전 상한까지만 싣되 실제 합계와 절단 여부를 함께 준다.
+     * 클라이언트가 일부 결과를 전체인 것처럼 표시하지 않게 하는 응답 계약이다.
+     */
+    private fun sectionPageInfo(
+        type: AdminResourceType,
+        facts: Map<String, Any?>,
+        sections: Map<String, List<Map<String, Any?>>>,
+    ): Map<String, AdminResourceSectionPageInfo> {
+        if (type != AdminResourceType.ALBUM) return emptyMap()
+        return linkedMapOf(
+            "folders" to pageInfo((facts["folders"] as? Number)?.toLong(), sections["folders"]),
+            "items" to pageInfo((facts["photos"] as? Number)?.toLong(), sections["items"]),
+        )
+    }
+
+    private fun pageInfo(total: Long?, rows: List<Map<String, Any?>>?): AdminResourceSectionPageInfo {
+        val returned = rows.orEmpty().size
+        val totalCount = total ?: returned.toLong()
+        return AdminResourceSectionPageInfo(
+            totalCount = totalCount,
+            returnedCount = returned,
+            truncated = totalCount > returned,
+        )
+    }
 }

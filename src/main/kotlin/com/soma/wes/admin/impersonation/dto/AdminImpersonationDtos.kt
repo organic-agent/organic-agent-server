@@ -68,7 +68,7 @@ data class AdminImpersonationViewResponse(
         "READ_PHOTOS",
         "READ_SELECTION_STATUS",
         "READ_COLLABORATION_SUMMARY",
-        "READ_CATEGORIES",
+        "READ_ALBUMS",
         "READ_RETOUCH_STATUS",
     ),
 )

@@ -315,6 +315,19 @@ class TrashEraserTest @Autowired constructor(
         insertChildTrash("COLLAB_LIKE", 91_002, "COLLABORATION", likeParent)
         trashGallery(likeGallery, expiredAt())
 
+        val templateGallery = createGallery()
+        val albumParent = jdbcTemplate.queryForObject(
+            """
+            INSERT INTO photo_folder_groups (gallery_id, name, version, created_at, updated_at)
+            VALUES (?, 'child-template-album', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            RETURNING id
+            """.trimIndent(),
+            Long::class.java,
+            templateGallery,
+        )!!
+        insertChildTrash("ALBUM_TEMPLATE", 91_003, "ALBUM", albumParent)
+        trashGallery(templateGallery, expiredAt())
+
         val retouchGallery = createGallery()
         val retouchParent = insertRetouchRound(retouchGallery, "DRAFTING")
         insertChildTrash("RETOUCH_ITEM", 91_004, "RETOUCH_REQUEST", retouchParent)
@@ -323,7 +336,7 @@ class TrashEraserTest @Autowired constructor(
         trashEraser.purgeExpired()
 
         assertThat(
-            listOf(commentGallery, likeGallery, retouchGallery).map(::countGalleryRows),
+            listOf(commentGallery, likeGallery, templateGallery, retouchGallery).map(::countGalleryRows),
         ).containsOnly(1L)
         assertThat(photoStorage.deletedKeys()).isEmpty()
     }

@@ -10,13 +10,14 @@ paths:
 
 ## 조회 메서드
 
-- 파생 쿼리 메서드(`findByIdAndGalleryId`)를 우선 쓴다. 이름으로 표현이 안 될 때만 `@Query`.
+- 파생 쿼리 메서드(`findByIdAndGroupId`)를 우선 쓴다. 이름으로 표현이 안 될 때만 `@Query`.
 - **스코프는 쿼리 안에서 건다.** 경로에 부모가 있는 자원은 `findByIdAnd{Parent}Id`로 찾는다 —
   남의 갤러리/부모의 id를 자기 경로에 끼워 넣는 요청이 조회 단계에서 404가 된다. id로 찾은 뒤
-  코드에서 소유자를 비교하는 방식은 쓰지 않는다 (`ConceptFolderRepository.findByIdAndGalleryId`).
-- 정렬이 정책이면 메서드 이름에 새긴다 (`findAllByGalleryIdOrderBySortOrderAscIdAsc` — 화면 순서 유지).
-- 반환은 nullable(`ConceptFolder?`)로 두고 예외 번역은 호출자(서비스)가 한다 —
-  `?: throw CategoryException(CONCEPT_NOT_FOUND)`가 기본형이다.
+  코드에서 소유자를 비교하는 방식은 쓰지 않는다 (`PhotoFolderGroupRepository.findByIdAndGalleryId`
+  KDoc 참조).
+- 정렬이 정책이면 메서드 이름에 새긴다 (`findAllByGroupIdOrderByIdAsc` — 만든 순서 유지).
+- 반환은 nullable(`PhotoFolderGroup?`)로 두고 예외 번역은 호출자(서비스)가 한다 —
+  `?: throw FolderException(GROUP_NOT_FOUND)`가 기본형이다.
 - `requireById` 같은 get-or-throw 확장 함수는 처음부터 만들지 않는다. **여러 클래스에서 같은
   조회 + 같은 예외의 조합이 반복될 때** 비로소 repository 패키지에 뽑는다
   (`GalleryRepository.requireById`가 그렇게 생겼다). 한두 곳뿐이면 서비스의 `?: throw`로 충분하다.
@@ -30,8 +31,9 @@ paths:
 
 - 여러 행을 갱신/삭제하는 경로는 엔티티 루프가 아니라
   `@Modifying(clearAutomatically = true, flushAutomatically = true)` + JPQL `@Query`로 처리한다
-  (`PhotoSelectionItemRepository`의 벌크 삭제).
-- 영향 행 수를 반환해 호출자가 0건을 판정할 수 있게 한다 (0건이면 404로 번역).
+  (`PhotoFolderItemRepository.moveAll`, `deleteAllByGroupId`).
+- 영향 행 수를 반환해 호출자가 0건을 판정할 수 있게 한다
+  (`deleteByFolderIdAndPhotoId` 0건 → `PHOTO_NOT_IN_FOLDER`).
 - 벌크 쿼리가 전제하는 선행 조건(예: "호출자가 부모를 잠그고 확인했다")은 KDoc에 적는다.
 
 ## 소프트 삭제와 native SQL

@@ -79,6 +79,24 @@ enum class AdminWorkflowAction(
         setOf(AdminResourceType.COLLABORATION),
         setOf("likeId", "likeExpectedVersion"),
     ),
+    CREATE_ALBUM_TEMPLATE(setOf(AdminResourceType.ALBUM), setOf("name", "layout")),
+    UPDATE_ALBUM_TEMPLATE(
+        setOf(AdminResourceType.ALBUM),
+        setOf("templateId", "templateExpectedVersion", "name", "layout"),
+    ),
+    DELETE_ALBUM_TEMPLATE(
+        setOf(AdminResourceType.ALBUM),
+        setOf("templateId", "templateExpectedVersion"),
+    ),
+    RESTORE_ALBUM_TEMPLATE(
+        setOf(AdminResourceType.ALBUM),
+        setOf("templateId", "templateExpectedVersion"),
+    ),
+    REPLACE_ALBUM_LAYOUT(
+        setOf(AdminResourceType.ALBUM),
+        setOf("folders"),
+        setOf("templateId", "selectionRevisionId"),
+    ),
     CREATE_RETOUCH_ITEM(
         setOf(AdminResourceType.RETOUCH_REQUEST),
         setOf("photoId"),
