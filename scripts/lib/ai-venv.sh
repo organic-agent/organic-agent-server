@@ -24,21 +24,39 @@ ai_python() {
   fi
   local py="$dir/.venv/bin/python"
   if [ ! -x "$py" ]; then
-    echo "[setup] venv 생성: $dir/.venv (첫 실행은 수 GB 일 수 있다)" >&2
-    python3 -m venv "$dir/.venv"
-    if [ "$(uname -s)" = "Linux" ] && grep -q '^torch' "$dir/requirements.txt"; then
-      "$py" -m pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cpu >&2
+    # Python 3.12 고정 — torch 2.4.1 핀은 3.13+ 에 휠이 없다. uv 가 있으면 3.12 를 알아서 받는다.
+    echo "[setup] venv 생성: $dir/.venv (Python 3.12, 첫 실행은 수 GB 일 수 있다)" >&2
+    if command -v uv >/dev/null 2>&1; then
+      uv venv -q --python 3.12 "$dir/.venv" >&2
+    elif command -v python3.12 >/dev/null 2>&1; then
+      python3.12 -m venv "$dir/.venv"
+    else
+      echo "Python 3.12 가 없다. uv(brew install uv) 또는 python3.12 를 설치할 것." >&2
+      return 1
     fi
-    "$py" -m pip install -q -r "$dir/requirements.txt" >&2
+    if [ "$(uname -s)" = "Linux" ] && grep -q '^torch' "$dir/requirements.txt"; then
+      _ai_pip "$py" install torch torchvision --index-url https://download.pytorch.org/whl/cpu >&2
+    fi
+    _ai_pip "$py" install -r "$dir/requirements.txt" >&2
   fi
   if ! "$py" -c "import $mod.job" 2>/dev/null; then
     echo "[setup] pip install -e $dir (최초 1회)" >&2
-    "$py" -m pip install -q -e "$dir" --no-deps >&2
+    _ai_pip "$py" install -e "$dir" --no-deps >&2
   fi
   if [ "$mod" = "score" ] && ! "$py" -c "import categorize.job" 2>/dev/null; then
     echo "[setup] pip install -e $ai_root/categorize (score 체인용, 최초 1회)" >&2
-    "$py" -m pip install -q -r "$ai_root/categorize/requirements.txt" >&2
-    "$py" -m pip install -q -e "$ai_root/categorize" --no-deps >&2
+    _ai_pip "$py" install -r "$ai_root/categorize/requirements.txt" >&2
+    _ai_pip "$py" install -e "$ai_root/categorize" --no-deps >&2
   fi
   echo "$py"
+}
+
+# uv 로 만든 venv 에는 pip 이 없다 — uv pip 을 쓰고, 없으면 python -m pip.
+_ai_pip() {
+  local py="$1"; shift
+  if command -v uv >/dev/null 2>&1; then
+    uv pip -q --python "$py" "$@"
+  else
+    "$py" -m pip install -q "${@:2}"
+  fi
 }
