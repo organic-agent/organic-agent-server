@@ -17,10 +17,11 @@ data class RecommendablePhotoDto(
 
     companion object {
 
+        /** 호출 전에 [PhotoAnalysis.isAnalyzed]로 걸러야 한다 — 백분위 없는 행을 기본값으로 메꾸지 않는다. */
         fun from(analysis: PhotoAnalysis) = RecommendablePhotoDto(
             photoId = analysis.photoId,
-            technicalPct = analysis.technicalPct?.toDouble() ?: 50.0,
-            aestheticPct = analysis.aestheticPct?.toDouble() ?: 50.0,
+            technicalPct = requireNotNull(analysis.technicalPct) { "분석되지 않은 사진: ${analysis.photoId}" }.toDouble(),
+            aestheticPct = requireNotNull(analysis.aestheticPct) { "분석되지 않은 사진: ${analysis.photoId}" }.toDouble(),
             subjects = analysis.subjects ?: "unknown",
             clusterId = analysis.clusterId ?: -1,
             clusterRank = analysis.clusterRank ?: 0,

@@ -67,7 +67,7 @@ class PhotoAnalysis(
     @Column(name = "subjects", length = 20)
     val subjects: String? = null
 
-    /** 갤러리 안 백분위 0~100. 원점수가 아니라 모델마다 단위가 달라도 비교할 수 있다. */
+    /** 갤러리 안 백분위 0~100. 원점수가 아니라 모델마다 단위가 달라도 비교할 수 있다. CATEGORIZE 잡이 쓴다. */
     @Column(name = "technical_pct")
     val technicalPct: Float? = null
 
@@ -82,7 +82,7 @@ class PhotoAnalysis(
     @Column(name = "cluster_rank")
     val clusterRank: Int? = null
 
-    /** 분석 컬럼을 만든 파이프라인 버전. null이면 임베딩만 있고 분석은 아직이다. */
+    /** 분석 컬럼을 만든 파이프라인 버전. SCORE 잡이 쓴다 — null이면 임베딩만 있고 분석은 아직이다. */
     @Column(name = "model_version", length = 40)
     val modelVersion: String? = null
 
@@ -100,8 +100,13 @@ class PhotoAnalysis(
     /** 숫자 세부 점수 하나. 없거나 숫자가 아니면 null — 배치 버전에 따라 키가 빠질 수 있다. */
     fun subScore(key: String): Double? = (subScores[key] as? Number)?.toDouble()
 
+    /**
+     * 분석 완료 — 비교샷·추천이 재료로 써도 되는 행인가. 배치가 SCORE(`model_version`)와 CATEGORIZE(백분위·그룹)
+     * 두 잡으로 갈라져 있어 `model_version`만으로는 부족하다. 그 사이 창의 행은 백분위가 비어 있고, 그런 행을
+     * 완료로 보면 판정·추천이 기본값으로 조용히 틀린다. 소비자가 실제로 쓰는 백분위가 채워졌는지를 본다.
+     */
     val isAnalyzed: Boolean
-        get() = modelVersion != null
+        get() = modelVersion != null && technicalPct != null && aestheticPct != null
 
     companion object {
 

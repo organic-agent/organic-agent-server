@@ -134,6 +134,30 @@ class AiSelectionJobRunnerTest @Autowired constructor(
         }
 
         @Test
+        fun `SCORE만 끝나 백분위가 없는 사진은 재료에서 빠진다`() {
+            // given — 벡터·model_version은 있지만 CATEGORIZE 전이라 백분위가 없는 사진 하나
+            val w = world()
+            val scoredOnly = photoFixture.업로드된_사진(fixture.galleryId, 1).single()
+            photoFixture.벡터_적재(scoredOnly, FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also { it[99] = 1f })
+            recommendationFixture.점수만(scoredOnly)
+            recommendationFixture.미리보기(scoredOnly)
+            val jobId = requestJob()
+            llm.respondWith(reasonsJson(w.beach + w.garden + w.unfiled))
+
+            // when
+            runner.run(jobId)
+
+            // then — 50점으로 메꿔 미분류에 끼워 넣지 않는다
+            val job = aiSelectionJobRepository.findById(jobId).orElseThrow()
+            val recs = aiRecommendationRepository.findAllBySelectionIdAndRound(job.selectionId, 1)
+            assertSoftly { softly ->
+                softly.assertThat(job.status).isEqualTo(AiJobStatus.DONE)
+                softly.assertThat(recs.map { it.photoId }).doesNotContain(scoredOnly)
+                softly.assertThat(recs.filter { it.folderId == null }.map { it.photoId }).containsExactly(w.unfiled)
+            }
+        }
+
+        @Test
         fun `이유는 2단계로 채우고 사진·형제를 함께 보낸다`() {
             // given
             val w = world()

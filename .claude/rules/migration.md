@@ -36,6 +36,12 @@ paths:
   (임베더 Lambda, AI 분석·naming 배치)이 직접 INSERT/UPDATE 한다. 엔티티의 그 컬럼은
   읽기 전용 `val`이고, 컬럼을 바꾸면 AI repo(`photoselect/store.py`·`embedder/db.py`)도
   함께 바꾼다. 전용 DB 유저(`embedder`, `photoselect`)의 GRANT도 새 테이블마다 필요하다.
+- `photo_analysis`는 세 주체가 나눠 쓴다 — 임베더가 `embedding·embedding_model`, SCORE 잡이
+  `subjects·sub_scores·clip_embedding·model_version`, CATEGORIZE 잡이 `technical_pct·aesthetic_pct·cluster_*·
+  embed_group_id`. 두 잡 사이에 `model_version`만 있고 백분위가 없는 창이 있으므로 "분석 완료"는
+  `PhotoAnalysis.isAnalyzed`(백분위까지 채워짐) 하나로만 판단한다. DB 제약도 잡 단위다(V3):
+  `ck_photo_analysis_scored`(model_version ⇒ subjects·analyzed_at), `ck_photo_analysis_categorized`
+  (백분위·연사·그룹은 전부 있거나 전부 없음). 배치가 쓰는 컬럼 묶음을 바꾸면 이 두 제약도 같이 본다.
 - `ai_selection_jobs`·`ai_recommendations`·`ai_pair_verdicts`는 2026-09-04부터 이 서버가 쓴다
   (추천 실행기 `AiSelectionJobRunner`, 비교샷 `PairVerdictJudge`). AI repo는 더 이상 이 테이블을 쓰지 않는다.
 
