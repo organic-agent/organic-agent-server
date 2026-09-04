@@ -1,17 +1,22 @@
 package com.soma.wes.collab.support
 
-import com.soma.wes.collab.domain.CollabGuest
+import com.soma.wes.collab.domain.CollabParticipant
 import com.soma.wes.collab.dto.CollabAccessDto
 import com.soma.wes.collab.exception.CollabErrorCode
 import com.soma.wes.collab.exception.CollabException
-import com.soma.wes.collab.repository.CollabGuestRepository
+import com.soma.wes.collab.repository.CollabParticipantRepository
 import com.soma.wes.collab.repository.CollabSessionRepository
 import com.soma.wes.gallery.domain.GalleryStatus
 import com.soma.wes.gallery.repository.GalleryRepository
+import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.requireById
 import org.springframework.stereotype.Component
 import java.time.Clock
 import java.time.ZonedDateTime
+import com.soma.wes.user.repository.UserRepository
+import com.soma.wes.user.repository.requireById
+import com.soma.wes.workspace.domain.WorkspaceRole
+import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 
 /**
  * 협업 링크를 들고 온 요청이 무엇을 할 수 있는지.
@@ -29,8 +34,11 @@ import java.time.ZonedDateTime
 @Component
 class CollabSessionAccess(
     private val collabSessionRepository: CollabSessionRepository,
-    private val collabGuestRepository: CollabGuestRepository,
+    private val participantRepository: CollabParticipantRepository,
     private val galleryRepository: GalleryRepository,
+    private val galleryMemberRepository: GalleryMemberRepository,
+    private val workspaceMemberRepository: WorkspaceMemberRepository,
+    private val userRepository: UserRepository,
     private val clock: Clock,
 ) {
 
@@ -64,7 +72,7 @@ class CollabSessionAccess(
      * 링크로 의견을 남길 수 있는지. 댓글과 반응이 여기를 지난다.
      *
      * 부부가 고를 수 있는 동안에만 열린다 —
-     * [com.soma.wes.gallery.support.GalleryAccessPolicy.requireCouple]과 같은 기준이다.
+     * [com.soma.wes.gallery.support.GalleryAccessPolicy.requireSelectionEditor]과 같은 기준이다.
      * 마감된 갤러리에 하객 의견이 계속 쌓이면, 그 의견은 아무도 읽지 않을 곳에 쌓인다.
      */
     fun requireWritable(collabToken: String): CollabAccessDto {
@@ -93,8 +101,18 @@ class CollabSessionAccess(
      * 토큰이 없는 것과 틀린 것을 구분하지 않는다. 화면이 할 일은 어느 쪽이든 같다 —
      * 닉네임을 다시 받아 새로 입장시키면 된다.
      */
-    fun requireGuest(access: CollabAccessDto, guestToken: String?): CollabGuest =
-        findGuest(access, guestToken) ?: throw CollabException(CollabErrorCode.GUEST_NOT_IDENTIFIED)
+    fun requireParticipant(access: CollabAccessDto, userId: Long?, guestToken: String?): CollabParticipant {
+        if (userId != null) {
+            if (!canUserReact(access, userId)) {
+                throw CollabException(CollabErrorCode.PARTICIPANT_READ_ONLY)
+            }
+            return participantRepository.findByCollabSessionIdAndUserId(access.sessionId, userId)
+                ?: participantRepository.save(
+                    CollabParticipant.user(access.sessionId, userId, userRepository.requireById(userId).nickname),
+                )
+        }
+        return findGuest(access, guestToken) ?: throw CollabException(CollabErrorCode.GUEST_NOT_IDENTIFIED)
+    }
 
     /**
      * 보고 있는 사람이 누구인지. 조회 경로가 쓴다.
@@ -102,11 +120,36 @@ class CollabSessionAccess(
      * 토큰이 없거나 이 세션의 것이 아니면 그냥 익명으로 본다 — 보는 것을 막을 이유가 없고,
      * 화면에서는 "내가 누른 반응"과 "내가 쓴 댓글" 표시만 비어 보인다.
      */
-    fun findGuest(access: CollabAccessDto, guestToken: String?): CollabGuest? {
+    fun findParticipant(access: CollabAccessDto, userId: Long?, guestToken: String?): CollabParticipant? {
+        if (userId != null) {
+            return if (canUserReact(access, userId)) {
+                participantRepository.findByCollabSessionIdAndUserId(access.sessionId, userId)
+            } else {
+                null
+            }
+        }
+        return findGuest(access, guestToken)
+    }
+
+    fun requireGuest(access: CollabAccessDto, guestToken: String?): CollabParticipant =
+        findGuest(access, guestToken) ?: throw CollabException(CollabErrorCode.GUEST_NOT_IDENTIFIED)
+
+    fun findGuest(access: CollabAccessDto, guestToken: String?): CollabParticipant? {
         if (guestToken.isNullOrBlank()) {
             return null
         }
 
-        return collabGuestRepository.findByGuestTokenAndCollabSessionId(guestToken, access.sessionId)
+        return participantRepository.findByGuestTokenAndCollabSessionId(guestToken, access.sessionId)
+    }
+
+    private fun canUserReact(access: CollabAccessDto, userId: Long): Boolean {
+        if (galleryMemberRepository.findByGalleryIdAndUserId(access.gallery.requiredId, userId) != null) {
+            return true
+        }
+        return workspaceMemberRepository.existsByWorkspaceIdAndUserIdAndRoleIn(
+            access.gallery.workspaceId,
+            userId,
+            listOf(WorkspaceRole.OWNER),
+        )
     }
 }

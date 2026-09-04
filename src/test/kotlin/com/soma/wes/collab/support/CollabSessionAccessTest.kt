@@ -15,6 +15,10 @@ import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.support.IntegrationTest
+import com.soma.wes.user.fixture.UserFixture
+import com.soma.wes.workspace.domain.WorkspaceMember
+import com.soma.wes.workspace.domain.WorkspaceRole
+import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.assertj.core.api.SoftAssertions.assertSoftly
@@ -27,7 +31,7 @@ import java.time.Clock
 import java.time.ZonedDateTime
 
 /**
- * 계정 없는 요청의 세 문을 확인한다 — 토큰이 곧 자격이다.
+ * 사용자와 게스트가 같은 협업 링크에서 참여자 신원으로 합쳐지는 규칙을 확인한다.
  *
  * 보는 것은 셋이다. **보는 문이 딱 그만큼만 열려 있는가**(없는 토큰·폐기·DRAFT가 각각 다른
  * 답으로 막히는지), **남기는 문이 부부의 선택 기한과 같이 움직이는가**, 그리고 **글쓴이 확인이
@@ -42,6 +46,8 @@ class CollabSessionAccessTest @Autowired constructor(
     private val galleryFixture: GalleryFixture,
     private val galleryRepository: GalleryRepository,
     private val collabSessionRepository: CollabSessionRepository,
+    private val workspaceMemberRepository: WorkspaceMemberRepository,
+    private val userFixture: UserFixture,
     private val clock: Clock,
 ) {
 
@@ -271,6 +277,56 @@ class CollabSessionAccessTest @Autowired constructor(
                 softly.assertThat(collabSessionAccess.findGuest(access, strangers)).isNull()
                 softly.assertThat(collabSessionAccess.findGuest(access, mine)?.nickname).isEqualTo("영희")
             }
+        }
+    }
+
+    @Nested
+    @DisplayName("로그인 참여자를 확인할 때")
+    inner class IdentifyUser {
+
+        @Test
+        fun `Bearer 사용자가 있으면 잘못된 게스트 토큰보다 로그인 신원을 우선한다`() {
+            val session = openSession()
+            val access = collabSessionAccess.requireReadable(session.collabToken)
+
+            val participant = collabSessionAccess.requireParticipant(
+                access,
+                fixture.member.requiredId,
+                "invalid-guest-token",
+            )
+
+            assertThat(participant.userId).isEqualTo(fixture.member.requiredId)
+            assertThat(participant.guestToken).isNull()
+        }
+
+        @Test
+        fun `스튜디오 MEMBER는 협업을 볼 수 있지만 반응 작성 참여자가 될 수 없다`() {
+            val session = openSession()
+            val access = collabSessionAccess.requireReadable(session.collabToken)
+            val studioMember = userFixture.사용자()
+            workspaceMemberRepository.save(
+                WorkspaceMember(access.gallery.workspaceId, studioMember.requiredId, WorkspaceRole.MEMBER),
+            )
+
+            assertThatThrownBy {
+                collabSessionAccess.requireParticipant(access, studioMember.requiredId, null)
+            }.isInstanceOf(CollabException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(CollabErrorCode.PARTICIPANT_READ_ONLY)
+        }
+
+        @Test
+        fun `스튜디오 OWNER는 로그인 참여자가 될 수 있다`() {
+            val session = openSession()
+            val access = collabSessionAccess.requireReadable(session.collabToken)
+
+            val participant = collabSessionAccess.requireParticipant(
+                access,
+                fixture.photographer.requiredId,
+                null,
+            )
+
+            assertThat(participant.userId).isEqualTo(fixture.photographer.requiredId)
         }
     }
 

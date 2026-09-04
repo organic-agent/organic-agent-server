@@ -41,8 +41,24 @@ class GalleryAccessPolicy(
         return gallery
     }
 
+    /** 보정 결과 업로드·완료는 STUDIO 작업공간 구성원만 담당한다. */
     @Transactional(readOnly = true)
-    fun requirePhotographer(galleryId: Long, userId: Long): Gallery = requireManager(galleryId, userId)
+    fun requireRetouchProcessor(galleryId: Long, userId: Long): Gallery {
+        val gallery = galleryRepository.requireById(galleryId)
+        val workspace = workspaceRepository.findById(gallery.workspaceId).orElse(null)
+            ?: throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        if (workspace.type != WorkspaceType.STUDIO ||
+            !studioRepository.existsByIdAndSuspendedAtIsNull(gallery.workspaceId) ||
+            !workspaceMemberRepository.existsByWorkspaceIdAndUserIdAndRoleIn(
+                gallery.workspaceId,
+                userId,
+                ACTIVE_WORKSPACE_ROLES,
+            )
+        ) {
+            throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        }
+        return gallery
+    }
 
     /**
      * 초대 수락.
@@ -54,9 +70,6 @@ class GalleryAccessPolicy(
             throw GalleryException(GalleryErrorCode.MANAGER_CANNOT_ACCEPT_INVITE)
         }
     }
-
-    @Transactional(readOnly = true)
-    fun requireNotPhotographer(galleryId: Long, userId: Long) = requireNotManager(galleryId, userId)
 
     /**
      * 선택 앨범의 담기·빼기·제출, 협업 세션 개설과 큐레이션.
@@ -75,9 +88,6 @@ class GalleryAccessPolicy(
         requireSelectable(gallery)
         return gallery
     }
-
-    @Transactional(readOnly = true)
-    fun requireCouple(galleryId: Long, userId: Long): Gallery = requireSelectionEditor(galleryId, userId)
 
     /**
      * 갤러리 상세, 사진 목록, 선택 앨범 조회, 협업 결과 조회.
@@ -108,10 +118,6 @@ class GalleryAccessPolicy(
         }
         return requireSelectionEditor(galleryId, userId)
     }
-
-    @Transactional(readOnly = true)
-    fun requirePhotographerOrCouple(galleryId: Long, userId: Long): Gallery =
-        requireManagerOrSelectionEditor(galleryId, userId)
 
     private fun isManager(gallery: Gallery, userId: Long): Boolean {
         val workspace = workspaceRepository.findById(gallery.workspaceId).orElse(null) ?: return false

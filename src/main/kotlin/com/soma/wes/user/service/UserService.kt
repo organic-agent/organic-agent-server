@@ -57,7 +57,7 @@ class UserService(
                 ?.takeIf { it.type == WorkspaceType.PERSONAL }
                 ?.requiredId
         }
-        val personalGalleries = galleryRepository.findAllByStudioIdIn(personalWorkspaceIds)
+        val personalGalleries = galleryRepository.findAllByWorkspaceIdIn(personalWorkspaceIds)
         val memberGalleries = galleryRepository.findAllById(galleryMemberships.map { it.galleryId })
         val galleries = (personalGalleries + memberGalleries).associateBy { it.requiredId }
 
@@ -65,7 +65,7 @@ class UserService(
             val workspace = workspaces[membership.workspaceId]
                 ?.takeIf { it.type == WorkspaceType.STUDIO } ?: return@mapNotNull null
             val studio = studios[workspace.requiredId] ?: return@mapNotNull null
-            val latestGalleryAt = galleryRepository.findAllByStudioId(workspace.requiredId)
+            val latestGalleryAt = galleryRepository.findAllByWorkspaceId(workspace.requiredId)
                 .mapNotNull { it.updatedAt ?: it.createdAt }
                 .maxOrNull()
             UserWorkspaceResponse(
@@ -106,11 +106,23 @@ class UserService(
         val memberships = workspaceMemberRepository.findAllByUserId(id)
         val ownedWorkspaceIds = memberships.filter { it.role == WorkspaceRole.OWNER }.map { it.workspaceId }
         val ownedWorkspaces = workspaceRepository.findAllById(ownedWorkspaceIds)
-        val ownedStudioWorkspaces = ownedWorkspaces.filter { it.type == WorkspaceType.STUDIO }
+        val ownedPersonalWorkspaces = ownedWorkspaces.filter { it.type == WorkspaceType.PERSONAL }
         val galleryMemberships = galleryMemberRepository.findAllByUserId(id)
 
-        ownedWorkspaces.forEach { workspace ->
-            val galleryRecipients = galleryRepository.findAllByStudioId(workspace.requiredId)
+        memberships.filter { membership ->
+            membership.role == WorkspaceRole.OWNER &&
+                ownedWorkspaces.any { it.requiredId == membership.workspaceId && it.type == WorkspaceType.STUDIO }
+        }.forEach { membership ->
+            val members = workspaceMemberRepository.findAllWithLockByWorkspaceId(membership.workspaceId)
+            if (members.count { it.role == WorkspaceRole.OWNER } == 1) {
+                throw com.soma.wes.studio.exception.StudioException(
+                    com.soma.wes.studio.exception.StudioErrorCode.LAST_OWNER_PROTECTED,
+                )
+            }
+        }
+
+        ownedPersonalWorkspaces.forEach { workspace ->
+            val galleryRecipients = galleryRepository.findAllByWorkspaceId(workspace.requiredId)
                 .flatMap { gallery -> galleryMemberRepository.findAllByGalleryId(gallery.requiredId) }
                 .map { it.userId }
             val recipients = (workspaceMemberRepository.findAllByWorkspaceId(workspace.requiredId)
@@ -145,7 +157,7 @@ class UserService(
         authTokenProvider.logout(user)
         galleryMemberRepository.deleteAll(galleryMemberships)
         workspaceMemberRepository.deleteAll(memberships)
-        workspaceRepository.deleteAll(ownedStudioWorkspaces)
+        workspaceRepository.deleteAll(ownedPersonalWorkspaces)
         userRepository.delete(user)
     }
 }

@@ -264,7 +264,7 @@ class AdminChildTrashRepository(
                 WHERE active.id <> trashed.id
                   AND active.collab_session_id = trashed.collab_session_id
                   AND active.photo_id = trashed.photo_id
-                  AND active.collab_guest_id = trashed.collab_guest_id
+                  AND active.participant_id = trashed.participant_id
                   AND active.deleted_at IS NULL
             )
             """.trimIndent(),

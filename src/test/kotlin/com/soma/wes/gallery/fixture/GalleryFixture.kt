@@ -28,7 +28,7 @@ class GalleryFixture(
         val studio = studioFixture.소유_스튜디오(photographer)
         val gallery = galleryRepository.save(
             Gallery(
-                studioId = studio.id!!,
+                workspaceId = studio.id!!,
                 createdByUserId = photographer.requiredId,
                 title = "본식",
                 status = GalleryStatus.OPEN,

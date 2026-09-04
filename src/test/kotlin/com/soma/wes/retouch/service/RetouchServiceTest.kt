@@ -862,7 +862,7 @@ class RetouchServiceTest @Autowired constructor(
                 softly.assertThat(result.rounds.single().completedAt).isNotNull()
                 softly.assertThat(result.currentRound).isNull()
                 softly.assertThat(galleryRepository.findById(fixture.galleryId).orElseThrow().stage)
-                    .isEqualTo(GalleryStage.ALBUM)
+                    .isEqualTo(GalleryStage.DELIVERY)
             }
         }
 

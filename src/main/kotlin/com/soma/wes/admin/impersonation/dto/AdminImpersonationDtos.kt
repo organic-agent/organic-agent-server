@@ -100,7 +100,7 @@ data class AdminImpersonationGalleryViewResponse(
             "SELECTION_IN_PROGRESS",
             "SELECTION_COMPLETED",
             "RETOUCH",
-            "ALBUM",
+            "DELIVERY",
             "ARCHIVED",
         ],
     )

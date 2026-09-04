@@ -20,6 +20,9 @@ import org.hibernate.annotations.SQLRestriction
     indexes = [Index(name = "idx_detail_folders_concept", columnList = "concept_folder_id, sort_order")],
 )
 class DetailFolder(
+    @Column(name = "gallery_id", nullable = false, updatable = false)
+    val galleryId: Long,
+
     @Column(name = "concept_folder_id", nullable = false, updatable = false)
     val conceptFolderId: Long,
 

@@ -56,7 +56,7 @@ class GalleryInviteService(
         userId: Long,
         request: IssueGalleryInviteRequest = IssueGalleryInviteRequest(),
     ): GalleryInviteResponse {
-        galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
         val gallery = galleryRepository.requireWithLockById(galleryId)
         val workspace = workspaceRepository.findById(gallery.workspaceId).orElseThrow {
             GalleryException(GalleryErrorCode.GALLERY_NOT_FOUND)
@@ -90,7 +90,7 @@ class GalleryInviteService(
 
     @Transactional(readOnly = true)
     fun getCurrent(galleryId: Long, userId: Long): GalleryInviteResponse {
-        galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
         val invite = galleryInviteRepository.findByGalleryIdAndRevokedAtIsNull(galleryId)
             ?: throw GalleryException(GalleryErrorCode.INVITE_NOT_FOUND)
         return toResponse(invite, ZonedDateTime.now(clock))
@@ -131,7 +131,7 @@ class GalleryInviteService(
 
     @Transactional
     fun revoke(galleryId: Long, inviteId: Long, userId: Long) {
-        galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
         galleryInviteRepository.requireByIdAndGalleryId(inviteId, galleryId)
             .revoke(ZonedDateTime.now(clock))
     }
@@ -146,7 +146,7 @@ class GalleryInviteService(
 
         val gallery = galleryRepository.requireWithLockById(invite.galleryId)
         existingMembershipResponse(invite, gallery, userId)?.let { return it }
-        galleryAccessPolicy.requireNotPhotographer(invite.galleryId, userId)
+        galleryAccessPolicy.requireNotManager(invite.galleryId, userId)
         if (invite.isFull || isGalleryCapacityFull(invite)) {
             throw GalleryException(GalleryErrorCode.INVITE_FULL)
         }

@@ -230,14 +230,26 @@ class AdminResourceRepository(
         definition.defaults.forEach { (name, value) -> normalized.putIfAbsent(name, value) }
         definition.generatedSecretField?.let { normalized[it] = secureTokenGenerator.generate() }
 
+        if (type == AdminResourceType.DETAIL_FOLDER) {
+            normalized["galleryId"] = galleryIdForConceptFolder(
+                (normalized.getValue("conceptFolderId") as Number).toLong(),
+            )
+        }
         if (type == AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT) {
             validateCategoryAssignment(normalized)
+            normalized["galleryId"] = galleryIdForPhoto(
+                (normalized.getValue("photoId") as Number).toLong(),
+            )
         }
 
         val id = when (type) {
             AdminResourceType.STUDIO -> createStudio(normalized)
             else -> insertResource(definition, normalized).also { createdId ->
-                if (type == AdminResourceType.USER) createPersonalWorkspace(createdId, normalized.getValue("nickname").toString())
+                when (type) {
+                    AdminResourceType.USER -> createPersonalWorkspace(createdId, normalized.getValue("nickname").toString())
+                    AdminResourceType.GALLERY -> createSelection(createdId)
+                    else -> Unit
+                }
             }
         }
         return ResourceCreateResult(id)
@@ -276,6 +288,17 @@ class AdminResourceRepository(
             VALUES (:workspaceId, :userId, 'OWNER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """.trimIndent(),
         ).param("workspaceId", workspaceId).param("userId", userId).update()
+    }
+
+    private fun createSelection(galleryId: Long) {
+        jdbcClient.sql(
+            """
+            INSERT INTO photo_selections
+                (gallery_id, status, version, created_at, updated_at)
+            VALUES (:galleryId, 'SELECTING', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (gallery_id) DO NOTHING
+            """.trimIndent(),
+        ).param("galleryId", galleryId).update()
     }
 
     private fun createStudio(normalized: Map<String, Any?>): Long {
@@ -426,6 +449,22 @@ class AdminResourceRepository(
             .single()
         if (!valid) throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
     }
+
+    private fun galleryIdForConceptFolder(conceptFolderId: Long): Long = jdbcClient.sql(
+        "SELECT gallery_id FROM concept_folders WHERE id = :id AND deleted_at IS NULL",
+    )
+        .param("id", conceptFolderId)
+        .query { rs, _ -> rs.getLong("gallery_id") }
+        .optional()
+        .orElseThrow { AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS) }
+
+    private fun galleryIdForPhoto(photoId: Long): Long = jdbcClient.sql(
+        "SELECT gallery_id FROM photos WHERE id = :id AND deleted_at IS NULL",
+    )
+        .param("id", photoId)
+        .query { rs, _ -> rs.getLong("gallery_id") }
+        .optional()
+        .orElseThrow { AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS) }
 
     private fun updateCategoryAssignment(
         photoId: Long,
@@ -952,7 +991,7 @@ class AdminResourceRepository(
                             "SELECTION_IN_PROGRESS",
                             "SELECTION_COMPLETED",
                             "RETOUCH",
-                            "ALBUM",
+                            "DELIVERY",
                             "ARCHIVED",
                         ),
                     ),
@@ -1029,6 +1068,7 @@ class AdminResourceRepository(
                 labelExpression = "name",
                 searchExpression = "CONCAT_WS(' ', name, concept_folder_id, created_source)",
                 fields = listOf(
+                    FieldDefinition("galleryId", "gallery_id", FieldKind.LONG, createAllowed = false, updateAllowed = false, minNumber = 1),
                     FieldDefinition("conceptFolderId", "concept_folder_id", FieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
                     FieldDefinition("name", "name", FieldKind.STRING, requiredOnCreate = true, maxLength = 100),
                     FieldDefinition("sortOrder", "sort_order", FieldKind.INT, requiredOnCreate = true, minNumber = 0),
@@ -1052,6 +1092,7 @@ class AdminResourceRepository(
                 labelExpression = "'photo #' || photo_id || ' category'",
                 searchExpression = "CONCAT_WS(' ', photo_id, detail_folder_id, assigned_by_user_id, assigned_source)",
                 fields = listOf(
+                    FieldDefinition("galleryId", "gallery_id", FieldKind.LONG, createAllowed = false, updateAllowed = false, minNumber = 1),
                     FieldDefinition("photoId", "photo_id", FieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
                     FieldDefinition("detailFolderId", "detail_folder_id", FieldKind.LONG, requiredOnCreate = true, minNumber = 1),
                     FieldDefinition("assignedByUserId", "assigned_by_user_id", FieldKind.LONG, requiredOnCreate = true, minNumber = 1),
@@ -1123,6 +1164,7 @@ class AdminResourceRepository(
                 ),
                 softDeleteColumn = "deleted_at",
                 defaults = mapOf("status" to "SELECTING", "submittedAt" to null),
+                createSupported = false,
             ),
             ResourceDefinition(
                 type = AdminResourceType.COLLABORATION,

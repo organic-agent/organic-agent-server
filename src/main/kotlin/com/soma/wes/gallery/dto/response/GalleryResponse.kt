@@ -13,8 +13,6 @@ data class GalleryResponse(
     val id: Long,
     val workspaceId: Long,
     val createdByUserId: Long?,
-    @Deprecated("workspaceId를 사용하세요")
-    val studioId: Long,
     val title: String,
     val status: GalleryStatus,
     val workflowStatus: GalleryWorkflowStatus,
@@ -39,7 +37,6 @@ data class GalleryResponse(
             id = gallery.requiredId,
             workspaceId = gallery.workspaceId,
             createdByUserId = gallery.createdByUserId,
-            studioId = gallery.studioId,
             title = gallery.title,
             status = gallery.status,
             workflowStatus = gallery.workflowStatus,

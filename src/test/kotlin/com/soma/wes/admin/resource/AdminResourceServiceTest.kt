@@ -217,7 +217,7 @@ class AdminResourceServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `현재 비즈니스 리소스 일곱 종류를 생성하고 통합 검색한다`() {
+    fun `현재 비즈니스 리소스를 생성하고 통합 검색한다`() {
         val actor = adminAccountFixture.관리자("all-resource-owner")
         val user = createUser(actor.requiredId, "all-resource-user")
         val studio = service.create(
@@ -246,12 +246,9 @@ class AdminResourceServiceTest @Autowired constructor(
             ),
             "127.0.0.1",
         )
-        val selection = service.create(
-            actor.requiredId,
-            AdminResourceType.SELECTION,
-            CreateAdminResourceRequest("셀렉 앨범 복구", mapOf("galleryId" to gallery.id)),
-            "127.0.0.1",
-        )
+        val selectionId = jdbcClient.sql("SELECT id FROM photo_selections WHERE gallery_id = :galleryId")
+            .param("galleryId", gallery.id).query { rs, _ -> rs.getLong(1) }.single()
+        val selection = service.get(AdminResourceType.SELECTION, selectionId)
         val conceptFolderId = createConceptFolder(gallery.id, "전체 리소스")
         val collaboration = service.create(
             actor.requiredId,
@@ -403,8 +400,24 @@ class AdminResourceServiceTest @Autowired constructor(
             """.trimIndent(),
         ).param("galleryId", gallery.id).query { rs, _ -> rs.getLong(1) }.single()
         jdbcClient.sql(
-            "INSERT INTO categorization_job_photos (job_id, photo_id) VALUES (:jobId, :photoId)",
-        ).param("jobId", jobId).param("photoId", photo.id).update()
+            """
+            INSERT INTO categorization_job_photos (job_id, gallery_id, photo_id, status, processed_at)
+            VALUES (:jobId, :galleryId, :photoId, 'ASSIGNED', CURRENT_TIMESTAMP)
+            """.trimIndent(),
+        ).param("jobId", jobId).param("galleryId", gallery.id).param("photoId", photo.id).update()
+        val selectionId = jdbcClient.sql("SELECT id FROM photo_selections WHERE gallery_id = :galleryId")
+            .param("galleryId", gallery.id).query { rs, _ -> rs.getLong(1) }.single()
+        jdbcClient.sql(
+            """
+            INSERT INTO photo_selection_items
+                (selection_id, gallery_id, photo_id, added_by_user_id, sort_order, version, created_at, updated_at)
+            VALUES (:selectionId, :galleryId, :photoId, :userId, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """.trimIndent(),
+        ).param("selectionId", selectionId)
+            .param("galleryId", gallery.id)
+            .param("photoId", photo.id)
+            .param("userId", owner.id)
+            .update()
 
         assertThat(assignment.id).isEqualTo(photo.id)
         assertThat(rating.id).isEqualTo(photo.id)
@@ -439,7 +452,20 @@ class AdminResourceServiceTest @Autowired constructor(
         assertThat(photoContext.sections).containsKeys("categoryAssignment", "categorizationJobs", "rating")
         val jobPhotoRow = contextService.get(AdminResourceType.CATEGORIZATION_JOB, jobId)
             .sections.getValue("photos").single()
-        assertThat(jobPhotoRow).containsEntry("photoId", photo.id)
+        assertThat(jobPhotoRow)
+            .containsEntry("photoId", photo.id)
+            .containsEntry("galleryId", gallery.id)
+            .containsEntry("photoStatus", "PENDING")
+            .containsEntry("categorizationStatus", "ASSIGNED")
+            .containsEntry("failureCode", null)
+        assertThat(jobPhotoRow["processedAt"]).isNotNull()
+        val selectionItemRow = contextService.get(AdminResourceType.SELECTION, selectionId)
+            .sections.getValue("items").single()
+        assertThat(selectionItemRow)
+            .containsEntry("galleryId", gallery.id)
+            .containsEntry("photoId", photo.id)
+            .containsEntry("addedByUserId", owner.id)
+            .containsEntry("sortOrder", 0)
 
         val moved = service.update(
             actor.requiredId,
@@ -567,7 +593,7 @@ class AdminResourceServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `셀렉 생성은 SELECTING으로 고정하고 제출은 리비전 워크플로만 허용한다`() {
+    fun `셀렉은 갤러리 생성과 함께 만들어지고 제출은 리비전 워크플로만 허용한다`() {
         val actor = adminAccountFixture.관리자("selection-state-owner")
         val galleryId = createGallery(actor.requiredId, "selection-state")
 
@@ -585,14 +611,21 @@ class AdminResourceServiceTest @Autowired constructor(
             assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         }
 
-        val selection = service.create(
-            actor.requiredId,
-            AdminResourceType.SELECTION,
-            CreateAdminResourceRequest("셀렉 생성", mapOf("galleryId" to galleryId)),
-            "127.0.0.1",
-        )
+        val selectionId = jdbcClient.sql("SELECT id FROM photo_selections WHERE gallery_id = :galleryId")
+            .param("galleryId", galleryId).query { rs, _ -> rs.getLong(1) }.single()
+        val selection = service.get(AdminResourceType.SELECTION, selectionId)
         assertThat(selection.fields["status"]).isEqualTo("SELECTING")
         assertThat(selection.fields["submittedAt"]).isNull()
+        assertThatThrownBy {
+            service.create(
+                actor.requiredId,
+                AdminResourceType.SELECTION,
+                CreateAdminResourceRequest("중복 셀렉 생성", mapOf("galleryId" to galleryId)),
+                "127.0.0.1",
+            )
+        }.isInstanceOfSatisfying(AdminException::class.java) {
+            assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
+        }
         assertThatThrownBy {
             service.update(
                 actor.requiredId,
@@ -782,7 +815,7 @@ class AdminResourceServiceTest @Autowired constructor(
                     mapOf(
                         "status" to "CLOSED",
                         "workflowStatus" to "COMPLETED",
-                        "stage" to "ALBUM",
+                        "stage" to "DELIVERY",
                         "selectionDeadline" to ZonedDateTime.now().plusDays(14).toOffsetDateTime().toString(),
                     ),
                 ),

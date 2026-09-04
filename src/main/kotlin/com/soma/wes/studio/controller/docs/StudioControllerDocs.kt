@@ -188,9 +188,9 @@ interface StudioControllerDocs {
 
     @Operation(
         summary = "스튜디오 멤버 탈퇴",
-        description = "MEMBER가 해당 스튜디오 소속에서 나간다. OWNER는 스튜디오 삭제 API를 사용해야 한다.",
+        description = "MEMBER는 언제든 나갈 수 있다. OWNER는 다른 OWNER가 한 명 이상 있을 때만 나갈 수 있다.",
     )
-    fun leave(loginUser: LoginUser, studioId: Long): ResponseEntity<Unit>
+    fun leave(loginUser: LoginUser, workspaceId: Long): ResponseEntity<Unit>
 
     @Operation(
         summary = "내 스튜디오 삭제",

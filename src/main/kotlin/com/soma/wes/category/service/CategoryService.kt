@@ -56,7 +56,7 @@ class CategoryService(
         val concept = requireConcept(galleryId, conceptId)
         val sortOrder = detailRepository.findAllByConceptFolderIdOrderBySortOrderAscIdAsc(conceptId).size
         val detail = detailRepository.save(
-            DetailFolder(concept.requiredId, request.name.trim(), sortOrder, CategorySource.USER),
+            DetailFolder(galleryId, concept.requiredId, request.name.trim(), sortOrder, CategorySource.USER),
         )
         return detailResponse(detail, emptyList())
     }
@@ -90,12 +90,11 @@ class CategoryService(
         }
 
         val target = request.targetDetailFolderId?.let { targetId ->
-            val detail = detailRepository.findById(targetId).orElse(null)
+            val detail = detailRepository.findByIdAndGalleryId(targetId, galleryId)
                 ?: throw CategoryException(CategoryErrorCode.DETAIL_NOT_FOUND)
-            requireConcept(galleryId, detail.conceptFolderId)
             detail
         }
-        val current = assignmentRepository.findAllByPhotoIdIn(photoIds).associateBy { it.photoId }
+        val current = assignmentRepository.findAllByGalleryIdAndPhotoIdIn(galleryId, photoIds).associateBy { it.photoId }
         val currentDetails = detailRepository.findAllById(current.values.map { it.detailFolderId })
             .associateBy { it.requiredId }
 
@@ -113,7 +112,7 @@ class CategoryService(
                 if (existing != null) assignmentRepository.delete(existing)
             } else if (existing == null) {
                 assignmentRepository.save(
-                    PhotoCategoryAssignment(photoId, target.requiredId, userId, CategorySource.USER, null, now),
+                    PhotoCategoryAssignment(galleryId, photoId, target.requiredId, userId, CategorySource.USER, null, now),
                 )
             } else {
                 existing.moveTo(target.requiredId, userId, now)
@@ -150,6 +149,7 @@ class CategoryService(
 
     private fun detailResponse(detail: DetailFolder, photoIds: List<Long>) = DetailFolderResponse(
         id = detail.requiredId,
+        galleryId = detail.galleryId,
         conceptFolderId = detail.conceptFolderId,
         name = detail.name,
         sortOrder = detail.sortOrder,

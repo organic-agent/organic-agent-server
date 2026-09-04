@@ -19,6 +19,35 @@ class AdminCascadeTrashRepository(
     private val auditSanitizer: AdminAuditSanitizer,
 ) {
 
+    fun isLastOwnerOfAnyStudio(userId: Long): Boolean {
+        val owners = jdbcClient.sql(
+            """
+            SELECT member.workspace_id, member.user_id
+            FROM workspace_members member
+            JOIN workspaces workspace ON workspace.id = member.workspace_id
+            JOIN studios studio ON studio.workspace_id = workspace.id
+            WHERE member.role = 'OWNER'
+              AND member.deleted_at IS NULL
+              AND workspace.deleted_at IS NULL
+              AND studio.deleted_at IS NULL
+              AND member.workspace_id IN (
+                  SELECT target.workspace_id
+                  FROM workspace_members target
+                  WHERE target.user_id = :userId
+                    AND target.role = 'OWNER'
+                    AND target.deleted_at IS NULL
+              )
+            ORDER BY member.workspace_id, member.id
+            FOR UPDATE OF member
+            """.trimIndent(),
+        ).param("userId", userId)
+            .query { rs, _ -> rs.getLong("workspace_id") to rs.getLong("user_id") }
+            .list()
+        return owners.groupBy(Pair<Long, Long>::first)
+            .values
+            .any { studioOwners -> studioOwners.size == 1 && studioOwners.single().second == userId }
+    }
+
     /**
      * product purge와 겹칠 수 있는 gallery/photo를 advisory mutex로 먼저 직렬화한다.
      * soft-delete UPDATE는 이미 휴지통인 descendant를 잠그지 않으므로 이 별도 경계가 필요하다.

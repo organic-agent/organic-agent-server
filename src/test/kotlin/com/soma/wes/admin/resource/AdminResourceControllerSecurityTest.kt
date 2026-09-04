@@ -521,12 +521,10 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             ),
             "127.0.0.1",
         )
-        adminResourceService.create(
-            account.requiredId,
-            AdminResourceType.SELECTION,
-            CreateAdminResourceRequest("[TEST_OPERATION] 셀렉 준비", mapOf("galleryId" to gallery.id)),
-            "127.0.0.1",
-        )
+        assertThat(
+            jdbcClient.sql("SELECT COUNT(*) FROM photo_selections WHERE gallery_id = :galleryId")
+                .param("galleryId", gallery.id).query { rs, _ -> rs.getLong(1) }.single(),
+        ).isOne()
         val conceptFolderId = createConceptFolder(gallery.id)
         val collaboration = adminResourceService.create(
             account.requiredId,
@@ -553,15 +551,16 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
         assignPhotoToSession(collaboration.id, photo.id)
         val collabGuestId = jdbcClient.sql(
             """
-            INSERT INTO collab_guests (collab_session_id, guest_token, nickname, version, created_at, updated_at)
-            VALUES (:sessionId, 'must-not-leak-guest-token', '하객', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            INSERT INTO collab_participants
+                (collab_session_id, participant_type, guest_token, nickname, version, created_at, updated_at)
+            VALUES (:sessionId, 'GUEST', 'must-not-leak-guest-token', '하객', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
             """.trimIndent(),
         ).param("sessionId", collaboration.id).query { rs, _ -> rs.getLong("id") }.single()
         jdbcClient.sql(
             """
             INSERT INTO collab_photo_comments
-                (collab_session_id, photo_id, collab_guest_id, content, version, created_at, updated_at)
+                (collab_session_id, photo_id, participant_id, content, version, created_at, updated_at)
             VALUES (:sessionId, :photoId, :guestId,
                     '확인 private@example.com token=must-not-leak', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """.trimIndent(),
@@ -1052,8 +1051,8 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
         val detailId = jdbcClient.sql(
             """
             INSERT INTO detail_folders
-                (concept_folder_id, name, sort_order, created_source, version, created_at, updated_at)
-            SELECT concept_folder_id, '대리보기 상세', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                (gallery_id, concept_folder_id, name, sort_order, created_source, version, created_at, updated_at)
+            SELECT gallery_id, concept_folder_id, '대리보기 상세', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             FROM collab_sessions WHERE id = :sessionId
             RETURNING id
             """.trimIndent(),
@@ -1061,8 +1060,9 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
         jdbcClient.sql(
             """
             INSERT INTO photo_category_assignments
-                (photo_id, detail_folder_id, assigned_source, assigned_at, version, created_at, updated_at)
-            VALUES (:photoId, :detailId, 'USER', CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                (gallery_id, photo_id, detail_folder_id, assigned_source, assigned_at, version, created_at, updated_at)
+            SELECT gallery_id, id, :detailId, 'USER', CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            FROM photos WHERE id = :photoId
             """.trimIndent(),
         ).param("photoId", photoId).param("detailId", detailId).update()
     }

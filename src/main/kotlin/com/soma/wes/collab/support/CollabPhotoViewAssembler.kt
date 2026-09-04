@@ -30,7 +30,7 @@ class CollabPhotoViewAssembler(
         conceptFolderId: Long,
         page: Int,
         size: Int,
-        guestId: Long? = null,
+        participantId: Long? = null,
     ): CollabPhotoPageResponse {
         val allPhotoIds = photoIds(conceptFolderId)
         val safePage = page.coerceAtLeast(0)
@@ -48,8 +48,8 @@ class CollabPhotoViewAssembler(
             likeRepository.countBySessionAndPhotoIdIn(sessionId, pageIds).associate { it.photoId to it.count }
         val commentCounts = if (pageIds.isEmpty()) emptyMap() else
             commentRepository.countBySessionAndPhotoIdIn(sessionId, pageIds).associate { it.photoId to it.count }
-        val myLikes = if (guestId == null || pageIds.isEmpty()) emptySet() else
-            likeRepository.findAllByCollabSessionIdAndPhotoIdInAndCollabGuestId(sessionId, pageIds, guestId)
+        val myLikes = if (participantId == null || pageIds.isEmpty()) emptySet() else
+            likeRepository.findAllByCollabSessionIdAndPhotoIdInAndParticipantId(sessionId, pageIds, participantId)
                 .mapTo(mutableSetOf()) { it.photoId }
 
         val contents = pageIds.mapNotNull { photoId ->

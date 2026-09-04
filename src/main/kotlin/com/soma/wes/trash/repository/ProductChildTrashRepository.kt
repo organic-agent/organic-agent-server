@@ -52,10 +52,10 @@ class ProductChildTrashRepository(
     fun softDeleteComment(
         sessionId: Long,
         commentId: Long,
-        authorGuestId: Long?,
+        authorParticipantId: Long?,
         deletedAt: ZonedDateTime,
     ): Long? {
-        val authorPredicate = authorGuestId?.let { "AND c.collab_guest_id = :authorGuestId" }.orEmpty()
+        val authorPredicate = authorParticipantId?.let { "AND c.participant_id = :authorParticipantId" }.orEmpty()
         var statement = jdbcClient.sql(
             """
             UPDATE collab_photo_comments c
@@ -69,14 +69,14 @@ class ProductChildTrashRepository(
             .param("commentId", commentId)
             .param("sessionId", sessionId)
             .param("deletedAt", deletedAt.toOffsetDateTime())
-        if (authorGuestId != null) statement = statement.param("authorGuestId", authorGuestId)
+        if (authorParticipantId != null) statement = statement.param("authorParticipantId", authorParticipantId)
         return statement.query { rs, _ -> rs.getLong("id") }.optional().orElse(null)
     }
 
     fun softDeleteLike(
         sessionId: Long,
         photoId: Long,
-        guestId: Long,
+        participantId: Long,
         deletedAt: ZonedDateTime,
     ): Long? = jdbcClient.sql(
         """
@@ -84,14 +84,14 @@ class ProductChildTrashRepository(
         SET deleted_at = :deletedAt, version = l.version + 1, updated_at = :deletedAt
         WHERE l.collab_session_id = :sessionId
           AND l.photo_id = :photoId
-          AND l.collab_guest_id = :guestId
+          AND l.participant_id = :participantId
           AND l.deleted_at IS NULL
         RETURNING l.id
         """.trimIndent(),
     )
         .param("sessionId", sessionId)
         .param("photoId", photoId)
-        .param("guestId", guestId)
+        .param("participantId", participantId)
         .param("deletedAt", deletedAt.toOffsetDateTime())
         .query { rs, _ -> rs.getLong("id") }
         .optional()

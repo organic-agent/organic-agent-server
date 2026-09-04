@@ -61,7 +61,8 @@ class JwtAuthFilter(
     }
 
     override fun shouldNotFilter(request: HttpServletRequest): Boolean =
-        PublicPaths.PATTERNS.any { pathMatcher.match(it, request.requestURI) }
+        request.getHeader(AUTHORIZATION_HEADER).isNullOrBlank() &&
+            PublicPaths.PATTERNS.any { pathMatcher.match(it, request.requestURI) }
 
     /**
      * `Authorization: Bearer {token}` 헤더에서 토큰만 떼어낸다.

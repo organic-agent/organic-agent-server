@@ -44,6 +44,7 @@ enum class AdminErrorCode(
     RESOURCE_SUSPENSION_CONFLICT(HttpStatus.CONFLICT, "ADMIN_409_12", "요청한 정지 상태와 현재 상태가 같습니다."),
     IMPERSONATION_ALREADY_ACTIVE(HttpStatus.CONFLICT, "ADMIN_409_13", "현재 로그인 세션에 이미 활성 대리보기가 있습니다."),
     TRASH_CHILD_RESTORE_FORBIDDEN(HttpStatus.CONFLICT, "ADMIN_409_14", "연쇄 삭제된 하위 데이터는 루트 배치에서만 복원할 수 있습니다."),
+    LAST_STUDIO_OWNER_PROTECTED(HttpStatus.CONFLICT, "ADMIN_409_15", "마지막 스튜디오 OWNER 사용자는 삭제할 수 없습니다. 다른 OWNER를 먼저 지정해 주세요."),
 
     REVISION_EXPIRED(HttpStatus.GONE, "ADMIN_410_1", "7일 복구 기간이 지난 리비전입니다."),
     TRASH_BATCH_EXPIRED(HttpStatus.GONE, "ADMIN_410_2", "7일 복구 기간이 지나 영구 삭제가 시작된 데이터입니다."),

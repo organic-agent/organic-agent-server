@@ -9,17 +9,17 @@ import org.springframework.data.repository.query.Param
 interface CollabPhotoLikeRepository : JpaRepository<CollabPhotoLike, Long> {
 
     /** 이 하객이 이 사진을 이미 눌렀는지. 눌렀으면 그대로 두고 없을 때만 만든다. */
-    fun existsByCollabSessionIdAndPhotoIdAndCollabGuestId(
+    fun existsByCollabSessionIdAndPhotoIdAndParticipantId(
         collabSessionId: Long,
         photoId: Long,
-        collabGuestId: Long,
+        participantId: Long,
     ): Boolean
 
     /** 하객 자신이 어느 사진을 눌렀는지. 화면이 자기가 누른 버튼을 켜둔 채로 그린다. */
-    fun findAllByCollabSessionIdAndPhotoIdInAndCollabGuestId(
+    fun findAllByCollabSessionIdAndPhotoIdInAndParticipantId(
         collabSessionId: Long,
         photoIds: Collection<Long>,
-        collabGuestId: Long,
+        participantId: Long,
     ): List<CollabPhotoLike>
 
     /**

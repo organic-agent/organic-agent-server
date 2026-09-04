@@ -29,12 +29,14 @@ interface DetailFolderRepository : JpaRepository<DetailFolder, Long> {
     fun findAllByConceptFolderIdOrderBySortOrderAscIdAsc(conceptFolderId: Long): List<DetailFolder>
     fun findAllByConceptFolderIdIn(conceptFolderIds: Collection<Long>): List<DetailFolder>
     fun findByIdAndConceptFolderId(id: Long, conceptFolderId: Long): DetailFolder?
+    fun findByIdAndGalleryId(id: Long, galleryId: Long): DetailFolder?
 }
 
 interface PhotoCategoryAssignmentRepository : JpaRepository<PhotoCategoryAssignment, Long> {
     fun findAllByDetailFolderId(detailFolderId: Long): List<PhotoCategoryAssignment>
     fun findAllByDetailFolderIdIn(detailFolderIds: Collection<Long>): List<PhotoCategoryAssignment>
     fun findAllByPhotoIdIn(photoIds: Collection<Long>): List<PhotoCategoryAssignment>
+    fun findAllByGalleryIdAndPhotoIdIn(galleryId: Long, photoIds: Collection<Long>): List<PhotoCategoryAssignment>
     fun deleteAllByDetailFolderId(detailFolderId: Long)
     fun deleteAllByDetailFolderIdIn(detailFolderIds: Collection<Long>)
 }
@@ -51,4 +53,5 @@ interface CategorizationJobRepository : JpaRepository<CategorizationJob, Long> {
 interface CategorizationJobPhotoRepository : JpaRepository<CategorizationJobPhoto, CategorizationJobPhotoId> {
     fun findAllByPhotoIdIn(photoIds: Collection<Long>): List<CategorizationJobPhoto>
     fun countByJobId(jobId: Long): Long
+    fun findAllByJobIdOrderByPhotoId(jobId: Long): List<CategorizationJobPhoto>
 }

@@ -21,4 +21,5 @@ enum class StudioErrorCode(
     // 재사용하면 옛 클라이언트·로그와 뜻이 어긋나므로 비워 둔다.
     STUDIO_ALREADY_EXISTS(HttpStatus.CONFLICT, "STUDIO_409_1", "이미 스튜디오를 만들었습니다."),
     GALLERY_URL_DUPLICATED(HttpStatus.CONFLICT, "STUDIO_409_2", "이미 사용 중인 갤러리 주소입니다."),
+    LAST_OWNER_PROTECTED(HttpStatus.CONFLICT, "STUDIO_409_11", "마지막 스튜디오 OWNER는 강등·탈퇴·회원 탈퇴할 수 없습니다. 다른 OWNER를 먼저 지정해 주세요."),
 }

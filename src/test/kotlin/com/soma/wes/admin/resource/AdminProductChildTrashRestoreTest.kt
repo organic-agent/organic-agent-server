@@ -134,16 +134,18 @@ class AdminProductChildTrashRestoreTest @Autowired constructor(
         val detailId = jdbcClient.sql(
             """
             INSERT INTO detail_folders
-                (concept_folder_id, name, sort_order, created_source, version, created_at, updated_at)
-            VALUES (:conceptId, '복원 상세', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                (gallery_id, concept_folder_id, name, sort_order, created_source, version, created_at, updated_at)
+            SELECT gallery_id, id, '복원 상세', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            FROM concept_folders WHERE id = :conceptId
             RETURNING id
             """.trimIndent(),
         ).param("conceptId", conceptId).query { rs, _ -> rs.getLong("id") }.single()
         jdbcClient.sql(
             """
             INSERT INTO photo_category_assignments
-                (photo_id, detail_folder_id, assigned_source, assigned_at, version, created_at, updated_at)
-            VALUES (:photoId, :detailId, 'USER', CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                (gallery_id, photo_id, detail_folder_id, assigned_source, assigned_at, version, created_at, updated_at)
+            SELECT gallery_id, id, :detailId, 'USER', CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            FROM photos WHERE id = :photoId
             """.trimIndent(),
         ).param("photoId", photoId).param("detailId", detailId).update()
         return photoId
@@ -160,10 +162,10 @@ class AdminProductChildTrashRestoreTest @Autowired constructor(
 
     private fun insertGuest(sessionId: Long): Long = jdbcClient.sql(
         """
-        INSERT INTO collab_guests (
-            collab_session_id, guest_token, nickname, version, created_at, updated_at
+        INSERT INTO collab_participants (
+            collab_session_id, participant_type, guest_token, nickname, version, created_at, updated_at
         )
-        VALUES (:sessionId, 'product-child-restore-guest', '복원 하객', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (:sessionId, 'GUEST', 'product-child-restore-guest', '복원 하객', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING id
         """.trimIndent(),
     )
@@ -174,10 +176,10 @@ class AdminProductChildTrashRestoreTest @Autowired constructor(
     private fun insertComment(photoId: Long, guestId: Long): Long = jdbcClient.sql(
         """
         INSERT INTO collab_photo_comments (
-            collab_session_id, photo_id, collab_guest_id, content, version, created_at, updated_at
+            collab_session_id, photo_id, participant_id, content, version, created_at, updated_at
         )
         SELECT collab_session_id, :photoId, id, '복원할 댓글', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-        FROM collab_guests WHERE id = :guestId
+        FROM collab_participants WHERE id = :guestId
         RETURNING id
         """.trimIndent(),
     )
@@ -189,10 +191,10 @@ class AdminProductChildTrashRestoreTest @Autowired constructor(
     private fun insertLike(photoId: Long, guestId: Long): Long = jdbcClient.sql(
         """
         INSERT INTO collab_photo_likes (
-            collab_session_id, photo_id, collab_guest_id, version, created_at, updated_at
+            collab_session_id, photo_id, participant_id, version, created_at, updated_at
         )
         SELECT collab_session_id, :photoId, id, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-        FROM collab_guests WHERE id = :guestId
+        FROM collab_participants WHERE id = :guestId
         RETURNING id
         """.trimIndent(),
     )

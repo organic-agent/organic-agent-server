@@ -127,7 +127,11 @@ class AnalysisOrchestratorTest @Autowired constructor(
             assertThat(stages(jobId)).containsExactly(AnalysisStage.EMBED)
 
             // 임베더가 다시 적재한 것처럼 갱신 시각을 올린다
-            jdbcTemplate.update("UPDATE photo_analysis SET updated_at = now() WHERE photo_id IN (?, ?)", photos[0], photos[1])
+            jdbcTemplate.update(
+                "UPDATE photo_analysis SET updated_at = now() + interval '1 minute' WHERE photo_id IN (?, ?)",
+                photos[0],
+                photos[1],
+            )
             orchestrator.sweep()
 
             // then — EMBED가 닫히고 SCORE로 (force는 score에도 전달된다)

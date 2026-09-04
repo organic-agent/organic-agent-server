@@ -115,7 +115,7 @@ class MockGallerySeederTest @Autowired constructor(
             assertSoftly { softly ->
                 softly.assertThat(gallery.title).isEqualTo("체험 갤러리")
                 softly.assertThat(gallery.status).isEqualTo(GalleryStatus.DRAFT)
-                softly.assertThat(gallery.studioId)
+                softly.assertThat(gallery.workspaceId)
                     .isEqualTo(request.workspaceId)
                 softly.assertThat(gallery.selectionDeadline).isNull()
                 softly.assertThat(gallery.maxSelectablePhotoCount).isNull()
@@ -285,7 +285,7 @@ class MockGallerySeederTest @Autowired constructor(
         val studio = studioFixture.소유_스튜디오(operator)
         return galleryRepository.save(
             Gallery(
-                studioId = studio.workspaceId,
+                workspaceId = studio.workspaceId,
                 createdByUserId = operator.requiredId,
                 title = "샘플 템플릿",
             ),

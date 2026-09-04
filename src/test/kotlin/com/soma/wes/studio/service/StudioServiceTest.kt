@@ -1,6 +1,7 @@
 package com.soma.wes.studio.service
 
 import com.soma.wes.studio.dto.request.CreateStudioRequest
+import com.soma.wes.studio.dto.request.ChangeStudioMemberRoleRequest
 import com.soma.wes.notification.repository.UserNotificationRepository
 import com.soma.wes.studio.dto.request.UpdateStudioRequest
 import com.soma.wes.studio.exception.StudioErrorCode
@@ -110,6 +111,64 @@ class StudioServiceTest @Autowired constructor(
 
         assertThat(workspaceMemberRepository.findByWorkspaceIdAndUserId(studio.workspaceId, member.requiredId)).isNull()
         assertThat(notificationRepository.findAllByUserIdOrderByCreatedAtDescIdDesc(owner.requiredId)).hasSize(1)
+    }
+
+    @Test
+    fun `OWNER는 멤버를 승격하고 마지막 OWNER가 아닌 자신을 강등할 수 있다`() {
+        val owner = userFixture.사용자()
+        val member = userFixture.사용자()
+        val studio = studioService.create(owner.requiredId, CreateStudioRequest("공동 소유", "co-owner-studio"))
+        val membership = workspaceMemberRepository.save(
+            com.soma.wes.workspace.domain.WorkspaceMember(
+                studio.workspaceId,
+                member.requiredId,
+                WorkspaceRole.MEMBER,
+            ),
+        )
+
+        val promoted = studioService.changeMemberRole(
+            studio.workspaceId,
+            membership.requiredId,
+            owner.requiredId,
+            ChangeStudioMemberRoleRequest(WorkspaceRole.OWNER),
+        )
+        val ownerMembership = workspaceMemberRepository
+            .findByWorkspaceIdAndUserId(studio.workspaceId, owner.requiredId)!!
+        val demoted = studioService.changeMemberRole(
+            studio.workspaceId,
+            ownerMembership.requiredId,
+            owner.requiredId,
+            ChangeStudioMemberRoleRequest(WorkspaceRole.MEMBER),
+        )
+
+        assertThat(promoted.role).isEqualTo(WorkspaceRole.OWNER)
+        assertThat(demoted.role).isEqualTo(WorkspaceRole.MEMBER)
+        assertThat(studioService.listMembers(studio.workspaceId, member.requiredId))
+            .extracting("role")
+            .containsExactly(WorkspaceRole.OWNER, WorkspaceRole.MEMBER)
+    }
+
+    @Test
+    fun `마지막 OWNER는 강등하거나 스튜디오에서 나갈 수 없다`() {
+        val owner = userFixture.사용자()
+        val studio = studioService.create(owner.requiredId, CreateStudioRequest("보호 스튜디오", "protected-studio"))
+        val ownerMembership = workspaceMemberRepository
+            .findByWorkspaceIdAndUserId(studio.workspaceId, owner.requiredId)!!
+
+        assertThatThrownBy {
+            studioService.changeMemberRole(
+                studio.workspaceId,
+                ownerMembership.requiredId,
+                owner.requiredId,
+                ChangeStudioMemberRoleRequest(WorkspaceRole.MEMBER),
+            )
+        }.isInstanceOf(StudioException::class.java)
+            .extracting("errorCode")
+            .isEqualTo(StudioErrorCode.LAST_OWNER_PROTECTED)
+        assertThatThrownBy { studioService.leave(studio.workspaceId, owner.requiredId) }
+            .isInstanceOf(StudioException::class.java)
+            .extracting("errorCode")
+            .isEqualTo(StudioErrorCode.LAST_OWNER_PROTECTED)
     }
 
     @Test

@@ -51,7 +51,7 @@ class AiRecommendationService(
     private val log = LoggerFactory.getLogger(javaClass)
 
     /**
-     * 추천 한 라운드를 요청한다. 셀렉의 주인인 부부만(`requireCouple`) — 마감·미공개 갤러리는
+     * 추천 한 라운드를 요청한다. 셀렉의 주인인 부부만(`requireSelectionEditor`) — 마감·미공개 갤러리는
      * 거기서 막힌다. 아직 셀렉 행이 없으면 여기서 만든다(담기와 같은 규약).
      *
      * 추천은 AI 폴더 세트 위에서 돈다 — 세트가 없으면 409로 거절하고 폴백을 두지 않는다.
@@ -63,7 +63,7 @@ class AiRecommendationService(
      */
     @Transactional
     fun request(galleryId: Long, userId: Long, request: AiRecommendationRequest): AiSelectionJobResponse {
-        galleryAccessPolicy.requireCouple(galleryId, userId)
+        galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
         val folderSetJobId = resolveFolderSetJobId(galleryId, request.analysisJobId)
 

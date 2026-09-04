@@ -65,7 +65,7 @@ class PhotoService(
         userId: Long,
         request: IssueUploadUrlsRequest,
     ): IssueUploadUrlsResponse {
-        galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
 
         if (request.files.size > properties.maxBatchSize) {
             throw PhotoException(PhotoErrorCode.TOO_MANY_PHOTOS)
@@ -112,7 +112,7 @@ class PhotoService(
      */
     @Transactional
     fun completeUpload(galleryId: Long, userId: Long, request: CompleteUploadRequest): PhotoCountResponse {
-        galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
 
         val photos = checkAndLoadPhotos(galleryId, request.photoIds)
         photos.forEach { it.markUploaded() }
@@ -147,7 +147,7 @@ class PhotoService(
      */
     @Transactional
     fun moveToTrash(galleryId: Long, userId: Long, request: DeletePhotosRequest): PhotoCountResponse {
-        galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
 
         val photos = checkAndLoadPhotos(galleryId, request.photoIds)
         val now = ZonedDateTime.now(clock)
@@ -228,7 +228,7 @@ class PhotoService(
     @Transactional(readOnly = true)
     fun get(galleryId: Long, photoId: Long, userId: Long): PhotoDetailResponse {
         // 작가는 언제든, 부부는 갤러리가 열려 있고 마감 전인 동안에만 본다.
-        galleryAccessPolicy.requirePhotographerOrCouple(galleryId, userId)
+        galleryAccessPolicy.requireManagerOrSelectionEditor(galleryId, userId)
 
         val photo = photoRepository.findByIdAndGalleryId(photoId, galleryId)
             ?: throw PhotoException(PhotoErrorCode.PHOTO_NOT_FOUND)
@@ -246,7 +246,7 @@ class PhotoService(
     /** 임베딩 진행 상황을 확인하는 곳. Lambda는 비동기라 이 집계 말고는 알 방법이 없다. */
     @Transactional(readOnly = true)
     fun summarize(galleryId: Long, userId: Long): PhotoSummaryResponse {
-        galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
 
         return PhotoSummaryResponse(
             total = photoRepository.countByGalleryId(galleryId),

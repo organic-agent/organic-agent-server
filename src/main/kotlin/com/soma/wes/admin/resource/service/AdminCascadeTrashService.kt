@@ -46,6 +46,9 @@ class AdminCascadeTrashService(
         if (type !in CASCADE_TRASH_ROOT_TYPES) {
             throw AdminException(AdminErrorCode.RESOURCE_DELETE_UNSUPPORTED)
         }
+        if (type == AdminResourceType.USER && trashRepository.isLastOwnerOfAnyStudio(id)) {
+            throw AdminException(AdminErrorCode.LAST_STUDIO_OWNER_PROTECTED)
+        }
         val before = requireResource(type, id)
         requireVersion(before, request.expectedVersion)
         if (before.deleted || trashRepository.hasOverlappingActiveBatch(type, id)) {

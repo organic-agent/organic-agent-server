@@ -87,4 +87,17 @@ class JwtAuthFilterRegistrationTest @Autowired constructor(
             .withFailMessage("필터가 ${executions}번 실행됐다. 이중 등록되면 이 수가 늘어난다.")
             .isEqualTo(1)
     }
+
+    @Test
+    fun `공개 협업 경로라도 잘못된 Bearer가 있으면 게스트로 강등하지 않고 401이다`() {
+        val request = HttpRequest.newBuilder()
+            .uri(URI.create("http://localhost:$port/api/v1/collab/any-token"))
+            .header("Authorization", "Bearer invalid-token")
+            .GET()
+            .build()
+
+        val response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString())
+
+        assertThat(response.statusCode()).isEqualTo(401)
+    }
 }

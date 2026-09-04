@@ -48,7 +48,7 @@ class CategorizationService(
 
     private fun latestResponse(galleryId: Long): CategorizationJobResponse? {
         val job = jobRepository.findFirstByGalleryIdOrderByCreatedAtDesc(galleryId) ?: return null
-        return CategorizationJobResponse.of(job, jobPhotoRepository.countByJobId(job.requiredId).toInt())
+        return CategorizationJobResponse.of(job, jobPhotoRepository.findAllByJobIdOrderByPhotoId(job.requiredId))
     }
 
     private fun recordNoOpIncremental(galleryId: Long): CategorizationJobResponse {
@@ -61,6 +61,6 @@ class CategorizationService(
         val now = ZonedDateTime.now(clock)
         val job = jobRepository.save(CategorizationJob(galleryId, mode).also { it.startedAt = now })
         job.complete(ZonedDateTime.now(clock))
-        return CategorizationJobResponse.of(job, processedPhotoCount = 0)
+        return CategorizationJobResponse.of(job)
     }
 }

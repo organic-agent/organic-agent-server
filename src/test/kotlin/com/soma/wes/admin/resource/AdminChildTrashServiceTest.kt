@@ -380,7 +380,7 @@ class AdminChildTrashServiceTest @Autowired constructor(
         val likeId = jdbcClient.sql(
             """
             INSERT INTO collab_photo_likes
-                (collab_session_id, photo_id, collab_guest_id, version, created_at, updated_at)
+                (collab_session_id, photo_id, participant_id, version, created_at, updated_at)
             VALUES (:sessionId, :photoId, :guestId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
             """.trimIndent(),
@@ -409,7 +409,7 @@ class AdminChildTrashServiceTest @Autowired constructor(
                     jdbcClient.sql(
                         """
                         INSERT INTO collab_photo_likes
-                            (collab_session_id, photo_id, collab_guest_id, version, created_at, updated_at)
+                            (collab_session_id, photo_id, participant_id, version, created_at, updated_at)
                         VALUES (:sessionId, :photoId, :guestId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                         """.trimIndent(),
                     ).param("sessionId", collaboration.id).param("photoId", identity.photoId)
@@ -543,10 +543,10 @@ class AdminChildTrashServiceTest @Autowired constructor(
         assignPhotoToSession(sessionId, photoId)
         val guestId = jdbcClient.sql(
             """
-            INSERT INTO collab_guests (
-                collab_session_id, guest_token, nickname, version, created_at, updated_at
+            INSERT INTO collab_participants (
+                collab_session_id, participant_type, guest_token, nickname, version, created_at, updated_at
             )
-            VALUES (:sessionId, :guestToken, '하객', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (:sessionId, 'GUEST', :guestToken, '하객', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
             """.trimIndent(),
         ).param("sessionId", sessionId).param("guestToken", "guest-$sessionId")
@@ -554,7 +554,7 @@ class AdminChildTrashServiceTest @Autowired constructor(
         return jdbcClient.sql(
             """
             INSERT INTO collab_photo_comments (
-                collab_session_id, photo_id, collab_guest_id, content, version, created_at, updated_at
+                collab_session_id, photo_id, participant_id, content, version, created_at, updated_at
             )
             VALUES (:sessionId, :photoId, :guestId, :content, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
@@ -572,10 +572,10 @@ class AdminChildTrashServiceTest @Autowired constructor(
         assignPhotoToSession(sessionId, photoId)
         val guestId = jdbcClient.sql(
             """
-            INSERT INTO collab_guests (
-                collab_session_id, guest_token, nickname, version, created_at, updated_at
+            INSERT INTO collab_participants (
+                collab_session_id, participant_type, guest_token, nickname, version, created_at, updated_at
             )
-            VALUES (:sessionId, :guestToken, '하객', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (:sessionId, 'GUEST', :guestToken, '하객', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
             """.trimIndent(),
         ).param("sessionId", sessionId).param("guestToken", "guest-$suffix")
@@ -622,7 +622,7 @@ class AdminChildTrashServiceTest @Autowired constructor(
             """
             WITH inserted_comments AS (
                 INSERT INTO collab_photo_comments (
-                    collab_session_id, photo_id, collab_guest_id, content, version, deleted_at,
+                    collab_session_id, photo_id, participant_id, content, version, deleted_at,
                     created_at, updated_at
                 )
                 SELECT :sessionId, :photoId, :guestId, 'bulk-' || n, 1,
@@ -705,18 +705,21 @@ class AdminChildTrashServiceTest @Autowired constructor(
         val detailId = jdbcClient.sql(
             """
             INSERT INTO detail_folders
-                (concept_folder_id, name, sort_order, created_source, version, created_at, updated_at)
-            VALUES (:conceptId, '관리자 테스트 상세', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                (gallery_id, concept_folder_id, name, sort_order, created_source, version, created_at, updated_at)
+            SELECT gallery_id, id, '관리자 테스트 상세', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            FROM concept_folders WHERE id = :conceptId
             RETURNING id
             """.trimIndent(),
         ).param("conceptId", conceptId).query { rs, _ -> rs.getLong("id") }.single()
         jdbcClient.sql(
             """
             INSERT INTO photo_category_assignments
-                (photo_id, detail_folder_id, assigned_source, assigned_at, version, created_at, updated_at)
-            VALUES (:photoId, :detailId, 'USER', CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                (gallery_id, photo_id, detail_folder_id, assigned_source, assigned_at, version, created_at, updated_at)
+            SELECT gallery_id, id, :detailId, 'USER', CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            FROM photos WHERE id = :photoId
             ON CONFLICT (photo_id) DO UPDATE SET detail_folder_id = EXCLUDED.detail_folder_id,
-                assigned_source = 'USER', assigned_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                gallery_id = EXCLUDED.gallery_id, assigned_source = 'USER',
+                assigned_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
             """.trimIndent(),
         ).param("photoId", photoId).param("detailId", detailId).update()
     }

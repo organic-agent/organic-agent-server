@@ -47,7 +47,7 @@ class GalleryMemberService(
      */
     @Transactional
     fun remove(galleryId: Long, memberId: Long, userId: Long) {
-        galleryAccessPolicy.requirePhotographer(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
         // 정원을 바꾸는 경로는 전부 갤러리 행을 잠그고 시작한다.
         galleryRepository.requireWithLockById(galleryId)
 
