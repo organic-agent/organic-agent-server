@@ -24,7 +24,7 @@ import org.hibernate.type.SqlTypes
  * 임베더 Lambda가 [embedding]·[embeddingModel]을 `INSERT … ON CONFLICT`로
  * 채우고, AI 분석 배치(full 잡)가 그룹·피사체·점수·클러스터를 채운다. 이 서버는 두 값 모두 정상
  * 경로에서는 쓰지 않는다 — [embeddedBy]는 Mock 갤러리 복제와 테스트가 쓰는 우회로다. 분석 컬럼은
- * 읽기 전용이라 `val`이고, `face_boxes`·`sub_scores`(jsonb)는 이 서버가 읽지 않아 매핑하지 않았다.
+ * 읽기 전용이라 `val`이고, `face_boxes`(jsonb)는 이 서버가 읽지 않아 매핑하지 않았다.
  */
 @Entity
 @Table(name = "photo_analysis")
@@ -88,6 +88,17 @@ class PhotoAnalysis(
 
     @Column(name = "analyzed_at")
     val analyzedAt: ZonedDateTime? = null
+
+    /**
+     * 분석 배치의 세부 점수(`sharpness`·`sharpness_pct`·`highlight_clip`·`shadow_clip`·`technical_score`·
+     * `aesthetic_score` …). 비교샷 판정과 추천 이유의 재료다. 행을 만들 때는 빈 객체다(DB 기본값과 같다).
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "sub_scores", nullable = false, columnDefinition = "jsonb")
+    val subScores: Map<String, Any?> = emptyMap()
+
+    /** 숫자 세부 점수 하나. 없거나 숫자가 아니면 null — 배치 버전에 따라 키가 빠질 수 있다. */
+    fun subScore(key: String): Double? = (subScores[key] as? Number)?.toDouble()
 
     val isAnalyzed: Boolean
         get() = modelVersion != null

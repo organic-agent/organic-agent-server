@@ -40,6 +40,7 @@ dependencies {
     api("io.awspring.cloud:spring-cloud-aws-starter-parameter-store")
     api("io.awspring.cloud:spring-cloud-aws-starter-s3")
     api("software.amazon.awssdk:lambda")
+    api("software.amazon.awssdk:bedrockruntime")
 
     api("org.jetbrains.kotlin:kotlin-reflect")
     api("tools.jackson.module:jackson-module-kotlin")

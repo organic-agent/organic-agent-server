@@ -1,5 +1,6 @@
 package com.soma.wes.support
 
+
 import org.junit.jupiter.api.extension.ExtendWith
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
@@ -18,11 +19,13 @@ import org.springframework.context.annotation.Import
  * 반드시 필요하므로 명시적으로 import한다. 같은 클래스가 공개 API scan에도 잡히지만 Spring은
  * 동일 configuration class를 한 번만 등록한다. 도메인별 Fixture는 각 애플리케이션 scan 또는
  * 필요한 테스트의 별도 import에 맡긴다.
+ *
+ * [FakeLlmConfig]는 Bedrock·S3 미리보기를 페이크로 바꾼다 — LLM이 필요한 테스트는 페이크를 주입받아 응답을 정한다.
  */
 @Target(AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.RUNTIME)
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(TestcontainersConfiguration::class, DatabaseCleaner::class)
+@Import(TestcontainersConfiguration::class, DatabaseCleaner::class, FakeLlmConfig::class)
 @ExtendWith(DatabaseClearExtension::class)
 annotation class IntegrationTest

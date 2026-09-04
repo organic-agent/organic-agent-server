@@ -24,8 +24,8 @@ interface AiCompareControllerDocs {
             5~6초 걸리므로 프론트는 "AI가 보는 중…"을 그린다. 판정은 항상 하나를 고르며, 거의 같을
             때는 confidence=slight("거의 같아요, 굳이 고르면")로 온다.
 
-            AI 응답이 예산(8초)을 넘거나 실패하면 측정된 수치만으로 판정한 source=template이 온다 —
-            "AI가 못 골랐어요"가 아니라 "기준으로만 골랐어요" 톤으로 보여준다.
+            AI 응답이 예산(8초)을 넘거나 실패하면, 또는 이 환경에 LLM이 꺼져 있으면 측정된 수치만으로
+            판정한 source=template이 온다 — "AI가 못 골랐어요"가 아니라 "기준으로만 골랐어요" 톤으로 보여준다.
 
             같은 두 장의 재요청은 저장된 판정을 그대로 돌려준다(cached=true, 순서 무관 — (a,b)와
             (b,a)는 같은 판정). 부부 전용이고, 두 사진 모두 AI 분석(FULL)이 끝나 있어야 한다.
@@ -53,8 +53,6 @@ interface AiCompareControllerDocs {
         ),
         ApiResponse(responseCode = "404", description = "이 갤러리에 없는 사진", content = []),
         ApiResponse(responseCode = "409", description = "AI 분석이 끝나지 않은 사진", content = []),
-        ApiResponse(responseCode = "502", description = "판정 실행 실패", content = []),
-        ApiResponse(responseCode = "503", description = "판정 실행기가 설정되지 않음", content = []),
     )
     fun compare(
         loginUser: LoginUser,

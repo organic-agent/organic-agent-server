@@ -15,12 +15,11 @@ import org.springframework.stereotype.Service
 /**
  * 비교샷 — 두 사진 중 AI가 하나를 고르고 근거를 말한다.
  *
- * 이 서버의 첫 동기 AI 유스케이스다. 판정(사실 수집 → 템플릿 → LLM, 예산 초과 시 템플릿 폴백)과
- * 저장(`ai_pair_verdicts`, 순서 무관 캐시)은 전부 AI 쪽 일이고, 이 서버는 검증을 마친 뒤
- * 실행기를 부르고 기다렸다가 응답을 그대로 돌려준다.
+ * 이 서버의 첫 동기 AI 유스케이스다. 검증과 셀렉 확보까지가 여기 일이고, 판정(사실 수집 → 템플릿 →
+ * LLM, 예산 초과 시 템플릿 폴백)과 저장(`ai_pair_verdicts`, 순서 무관 캐시)은 [PairVerdictJudge]가 한다.
  *
- * 메서드에 `@Transactional`이 없는 것은 의도다 — 5초 안팎의 실행기 호출이 커넥션을 물면 안 된다.
- * 조회·셀렉 생성은 각자 자체 트랜잭션으로 끝나고, 판정은 DB 상태를 바꾸지 않는다(AI 쪽이 쓴다).
+ * 메서드에 `@Transactional`이 없는 것은 의도다 — 5초 안팎의 LLM 호출이 커넥션을 물면 안 된다.
+ * 조회·셀렉 생성은 각자 자체 트랜잭션으로 끝나고, 판정기는 자기 트랜잭션을 짧게 끊어 쓴다.
  */
 @Service
 class AiCompareService(
@@ -28,7 +27,7 @@ class AiCompareService(
     private val photoRepository: PhotoRepository,
     private val photoAnalysisRepository: PhotoAnalysisRepository,
     private val photoSelectionRepository: PhotoSelectionRepository,
-    private val pairCompareInvoker: PairCompareInvoker,
+    private val pairVerdictJudge: PairVerdictJudge,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -44,18 +43,13 @@ class AiCompareService(
         if (request.photoA == request.photoB) {
             throw RecommendationException(RecommendationErrorCode.COMPARE_SAME_PHOTO)
         }
-        // 기동이 아니라 여기서 실패한다 — 로컬·테스트에는 실행기가 없는 것이 정상이다.
-        if (!pairCompareInvoker.isAvailable) {
-            throw RecommendationException(RecommendationErrorCode.COMPARE_NOT_CONFIGURED)
-        }
-
         val photoIds = listOf(request.photoA, request.photoB)
         validateComparable(galleryId, photoIds)
 
         val selection = photoSelectionRepository.findByGalleryId(galleryId)
             ?: photoSelectionRepository.save(PhotoSelection(galleryId = galleryId))
 
-        val verdict = pairCompareInvoker.compare(selection.requiredId, request.photoA, request.photoB)
+        val verdict = pairVerdictJudge.judge(selection.requiredId, galleryId, request.photoA, request.photoB)
 
         log.info(
             "비교샷 판정: galleryId={}, selectionId={}, ({}, {}) → {} [{}{}]",
@@ -68,7 +62,7 @@ class AiCompareService(
 
     /**
      * 갤러리 스코프의 살아 있는 사진 두 장이어야 하고, 둘 다 분석이 끝나 있어야 한다.
-     * 판정 재료가 분석 컬럼이라 AI 쪽에서도 죽지만, 기다리게 한 뒤 실패하는 것보다 여기서 거절한다.
+     * 판정 재료가 분석 컬럼이다 — 판정기 안에서도 막히지만, 셀렉을 만들기 전에 여기서 거절한다.
      */
     private fun validateComparable(galleryId: Long, photoIds: List<Long>) {
         val photos = photoRepository.findAllByGalleryIdAndIdIn(galleryId, photoIds)

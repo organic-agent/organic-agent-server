@@ -76,12 +76,10 @@ enum class RecommendationErrorCode(
     COMPARE_NOT_ANALYZED(HttpStatus.CONFLICT, "RECOMMENDATION_409_7", "AI 분석이 끝나지 않은 사진이라 비교할 수 없습니다."),
 
     /**
-     * 판정 실행이 시작됐지만 실패한 경우(프로세스 오류, Lambda 함수 오류, 계약을 벗어난 응답).
+     * LLM 호출이 판정·문장을 돌려주지 못한 경우(타임아웃, 스로틀링, 거부, 잘림, JSON 아님, 설정 꺼짐).
      *
-     * 템플릿 폴백은 AI 쪽 안에서 처리되므로, 여기까지 온 실패는 실행 경로 자체의 문제다.
+     * 사용자에게 나가는 일은 없다 — 비교샷은 템플릿 판정으로, 추천 이유는 폴백 문장으로 흡수한다.
+     * 어댑터가 벤더 예외를 이 하나로 번역하므로 호출자는 실패의 종류를 가리지 않는다.
      */
-    COMPARE_FAILED(HttpStatus.BAD_GATEWAY, "RECOMMENDATION_502_1", "AI 비교 판정에 실패했습니다."),
-
-    /** 실행기(Lambda·로컬 스크립트)가 설정되지 않은 경우. 로컬·테스트에는 없는 것이 정상이라 호출 시점에 실패한다. */
-    COMPARE_NOT_CONFIGURED(HttpStatus.SERVICE_UNAVAILABLE, "RECOMMENDATION_503_1", "AI 비교가 설정되지 않았습니다."),
+    LLM_CALL_FAILED(HttpStatus.BAD_GATEWAY, "RECOMMENDATION_502_1", "AI 호출에 실패했습니다."),
 }

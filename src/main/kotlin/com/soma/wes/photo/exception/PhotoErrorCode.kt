@@ -49,6 +49,9 @@ enum class PhotoErrorCode(
     /** 원본 교체 완료 검증에서 S3 메타데이터 조회 자체가 실패한 경우. */
     STORAGE_METADATA_FAILED(HttpStatus.BAD_GATEWAY, "PHOTO_502_4", "사진 원본의 업로드 상태를 확인하지 못했습니다."),
 
+    /** AI 호출 재료로 미리보기를 읽지 못한 경우. 호출자(판정·이유)는 사진 없는 경로로 폴백한다. */
+    STORAGE_READ_FAILED(HttpStatus.BAD_GATEWAY, "PHOTO_502_5", "사진 미리보기를 읽지 못했습니다."),
+
     /**
      * 임베딩 함수 이름이 설정되지 않은 경우.
      *
