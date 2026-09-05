@@ -14,8 +14,6 @@ import com.soma.wes.category.exception.CategoryException
 import com.soma.wes.category.repository.ConceptFolderRepository
 import com.soma.wes.category.repository.DetailFolderRepository
 import com.soma.wes.category.repository.PhotoCategoryAssignmentRepository
-import com.soma.wes.gallery.repository.GalleryRepository
-import com.soma.wes.gallery.repository.requireWithLockById
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.repository.PhotoRepository
 import java.time.Clock
@@ -26,7 +24,6 @@ import org.springframework.transaction.annotation.Transactional
 @Service
 class CategoryService(
     private val galleryAccessPolicy: GalleryAccessPolicy,
-    private val galleryRepository: GalleryRepository,
     private val conceptRepository: ConceptFolderRepository,
     private val detailRepository: DetailFolderRepository,
     private val assignmentRepository: PhotoCategoryAssignmentRepository,
@@ -36,8 +33,7 @@ class CategoryService(
 ) {
     @Transactional
     fun createConcept(galleryId: Long, userId: Long, request: CreateConceptFolderRequest): ConceptFolderResponse {
-        galleryAccessPolicy.requireManager(galleryId, userId)
-        galleryRepository.requireWithLockById(galleryId)
+        galleryAccessPolicy.requireCategoryEditor(galleryId, userId)
         val sortOrder = conceptRepository.findAllByGalleryIdOrderBySortOrderAscIdAsc(galleryId).size
         val concept = conceptRepository.save(
             ConceptFolder(galleryId, request.name.trim(), sortOrder, CategorySource.USER),
@@ -52,7 +48,7 @@ class CategoryService(
         userId: Long,
         request: CreateDetailFolderRequest,
     ): DetailFolderResponse {
-        galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requireCategoryEditor(galleryId, userId)
         val concept = requireConcept(galleryId, conceptId)
         val sortOrder = detailRepository.findAllByConceptFolderIdOrderBySortOrderAscIdAsc(conceptId).size
         val detail = detailRepository.save(
@@ -81,8 +77,7 @@ class CategoryService(
 
     @Transactional
     fun movePhotos(galleryId: Long, userId: Long, request: MoveCategoryPhotosRequest) {
-        galleryAccessPolicy.requireManager(galleryId, userId)
-        galleryRepository.requireWithLockById(galleryId)
+        galleryAccessPolicy.requireCategoryEditor(galleryId, userId)
         if (request.photoIds.isEmpty()) throw CategoryException(CategoryErrorCode.EMPTY_PHOTO_IDS)
         val photoIds = request.photoIds.distinct()
         if (photoRepository.findAllByGalleryIdAndIdIn(galleryId, photoIds).size != photoIds.size) {
@@ -122,7 +117,7 @@ class CategoryService(
 
     @Transactional
     fun deleteDetail(galleryId: Long, conceptId: Long, detailId: Long, userId: Long) {
-        galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requireCategoryEditor(galleryId, userId)
         requireConcept(galleryId, conceptId)
         val detail = detailRepository.findByIdAndConceptFolderId(detailId, conceptId)
             ?: throw CategoryException(CategoryErrorCode.DETAIL_NOT_FOUND)
@@ -134,7 +129,7 @@ class CategoryService(
 
     @Transactional
     fun deleteConcept(galleryId: Long, conceptId: Long, userId: Long) {
-        galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requireCategoryEditor(galleryId, userId)
         val concept = requireConcept(galleryId, conceptId)
         val details = detailRepository.findAllByConceptFolderIdOrderBySortOrderAscIdAsc(conceptId)
         reactionCleaner.deleteForConcept(conceptId)
