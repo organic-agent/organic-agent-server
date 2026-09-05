@@ -222,6 +222,56 @@ class AiSelectionJobRunnerTest @Autowired constructor(
     }
 
     @Nested
+    @DisplayName("폴더와 동떨어진 사진이 있을 때")
+    inner class Misfit {
+
+        /**
+         * 배경: 정원 폴더 6장은 같은 방향의 임베딩, 해변 1장은 직각 방향. 해변 사진을 사용자가 실수로 정원 폴더에
+         * 옮겼고 점수는 갤러리에서 가장 높다 — 규칙이 없으면 정원 1위로 뽑힌다.
+         */
+        private fun misfitWorld(): Pair<List<Long>, Long> {
+            val garden = photoFixture.업로드된_사진(fixture.galleryId, 6).mapIndexed { i, photoId ->
+                photoFixture.벡터_적재(photoId, FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also { it[50] = 1f })
+                recommendationFixture.분석_결과(photoId, embedGroupId = 2, clusterId = 10 + i, technicalPct = 80.0 - i, aestheticPct = 70.0 - i)
+                photoId
+            }
+            val beach = photoFixture.업로드된_사진(fixture.galleryId, 1).single()
+            photoFixture.벡터_적재(beach, FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also { it[10] = 1f })
+            recommendationFixture.분석_결과(beach, embedGroupId = 1, clusterId = 1, technicalPct = 99.0, aestheticPct = 99.0)
+            val jobId = recommendationFixture.분석_잡(fixture.galleryId)
+            recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 1, parentName = "야외 자연", conceptName = "해변")
+            recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 2, parentName = "야외 정원·건물", conceptName = "정원")
+            val concepts = aiCategoryFolderService.createFromAnalysis(fixture.galleryId, fixture.photographer.id!!)
+            val gardenFolderId = concepts.flatMap { it.details }.first { it.name == "정원" }.id
+            jdbcTemplate.update("UPDATE photo_category_assignments SET detail_folder_id = ? WHERE photo_id = ?", gardenFolderId, beach)
+            (garden + beach).forEach { recommendationFixture.미리보기(it) }
+            return garden to beach
+        }
+
+        @Test
+        fun `옮겨 들어온 사진은 점수가 가장 높아도 그 폴더의 추천에서 빠지고 result에 남는다`() {
+            // given
+            val (garden, beach) = misfitWorld()
+            llm.isEnabled = false
+            val jobId = requestJob()
+
+            // when
+            runner.run(jobId)
+
+            // then — 정원은 목표 4장을 나머지 6장에서 채운다
+            val job = aiSelectionJobRepository.findById(jobId).orElseThrow()
+            val recs = aiRecommendationRepository.findAllBySelectionIdAndRound(job.selectionId, 1)
+            assertSoftly { softly ->
+                softly.assertThat(job.status).isEqualTo(AiJobStatus.DONE)
+                softly.assertThat(recs.map { it.photoId }).doesNotContain(beach)
+                softly.assertThat(recs.map { it.photoId }).hasSize(4).isSubsetOf(garden)
+                softly.assertThat(job.result).containsEntry("misfit", 1)
+                softly.assertThat((job.result!!["misfitPhotoIds"] as List<*>).map { (it as Number).toLong() }).containsExactly(beach)
+            }
+        }
+    }
+
+    @Nested
     @DisplayName("다음 라운드(refine)를 돌릴 때")
     inner class Refine {
 
@@ -272,6 +322,72 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             assertSoftly { softly ->
                 softly.assertThat(secondRound.map { it.photoId }).doesNotContain(rejected)
                 softly.assertThat(secondRound.map { it.photoId }).containsAnyElementsOf(shownAgain)
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("폴더 하나만 다시 추천할 때")
+    inner class FolderScoped {
+
+        private fun requestFolderJob(detailFolderId: Long): Long =
+            aiRecommendationService.request(
+                fixture.galleryId, fixture.member.id!!, AiRecommendationRequest(detailFolderId = detailFolderId),
+            ).jobId
+
+        @Test
+        fun `그 폴더의 추천만 지우고 다시 쓰며 다른 폴더의 추천은 남는다`() {
+            // given — 전체 라운드 뒤 해변 폴더만 다시 받는다
+            val w = world()
+            llm.isEnabled = false
+            runner.run(requestJob())
+            val selectionId = selectionFixture.셀렉(fixture.galleryId)
+            val before = aiRecommendationRepository.findAllBySelectionId(selectionId)
+            val gardenBefore = before.filter { it.folderId == w.gardenFolderId }.map { it.requiredId }
+            val unfiledBefore = before.filter { it.folderId == null }.map { it.requiredId }
+
+            // when
+            runner.run(requestFolderJob(w.beachFolderId))
+
+            // then — 해변은 새 라운드(2)로 3장, 정원·미분류 행은 id까지 그대로
+            val after = aiRecommendationRepository.findAllBySelectionId(selectionId)
+            val listed = aiRecommendationService.list(fixture.galleryId, fixture.member.id!!, folderId = null)
+            assertSoftly { softly ->
+                softly.assertThat(after.filter { it.folderId == w.beachFolderId }.map { it.round }).containsOnly(2)
+                softly.assertThat(after.filter { it.folderId == w.beachFolderId }).hasSize(3)
+                softly.assertThat(after.filter { it.folderId == w.gardenFolderId }.map { it.requiredId }).containsExactlyElementsOf(gardenBefore)
+                softly.assertThat(after.filter { it.folderId == null }.map { it.requiredId }).containsExactlyElementsOf(unfiledBefore)
+                softly.assertThat(listed.photos.map { it.photo.photoId }).hasSize(5)
+                softly.assertThat(aiSelectionJobRepository.findAll().maxBy { it.requiredId }.result).containsEntry("unfiled", 1)
+            }
+        }
+
+        @Test
+        fun `옮겨 나간 사진의 추천은 남고 옮겨 온 사진은 새 폴더에서 다시 계산된다`() {
+            // given — 전체 라운드 뒤, 해변 1위 사진을 정원으로 옮긴다
+            val w = world()
+            llm.isEnabled = false
+            runner.run(requestJob())
+            val selectionId = selectionFixture.셀렉(fixture.galleryId)
+            val moved = aiRecommendationRepository.findAllBySelectionId(selectionId)
+                .first { it.folderId == w.beachFolderId && it.rank == 1 }.photoId
+            jdbcTemplate.update("UPDATE photo_category_assignments SET detail_folder_id = ? WHERE photo_id = ?", w.gardenFolderId, moved)
+
+            // 옮긴 직후: 표시는 사진을 따라가 정원 화면에 보인다
+            val gardenView = aiRecommendationService.list(fixture.galleryId, fixture.member.id!!, folderId = w.gardenFolderId)
+
+            // when — 정원만 다시 추천
+            runner.run(requestFolderJob(w.gardenFolderId))
+
+            // then — 옮겨 온 사진은 정원 범위에 들어 1라운드 표시가 리셋되고(다시 뽑히면 2라운드), 정원의 추천은
+            // 2라운드로 새로 적히며, 해변에 남은 사진의 추천은 1라운드 그대로다
+            val after = aiRecommendationRepository.findAllBySelectionId(selectionId)
+            val gardenNow = after.filter { it.folderId == w.gardenFolderId }
+            assertSoftly { softly ->
+                softly.assertThat(gardenView.photos.map { it.photo.photoId }).contains(moved)
+                softly.assertThat(after.filter { it.photoId == moved }.map { it.round }).doesNotContain(1)
+                softly.assertThat(gardenNow.map { it.round }).isNotEmpty().containsOnly(2)
+                softly.assertThat(after.filter { it.folderId == w.beachFolderId }.map { it.round }).isNotEmpty().containsOnly(1)
             }
         }
     }

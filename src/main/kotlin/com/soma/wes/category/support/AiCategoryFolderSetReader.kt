@@ -47,6 +47,25 @@ class AiCategoryFolderSetReader(
         }
     }
 
+    /** 세부폴더 하나와 지금 든 사진. 세트와 무관하게(사용자가 만든 폴더도) 읽는다 — 폴더 범위 추천의 대상이다. */
+    @Transactional(readOnly = true)
+    fun detailFolder(galleryId: Long, detailFolderId: Long): FolderSetDetailDto? {
+        val detail = detailFolderRepository.findByIdAndGalleryId(detailFolderId, galleryId) ?: return null
+        val concept = conceptFolderRepository.findById(detail.conceptFolderId).orElse(null) ?: return null
+        return FolderSetDetailDto(
+            detailFolderId = detail.requiredId,
+            conceptName = concept.name,
+            detailName = detail.name,
+            photoIds = assignmentRepository.findAllByDetailFolderId(detail.requiredId).map { it.photoId },
+        )
+    }
+
+    /** photo_id → 지금 든 세부폴더 id. 어느 폴더에도 없는 사진은 빠진다. 추천 응답이 "현재 폴더"를 붙이는 근거다. */
+    @Transactional(readOnly = true)
+    fun detailIdsByPhotoId(photoIds: Collection<Long>): Map<Long, Long> =
+        if (photoIds.isEmpty()) emptyMap()
+        else assignmentRepository.findAllByPhotoIdIn(photoIds).associate { it.photoId to it.detailFolderId }
+
     /** photo_id → "컨셉 › 세부" 표시 이름. 어느 세부 폴더에도 없는 사진은 빠진다(호출자가 미분류로 본다). */
     @Transactional(readOnly = true)
     fun folderNamesByPhotoId(photoIds: Collection<Long>): Map<Long, String> {

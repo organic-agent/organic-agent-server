@@ -29,6 +29,7 @@ enum class RecommendationErrorCode(
 
     /** 요청이 콕 집은 AI 폴더 세트(analysisJobId)가 이 갤러리에 없는 경우. 지운 세트도 없는 것이다. */
     FOLDER_SET_NOT_FOUND(HttpStatus.NOT_FOUND, "RECOMMENDATION_404_2", "요청한 AI 폴더 세트를 찾을 수 없습니다."),
+    DETAIL_FOLDER_NOT_FOUND(HttpStatus.NOT_FOUND, "RECOMMENDATION_404_4", "추천할 세부폴더를 찾을 수 없습니다."),
 
     COMPARE_SAME_PHOTO(HttpStatus.BAD_REQUEST, "RECOMMENDATION_400_1", "같은 사진 두 장은 비교할 수 없습니다."),
 

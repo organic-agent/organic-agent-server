@@ -26,6 +26,9 @@ data class AiSelectionJobResponse(
     @field:Schema(description = "요청 시점의 기준 AI 폴더 세트 키. 현재 보는 세트와 다르면 추천을 다시 받아야 한다.")
     val folderSetJobId: Long?,
 
+    @field:Schema(description = "이 잡의 범위 세부폴더. null이면 갤러리 전체 라운드다.")
+    val detailFolderId: Long?,
+
     @field:Schema(description = "이 잡이 만든 추천 라운드 번호. 끝나기 전에는 null.")
     val round: Int?,
 
@@ -47,6 +50,7 @@ data class AiSelectionJobResponse(
             mode = job.mode,
             status = job.status,
             folderSetJobId = job.folderSetJobId,
+            detailFolderId = job.detailFolderId,
             round = job.round,
             startedAt = job.startedAt,
             finishedAt = job.finishedAt,

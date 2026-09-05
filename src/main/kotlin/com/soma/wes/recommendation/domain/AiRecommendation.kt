@@ -16,9 +16,10 @@ import org.hibernate.type.SqlTypes
  * AI가 한 셀렉에 제시한 사진 한 장. 실행기가 폴더마다 점수 상위 n장을 INSERT하고(이때 [reason]은 null),
  * LLM 이유 문장을 뒤이어 [fillReason]으로 채운다(2단계).
  *
- * 라운드마다 통째로 쌓이고 화면은 최신 라운드만 읽는다 — refine이 이전 라운드를 고치는 대신 새
- * 라운드를 다시 적기 때문에 같은 사진이 여러 라운드에 나올 수 있다(`round`가 유니크에 드는 이유).
- * 반응 컬럼 중 [rejectedAt]만 읽는다(다음 라운드가 거절을 뺀다). accepted/unselected/accept_mode는 반응 API가 생길 때 매핑한다.
+ * 추천은 **사진에 붙는다**. 화면은 사진마다 가장 최근 라운드의 행을 읽으므로(라운드 전체 교체가 아니다),
+ * 사진을 다른 폴더로 옮겨도 표시는 따라간다. 잡이 돌면 그 잡의 범위(폴더 하나 또는 전체)에 든 사진의
+ * 기존 행을 지우고 새 라운드로 다시 적는다 — 거절 행([rejectedAt])은 지우지 않고 남겨 다음 계산이 뺀다.
+ * accepted/unselected/accept_mode는 반응 API가 생길 때 매핑한다.
  */
 @Entity
 @Table(
@@ -49,8 +50,8 @@ class AiRecommendation(
     val presentedAt: ZonedDateTime,
 
     /**
-     * 추천 당시의 자식 폴더. 세트에 안 들어간 사진(미분류 가상 폴더)은 null. 재현용이다 —
-     * 현재 세부폴더 id를 재현용으로 남기며, 화면은 사진의 현재 카테고리 배정과 구분해 다룬다.
+     * 추천 당시의 세부폴더(재현용). 세트에 안 들어간 사진(미분류 가상 폴더)은 null. 화면 응답의
+     * folderId는 이 값이 아니라 사진의 **현재** 배정이다 — 표시는 사진을 따라간다.
      */
     @Column(name = "folder_id", updatable = false)
     val folderId: Long? = null,

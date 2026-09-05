@@ -39,6 +39,13 @@ class AiSelectionJob(
     @Column(name = "folder_set_job_id", updatable = false)
     val folderSetJobId: Long? = null,
 
+    /**
+     * 이 잡의 범위. null이면 갤러리 전체(모든 세부폴더 + 미분류)를 한 라운드로 계산한다. 값이 있으면 그
+     * 세부폴더에 요청 시점에 든 사진만 대상으로 하고, 그 사진들의 기존 추천만 지우고 다시 쓴다.
+     */
+    @Column(name = "detail_folder_id", updatable = false)
+    val detailFolderId: Long? = null,
+
 ) : BaseEntity() {
 
     @Id
