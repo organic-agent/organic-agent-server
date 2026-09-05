@@ -131,6 +131,39 @@ class AiRecommendationServiceTest @Autowired constructor(
         }
 
         @Test
+        fun `세부폴더를 집으면 그 범위로 잡을 만든다`() {
+            // given
+            val set = aiFolderSet()
+
+            // when
+            val response = aiRecommendationService.request(
+                fixture.galleryId, fixture.member.id!!, AiRecommendationRequest(detailFolderId = set.folderId),
+            )
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.detailFolderId).isEqualTo(set.folderId)
+                softly.assertThat(response.folderSetJobId).isEqualTo(set.analysisJobId)
+            }
+        }
+
+        @Test
+        fun `없는 세부폴더를 집으면 404다`() {
+            // given
+            aiFolderSet()
+
+            // when & then
+            assertThatThrownBy {
+                aiRecommendationService.request(
+                    fixture.galleryId, fixture.member.id!!, AiRecommendationRequest(detailFolderId = 999_999),
+                )
+            }
+                .isInstanceOf(RecommendationException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(RecommendationErrorCode.DETAIL_FOLDER_NOT_FOUND)
+        }
+
+        @Test
         fun `콕 집은 세트가 갤러리에 없으면 404다`() {
             // given
             aiFolderSet()
@@ -215,13 +248,15 @@ class AiRecommendationServiceTest @Autowired constructor(
         }
 
         @Test
-        fun `최신 라운드만 돌려주고 순위 순서를 지킨다`() {
-            // given
+        fun `사진마다 가장 최근 추천을 돌려주고 순위 순서를 지킨다`() {
+            // given — 사진 0은 1라운드에만, 사진 1은 1·2라운드에, 사진 2는 2라운드에만. 라운드 전체 교체가
+            // 아니라 사진 단위라 사진 0의 표시는 남고, 사진 1은 2라운드 행이 이긴다.
             val set = aiFolderSet(photoCount = 3)
             val selectionId = selectionFixture.셀렉(fixture.galleryId)
-            recommendationFixture.추천(selectionId, set.photoIds[0], round = 1, rank = 1, folderId = set.folderId)
-            recommendationFixture.추천(selectionId, set.photoIds[1], round = 2, rank = 1, folderId = set.folderId)
-            recommendationFixture.추천(selectionId, set.photoIds[2], round = 2, rank = 2, folderId = set.folderId)
+            recommendationFixture.추천(selectionId, set.photoIds[0], round = 1, rank = 3, folderId = set.folderId)
+            recommendationFixture.추천(selectionId, set.photoIds[1], round = 1, rank = 1, folderId = set.folderId)
+            recommendationFixture.추천(selectionId, set.photoIds[1], round = 2, rank = 2, folderId = set.folderId)
+            recommendationFixture.추천(selectionId, set.photoIds[2], round = 2, rank = 1, folderId = set.folderId)
 
             // when
             val response = aiRecommendationService.list(fixture.galleryId, fixture.member.id!!, folderId = null)
@@ -230,28 +265,48 @@ class AiRecommendationServiceTest @Autowired constructor(
             assertSoftly { softly ->
                 softly.assertThat(response.round).isEqualTo(2)
                 softly.assertThat(response.photos.map { it.photo.photoId })
-                    .containsExactly(set.photoIds[1], set.photoIds[2])
-                softly.assertThat(response.photos.map { it.rank }).containsExactly(1, 2)
+                    .containsExactly(set.photoIds[2], set.photoIds[1], set.photoIds[0])
+                softly.assertThat(response.photos.map { it.rank }).containsExactly(1, 2, 3)
             }
         }
 
         @Test
-        fun `folderId를 주면 그 폴더의 추천만 온다`() {
-            // given — 미분류(folder_id null) 추천이 섞여 있어도 폴더 화면에는 안 나온다.
+        fun `folderId를 주면 지금 그 폴더에 든 사진의 추천만 온다`() {
+            // given — 사진 1은 추천 뒤 폴더에서 빠졌다(미분류). 표시는 사진을 따라가므로 폴더 화면에는 안 나온다.
             val set = aiFolderSet(photoCount = 2)
             val selectionId = selectionFixture.셀렉(fixture.galleryId)
             recommendationFixture.추천(selectionId, set.photoIds[0], rank = 1, folderId = set.folderId)
-            recommendationFixture.추천(selectionId, set.photoIds[1], rank = 1, folderId = null)
+            recommendationFixture.추천(selectionId, set.photoIds[1], rank = 2, folderId = set.folderId)
+            jdbcTemplate.update("DELETE FROM photo_category_assignments WHERE photo_id = ?", set.photoIds[1])
 
             // when
-            val response = aiRecommendationService.list(fixture.galleryId, fixture.member.id!!, folderId = set.folderId)
+            val inFolder = aiRecommendationService.list(fixture.galleryId, fixture.member.id!!, folderId = set.folderId)
+            val all = aiRecommendationService.list(fixture.galleryId, fixture.member.id!!, folderId = null)
+
+            // then — 전체 목록에서는 옮겨 나간 사진도 현재 폴더 null로 남아 있다.
+            assertSoftly { softly ->
+                softly.assertThat(inFolder.photos).hasSize(1)
+                softly.assertThat(inFolder.photos.single().photo.photoId).isEqualTo(set.photoIds[0])
+                softly.assertThat(inFolder.photos.single().folderId).isEqualTo(set.folderId)
+                softly.assertThat(all.photos.map { it.photo.photoId }).containsExactly(set.photoIds[0], set.photoIds[1])
+                softly.assertThat(all.photos.map { it.folderId }).containsExactly(set.folderId, null)
+            }
+        }
+
+        @Test
+        fun `거절한 추천은 목록에 나오지 않는다`() {
+            // given
+            val set = aiFolderSet(photoCount = 2)
+            val selectionId = selectionFixture.셀렉(fixture.galleryId)
+            recommendationFixture.추천(selectionId, set.photoIds[0], rank = 1, folderId = set.folderId)
+            recommendationFixture.추천(selectionId, set.photoIds[1], rank = 2, folderId = set.folderId)
+            jdbcTemplate.update("UPDATE ai_recommendations SET rejected_at = now() WHERE photo_id = ?", set.photoIds[1])
+
+            // when
+            val response = aiRecommendationService.list(fixture.galleryId, fixture.member.id!!, folderId = null)
 
             // then
-            assertSoftly { softly ->
-                softly.assertThat(response.photos).hasSize(1)
-                softly.assertThat(response.photos.single().photo.photoId).isEqualTo(set.photoIds[0])
-                softly.assertThat(response.photos.single().folderId).isEqualTo(set.folderId)
-            }
+            assertThat(response.photos.map { it.photo.photoId }).containsExactly(set.photoIds[0])
         }
 
         @Test

@@ -31,8 +31,11 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * 폴더별 AI 추천을 요청하고 읽는다.
  *
  * 요청은 `ai_selection_jobs`에 PENDING 행을 넣고 커밋 뒤 실행기에 넘긴다 — 계산(폴더마다 목표 비례 n장,
- * 연사 클러스터당 1장, 이유 문장)은 [AiSelectionJobRunner]가 요청 스레드 밖에서 한다. 읽을 때는 최신
- * 라운드에 사진·담김 여부를 붙여 돌려준다.
+ * 연사 클러스터당 1장, 이유 문장)은 [AiSelectionJobRunner]가 요청 스레드 밖에서 한다.
+ *
+ * 추천은 사진에 붙는다. 읽을 때는 라운드가 아니라 **사진마다 가장 최근 추천**에 사진·담김 여부·현재 폴더를
+ * 붙여 돌려준다 — 사진을 다른 폴더로 옮겨도 표시가 따라가고, 폴더 하나만 다시 추천해도 다른 폴더의 표시는
+ * 남는다. 잡의 범위(세부폴더 하나 또는 전체)에 든 사진의 기존 추천만 실행기가 지우고 다시 적는다.
  */
 @Service
 class AiRecommendationService(
@@ -60,12 +63,19 @@ class AiRecommendationService(
      *
      * 모드는 셀렉의 이력으로 정한다 — 추천 라운드가 하나도 없으면 DRAFT, 있으면 REFINE(담기·거절
      * 반응을 빼고 다시 계산한 다음 라운드). 화면이 고를 이유가 없어 본문에서 받지 않는다.
+     *
+     * 범위(detailFolderId)를 주면 그 세부폴더만 다시 추천한다. 세트에 든 폴더가 아니어도(사용자가 만든
+     * 폴더) 된다 — 그래서 폴더 범위 요청에는 AI 세트가 없어도 거절하지 않는다.
      */
     @Transactional
     fun request(galleryId: Long, userId: Long, request: AiRecommendationRequest): AiSelectionJobResponse {
         galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
-        val folderSetJobId = resolveFolderSetJobId(galleryId, request.analysisJobId)
+        val detailFolderId = request.detailFolderId?.also { detailFolderId ->
+            aiFolderSetReader.detailFolder(galleryId, detailFolderId)
+                ?: throw RecommendationException(RecommendationErrorCode.DETAIL_FOLDER_NOT_FOUND)
+        }
+        val folderSetJobId = resolveFolderSetJobId(galleryId, request.analysisJobId, required = detailFolderId == null)
 
         val selection = photoSelectionRepository.findByGalleryId(galleryId)
             ?: photoSelectionRepository.save(PhotoSelection(galleryId = galleryId))
@@ -86,6 +96,7 @@ class AiRecommendationService(
                     selectionId = selectionId,
                     mode = mode,
                     folderSetJobId = folderSetJobId,
+                    detailFolderId = detailFolderId,
                 ),
             )
         } catch (e: DataIntegrityViolationException) {
@@ -93,8 +104,8 @@ class AiRecommendationService(
         }
 
         log.info(
-            "AI 추천 요청: galleryId={}, selectionId={}, mode={}, folderSetJobId={}, jobId={}",
-            galleryId, selectionId, mode, folderSetJobId, job.requiredId,
+            "AI 추천 요청: galleryId={}, selectionId={}, mode={}, folderSetJobId={}, detailFolderId={}, jobId={}",
+            galleryId, selectionId, mode, folderSetJobId, detailFolderId, job.requiredId,
         )
         // 커밋 뒤에 넘긴다 — 실행기가 아직 안 보이는 행을 집으려다 실패하면 안 된다.
         val jobId = job.requiredId
@@ -107,8 +118,11 @@ class AiRecommendationService(
         return AiSelectionJobResponse.from(job)
     }
 
-    /** 콕 집은 세트는 살아 있어야 하고(404), 생략하면 최신 세트다. 세트 자체가 없으면 409 — 폴더 생성이 먼저다. */
-    private fun resolveFolderSetJobId(galleryId: Long, analysisJobId: Long?): Long {
+    /**
+     * 콕 집은 세트는 살아 있어야 하고(404), 생략하면 최신 세트다. 전체 라운드([required])인데 세트 자체가
+     * 없으면 409 — 폴더 생성이 먼저다. 폴더 범위 요청은 세트 없이도 돌므로 null을 허용한다.
+     */
+    private fun resolveFolderSetJobId(galleryId: Long, analysisJobId: Long?, required: Boolean): Long? {
         if (analysisJobId != null) {
             if (!aiFolderSetReader.setExists(galleryId, analysisJobId)) {
                 throw RecommendationException(RecommendationErrorCode.FOLDER_SET_NOT_FOUND)
@@ -116,12 +130,14 @@ class AiRecommendationService(
             return analysisJobId
         }
 
-        return aiFolderSetReader.latestSetJobId(galleryId)
-            ?: throw RecommendationException(RecommendationErrorCode.FOLDER_SET_NOT_READY)
+        val latest = aiFolderSetReader.latestSetJobId(galleryId)
+        if (latest == null && required) throw RecommendationException(RecommendationErrorCode.FOLDER_SET_NOT_READY)
+        return latest
     }
 
     /**
-     * 최신 라운드의 추천. [folderId]가 있으면 그 폴더의 추천만 — 폴더 화면이 배지를 그리는 경로다.
+     * 사진마다 가장 최근 추천. [folderId]가 있으면 **지금 그 폴더에 든** 사진의 추천만 — 폴더 화면이 배지를
+     * 그리는 경로다. 응답의 folderId도 현재 배정이다(추천 당시 폴더가 아니다). 거절한 추천은 그리지 않는다.
      *
      * 보는 것이라 작가도 볼 수 있다(`requireViewer`) — 부부가 무엇을 제안받았는지는 작가 화면에도
      * 쓸모가 있다. 셀렉 행이 없거나 추천이 한 번도 없었으면 빈 응답이지 404가 아니다 — 프론트가
@@ -145,17 +161,24 @@ class AiRecommendationService(
                 viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
             )
 
-        val recommendations = when (folderId) {
-            null -> aiRecommendationRepository
-                .findAllBySelectionIdAndRoundOrderByFolderIdAscRankAsc(selectionId, latestRound)
-            else -> aiRecommendationRepository
-                .findAllBySelectionIdAndRoundAndFolderIdOrderByRankAsc(selectionId, latestRound, folderId)
+        // 사진마다 가장 최근 라운드의 행 하나. 거절 행은 표시하지 않는다(다음 계산이 뺄 근거로만 남는다).
+        val latestByPhoto = aiRecommendationRepository.findAllBySelectionId(selectionId)
+            .groupBy { it.photoId }
+            .mapNotNull { (_, rows) -> rows.maxBy { it.round } }
+            .filter { it.rejectedAt == null }
+        val currentFolderByPhoto = aiFolderSetReader.detailIdsByPhotoId(latestByPhoto.map { it.photoId })
+        val visible = when (folderId) {
+            null -> latestByPhoto
+            else -> latestByPhoto.filter { currentFolderByPhoto[it.photoId] == folderId }
         }
+        val ordered = visible.sortedWith(
+            compareBy<AiRecommendation, Long?>(nullsLast()) { currentFolderByPhoto[it.photoId] }.thenBy { it.rank },
+        )
 
         return AiRecommendationListResponse(
             round = latestRound,
             job = job,
-            photos = recommendationResponses(galleryId, selectionId, recommendations),
+            photos = recommendationResponses(galleryId, selectionId, ordered, currentFolderByPhoto),
             viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
         )
     }
@@ -168,6 +191,7 @@ class AiRecommendationService(
         galleryId: Long,
         selectionId: Long,
         recommendations: List<AiRecommendation>,
+        currentFolderByPhoto: Map<Long, Long>,
     ): List<AiRecommendationResponse> {
         val photoIds = recommendations.map { it.photoId }
         val photos = photoRepository.findAllByGalleryIdAndIdIn(galleryId, photoIds)
@@ -180,6 +204,7 @@ class AiRecommendationService(
             photoResponseById[recommendation.photoId]?.let { photo ->
                 AiRecommendationResponse.of(
                     recommendation = recommendation,
+                    folderId = currentFolderByPhoto[recommendation.photoId],
                     photo = photo,
                     selected = recommendation.photoId in selectedPhotoIds,
                 )
