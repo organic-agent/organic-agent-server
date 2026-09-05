@@ -8,6 +8,8 @@ import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.repository.requireById
+import com.soma.wes.gallery.repository.requireWithLockById
+import com.soma.wes.selection.repository.PhotoSelectionRepository
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.domain.WorkspaceType
@@ -26,6 +28,7 @@ class GalleryAccessPolicy(
     private val galleryRepository: GalleryRepository,
     private val galleryMemberRepository: GalleryMemberRepository,
     private val studioRepository: StudioRepository,
+    private val photoSelectionRepository: PhotoSelectionRepository,
     private val workspaceRepository: WorkspaceRepository,
     private val workspaceMemberRepository: WorkspaceMemberRepository,
     private val clock: Clock,
@@ -38,6 +41,24 @@ class GalleryAccessPolicy(
         if (!isManager(gallery, userId)) {
             throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
         }
+        return gallery
+    }
+
+    /**
+     * 초대 고객도 선택 중에는 분류를 정리한다. 제출과 같은 갤러리 잠금을 잡은 뒤 상태를
+     * 확인해야 제출이 끝난 뒤 대기 중이던 이동이 저장되는 일을 막을 수 있다.
+     * 작업공간 관리자는 제출 이후에도 기존 관리 권한을 유지한다.
+     */
+    @Transactional
+    fun requireCategoryEditor(galleryId: Long, userId: Long): Gallery {
+        val gallery = galleryRepository.requireWithLockById(galleryId)
+        if (isManager(gallery, userId)) {
+            return gallery
+        }
+
+        findMember(galleryId, userId)
+        requireSelectable(gallery)
+        photoSelectionRepository.findByGalleryId(galleryId)?.requireEditable()
         return gallery
     }
 
