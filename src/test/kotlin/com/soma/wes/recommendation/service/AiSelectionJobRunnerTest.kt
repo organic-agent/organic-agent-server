@@ -222,6 +222,56 @@ class AiSelectionJobRunnerTest @Autowired constructor(
     }
 
     @Nested
+    @DisplayName("폴더와 동떨어진 사진이 있을 때")
+    inner class Misfit {
+
+        /**
+         * 배경: 정원 폴더 6장은 같은 방향의 임베딩, 해변 1장은 직각 방향. 해변 사진을 사용자가 실수로 정원 폴더에
+         * 옮겼고 점수는 갤러리에서 가장 높다 — 규칙이 없으면 정원 1위로 뽑힌다.
+         */
+        private fun misfitWorld(): Pair<List<Long>, Long> {
+            val garden = photoFixture.업로드된_사진(fixture.galleryId, 6).mapIndexed { i, photoId ->
+                photoFixture.벡터_적재(photoId, FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also { it[50] = 1f })
+                recommendationFixture.분석_결과(photoId, embedGroupId = 2, clusterId = 10 + i, technicalPct = 80.0 - i, aestheticPct = 70.0 - i)
+                photoId
+            }
+            val beach = photoFixture.업로드된_사진(fixture.galleryId, 1).single()
+            photoFixture.벡터_적재(beach, FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also { it[10] = 1f })
+            recommendationFixture.분석_결과(beach, embedGroupId = 1, clusterId = 1, technicalPct = 99.0, aestheticPct = 99.0)
+            val jobId = recommendationFixture.분석_잡(fixture.galleryId)
+            recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 1, parentName = "야외 자연", conceptName = "해변")
+            recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 2, parentName = "야외 정원·건물", conceptName = "정원")
+            val concepts = aiCategoryFolderService.createFromAnalysis(fixture.galleryId, fixture.photographer.id!!)
+            val gardenFolderId = concepts.flatMap { it.details }.first { it.name == "정원" }.id
+            jdbcTemplate.update("UPDATE photo_category_assignments SET detail_folder_id = ? WHERE photo_id = ?", gardenFolderId, beach)
+            (garden + beach).forEach { recommendationFixture.미리보기(it) }
+            return garden to beach
+        }
+
+        @Test
+        fun `옮겨 들어온 사진은 점수가 가장 높아도 그 폴더의 추천에서 빠지고 result에 남는다`() {
+            // given
+            val (garden, beach) = misfitWorld()
+            llm.isEnabled = false
+            val jobId = requestJob()
+
+            // when
+            runner.run(jobId)
+
+            // then — 정원은 목표 4장을 나머지 6장에서 채운다
+            val job = aiSelectionJobRepository.findById(jobId).orElseThrow()
+            val recs = aiRecommendationRepository.findAllBySelectionIdAndRound(job.selectionId, 1)
+            assertSoftly { softly ->
+                softly.assertThat(job.status).isEqualTo(AiJobStatus.DONE)
+                softly.assertThat(recs.map { it.photoId }).doesNotContain(beach)
+                softly.assertThat(recs.map { it.photoId }).hasSize(4).isSubsetOf(garden)
+                softly.assertThat(job.result).containsEntry("misfit", 1)
+                softly.assertThat((job.result!!["misfitPhotoIds"] as List<*>).map { (it as Number).toLong() }).containsExactly(beach)
+            }
+        }
+    }
+
+    @Nested
     @DisplayName("다음 라운드(refine)를 돌릴 때")
     inner class Refine {
 

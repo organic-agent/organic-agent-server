@@ -17,6 +17,7 @@ import com.soma.wes.recommendation.dto.RecommendablePhotoDto
 import com.soma.wes.recommendation.dto.SiblingImageDto
 import com.soma.wes.recommendation.repository.AiRecommendationRepository
 import com.soma.wes.recommendation.repository.AiSelectionJobRepository
+import com.soma.wes.recommendation.support.FolderFitRule
 import com.soma.wes.recommendation.support.FolderQuota
 import com.soma.wes.recommendation.support.MmrSelector
 import com.soma.wes.recommendation.support.ReasonMaterial
@@ -35,7 +36,8 @@ import kotlin.math.sqrt
 /**
  * 폴더별 추천 한 라운드 — AI repo `recommend/draft.run`의 자리다.
  *
- *     폴더마다 f:  후보 = f.photos − 담은 사진 − 거절     (이전 라운드 노출은 제외하지 않는다)
+ *     폴더마다 f:  후보 = f.photos − 담은 사진 − 거절 − 폴더와 동떨어진 사진([FolderFitRule])
+ *                  (이전 라운드 노출은 제외하지 않는다)
  *                  n_f = max(1, round(remaining·|f|/Σ|f'|)),  n_f ≤ ceil(|f|·0.5)
  *                  연사 클러스터당 1장 → MMR → n_f장, 폴더 안 점수 순위가 rank
  *     미분류(세트에 없는 사진)는 가상 폴더로 같은 규칙.
@@ -201,9 +203,17 @@ class AiSelectionJobRunner(
 
         val picks = mutableListOf<PlannedPick>()
         val perFolder = linkedMapOf<String, Int>()
+        val misfitPhotoIds = mutableListOf<Long>()
         folders.sortedByDescending { it.photoIds.size }.forEach { folder ->
             if (folder.photoIds.isEmpty()) return@forEach
-            val members = folder.photoIds.mapNotNull { indexById[it] }.filter { it !in exclude }
+            val allMembers = folder.photoIds.mapNotNull { indexById[it] }
+            // 폴더와 동떨어진 사진(실수로 옮겨 온 사진)은 후보에서 뺀다. 미분류는 원래 잡동사니라 판정하지 않는다.
+            val misfit = if (folder.folderId == null) emptySet() else FolderFitRule.misfits(world.embeddings, allMembers)
+            if (misfit.isNotEmpty()) {
+                misfitPhotoIds += misfit.map { rows[it].photoId }
+                log.info("폴더 {}›{} 에서 동떨어진 사진 {}장 제외: {}", folder.parentName, folder.name, misfit.size, misfit.map { rows[it].photoId })
+            }
+            val members = allMembers.filter { it !in exclude && it !in misfit }
             val folderPicks = MmrSelector.selectInFolder(score, world.embeddings, members, clusterIds, quota.getValue(folder.folderId))
             perFolder["${folder.parentName}›${folder.name}"] = folderPicks.size
             folderPicks.forEach { pick ->
@@ -272,6 +282,7 @@ class AiSelectionJobRunner(
             selected = nSelected,
             remaining = remaining,
             preferenceOn = prefOn,
+            misfitPhotoIds = misfitPhotoIds,
         )
     }
 
@@ -362,6 +373,7 @@ class AiSelectionJobRunner(
             "selected" to draft.selected, "target" to world.target, "remaining" to draft.remaining,
             "folders" to draft.folders, "unfiled" to draft.unfiled, "scopeFolderId" to world.scopeFolderId,
             "perFolder" to draft.perFolder, "reasonDistribution" to reasonDistribution,
+            "misfit" to draft.misfitPhotoIds.size, "misfitPhotoIds" to draft.misfitPhotoIds,
             "preferenceOn" to draft.preferenceOn, "llm" to llm.isEnabled, "reasonReady" to reasonReady,
             "elapsedSeconds" to round(Duration.ofNanos(System.nanoTime() - startedNanos).toMillis() / 10.0) / 100,
         )
@@ -420,6 +432,8 @@ class AiSelectionJobRunner(
         val selected: Int,
         val remaining: Int,
         val preferenceOn: Boolean,
+        /** 폴더와 동떨어져 후보에서 뺀 사진. 잡 result에 남긴다. */
+        val misfitPhotoIds: List<Long>,
     )
 
     companion object {
