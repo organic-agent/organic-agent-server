@@ -11,6 +11,8 @@ import com.soma.wes.category.domain.PhotoCategoryAssignment
 import jakarta.persistence.LockModeType
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Lock
+import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
 
 interface ConceptFolderRepository : JpaRepository<ConceptFolder, Long> {
     fun findAllByGalleryIdOrderBySortOrderAscIdAsc(galleryId: Long): List<ConceptFolder>
@@ -21,6 +23,7 @@ interface ConceptFolderRepository : JpaRepository<ConceptFolder, Long> {
     fun findFirstByGalleryIdAndAnalysisJobIdIsNotNullOrderByAnalysisJobIdDesc(galleryId: Long): ConceptFolder?
     fun existsByGalleryIdAndAnalysisJobId(galleryId: Long, analysisJobId: Long): Boolean
     fun findByIdAndGalleryId(id: Long, galleryId: Long): ConceptFolder?
+    fun countByGalleryId(galleryId: Long): Long
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     fun findWithLockByIdAndGalleryId(id: Long, galleryId: Long): ConceptFolder?
 }
@@ -37,6 +40,9 @@ interface PhotoCategoryAssignmentRepository : JpaRepository<PhotoCategoryAssignm
     fun findAllByDetailFolderIdIn(detailFolderIds: Collection<Long>): List<PhotoCategoryAssignment>
     fun findAllByPhotoIdIn(photoIds: Collection<Long>): List<PhotoCategoryAssignment>
     fun findAllByGalleryIdAndPhotoIdIn(galleryId: Long, photoIds: Collection<Long>): List<PhotoCategoryAssignment>
+    /** 갤러리에서 이미 폴더에 든 사진 id. 사진 id 수천 개를 IN으로 보내는 대신 gallery_id 한 번으로 읽는다. */
+    @Query("SELECT a.photoId FROM PhotoCategoryAssignment a WHERE a.galleryId = :galleryId")
+    fun findAllPhotoIdsByGalleryId(@Param("galleryId") galleryId: Long): List<Long>
     fun deleteAllByDetailFolderId(detailFolderId: Long)
     fun deleteAllByDetailFolderIdIn(detailFolderIds: Collection<Long>)
 }
@@ -52,6 +58,9 @@ interface CategorizationJobRepository : JpaRepository<CategorizationJob, Long> {
 
 interface CategorizationJobPhotoRepository : JpaRepository<CategorizationJobPhoto, CategorizationJobPhotoId> {
     fun findAllByPhotoIdIn(photoIds: Collection<Long>): List<CategorizationJobPhoto>
+    /** 갤러리에서 어느 카테고리화 잡이든 한 번 처리한 사진 id. */
+    @Query("SELECT DISTINCT j.photoId FROM CategorizationJobPhoto j WHERE j.galleryId = :galleryId")
+    fun findAllPhotoIdsByGalleryId(@Param("galleryId") galleryId: Long): List<Long>
     fun countByJobId(jobId: Long): Long
     fun findAllByJobIdOrderByPhotoId(jobId: Long): List<CategorizationJobPhoto>
 }

@@ -1,6 +1,7 @@
 package com.soma.wes.photo.repository
 
 import com.soma.wes.photo.domain.PhotoAnalysis
+import com.soma.wes.photo.repository.projection.PhotoAnalysisGrouping
 import com.soma.wes.photo.repository.projection.PhotoAnalysisSummary
 import com.soma.wes.photo.repository.projection.PhotoEmbedding
 import org.springframework.data.jpa.repository.JpaRepository
@@ -34,6 +35,21 @@ interface PhotoAnalysisRepository : JpaRepository<PhotoAnalysis, Long> {
         """,
     )
     fun findAllAnalyzedSummaryByGalleryId(@Param("galleryId") galleryId: Long): List<PhotoAnalysisSummary>
+
+    /**
+     * 갤러리의 분석 행 전부를 폴더 계획에 필요한 컬럼만으로, 화면 순서([Photo.DISPLAY_ORDER]와 같은
+     * display_order → id)로 읽는다. 벡터를 나르지 않고 Photo 엔티티도 따로 읽지 않는다 —
+     * 7천 장 갤러리에서 엔티티째 읽기가 2분 가까이 걸렸다(#160).
+     */
+    @Query(
+        """
+        SELECT a.photoId AS photoId, a.embedGroupId AS embedGroupId, a.subjects AS subjects, a.clusterId AS clusterId
+        FROM PhotoAnalysis a JOIN Photo p ON p.id = a.photoId
+        WHERE p.galleryId = :galleryId
+        ORDER BY p.displayOrder ASC, p.id ASC
+        """,
+    )
+    fun findAllGroupingByGalleryIdOrderByDisplay(@Param("galleryId") galleryId: Long): List<PhotoAnalysisGrouping>
 
     /** 주어진 사진의 DINOv3 벡터. 벡터가 없는 행은 빠진다. */
     @Query(
