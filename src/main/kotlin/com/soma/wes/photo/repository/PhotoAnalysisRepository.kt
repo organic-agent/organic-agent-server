@@ -1,6 +1,8 @@
 package com.soma.wes.photo.repository
 
 import com.soma.wes.photo.domain.PhotoAnalysis
+import com.soma.wes.photo.repository.projection.PhotoAnalysisSummary
+import com.soma.wes.photo.repository.projection.PhotoEmbedding
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
@@ -15,4 +17,31 @@ interface PhotoAnalysisRepository : JpaRepository<PhotoAnalysis, Long> {
      */
     @Query("SELECT a FROM PhotoAnalysis a WHERE a.photoId IN (SELECT p.id FROM Photo p WHERE p.galleryId = :galleryId)")
     fun findAllByGalleryId(@Param("galleryId") galleryId: Long): List<PhotoAnalysis>
+
+    /**
+     * 갤러리에서 분석이 끝나고 벡터도 있는 행을 벡터 없이 읽는다. 조건은 [PhotoAnalysis.isAnalyzed]
+     * + `embedding IS NOT NULL`과 같다 — 추천이 재료로 써도 되는 행의 정의를 쿼리로 옮긴 것이다.
+     * 벡터는 [findAllEmbeddingByPhotoIdIn]으로 필요한 사진만 따로 읽는다.
+     */
+    @Query(
+        """
+        SELECT a.photoId AS photoId, a.technicalPct AS technicalPct, a.aestheticPct AS aestheticPct,
+               a.subjects AS subjects, a.clusterId AS clusterId, a.clusterRank AS clusterRank, a.subScores AS subScores
+        FROM PhotoAnalysis a
+        WHERE a.photoId IN (SELECT p.id FROM Photo p WHERE p.galleryId = :galleryId)
+          AND a.modelVersion IS NOT NULL AND a.technicalPct IS NOT NULL AND a.aestheticPct IS NOT NULL
+          AND a.embedding IS NOT NULL
+        """,
+    )
+    fun findAllAnalyzedSummaryByGalleryId(@Param("galleryId") galleryId: Long): List<PhotoAnalysisSummary>
+
+    /** 주어진 사진의 DINOv3 벡터. 벡터가 없는 행은 빠진다. */
+    @Query(
+        """
+        SELECT a.photoId AS photoId, a.embedding AS embedding
+        FROM PhotoAnalysis a
+        WHERE a.photoId IN :photoIds AND a.embedding IS NOT NULL
+        """,
+    )
+    fun findAllEmbeddingByPhotoIdIn(@Param("photoIds") photoIds: Collection<Long>): List<PhotoEmbedding>
 }
