@@ -117,8 +117,7 @@ app:
     # 서울에는 Sonnet 온디맨드가 없어 global. 크로스 리전 프로필을 쓴다 — 요청이 국외로 나간다.
     region: ap-northeast-2
     model-id: global.anthropic.claude-sonnet-4-6
-    # 나머지 손잡이(image-long-edge, compare-timeout, reasons-batch …)는 LlmProperties 기본값이다.
-    # 값의 정본은 AI repo photoselect/docs/plan-v3-folder-compare.md §2·§3 — 바꾸면 그 문서를 먼저 고친다.
+    # 나머지 손잡이(image-long-edge, compare-timeout, reasons-timeout, reasons-batch …)는 LlmProperties 기본값이다.
 
   mock-gallery:
     # Mock 갤러리가 복제할 샘플 템플릿 갤러리 id. 0은 "기능 꺼짐"이다(생성 요청이 503).

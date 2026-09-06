@@ -72,15 +72,15 @@ class AiSelectionJobRunner(
             log.info("AI 추천 잡을 집지 못함(이미 실행 중이거나 끝남): jobId={}", jobId)
             return
         }
-        val started = System.nanoTime()
+        val timing = StageTiming()
         try {
-            val world = transactionTemplate.execute { load(jobId) }!!
-            val draft = plan(world)
-            val roundNo = transactionTemplate.execute { persistRound(world, draft) }!!
-            val reasonReady = fillReasons(world, draft, roundNo)
+            val world = timing.measure("load") { transactionTemplate.execute { load(jobId) }!! }
+            val draft = timing.measure("plan") { plan(world) }
+            val roundNo = timing.measure("persist") { transactionTemplate.execute { persistRound(world, draft) }!! }
+            val reasonReady = timing.measure("reasons") { fillReasons(world, draft, roundNo, timing) }
             transactionTemplate.execute {
                 val job = aiSelectionJobRepository.findById(jobId).orElseThrow()
-                job.finish(summary(world, draft, roundNo, reasonReady, started), ZonedDateTime.now(clock))
+                job.finish(summary(world, draft, roundNo, reasonReady, timing), ZonedDateTime.now(clock))
             }
             log.info("AI 추천 잡 완료: jobId={}, round={}, k={}", jobId, roundNo, draft.picks.size)
         } catch (e: Exception) {
@@ -342,34 +342,39 @@ class AiSelectionJobRunner(
 
     // ── 2단계: 이유 문장 ──
 
-    private fun fillReasons(world: World, draft: Draft, roundNo: Int): Int {
+    private fun fillReasons(world: World, draft: Draft, roundNo: Int, timing: StageTiming): Int {
         val pending = transactionTemplate.execute {
             aiRecommendationRepository.findAllBySelectionIdAndRound(world.selectionId, roundNo)
                 .filter { it.reason == null }.mapTo(mutableSetOf()) { it.photoId }
         }!!
-        val inputs = draft.picks.filter { it.photoId in pending }.map { pick ->
-            val image = if (llm.isEnabled && properties.reasonsVision) readPreview(world, pick.photoId) else null
-            val siblings = if (image != null) {
-                pick.siblingIds.take(properties.reasonsSiblingImages).mapNotNull { (id, whyNot) ->
-                    readPreview(world, id)?.let { SiblingImageDto(id, whyNot, it) }
-                }
-            } else {
-                emptyList()
-            }
-            ReasonInputDto(pick.photoId, pick.primary, pick.facts, pick.fallback, image, siblings)
-        }
-        if (inputs.isEmpty()) return 0
+        val picks = draft.picks.filter { it.photoId in pending }
+        if (picks.isEmpty()) return 0
 
-        // 배치 단위로 UPDATE — 한 배치가 끝날 때마다 화면의 reasonReady가 뒤집힌다.
-        inputs.chunked(properties.reasonsBatch).forEach { chunk ->
-            val texts = reasonGenerator.generate(chunk)
+        // 배치 단위로 미리보기를 읽고 UPDATE — 한 배치가 끝날 때마다 화면의 reasonReady가 뒤집힌다.
+        // 미리보기도 배치마다 읽어야 첫 배치가 라운드 전체의 S3 읽기를 기다리지 않는다.
+        picks.chunked(properties.reasonsBatch).forEach { chunk ->
+            val batchStarted = System.nanoTime()
+            val inputs = chunk.map { pick ->
+                val image = if (llm.isEnabled && properties.reasonsVision) readPreview(world, pick.photoId) else null
+                val siblings = if (image != null) {
+                    pick.siblingIds.take(properties.reasonsSiblingImages).mapNotNull { (id, whyNot) ->
+                        readPreview(world, id)?.let { SiblingImageDto(id, whyNot, it) }
+                    }
+                } else {
+                    emptyList()
+                }
+                ReasonInputDto(pick.photoId, pick.primary, pick.facts, pick.fallback, image, siblings)
+            }
+            val texts = reasonGenerator.generate(inputs)
             transactionTemplate.execute {
                 aiRecommendationRepository.findAllBySelectionIdAndRound(world.selectionId, roundNo)
                     .filter { it.photoId in texts }
                     .forEach { it.fillReason(texts.getValue(it.photoId)) }
             }
+            val fromLlm = inputs.count { texts[it.photoId] != it.fallback }
+            timing.batch(size = inputs.size, fromLlm = fromLlm, startedNanos = batchStarted)
         }
-        return inputs.size
+        return picks.size
     }
 
     private fun readPreview(world: World, photoId: Long): ByteArray? {
@@ -383,7 +388,7 @@ class AiSelectionJobRunner(
         }
     }
 
-    private fun summary(world: World, draft: Draft, roundNo: Int, reasonReady: Int, startedNanos: Long): Map<String, Any?> {
+    private fun summary(world: World, draft: Draft, roundNo: Int, reasonReady: Int, timing: StageTiming): Map<String, Any?> {
         val reasonDistribution = linkedMapOf<String, Int>()
         draft.picks.forEach { reasonDistribution.merge(it.primary, 1, Int::plus) }
         return linkedMapOf(
@@ -393,7 +398,8 @@ class AiSelectionJobRunner(
             "perFolder" to draft.perFolder, "reasonDistribution" to reasonDistribution,
             "misfit" to draft.misfitPhotoIds.size, "misfitPhotoIds" to draft.misfitPhotoIds,
             "preferenceOn" to draft.preferenceOn, "llm" to llm.isEnabled, "reasonReady" to reasonReady,
-            "elapsedSeconds" to round(Duration.ofNanos(System.nanoTime() - startedNanos).toMillis() / 10.0) / 100,
+            "elapsedSeconds" to timing.elapsedSeconds(),
+            "timing" to timing.toMap(),
         )
     }
 
@@ -410,6 +416,35 @@ class AiSelectionJobRunner(
     private fun round4(v: Double) = round(v * 10000) / 10000
 
     private class JobRef(val id: Long, val mode: AiSelectionMode, val round: Int?)
+
+    /**
+     * 단계별 소요를 잡 result에 남기기 위한 초시계. 운영에서 "어디가 느린가"를 로그 시각을 맞춰 보지 않고
+     * result 하나로 읽게 한다 — 읽기(load)·계산(plan)·적재(persist)·이유(reasons) + 이유 배치마다 크기·LLM 성공 수·초.
+     */
+    private class StageTiming {
+        private val startedNanos = System.nanoTime()
+        private val stages = linkedMapOf<String, Double>()
+        private val batches = mutableListOf<Map<String, Any>>()
+
+        fun <T> measure(stage: String, block: () -> T): T {
+            val started = System.nanoTime()
+            try {
+                return block()
+            } finally {
+                stages[stage] = seconds(started)
+            }
+        }
+
+        fun batch(size: Int, fromLlm: Int, startedNanos: Long) {
+            batches += linkedMapOf("size" to size, "llm" to fromLlm, "seconds" to seconds(startedNanos))
+        }
+
+        fun elapsedSeconds() = seconds(startedNanos)
+
+        fun toMap(): Map<String, Any?> = linkedMapOf<String, Any?>("stagesSeconds" to stages.toMap(), "reasonBatches" to batches.toList())
+
+        private fun seconds(sinceNanos: Long) = round(Duration.ofNanos(System.nanoTime() - sinceNanos).toMillis() / 10.0) / 100
+    }
 
     private class VirtualFolder(val folderId: Long?, val parentName: String, val name: String, val photoIds: List<Long>)
 

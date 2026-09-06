@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.jdbc.core.JdbcTemplate
+import java.time.Duration
 
 @IntegrationTest
 class AiSelectionJobRunnerTest @Autowired constructor(
@@ -176,6 +177,34 @@ class AiSelectionJobRunnerTest @Autowired constructor(
                 softly.assertThat(texts).anyMatch { it.startsWith("같은 순간의 다른 컷") }
                 softly.assertThat(parts.filterIsInstance<LlmPartDto.Image>()).isNotEmpty()
                 softly.assertThat(llm.requests.first().maxRetries).isEqualTo(2)
+            }
+        }
+
+        @Test
+        fun `이유 배치는 설정한 크기로 잘라 배치마다 예산을 걸고, result에 단계별 소요를 남긴다`() {
+            // given — 목표 4 → 추천 5장, 배치 2 → 요청 3번(2·2·1)
+            val w = world()
+            val jobId = requestJob()
+            llm.respondWith(reasonsJson(w.beach + w.garden + w.unfiled))
+
+            // when
+            runner.run(jobId)
+
+            // then
+            val job = aiSelectionJobRepository.findById(jobId).orElseThrow()
+            val photosPerRequest = llm.requests.map { request ->
+                request.parts.filterIsInstance<LlmPartDto.Text>().count { it.text.startsWith("### photo_id:") }
+            }
+            val timing = job.result!!["timing"] as Map<*, *>
+            val stages = timing["stagesSeconds"] as Map<*, *>
+            val batches = timing["reasonBatches"] as List<*>
+            assertSoftly { softly ->
+                softly.assertThat(photosPerRequest).containsExactly(2, 2, 1)
+                softly.assertThat(llm.requests.map { it.timeout }).containsOnly(Duration.ofMinutes(3))
+                softly.assertThat(stages.keys).containsExactly("load", "plan", "persist", "reasons")
+                softly.assertThat(batches.map { (it as Map<*, *>)["size"] }).containsExactly(2, 2, 1)
+                softly.assertThat(batches.map { (it as Map<*, *>)["llm"] }).containsExactly(2, 2, 1)
+                softly.assertThat(job.result).containsKey("elapsedSeconds")
             }
         }
 
