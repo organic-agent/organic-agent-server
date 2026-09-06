@@ -213,7 +213,7 @@ class CollabSessionQueryServiceTest @Autowired constructor(
                     sessionRepository.findById(shared.session.sessionId).orElseThrow().also { it.deletedAt = now },
                 )
                 TrashedResource.CONCEPT -> conceptRepository.saveAndFlush(
-                    conceptRepository.findById(shared.session.conceptFolderId).orElseThrow().also { it.deletedAt = now },
+                    conceptRepository.findById(checkNotNull(shared.session.conceptFolderId)).orElseThrow().also { it.deletedAt = now },
                 )
                 TrashedResource.DETAIL -> detailRepository.saveAndFlush(
                     detailRepository.findById(shared.detailId).orElseThrow().also { it.deletedAt = now },

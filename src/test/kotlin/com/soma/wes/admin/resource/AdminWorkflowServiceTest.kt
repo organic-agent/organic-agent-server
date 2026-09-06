@@ -806,6 +806,59 @@ class AdminWorkflowServiceTest @Autowired constructor(
     }
 
     @Test
+    fun `수동 공유폴더는 지정 사진의 관리자 반응과 진단 조회를 지원한다`() {
+        val actor = adminAccountFixture.관리자("workflow-manual-collab")
+        val graph = createGraph(actor.requiredId, "manual-collab", withPhoto = true)
+        val photoId = requireNotNull(graph.photo).id
+        val unsharedPhotoId = createPhoto(actor.requiredId, graph.gallery.id, "unshared").id
+        val session = resourceService.create(
+            actor.requiredId, AdminResourceType.COLLABORATION,
+            CreateAdminResourceRequest("수동 공유폴더 생성", mapOf("galleryId" to graph.gallery.id, "name" to "선택 사진")),
+            "127.0.0.1",
+        )
+        jdbcClient.sql(
+            """
+            INSERT INTO collab_session_photos (collab_session_id, gallery_id, photo_id, version, created_at, updated_at)
+            VALUES (:sessionId, :galleryId, :photoId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """.trimIndent(),
+        ).param("sessionId", session.id).param("galleryId", graph.gallery.id).param("photoId", photoId).update()
+        val participantId = jdbcClient.sql(
+            """
+            INSERT INTO collab_participants (collab_session_id, participant_type, guest_token, nickname, version, created_at, updated_at)
+            VALUES (:sessionId, 'GUEST', 'manual-collab-guest', '하객', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING id
+            """.trimIndent(),
+        ).param("sessionId", session.id).query { rs, _ -> rs.getLong(1) }.single()
+
+        assertThatThrownBy {
+            execute(
+                actor.requiredId, AdminResourceType.COLLABORATION, session.id,
+                AdminWorkflowAction.ADD_COLLAB_LIKE, 0, "manual-collab-unshared-001",
+                mapOf("photoId" to unsharedPhotoId, "participantId" to participantId),
+            )
+        }.isInstanceOfSatisfying(AdminException::class.java) {
+            assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
+        }
+        execute(
+            actor.requiredId, AdminResourceType.COLLABORATION, session.id,
+            AdminWorkflowAction.CREATE_COLLAB_COMMENT, 0, "manual-collab-comment-001",
+            mapOf("photoId" to photoId, "participantId" to participantId, "content" to "함께 고른 사진"),
+        )
+        execute(
+            actor.requiredId, AdminResourceType.COLLABORATION, session.id,
+            AdminWorkflowAction.ADD_COLLAB_LIKE, 1, "manual-collab-like-001",
+            mapOf("photoId" to photoId, "participantId" to participantId),
+        )
+
+        val context = contextService.get(AdminResourceType.COLLABORATION, session.id)
+        assertThat(context.resource.fields).containsEntry("conceptFolderId", null)
+        assertThat(context.resource.version).isEqualTo(2)
+        assertThat(context.facts).containsEntry("photos", 1L).containsEntry("comments", 1L).containsEntry("likes", 1L)
+        assertThat(context.relations.filter { it.type == AdminResourceType.PHOTO }.map { it.id }).containsExactly(photoId)
+        assertThat(context.sections.getValue("sharedPhotos").map { it["photoId"] }).containsExactly(photoId)
+        assertThat(context.sections.getValue("sharedPhotos").single()["createdAt"]).isNotNull()
+    }
+
+    @Test
     fun `휴지통 좋아요 뒤 하객이 다시 누르면 새 반응을 보존하고 예전 행 복원을 거절한다`() {
         val actor = adminAccountFixture.관리자("workflow-like-conflict-owner")
         val graph = createGraph(actor.requiredId, "like-conflict", withPhoto = true)

@@ -32,8 +32,8 @@ class CollabSession(
     @Column(name = "gallery_id", nullable = false, updatable = false)
     val galleryId: Long,
 
-    @Column(name = "concept_folder_id", nullable = false, updatable = false)
-    val conceptFolderId: Long,
+    @Column(name = "concept_folder_id", nullable = true)
+    var conceptFolderId: Long?,
 
     /** 부부가 링크를 구분하려고 붙인 이름. 하객에게도 첫 화면에 보인다. */
     @Column(nullable = false, length = MAX_NAME_LENGTH)
@@ -55,6 +55,19 @@ class CollabSession(
     var expiresAt: ZonedDateTime? = null,
 
 ) : BaseEntity() {
+
+    val selectionMode: CollabSelectionMode
+        get() = if (conceptFolderId == null) CollabSelectionMode.MANUAL else CollabSelectionMode.CONCEPT_FOLDER
+
+    /** 사진 변경도 세션 버전에 반영해 관리자 편집이 오래된 상태를 덮어쓰지 않게 한다. */
+    fun photosChanged(at: ZonedDateTime) {
+        updatedAt = at
+    }
+
+    fun convertToManual(at: ZonedDateTime) {
+        conceptFolderId = null
+        photosChanged(at)
+    }
 
     @Column(name = "include_all_albums", nullable = false)
     var includeAllAlbums: Boolean = false
@@ -84,7 +97,7 @@ class CollabSession(
             return trimmed
         }
 
-        fun of(galleryId: Long, conceptFolderId: Long, name: String, collabToken: String) = CollabSession(
+        fun of(galleryId: Long, conceptFolderId: Long?, name: String, collabToken: String) = CollabSession(
             galleryId = galleryId,
             conceptFolderId = conceptFolderId,
             name = requireValidName(name),

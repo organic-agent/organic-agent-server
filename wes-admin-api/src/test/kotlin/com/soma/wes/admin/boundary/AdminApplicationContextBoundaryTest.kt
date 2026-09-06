@@ -21,6 +21,7 @@ import com.soma.wes.collab.repository.CollabSessionRepository
 import com.soma.wes.collab.service.CollabSessionQueryService
 import com.soma.wes.collab.support.CollabCategoryReactionCleaner
 import com.soma.wes.collab.support.CollabLinkResolver
+import com.soma.wes.collab.support.CollabPhotoMembership
 import com.soma.wes.collab.support.CollabPhotoViewAssembler
 import com.soma.wes.global.config.AwsLambdaConfig
 import com.soma.wes.analysis.config.EmbeddingProperties
@@ -134,6 +135,7 @@ class AdminApplicationContextBoundaryTest @Autowired constructor(
             RetouchService::class.java,
             PhotoViewAssembler::class.java,
             CollabPhotoViewAssembler::class.java,
+            CollabPhotoMembership::class.java,
             RetouchRequestService::class.java,
             RetouchPhotoLoader::class.java,
             RetouchResultLoader::class.java,

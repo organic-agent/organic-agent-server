@@ -2,6 +2,8 @@ package com.soma.wes.collab.controller
 
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.collab.controller.docs.CollabSessionControllerDocs
+import com.soma.wes.collab.dto.request.CollabPhotoIdsRequest
+import jakarta.validation.Valid
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
 import com.soma.wes.collab.dto.request.RenameCollabSessionRequest
 import com.soma.wes.collab.dto.response.CollabCommentResponse
@@ -33,7 +35,7 @@ class CollabSessionController(
     override fun open(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
-        @RequestBody request: OpenCollabSessionRequest,
+        @Valid @RequestBody request: OpenCollabSessionRequest,
     ): ResponseEntity<CollabSessionResponse> =
         ResponseEntity.status(HttpStatus.CREATED).body(service.open(galleryId, loginUser.id, request))
 
@@ -76,6 +78,35 @@ class CollabSessionController(
         @PathVariable sessionId: Long,
     ): ResponseEntity<CollabSessionResponse> =
         ResponseEntity.ok(service.republish(galleryId, sessionId, loginUser.id))
+
+    @PostMapping("/{sessionId}/photos")
+    override fun addPhotos(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @PathVariable sessionId: Long,
+        @Valid @RequestBody request: CollabPhotoIdsRequest,
+    ): ResponseEntity<CollabSessionResponse> {
+        return ResponseEntity.ok(service.addPhotos(galleryId, sessionId, loginUser.id, request))
+    }
+
+    @DeleteMapping("/{sessionId}/photos")
+    override fun removePhotos(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @PathVariable sessionId: Long,
+        @Valid @RequestBody request: CollabPhotoIdsRequest,
+    ): ResponseEntity<CollabSessionResponse> {
+        return ResponseEntity.ok(service.removePhotos(galleryId, sessionId, loginUser.id, request))
+    }
+
+    @PostMapping("/{sessionId}/convert-to-manual")
+    override fun convertToManual(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @PathVariable sessionId: Long,
+    ): ResponseEntity<CollabSessionResponse> {
+        return ResponseEntity.ok(service.convertToManual(galleryId, sessionId, loginUser.id))
+    }
 
     @GetMapping("/{sessionId}/photos")
     override fun listPhotos(

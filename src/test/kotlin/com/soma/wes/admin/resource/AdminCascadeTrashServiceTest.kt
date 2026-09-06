@@ -42,6 +42,74 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
     fun resetStorage() = photoStorage.reset()
 
     @Test
+    fun `수동 공유폴더 삭제 복원과 영구 삭제는 원본 사진을 보존한다`() {
+        val actor = adminAccountFixture.관리자("manual-collab-trash")
+        val user = create(actor.requiredId, AdminResourceType.USER, mapOf(
+            "provider" to "GOOGLE", "providerId" to "manual-collab-trash", "nickname" to "소유자",
+        ))
+        val studio = create(actor.requiredId, AdminResourceType.STUDIO, mapOf(
+            "ownerUserId" to user.id, "name" to "공유 휴지통", "galleryUrl" to "manual-collab-trash",
+        ))
+        val gallery = create(actor.requiredId, AdminResourceType.GALLERY, mapOf(
+            "workspaceId" to studio.id, "title" to "공유 휴지통",
+        ))
+        val photo = createPhoto(actor.requiredId, gallery.id, "manual-shared.jpg")
+        val collaboration = create(actor.requiredId, AdminResourceType.COLLABORATION, mapOf(
+            "galleryId" to gallery.id, "name" to "수동 공유",
+        ))
+        jdbcClient.sql(
+            """
+            INSERT INTO collab_session_photos (collab_session_id, gallery_id, photo_id, version, created_at, updated_at)
+            VALUES (:sessionId, :galleryId, :photoId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """.trimIndent(),
+        ).param("sessionId", collaboration.id).param("galleryId", gallery.id).param("photoId", photo.id).update()
+
+        // 선행 제품 purge claim이 있으면 수동 소속도 관리자 삭제와 충돌해야 한다.
+        jdbcClient.sql(
+            """
+            INSERT INTO product_purge_claims (resource_type, resource_id, claim_token, claimed_at, lease_until)
+            VALUES ('PHOTO', :photoId, :token, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '15 minutes')
+            """.trimIndent(),
+        ).param("photoId", photo.id).param("token", UUID.randomUUID()).update()
+        assertThatThrownBy {
+            service.delete(
+                actor.requiredId, AdminResourceType.COLLABORATION, collaboration.id,
+                ChangeAdminResourceStateRequest("선행 사진 삭제와 충돌", collaboration.version), "127.0.0.1",
+            )
+        }.isInstanceOfSatisfying(AdminException::class.java) {
+            assertThat(it.errorCode).isEqualTo(AdminErrorCode.TRASH_BATCH_CONFLICT)
+        }
+        assertThat(deletedAt("collab_sessions", collaboration.id)).isNull()
+        jdbcClient.sql("DELETE FROM product_purge_claims WHERE resource_type = 'PHOTO' AND resource_id = :photoId")
+            .param("photoId", photo.id).update()
+
+        val batch = service.delete(
+            actor.requiredId, AdminResourceType.COLLABORATION, collaboration.id,
+            ChangeAdminResourceStateRequest("공유 삭제", collaboration.version), "127.0.0.1",
+        )
+        assertThat(batch.affectedCounts).containsEntry("COLLABORATION", 1L).doesNotContainKey("PHOTO")
+        assertThat(count("collab_session_photos", "collab_session_id", collaboration.id)).isOne()
+        assertThat(deletedAt("photos", photo.id)).isNull()
+        service.restoreBatch(actor.requiredId, batch.id, AdminReasonRequest("공유 복원"), "127.0.0.1")
+        val restored = contextService.get(AdminResourceType.COLLABORATION, collaboration.id)
+        assertThat(restored.resource.fields).containsEntry("conceptFolderId", null)
+        assertThat(restored.sections.getValue("sharedPhotos").map { it["photoId"] }).containsExactly(photo.id)
+        assertThat(restored.resource.deleted).isFalse()
+
+        val purgeBatch = service.delete(
+            actor.requiredId, AdminResourceType.COLLABORATION, collaboration.id,
+            ChangeAdminResourceStateRequest("공유 영구 삭제", restored.resource.version), "127.0.0.1",
+        )
+        jdbcClient.sql("UPDATE admin_trash_batches SET restore_until = CURRENT_TIMESTAMP - INTERVAL '1 minute' WHERE id = :id")
+            .param("id", purgeBatch.id).update()
+        purgeService.purgeExpired()
+        assertThat(count("collab_sessions", "id", collaboration.id)).isZero()
+        assertThat(count("collab_session_photos", "collab_session_id", collaboration.id)).isZero()
+        assertThat(count("photos", "id", photo.id)).isOne()
+        assertThat(photoStorage.deletedKeys()).isEmpty()
+    }
+
+    @Test
     fun `갤러리 연쇄 삭제는 이번 배치의 활성 자식만 복원한다`() {
         val actor = adminAccountFixture.관리자("cascade-gallery")
         val user = create(actor.requiredId, AdminResourceType.USER, mapOf(

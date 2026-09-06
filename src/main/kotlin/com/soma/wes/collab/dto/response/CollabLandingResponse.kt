@@ -27,5 +27,11 @@ data class CollabLandingResponse(
     val expiresAt: java.time.ZonedDateTime? = null,
     val albums: List<Album> = emptyList(),
 ) {
-    data class Album(val conceptFolderId: Long, val name: String, val photoCount: Long, val collabToken: String)
+    data class Album(
+        val conceptFolderId: Long?,
+        val name: String,
+        val photoCount: Long,
+        val collabToken: String,
+        val sessionId: Long,
+    )
 }

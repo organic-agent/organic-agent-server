@@ -1,7 +1,6 @@
 package com.soma.wes.collab.support
 
-import com.soma.wes.category.repository.DetailFolderRepository
-import com.soma.wes.category.repository.PhotoCategoryAssignmentRepository
+import com.soma.wes.collab.domain.CollabSession
 import com.soma.wes.collab.dto.response.CollabPhotoPageResponse
 import com.soma.wes.collab.dto.response.CollabPhotoResponse
 import com.soma.wes.collab.repository.CollabPhotoCommentRepository
@@ -12,30 +11,29 @@ import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.support.PhotoViewAssembler
 import org.springframework.stereotype.Component
 
-/** 컨셉폴더의 현재 배정을 동적으로 읽어 공유 화면을 만든다. 사진 복사 행은 만들지 않는다. */
+/** 현재 세션의 공유 사진만 조립한다. 수동 구성과 기존 동적 카테고리 공유가 같은 경계를 지난다. */
 @Component
 class CollabPhotoViewAssembler(
-    private val detailRepository: DetailFolderRepository,
-    private val assignmentRepository: PhotoCategoryAssignmentRepository,
+    private val membership: CollabPhotoMembership,
     private val photoRepository: PhotoRepository,
     private val photoViewAssembler: PhotoViewAssembler,
     private val likeRepository: CollabPhotoLikeRepository,
     private val commentRepository: CollabPhotoCommentRepository,
     private val properties: StorageProperties,
 ) {
-    fun count(conceptFolderId: Long): Long = photoIds(conceptFolderId).size.toLong()
+    fun count(session: CollabSession): Long = membership.count(session)
 
     fun toPage(
-        sessionId: Long,
-        conceptFolderId: Long,
+        session: CollabSession,
         page: Int,
         size: Int,
         participantId: Long? = null,
     ): CollabPhotoPageResponse {
-        val allPhotoIds = photoIds(conceptFolderId)
+        val sessionId = session.requiredId
+        val allPhotoIds = membership.photoIds(session)
         val safePage = page.coerceAtLeast(0)
         val safeSize = size.coerceIn(1, 200)
-        val from = (safePage * safeSize).coerceAtMost(allPhotoIds.size)
+        val from = (safePage.toLong() * safeSize).coerceAtMost(allPhotoIds.size.toLong()).toInt()
         val to = (from + safeSize).coerceAtMost(allPhotoIds.size)
         val pageIds = allPhotoIds.subList(from, to)
         val photosById = photoRepository.findAllById(pageIds).associateBy { it.requiredId }
@@ -73,14 +71,5 @@ class CollabPhotoViewAssembler(
         return CollabPhotoPageResponse.of(responsePage, properties.viewUrlTtl.seconds)
     }
 
-    fun contains(conceptFolderId: Long, photoId: Long): Boolean = photoId in photoIds(conceptFolderId)
-
-    private fun photoIds(conceptFolderId: Long): List<Long> {
-        val detailIds = detailRepository.findAllByConceptFolderIdOrderBySortOrderAscIdAsc(conceptFolderId)
-            .map { it.requiredId }
-        if (detailIds.isEmpty()) return emptyList()
-        return assignmentRepository.findAllByDetailFolderIdIn(detailIds)
-            .map { it.photoId }
-            .distinct()
-    }
+    fun contains(session: CollabSession, photoId: Long): Boolean = membership.contains(session, photoId)
 }

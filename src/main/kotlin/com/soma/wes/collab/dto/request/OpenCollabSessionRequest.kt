@@ -5,8 +5,8 @@ import io.swagger.v3.oas.annotations.media.Schema
 @Schema(description = "협업 세션 열기 요청")
 data class OpenCollabSessionRequest(
 
-    @field:Schema(description = "현재 사진 구성을 동적으로 공유할 컨셉폴더 id")
-    val conceptFolderId: Long,
+    @field:Schema(description = "기존 컨셉 공유 호환용. 생략하면 사진을 직접 담는 공유폴더를 만든다.")
+    val conceptFolderId: Long? = null,
 
     @field:Schema(
         description = "부부가 링크를 구분하려고 붙이는 이름. 하객 첫 화면에도 보인다. " +
@@ -17,5 +17,8 @@ data class OpenCollabSessionRequest(
     val coverTitle: String? = null,
     val coverAuthor: String? = null,
     val includeAllAlbums: Boolean? = null,
+    @field:jakarta.validation.constraints.Size(max = CollabPhotoIdsRequest.MAX_BATCH_SIZE)
+    @field:Schema(description = "수동 공유폴더에 처음 담을 사진 id. 생략하면 빈 폴더를 만든다. 컨셉 연결과 함께 지정할 수 없다.")
+    val photoIds: List<Long> = emptyList(),
 
 )
