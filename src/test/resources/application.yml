@@ -79,6 +79,8 @@ jwt:
   refresh-token-expiration: 14d
 
 app:
+  gallery-lifecycle:
+    enabled: false
   admin:
     session:
       absolute-ttl: 8h

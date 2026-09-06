@@ -1,6 +1,7 @@
 package com.soma.wes.selection.service
 
 import com.soma.wes.gallery.domain.Gallery
+import com.soma.wes.gallery.domain.GalleryStage
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.repository.requireWithLockById
 import com.soma.wes.gallery.support.GalleryAccessPolicy
@@ -14,6 +15,14 @@ import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.service.PhotoStorage
 import com.soma.wes.photo.support.PhotoViewAssembler
 import com.soma.wes.retouch.support.RetouchResultLoader
+import com.soma.wes.retouch.service.RetouchRequestService
+import com.soma.wes.retouch.repository.RetouchRoundRepository
+import com.soma.wes.retouch.repository.RetouchPhotoRepository
+import com.soma.wes.retouch.domain.RetouchRoundStatus
+import com.soma.wes.retouch.exception.RetouchException
+import com.soma.wes.retouch.exception.RetouchErrorCode
+import com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest
+import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.selection.domain.PhotoSelection
 import com.soma.wes.selection.domain.PhotoSelectionItem
 import com.soma.wes.selection.dto.request.DeselectPhotosRequest
@@ -48,6 +57,10 @@ class PhotoSelectionService(
     private val clock: Clock,
     private val workspaceMemberRepository: WorkspaceMemberRepository,
     private val notificationPublisher: UserNotificationPublisher,
+    private val retouchRequestWriter: RetouchRequestService,
+    private val galleryMemberRepository: GalleryMemberRepository,
+    private val retouchRoundRepository: RetouchRoundRepository,
+    private val retouchPhotoRepository: RetouchPhotoRepository,
 ) {
 
     /**
@@ -57,7 +70,13 @@ class PhotoSelectionService(
     fun get(galleryId: Long, userId: Long): PhotoSelectionResponse {
         val gallery = galleryAccessPolicy.requireViewer(galleryId, userId)
 
-        return responseOf(gallery, photoSelectionRepository.findByGalleryId(galleryId))
+        val selection = photoSelectionRepository.findByGalleryId(galleryId)
+        val response = responseOf(gallery, selection)
+        if (galleryAccessPolicy.isStudioManager(galleryId, userId)) {
+            if (selection?.isSubmitted != true) return response.copy(photos = emptyList())
+            return response.copy(photos = response.photos.map { it.copy(photo = it.photo.copy(score = null)) })
+        }
+        return response
     }
 
     /**
@@ -69,6 +88,10 @@ class PhotoSelectionService(
         galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
         val gallery = galleryRepository.requireWithLockById(galleryId)
+        requireSelectionNotExported(gallery)
+        if (gallery.photoOrganizationRequired && gallery.foldersSavedAt == null) {
+            throw SelectionException(SelectionErrorCode.PHOTO_ORGANIZATION_REQUIRED)
+        }
         val selection = loadOrCreate(galleryId)
         selection.requireEditable()
 
@@ -121,6 +144,7 @@ class PhotoSelectionService(
         galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
         val gallery = galleryRepository.requireWithLockById(galleryId)
+        requireSelectionNotExported(gallery)
         val selection = photoSelectionRepository.findByGalleryId(galleryId)
             ?: return responseOf(gallery, null)
         selection.requireEditable()
@@ -140,7 +164,8 @@ class PhotoSelectionService(
     fun deselectPhoto(galleryId: Long, photoId: Long, userId: Long) {
         galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
-        galleryRepository.requireWithLockById(galleryId)
+        val gallery = galleryRepository.requireWithLockById(galleryId)
+        requireSelectionNotExported(gallery)
         val selection = photoSelectionRepository.findByGalleryId(galleryId)
             ?: throw SelectionException(SelectionErrorCode.PHOTO_NOT_SELECTED)
         selection.requireEditable()
@@ -154,10 +179,18 @@ class PhotoSelectionService(
      * 부부가 고르기를 끝내고 작가에게 넘긴다.
      */
     @Transactional
-    fun submit(galleryId: Long, userId: Long): PhotoSelectionResponse {
+    fun submit(
+        galleryId: Long,
+        userId: Long,
+        request: SubmitRetouchRequestsRequest = SubmitRetouchRequestsRequest(),
+    ): PhotoSelectionResponse {
         galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
+        if (galleryAccessPolicy.isPersonalGallery(galleryId)) {
+            throw SelectionException(SelectionErrorCode.PERSONAL_EXPORT_REQUIRED)
+        }
 
         val gallery = galleryRepository.requireWithLockById(galleryId)
+        requireSelectionNotExported(gallery)
         val selection = photoSelectionRepository.findByGalleryId(galleryId)
             ?: throw SelectionException(SelectionErrorCode.EMPTY_SELECTION)
 
@@ -165,11 +198,24 @@ class PhotoSelectionService(
         // "몇 장을 제출했는지"를 두 값이 다르게 말하지 않는다.
         val items = photoSelectionItemRepository.findAllBySelectionId(selection.requiredId)
         val photos = selectedPhotoResponses(selection.galleryId, items)
+        selection.requireEditable()
+        selection.requireExactTarget(gallery.maxSelectablePhotoCount, photos.size)
         selection.submit(photos.size, userId, ZonedDateTime.now(clock))
+        val latestRound = retouchRoundRepository.findFirstByGalleryIdOrderByRoundNoDesc(galleryId)
+        if (latestRound == null || latestRound.isDrafting) {
+            retouchRequestWriter.submit(
+                gallery = gallery,
+                roundNo = latestRound?.roundNo ?: 1,
+                photoIds = photos.map { it.photo.photoId },
+                requests = request.requests,
+                at = ZonedDateTime.now(clock),
+            )
+        } else if (request.requests.isNotEmpty()) {
+            throw RetouchException(RetouchErrorCode.INVALID_ROUND_STATUS)
+        }
         gallery.markSelectionCompleted()
         notificationPublisher.publish(
             userIds = workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId)
-                .filter { it.role == WorkspaceRole.OWNER }
                 .map { it.userId },
             type = UserNotificationType.SELECTION_SUBMITTED,
             scope = UserNotificationScope.GALLERY,
@@ -197,9 +243,27 @@ class PhotoSelectionService(
         val selection = photoSelectionRepository.findByGalleryId(galleryId)
             ?: throw SelectionException(SelectionErrorCode.SELECTION_NOT_SUBMITTED)
 
+        val latestRound = retouchRoundRepository.findFirstByGalleryIdOrderByRoundNoDesc(galleryId)
+        if (latestRound?.status == RetouchRoundStatus.COMPLETED) {
+            throw RetouchException(RetouchErrorCode.INVALID_ROUND_STATUS)
+        }
+        if (latestRound?.status == RetouchRoundStatus.REQUESTED) {
+            if (retouchPhotoRepository.findAllByRoundId(latestRound.requiredId).any { it.hasResult }) {
+                throw RetouchException(RetouchErrorCode.INVALID_ROUND_STATUS)
+            }
+            latestRound.reopenRequest()
+        }
         selection.withdraw()
         gallery.markSelectionInProgress()
-        return responseOf(gallery, selection)
+        notificationPublisher.publish(
+            userIds = galleryMemberRepository.findAllByGalleryId(galleryId).map { it.userId },
+            type = UserNotificationType.SELECTION_REOPENED,
+            scope = UserNotificationScope.GALLERY,
+            scopeId = galleryId,
+            title = "사진 선택이 다시 열렸습니다",
+            message = "${gallery.title}에서 사진을 다시 선택할 수 있습니다.",
+        )
+        return responseOf(gallery, selection).copy(photos = emptyList())
     }
 
     /** V5 이전 갤러리까지 안전하게 읽기 위한 호환 경로다. 신규 갤러리는 생성 트랜잭션에서 함께 만든다. */
@@ -276,5 +340,10 @@ class PhotoSelectionService(
                 )
             }
         }
+    }
+    private fun requireSelectionNotExported(gallery: Gallery) {
+        if (galleryAccessPolicy.isPersonalGallery(gallery.requiredId) &&
+            gallery.stage in setOf(GalleryStage.RETOUCH, GalleryStage.DELIVERY, GalleryStage.ARCHIVED)
+        ) throw SelectionException(SelectionErrorCode.SELECTION_ALREADY_EXPORTED)
     }
 }

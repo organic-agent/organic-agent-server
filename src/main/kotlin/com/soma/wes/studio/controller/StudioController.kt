@@ -9,6 +9,8 @@ import com.soma.wes.studio.dto.response.GalleryUrlAvailabilityResponse
 import com.soma.wes.studio.dto.response.StudioResponse
 import com.soma.wes.studio.dto.response.StudioMemberResponse
 import com.soma.wes.studio.service.StudioService
+import com.soma.wes.studio.service.StudioInviteService
+import com.soma.wes.studio.dto.response.StudioInviteResponse
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -28,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/v1/studios")
 class StudioController(
     private val studioService: StudioService,
+    private val studioInviteService: StudioInviteService,
 ) : StudioControllerDocs {
 
 
@@ -56,6 +59,49 @@ class StudioController(
         @AuthenticationPrincipal loginUser: LoginUser,
     ): ResponseEntity<List<StudioResponse>> {
         return ResponseEntity.ok(studioService.listMine(loginUser.id))
+    }
+
+    @GetMapping("/{workspaceId}")
+    override fun get(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable workspaceId: Long,
+    ): ResponseEntity<StudioResponse> {
+        return ResponseEntity.ok(studioService.get(workspaceId, loginUser.id))
+    }
+
+    @PostMapping("/{workspaceId}/invite-link", "/{workspaceId}/invites")
+    override fun issueInvite(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable workspaceId: Long,
+    ): ResponseEntity<StudioInviteResponse> {
+        return ResponseEntity.status(HttpStatus.CREATED).body(studioInviteService.issue(workspaceId, loginUser.id))
+    }
+
+    @GetMapping("/{workspaceId}/invite-link")
+    override fun currentInvite(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable workspaceId: Long,
+    ): ResponseEntity<StudioInviteResponse> {
+        return ResponseEntity.ok(studioInviteService.current(workspaceId, loginUser.id))
+    }
+
+    @DeleteMapping("/{workspaceId}")
+    override fun delete(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable workspaceId: Long,
+    ): ResponseEntity<Unit> {
+        studioService.delete(workspaceId, loginUser.id)
+        return ResponseEntity.noContent().build()
+    }
+
+    @DeleteMapping("/{workspaceId}/members/{memberId}")
+    override fun removeMember(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable workspaceId: Long,
+        @PathVariable memberId: Long,
+    ): ResponseEntity<Unit> {
+        studioService.removeMember(workspaceId, memberId, loginUser.id)
+        return ResponseEntity.noContent().build()
     }
 
     @PatchMapping("/{workspaceId}")

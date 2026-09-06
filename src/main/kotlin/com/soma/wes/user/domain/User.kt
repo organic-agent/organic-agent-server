@@ -2,6 +2,8 @@ package com.soma.wes.user.domain
 
 import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.global.BaseEntity
+import com.soma.wes.user.exception.UserException
+import com.soma.wes.user.exception.UserErrorCode
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
@@ -65,11 +67,17 @@ class User(
     }
 
     fun updateNickname(nickname: String) {
+        if (nickname.isBlank() || nickname.length > MAX_NICKNAME_LENGTH) throw UserException(UserErrorCode.INVALID_NICKNAME)
         this.nickname = nickname
     }
 
     fun syncProviderEmail(email: String?) {
         this.email = email
+    }
+
+    companion object {
+        /** 사용자 프로필 이름 컬럼과 같은 상한이다. */
+        const val MAX_NICKNAME_LENGTH = 50
     }
 
     fun changeRole(role: Role) {

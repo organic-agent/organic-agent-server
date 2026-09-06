@@ -21,6 +21,10 @@ import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.gallery.support.GalleryInviteUrlResolver
 import com.soma.wes.global.SecureTokenGenerator
 import com.soma.wes.studio.repository.StudioRepository
+import com.soma.wes.studio.service.StudioInviteService
+import com.soma.wes.notification.service.UserNotificationPublisher
+import com.soma.wes.notification.domain.UserNotificationScope
+import com.soma.wes.notification.domain.UserNotificationType
 import com.soma.wes.workspace.domain.Workspace
 import com.soma.wes.workspace.domain.WorkspaceMember
 import com.soma.wes.workspace.domain.WorkspaceRole
@@ -45,6 +49,8 @@ class GalleryInviteService(
     private val tokenGenerator: SecureTokenGenerator,
     private val urlResolver: GalleryInviteUrlResolver,
     private val clock: Clock,
+    private val studioInviteService: StudioInviteService,
+    private val notificationPublisher: UserNotificationPublisher,
 ) {
     companion object {
         val VALIDITY: Duration = Duration.ofDays(7)
@@ -58,6 +64,7 @@ class GalleryInviteService(
     ): GalleryInviteResponse {
         galleryAccessPolicy.requireManager(galleryId, userId)
         val gallery = galleryRepository.requireWithLockById(galleryId)
+        gallery.requireWritable(ZonedDateTime.now(clock))
         val workspace = workspaceRepository.findById(gallery.workspaceId).orElseThrow {
             GalleryException(GalleryErrorCode.GALLERY_NOT_FOUND)
         }
@@ -98,6 +105,7 @@ class GalleryInviteService(
 
     @Transactional(readOnly = true)
     fun preview(token: String, userId: Long): GalleryInvitePreviewResponse {
+        studioInviteService.previewIfPresent(token, userId)?.let { return it }
         val invite = galleryInviteRepository.findByToken(token)
             ?: throw GalleryException(GalleryErrorCode.INVITE_INVALID)
         val gallery = galleryRepository.requireById(invite.galleryId)
@@ -132,19 +140,30 @@ class GalleryInviteService(
     @Transactional
     fun revoke(galleryId: Long, inviteId: Long, userId: Long) {
         galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryRepository.requireWithLockById(galleryId).requireWritable(ZonedDateTime.now(clock))
         galleryInviteRepository.requireByIdAndGalleryId(inviteId, galleryId)
             .revoke(ZonedDateTime.now(clock))
     }
 
     @Transactional
-    fun accept(token: String, userId: Long): GalleryInviteAcceptResponse {
+    fun accept(token: String, userId: Long): GalleryInviteAcceptResponse = acceptInternal(token, userId)
+
+    private fun acceptInternal(token: String, userId: Long): GalleryInviteAcceptResponse {
+        studioInviteService.acceptIfPresent(token, userId)?.let { return it }
+        val found = galleryInviteRepository.findByToken(token)
+            ?: throw GalleryException(GalleryErrorCode.INVITE_INVALID)
+        val gallery = galleryRepository.requireWithLockById(found.galleryId)
+        gallery.requireWritable(ZonedDateTime.now(clock))
         val invite = galleryInviteRepository.findWithLockByToken(token)
             ?: throw GalleryException(GalleryErrorCode.INVITE_INVALID)
         val now = ZonedDateTime.now(clock)
         if (invite.isRevoked) throw GalleryException(GalleryErrorCode.INVITE_REVOKED)
         if (invite.isExpiredAt(now)) throw GalleryException(GalleryErrorCode.INVITE_EXPIRED)
 
-        val gallery = galleryRepository.requireWithLockById(invite.galleryId)
+        if (invite.kind == GalleryInviteKind.PERSONAL_PARTNER) {
+            workspaceRepository.findWithLockById(gallery.workspaceId)
+                ?: throw GalleryException(GalleryErrorCode.INVITE_INVALID)
+        }
         existingMembershipResponse(invite, gallery, userId)?.let { return it }
         galleryAccessPolicy.requireNotManager(invite.galleryId, userId)
         if (invite.isFull || isGalleryCapacityFull(invite)) {
@@ -166,7 +185,26 @@ class GalleryInviteService(
             }
         }
         invite.consume()
+        notificationPublisher.publish(
+            userIds = workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId)
+                .map { it.userId }.filterNot { it == userId },
+            type = UserNotificationType.INVITE_ACCEPTED,
+            scope = UserNotificationScope.GALLERY,
+            scopeId = gallery.requiredId,
+            title = "초대가 수락되었습니다",
+            message = "${gallery.title}에 초대한 멤버가 합류했습니다.",
+        )
         return response
+    }
+
+    @Transactional
+    fun acceptPartner(token: String, userId: Long): GalleryInviteAcceptResponse {
+        val invite = galleryInviteRepository.findByToken(token)
+            ?: throw GalleryException(GalleryErrorCode.INVITE_INVALID)
+        if (invite.kind != GalleryInviteKind.PERSONAL_PARTNER) {
+            throw GalleryException(GalleryErrorCode.INVALID_INVITE_KIND)
+        }
+        return acceptInternal(token, userId)
     }
 
     private fun existingMembershipResponse(
@@ -186,15 +224,21 @@ class GalleryInviteService(
     private fun isAlreadyMember(invite: GalleryInvite, gallery: Gallery, userId: Long): Boolean =
         existingMembershipResponse(invite, gallery, userId) != null
 
-    private fun isGalleryCapacityFull(invite: GalleryInvite): Boolean =
-        invite.kind == GalleryInviteKind.GALLERY_MEMBER &&
+    private fun isGalleryCapacityFull(invite: GalleryInvite): Boolean = when (invite.kind) {
+        GalleryInviteKind.GALLERY_MEMBER ->
             galleryMemberRepository.countByGalleryId(invite.galleryId) >= GalleryMember.MAX_PER_GALLERY
+        GalleryInviteKind.PERSONAL_PARTNER -> {
+            val gallery = galleryRepository.requireById(invite.galleryId)
+            workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId).size >= GalleryMember.MAX_PER_GALLERY
+        }
+        GalleryInviteKind.STUDIO_MEMBER -> false
+    }
 
     private fun validateKind(kind: GalleryInviteKind, workspace: Workspace) {
         val valid = when (kind) {
             GalleryInviteKind.STUDIO_MEMBER -> workspace.type == WorkspaceType.STUDIO
             GalleryInviteKind.PERSONAL_PARTNER -> workspace.type == WorkspaceType.PERSONAL
-            GalleryInviteKind.GALLERY_MEMBER -> true
+            GalleryInviteKind.GALLERY_MEMBER -> workspace.type == WorkspaceType.STUDIO
         }
         if (!valid) throw GalleryException(GalleryErrorCode.INVALID_INVITE_KIND)
     }

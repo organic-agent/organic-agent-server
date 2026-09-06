@@ -10,6 +10,8 @@ import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
 import org.hibernate.annotations.SQLRestriction
+import org.hibernate.annotations.JdbcTypeCode
+import org.hibernate.type.SqlTypes
 import java.time.ZonedDateTime
 
 /**
@@ -49,6 +51,10 @@ class RetouchPhoto(
     @Column(name = "annotation_key", length = 500)
     var annotationKey: String? = null
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "request_points", nullable = false, columnDefinition = "jsonb")
+    var points: List<RetouchPoint> = emptyList()
+
     /** 작가가 올린 보정 결과 파일의 storage key. null이면 아직 응답이 없는 항목이다. */
     @Column(name = "result_key", length = 500)
     var resultKey: String? = null
@@ -71,11 +77,14 @@ class RetouchPhoto(
      * 요청 내용을 적는다. DRAFTING 동안에는 몇 번이고 덮어쓴다 — 주석은 이미지 방식이라
      * 부분 수정이 없고, 다시 그려 올린 key로 통째로 바뀐다.
      */
-    fun writeRequest(requestText: String?, annotationKey: String?) {
+    fun writeRequest(requestText: String?, annotationKey: String?, points: List<RetouchPoint> = emptyList()) {
         if (requestText != null && requestText.length > MAX_REQUEST_TEXT_LENGTH) {
             throw RetouchException(RetouchErrorCode.REQUEST_TEXT_TOO_LONG)
         }
 
+        if (points.size > MAX_POINTS) throw RetouchException(RetouchErrorCode.INVALID_POINT)
+        points.forEach { it.validate() }
+        this.points = points.toList()
         this.requestText = requestText
         this.annotationKey = annotationKey
     }
@@ -96,5 +105,8 @@ class RetouchPhoto(
          * 사진 한 장의 보정 지시가 이 길이를 넘으면 그것은 텍스트가 아니라 첨부다.
          */
         const val MAX_REQUEST_TEXT_LENGTH = 2000
+
+        /** 한 사진의 요청 패널에서 지원하는 최대 주석 지점 수. */
+        const val MAX_POINTS = 100
     }
 }

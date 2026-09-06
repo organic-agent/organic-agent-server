@@ -21,7 +21,7 @@ import org.hibernate.type.SqlTypes
  * 하나를 지키는 부분 유니크 인덱스와 프론트 계약이다. 누가 무엇을 쓰는지가 계약이다:
  * - 이 서버: [status]·[stage]·[stageAttempts]·[dispatchedAt]·[observedProgress]·[startedAt]·[finishedAt].
  * - Lambda: [stageStatus]의 시작(claim)·끝, [heartbeatAt], [result]의 단계별 키, [error]. 아직 단계 상태를 쓰지 않는
- *   Lambda(AI repo Phase 0 이전)는 [status]를 직접 DONE·FAILED로 닫는다 — 종료 상태는 그대로 받아들인다(살아 있는 잡만 스윕한다).
+ *   Lambda(AI repo Phase 0 이전)는 [status]를 직접 DONE·FAILED로 닫는다 — 종료 상태는 그대로 받아들이고 완료 알림만 별도로 스윕한다.
  * - [AnalysisStage.EMBED]는 예외로 이 서버가 `photo_analysis`를 관측해 단계를 열고 닫는다. 임베더는 잡을 모른다.
  *
  * 갤러리당 살아 있는 잡이 하나뿐이라는 규칙은 DB의 부분 유니크(`uk_ai_analysis_jobs_active`)가 최종적으로 지킨다.
@@ -86,6 +86,11 @@ class AnalysisJob(
 
     @Column(name = "finished_at")
     var finishedAt: ZonedDateTime? = null
+        protected set
+
+    /** 완료 알림과 같은 트랜잭션에서만 기록한다. 옛 Lambda의 status 직접 갱신도 스윕이 이 마커로 찾는다. */
+    @Column(name = "completion_notified_at")
+    var completionNotifiedAt: ZonedDateTime? = null
         protected set
 
     @Column(name = "error")
@@ -167,6 +172,11 @@ class AnalysisJob(
     fun finish(now: ZonedDateTime) {
         status = AnalysisStatus.DONE
         finishedAt = now
+    }
+
+    fun markCompletionNotified(now: ZonedDateTime) {
+        check(status == AnalysisStatus.DONE) { "완료된 분석 잡만 알림을 기록할 수 있습니다." }
+        if (completionNotifiedAt == null) completionNotifiedAt = now
     }
 
     fun fail(error: String, now: ZonedDateTime) {

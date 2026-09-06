@@ -62,7 +62,7 @@ class GalleryInvite(
     val isRevoked: Boolean
         get() = revokedAt != null
 
-    fun isExpiredAt(at: ZonedDateTime): Boolean = expiresAt.isBefore(at)
+    fun isExpiredAt(at: ZonedDateTime): Boolean = !expiresAt.isAfter(at)
 
     val isFull: Boolean
         get() = usedCount >= maxUses

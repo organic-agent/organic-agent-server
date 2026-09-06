@@ -2,6 +2,7 @@ package com.soma.wes.retouch.dto.response
 
 import com.soma.wes.photo.dto.response.PhotoResponse
 import com.soma.wes.retouch.domain.RetouchPhoto
+import com.soma.wes.retouch.domain.RetouchPoint
 import io.swagger.v3.oas.annotations.media.Schema
 
 @Schema(description = "회차에 담긴 보정 요청 한 건")
@@ -15,6 +16,8 @@ data class RetouchPhotoResponse(
     @field:Schema(description = "사진별 보정 요청 텍스트. 아직 적지 않았으면 null이다")
     val requestText: String?,
 
+    val points: List<RetouchPoint>,
+
     @field:Schema(description = "주석 이미지의 서명된 조회 URL. 주석을 그리지 않았으면 null이다")
     val annotationUrl: String?,
 
@@ -27,6 +30,7 @@ data class RetouchPhotoResponse(
             retouchPhotoId = item.requiredId,
             photo = photo,
             requestText = item.requestText,
+            points = item.points,
             annotationUrl = annotationUrl,
             hasResult = item.hasResult,
         )

@@ -79,7 +79,7 @@ interface OAuthControllerDocs {
         @Parameter(hidden = true)
         origin: String?,
         @Parameter(
-            description = "초대 링크(/invite/{token})로 들어온 경우 그 토큰. 로그인 직후 수락까지 이어진다. " +
+            description = "초대 링크(/invite/{token})로 들어온 경우 그 토큰. 로그인 후 미리보기와 수락 화면까지 유지된다. " +
                 "일반 로그인이면 생략한다.",
         )
         inviteToken: String?,
@@ -90,17 +90,14 @@ interface OAuthControllerDocs {
         description = "인가 코드로 provider에서 사용자 정보를 가져와 우리 토큰을 발급한다. " +
             "처음 보는 사용자면 가입시키고, 이미 있으면 로그인시킨다.\n\n" +
             "콜백 쿼리스트링의 `state`를 함께 넘기면, 로그인 URL을 만들 때 `inviteToken`을 줬던 경우 " +
-            "**초대 수락까지 이 한 번의 호출로 끝난다** — 응답의 `galleryId`로 곧바로 갤러리에 진입하면 되고, " +
-            "별도의 수락 호출이 필요 없다. 이때 사용자 종류는 CLIENT(예비 부부)로 확정된다.\n\n" +
-            "수락에 실패해도(만료·폐기된 링크, 담당 작가 본인) **로그인 자체는 성공한다.** " +
-            "그때는 `galleryId`가 null로 오며, 사용자가 초대 링크를 다시 눌러 수락 API를 부르면 " +
-            "410·403으로 정확한 이유를 받는다.",
+            "응답의 inviteToken을 GET /invites/{token}에 전달해 미리보기를 표시한다. " +
+            "로그인은 소속을 바꾸지 않으며 사용자가 수락을 누를 때 POST /invites/{token}/accept를 호출한다.",
     )
     @ApiResponses(
         ApiResponse(
             responseCode = "200",
             description = "로그인 성공. access token과 refresh token을 응답한다. " +
-                "초대로 들어왔다면 galleryId가 함께 온다.",
+                "초대로 들어왔다면 수락 전 inviteToken이 함께 온다.",
         ),
         ApiResponse(
             responseCode = "400",

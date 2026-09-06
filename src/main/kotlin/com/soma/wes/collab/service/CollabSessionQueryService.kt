@@ -34,19 +34,19 @@ class CollabSessionQueryService(
 ) {
     @Transactional(readOnly = true)
     fun list(galleryId: Long, userId: Long): List<CollabSessionResponse> {
-        galleryAccessPolicy.requireViewer(galleryId, userId)
+        galleryAccessPolicy.requireParticipantViewer(galleryId, userId)
         return sessionRepository.findAllByGalleryIdOrderByCreatedAtDesc(galleryId).map(::toResponse)
     }
 
     @Transactional(readOnly = true)
     fun get(galleryId: Long, sessionId: Long, userId: Long): CollabSessionResponse {
-        galleryAccessPolicy.requireViewer(galleryId, userId)
+        galleryAccessPolicy.requireParticipantViewer(galleryId, userId)
         return toResponse(sessionRepository.requireByIdAndGalleryId(sessionId, galleryId))
     }
 
     @Transactional(readOnly = true)
     fun listPhotos(galleryId: Long, sessionId: Long, userId: Long, page: Int, size: Int): CollabPhotoPageResponse {
-        galleryAccessPolicy.requireViewer(galleryId, userId)
+        galleryAccessPolicy.requireParticipantViewer(galleryId, userId)
         val session = sessionRepository.requireByIdAndGalleryId(sessionId, galleryId)
         return photoViewAssembler.toPage(session.requiredId, session.conceptFolderId, page, size)
     }
@@ -61,7 +61,7 @@ class CollabSessionQueryService(
         page: Int,
         size: Int,
     ): PageResponse<CollabCommentResponse> {
-        galleryAccessPolicy.requireViewer(galleryId, userId)
+        galleryAccessPolicy.requireParticipantViewer(galleryId, userId)
 
         val session = sessionRepository.requireByIdAndGalleryId(sessionId, galleryId)
         conceptRepository.findByIdAndGalleryId(session.conceptFolderId, galleryId)
@@ -97,7 +97,7 @@ class CollabSessionQueryService(
 
     @Transactional(readOnly = true)
     fun listViewerComments(galleryId: Long, userId: Long, limit: Int = 200): List<CollabViewerCommentResponse> {
-        galleryAccessPolicy.requireViewer(galleryId, userId)
+        galleryAccessPolicy.requireParticipantViewer(galleryId, userId)
         val sessionIds = sessionRepository.findAllByGalleryIdOrderByCreatedAtDesc(galleryId).map { it.requiredId }
         if (sessionIds.isEmpty()) return emptyList()
         return commentRepository.findAllByCollabSessionIdInOrderByIdDesc(

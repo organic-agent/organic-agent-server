@@ -236,6 +236,9 @@ interface GalleryInviteControllerDocs {
     )
     fun accept(loginUser: LoginUser, token: String): ResponseEntity<GalleryInviteAcceptResponse>
 
+    @Operation(summary = "개인 파트너 초대 수락", description = "PERSONAL_PARTNER 초대만 허용하고 소유자를 포함한 정원 2명을 검증한다.")
+    fun acceptPartner(loginUser: LoginUser, token: String): ResponseEntity<GalleryInviteAcceptResponse>
+
     @Operation(
         summary = "초대 미리보기",
         description = "수락 전에 스튜디오·갤러리와 초대 종류, 만료·폐기·정원·기존 소속 상태를 확인한다.",

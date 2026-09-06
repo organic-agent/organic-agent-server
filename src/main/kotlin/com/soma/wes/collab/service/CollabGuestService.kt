@@ -31,12 +31,20 @@ class CollabGuestService(
 ) {
     @Transactional
     fun enter(collabToken: String, request: EnterCollabRequest): CollabGuestResponse {
-        val access = sessionAccess.requireWritable(collabToken)
+        val access = sessionAccess.requireReadable(collabToken)
         return CollabGuestResponse.from(
             participantRepository.save(
                 CollabParticipant.guest(access.sessionId, tokenGenerator.generate(), request.nickname),
             ),
         )
+    }
+
+    @Transactional
+    fun renameGuest(collabToken: String, guestToken: String?, request: EnterCollabRequest): CollabGuestResponse {
+        val access = sessionAccess.requireReadable(collabToken)
+        val guest = sessionAccess.requireGuest(access, guestToken)
+        guest.nickname = CollabParticipant.requireValidNickname(request.nickname)
+        return CollabGuestResponse.from(guest)
     }
 
     @Transactional

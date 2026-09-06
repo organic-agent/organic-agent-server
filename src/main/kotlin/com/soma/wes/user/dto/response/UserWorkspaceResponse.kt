@@ -1,6 +1,7 @@
 package com.soma.wes.user.dto.response
 
 import com.soma.wes.workspace.domain.WorkspaceRole
+import com.soma.wes.workspace.domain.WorkspaceType
 import java.time.ZonedDateTime
 
 enum class UserWorkspaceKind {
@@ -17,4 +18,5 @@ data class UserWorkspaceResponse(
     val name: String,
     val role: WorkspaceRole,
     val lastActivityAt: ZonedDateTime?,
+    val workspaceType: WorkspaceType? = null,
 )

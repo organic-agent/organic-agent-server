@@ -1,6 +1,7 @@
 package com.soma.wes.selection.controller.docs
 
 import com.soma.wes.auth.domain.LoginUser
+import com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest
 import com.soma.wes.selection.dto.request.DeselectPhotosRequest
 import com.soma.wes.selection.dto.request.SelectPhotosRequest
 import com.soma.wes.selection.dto.response.PhotoSelectionResponse
@@ -115,9 +116,9 @@ interface PhotoSelectionControllerDocs {
             제출 뒤에는 담기도 빼기도 막힌다(409). 작가가 이 목록을 보고 보정에 들어가므로
             그 뒤에 조용히 바뀌면 어느 쪽이 최종인지 알 수 없어진다. 되돌리는 것은 작가만 한다.
 
-            계약 장수에 못 미쳐도 제출된다 — 50장 계약에 45장만 고르는 일은 실제로 있다.
-            응답의 maxSelectablePhotoCount와 selectedCount로 화면이 미리 물어볼 수 있다.
-            한 장도 고르지 않았다면 400이다.
+            계약 장수를 정확히 채워야 한다. 미달·초과는 SELECTION_400_7, 빈 선택은 SELECTION_400_6이다.
+            선택된 모든 사진은 기본 보정 대상이며, 선택적인 requests에 사진별 메모·지점 주석을 동봉한다.
+            선택 제출과 첫 보정 요청은 하나의 트랜잭션으로 저장된다.
         """,
     )
     @ApiResponses(
@@ -126,7 +127,7 @@ interface PhotoSelectionControllerDocs {
         ApiResponse(responseCode = "403", description = "부부가 아니거나, 마감/미공개 갤러리", content = []),
         ApiResponse(responseCode = "409", description = "이미 제출한 앨범(SELECTION_409_1)", content = []),
     )
-    fun submit(loginUser: LoginUser, galleryId: Long): ResponseEntity<PhotoSelectionResponse>
+    fun submit(loginUser: LoginUser, galleryId: Long, request: SubmitRetouchRequestsRequest?): ResponseEntity<PhotoSelectionResponse>
 
     @Operation(
         summary = "선택 앨범 제출 되돌리기",
@@ -134,7 +135,7 @@ interface PhotoSelectionControllerDocs {
             제출을 취소해 부부가 다시 고를 수 있게 한다. **담당 작가만** 할 수 있다 —
             부부가 스스로 되돌릴 수 있으면 제출이라는 잠금이 아무것도 잠그지 않는다.
 
-            이미 보정에 들어갔을 수도 있으므로 되돌릴지는 작가가 판단한다.
+            보정본 업로드가 시작되었거나 이미 보낸 회차가 있으면 되돌릴 수 없다. 초안 메모는 보존한다.
         """,
     )
     @ApiResponses(
@@ -143,4 +144,6 @@ interface PhotoSelectionControllerDocs {
         ApiResponse(responseCode = "409", description = "제출되지 않은 앨범(SELECTION_409_2)", content = []),
     )
     fun withdraw(loginUser: LoginUser, galleryId: Long): ResponseEntity<PhotoSelectionResponse>
+    @Operation(summary = "선택 목록과 보정 요청서 CSV 다운로드", description = "UTF-8 BOM CSV의 고정 컬럼: photo_id, filename, request, point_requests. 정확한 목표 장수를 채워야 하며 개인 갤러리는 첫 내보내기에 보정 단계로 전이한다.")
+    fun export(loginUser: LoginUser, galleryId: Long): ResponseEntity<ByteArray>
 }

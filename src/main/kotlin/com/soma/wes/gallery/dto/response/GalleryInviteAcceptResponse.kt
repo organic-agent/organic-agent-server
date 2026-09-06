@@ -10,7 +10,7 @@ import io.swagger.v3.oas.annotations.media.Schema
  */
 @Schema(description = "초대 수락 결과")
 data class GalleryInviteAcceptResponse(
-    val galleryId: Long,
+    val galleryId: Long?,
 
     val workspaceId: Long,
 
@@ -28,7 +28,7 @@ data class GalleryInviteAcceptResponse(
             memberId = member.requiredId,
         )
 
-        fun workspace(galleryId: Long, workspaceId: Long, kind: GalleryInviteKind) = GalleryInviteAcceptResponse(
+        fun workspace(galleryId: Long?, workspaceId: Long, kind: GalleryInviteKind) = GalleryInviteAcceptResponse(
             galleryId = galleryId,
             workspaceId = workspaceId,
             kind = kind,

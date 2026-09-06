@@ -10,6 +10,7 @@ import com.soma.wes.collab.dto.request.WriteCollabCommentRequest
 import com.soma.wes.collab.service.CollabGuestQueryService
 import com.soma.wes.collab.service.CollabGuestService
 import com.soma.wes.collab.service.CollabSessionService
+import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryInviteKind
 import com.soma.wes.gallery.domain.GalleryStatus
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
@@ -135,35 +136,37 @@ class PhotoCommentServiceTest @Autowired constructor(
             // given
             val owner = userFixture.사용자(nickname = "개인 갤러리 주인")
             val workspace = checkNotNull(workspaceRepository.findByPersonalOwnerUserId(owner.requiredId))
-            val gallery = galleryService.create(owner.requiredId, CreateGalleryRequest(workspace.requiredId, "우리 사진"))
-            galleryService.open(gallery.id, owner.requiredId)
-            val ownPhoto = photoFixture.업로드된_사진(gallery.id, count = 1).single()
+            val gallery = galleryRepository.save(Gallery(
+                workspaceId = workspace.requiredId, createdByUserId = owner.requiredId,
+                title = "우리 사진", status = GalleryStatus.OPEN,
+            ))
+            val ownPhoto = photoFixture.업로드된_사진(gallery.requiredId, count = 1).single()
             val spouse = userFixture.사용자(nickname = "초대받은 배우자")
             val invite = galleryInviteService.issue(
-                gallery.id, owner.requiredId, IssueGalleryInviteRequest(kind = GalleryInviteKind.PERSONAL_PARTNER),
+                gallery.requiredId, owner.requiredId, IssueGalleryInviteRequest(kind = GalleryInviteKind.PERSONAL_PARTNER),
             )
             galleryInviteService.accept(galleryInviteRepository.findById(invite.id).orElseThrow().token, spouse.requiredId)
 
             // when
             val ownerComment = photoCommentService.write(
-                gallery.id, ownPhoto, owner.requiredId, WritePhotoCommentRequest("개인 갤러리 대화"),
+                gallery.requiredId, ownPhoto, owner.requiredId, WritePhotoCommentRequest("개인 갤러리 대화"),
             )
             val spouseComment = photoCommentService.write(
-                gallery.id, ownPhoto, spouse.requiredId, WritePhotoCommentRequest("함께 고르자"),
+                gallery.requiredId, ownPhoto, spouse.requiredId, WritePhotoCommentRequest("함께 고르자"),
             )
-            val response = photoCommentService.list(gallery.id, ownPhoto, owner.requiredId, 0, 20)
-            photoCommentService.delete(gallery.id, ownPhoto, ownerComment.commentId, owner.requiredId)
+            val response = photoCommentService.list(gallery.requiredId, ownPhoto, owner.requiredId, 0, 20)
+            photoCommentService.delete(gallery.requiredId, ownPhoto, ownerComment.commentId, owner.requiredId)
 
             // then
             assertSoftly { softly ->
                 softly.assertThat(response.contents.map { it.commentId })
                     .containsExactly(ownerComment.commentId, spouseComment.commentId)
                 softly.assertThat(response.contents.map { it.mine }).containsExactly(true, false)
-                softly.assertThat(photoCommentService.list(gallery.id, ownPhoto, spouse.requiredId, 0, 20).contents.map { it.commentId })
+                softly.assertThat(photoCommentService.list(gallery.requiredId, ownPhoto, spouse.requiredId, 0, 20).contents.map { it.commentId })
                     .containsExactly(spouseComment.commentId)
             }
-            photoCommentService.delete(gallery.id, ownPhoto, spouseComment.commentId, spouse.requiredId)
-            assertThat(photoCommentService.list(gallery.id, ownPhoto, owner.requiredId, 0, 20).contents).isEmpty()
+            photoCommentService.delete(gallery.requiredId, ownPhoto, spouseComment.commentId, spouse.requiredId)
+            assertThat(photoCommentService.list(gallery.requiredId, ownPhoto, owner.requiredId, 0, 20).contents).isEmpty()
         }
 
         @Test
@@ -285,11 +288,13 @@ class PhotoCommentServiceTest @Autowired constructor(
             // given
             val owner = userFixture.사용자()
             val workspace = checkNotNull(workspaceRepository.findByPersonalOwnerUserId(owner.requiredId))
-            val gallery = galleryService.create(owner.requiredId, CreateGalleryRequest(workspace.requiredId, "개인 사진"))
-            galleryService.open(gallery.id, owner.requiredId)
-            val ownPhoto = photoFixture.업로드된_사진(gallery.id, count = 1).single()
+            val gallery = galleryRepository.save(Gallery(
+                workspaceId = workspace.requiredId, createdByUserId = owner.requiredId,
+                title = "개인 사진", status = GalleryStatus.OPEN,
+            ))
+            val ownPhoto = photoFixture.업로드된_사진(gallery.requiredId, count = 1).single()
             val comment = photoCommentService.write(
-                gallery.id, ownPhoto, owner.requiredId, WritePhotoCommentRequest("접근 종료 전 대화"),
+                gallery.requiredId, ownPhoto, owner.requiredId, WritePhotoCommentRequest("접근 종료 전 대화"),
             )
             val membership = checkNotNull(
                 workspaceMemberRepository.findByWorkspaceIdAndUserId(workspace.requiredId, owner.requiredId),
@@ -298,11 +303,11 @@ class PhotoCommentServiceTest @Autowired constructor(
             workspaceMemberRepository.saveAndFlush(membership)
 
             // when & then
-            assertGalleryDenied { photoCommentService.list(gallery.id, ownPhoto, owner.requiredId, 0, 20) }
+            assertGalleryDenied { photoCommentService.list(gallery.requiredId, ownPhoto, owner.requiredId, 0, 20) }
             assertGalleryDenied {
-                photoCommentService.write(gallery.id, ownPhoto, owner.requiredId, WritePhotoCommentRequest("접근 시도"))
+                photoCommentService.write(gallery.requiredId, ownPhoto, owner.requiredId, WritePhotoCommentRequest("접근 시도"))
             }
-            assertGalleryDenied { photoCommentService.delete(gallery.id, ownPhoto, comment.commentId, owner.requiredId) }
+            assertGalleryDenied { photoCommentService.delete(gallery.requiredId, ownPhoto, comment.commentId, owner.requiredId) }
         }
 
         @Test
@@ -480,7 +485,7 @@ class PhotoCommentServiceTest @Autowired constructor(
                 )
             }.isInstanceOf(GalleryException::class.java)
                 .extracting("errorCode")
-                .isEqualTo(GalleryErrorCode.GALLERY_NOT_OPEN)
+                .isEqualTo(GalleryErrorCode.GALLERY_ARCHIVED)
             photoCommentService.delete(fixture.galleryId, photoId, comment.commentId, fixture.member.requiredId)
             assertThat(photoCommentRepository.count()).isZero()
         }
@@ -646,7 +651,7 @@ class PhotoCommentServiceTest @Autowired constructor(
                 fixture.galleryId, fixture.photographer.requiredId, MoveCategoryPhotosRequest(listOf(photoId), detail.id),
             )
             val session = collabSessionService.open(
-                fixture.galleryId, fixture.photographer.requiredId, OpenCollabSessionRequest(concept.id, "하객 의견"),
+                fixture.galleryId, fixture.member.requiredId, OpenCollabSessionRequest(concept.id, "하객 의견"),
             )
             val token = session.collabUrl.substringAfterLast('/')
             val guest = collabGuestService.enter(token, EnterCollabRequest("친구"))

@@ -2,6 +2,8 @@ package com.soma.wes.gallery.dto.response
 
 import com.soma.wes.gallery.domain.GalleryMember
 import com.soma.wes.user.domain.User
+import com.soma.wes.workspace.domain.WorkspaceMember
+import com.soma.wes.workspace.domain.WorkspaceRole
 import io.swagger.v3.oas.annotations.media.Schema
 import java.time.ZonedDateTime
 
@@ -14,7 +16,7 @@ import java.time.ZonedDateTime
 @Schema(description = "갤러리 멤버")
 data class GalleryMemberResponse(
 
-    @field:Schema(description = "내보낼 때 쓰는 id. 사용자 id가 아니다.")
+    @field:Schema(description = "내보낼 때 쓰는 소속 id. 개인 갤러리는 작업공간 소속, 스튜디오 갤러리는 고객 소속 id이며 사용자 id가 아니다.")
     val memberId: Long,
 
     val userId: Long,
@@ -23,9 +25,19 @@ data class GalleryMemberResponse(
 
     @field:Schema(description = "초대를 수락한 시각")
     val joinedAt: ZonedDateTime?,
+    val role: GalleryParticipantRole = GalleryParticipantRole.CLIENT,
 ) {
 
     companion object {
+        fun personal(member: WorkspaceMember, user: User) = GalleryMemberResponse(
+            memberId = member.requiredId,
+            userId = member.userId,
+            nickname = user.nickname,
+            email = user.email,
+            joinedAt = member.createdAt,
+            role = if (member.role == WorkspaceRole.OWNER) GalleryParticipantRole.OWNER else GalleryParticipantRole.PARTNER,
+        )
+
         fun of(member: GalleryMember, user: User) = GalleryMemberResponse(
             memberId = member.requiredId,
             userId = member.userId,

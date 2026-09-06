@@ -48,6 +48,8 @@ import java.time.ZonedDateTime
     TimeConfig::class,
     GalleryAccessPolicy::class,
     GalleryInviteService::class,
+    com.soma.wes.studio.service.StudioInviteService::class,
+    com.soma.wes.notification.service.UserNotificationService::class,
     SecureTokenGenerator::class,
     GalleryInviteUrlResolver::class,
 )

@@ -58,7 +58,7 @@ class CollabSessionQueryServiceTest @Autowired constructor(
     @DisplayName("공유 사진의 댓글 결과를 읽을 때")
     inner class Reading {
         @Test
-        fun `두 부부와 관리자가 닉네임과 최신순 페이지를 읽고 본인 표시를 구분한다`() {
+        fun `두 부부는 닉네임과 최신순 페이지를 읽고 작가에게는 결과를 공개하지 않는다`() {
             // given
             val partner = galleryFixture.멤버(shared.galleryId)
             val guest = guestService.enter(shared.token, EnterCollabRequest(nickname = "친구"))
@@ -77,9 +77,12 @@ class CollabSessionQueryServiceTest @Autowired constructor(
             val partners = queryService.listPhotoComments(
                 shared.galleryId, shared.session.sessionId, shared.photoId, partner.requiredId, 1, 1,
             )
-            val manager = queryService.listPhotoComments(
-                shared.galleryId, shared.session.sessionId, shared.photoId, shared.gallery.photographer.requiredId, 0, 50,
-            )
+            assertThatThrownBy {
+                queryService.listPhotoComments(
+                    shared.galleryId, shared.session.sessionId, shared.photoId, shared.gallery.photographer.requiredId, 0, 50,
+                )
+            }.isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode").isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
 
             // then
             assertSoftly { softly ->
@@ -91,8 +94,6 @@ class CollabSessionQueryServiceTest @Autowired constructor(
                 softly.assertThat(partners.contents.single().nickname).isEqualTo("친구")
                 softly.assertThat(partners.contents.single().mine).isFalse()
                 softly.assertThat(partners.hasNext).isFalse()
-                softly.assertThat(manager.contents.map { it.commentId }).containsExactly(second.commentId, first.commentId)
-                softly.assertThat(manager.contents).allMatch { !it.mine }
             }
         }
 
@@ -107,7 +108,7 @@ class CollabSessionQueryServiceTest @Autowired constructor(
             gallery.status = GalleryStatus.CLOSED
             galleryRepository.saveAndFlush(gallery)
             galleryFixture.마감_지남(shared.galleryId)
-            sessionService.revoke(shared.galleryId, shared.session.sessionId, shared.gallery.photographer.requiredId)
+            sessionService.revoke(shared.galleryId, shared.session.sessionId, shared.gallery.member.requiredId)
 
             // when
             val result = queryService.listPhotoComments(

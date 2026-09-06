@@ -25,6 +25,7 @@ import com.soma.wes.collab.support.CollabPhotoViewAssembler
 import com.soma.wes.global.config.AwsLambdaConfig
 import com.soma.wes.analysis.config.EmbeddingProperties
 import com.soma.wes.analysis.infrastructure.LambdaEmbeddingInvoker
+import com.soma.wes.gallery.config.GalleryLifecycleProperties
 import com.soma.wes.gallery.config.GalleryInviteProperties
 import com.soma.wes.gallery.config.MockGalleryProperties
 import com.soma.wes.gallery.repository.GalleryRepository
@@ -46,6 +47,7 @@ import com.soma.wes.photo.support.PhotoViewAssembler
 import com.soma.wes.analysis.support.AiConceptAssignmentLoader
 import com.soma.wes.retouch.repository.RetouchRoundRepository
 import com.soma.wes.retouch.service.RetouchService
+import com.soma.wes.retouch.service.RetouchRequestService
 import com.soma.wes.retouch.support.RetouchPhotoLoader
 import com.soma.wes.retouch.support.RetouchResultLoader
 import com.soma.wes.retouch.support.RetouchViewAssembler
@@ -99,6 +101,7 @@ class AdminApplicationContextBoundaryTest @Autowired constructor(
             EmbeddingProperties::class.java,
             MockGalleryProperties::class.java,
             GalleryInviteProperties::class.java,
+            GalleryLifecycleProperties::class.java,
             CollabProperties::class.java,
             AdminAccountRepository::class.java,
             AdminAuditLogRepository::class.java,
@@ -131,6 +134,7 @@ class AdminApplicationContextBoundaryTest @Autowired constructor(
             RetouchService::class.java,
             PhotoViewAssembler::class.java,
             CollabPhotoViewAssembler::class.java,
+            RetouchRequestService::class.java,
             RetouchPhotoLoader::class.java,
             RetouchResultLoader::class.java,
             RetouchViewAssembler::class.java,

@@ -40,6 +40,7 @@ class CollabSessionAccess(
     private val workspaceMemberRepository: WorkspaceMemberRepository,
     private val userRepository: UserRepository,
     private val clock: Clock,
+    private val workspaceRepository: com.soma.wes.workspace.repository.WorkspaceRepository,
 ) {
 
     /**
@@ -92,7 +93,9 @@ class CollabSessionAccess(
      */
     fun isWritable(access: CollabAccessDto): Boolean {
         val gallery = access.gallery
-        return gallery.status == GalleryStatus.OPEN && !gallery.isDeadlinePassed(ZonedDateTime.now(clock))
+        return gallery.status == GalleryStatus.OPEN && !gallery.isDeadlinePassed(ZonedDateTime.now(clock)) &&
+            gallery.stage != com.soma.wes.gallery.domain.GalleryStage.ARCHIVED &&
+            gallery.planExpiresAt?.let { it.isAfter(ZonedDateTime.now(clock)) } != false
     }
 
     /**
@@ -146,10 +149,11 @@ class CollabSessionAccess(
         if (galleryMemberRepository.findByGalleryIdAndUserId(access.gallery.requiredId, userId) != null) {
             return true
         }
+        if (workspaceRepository.findById(access.gallery.workspaceId).orElse(null)?.type != com.soma.wes.workspace.domain.WorkspaceType.PERSONAL) return false
         return workspaceMemberRepository.existsByWorkspaceIdAndUserIdAndRoleIn(
             access.gallery.workspaceId,
             userId,
-            listOf(WorkspaceRole.OWNER),
+            WorkspaceRole.entries,
         )
     }
 }

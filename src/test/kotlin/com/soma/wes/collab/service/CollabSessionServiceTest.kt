@@ -93,7 +93,7 @@ class CollabSessionServiceTest @Autowired constructor(
         }
 
         @Test
-        fun `마감 후에는 이름 변경과 폐기만 허용한다`() {
+        fun `선택 마감 이후에도 클라이언트는 조회용 공유 링크를 다시 발급할 수 있다`() {
             // given
             galleryFixture.마감_지남(shared.galleryId)
             val userId = shared.gallery.member.requiredId
@@ -107,44 +107,35 @@ class CollabSessionServiceTest @Autowired constructor(
             // then
             assertThat(renamed.name).isEqualTo("종료한 의견")
             assertThat(queryService.get(shared.galleryId, shared.session.sessionId, userId).revoked).isTrue()
-            assertPublicationDenied(userId, GalleryErrorCode.SELECTION_DEADLINE_PASSED)
+            assertThat(service.republish(shared.galleryId, shared.session.sessionId, userId).revoked).isFalse()
         }
 
         @Test
-        fun `닫힌 갤러리에서도 이름 변경과 폐기는 허용하고 발행은 거절한다`() {
+        fun `보관된 갤러리의 기존 링크 정리는 허용하지만 새 발행은 거절한다`() {
             // given
             val gallery = galleryRepository.findById(shared.galleryId).orElseThrow()
-            gallery.status = GalleryStatus.CLOSED
+            gallery.close()
             galleryRepository.saveAndFlush(gallery)
             val userId = shared.gallery.member.requiredId
 
             // when
-            service.rename(shared.galleryId, shared.session.sessionId, userId, RenameCollabSessionRequest(name = "끝난 링크"))
+            assertThatThrownBy {
+                service.rename(shared.galleryId, shared.session.sessionId, userId, RenameCollabSessionRequest(name = "끝난 링크"))
+            }.isInstanceOf(GalleryException::class.java).extracting("errorCode").isEqualTo(GalleryErrorCode.GALLERY_ARCHIVED)
             service.revoke(shared.galleryId, shared.session.sessionId, userId)
 
             // then
             assertThat(queryService.get(shared.galleryId, shared.session.sessionId, userId).revoked).isTrue()
-            assertPublicationDenied(userId, GalleryErrorCode.GALLERY_NOT_OPEN)
+            assertPublicationDenied(userId, GalleryErrorCode.GALLERY_ARCHIVED)
         }
 
         @Test
-        fun `기존 관리자는 갤러리 마감 이후에도 발행 권한을 유지한다`() {
-            // given
+        fun `스튜디오 작가는 클라이언트의 공유 링크를 발급하거나 관리할 수 없다`() {
+            assertAllMutationsDenied(shared.gallery.photographer.requiredId, GalleryErrorCode.GALLERY_ACCESS_DENIED)
             galleryFixture.마감_지남(shared.galleryId)
-            val gallery = galleryRepository.findById(shared.galleryId).orElseThrow()
-            gallery.status = GalleryStatus.CLOSED
-            galleryRepository.saveAndFlush(gallery)
-
-            // when
-            val reopened = service.open(
-                shared.galleryId, shared.gallery.photographer.requiredId,
-                OpenCollabSessionRequest(conceptFolderId = shared.session.conceptFolderId, name = "관리자 링크"),
-            )
-            val republished = service.republish(shared.galleryId, reopened.sessionId, shared.gallery.photographer.requiredId)
-
-            // then
-            assertThat(republished.collabUrl).isNotEqualTo(reopened.collabUrl)
+            assertAllMutationsDenied(shared.gallery.photographer.requiredId, GalleryErrorCode.GALLERY_ACCESS_DENIED)
         }
+
     }
 
     @Nested
@@ -173,7 +164,7 @@ class CollabSessionServiceTest @Autowired constructor(
             val userId = shared.gallery.member.requiredId
 
             // when & then
-            assertPublicationDenied(userId, GalleryErrorCode.GALLERY_NOT_OPEN)
+            assertPublicationDenied(userId, GalleryErrorCode.GALLERY_ACCESS_DENIED)
             listOf<() -> Unit>(
                 { service.rename(shared.galleryId, shared.session.sessionId, userId, RenameCollabSessionRequest(name = "변경")) },
                 { service.revoke(shared.galleryId, shared.session.sessionId, userId) },

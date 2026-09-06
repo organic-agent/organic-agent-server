@@ -22,4 +22,10 @@ data class CollabLandingResponse(
             "보기만 된다 — 화면은 댓글창과 반응 버튼을 감추면 된다.",
     )
     val writable: Boolean,
-)
+    val coverTitle: String? = null,
+    val coverAuthor: String? = null,
+    val expiresAt: java.time.ZonedDateTime? = null,
+    val albums: List<Album> = emptyList(),
+) {
+    data class Album(val conceptFolderId: Long, val name: String, val photoCount: Long, val collabToken: String)
+}

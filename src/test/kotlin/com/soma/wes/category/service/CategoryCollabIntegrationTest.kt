@@ -56,7 +56,7 @@ class CategoryCollabIntegrationTest @Autowired constructor(
 
         val first = collabSessionService.open(
             fixture.galleryId,
-            fixture.photographer.requiredId,
+            fixture.member.requiredId,
             OpenCollabSessionRequest(concept.id, "본식 의견"),
         )
         categoryService.movePhotos(
@@ -67,7 +67,7 @@ class CategoryCollabIntegrationTest @Autowired constructor(
         val afterUnassign = collabGuestQueryService.listPhotos(first.collabUrl.substringAfterLast('/'), null, 0, 20)
         val reopened = collabSessionService.open(
             fixture.galleryId,
-            fixture.photographer.requiredId,
+            fixture.member.requiredId,
             OpenCollabSessionRequest(concept.id, "새 이름"),
         )
 
@@ -116,7 +116,7 @@ class CategoryCollabIntegrationTest @Autowired constructor(
         )
         val session = collabSessionService.open(
             fixture.galleryId,
-            fixture.photographer.requiredId,
+            fixture.member.requiredId,
             OpenCollabSessionRequest(firstConcept.id, "본식 의견"),
         )
         val token = session.collabUrl.substringAfterLast('/')

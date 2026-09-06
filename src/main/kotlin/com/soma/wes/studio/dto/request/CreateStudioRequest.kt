@@ -4,11 +4,11 @@ import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
 
-@Schema(description = "스튜디오 생성 요청. 이 요청이 성공하면 사용자 종류가 PHOTOGRAPHER로 확정된다.")
+@Schema(description = "스튜디오 생성 요청. 성공하면 해당 스튜디오의 OWNER 멤버십을 만든다.")
 data class CreateStudioRequest(
 
     @field:NotBlank
-    @field:Size(max = 255)
+    @field:Size(max = 100)
     @field:Schema(description = "스튜디오 이름", example = "오가닉 스튜디오")
     val name: String,
 

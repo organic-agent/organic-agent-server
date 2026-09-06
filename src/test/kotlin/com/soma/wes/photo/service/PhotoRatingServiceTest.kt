@@ -10,6 +10,11 @@ import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.repository.PhotoRatingRepository
+import com.soma.wes.gallery.repository.GalleryRepository
+import com.soma.wes.workspace.repository.WorkspaceMemberRepository
+import com.soma.wes.workspace.domain.WorkspaceMember
+import com.soma.wes.workspace.domain.WorkspaceRole
+import org.springframework.jdbc.core.JdbcTemplate
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.user.fixture.UserFixture
 import org.assertj.core.api.Assertions.assertThat
@@ -24,7 +29,7 @@ import org.springframework.beans.factory.annotation.Autowired
 /**
  * 사진 별점을 서비스 경계에서 확인한다.
  *
- * 핵심은 "점수가 사진당 하나"라는 것이다 — 부부 두 사람과 작가가 같은 한 칸을 나눠 쓰고,
+ * 핵심은 "점수가 사진당 하나"라는 것이다 — 부부 두 사람이 같은 한 칸을 나눠 쓰고,
  * 누가 매겼는지로 행이 나뉘지 않는다.
  */
 @IntegrationTest
@@ -35,6 +40,9 @@ class PhotoRatingServiceTest @Autowired constructor(
     private val photoFixture: PhotoFixture,
     private val userFixture: UserFixture,
     private val photoRatingRepository: PhotoRatingRepository,
+    private val galleries: GalleryRepository,
+    private val workspaceMembers: WorkspaceMemberRepository,
+    private val jdbc: JdbcTemplate,
 ) {
 
     private lateinit var fixture: OpenGallery
@@ -215,6 +223,20 @@ class PhotoRatingServiceTest @Autowired constructor(
     inner class FilterByScore {
 
         @Test
+        fun `스튜디오는 고객 별점을 볼 수도 필터로 추론할 수도 없다`() {
+            val photoId = photoFixture.업로드된_사진(fixture.galleryId, count = 1).single()
+            rate(photoId, score = 5)
+
+            val list = photoService.list(fixture.galleryId, fixture.photographer.requiredId, null, null, page = 0, size = 20)
+            assertThat(list.contents.single().score).isNull()
+            assertThat(photoService.get(fixture.galleryId, photoId, fixture.photographer.requiredId).score).isNull()
+            assertThatThrownBy {
+                photoService.list(fixture.galleryId, fixture.photographer.requiredId, null, 4, page = 0, size = 20)
+            }.isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode").isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        }
+
+        @Test
         fun `목록에 별점이 함께 오고 최소 점수로 거를 수 있다`() {
             // given
             val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 3)
@@ -268,6 +290,24 @@ class PhotoRatingServiceTest @Autowired constructor(
         }
     }
 
+    @Test
+    fun `고객이 스튜디오에 합류하면 중복 소속이나 운영 정지로 별점 권한이 되살아나지 않는다`() {
+        val photoId = photoFixture.업로드된_사진(fixture.galleryId, 1).single()
+        rate(photoId, 5)
+        val gallery = galleries.findById(fixture.galleryId).orElseThrow()
+        workspaceMembers.save(WorkspaceMember(gallery.workspaceId, fixture.member.requiredId, WorkspaceRole.MEMBER))
+
+        fun verifyPrivacy() {
+            assertThat(photoService.get(fixture.galleryId, photoId, fixture.member.requiredId).score).isNull()
+            assertThatThrownBy { rate(photoId, 4) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode").isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        }
+        verifyPrivacy()
+        jdbc.update("update studios set suspended_at = now() where workspace_id = ?", gallery.workspaceId)
+        verifyPrivacy()
+    }
+
     // --- helpers ---
 
     private fun rate(photoId: Long, score: Int) {
@@ -275,5 +315,5 @@ class PhotoRatingServiceTest @Autowired constructor(
     }
 
     private fun list(status: PhotoStatus? = null, minScore: Int? = null) =
-        photoService.list(fixture.galleryId, fixture.photographer.id!!, status, minScore, page = 0, size = 20)
+        photoService.list(fixture.galleryId, fixture.member.id!!, status, minScore, page = 0, size = 20)
 }

@@ -8,14 +8,10 @@ data class LoginResponse(
     val accessToken: String,
     val refreshToken: String,
 
-    /**
-     * 초대 링크를 눌러 로그인한 경우 방금 들어온 갤러리. 그 외에는 null이다.
-     *
-     * 이 값이 있으면 프론트는 곧바로 해당 갤러리로 보내면 된다. 수락이 로그인과 한 번에
-     * 끝나므로 별도 수락 호출이 필요 없다.
-     */
-    @field:Schema(description = "초대로 로그인했다면 방금 들어온 갤러리 id. 일반 로그인은 null")
+    @field:Schema(description = "일반 로그인과 수락 전 로그인은 null. 초대 수락은 POST /invites/{token}/accept로 별도 처리한다.")
     val galleryId: Long? = null,
+    @field:Schema(description = "로그인 후 미리보기와 명시적 수락을 진행할 초대 토큰. 없으면 null.")
+    val inviteToken: String? = null,
 ) {
 
     companion object {

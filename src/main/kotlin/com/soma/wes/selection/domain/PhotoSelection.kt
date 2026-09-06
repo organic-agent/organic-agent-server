@@ -83,6 +83,13 @@ class PhotoSelection(
         }
     }
 
+    fun requireExactTarget(target: Int?, selectedCount: Int) {
+        if (selectedCount == 0) throw SelectionException(SelectionErrorCode.EMPTY_SELECTION)
+        if (target != null && target != selectedCount) {
+            throw SelectionException(SelectionErrorCode.EXACT_TARGET_REQUIRED)
+        }
+    }
+
     /** 부부가 고르기를 끝내고 작가에게 넘긴다.*/
     fun submit(selectedCount: Int, submittedByUserId: Long, at: ZonedDateTime) {
         requireEditable()

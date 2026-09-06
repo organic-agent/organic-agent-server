@@ -49,7 +49,7 @@ data class PhotoDetailResponse(
 
     @field:Schema(
         description = "이 사진에 매겨진 별점(1~5). 아무도 매기지 않았으면 null이다. " +
-            "부부와 작가가 같은 한 칸을 나눠 쓰므로 '내 점수'와 '남의 점수'는 없다.",
+            "클라이언트 두 명이 공유하며 작가 응답에는 null이다.",
     )
     val score: Int?,
 ) {

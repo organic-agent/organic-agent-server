@@ -22,4 +22,5 @@ data class CollabPhotoResponse(
             "부부·작가가 결과를 볼 때도 false다 — 그들은 하객이 아니다.",
     )
     val liked: Boolean,
+    val metadata: com.soma.wes.photo.dto.response.PhotoMetadataResponse? = null,
 )

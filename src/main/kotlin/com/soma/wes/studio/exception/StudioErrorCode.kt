@@ -10,6 +10,7 @@ enum class StudioErrorCode(
 ) : ErrorCode {
 
     INVALID_GALLERY_URL(HttpStatus.BAD_REQUEST, "STUDIO_400_1", "갤러리 주소는 소문자·숫자·하이픈으로 3~50자여야 하며, 사용할 수 없는 주소입니다.",),
+    INVALID_STUDIO_PROFILE(HttpStatus.BAD_REQUEST, "STUDIO_400_4", "스튜디오 이름은 1~100자, 연락처는 100자 이하, 소개는 500자 이하로 입력해 주세요."),
     STUDIO_SELECTION_REQUIRED(HttpStatus.BAD_REQUEST, "STUDIO_400_3", "여러 스튜디오에 속해 있어 작업할 스튜디오를 지정해야 합니다."),
 
     NOT_STUDIO_OWNER(HttpStatus.FORBIDDEN, "STUDIO_403_1", "스튜디오 소유자만 할 수 있습니다."),

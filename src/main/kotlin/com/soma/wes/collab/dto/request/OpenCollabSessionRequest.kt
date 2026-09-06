@@ -14,5 +14,8 @@ data class OpenCollabSessionRequest(
         example = "본식 후보",
     )
     val name: String,
+    val coverTitle: String? = null,
+    val coverAuthor: String? = null,
+    val includeAllAlbums: Boolean? = null,
 
 )

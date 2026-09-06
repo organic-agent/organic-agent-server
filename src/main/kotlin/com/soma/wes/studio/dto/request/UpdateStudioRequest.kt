@@ -8,7 +8,7 @@ import jakarta.validation.constraints.Size
 data class UpdateStudioRequest(
 
     @field:NotBlank
-    @field:Size(max = 255)
+    @field:Size(max = 100)
     @field:Schema(description = "스튜디오 이름", example = "오가닉 스튜디오")
     val name: String,
 

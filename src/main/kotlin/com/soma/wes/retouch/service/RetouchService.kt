@@ -1,6 +1,8 @@
 package com.soma.wes.retouch.service
 
+import com.soma.wes.gallery.config.GalleryLifecycleProperties
 import com.soma.wes.gallery.domain.Gallery
+import com.soma.wes.gallery.domain.GalleryStage
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.repository.requireWithLockById
@@ -10,6 +12,13 @@ import com.soma.wes.photo.service.PhotoStorage
 import com.soma.wes.notification.domain.UserNotificationScope
 import com.soma.wes.notification.domain.UserNotificationType
 import com.soma.wes.notification.service.UserNotificationPublisher
+import com.soma.wes.photo.repository.PhotoRepository
+import com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest
+import com.soma.wes.retouch.dto.request.MatchRetouchResultsRequest
+import com.soma.wes.retouch.dto.response.MatchRetouchResultsResponse
+import com.soma.wes.retouch.service.RetouchRequestService
+import com.soma.wes.selection.repository.PhotoSelectionRepository
+import com.soma.wes.selection.repository.PhotoSelectionItemRepository
 import com.soma.wes.retouch.domain.RetouchPhoto
 import com.soma.wes.retouch.domain.RetouchRound
 import com.soma.wes.retouch.domain.RetouchRoundStatus
@@ -36,6 +45,7 @@ import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import java.time.Clock
 import java.time.ZonedDateTime
 import java.util.UUID
@@ -58,6 +68,12 @@ class RetouchService(
     private val workspaceMemberRepository: WorkspaceMemberRepository,
     private val galleryMemberRepository: GalleryMemberRepository,
     private val notificationPublisher: UserNotificationPublisher,
+    private val requestWriter: RetouchRequestService,
+    private val selectionRepository: PhotoSelectionRepository,
+    private val selectionItemRepository: PhotoSelectionItemRepository,
+    private val photoRepository: PhotoRepository,
+    private val transactionTemplate: TransactionTemplate,
+    private val lifecycleProperties: GalleryLifecycleProperties,
 ) {
 
     companion object {
@@ -94,7 +110,7 @@ class RetouchService(
     fun get(galleryId: Long, userId: Long): RetouchOverviewResponse {
         val gallery = galleryAccessPolicy.requireViewer(galleryId, userId)
 
-        return overviewOf(gallery)
+        return overviewOf(gallery, userId)
     }
 
     /**
@@ -102,7 +118,7 @@ class RetouchService(
      */
     @Transactional
     fun addPhotos(galleryId: Long, userId: Long, request: AddRetouchPhotosRequest): RetouchOverviewResponse {
-        galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
+        galleryAccessPolicy.requireRetouchRequester(galleryId, userId)
 
         val gallery = galleryRepository.requireWithLockById(galleryId)
         val round = loadOrCreateDraftingRound(gallery)
@@ -116,7 +132,7 @@ class RetouchService(
             },
         )
 
-        return overviewOf(gallery)
+        return overviewOf(gallery, userId)
     }
 
     /**
@@ -156,7 +172,7 @@ class RetouchService(
      */
     @Transactional
     fun removePhoto(galleryId: Long, photoId: Long, userId: Long) {
-        galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
+        galleryAccessPolicy.requireRetouchRequester(galleryId, userId)
 
         galleryRepository.requireWithLockById(galleryId)
         val round = requireDraftingRound(galleryId, RetouchErrorCode.PHOTO_NOT_IN_ROUND)
@@ -177,7 +193,7 @@ class RetouchService(
         userId: Long,
         request: UpdateRetouchPhotoRequest,
     ): RetouchPhotoResponse {
-        galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
+        galleryAccessPolicy.requireRetouchRequester(galleryId, userId)
 
         // 항목 하나의 갱신이지만 갤러리 행을 잠근다 — 제출과 겹치면 잠긴 회차에 요청이 적힌다.
         galleryRepository.requireWithLockById(galleryId)
@@ -186,7 +202,7 @@ class RetouchService(
             ?: throw RetouchException(RetouchErrorCode.PHOTO_NOT_IN_ROUND)
 
         validateAnnotationKey(galleryId, request.annotationKey)
-        item.writeRequest(request.requestText, request.annotationKey)
+        item.writeRequest(request.requestText, request.annotationKey, request.points)
 
         return retouchViewAssembler.toResponses(galleryId, listOf(item)).first()
     }
@@ -203,7 +219,7 @@ class RetouchService(
      */
     @Transactional(readOnly = true)
     fun issueAnnotationUploadUrl(galleryId: Long, userId: Long): IssueAnnotationUploadUrlResponse {
-        galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
+        galleryAccessPolicy.requireRetouchRequester(galleryId, userId)
 
         val key = "${annotationKeyPrefix(galleryId)}${UUID.randomUUID()}.png"
         val presigned = photoStorage.presignUpload(key, ANNOTATION_CONTENT_TYPE)
@@ -220,7 +236,8 @@ class RetouchService(
      */
     @Transactional
     fun submitRound(galleryId: Long, userId: Long): RetouchOverviewResponse {
-        galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
+        galleryAccessPolicy.requireRetouchRequester(galleryId, userId)
+        requireStudioRoundAction(galleryId)
 
         val gallery = galleryRepository.requireWithLockById(galleryId)
         val round = requireDraftingRound(galleryId, RetouchErrorCode.EMPTY_ROUND)
@@ -237,7 +254,6 @@ class RetouchService(
         gallery.markRetouchStarted()
         notificationPublisher.publish(
             userIds = workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId)
-                .filter { it.role == WorkspaceRole.OWNER }
                 .map { it.userId },
             type = UserNotificationType.RETOUCH_REQUESTED,
             scope = UserNotificationScope.GALLERY,
@@ -245,7 +261,7 @@ class RetouchService(
             title = "보정 요청이 도착했습니다",
             message = "${gallery.title}의 보정 요청이 제출되었습니다.",
         )
-        return overviewOf(gallery)
+        return overviewOf(gallery, userId)
     }
 
     /** DRAFTING 회차가 없다는 것을 무엇으로 알릴지는 유스케이스마다 다르다 — 호출자가 정한다. */
@@ -263,11 +279,17 @@ class RetouchService(
 
         val round = retouchRoundRepository.findByGalleryIdAndRoundNo(galleryId, roundNo)
             ?: throw RetouchException(RetouchErrorCode.ROUND_NOT_FOUND)
-        val items = retouchPhotoRepository.findAllByRoundId(round.requiredId)
+        val items = if (round.isDrafting && galleryAccessPolicy.isStudioManager(galleryId, userId)) emptyList()
+            else retouchPhotoRepository.findAllByRoundId(round.requiredId)
 
+        val hideRating = galleryAccessPolicy.isStudioManager(galleryId, userId)
         return RetouchRoundDetailResponse.of(
             round = round,
-            photos = retouchViewAssembler.toDetailResponses(galleryId, items),
+            photos = retouchViewAssembler.toDetailResponses(
+                galleryId, items,
+                includeResults = round.status == RetouchRoundStatus.COMPLETED ||
+                    galleryAccessPolicy.canInspectRetouchDrafts(galleryId, userId),
+            ).map { if (hideRating) it.copy(photo = it.photo.copy(score = null)) else it },
             viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
         )
     }
@@ -276,15 +298,17 @@ class RetouchService(
      * 결과 파일들이 올라갈 자리의 서명 URL을 발급한다. 주석과 같은 방식이라 발급은 아무 행도
      * 만들지 않는다 — 항목과의 연결은 결과 확정([completeResults])이 만든다.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     fun issueResultUploadUrls(
         galleryId: Long,
         roundNo: Int,
         userId: Long,
         request: IssueResultUploadUrlsRequest,
     ): IssueResultUploadUrlsResponse {
-        galleryAccessPolicy.requireRetouchProcessor(galleryId, userId)
+        val authorizedGallery = galleryAccessPolicy.requireRetouchProcessor(galleryId, userId)
+        requirePersonalResultRound(authorizedGallery, roundNo)
 
+        val gallery = galleryRepository.requireWithLockById(galleryId)
         val round = findRequestedRound(galleryId, roundNo)
         loadItemsInRound(round.requiredId, request.files.map { it.photoId })
 
@@ -297,6 +321,7 @@ class RetouchService(
             )
         }
 
+        gallery.markRetouchStarted()
         return IssueResultUploadUrlsResponse(
             uploads = uploads,
             uploadUrlTtlSeconds = properties.uploadUrlTtl.seconds,
@@ -310,36 +335,54 @@ class RetouchService(
     /**
      * S3 PUT을 마친 결과들을 항목에 기록한다. 회차가 끝나기 전에는 다시 올린 key로 덮어쓴다.
      */
-    @Transactional
     fun completeResults(
         galleryId: Long,
         roundNo: Int,
         userId: Long,
         request: CompleteResultsRequest,
     ): RetouchRoundDetailResponse {
-        galleryAccessPolicy.requireRetouchProcessor(galleryId, userId)
-
-        val round = lockRequestedRound(galleryId, roundNo)
-        val items = loadItemsInRound(round.requiredId, request.results.map { it.photoId })
+        val authorizedGallery = galleryAccessPolicy.requireRetouchProcessor(galleryId, userId)
+        requirePersonalResultRound(authorizedGallery, roundNo)
+        val round = findRequestedRound(galleryId, roundNo)
+        loadItemsInRound(round.requiredId, request.results.map { it.photoId })
+        if (request.results.map { it.resultKey }.toSet().size != request.results.size) {
+            throw RetouchException(RetouchErrorCode.DUPLICATE_RESULT)
+        }
         request.results.forEach { result ->
             validateResultKey(galleryId, roundNo, result.resultKey)
             resultExtensionOf(result.contentType)
         }
 
-        val itemsByPhotoId = items.associateBy { it.photoId }
-        request.results.forEach { result ->
-            itemsByPhotoId.getValue(result.photoId)
-                .writeResult(result.resultKey, result.contentType.lowercase())
+        // S3 응답을 기다리는 동안 DB 연결이나 갤러리 잠금을 잡지 않는다.
+        if (request.results.any { !photoStorage.exists(it.resultKey) }) {
+            throw RetouchException(RetouchErrorCode.RESULT_UPLOAD_INCOMPLETE)
         }
 
-        return RetouchRoundDetailResponse.of(
-            round = round,
-            photos = retouchViewAssembler.toDetailResponses(
-                galleryId,
-                retouchPhotoRepository.findAllByRoundId(round.requiredId),
-            ),
-            viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
-        )
+        return transactionTemplate.execute {
+            galleryAccessPolicy.requireRetouchProcessor(galleryId, userId)
+            val gallery = galleryRepository.requireWithLockById(galleryId)
+            gallery.requireWritable(ZonedDateTime.now(clock))
+            requirePersonalResultRound(gallery, roundNo)
+            val lockedRound = lockRequestedRound(galleryId, roundNo)
+            val items = loadItemsInRound(lockedRound.requiredId, request.results.map { it.photoId })
+            val existingResults = retouchPhotoRepository.findAllByRoundId(lockedRound.requiredId)
+                .filter { it.hasResult }.associate { it.resultKey to it.photoId }
+            if (request.results.any { result -> existingResults[result.resultKey]?.let { it != result.photoId } == true }) {
+                throw RetouchException(RetouchErrorCode.DUPLICATE_RESULT)
+            }
+            val itemsByPhotoId = items.associateBy { it.photoId }
+            request.results.forEach { result ->
+                itemsByPhotoId.getValue(result.photoId).writeResult(result.resultKey, result.contentType.lowercase())
+            }
+            val hideRating = galleryAccessPolicy.isStudioManager(galleryId, userId)
+            RetouchRoundDetailResponse.of(
+                round = lockedRound,
+                photos = retouchViewAssembler.toDetailResponses(
+                    galleryId, retouchPhotoRepository.findAllByRoundId(lockedRound.requiredId),
+                ).map { if (hideRating) it.copy(photo = it.photo.copy(score = null)) else it },
+                viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
+            )
+        } ?: throw RetouchException(RetouchErrorCode.INVALID_ROUND_STATUS)
     }
 
     private fun validateResultKey(galleryId: Long, roundNo: Int, resultKey: String) {
@@ -358,6 +401,7 @@ class RetouchService(
         }
 
         val cleanPhotoIds = photoIds.toSet()
+        if (cleanPhotoIds.size != photoIds.size) throw RetouchException(RetouchErrorCode.DUPLICATE_RESULT)
         val found = retouchPhotoRepository.findAllByRoundIdAndPhotoIdIn(roundId, cleanPhotoIds)
         if (found.size != cleanPhotoIds.size) {
             throw RetouchException(RetouchErrorCode.PHOTO_NOT_IN_ROUND)
@@ -372,10 +416,12 @@ class RetouchService(
     @Transactional
     fun completeRound(galleryId: Long, roundNo: Int, userId: Long): RetouchOverviewResponse {
         val gallery = galleryAccessPolicy.requireRetouchProcessor(galleryId, userId)
+        requireStudioRoundAction(galleryId)
 
+        galleryRepository.requireWithLockById(galleryId)
         val round = lockRequestedRound(galleryId, roundNo)
         val items = retouchPhotoRepository.findAllByRoundId(round.requiredId)
-        if (items.any { !it.hasResult }) {
+        if (items.isEmpty() || items.any { !it.hasResult }) {
             throw RetouchException(RetouchErrorCode.MISSING_RESULT)
         }
 
@@ -389,7 +435,7 @@ class RetouchService(
             title = "보정 결과가 준비되었습니다",
             message = "${gallery.title}의 보정 결과를 확인할 수 있습니다.",
         )
-        return overviewOf(gallery)
+        return overviewOf(gallery, userId)
     }
 
     /**
@@ -414,14 +460,121 @@ class RetouchService(
         }
     }
 
-    private fun overviewOf(gallery: Gallery): RetouchOverviewResponse {
+    /** N차 요청은 제출된 선택 안에서만 만들며, 1차 기본 보정은 선택 제출과 함께 생성한다. */
+    @Transactional
+    fun submitRequests(
+        galleryId: Long,
+        roundNo: Int,
+        userId: Long,
+        request: SubmitRetouchRequestsRequest,
+    ): RetouchOverviewResponse {
+        galleryAccessPolicy.requireRetouchRequester(galleryId, userId)
+        requireStudioRoundAction(galleryId)
+        val gallery = galleryRepository.requireWithLockById(galleryId)
+        val selection = selectionRepository.findByGalleryId(galleryId)
+            ?: throw RetouchException(RetouchErrorCode.PHOTO_NOT_SELECTED)
+        if (!selection.isSubmitted && !galleryAccessPolicy.isPersonalGallery(galleryId)) {
+            throw RetouchException(RetouchErrorCode.PHOTO_NOT_SELECTED)
+        }
+        val selectedIds = selectionItemRepository.findAllBySelectionId(selection.requiredId).map { it.photoId }
+        val targets = if (request.requests.isEmpty()) selectedIds else request.requests.map { it.photoId }
+        if (targets.any { it !in selectedIds }) throw RetouchException(RetouchErrorCode.PHOTO_NOT_SELECTED)
+        requestWriter.submit(gallery, roundNo, targets, request.requests, ZonedDateTime.now(clock))
+        notificationPublisher.publish(
+            userIds = workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId).map { it.userId },
+            type = UserNotificationType.RETOUCH_REQUESTED,
+            scope = UserNotificationScope.GALLERY,
+            scopeId = galleryId,
+            title = "보정 요청이 도착했습니다",
+            message = "${gallery.title}의 ${roundNo}차 보정 요청이 제출되었습니다.",
+        )
+        return overviewOf(gallery, userId)
+    }
+
+    /** 파일명은 확장자를 제외하고 비교한다. 중복 이름은 자동으로 고르지 않고 후보를 반환한다. */
+    @Transactional(readOnly = true)
+    fun matchResults(
+        galleryId: Long,
+        roundNo: Int,
+        userId: Long,
+        request: MatchRetouchResultsRequest,
+    ): MatchRetouchResultsResponse {
+        val authorizedGallery = galleryAccessPolicy.requireRetouchProcessor(galleryId, userId)
+        requirePersonalResultRound(authorizedGallery, roundNo)
+        val round = findRequestedRound(galleryId, roundNo)
+        val items = retouchPhotoRepository.findAllByRoundId(round.requiredId)
+        if (request.files.isEmpty()) throw RetouchException(RetouchErrorCode.EMPTY_PHOTO_IDS)
+        if (request.files.size > properties.maxBatchSize) throw RetouchException(RetouchErrorCode.TOO_MANY_PHOTOS)
+        val candidates = photoRepository.findAllByGalleryIdAndIdIn(galleryId, items.map { it.photoId })
+            .sortedWith(com.soma.wes.photo.domain.Photo.DISPLAY_ORDER)
+            .map { MatchRetouchResultsResponse.Candidate(photoId = it.requiredId, filename = it.originalFileName) }
+        val matches = request.files.map { file ->
+            if (file.filename.isBlank() || file.filename.length > 255 || file.filename.contains('/') || file.filename.contains('\\')) {
+                throw RetouchException(RetouchErrorCode.INVALID_FILENAME)
+            }
+            resultExtensionOf(file.contentType)
+            val stem = file.filename.substringBeforeLast('.').lowercase()
+            val matched = candidates.filter { it.filename.substringBeforeLast('.').lowercase() == stem }
+            MatchRetouchResultsResponse.Match(
+                filename = file.filename,
+                contentType = file.contentType,
+                photoId = matched.singleOrNull()?.photoId,
+                candidates = if (matched.isEmpty()) candidates else matched,
+            )
+        }
+        return MatchRetouchResultsResponse(matches = matches)
+    }
+
+    /** 보정본을 받은 클라이언트가 최종 확정하면 읽기 전용 보관 단계로 끝난다. */
+    @Transactional
+    fun confirm(galleryId: Long, userId: Long): RetouchOverviewResponse {
+        galleryAccessPolicy.requireRetouchRequester(galleryId, userId)
+        requireStudioRoundAction(galleryId)
+        val gallery = galleryRepository.requireWithLockById(galleryId)
+        val latest = retouchRoundRepository.findFirstByGalleryIdOrderByRoundNoDesc(galleryId)
+            ?: throw RetouchException(RetouchErrorCode.ROUND_NOT_FOUND)
+        if (latest.status != RetouchRoundStatus.COMPLETED) {
+            throw RetouchException(RetouchErrorCode.INVALID_ROUND_STATUS)
+        }
+        val now = ZonedDateTime.now(clock)
+        gallery.markRetouchConfirmed(now)
+        if (gallery.archivedUntil == null) lifecycleProperties.archivedRetentionDays?.let {
+            gallery.archivedUntil = now.plusDays(it.toLong())
+        }
+        notificationPublisher.publish(
+            userIds = workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId).map { it.userId },
+            type = UserNotificationType.RETOUCH_CONFIRMED,
+            scope = UserNotificationScope.GALLERY,
+            scopeId = galleryId,
+            title = "보정이 확정되었습니다",
+            message = "${gallery.title}의 보정이 최종 확정되었습니다.",
+        )
+        return overviewOf(gallery, userId)
+    }
+
+    private fun requireStudioRoundAction(galleryId: Long) {
+        if (galleryAccessPolicy.isPersonalGallery(galleryId)) {
+            throw RetouchException(RetouchErrorCode.INVALID_ROUND_STATUS)
+        }
+    }
+
+    private fun requirePersonalResultRound(gallery: Gallery, roundNo: Int) {
+        if (galleryAccessPolicy.isPersonalGallery(gallery.requiredId) &&
+            (roundNo != RetouchRound.FIRST_ROUND_NO || gallery.stage != GalleryStage.RETOUCH)
+        ) throw RetouchException(RetouchErrorCode.INVALID_ROUND_STATUS)
+    }
+
+    private fun overviewOf(gallery: Gallery, userId: Long): RetouchOverviewResponse {
         val galleryId = gallery.requiredId
         val rounds = retouchRoundRepository.findAllByGalleryIdOrderByRoundNoAsc(galleryId)
         val photoCounts = retouchPhotoRepository.countAllByGalleryIdGroupByRoundId(galleryId)
             .associate { it.roundId to it.photoCount }
 
+        val hideRating = galleryAccessPolicy.isStudioManager(galleryId, userId)
+        val inspectDrafts = galleryAccessPolicy.canInspectRetouchDrafts(galleryId, userId)
         val currentRound = rounds.lastOrNull { it.status != RetouchRoundStatus.COMPLETED }
         val currentItems = currentRound
+            ?.takeUnless { it.isDrafting && hideRating }
             ?.let { retouchPhotoRepository.findAllByRoundId(it.requiredId) }
             .orEmpty()
 
@@ -430,7 +583,12 @@ class RetouchService(
             submittedRoundCount = rounds.count { it.status != RetouchRoundStatus.DRAFTING },
             rounds = rounds.map { RetouchRoundSummaryResponse.of(it, photoCounts[it.requiredId] ?: 0L) },
             currentRound = currentRound?.let {
-                RetouchRoundResponse.of(it, retouchViewAssembler.toResponses(galleryId, currentItems))
+                RetouchRoundResponse.of(it, retouchViewAssembler.toResponses(galleryId, currentItems).map { photo ->
+                    photo.copy(
+                        hasResult = photo.hasResult && (it.status == RetouchRoundStatus.COMPLETED || inspectDrafts),
+                        photo = if (hideRating) photo.photo.copy(score = null) else photo.photo,
+                    )
+                })
             },
             viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
         )

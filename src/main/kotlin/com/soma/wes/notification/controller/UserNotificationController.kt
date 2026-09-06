@@ -12,6 +12,9 @@ import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PutMapping
+import org.springframework.web.bind.annotation.PatchMapping
+import com.soma.wes.notification.dto.ReadUserNotificationsRequest
+import com.soma.wes.notification.dto.ReadUserNotificationsResponse
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
@@ -29,6 +32,14 @@ class UserNotificationController(
         @RequestParam(required = false) scopeId: Long?,
     ): ResponseEntity<List<UserNotificationResponse>> =
         ResponseEntity.ok(notificationService.list(loginUser.id, scope, scopeId))
+
+    @PatchMapping("/read")
+    override fun read(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @Valid @RequestBody request: ReadUserNotificationsRequest,
+    ): ResponseEntity<ReadUserNotificationsResponse> {
+        return ResponseEntity.ok(notificationService.read(loginUser.id, request))
+    }
 
     @GetMapping("/settings")
     override fun getSettings(

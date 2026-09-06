@@ -88,6 +88,13 @@ class RetouchRound(
         completedAt = at
     }
 
+    /** 작가가 보정 작업을 시작하기 전에 선택을 다시 열면 초안 메모는 보존한다. */
+    fun reopenRequest() {
+        if (status != RetouchRoundStatus.REQUESTED) throw RetouchException(RetouchErrorCode.INVALID_ROUND_STATUS)
+        status = RetouchRoundStatus.DRAFTING
+        requestedAt = null
+    }
+
     companion object {
 
         /** 회차 번호의 시작. */

@@ -60,6 +60,7 @@ class CollabPhotoViewAssembler(
                 likeCount = likeCounts[photoId] ?: 0,
                 commentCount = commentCounts[photoId] ?: 0,
                 liked = photoId in myLikes,
+                metadata = com.soma.wes.photo.dto.response.PhotoMetadataResponse.from(photosById[photoId]?.metadata),
             )
         }
         val responsePage = PageResponse(

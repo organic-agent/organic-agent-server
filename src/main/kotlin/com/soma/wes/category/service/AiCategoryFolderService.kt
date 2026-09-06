@@ -49,7 +49,7 @@ class AiCategoryFolderService(
 
     @Transactional
     fun createFromAnalysis(galleryId: Long, userId: Long): List<ConceptFolderResponse> {
-        galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requireUploader(galleryId, userId)
         return createFromAnalysisLocked(galleryId)
     }
 

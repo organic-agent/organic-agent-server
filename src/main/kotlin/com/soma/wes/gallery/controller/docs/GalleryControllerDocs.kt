@@ -1,6 +1,7 @@
 package com.soma.wes.gallery.controller.docs
 
 import com.soma.wes.auth.domain.LoginUser
+import com.soma.wes.gallery.dto.request.RequestSelectionIncreaseRequest
 import com.soma.wes.gallery.dto.request.ChangeMaxRetouchRoundCountRequest
 import com.soma.wes.gallery.dto.request.ChangeMaxSelectablePhotoCountRequest
 import com.soma.wes.gallery.dto.request.ChangeSelectionDeadlineRequest
@@ -460,9 +461,9 @@ interface GalleryControllerDocs {
     fun open(loginUser: LoginUser, galleryId: Long): ResponseEntity<GalleryResponse>
 
     @Operation(
-        summary = "갤러리 선택 마감",
+        summary = "갤러리 종료 및 보관",
         description = "OPEN 갤러리를 CLOSED로 바꾼다. 담당 작가만 할 수 있다. " +
-            "마감한 뒤에도 부부는 갤러리와 사진을 계속 볼 수 있고, 고르거나 묶는 것만 막힌다.",
+            "ARCHIVED 단계로 전환하며 이후에는 열람과 삭제만 가능하다.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "마감 성공"),
@@ -629,4 +630,6 @@ interface GalleryControllerDocs {
         ),
     )
     fun moveToTrash(loginUser: LoginUser, galleryId: Long): ResponseEntity<Unit>
+    @Operation(summary = "계약 장수 상향 요청", description = "스튜디오 초대 클라이언트가 요청한다. 작가가 계약 장수를 변경하면 클라이언트에게 알림이 간다.")
+    fun requestSelectionIncrease(loginUser: LoginUser, galleryId: Long, request: RequestSelectionIncreaseRequest): ResponseEntity<Unit>
 }

@@ -30,6 +30,12 @@ data class GalleryResponse(
     val shootType: ShootType,
 
     val createdAt: ZonedDateTime?,
+    val photoOrganizationRequired: Boolean = false,
+    val foldersSavedAt: ZonedDateTime? = null,
+    val retouchConfirmedAt: ZonedDateTime? = null,
+    val archivedUntil: ZonedDateTime? = null,
+    val planExpiresAt: ZonedDateTime? = null,
+    val planMaxPhotoCount: Int? = null,
 ) {
 
     companion object {
@@ -46,6 +52,12 @@ data class GalleryResponse(
             maxRetouchRoundCount = gallery.maxRetouchRoundCount,
             shootType = gallery.shootType,
             createdAt = gallery.createdAt,
+            photoOrganizationRequired = gallery.photoOrganizationRequired,
+            foldersSavedAt = gallery.foldersSavedAt,
+            retouchConfirmedAt = gallery.retouchConfirmedAt,
+            archivedUntil = gallery.archivedUntil,
+            planExpiresAt = gallery.planExpiresAt,
+            planMaxPhotoCount = gallery.planMaxPhotoCount,
         )
     }
 }

@@ -526,6 +526,9 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
                 .param("galleryId", gallery.id).query { rs, _ -> rs.getLong(1) }.single(),
         ).isOne()
         val conceptFolderId = createConceptFolder(gallery.id)
+        jdbcClient.sql("UPDATE concept_folders SET name = :name WHERE id = :id")
+            .param("name", "컨셉 private@example.com token=must-not-leak")
+            .param("id", conceptFolderId).update()
         val collaboration = adminResourceService.create(
             account.requiredId,
             AdminResourceType.COLLABORATION,
@@ -596,8 +599,8 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             jsonPath("$.blockedCapabilities") { isArray() }
             jsonPath("$.view.sections.photos[0].photoId") { value(photo.id) }
             jsonPath("$.view.sections.selections[0].galleryId") { value(gallery.id) }
-            jsonPath("$.view.sections.collaborations[0].sessionId") { value(collaboration.id) }
-            jsonPath("$.view.sections.comments[0].photoId") { value(photo.id) }
+            jsonPath("$.view.sections.collaborations.length()") { value(0) }
+            jsonPath("$.view.sections.comments.length()") { value(0) }
             jsonPath("$.view.sections.categories[0].conceptFolderId") { value(conceptFolderId) }
             jsonPath("$.view.sections.retouch[0].galleryId") { value(gallery.id) }
             jsonPath("$.view.sectionCounts.photos") { value(1) }

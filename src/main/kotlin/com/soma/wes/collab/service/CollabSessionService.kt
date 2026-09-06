@@ -42,13 +42,18 @@ class CollabSessionService(
 
         val existing = sessionRepository.findByConceptFolderId(concept.requiredId)
         if (existing != null) {
-            if (existing.isRevoked) existing.republish(tokenGenerator.generate())
+            if (existing.isRevoked || existing.isExpiredAt(ZonedDateTime.now(clock))) existing.republish(tokenGenerator.generate(), ZonedDateTime.now(clock).plusDays(LINK_TTL_DAYS))
             existing.rename(request.name)
+            existing.updateCover(request.coverTitle, request.coverAuthor)
+            request.includeAllAlbums?.let { existing.includeAllAlbums = it }
             return toResponse(existing)
         }
         val session = sessionRepository.save(
             CollabSession.of(galleryId, concept.requiredId, request.name, tokenGenerator.generate()),
         )
+        session.expiresAt = ZonedDateTime.now(clock).plusDays(LINK_TTL_DAYS)
+        session.updateCover(request.coverTitle, request.coverAuthor)
+        request.includeAllAlbums?.let { session.includeAllAlbums = it }
         return toResponse(session)
     }
 
@@ -59,9 +64,11 @@ class CollabSessionService(
         userId: Long,
         request: RenameCollabSessionRequest,
     ): CollabSessionResponse {
-        galleryAccessPolicy.requireCollabManager(galleryId, userId, writable = false)
+        galleryAccessPolicy.requireCollabManager(galleryId, userId, writable = true)
         val session = sessionRepository.requireByIdAndGalleryId(sessionId, galleryId)
         session.rename(request.name)
+        session.updateCover(request.coverTitle, request.coverAuthor)
+        request.includeAllAlbums?.let { session.includeAllAlbums = it }
         return toResponse(session)
     }
 
@@ -69,7 +76,7 @@ class CollabSessionService(
     fun republish(galleryId: Long, sessionId: Long, userId: Long): CollabSessionResponse {
         galleryAccessPolicy.requireCollabManager(galleryId, userId, writable = true)
         val session = sessionRepository.requireByIdAndGalleryId(sessionId, galleryId)
-        session.republish(tokenGenerator.generate())
+        session.republish(tokenGenerator.generate(), ZonedDateTime.now(clock).plusDays(LINK_TTL_DAYS))
         return toResponse(session)
     }
 
@@ -81,7 +88,7 @@ class CollabSessionService(
 
     @Transactional
     fun deleteComment(galleryId: Long, sessionId: Long, commentId: Long, userId: Long) {
-        galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requireCollabManager(galleryId, userId, writable = false)
         sessionRepository.requireByIdAndGalleryId(sessionId, galleryId)
         val comment = commentRepository.findById(commentId)
             .orElseThrow { CollabException(CollabErrorCode.COMMENT_NOT_FOUND) }
@@ -95,4 +102,8 @@ class CollabSessionService(
         urlResolver.resolve(session.collabToken),
         photoViewAssembler.count(session.conceptFolderId),
     )
+    companion object {
+        /** 와이어프레임의 게스트 링크 유효기간. */
+        private const val LINK_TTL_DAYS = 7L
+    }
 }
