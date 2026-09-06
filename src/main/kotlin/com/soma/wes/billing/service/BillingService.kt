@@ -10,7 +10,6 @@ import com.soma.wes.billing.exception.BillingException
 import com.soma.wes.billing.repository.TestCheckoutRepository
 import com.soma.wes.user.repository.UserRepository
 import com.soma.wes.user.repository.requireById
-import org.springframework.core.env.Environment
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -19,7 +18,6 @@ import java.time.ZonedDateTime
 @Service
 class BillingService(
     private val properties: BillingProperties,
-    private val environment: Environment,
     private val userRepository: UserRepository,
     private val checkoutRepository: TestCheckoutRepository,
     private val clock: Clock,
@@ -51,9 +49,7 @@ class BillingService(
             ?: throw BillingException(BillingErrorCode.CHECKOUT_NOT_FOUND))
     }
 
-    private fun isTestCheckoutEnabled(): Boolean = properties.testCheckoutEnabled &&
-        environment.activeProfiles.any { it == "local" || it == "test" } &&
-        environment.activeProfiles.none { it == "prod" }
+    private fun isTestCheckoutEnabled(): Boolean = properties.testCheckoutEnabled
 
     private fun validatePlans() {
         if (properties.plans.map { it.id }.distinct().size != properties.plans.size || properties.plans.any {
