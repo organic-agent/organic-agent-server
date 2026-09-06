@@ -10,16 +10,15 @@ import com.soma.wes.billing.exception.BillingException
 import com.soma.wes.billing.repository.TestCheckoutRepository
 import com.soma.wes.user.repository.UserRepository
 import com.soma.wes.user.repository.requireById
-import org.springframework.core.env.Environment
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.ZonedDateTime
+import java.time.temporal.ChronoUnit
 
 @Service
 class BillingService(
     private val properties: BillingProperties,
-    private val environment: Environment,
     private val userRepository: UserRepository,
     private val checkoutRepository: TestCheckoutRepository,
     private val clock: Clock,
@@ -37,9 +36,11 @@ class BillingService(
         validatePlans()
         val plan = properties.plans.find { it.id == request.planId }
             ?: throw BillingException(BillingErrorCode.PLAN_NOT_FOUND)
+        // 응답의 만료 시각을 완료일로 다시 보내도 PostgreSQL에 저장된 값보다 늦어지지 않아야 한다.
+        val expiresAt = ZonedDateTime.now(clock).plusDays(plan.durationDays.toLong()).truncatedTo(ChronoUnit.MICROS)
         val checkout = checkoutRepository.save(TestCheckout(
             userId = userId, planId = plan.id, amount = plan.amount, currency = plan.currency,
-            maxPhotoCount = plan.maxPhotoCount, expiresAt = ZonedDateTime.now(clock).plusDays(plan.durationDays.toLong()),
+            maxPhotoCount = plan.maxPhotoCount, expiresAt = expiresAt,
         ))
         return CheckoutResponse.from(checkout)
     }
@@ -51,9 +52,7 @@ class BillingService(
             ?: throw BillingException(BillingErrorCode.CHECKOUT_NOT_FOUND))
     }
 
-    private fun isTestCheckoutEnabled(): Boolean = properties.testCheckoutEnabled &&
-        environment.activeProfiles.any { it == "local" || it == "test" } &&
-        environment.activeProfiles.none { it == "prod" }
+    private fun isTestCheckoutEnabled(): Boolean = properties.testCheckoutEnabled
 
     private fun validatePlans() {
         if (properties.plans.map { it.id }.distinct().size != properties.plans.size || properties.plans.any {
