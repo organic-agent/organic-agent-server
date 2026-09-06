@@ -4,10 +4,12 @@ import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.collab.controller.docs.CollabSessionControllerDocs
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
 import com.soma.wes.collab.dto.request.RenameCollabSessionRequest
+import com.soma.wes.collab.dto.response.CollabCommentResponse
 import com.soma.wes.collab.dto.response.CollabPhotoPageResponse
 import com.soma.wes.collab.dto.response.CollabSessionResponse
 import com.soma.wes.collab.service.CollabSessionQueryService
 import com.soma.wes.collab.service.CollabSessionService
+import com.soma.wes.global.page.PageResponse
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
@@ -94,5 +96,19 @@ class CollabSessionController(
     ): ResponseEntity<Unit> {
         service.deleteComment(galleryId, sessionId, commentId, loginUser.id)
         return ResponseEntity.noContent().build()
+    }
+
+    @GetMapping("/{sessionId}/photos/{photoId}/comments")
+    override fun listPhotoComments(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @PathVariable sessionId: Long,
+        @PathVariable photoId: Long,
+        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "50") size: Int,
+    ): ResponseEntity<PageResponse<CollabCommentResponse>> {
+        val result = queryService.listPhotoComments(galleryId, sessionId, photoId, loginUser.id, page, size)
+
+        return ResponseEntity.ok(result)
     }
 }

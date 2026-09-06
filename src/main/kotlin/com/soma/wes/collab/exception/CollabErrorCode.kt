@@ -9,8 +9,8 @@ enum class CollabErrorCode(
     override val message: String,
 ) : ErrorCode {
 
-    /** 닉네임이 비었거나 20자를 넘긴 경우. */
-    INVALID_NICKNAME(HttpStatus.BAD_REQUEST, "COLLAB_400_1", "닉네임은 1자 이상 20자 이하여야 합니다."),
+    /** 닉네임이 비었거나 50자를 넘긴 경우. */
+    INVALID_NICKNAME(HttpStatus.BAD_REQUEST, "COLLAB_400_1", "닉네임은 1자 이상 50자 이하여야 합니다."),
 
     /** 댓글이 비었거나 500자를 넘긴 경우. */
     INVALID_COMMENT(HttpStatus.BAD_REQUEST, "COLLAB_400_2", "댓글은 1자 이상 500자 이하여야 합니다."),

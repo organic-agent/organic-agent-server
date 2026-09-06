@@ -14,8 +14,6 @@ import com.soma.wes.collab.repository.CollabSessionRepository
 import com.soma.wes.collab.repository.requireByIdAndGalleryId
 import com.soma.wes.collab.support.CollabLinkResolver
 import com.soma.wes.collab.support.CollabPhotoViewAssembler
-import com.soma.wes.gallery.repository.GalleryRepository
-import com.soma.wes.gallery.repository.requireWithLockById
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.global.SecureTokenGenerator
 import com.soma.wes.trash.service.ProductChildTrashService
@@ -27,7 +25,6 @@ import org.springframework.transaction.annotation.Transactional
 @Service
 class CollabSessionService(
     private val galleryAccessPolicy: GalleryAccessPolicy,
-    private val galleryRepository: GalleryRepository,
     private val conceptRepository: ConceptFolderRepository,
     private val sessionRepository: CollabSessionRepository,
     private val commentRepository: CollabPhotoCommentRepository,
@@ -39,8 +36,7 @@ class CollabSessionService(
 ) {
     @Transactional
     fun open(galleryId: Long, userId: Long, request: OpenCollabSessionRequest): CollabSessionResponse {
-        galleryAccessPolicy.requireManager(galleryId, userId)
-        galleryRepository.requireWithLockById(galleryId)
+        galleryAccessPolicy.requireCollabManager(galleryId, userId, writable = true)
         val concept = conceptRepository.findByIdAndGalleryId(request.conceptFolderId, galleryId)
             ?: throw CategoryException(CategoryErrorCode.CONCEPT_NOT_FOUND)
 
@@ -63,7 +59,7 @@ class CollabSessionService(
         userId: Long,
         request: RenameCollabSessionRequest,
     ): CollabSessionResponse {
-        galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requireCollabManager(galleryId, userId, writable = false)
         val session = sessionRepository.requireByIdAndGalleryId(sessionId, galleryId)
         session.rename(request.name)
         return toResponse(session)
@@ -71,8 +67,7 @@ class CollabSessionService(
 
     @Transactional
     fun republish(galleryId: Long, sessionId: Long, userId: Long): CollabSessionResponse {
-        galleryAccessPolicy.requireManager(galleryId, userId)
-        galleryRepository.requireWithLockById(galleryId)
+        galleryAccessPolicy.requireCollabManager(galleryId, userId, writable = true)
         val session = sessionRepository.requireByIdAndGalleryId(sessionId, galleryId)
         session.republish(tokenGenerator.generate())
         return toResponse(session)
@@ -80,8 +75,7 @@ class CollabSessionService(
 
     @Transactional
     fun revoke(galleryId: Long, sessionId: Long, userId: Long) {
-        galleryAccessPolicy.requireManager(galleryId, userId)
-        galleryRepository.requireWithLockById(galleryId)
+        galleryAccessPolicy.requireCollabManager(galleryId, userId, writable = false)
         sessionRepository.requireByIdAndGalleryId(sessionId, galleryId).revoke(ZonedDateTime.now(clock))
     }
 
