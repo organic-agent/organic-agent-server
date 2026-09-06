@@ -200,6 +200,8 @@ class CollabManualFolderServiceTest @Autowired constructor(
             assertCode(CollabErrorCode.MANUAL_CONVERSION_REQUIRED) {
                 service.removePhotos(shared.galleryId, shared.session.sessionId, userId, CollabPhotoIdsRequest(listOf(shared.photoId)))
             }
+            // JVM 시계는 나노초를 제공할 수 있으므로 DB에 저장된 전환 직전 만료 시각을 기준으로 비교한다.
+            val persistedExpiresAt = query.get(shared.galleryId, shared.session.sessionId, userId).expiresAt
             // when
             val converted = service.convertToManual(shared.galleryId, shared.session.sessionId, userId)
             service.convertToManual(shared.galleryId, shared.session.sessionId, userId)
@@ -211,7 +213,7 @@ class CollabManualFolderServiceTest @Autowired constructor(
             assertThat(converted.selectionMode).isEqualTo(CollabSelectionMode.MANUAL)
             assertThat(converted.conceptFolderId).isNull()
             assertThat(converted.collabUrl).isEqualTo(shared.session.collabUrl)
-            assertThat(converted.expiresAt).isEqualTo(shared.session.expiresAt)
+            assertThat(converted.expiresAt).isEqualTo(persistedExpiresAt)
             val contents = guestQuery.listPhotos(shared.token, null, viewer.guestToken, 0, 20).contents
             assertThat(contents.map { it.photoId }).containsExactly(shared.photoId)
             assertThat(contents.single().liked).isTrue()
