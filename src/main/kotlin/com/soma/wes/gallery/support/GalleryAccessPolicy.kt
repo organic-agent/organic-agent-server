@@ -110,6 +110,55 @@ class GalleryAccessPolicy(
         return gallery
     }
 
+    /** 부부의 내부 대화는 작가에게 공개하지 않는다. 마감 이후에도 대화 조회와 본인 삭제는 남긴다. */
+    @Transactional(readOnly = true)
+    fun requireParticipantViewer(galleryId: Long, userId: Long): Gallery {
+        val gallery = galleryRepository.requireById(galleryId)
+        requireParticipant(gallery, userId)
+        return gallery
+    }
+
+    /** 댓글은 선택 결과를 바꾸지 않으므로 제출 여부와 무관하지만, 갤러리의 의견 작성 기한은 지킨다. */
+    @Transactional
+    fun requireParticipantWriter(galleryId: Long, userId: Long): Gallery {
+        val gallery = galleryRepository.requireWithLockById(galleryId)
+        requireParticipant(gallery, userId)
+        requireSelectable(gallery)
+        return gallery
+    }
+
+    private fun requireParticipant(gallery: Gallery, userId: Long) {
+        val workspace = workspaceRepository.findById(gallery.workspaceId).orElse(null)
+            ?: throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        val membership = workspaceMemberRepository.findByWorkspaceIdAndUserId(gallery.workspaceId, userId)
+        // PERSONAL_PARTNER 초대 수락은 gallery_members가 아니라 작업공간 MEMBER를 만든다.
+        val personalParticipant = workspace.type == WorkspaceType.PERSONAL && membership != null &&
+            (membership.role == WorkspaceRole.MEMBER || workspace.personalOwnerUserId == userId)
+        val invited = galleryMemberRepository.findByGalleryIdAndUserId(gallery.requiredId, userId) != null
+        // 운영 정지로 관리 기능이 막혀도 직원의 신분이 부부로 바뀌지는 않는다.
+        val studioManager = workspace.type == WorkspaceType.STUDIO && membership != null
+        if (studioManager || (!personalParticipant && !invited) || !gallery.isVisibleToMember) {
+            throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        }
+    }
+
+    /** 공유 관리는 기존 작업공간 관리자와 초대 부부가 담당한다. 부부는 마감 후에도 링크를 닫을 수 있다. */
+    @Transactional
+    fun requireCollabManager(galleryId: Long, userId: Long, writable: Boolean): Gallery {
+        val gallery = galleryRepository.requireWithLockById(galleryId)
+        if (isManager(gallery, userId)) {
+            return gallery
+        }
+
+        findMember(galleryId, userId)
+        if (writable) {
+            requireSelectable(gallery)
+        } else if (!gallery.isVisibleToMember) {
+            throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        }
+        return gallery
+    }
+
     /**
      * 갤러리 상세, 사진 목록, 선택 앨범 조회, 협업 결과 조회.
      */

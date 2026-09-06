@@ -37,6 +37,11 @@ enum class PhotoErrorCode(
     /** 요청에 다른 갤러리의 사진 id가 섞여 있는 경우. */
     PHOTO_NOT_FOUND(HttpStatus.NOT_FOUND, "PHOTO_404_1", "존재하지 않는 사진입니다."),
 
+    /** 인증된 부부의 내부 댓글. 하객 협업 댓글과는 별도 자원이다. */
+    INVALID_COMMENT(HttpStatus.BAD_REQUEST, "PHOTO_400_6", "댓글은 비어 있을 수 없고 500자 이하여야 합니다."),
+    COMMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "PHOTO_404_2", "존재하지 않는 사진 댓글입니다."),
+    COMMENT_DELETE_DENIED(HttpStatus.FORBIDDEN, "PHOTO_403_1", "본인이 작성한 댓글만 삭제할 수 있습니다."),
+
 
     /** 운영자 승인 삭제에서 S3 원본 또는 미리보기를 모두 지우지 못한 경우. */
     STORAGE_DELETE_FAILED(HttpStatus.BAD_GATEWAY, "PHOTO_502_2", "사진 원본 또는 미리보기 삭제를 완료하지 못했습니다."),
