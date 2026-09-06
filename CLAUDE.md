@@ -56,6 +56,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     Parameter Store에서 읽는다.
   - `reset-test-data.sh [local|remote] [--all] [--with-s3]` — 수동 테스트 데이터 초기화.
     계정은 기본 보존(토큰 유지). TRUNCATE 목록 규칙은 `.claude/rules/migration.md` 참조.
+  - `delete-accounts.sh [local|remote] --email a@x.com [--email …] [--with-s3]` — 특정 OAuth 계정과
+    그 계정에 딸린 워크스페이스·갤러리·사진·S3 객체만 삭제. 다른 사용자·관리자 계정은 남긴다.
   - `lambda/{embedder,score,categorize}.sh --gallery-id G [--job-id J] [--force]` — **로컬 Lambda 대역.** 운영 Lambda 함수
     하나 = 스크립트 하나(AI repo 최상위 모듈과 같은 이름), 인자는 Lambda 페이로드 키 그대로. 로컬 wes(local 프로필)의
     `analysis` 도메인이 "AI 분석" 버튼에서 단계마다 이것을 띄운다(`LocalProcessStageInvoker`, 운영의

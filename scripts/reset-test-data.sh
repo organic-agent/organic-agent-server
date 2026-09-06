@@ -114,8 +114,8 @@ fi
 #
 # 자식부터 적는다. RESTART IDENTITY로 id도 1부터 다시 시작한다 -- 매번 같은 id로 테스트하면
 # URL을 그대로 재사용할 수 있고, 어제 만든 갤러리 3번과 오늘 것이 헷갈리지 않는다.
-TABLES="collab_session_photos, collab_photo_likes, collab_photo_comments, collab_participants, collab_photos, collab_sessions"
-TABLES="$TABLES, admin_photo_replacement_uploads, admin_photo_revisions"
+TABLES="collab_session_photos, collab_photo_likes, collab_photo_comments, collab_participants, collab_sessions"
+TABLES="$TABLES, admin_photo_replacement_uploads, admin_photo_revisions, admin_retouch_artifact_uploads, admin_ai_selection_jobs"
 TABLES="$TABLES, ai_pair_verdicts, ai_recommendations, ai_selection_jobs, ai_concept_assignments, ai_analysis_jobs, photo_analysis"
 TABLES="$TABLES, categorization_job_photos, categorization_jobs, photo_category_assignments, detail_folders, concept_folders"
 TABLES="$TABLES, admin_selection_revisions, photo_selection_items, photo_selections, photo_ratings, photo_comments"
@@ -124,9 +124,14 @@ TABLES="$TABLES, photos"
 TABLES="$TABLES, test_checkouts, studio_invites, gallery_invites, gallery_members, galleries"
 TABLES="$TABLES, user_notifications, user_notification_settings"
 TABLES="$TABLES, studio_retouch_capabilities"
+# 관리자 쪽 갤러리·사진 참조 기록. FK가 없는 것도 있지만 가리키는 행이 사라지면 쓰레기라 함께 비운다.
+TABLES="$TABLES, admin_processing_jobs, admin_trash_entries, admin_trash_batches, admin_child_trash_records, admin_entity_revisions, product_purge_claims"
 if [ "$SCOPE" = "all" ]; then
+  TABLES="$TABLES, admin_notification_inbox_reads, admin_notification_inbox, admin_notification_outbox, admin_audit_logs"
   TABLES="$TABLES, admin_impersonation_sessions, admin_auth_events, admin_sessions, admin_accounts"
   TABLES="$TABLES, studios"
+  # users를 지우려면 users를 참조하는 workspaces·workspace_members(studios·galleries의 부모)도 같이 비워야 한다.
+  TABLES="$TABLES, workspace_members, workspaces"
   TABLES="$TABLES, refresh_tokens, oauth_states, users"
 fi
 
