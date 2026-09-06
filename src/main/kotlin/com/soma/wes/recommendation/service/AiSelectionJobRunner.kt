@@ -100,17 +100,13 @@ class AiSelectionJobRunner(
         val galleryId = selection.galleryId
         val gallery = galleryRepository.findById(galleryId).orElseThrow()
 
-        val photos = photoRepository.findAllByGalleryIdOrderByDisplayOrderAsc(galleryId).sortedWith(Photo.DISPLAY_ORDER)
-        val analysisById = photoAnalysisRepository.findAllByGalleryId(galleryId)
-            .filter { it.isAnalyzed && it.embedding != null }
-            .associateBy { it.photoId }
+        // 갤러리 전체는 벡터 없는 요약으로 읽는다 — 점수 정규화·피사체 통계·형제 목록이 전체 행을 보지만 벡터는 안 본다.
+        val summaryById = photoAnalysisRepository.findAllAnalyzedSummaryByGalleryId(galleryId).associateBy { it.photoId }
         val rows = mutableListOf<RecommendablePhotoDto>()
-        val embeddings = mutableListOf<FloatArray>()
         val previewKeys = mutableMapOf<Long, String?>()
-        photos.forEach { photo ->
-            val analysis = analysisById[photo.requiredId] ?: return@forEach
-            rows += RecommendablePhotoDto.from(analysis)
-            embeddings += normalized(analysis.embedding!!)
+        photoRepository.findAllByGalleryIdOrderByDisplayOrderAsc(galleryId).sortedWith(Photo.DISPLAY_ORDER).forEach { photo ->
+            val summary = summaryById[photo.requiredId] ?: return@forEach
+            rows += RecommendablePhotoDto.from(summary)
             previewKeys[photo.requiredId] = photo.previewKey
         }
         if (rows.isEmpty()) throw IllegalStateException("분석 결과가 없다: gallery=$galleryId")
@@ -139,7 +135,7 @@ class AiSelectionJobRunner(
             selectionId = selection.requiredId,
             galleryId = galleryId,
             rows = rows,
-            embeddings = embeddings.toTypedArray(),
+            embeddings = loadEmbeddings(rows, folders, scopeFolderId),
             folders = folders,
             quotaFolders = if (scopeFolderId == null) folders else setFolders.ifEmpty { folders },
             scopeFolderId = scopeFolderId,
@@ -149,6 +145,28 @@ class AiSelectionJobRunner(
             previousRound = previousRound,
             previewKeys = previewKeys,
         )
+    }
+
+    /**
+     * 벡터는 이번 라운드가 도는 사진만 읽는다 — 폴더 이상치 판정과 MMR이 폴더 안에서만 벡터를 비교하기 때문이다.
+     * 폴더 범위면 그 폴더의 사진, 전체 라운드면 세트 전 폴더 + 미분류 = 분석된 사진 전부다.
+     * 반환은 [rows]와 같은 인덱스의 배열이고, 범위 밖 행은 빈 배열이다 — 계산은 범위 폴더의 사진 인덱스만 넘기므로 닿지 않는다.
+     */
+    private fun loadEmbeddings(
+        rows: List<RecommendablePhotoDto>,
+        folders: List<FolderSetDetailDto>,
+        scopeFolderId: Long?,
+    ): Array<FloatArray> {
+        val rowIds = rows.map { it.photoId }
+        val wanted = if (scopeFolderId == null) {
+            rowIds
+        } else {
+            val analyzed = rowIds.toSet()
+            folders.flatMap { it.photoIds }.filter { it in analyzed }
+        }
+        val vectorById = photoAnalysisRepository.findAllEmbeddingByPhotoIdIn(wanted)
+            .associate { it.photoId to normalized(it.embedding) }
+        return Array(rows.size) { vectorById[rowIds[it]] ?: NO_EMBEDDING }
     }
 
     // ── 계산 ──
@@ -443,5 +461,8 @@ class AiSelectionJobRunner(
         private const val PREF_MIN_SELECTED = 5
         private const val UNFILED = "미분류"
         private const val UNKNOWN = "unknown"
+
+        /** 범위 밖 행의 벡터 자리. 조회 조건이 벡터 있는 행만 고르므로 범위 안 사진에는 오지 않는다. */
+        private val NO_EMBEDDING = FloatArray(0)
     }
 }
