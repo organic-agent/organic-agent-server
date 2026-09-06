@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.ZonedDateTime
+import java.time.temporal.ChronoUnit
 
 @Service
 class BillingService(
@@ -35,9 +36,11 @@ class BillingService(
         validatePlans()
         val plan = properties.plans.find { it.id == request.planId }
             ?: throw BillingException(BillingErrorCode.PLAN_NOT_FOUND)
+        // 응답의 만료 시각을 완료일로 다시 보내도 PostgreSQL에 저장된 값보다 늦어지지 않아야 한다.
+        val expiresAt = ZonedDateTime.now(clock).plusDays(plan.durationDays.toLong()).truncatedTo(ChronoUnit.MICROS)
         val checkout = checkoutRepository.save(TestCheckout(
             userId = userId, planId = plan.id, amount = plan.amount, currency = plan.currency,
-            maxPhotoCount = plan.maxPhotoCount, expiresAt = ZonedDateTime.now(clock).plusDays(plan.durationDays.toLong()),
+            maxPhotoCount = plan.maxPhotoCount, expiresAt = expiresAt,
         ))
         return CheckoutResponse.from(checkout)
     }

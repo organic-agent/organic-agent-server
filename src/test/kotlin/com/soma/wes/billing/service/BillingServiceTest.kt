@@ -20,6 +20,7 @@ import org.springframework.boot.test.context.ConfigDataApplicationContextInitial
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
 import java.time.Clock
+import java.time.temporal.ChronoField
 
 @IntegrationTest
 class BillingServiceTest @Autowired constructor(
@@ -29,8 +30,10 @@ class BillingServiceTest @Autowired constructor(
     private val personalGalleryService: PersonalGalleryService,
     private val clock: Clock,
 ) {
-    private fun service(properties: BillingProperties = BillingProperties(testCheckoutEnabled = true)): BillingService =
-        BillingService(properties, userRepository, checkoutRepository, clock)
+    private fun service(
+        properties: BillingProperties = BillingProperties(testCheckoutEnabled = true),
+        billingClock: Clock = clock,
+    ): BillingService = BillingService(properties, userRepository, checkoutRepository, billingClock)
 
     private fun deployedProperties(vararg overrides: String): BillingProperties {
         var properties: BillingProperties? = null
@@ -66,13 +69,18 @@ class BillingServiceTest @Autowired constructor(
     fun `배포 프로필의 테스트 플랜으로 개인 갤러리까지 시작할 수 있다`() {
         // given
         val user = userFixture.사용자()
-        val target = service(deployedProperties())
+        val nanosecondClock = Clock.fixed(clock.instant().with(ChronoField.NANO_OF_SECOND, 123456100), clock.zone)
+        val target = service(deployedProperties(), nanosecondClock)
         // when
         val plans = target.getPlans()
         val checkout = target.checkout(user.requiredId, CheckoutRequest(plans.plans.single().id))
         val gallery = personalGalleryService.create(
             user.requiredId,
-            CreatePersonalGalleryRequest(checkoutId = checkout.checkoutId, title = "테스트 개인 갤러리"),
+            CreatePersonalGalleryRequest(
+                checkoutId = checkout.checkoutId,
+                title = "테스트 개인 갤러리",
+                selectionDeadline = checkout.expiresAt,
+            ),
         )
         // then
         assertThat(plans.mode).isEqualTo("TEST")
