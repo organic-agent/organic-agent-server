@@ -10,7 +10,8 @@ import com.soma.wes.support.IntegrationTest
 import com.soma.wes.trash.service.ProductChildTrashService
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.SoftAssertions.assertSoftly
-import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.transaction.support.TransactionTemplate
@@ -26,8 +27,9 @@ class AdminProductChildTrashRestoreTest @Autowired constructor(
     private val jdbcClient: JdbcClient,
 ) {
 
-    @Test
-    fun `제품에서 지운 댓글 좋아요 보정 항목을 관리자가 7일 안에 복원한다`() {
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `제품에서 지운 댓글 좋아요 보정 항목을 관리자가 7일 안에 복원한다`(manual: Boolean) {
         val actor = adminAccountFixture.관리자("product-child-restore")
         val user = create(
             actor.requiredId,
@@ -67,7 +69,7 @@ class AdminProductChildTrashRestoreTest @Autowired constructor(
             AdminResourceType.COLLABORATION,
             mapOf(
                 "galleryId" to gallery.id,
-                "conceptFolderId" to insertConceptFolder(gallery.id),
+                "conceptFolderId" to if (manual) null else insertConceptFolder(gallery.id),
                 "name" to "제품 휴지통 복원",
             ),
         )
@@ -76,7 +78,7 @@ class AdminProductChildTrashRestoreTest @Autowired constructor(
             AdminResourceType.RETOUCH_REQUEST,
             mapOf("galleryId" to gallery.id, "roundNo" to 1),
         )
-        val photoId = assignPhotoToSessionConcept(collaboration.id, photo.id)
+        val photoId = if (manual) addManualPhoto(collaboration.id, photo.id) else assignPhotoToSessionConcept(collaboration.id, photo.id)
         val guestId = insertGuest(collaboration.id)
         val commentId = insertComment(photoId, guestId)
 
@@ -127,6 +129,17 @@ class AdminProductChildTrashRestoreTest @Autowired constructor(
             CreateAdminResourceRequest("제품 휴지통 복원 테스트 데이터 생성", fields),
             "127.0.0.1",
         )
+
+    private fun addManualPhoto(sessionId: Long, photoId: Long): Long {
+        jdbcClient.sql(
+            """
+            INSERT INTO collab_session_photos (collab_session_id, gallery_id, photo_id, version, created_at, updated_at)
+            SELECT id, gallery_id, :photoId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            FROM collab_sessions WHERE id = :sessionId
+            """.trimIndent(),
+        ).param("sessionId", sessionId).param("photoId", photoId).update()
+        return photoId
+    }
 
     private fun assignPhotoToSessionConcept(sessionId: Long, photoId: Long): Long {
         val conceptId = jdbcClient.sql("SELECT concept_folder_id FROM collab_sessions WHERE id = :sessionId")

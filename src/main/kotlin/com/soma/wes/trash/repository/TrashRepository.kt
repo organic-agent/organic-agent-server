@@ -140,6 +140,7 @@ class TrashRepository(
             "SELECT id FROM photos WHERE gallery_id = :galleryId ORDER BY id FOR UPDATE",
             "SELECT id FROM photo_selections WHERE gallery_id = :galleryId ORDER BY id FOR UPDATE",
             "SELECT id FROM collab_sessions WHERE gallery_id = :galleryId ORDER BY id FOR UPDATE",
+            "SELECT id FROM collab_session_photos WHERE gallery_id = :galleryId ORDER BY id FOR UPDATE",
             """
                 SELECT c.id
                 FROM collab_photo_comments c
@@ -346,9 +347,13 @@ class TrashRepository(
                     JOIN photo_category_assignments a ON a.detail_folder_id = d.id
                     WHERE d.concept_folder_id = s.concept_folder_id
                       AND a.photo_id IN (:photoIds)
-                )
+                ) OR (s.concept_folder_id IS NULL AND EXISTS (
+                    SELECT 1 FROM collab_session_photos membership
+                    WHERE membership.collab_session_id = s.id AND membership.photo_id IN (:photoIds)
+                ))
                 ORDER BY s.id FOR UPDATE OF s
             """.trimIndent(),
+            "SELECT id FROM collab_session_photos WHERE photo_id IN (:photoIds) ORDER BY id FOR UPDATE",
             """
                 SELECT c.id
                 FROM collab_photo_comments c
@@ -780,9 +785,18 @@ class TrashRepository(
                       AND EXISTS (
                           SELECT 1
                           FROM collab_sessions session
-                          JOIN detail_folders detail ON detail.concept_folder_id = session.concept_folder_id
-                          JOIN photo_category_assignments assignment ON assignment.detail_folder_id = detail.id
-                          WHERE session.id = e.resource_id AND assignment.photo_id = $photoIdExpression
+                          WHERE session.id = e.resource_id AND (
+                              EXISTS (
+                                  SELECT 1 FROM detail_folders detail
+                                  JOIN photo_category_assignments assignment ON assignment.detail_folder_id = detail.id
+                                  WHERE detail.concept_folder_id = session.concept_folder_id
+                                    AND assignment.photo_id = $photoIdExpression
+                              ) OR (session.concept_folder_id IS NULL AND EXISTS (
+                                  SELECT 1 FROM collab_session_photos membership
+                                  WHERE membership.collab_session_id = session.id
+                                    AND membership.photo_id = $photoIdExpression
+                              ))
+                          )
                       )
                   )
                   OR (

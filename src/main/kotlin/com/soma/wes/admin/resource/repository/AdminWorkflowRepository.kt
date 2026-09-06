@@ -1620,16 +1620,24 @@ class AdminWorkflowRepository(
         EXISTS (
             SELECT 1
             FROM collab_sessions shared_session
-            JOIN concept_folders shared_concept
-              ON shared_concept.id = shared_session.concept_folder_id
-             AND shared_concept.deleted_at IS NULL
-            JOIN detail_folders shared_detail
-              ON shared_detail.concept_folder_id = shared_concept.id
-             AND shared_detail.deleted_at IS NULL
-            JOIN photo_category_assignments shared_assignment
-              ON shared_assignment.detail_folder_id = shared_detail.id
+            JOIN photos shared_photo ON shared_photo.gallery_id = shared_session.gallery_id
+              AND shared_photo.deleted_at IS NULL
             WHERE shared_session.id = $sessionExpression
-              AND shared_assignment.photo_id = $photoExpression
+              AND shared_photo.id = $photoExpression
+              AND (
+                  EXISTS (
+                      SELECT 1 FROM concept_folders shared_concept
+                      JOIN detail_folders shared_detail ON shared_detail.concept_folder_id = shared_concept.id
+                        AND shared_detail.deleted_at IS NULL
+                      JOIN photo_category_assignments shared_assignment ON shared_assignment.detail_folder_id = shared_detail.id
+                      WHERE shared_concept.id = shared_session.concept_folder_id
+                        AND shared_concept.deleted_at IS NULL
+                        AND shared_assignment.photo_id = shared_photo.id
+                  ) OR (shared_session.concept_folder_id IS NULL AND EXISTS (
+                      SELECT 1 FROM collab_session_photos membership
+                      WHERE membership.collab_session_id = shared_session.id AND membership.photo_id = shared_photo.id
+                  ))
+              )
         )
     """.trimIndent()
 

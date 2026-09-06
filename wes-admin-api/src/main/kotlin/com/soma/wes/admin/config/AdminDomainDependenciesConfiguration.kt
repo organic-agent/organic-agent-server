@@ -5,6 +5,7 @@ import com.soma.wes.collab.config.CollabProperties
 import com.soma.wes.collab.service.CollabSessionQueryService
 import com.soma.wes.collab.support.CollabCategoryReactionCleaner
 import com.soma.wes.collab.support.CollabLinkResolver
+import com.soma.wes.collab.support.CollabPhotoMembership
 import com.soma.wes.collab.support.CollabPhotoViewAssembler
 import com.soma.wes.category.service.CategorizationService
 import com.soma.wes.category.service.CategoryService
@@ -88,6 +89,7 @@ import org.springframework.context.annotation.Import
     RetouchService::class,
     PhotoViewAssembler::class,
     CollabPhotoViewAssembler::class,
+    CollabPhotoMembership::class,
     RetouchRequestService::class,
     RetouchPhotoLoader::class,
     RetouchResultLoader::class,

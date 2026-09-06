@@ -12,6 +12,7 @@ import com.soma.wes.collab.repository.CollabPhotoCommentRepository
 import com.soma.wes.collab.repository.CollabSessionRepository
 import com.soma.wes.collab.repository.requireByIdAndGalleryId
 import com.soma.wes.collab.support.CollabLinkResolver
+import com.soma.wes.collab.support.CollabPhotoMembership
 import com.soma.wes.collab.support.CollabPhotoViewAssembler
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.global.page.PageRequests
@@ -27,15 +28,20 @@ class CollabSessionQueryService(
     private val sessionRepository: CollabSessionRepository,
     private val commentRepository: CollabPhotoCommentRepository,
     private val participantRepository: CollabParticipantRepository,
-    private val conceptRepository: ConceptFolderRepository,
     private val photoRepository: PhotoRepository,
     private val photoViewAssembler: CollabPhotoViewAssembler,
     private val urlResolver: CollabLinkResolver,
+    private val membership: CollabPhotoMembership,
+    private val conceptRepository: ConceptFolderRepository,
 ) {
     @Transactional(readOnly = true)
     fun list(galleryId: Long, userId: Long): List<CollabSessionResponse> {
         galleryAccessPolicy.requireParticipantViewer(galleryId, userId)
-        return sessionRepository.findAllByGalleryIdOrderByCreatedAtDesc(galleryId).map(::toResponse)
+        val sessions = sessionRepository.findAllByGalleryIdOrderByCreatedAtDesc(galleryId)
+        val ids = membership.photoIds(sessions)
+        return sessions.map { session -> CollabSessionResponse.of(
+            session, urlResolver.resolve(session.collabToken), ids[session.requiredId].orEmpty().size.toLong(),
+        ) }
     }
 
     @Transactional(readOnly = true)
@@ -48,10 +54,10 @@ class CollabSessionQueryService(
     fun listPhotos(galleryId: Long, sessionId: Long, userId: Long, page: Int, size: Int): CollabPhotoPageResponse {
         galleryAccessPolicy.requireParticipantViewer(galleryId, userId)
         val session = sessionRepository.requireByIdAndGalleryId(sessionId, galleryId)
-        return photoViewAssembler.toPage(session.requiredId, session.conceptFolderId, page, size)
+        return photoViewAssembler.toPage(session, page, size)
     }
 
-    /** 폐기된 링크의 의견도 갤러리 구성원은 읽되, 현재 컨셉에서 빠진 사진의 의견은 노출하지 않는다. */
+    /** 폐기된 링크의 의견도 갤러리 구성원은 읽되, 현재 공유폴더에서 빠진 사진의 의견은 노출하지 않는다. */
     @Transactional(readOnly = true)
     fun listPhotoComments(
         galleryId: Long,
@@ -64,11 +70,13 @@ class CollabSessionQueryService(
         galleryAccessPolicy.requireParticipantViewer(galleryId, userId)
 
         val session = sessionRepository.requireByIdAndGalleryId(sessionId, galleryId)
-        conceptRepository.findByIdAndGalleryId(session.conceptFolderId, galleryId)
-            ?: throw CollabException(CollabErrorCode.SESSION_NOT_FOUND)
+        session.conceptFolderId?.let { conceptId ->
+            conceptRepository.findByIdAndGalleryId(conceptId, galleryId)
+                ?: throw CollabException(CollabErrorCode.SESSION_NOT_FOUND)
+        }
         photoRepository.findByIdAndGalleryId(photoId, galleryId)
             ?: throw CollabException(CollabErrorCode.COLLAB_PHOTO_NOT_FOUND)
-        if (!photoViewAssembler.contains(session.conceptFolderId, photoId)) {
+        if (!photoViewAssembler.contains(session, photoId)) {
             throw CollabException(CollabErrorCode.COLLAB_PHOTO_NOT_FOUND)
         }
 
@@ -98,12 +106,14 @@ class CollabSessionQueryService(
     @Transactional(readOnly = true)
     fun listViewerComments(galleryId: Long, userId: Long, limit: Int = 200): List<CollabViewerCommentResponse> {
         galleryAccessPolicy.requireParticipantViewer(galleryId, userId)
-        val sessionIds = sessionRepository.findAllByGalleryIdOrderByCreatedAtDesc(galleryId).map { it.requiredId }
-        if (sessionIds.isEmpty()) return emptyList()
+        val sessions = sessionRepository.findAllByGalleryIdOrderByCreatedAtDesc(galleryId)
+        if (sessions.isEmpty()) return emptyList()
+        val sessionIds = sessions.map { it.requiredId }
+        val shared = membership.photoIds(sessions).mapValues { it.value.toSet() }
         return commentRepository.findAllByCollabSessionIdInOrderByIdDesc(
             sessionIds,
             PageRequest.of(0, limit.coerceIn(1, 200)),
-        ).content.map { comment ->
+        ).content.filter { it.photoId in shared[it.collabSessionId].orEmpty() }.map { comment ->
             CollabViewerCommentResponse(
                 commentId = comment.requiredId,
                 sessionId = comment.collabSessionId,
@@ -117,7 +127,7 @@ class CollabSessionQueryService(
     private fun toResponse(session: com.soma.wes.collab.domain.CollabSession) = CollabSessionResponse.of(
         session,
         urlResolver.resolve(session.collabToken),
-        photoViewAssembler.count(session.conceptFolderId),
+        photoViewAssembler.count(session),
     )
 
     companion object {

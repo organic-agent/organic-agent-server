@@ -114,7 +114,13 @@ class AdminCascadeTrashRepository(
                 FROM collab_sessions s
                 JOIN detail_folders d ON d.concept_folder_id = s.concept_folder_id AND d.deleted_at IS NULL
                 JOIN photo_category_assignments a ON a.detail_folder_id = d.id
-                WHERE s.id = :rootId ORDER BY a.photo_id
+                WHERE s.id = :rootId
+                UNION ALL
+                SELECT membership.photo_id AS id
+                FROM collab_sessions s
+                JOIN collab_session_photos membership ON membership.collab_session_id = s.id
+                WHERE s.id = :rootId AND s.concept_folder_id IS NULL
+                ORDER BY id
                 """.trimIndent(),
             )
                 .param("rootId", rootId)
@@ -329,9 +335,16 @@ class AdminCascadeTrashRepository(
                           OR (e.resource_type = 'COLLABORATION' AND EXISTS (
                               SELECT 1
                               FROM collab_sessions s
-                              JOIN detail_folders d ON d.concept_folder_id = s.concept_folder_id
-                              JOIN photo_category_assignments a ON a.detail_folder_id = d.id
-                              WHERE s.id = e.resource_id AND a.photo_id = claim.resource_id
+                              WHERE s.id = e.resource_id AND (
+                                  EXISTS (
+                                      SELECT 1 FROM detail_folders d
+                                      JOIN photo_category_assignments a ON a.detail_folder_id = d.id
+                                      WHERE d.concept_folder_id = s.concept_folder_id AND a.photo_id = claim.resource_id
+                                  ) OR (s.concept_folder_id IS NULL AND EXISTS (
+                                      SELECT 1 FROM collab_session_photos membership
+                                      WHERE membership.collab_session_id = s.id AND membership.photo_id = claim.resource_id
+                                  ))
+                              )
                           ))
                           OR (e.resource_type = 'COLLAB_COMMENT' AND EXISTS (
                               SELECT 1

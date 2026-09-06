@@ -73,11 +73,7 @@ class AdminResourceContextRepository(
         AdminResourceType.COLLABORATION -> linkedSetOf<ResourceReference>().apply {
             addAll(references(AdminResourceType.GALLERY, "SELECT gallery_id AS id FROM collab_sessions WHERE id = :id", id))
             addAll(references(AdminResourceType.PHOTO, """
-                SELECT a.photo_id AS id
-                FROM collab_sessions s
-                JOIN detail_folders d ON d.concept_folder_id = s.concept_folder_id AND d.deleted_at IS NULL
-                JOIN photo_category_assignments a ON a.detail_folder_id = d.id
-                WHERE s.id = :id
+                SELECT shared.photo_id AS id FROM (${sharedPhotosSql()}) shared
             """.trimIndent(), id))
         }
         AdminResourceType.RETOUCH_REQUEST -> linkedSetOf<ResourceReference>().apply {
@@ -260,7 +256,7 @@ class AdminResourceContextRepository(
             """
                 SELECT
                     (SELECT COUNT(*) FROM collab_participants WHERE collab_session_id = :id AND deleted_at IS NULL) AS participants,
-                    (SELECT COUNT(*) FROM collab_sessions s JOIN detail_folders d ON d.concept_folder_id = s.concept_folder_id AND d.deleted_at IS NULL JOIN photo_category_assignments a ON a.detail_folder_id = d.id WHERE s.id = :id) AS photos,
+                    (SELECT COUNT(*) FROM (${sharedPhotosSql()}) shared) AS photos,
                     (SELECT COUNT(*) FROM collab_photo_comments c WHERE c.collab_session_id = :id) AS comments,
                     (SELECT COUNT(*) FROM collab_photo_likes l WHERE l.collab_session_id = :id AND l.deleted_at IS NULL) AS likes
             """.trimIndent(), id,
@@ -1048,12 +1044,9 @@ class AdminResourceContextRepository(
             "sharedPhotos" to rows(
                 """
                     SELECT p.id AS photo_id, p.original_file_name,
-                           p.status, a.assigned_at AS created_at
-                    FROM collab_sessions s
-                    JOIN detail_folders d ON d.concept_folder_id = s.concept_folder_id AND d.deleted_at IS NULL
-                    JOIN photo_category_assignments a ON a.detail_folder_id = d.id
-                    JOIN photos p ON p.id = a.photo_id
-                    WHERE s.id = :id
+                           p.status, shared.created_at
+                    FROM (${sharedPhotosSql()}) shared
+                    JOIN photos p ON p.id = shared.photo_id
                     ORDER BY p.id LIMIT 100
                 """.trimIndent(),
                 id,
@@ -1207,6 +1200,20 @@ class AdminResourceContextRepository(
         "assignedAt" to rs.getObject("assigned_at"),
         "version" to rs.getLong("version"),
     ) }
+
+    /** 관리자 진단에서는 휴지통 사진까지 관계를 보존하고 공유 방식에 맞는 소속만 조회한다. */
+    private fun sharedPhotosSql(): String = """
+        SELECT a.photo_id, a.assigned_at AS created_at
+        FROM collab_sessions s
+        JOIN detail_folders d ON d.concept_folder_id = s.concept_folder_id AND d.deleted_at IS NULL
+        JOIN photo_category_assignments a ON a.detail_folder_id = d.id
+        WHERE s.id = :id
+        UNION ALL
+        SELECT membership.photo_id, membership.created_at
+        FROM collab_sessions s
+        JOIN collab_session_photos membership ON membership.collab_session_id = s.id
+        WHERE s.id = :id AND s.concept_folder_id IS NULL
+    """.trimIndent()
 
     private fun references(type: AdminResourceType, sql: String, id: Long): List<ResourceReference> =
         jdbcClient.sql(sql)

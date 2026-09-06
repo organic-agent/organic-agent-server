@@ -1,5 +1,6 @@
 package com.soma.wes.collab.support
 
+import com.soma.wes.collab.domain.CollabSession
 import com.soma.wes.collab.domain.CollabParticipant
 import com.soma.wes.collab.dto.CollabAccessDto
 import com.soma.wes.collab.exception.CollabErrorCode
@@ -10,7 +11,10 @@ import com.soma.wes.gallery.domain.GalleryStatus
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.requireById
+import com.soma.wes.photo.domain.PhotoStatus
+import com.soma.wes.photo.repository.PhotoRepository
 import org.springframework.stereotype.Component
+import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.ZonedDateTime
 import com.soma.wes.user.repository.UserRepository
@@ -41,6 +45,7 @@ class CollabSessionAccess(
     private val userRepository: UserRepository,
     private val clock: Clock,
     private val workspaceRepository: com.soma.wes.workspace.repository.WorkspaceRepository,
+    private val photoRepository: PhotoRepository,
 ) {
 
     /**
@@ -52,6 +57,10 @@ class CollabSessionAccess(
     fun requireReadable(collabToken: String): CollabAccessDto {
         val session = collabSessionRepository.findByCollabToken(collabToken)
             ?: throw CollabException(CollabErrorCode.SESSION_NOT_FOUND)
+        return requireReadable(session)
+    }
+
+    private fun requireReadable(session: CollabSession): CollabAccessDto {
         if (session.isRevoked) {
             throw CollabException(CollabErrorCode.SESSION_REVOKED)
         }
@@ -76,8 +85,19 @@ class CollabSessionAccess(
      * [com.soma.wes.gallery.support.GalleryAccessPolicy.requireSelectionEditor]과 같은 기준이다.
      * 마감된 갤러리에 하객 의견이 계속 쌓이면, 그 의견은 아무도 읽지 않을 곳에 쌓인다.
      */
-    fun requireWritable(collabToken: String): CollabAccessDto {
-        val access = requireReadable(collabToken)
+    @Transactional
+    fun requireWritable(collabToken: String, photoId: Long? = null): CollabAccessDto {
+        if (photoId != null) {
+            val galleryId = collabSessionRepository.findGalleryIdByCollabToken(collabToken)
+                ?: throw CollabException(CollabErrorCode.SESSION_NOT_FOUND)
+            // 사진 삭제와 반응 저장이 사진 → 세션 순서를 공유한다. 세션은 잠금 뒤 새로 읽는다.
+            val photo = photoRepository.findWithLockByIdAndGalleryId(photoId, galleryId)
+                ?: throw CollabException(CollabErrorCode.COLLAB_PHOTO_NOT_FOUND)
+            if (photo.status == PhotoStatus.PENDING) throw CollabException(CollabErrorCode.COLLAB_PHOTO_NOT_FOUND)
+        }
+        val session = collabSessionRepository.findWithLockByCollabToken(collabToken)
+            ?: throw CollabException(CollabErrorCode.SESSION_NOT_FOUND)
+        val access = requireReadable(session)
 
         if (!isWritable(access)) {
             throw CollabException(CollabErrorCode.FEEDBACK_CLOSED)

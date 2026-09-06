@@ -1173,7 +1173,7 @@ class AdminResourceRepository(
                 searchExpression = "CONCAT_WS(' ', name, gallery_id)",
                 fields = listOf(
                     FieldDefinition("galleryId", "gallery_id", FieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
-                    FieldDefinition("conceptFolderId", "concept_folder_id", FieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
+                    FieldDefinition("conceptFolderId", "concept_folder_id", FieldKind.LONG, updateAllowed = false, nullable = true, minNumber = 1),
                     FieldDefinition("name", "name", FieldKind.STRING, requiredOnCreate = true, maxLength = 100),
                     FieldDefinition("collabToken", "collab_token", FieldKind.STRING, createAllowed = false, updateAllowed = false, maxLength = 255, masked = true),
                     FieldDefinition(

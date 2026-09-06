@@ -4,6 +4,7 @@ import com.soma.wes.category.dto.request.CreateConceptFolderRequest
 import com.soma.wes.category.service.CategoryService
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
 import com.soma.wes.collab.service.CollabGuestQueryService
+import com.soma.wes.collab.service.CollabSessionQueryService
 import com.soma.wes.collab.service.CollabSessionService
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
@@ -59,6 +60,7 @@ class TrashServiceTest @Autowired constructor(
     private val photoService: PhotoService,
     private val galleryService: GalleryService,
     private val collabSessionService: CollabSessionService,
+    private val collabSessionQueryService: CollabSessionQueryService,
     private val collabGuestQueryService: CollabGuestQueryService,
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
@@ -178,6 +180,53 @@ class TrashServiceTest @Autowired constructor(
                 .extracting("errorCode")
                 .isEqualTo(TrashErrorCode.PHOTO_NOT_IN_TRASH)
             assertThat(countPhotoRows(photoId)).isOne()
+        }
+
+        @Test
+        fun `수동 공유 사진의 휴지통 복원은 소속을 유지하고 영구 삭제만 소속을 제거한다`() {
+            val photoId = uploadPhotos(count = 1).single()
+            val session = collabSessionService.open(
+                fixture.galleryId, fixture.member.requiredId,
+                OpenCollabSessionRequest(name = "직접 담은 사진", photoIds = listOf(photoId)),
+            )
+            moveToTrash(listOf(photoId))
+            assertThat(collabSessionQueryService.get(fixture.galleryId, session.sessionId, fixture.member.requiredId).photoCount).isZero()
+            assertThat(countManualMemberships(session.sessionId)).isOne()
+
+            trashService.restorePhotos(fixture.galleryId, fixture.photographer.requiredId, RestorePhotosRequest(listOf(photoId)))
+            assertThat(collabSessionQueryService.get(fixture.galleryId, session.sessionId, fixture.member.requiredId).photoCount).isOne()
+            // JPA는 휴지통 행을 숨기므로 활성 사진일 때 URL 만료를 준비한다.
+            expireUploadUrls(listOf(photoId))
+            moveToTrash(listOf(photoId))
+            trashService.erasePhotos(fixture.galleryId, fixture.photographer.requiredId, EraseTrashedPhotosRequest(listOf(photoId)))
+
+            assertThat(countPhotoRows(photoId)).isZero()
+            assertThat(countManualMemberships(session.sessionId)).isZero()
+            assertThat(collabSessionQueryService.get(fixture.galleryId, session.sessionId, fixture.member.requiredId).photoCount).isZero()
+        }
+
+        @Test
+        fun `관리자 휴지통의 수동 공유폴더가 가진 사진은 제품에서 먼저 영구 삭제하지 않는다`() {
+            val photoId = uploadPhotos(count = 1).single()
+            val session = collabSessionService.open(
+                fixture.galleryId, fixture.member.requiredId,
+                OpenCollabSessionRequest(name = "복원 대기 공유", photoIds = listOf(photoId)),
+            )
+            // JPA는 휴지통 행을 숨기므로 활성 사진일 때 URL 만료를 준비한다.
+            expireUploadUrls(listOf(photoId))
+            moveToTrash(listOf(photoId))
+            lockWithAdminBatch("COLLABORATION", session.sessionId, "ACTIVE")
+            jdbcTemplate.update("UPDATE collab_sessions SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?", session.sessionId)
+
+            assertThat(trashService.listPhotos(fixture.galleryId, fixture.photographer.requiredId).photos).isEmpty()
+            assertThatThrownBy {
+                trashService.erasePhotos(fixture.galleryId, fixture.photographer.requiredId, EraseTrashedPhotosRequest(listOf(photoId)))
+            }.isInstanceOfSatisfying(TrashException::class.java) {
+                assertThat(it.errorCode).isEqualTo(TrashErrorCode.PHOTO_NOT_IN_TRASH)
+            }
+            assertThat(countPhotoRows(photoId)).isOne()
+            assertThat(countManualMemberships(session.sessionId)).isOne()
+            assertThat(photoStorage.deletedKeys()).isEmpty()
         }
 
         @Test
@@ -489,6 +538,12 @@ class TrashServiceTest @Autowired constructor(
         )
         return session.collabUrl.substringAfterLast('/')
     }
+
+    private fun countManualMemberships(sessionId: Long): Long = checkNotNull(
+        jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM collab_session_photos WHERE collab_session_id = ?", Long::class.java, sessionId,
+        ),
+    )
 
     private fun listPhotos() =
         photoService.list(fixture.galleryId, fixture.photographer.id!!, status = null, minScore = null, page = 0, size = 10)
