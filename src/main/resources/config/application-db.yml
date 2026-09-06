@@ -21,6 +21,10 @@ spring:
         # 서버·DB 시간대를 KST로 고정한다. 못박지 않으면 JVM 기본 타임존을 따라가 서버 환경에 좌우된다.
         jdbc:
           time_zone: Asia/Seoul
+          # 할당 id 엔티티의 saveAll이 INSERT를 묶어 보내게 한다. IDENTITY 엔티티에는 효과가 없다(Hibernate가 행마다 id를 받아야 해서).
+          batch_size: 100
+        order_inserts: true
+        order_updates: true
 
 ---
 spring:

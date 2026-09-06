@@ -9,6 +9,7 @@ import com.soma.wes.collab.support.CollabPhotoMembership
 import com.soma.wes.collab.support.CollabPhotoViewAssembler
 import com.soma.wes.category.service.CategorizationService
 import com.soma.wes.category.service.CategoryService
+import com.soma.wes.category.repository.CategoryBulkWriter
 import com.soma.wes.category.service.AiCategoryFolderService
 import com.soma.wes.category.support.AiCategoryFolderPlanner
 import com.soma.wes.global.config.AwsLambdaConfig
@@ -98,6 +99,7 @@ import org.springframework.context.annotation.Import
     ProductChildTrashService::class,
     AiCategoryFolderPlanner::class,
     AiConceptAssignmentLoader::class,
+    CategoryBulkWriter::class,
     AiCategoryFolderService::class,
     CategorizationService::class,
 )
