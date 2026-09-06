@@ -4,8 +4,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 import java.time.Duration
 
 /**
- * Bedrock(Anthropic Messages) 호출 손잡이. 값의 정본은 AI repo `photoselect/docs/plan-v3-folder-compare.md`
- * §2·§3과 `config.py`의 `LlmKnobs`다 — 두 언어가 같은 값을 써야 하므로 바꿀 때는 그 문서를 먼저 고친다.
+ * Bedrock(Anthropic Messages) 호출 손잡이. AI repo의 `photoselect` 모듈(`LlmKnobs`)이 이 서버로 옮겨 오면서
+ * 값의 정본도 여기다.
  *
  * [enabled]가 false면 LLM을 부르지 않는 구현이 꽂힌다 — 비교샷은 항상 템플릿 판정, 추천 이유는 항상
  * 폴백 문장이다(AI repo의 `llm=None` 경로와 같다). 로컬·테스트 기본값이고, prod는 Parameter Store가 켠다.
@@ -27,7 +27,14 @@ data class LlmProperties(
     /** 이 시간 안에 판정이 안 오면 템플릿 판정으로 응답한다 — 사용자가 화면에서 기다리는 예산. */
     val compareTimeout: Duration = Duration.ofSeconds(8),
 
-    /** 이유 문장 한 호출에 넣는 사진 수. 사진마다 이미지(본인 + 형제)가 붙으므로 작게. */
+    /**
+     * 이유 문장 한 배치의 예산. 배치는 사용자가 기다리지 않으므로 넉넉하되, 끝없이 물고 있지는 않게.
+     * HTTP 소켓 읽기 타임아웃도 이 값으로 맞춘다([AwsBedrockConfig]) — SDK 기본 30초가 남아 있으면
+     * 이미지 여러 장 + 수천 토큰 출력을 기다리다 끊긴다.
+     */
+    val reasonsTimeout: Duration = Duration.ofMinutes(3),
+
+    /** 이유 문장 한 호출에 넣는 사진 수. 사진마다 이미지(본인 + 형제)가 붙으므로 작게. 10장이면 한 호출에 1분 안팎이다. */
     val reasonsBatch: Int = 10,
 
     val reasonsMaxTokens: Int = 8192,

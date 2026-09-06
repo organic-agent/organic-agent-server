@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider
 import software.amazon.awssdk.awscore.retry.AwsRetryStrategy
+import software.amazon.awssdk.http.apache.ApacheHttpClient
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient
 
@@ -16,6 +17,10 @@ import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient
  *
  * SDK 재시도는 끈다. 재시도 여부는 호출마다 다르다(동기 비교샷은 0회, 배치 이유 문장은 몇 회) —
  * 요청 단위로 재시도 정책을 바꿀 수 없어 어댑터가 직접 돈다.
+ *
+ * HTTP 소켓 읽기 타임아웃은 가장 긴 호출 예산([LlmProperties.reasonsTimeout])에 맞춘다. SDK 기본값 30초는
+ * 이미지 여러 장을 넣은 이유 배치가 답을 만드는 동안 끊어 버린다 — 호출별 예산은 요청의 `apiCallTimeout`이
+ * 따로 건다(비교샷 8초).
  */
 @Configuration
 class AwsBedrockConfig {
@@ -28,6 +33,7 @@ class AwsBedrockConfig {
     ): BedrockRuntimeClient = BedrockRuntimeClient.builder()
         .credentialsProvider(credentialsProvider)
         .region(Region.of(properties.region))
+        .httpClientBuilder(ApacheHttpClient.builder().socketTimeout(properties.reasonsTimeout))
         .overrideConfiguration { it.retryStrategy(AwsRetryStrategy.doNotRetry()) }
         .build()
 }

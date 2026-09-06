@@ -32,6 +32,7 @@ class ReasonGenerator(
                         parts = ReasonPrompt.userParts(chunk),
                         schema = ReasonPrompt.SCHEMA,
                         maxTokens = properties.reasonsMaxTokens,
+                        timeout = properties.reasonsTimeout,
                         maxRetries = BATCH_RETRIES,
                     ),
                 )
