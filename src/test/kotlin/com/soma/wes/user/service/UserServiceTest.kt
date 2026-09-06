@@ -113,19 +113,27 @@ class UserServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `유일한 스튜디오 OWNER는 회원 탈퇴할 수 없다`() {
+    fun `유일한 스튜디오 OWNER가 탈퇴하면 소유 스튜디오를 함께 삭제한다`() {
         val owner = saveUser("last-owner")
         val workspace = workspaceRepository.save(Workspace.studio("마지막 OWNER 스튜디오"))
         workspaceMemberRepository.save(WorkspaceMember(workspace.requiredId, owner.requiredId, WorkspaceRole.OWNER))
         studioRepository.save(Studio(workspace.requiredId, "마지막 OWNER 스튜디오", "last-owner-studio"))
+        val gallery = galleryRepository.save(Gallery(workspace.requiredId, owner.requiredId, "삭제할 갤러리"))
 
-        assertThatThrownBy { userService.delete(owner.requiredId) }
-            .isInstanceOf(StudioException::class.java)
-            .extracting("errorCode")
-            .isEqualTo(StudioErrorCode.LAST_OWNER_PROTECTED)
+        userService.delete(owner.requiredId)
 
-        assertThat(userRepository.findById(owner.requiredId)).isPresent
-        assertThat(workspaceRepository.findById(workspace.requiredId)).isPresent
+        assertThat(userRepository.findById(owner.requiredId)).isEmpty
+        assertThat(workspaceRepository.findById(workspace.requiredId)).isEmpty
+        assertThat(galleryRepository.findById(gallery.requiredId)).isEmpty
+    }
+
+    @Test
+    fun `닉네임 수정은 공백을 정리하고 빈 이름은 거절한다`() {
+        val user = saveUser("nickname-validation")
+        assertThat(userService.update(user.requiredId, com.soma.wes.user.dto.request.UpdateUserRequest(" 새 이름 ")).nickname)
+            .isEqualTo("새 이름")
+        assertThatThrownBy { userService.update(user.requiredId, com.soma.wes.user.dto.request.UpdateUserRequest("  ")) }
+            .isInstanceOf(UserException::class.java).extracting("errorCode").isEqualTo(UserErrorCode.INVALID_NICKNAME)
     }
 
     private fun saveUser(providerId: String): User = userRepository.save(

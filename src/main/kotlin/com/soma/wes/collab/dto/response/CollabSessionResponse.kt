@@ -25,6 +25,10 @@ data class CollabSessionResponse(
     val photoCount: Long,
 
     val createdAt: ZonedDateTime?,
+    val expiresAt: ZonedDateTime? = null,
+    val coverTitle: String? = null,
+    val coverAuthor: String? = null,
+    val includeAllAlbums: Boolean = false,
 ) {
 
     companion object {
@@ -38,6 +42,10 @@ data class CollabSessionResponse(
             revokedAt = session.revokedAt,
             photoCount = photoCount,
             createdAt = session.createdAt,
+            expiresAt = session.expiresAt,
+            coverTitle = session.coverTitle,
+            coverAuthor = session.coverAuthor,
+            includeAllAlbums = session.includeAllAlbums,
         )
     }
 }

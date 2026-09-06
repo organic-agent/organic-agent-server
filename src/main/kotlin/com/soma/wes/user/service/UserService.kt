@@ -34,17 +34,19 @@ class UserService(
 
     @Transactional(readOnly = true)
     fun getUser(id: Long): UserResponse =
-        UserResponse.from(userRepository.requireById(id))
+        UserResponse.from(userRepository.requireById(id)).copy(workspaces = buildWorkspaces(id))
 
     @Transactional
     fun update(id: Long, request: UpdateUserRequest): UserResponse {
         val user = userRepository.requireById(id)
         user.updateNickname(request.nickname.trim())
-        return UserResponse.from(user)
+        return UserResponse.from(user).copy(workspaces = buildWorkspaces(id))
     }
 
     @Transactional(readOnly = true)
-    fun listWorkspaces(userId: Long): List<UserWorkspaceResponse> {
+    fun listWorkspaces(userId: Long): List<UserWorkspaceResponse> = buildWorkspaces(userId)
+
+    private fun buildWorkspaces(userId: Long): List<UserWorkspaceResponse> {
         val memberships = workspaceMemberRepository.findAllByUserId(userId)
         val workspaces = workspaceRepository.findAllById(memberships.map { it.workspaceId })
             .associateBy { it.requiredId }
@@ -65,9 +67,6 @@ class UserService(
             val workspace = workspaces[membership.workspaceId]
                 ?.takeIf { it.type == WorkspaceType.STUDIO } ?: return@mapNotNull null
             val studio = studios[workspace.requiredId] ?: return@mapNotNull null
-            val latestGalleryAt = galleryRepository.findAllByWorkspaceId(workspace.requiredId)
-                .mapNotNull { it.updatedAt ?: it.createdAt }
-                .maxOrNull()
             UserWorkspaceResponse(
                 id = workspace.requiredId,
                 kind = UserWorkspaceKind.STUDIO,
@@ -75,7 +74,8 @@ class UserService(
                 galleryId = null,
                 name = studio.name,
                 role = membership.role,
-                lastActivityAt = listOfNotNull(studio.updatedAt, studio.createdAt, latestGalleryAt).maxOrNull(),
+                lastActivityAt = listOfNotNull(studio.updatedAt, studio.createdAt, membership.updatedAt, membership.createdAt).maxOrNull(),
+                workspaceType = WorkspaceType.STUDIO,
             )
         }
         val personalWorkspaceRoles = memberships.associate { it.workspaceId to it.role }
@@ -93,6 +93,7 @@ class UserService(
                     personalWorkspaceRoles[gallery.workspaceId] ?: WorkspaceRole.OWNER
                 },
                 lastActivityAt = gallery.updatedAt ?: gallery.createdAt,
+                workspaceType = if (gallery.workspaceId in personalWorkspaceIds) WorkspaceType.PERSONAL else WorkspaceType.STUDIO,
             )
         }
         return (studioRows + galleryRows).sortedWith(
@@ -109,19 +110,28 @@ class UserService(
         val ownedPersonalWorkspaces = ownedWorkspaces.filter { it.type == WorkspaceType.PERSONAL }
         val galleryMemberships = galleryMemberRepository.findAllByUserId(id)
 
-        memberships.filter { membership ->
-            membership.role == WorkspaceRole.OWNER &&
-                ownedWorkspaces.any { it.requiredId == membership.workspaceId && it.type == WorkspaceType.STUDIO }
-        }.forEach { membership ->
-            val members = workspaceMemberRepository.findAllWithLockByWorkspaceId(membership.workspaceId)
-            if (members.count { it.role == WorkspaceRole.OWNER } == 1) {
-                throw com.soma.wes.studio.exception.StudioException(
-                    com.soma.wes.studio.exception.StudioErrorCode.LAST_OWNER_PROTECTED,
-                )
-            }
+        val ownedStudioWorkspaces = ownedWorkspaces.filter { workspace ->
+            workspace.type == WorkspaceType.STUDIO &&
+                workspaceMemberRepository.findAllWithLockByWorkspaceId(workspace.requiredId)
+                    .count { it.role == WorkspaceRole.OWNER } == 1
+        }
+        val deletedWorkspaces = ownedPersonalWorkspaces + ownedStudioWorkspaces
+        val deletedWorkspaceIds = deletedWorkspaces.map { it.requiredId }.toSet()
+
+        memberships.filter { it.workspaceId !in deletedWorkspaceIds }.forEach { membership ->
+            val workspace = workspaceRepository.findById(membership.workspaceId).orElse(null) ?: return@forEach
+            notificationPublisher.publish(
+                userIds = workspaceMemberRepository.findAllByWorkspaceId(workspace.requiredId)
+                    .filter { it.role == WorkspaceRole.OWNER && it.userId != id }.map { it.userId },
+                type = UserNotificationType.WORKSPACE_MEMBER_LEFT,
+                scope = if (workspace.type == WorkspaceType.STUDIO) UserNotificationScope.STUDIO else UserNotificationScope.GLOBAL,
+                scopeId = if (workspace.type == WorkspaceType.STUDIO) workspace.requiredId else null,
+                title = "멤버가 탈퇴했습니다",
+                message = "${workspace.name}의 멤버 한 명이 회원 탈퇴했습니다.",
+            )
         }
 
-        ownedPersonalWorkspaces.forEach { workspace ->
+        deletedWorkspaces.forEach { workspace ->
             val galleryRecipients = galleryRepository.findAllByWorkspaceId(workspace.requiredId)
                 .flatMap { gallery -> galleryMemberRepository.findAllByGalleryId(gallery.requiredId) }
                 .map { it.userId }
@@ -157,7 +167,7 @@ class UserService(
         authTokenProvider.logout(user)
         galleryMemberRepository.deleteAll(galleryMemberships)
         workspaceMemberRepository.deleteAll(memberships)
-        workspaceRepository.deleteAll(ownedPersonalWorkspaces)
+        workspaceRepository.deleteAll(deletedWorkspaces)
         userRepository.delete(user)
     }
 }

@@ -2,6 +2,9 @@ package com.soma.wes.retouch.controller
 
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.retouch.controller.docs.RetouchControllerDocs
+import com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest
+import com.soma.wes.retouch.dto.request.MatchRetouchResultsRequest
+import com.soma.wes.retouch.dto.response.MatchRetouchResultsResponse
 import com.soma.wes.retouch.dto.request.AddRetouchPhotosRequest
 import com.soma.wes.retouch.dto.request.CompleteResultsRequest
 import com.soma.wes.retouch.dto.request.IssueResultUploadUrlsRequest
@@ -12,6 +15,9 @@ import com.soma.wes.retouch.dto.response.RetouchOverviewResponse
 import com.soma.wes.retouch.dto.response.RetouchPhotoResponse
 import com.soma.wes.retouch.dto.response.RetouchRoundDetailResponse
 import com.soma.wes.retouch.service.RetouchService
+import com.soma.wes.retouch.service.RetouchRefinementService
+import com.soma.wes.retouch.dto.request.RefineRetouchRequest
+import com.soma.wes.retouch.dto.response.RefineRetouchResponse
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -30,9 +36,10 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/v1/galleries/{galleryId}/retouch")
 class RetouchController(
     private val retouchService: RetouchService,
+    private val refinementService: RetouchRefinementService,
 ) : RetouchControllerDocs {
 
-    @GetMapping
+    @GetMapping("", "/rounds")
     override fun get(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
@@ -132,7 +139,7 @@ class RetouchController(
         return ResponseEntity.ok(result)
     }
 
-    @PostMapping("/rounds/{roundNo}/complete")
+    @PostMapping("/rounds/{roundNo}/complete", "/rounds/{roundNo}/send")
     override fun completeRound(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
@@ -141,5 +148,58 @@ class RetouchController(
         val result = retouchService.completeRound(galleryId, roundNo, loginUser.id)
 
         return ResponseEntity.ok(result)
+    }
+    @PostMapping("/rounds/{roundNo}/requests")
+    override fun submitRequests(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @PathVariable roundNo: Int,
+        @Valid @RequestBody request: SubmitRetouchRequestsRequest,
+    ): ResponseEntity<RetouchOverviewResponse> {
+        return ResponseEntity.ok(retouchService.submitRequests(galleryId, roundNo, loginUser.id, request))
+    }
+
+    @PostMapping("/rounds/{roundNo}/results/match")
+    override fun matchResults(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @PathVariable roundNo: Int,
+        @Valid @RequestBody request: MatchRetouchResultsRequest,
+    ): ResponseEntity<MatchRetouchResultsResponse> {
+        return ResponseEntity.ok(retouchService.matchResults(galleryId, roundNo, loginUser.id, request))
+    }
+
+    @PostMapping("/confirm")
+    override fun confirm(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+    ): ResponseEntity<RetouchOverviewResponse> {
+        return ResponseEntity.ok(retouchService.confirm(galleryId, loginUser.id))
+    }
+
+    @PostMapping("/results/upload-urls")
+    override fun issuePersonalResultUploadUrls(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @Valid @RequestBody request: IssueResultUploadUrlsRequest,
+    ): ResponseEntity<IssueResultUploadUrlsResponse> {
+        return ResponseEntity.ok(retouchService.issueResultUploadUrls(galleryId, 1, loginUser.id, request))
+    }
+
+    @PostMapping("/results/complete")
+    override fun completePersonalResults(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @Valid @RequestBody request: CompleteResultsRequest,
+    ): ResponseEntity<RetouchRoundDetailResponse> {
+        return ResponseEntity.ok(retouchService.completeResults(galleryId, 1, loginUser.id, request))
+    }
+    @PostMapping("/requests/refine")
+    override fun refine(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @Valid @RequestBody request: RefineRetouchRequest,
+    ): ResponseEntity<RefineRetouchResponse> {
+        return ResponseEntity.ok(refinementService.refine(galleryId, loginUser.id, request))
     }
 }

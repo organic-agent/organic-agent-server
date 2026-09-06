@@ -13,6 +13,7 @@ import com.soma.wes.category.support.AiCategoryFolderPlanner
 import com.soma.wes.global.config.AwsLambdaConfig
 import com.soma.wes.analysis.config.EmbeddingProperties
 import com.soma.wes.analysis.infrastructure.LambdaEmbeddingInvoker
+import com.soma.wes.gallery.config.GalleryLifecycleProperties
 import com.soma.wes.gallery.config.GalleryInviteProperties
 import com.soma.wes.gallery.config.MockGalleryProperties
 import com.soma.wes.gallery.service.GalleryService
@@ -30,6 +31,7 @@ import com.soma.wes.photo.support.PhotoViewAssembler
 import com.soma.wes.notification.service.UserNotificationPublisher
 import com.soma.wes.analysis.support.AiConceptAssignmentLoader
 import com.soma.wes.retouch.service.RetouchService
+import com.soma.wes.retouch.service.RetouchRequestService
 import com.soma.wes.retouch.support.RetouchPhotoLoader
 import com.soma.wes.retouch.support.RetouchResultLoader
 import com.soma.wes.retouch.support.RetouchViewAssembler
@@ -60,6 +62,7 @@ import org.springframework.context.annotation.Import
     EmbeddingProperties::class,
     MockGalleryProperties::class,
     GalleryInviteProperties::class,
+    GalleryLifecycleProperties::class,
     CollabProperties::class,
 )
 @Import(
@@ -85,6 +88,7 @@ import org.springframework.context.annotation.Import
     RetouchService::class,
     PhotoViewAssembler::class,
     CollabPhotoViewAssembler::class,
+    RetouchRequestService::class,
     RetouchPhotoLoader::class,
     RetouchResultLoader::class,
     RetouchViewAssembler::class,

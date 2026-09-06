@@ -133,7 +133,7 @@ class OAuthLoginServiceTest @Autowired constructor(
     inner class LoginWithInvite {
 
         @Test
-        fun `초대 링크로 로그인하면 가입과 수락이 한 번에 끝난다`() {
+        fun `초대 링크 로그인은 수락할 토큰만 반환하고 소속은 만들지 않는다`() {
             // 링크 클릭 → 카카오 로그인 → 갤러리 도착. 중간에 별도 수락 호출이 없어야
             // 그 사이에서 흐름이 끊길 구간도 없다.
             // given
@@ -148,9 +148,10 @@ class OAuthLoginServiceTest @Autowired constructor(
             val response = oAuthLoginService.login("kakao", AuthCodeRequest("auth-code", state), null)
 
             // then
-            assertThat(response.galleryId).isEqualTo(gallery.id)
+            assertThat(response.galleryId).isNull()
+            assertThat(response.inviteToken).isEqualTo("invite-happy")
             val user = checkNotNull(userRepository.findByProviderAndProviderId(OAuthProvider.KAKAO, providerId))
-            assertThat(galleryMemberRepository.findByGalleryIdAndUserId(gallery.id!!, user.id!!)).isNotNull()
+            assertThat(galleryMemberRepository.findByGalleryIdAndUserId(gallery.id!!, user.id!!)).isNull()
         }
 
         @Test
@@ -216,9 +217,9 @@ class OAuthLoginServiceTest @Autowired constructor(
             val state = stateOf(oAuthLoginUrlService.generateLoginUrl("kakao", null, "invite-replay").loginUrl)
 
             // when & then
-            assertThat(oAuthLoginService.login("kakao", AuthCodeRequest("c", state), null).galleryId)
-                .isEqualTo(gallery.id)
-            assertThat(oAuthLoginService.login("kakao", AuthCodeRequest("c", state), null).galleryId).isNull()
+            assertThat(oAuthLoginService.login("kakao", AuthCodeRequest("c", state), null).inviteToken)
+                .isEqualTo("invite-replay")
+            assertThat(oAuthLoginService.login("kakao", AuthCodeRequest("c", state), null).inviteToken).isNull()
         }
     }
 

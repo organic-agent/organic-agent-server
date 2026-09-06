@@ -181,4 +181,12 @@ class StudioServiceTest @Autowired constructor(
         assertThat(studioRepository.findById(studio.workspaceId)).isEmpty
         assertThat(workspaceRepository.findById(studio.workspaceId)).isEmpty
     }
+    @Test
+    fun `프로필 길이 오류는 작업공간 저장 전에 도메인 오류로 거절한다`() {
+        val user = userFixture.사용자()
+        val before = workspaceRepository.count()
+        assertThatThrownBy { studioService.create(user.requiredId, CreateStudioRequest("가".repeat(101), "invalid-name")) }
+            .isInstanceOf(StudioException::class.java).extracting("errorCode").isEqualTo(StudioErrorCode.INVALID_STUDIO_PROFILE)
+        assertThat(workspaceRepository.count()).isEqualTo(before)
+    }
 }

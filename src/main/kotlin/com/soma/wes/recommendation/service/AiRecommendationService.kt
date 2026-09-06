@@ -150,6 +150,7 @@ class AiRecommendationService(
         val selection = photoSelectionRepository.findByGalleryId(galleryId)
             ?: return AiRecommendationListResponse.empty(properties.viewUrlTtl.seconds)
         val selectionId = selection.requiredId
+        val studioViewer = galleryAccessPolicy.isStudioManager(galleryId, userId)
 
         val job = aiSelectionJobRepository.findFirstBySelectionIdOrderByIdDesc(selectionId)
             ?.let { AiSelectionJobResponse.from(it) }
@@ -178,7 +179,11 @@ class AiRecommendationService(
         return AiRecommendationListResponse(
             round = latestRound,
             job = job,
-            photos = recommendationResponses(galleryId, selectionId, ordered, currentFolderByPhoto),
+            photos = recommendationResponses(galleryId, selectionId, ordered, currentFolderByPhoto).map {
+                if (studioViewer) it.copy(photo = it.photo.copy(score = null),
+                    selected = it.selected && selection.status == com.soma.wes.selection.domain.PhotoSelectionStatus.SUBMITTED)
+                else it
+            },
             viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
         )
     }

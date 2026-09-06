@@ -35,13 +35,13 @@ class RetouchViewAssembler(
     /**
      * 회차 상세용. 그리드 응답과 달리 결과 URL까지 서명해 전/후 비교를 지원한다.
      */
-    fun toDetailResponses(galleryId: Long, items: List<RetouchPhoto>): List<RetouchPhotoDetailResponse> =
+    fun toDetailResponses(galleryId: Long, items: List<RetouchPhoto>, includeResults: Boolean = true): List<RetouchPhotoDetailResponse> =
         assemble(galleryId, items) { item, photoResponse ->
             RetouchPhotoDetailResponse.of(
                 item = item,
                 photo = photoResponse,
                 annotationUrl = item.annotationKey?.let { photoStorage.presignView(it) },
-                resultUrl = item.resultKey?.let { photoStorage.presignView(it) },
+                resultUrl = item.resultKey?.takeIf { includeResults }?.let { photoStorage.presignView(it) },
             )
         }
 

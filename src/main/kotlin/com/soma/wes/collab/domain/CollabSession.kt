@@ -56,6 +56,20 @@ class CollabSession(
 
 ) : BaseEntity() {
 
+    @Column(name = "include_all_albums", nullable = false)
+    var includeAllAlbums: Boolean = false
+
+    @Column(name = "cover_title", length = MAX_NAME_LENGTH)
+    var coverTitle: String? = null
+
+    @Column(name = "cover_author", length = MAX_NAME_LENGTH)
+    var coverAuthor: String? = null
+
+    fun updateCover(title: String?, author: String?) {
+        if (title != null) coverTitle = if (title.isBlank()) null else requireValidName(title)
+        if (author != null) coverAuthor = if (author.isBlank()) null else requireValidName(author)
+    }
+
     @Column(name = "deleted_at")
     var deletedAt: ZonedDateTime? = null
 
@@ -100,11 +114,11 @@ class CollabSession(
     /**
      * 거둬들인 링크를 새 주소로 다시 내보낸다. [revoke]의 짝이다.
      */
-    fun republish(collabToken: String) {
+    fun republish(collabToken: String, expiresAt: ZonedDateTime? = null) {
         this.collabToken = collabToken
         revokedAt = null
         // 부부가 직접 다시 발행한 링크는 일반 제품 링크다. 이전 운영자 발급 TTL을 이어받지 않는다.
-        expiresAt = null
+        this.expiresAt = expiresAt
     }
 
     fun rename(name: String) {

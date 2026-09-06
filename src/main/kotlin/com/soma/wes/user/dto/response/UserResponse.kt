@@ -12,6 +12,7 @@ data class UserResponse(
     val email: String?,
     val role: Role,
     val createdAt: ZonedDateTime?,
+    val workspaces: List<UserWorkspaceResponse> = emptyList(),
 ) {
 
     companion object {

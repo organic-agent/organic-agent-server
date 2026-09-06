@@ -6,6 +6,7 @@ import com.soma.wes.studio.dto.request.CreateStudioRequest
 import com.soma.wes.studio.dto.request.UpdateStudioRequest
 import com.soma.wes.studio.dto.response.GalleryUrlAvailabilityResponse
 import com.soma.wes.studio.dto.response.StudioResponse
+import com.soma.wes.studio.dto.response.StudioInviteResponse
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.media.Content
 import io.swagger.v3.oas.annotations.media.ExampleObject
@@ -18,6 +19,21 @@ import org.springframework.http.ResponseEntity
 
 @Tag(name = "[Studio]", description = "스튜디오 API (사진작가 온보딩)")
 interface StudioControllerDocs {
+    @Operation(summary = "지정한 스튜디오 조회", description = "내 소속과 OWNER/MEMBER 역할을 반환한다.")
+    fun get(loginUser: LoginUser, workspaceId: Long): ResponseEntity<StudioResponse>
+
+    @Operation(summary = "작가 초대 링크 발급", description = "스튜디오 멤버가 발급할 수 있다. 7일 후 만료하며 재발급 시 이전 링크는 폐기한다. 갤러리가 없어도 발급할 수 있다.")
+    fun issueInvite(loginUser: LoginUser, workspaceId: Long): ResponseEntity<StudioInviteResponse>
+
+    @Operation(summary = "현재 작가 초대 링크 조회")
+    fun currentInvite(loginUser: LoginUser, workspaceId: Long): ResponseEntity<StudioInviteResponse>
+
+    @Operation(summary = "지정한 스튜디오 삭제", description = "소유자만 삭제할 수 있으며 산하 갤러리도 삭제하고 소속 멤버에게 알린다.")
+    fun delete(loginUser: LoginUser, workspaceId: Long): ResponseEntity<Unit>
+
+    @Operation(summary = "초대 작가 내보내기", description = "소유자만 MEMBER를 내보낼 수 있다. OWNER는 내보낼 수 없다.")
+    fun removeMember(loginUser: LoginUser, workspaceId: Long, memberId: Long): ResponseEntity<Unit>
+
 
     @Operation(
         summary = "스튜디오 작업공간 생성",

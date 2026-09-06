@@ -1,6 +1,16 @@
 package com.soma.wes.gallery.service
 
+import com.soma.wes.gallery.config.GalleryLifecycleProperties
 import com.soma.wes.gallery.domain.Gallery
+import com.soma.wes.gallery.dto.request.RequestSelectionIncreaseRequest
+import com.soma.wes.gallery.exception.GalleryException
+import com.soma.wes.gallery.exception.GalleryErrorCode
+import com.soma.wes.gallery.repository.requireWithLockById
+import com.soma.wes.notification.service.UserNotificationPublisher
+import com.soma.wes.notification.domain.UserNotificationType
+import com.soma.wes.notification.domain.UserNotificationScope
+import com.soma.wes.workspace.repository.WorkspaceRepository
+import com.soma.wes.workspace.domain.WorkspaceType
 import com.soma.wes.gallery.dto.request.ChangeMaxRetouchRoundCountRequest
 import com.soma.wes.gallery.dto.request.ChangeMaxSelectablePhotoCountRequest
 import com.soma.wes.gallery.dto.request.ChangeSelectionDeadlineRequest
@@ -35,6 +45,9 @@ class GalleryService(
     private val galleryAccessPolicy: GalleryAccessPolicy,
     private val photoSelectionRepository: PhotoSelectionRepository,
     private val clock: Clock,
+    private val notificationPublisher: UserNotificationPublisher,
+    private val workspaceRepository: WorkspaceRepository,
+    private val lifecycleProperties: GalleryLifecycleProperties,
 ) {
 
     @Transactional
@@ -71,7 +84,6 @@ class GalleryService(
 
         val memberGalleryIds = galleryMemberRepository.findAllByUserId(userId).map { it.galleryId }
         val asCouple = galleryRepository.findAllById(memberGalleryIds)
-            .filter { it.isVisibleToMember }
 
         // 자기 갤러리 초대는 GalleryAccessPolicy.requireNotManager가 막지만,
         // 그 규칙이 생기기 전 데이터까지 같은 갤러리를 두 번 그리게 두지는 않는다.
@@ -83,7 +95,7 @@ class GalleryService(
 
     @Transactional(readOnly = true)
     fun get(galleryId: Long, userId: Long): GalleryResponse =
-        GalleryResponse.from(galleryAccessPolicy.requireViewer(galleryId, userId))
+        GalleryResponse.from(galleryAccessPolicy.requireMetadataViewer(galleryId, userId))
 
     @Transactional
     fun changeMaxSelectablePhotoCount(
@@ -91,9 +103,12 @@ class GalleryService(
         userId: Long,
         request: ChangeMaxSelectablePhotoCountRequest,
     ): GalleryResponse {
-        val gallery = galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
+        val gallery = galleryRepository.requireWithLockById(galleryId)
+        gallery.requireWritable(ZonedDateTime.now(clock))
 
         gallery.changeMaxSelectablePhotoCount(request.maxSelectablePhotoCount)
+        publishToClients(gallery, UserNotificationType.SELECTION_INCREASE_APPROVED, "목표 장수가 변경되었어요", "변경된 목표 장수: ${request.maxSelectablePhotoCount ?: "제한 없음"}")
         return GalleryResponse.from(gallery)
     }
 
@@ -103,7 +118,9 @@ class GalleryService(
         userId: Long,
         request: ChangeMaxRetouchRoundCountRequest,
     ): GalleryResponse {
-        val gallery = galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
+        val gallery = galleryRepository.requireWithLockById(galleryId)
+        gallery.requireWritable(ZonedDateTime.now(clock))
 
         gallery.changeMaxRetouchRoundCount(request.maxRetouchRoundCount)
         return GalleryResponse.from(gallery)
@@ -112,7 +129,9 @@ class GalleryService(
     /** 촬영 종류만 바꾼다. 이미 만든 AI 폴더는 그대로다 — 새 목록은 다음 NAMING 잡부터 반영된다. */
     @Transactional
     fun changeShootType(galleryId: Long, userId: Long, request: ChangeShootTypeRequest): GalleryResponse {
-        val gallery = galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
+        val gallery = galleryRepository.requireWithLockById(galleryId)
+        gallery.requireWritable(ZonedDateTime.now(clock))
 
         gallery.changeShootType(request.shootType)
         return GalleryResponse.from(gallery)
@@ -120,7 +139,9 @@ class GalleryService(
 
     @Transactional
     fun rename(galleryId: Long, userId: Long, request: RenameGalleryRequest): GalleryResponse {
-        val gallery = galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
+        val gallery = galleryRepository.requireWithLockById(galleryId)
+        gallery.requireWritable(ZonedDateTime.now(clock))
 
         gallery.rename(request.title)
         return GalleryResponse.from(gallery)
@@ -136,25 +157,37 @@ class GalleryService(
         userId: Long,
         request: ChangeSelectionDeadlineRequest,
     ): GalleryResponse {
-        val gallery = galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
+        val gallery = galleryRepository.requireWithLockById(galleryId)
+        gallery.requireWritable(ZonedDateTime.now(clock))
 
+        if (request.selectionDeadline != null && gallery.planExpiresAt?.let { request.selectionDeadline.isAfter(it) } == true) {
+            throw GalleryException(GalleryErrorCode.INVALID_SELECTION_DEADLINE)
+        }
         gallery.changeSelectionDeadline(request.selectionDeadline, ZonedDateTime.now(clock))
         return GalleryResponse.from(gallery)
     }
 
     @Transactional
     fun open(galleryId: Long, userId: Long): GalleryResponse {
-        val gallery = galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
+        val gallery = galleryRepository.requireWithLockById(galleryId)
+        gallery.requireWritable(ZonedDateTime.now(clock))
 
         gallery.open()
+        publishToClients(gallery, UserNotificationType.GALLERY_OPENED, "갤러리가 열렸어요", "사진 정리를 시작해 주세요.")
         return GalleryResponse.from(gallery)
     }
 
     @Transactional
     fun close(galleryId: Long, userId: Long): GalleryResponse {
-        val gallery = galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
+        val gallery = galleryRepository.requireWithLockById(galleryId)
 
         gallery.close()
+        if (gallery.archivedUntil == null) lifecycleProperties.archivedRetentionDays?.let {
+            gallery.archivedUntil = ZonedDateTime.now(clock).plusDays(it.toLong())
+        }
         return GalleryResponse.from(gallery)
     }
 
@@ -164,16 +197,21 @@ class GalleryService(
         userId: Long,
         request: ChangeWorkflowStatusRequest,
     ): GalleryResponse {
-        val gallery = galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
+        val gallery = galleryRepository.requireWithLockById(galleryId)
+        gallery.requireWritable(ZonedDateTime.now(clock))
         gallery.changeWorkflowStatus(request.workflowStatus)
         return GalleryResponse.from(gallery)
     }
 
     @Transactional
     fun reopen(galleryId: Long, userId: Long, request: ReopenGalleryRequest): GalleryResponse {
-        val gallery = galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
+        val gallery = galleryRepository.requireWithLockById(galleryId)
+        gallery.requireWritable(ZonedDateTime.now(clock))
 
         gallery.reopen(request.selectionDeadline, ZonedDateTime.now(clock))
+        publishToClients(gallery, UserNotificationType.GALLERY_REOPENED, "선택이 다시 열렸어요", "새 마감 기한을 확인해 주세요.")
         return GalleryResponse.from(gallery)
     }
 
@@ -187,12 +225,38 @@ class GalleryService(
      */
     @Transactional
     fun moveToTrash(galleryId: Long, userId: Long) {
-        val gallery = galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requireManager(galleryId, userId)
+        val gallery = galleryRepository.requireWithLockById(galleryId)
 
         gallery.moveToTrash(ZonedDateTime.now(clock))
     }
 
+    @Transactional
+    fun requestSelectionIncrease(galleryId: Long, userId: Long, request: RequestSelectionIncreaseRequest) {
+        galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
+        val gallery = galleryRepository.requireWithLockById(galleryId)
+        photoSelectionRepository.findByGalleryId(galleryId)?.requireEditable()
+        if (workspaceRepository.findById(gallery.workspaceId).orElse(null)?.type != WorkspaceType.STUDIO ||
+            gallery.maxSelectablePhotoCount == null || request.requestedCount <= gallery.maxSelectablePhotoCount!! ||
+            request.message.orEmpty().length > 300
+        ) throw GalleryException(GalleryErrorCode.INVALID_INCREASE_REQUEST)
+        notificationPublisher.publish(
+            userIds = workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId).map { it.userId },
+            type = UserNotificationType.SELECTION_INCREASE_REQUESTED, scope = UserNotificationScope.GALLERY,
+            scopeId = galleryId, title = "계약 장수 상향 요청", message = "${request.requestedCount}장 요청: ${request.message.orEmpty()}",
+        )
+    }
+
+    private fun publishToClients(gallery: Gallery, type: UserNotificationType, title: String, message: String) {
+        notificationPublisher.publish(
+            userIds = galleryMemberRepository.findAllByGalleryId(gallery.requiredId).map { it.userId },
+            type = type, scope = UserNotificationScope.GALLERY, scopeId = gallery.requiredId, title = title, message = message,
+        )
+    }
+
     private fun requireOperatingWorkspace(workspaceId: Long, userId: Long) {
+        val workspace = workspaceRepository.findById(workspaceId).orElse(null)
+            ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
         if (!workspaceMemberRepository.existsByWorkspaceIdAndUserIdAndRoleIn(
                 workspaceId,
                 userId,
@@ -200,6 +264,9 @@ class GalleryService(
             )
         ) {
             throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
+        }
+        if (workspace.type == WorkspaceType.PERSONAL) {
+            throw GalleryException(GalleryErrorCode.PERSONAL_CHECKOUT_REQUIRED)
         }
         if (studioRepository.existsById(workspaceId) &&
             !studioRepository.existsByIdAndSuspendedAtIsNull(workspaceId)

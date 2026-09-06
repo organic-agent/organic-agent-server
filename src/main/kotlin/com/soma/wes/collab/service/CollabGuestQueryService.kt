@@ -17,6 +17,8 @@ import org.springframework.transaction.annotation.Transactional
 @Service
 class CollabGuestQueryService(
     private val sessionAccess: CollabSessionAccess,
+    private val sessionRepository: com.soma.wes.collab.repository.CollabSessionRepository,
+    private val clock: java.time.Clock,
     private val participantRepository: CollabParticipantRepository,
     private val commentRepository: CollabPhotoCommentRepository,
     private val photoViewAssembler: CollabPhotoViewAssembler,
@@ -28,6 +30,16 @@ class CollabGuestQueryService(
             access.gallery.title,
             photoViewAssembler.count(access.session.conceptFolderId),
             sessionAccess.isWritable(access),
+            coverTitle = access.session.coverTitle ?: access.session.name,
+            coverAuthor = access.session.coverAuthor,
+            expiresAt = access.session.expiresAt,
+            albums = (if (access.session.includeAllAlbums) sessionRepository.findAllByGalleryIdOrderByCreatedAtDesc(access.gallery.requiredId)
+                else listOf(access.session))
+                .filter { !it.isRevoked && !it.isExpiredAt(java.time.ZonedDateTime.now(clock)) }
+                .map { session -> CollabLandingResponse.Album(
+                    conceptFolderId = session.conceptFolderId, name = session.name,
+                    photoCount = photoViewAssembler.count(session.conceptFolderId), collabToken = session.collabToken,
+                ) },
         )
     }
 

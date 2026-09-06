@@ -1,6 +1,10 @@
 package com.soma.wes.photo.service
 
 import com.soma.wes.gallery.support.GalleryAccessPolicy
+import com.soma.wes.gallery.repository.GalleryRepository
+import com.soma.wes.gallery.repository.requireWithLockById
+import com.soma.wes.gallery.exception.GalleryException
+import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.global.page.PageRequests
 import com.soma.wes.global.page.PageResponse
 import com.soma.wes.photo.config.StorageProperties
@@ -38,6 +42,7 @@ class PhotoService(
     private val photoRepository: PhotoRepository,
     private val photoAnalysisRepository: PhotoAnalysisRepository,
     private val galleryAccessPolicy: GalleryAccessPolicy,
+    private val galleryRepository: GalleryRepository,
     private val photoStorage: PhotoStorage,
     private val photoViewAssembler: PhotoViewAssembler,
     private val properties: StorageProperties,
@@ -65,8 +70,14 @@ class PhotoService(
         userId: Long,
         request: IssueUploadUrlsRequest,
     ): IssueUploadUrlsResponse {
-        galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requireUploader(galleryId, userId)
 
+        val gallery = galleryRepository.requireWithLockById(galleryId)
+        gallery.planMaxPhotoCount?.let { limit ->
+            if (photoRepository.countByGalleryId(galleryId) + request.files.size > limit) {
+                throw GalleryException(GalleryErrorCode.PHOTO_PLAN_LIMIT_EXCEEDED)
+            }
+        }
         if (request.files.size > properties.maxBatchSize) {
             throw PhotoException(PhotoErrorCode.TOO_MANY_PHOTOS)
         }
@@ -112,7 +123,7 @@ class PhotoService(
      */
     @Transactional
     fun completeUpload(galleryId: Long, userId: Long, request: CompleteUploadRequest): PhotoCountResponse {
-        galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requireUploader(galleryId, userId)
 
         val photos = checkAndLoadPhotos(galleryId, request.photoIds)
         photos.forEach { it.markUploaded() }
@@ -147,7 +158,7 @@ class PhotoService(
      */
     @Transactional
     fun moveToTrash(galleryId: Long, userId: Long, request: DeletePhotosRequest): PhotoCountResponse {
-        galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requireUploader(galleryId, userId)
 
         val photos = checkAndLoadPhotos(galleryId, request.photoIds)
         val now = ZonedDateTime.now(clock)
@@ -187,10 +198,12 @@ class PhotoService(
         galleryAccessPolicy.requireViewer(galleryId, userId)
         validateMinScore(minScore)
 
+        val studioViewer = galleryAccessPolicy.isStudioManager(galleryId, userId)
+        if (studioViewer && minScore != null) throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
         val found = findPage(galleryId, status, minScore, pageableOf(page, size))
 
         return PhotoPageResponse.of(
-            page = PageResponse.of(found, photoViewAssembler.toResponses(found.content)),
+            page = PageResponse.of(found, photoViewAssembler.toResponses(found.content).map { if (studioViewer) it.copy(score = null) else it }),
             viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
         )
     }
@@ -228,7 +241,7 @@ class PhotoService(
     @Transactional(readOnly = true)
     fun get(galleryId: Long, photoId: Long, userId: Long): PhotoDetailResponse {
         // 작가는 언제든, 부부는 갤러리가 열려 있고 마감 전인 동안에만 본다.
-        galleryAccessPolicy.requireManagerOrSelectionEditor(galleryId, userId)
+        galleryAccessPolicy.requireViewer(galleryId, userId)
 
         val photo = photoRepository.findByIdAndGalleryId(photoId, galleryId)
             ?: throw PhotoException(PhotoErrorCode.PHOTO_NOT_FOUND)
@@ -239,14 +252,14 @@ class PhotoService(
             originalUrl = photoViewAssembler.originalUrlOf(photo),
             viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
             originalUrlTtlSeconds = properties.originalUrlTtl.seconds,
-            score = photoViewAssembler.scoreOf(photo),
+            score = if (galleryAccessPolicy.isStudioManager(galleryId, userId)) null else photoViewAssembler.scoreOf(photo),
         )
     }
 
     /** 임베딩 진행 상황을 확인하는 곳. Lambda는 비동기라 이 집계 말고는 알 방법이 없다. */
     @Transactional(readOnly = true)
     fun summarize(galleryId: Long, userId: Long): PhotoSummaryResponse {
-        galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requireViewer(galleryId, userId)
 
         return PhotoSummaryResponse(
             total = photoRepository.countByGalleryId(galleryId),

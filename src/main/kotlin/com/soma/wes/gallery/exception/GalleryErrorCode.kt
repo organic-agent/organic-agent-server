@@ -9,6 +9,11 @@ enum class GalleryErrorCode(
     override val message: String,
 ) : ErrorCode {
 
+    PERSONAL_CHECKOUT_REQUIRED(HttpStatus.PAYMENT_REQUIRED, "GALLERY_402_1", "개인 갤러리는 테스트 결제 완료 후 개설해 주세요."),
+    GALLERY_ARCHIVED(HttpStatus.FORBIDDEN, "GALLERY_403_6", "종료된 갤러리는 열람만 가능합니다."),
+    FOLDERS_ALREADY_SAVED(HttpStatus.CONFLICT, "GALLERY_409_2", "사진 정리가 이미 완료되었습니다."),
+    INVALID_INCREASE_REQUEST(HttpStatus.BAD_REQUEST, "GALLERY_400_8", "현재 계약 장수보다 큰 장수를 요청해 주세요."),
+    PHOTO_PLAN_LIMIT_EXCEEDED(HttpStatus.CONFLICT, "GALLERY_409_3", "플랜의 업로드 가능 장수를 초과했습니다."),
     INVALID_STATUS_TRANSITION(HttpStatus.BAD_REQUEST, "GALLERY_400_1", "현재 상태에서는 할 수 없는 동작입니다."),
 
     /**

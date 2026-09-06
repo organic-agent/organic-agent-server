@@ -484,7 +484,7 @@ class TrashServiceTest @Autowired constructor(
         ).id
         val session = collabSessionService.open(
             fixture.galleryId,
-            fixture.photographer.id!!,
+            fixture.member.requiredId,
             OpenCollabSessionRequest(conceptId, "본식 후보"),
         )
         return session.collabUrl.substringAfterLast('/')

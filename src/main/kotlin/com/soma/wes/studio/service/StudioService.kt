@@ -39,6 +39,7 @@ class StudioService(
 
     @Transactional
     fun create(userId: Long, request: CreateStudioRequest): StudioResponse {
+        Studio.validateProfile(request.name, request.contact, request.description)
         val normalizedGalleryUrl = Studio.validateGalleryUrl(request.galleryUrl)
         userRepository.requireById(userId)
 
@@ -62,7 +63,7 @@ class StudioService(
                 description = request.description,
             )
         )
-        return StudioResponse.from(studio)
+        return StudioResponse.from(studio, WorkspaceRole.OWNER)
     }
 
     private fun validateStudio(normalizedGalleryUrl: String) {
@@ -77,11 +78,27 @@ class StudioService(
         if (studios.isEmpty()) throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
         if (studios.size > 1) throw StudioException(StudioErrorCode.STUDIO_SELECTION_REQUIRED)
 
-        return StudioResponse.from(studios.single())
+        return responseFor(studios.single(), userId)
     }
 
     @Transactional(readOnly = true)
-    fun listMine(userId: Long): List<StudioResponse> = findStudiosFor(userId).map(StudioResponse::from)
+    fun listMine(userId: Long): List<StudioResponse> {
+        val memberships = workspaceMemberRepository.findAllByUserId(userId).associateBy { it.workspaceId }
+        return studioRepository.findAllByIdInAndSuspendedAtIsNull(memberships.keys).map { studio ->
+            StudioResponse.from(studio, memberships[studio.workspaceId]?.role)
+        }
+    }
+
+    private fun responseFor(studio: Studio, userId: Long): StudioResponse = StudioResponse.from(
+        studio,
+        workspaceMemberRepository.findByWorkspaceIdAndUserId(studio.workspaceId, userId)?.role,
+    )
+
+    @Transactional(readOnly = true)
+    fun get(workspaceId: Long, userId: Long): StudioResponse {
+        requireStudioMember(workspaceId, userId)
+        return responseFor(studioRepository.findById(workspaceId).orElseThrow(), userId)
+    }
 
     @Transactional
     fun updateMyStudio(userId: Long, request: UpdateStudioRequest): StudioResponse {
@@ -96,7 +113,7 @@ class StudioService(
 
         studio.update(request.name, normalizedGalleryUrl, request.contact, request.description)
         workspaceRepository.findWithLockById(studio.workspaceId)?.name = request.name
-        return StudioResponse.from(studio)
+        return StudioResponse.from(studio, WorkspaceRole.OWNER)
     }
 
     @Transactional
@@ -116,7 +133,7 @@ class StudioService(
         studio.update(request.name, normalizedGalleryUrl, request.contact, request.description)
         workspaceRepository.findWithLockById(studio.workspaceId)?.name = request.name
 
-        return StudioResponse.from(studio)
+        return StudioResponse.from(studio, WorkspaceRole.OWNER)
     }
 
     private fun findStudiosFor(userId: Long): List<Studio> {
@@ -190,6 +207,29 @@ class StudioService(
         return StudioMemberResponse.from(target, userRepository.requireById(target.userId))
     }
 
+    @Transactional
+    fun removeMember(workspaceId: Long, memberId: Long, userId: Long) {
+        requireStudioMember(workspaceId, userId)
+        workspaceRepository.findWithLockById(workspaceId)
+            ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
+        val members = workspaceMemberRepository.findAllWithLockByWorkspaceId(workspaceId)
+        if (members.none { it.userId == userId && it.role == WorkspaceRole.OWNER }) {
+            throw StudioException(StudioErrorCode.NOT_STUDIO_OWNER)
+        }
+        val member = members.find { it.requiredId == memberId }
+            ?: throw StudioException(StudioErrorCode.STUDIO_ACCESS_DENIED)
+        if (member.role == WorkspaceRole.OWNER) throw StudioException(StudioErrorCode.LAST_OWNER_PROTECTED)
+        workspaceMemberRepository.delete(member)
+        notificationPublisher.publish(
+            userIds = listOf(member.userId),
+            type = UserNotificationType.MEMBERSHIP_REMOVED,
+            scope = UserNotificationScope.STUDIO,
+            scopeId = workspaceId,
+            title = "스튜디오 소속이 해제되었습니다",
+            message = "스튜디오 소유자가 멤버십을 해제했습니다.",
+        )
+    }
+
     private fun requireStudioMember(workspaceId: Long, userId: Long) {
         if (!studioRepository.existsByIdAndSuspendedAtIsNull(workspaceId) ||
             workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, userId) == null
@@ -203,7 +243,22 @@ class StudioService(
         val studios = findOwnedStudiosFor(userId)
         if (studios.isEmpty()) throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
         if (studios.size > 1) throw StudioException(StudioErrorCode.STUDIO_SELECTION_REQUIRED)
-        val studio = studios.single()
+        deleteStudio(studios.single(), userId)
+    }
+
+    @Transactional
+    fun delete(workspaceId: Long, userId: Long) {
+        requireStudioMember(workspaceId, userId)
+        if (!workspaceMemberRepository.existsByWorkspaceIdAndUserIdAndRoleIn(workspaceId, userId, listOf(WorkspaceRole.OWNER))) {
+            throw StudioException(StudioErrorCode.NOT_STUDIO_OWNER)
+        }
+        val studio = studioRepository.findById(workspaceId).orElseThrow()
+        deleteStudio(studio, userId)
+    }
+
+    private fun deleteStudio(studio: Studio, userId: Long) {
+        workspaceRepository.findWithLockById(studio.workspaceId)
+            ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
         val galleryRecipients = galleryRepository.findAllByWorkspaceId(studio.workspaceId)
             .flatMap { gallery -> galleryMemberRepository.findAllByGalleryId(gallery.requiredId) }
             .map { it.userId }

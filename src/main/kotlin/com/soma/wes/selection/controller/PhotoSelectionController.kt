@@ -1,6 +1,10 @@
 package com.soma.wes.selection.controller
 
 import com.soma.wes.auth.domain.LoginUser
+import com.soma.wes.selection.service.PhotoSelectionExportService
+import org.springframework.http.HttpHeaders
+import org.springframework.http.MediaType
+import com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest
 import com.soma.wes.selection.controller.docs.PhotoSelectionControllerDocs
 import com.soma.wes.selection.dto.request.DeselectPhotosRequest
 import com.soma.wes.selection.dto.request.SelectPhotosRequest
@@ -23,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/v1/galleries/{galleryId}/photo-selection")
 class PhotoSelectionController(
     private val photoSelectionService: PhotoSelectionService,
+    private val photoSelectionExportService: PhotoSelectionExportService,
 ) : PhotoSelectionControllerDocs {
 
     @GetMapping
@@ -73,8 +78,9 @@ class PhotoSelectionController(
     override fun submit(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
+        @Valid @RequestBody(required = false) request: SubmitRetouchRequestsRequest?,
     ): ResponseEntity<PhotoSelectionResponse> {
-        val result = photoSelectionService.submit(galleryId, loginUser.id)
+        val result = photoSelectionService.submit(galleryId, loginUser.id, request ?: SubmitRetouchRequestsRequest())
 
         return ResponseEntity.ok(result)
     }
@@ -87,5 +93,17 @@ class PhotoSelectionController(
         val result = photoSelectionService.withdraw(galleryId, loginUser.id)
 
         return ResponseEntity.ok(result)
+    }
+    @GetMapping("/export")
+    override fun export(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+    ): ResponseEntity<ByteArray> {
+        val result = photoSelectionExportService.export(galleryId, loginUser.id)
+        return ResponseEntity.ok()
+            .contentType(MediaType.parseMediaType("text/csv;charset=UTF-8"))
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=wes-selection-$galleryId.csv")
+            .header(HttpHeaders.CACHE_CONTROL, "no-store")
+            .body(result)
     }
 }

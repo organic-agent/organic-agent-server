@@ -7,4 +7,7 @@ data class RenameCollabSessionRequest(
 
     @field:Schema(description = "새 이름. 링크(collabToken)는 그대로다 — 하객이 들고 있는 주소가 죽지 않는다.")
     val name: String,
+    val coverTitle: String? = null,
+    val coverAuthor: String? = null,
+    val includeAllAlbums: Boolean? = null,
 )

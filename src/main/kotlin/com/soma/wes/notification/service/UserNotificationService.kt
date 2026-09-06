@@ -9,6 +9,12 @@ import com.soma.wes.notification.dto.UserNotificationResponse
 import com.soma.wes.notification.dto.UserNotificationSettingsResponse
 import com.soma.wes.notification.repository.UserNotificationRepository
 import com.soma.wes.notification.repository.UserNotificationSettingRepository
+import com.soma.wes.notification.dto.ReadUserNotificationsRequest
+import com.soma.wes.notification.dto.ReadUserNotificationsResponse
+import com.soma.wes.notification.exception.NotificationErrorCode
+import com.soma.wes.notification.exception.NotificationException
+import java.time.Clock
+import java.time.ZonedDateTime
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -16,16 +22,44 @@ import org.springframework.transaction.annotation.Transactional
 class UserNotificationService(
     private val notificationRepository: UserNotificationRepository,
     private val settingRepository: UserNotificationSettingRepository,
+    private val clock: Clock,
 ) : UserNotificationPublisher {
     @Transactional(readOnly = true)
     fun list(userId: Long, scope: UserNotificationScope?, scopeId: Long?): List<UserNotificationResponse> {
-        val notifications = when {
-            scope == null -> notificationRepository.findAllByUserIdOrderByCreatedAtDescIdDesc(userId)
-            scopeId == null || scope == UserNotificationScope.GLOBAL ->
-                notificationRepository.findAllByUserIdAndScopeOrderByCreatedAtDescIdDesc(userId, scope)
-            else -> notificationRepository.findAllByUserIdAndScopeAndScopeIdOrderByCreatedAtDescIdDesc(userId, scope, scopeId)
+        return recent(userId, scope, scopeId).map(UserNotificationResponse::from)
+    }
+
+    private fun recent(userId: Long, scope: UserNotificationScope?, scopeId: Long?): List<UserNotification> =
+        notificationRepository.findRecent(userId, ZonedDateTime.now(clock).minusDays(RECENT_DAYS), scope, scopeId)
+
+    @Transactional
+    fun read(userId: Long, request: ReadUserNotificationsRequest): ReadUserNotificationsResponse {
+        val ids = request.notificationIds.distinct()
+        if ((request.all && ids.isNotEmpty()) || (!request.all && ids.isEmpty()) || ids.size > MAX_READ_BATCH ||
+            (request.scopeId != null && (request.scope == null || request.scope == UserNotificationScope.GLOBAL))
+        ) {
+            throw NotificationException(NotificationErrorCode.INVALID_READ_REQUEST)
         }
-        return notifications.map(UserNotificationResponse::from)
+        val recent = recent(userId, request.scope, request.scopeId)
+        val targets = if (request.all) recent else recent.filter { it.requiredId in ids }
+        if (!request.all && targets.size != ids.size) {
+            throw NotificationException(NotificationErrorCode.NOTIFICATION_NOT_FOUND)
+        }
+        val unread = targets.filter { it.readAt == null }
+        val now = ZonedDateTime.now(clock)
+        unread.forEach { it.readAt = now }
+        notificationRepository.flush()
+        return ReadUserNotificationsResponse(
+            updatedCount = unread.size,
+            unreadCount = recent(userId, null, null).count { it.readAt == null }.toLong(),
+        )
+    }
+
+    companion object {
+        /** 알림 드롭다운에서 보여 주는 기간이다. */
+        const val RECENT_DAYS = 30L
+        /** 개별 읽음 요청의 최대 개수다. */
+        const val MAX_READ_BATCH = 200
     }
 
     @Transactional(readOnly = true)

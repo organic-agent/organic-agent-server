@@ -1,6 +1,11 @@
 package com.soma.wes.retouch.controller.docs
 
 import com.soma.wes.auth.domain.LoginUser
+import com.soma.wes.retouch.dto.request.RefineRetouchRequest
+import com.soma.wes.retouch.dto.response.RefineRetouchResponse
+import com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest
+import com.soma.wes.retouch.dto.request.MatchRetouchResultsRequest
+import com.soma.wes.retouch.dto.response.MatchRetouchResultsResponse
 import com.soma.wes.retouch.dto.request.AddRetouchPhotosRequest
 import com.soma.wes.retouch.dto.request.CompleteResultsRequest
 import com.soma.wes.retouch.dto.request.IssueResultUploadUrlsRequest
@@ -65,7 +70,7 @@ interface RetouchControllerDocs {
                 "개수 상한 초과(RETOUCH_400_3), 빈 목록(RETOUCH_400_4), 업로드 전 사진(RETOUCH_400_5)",
             content = [],
         ),
-        ApiResponse(responseCode = "403", description = "부부가 아니거나, 마감/미공개 갤러리", content = []),
+        ApiResponse(responseCode = "403", description = "클라이언트가 아니거나, 종료/미공개 갤러리", content = []),
         ApiResponse(
             responseCode = "409",
             description = "이전 회차 진행 중(RETOUCH_409_1), 이미 담긴 사진이 섞임(RETOUCH_409_2)",
@@ -85,7 +90,7 @@ interface RetouchControllerDocs {
     )
     @ApiResponses(
         ApiResponse(responseCode = "204", description = "빼기 성공"),
-        ApiResponse(responseCode = "403", description = "부부가 아니거나, 마감/미공개 갤러리", content = []),
+        ApiResponse(responseCode = "403", description = "클라이언트가 아니거나, 종료/미공개 갤러리", content = []),
         ApiResponse(responseCode = "404", description = "요청 목록에 없는 사진(RETOUCH_404_1)", content = []),
     )
     fun removePhoto(loginUser: LoginUser, galleryId: Long, photoId: Long): ResponseEntity<Unit>
@@ -111,7 +116,7 @@ interface RetouchControllerDocs {
             description = "요청 텍스트가 너무 김(RETOUCH_400_7), 이 갤러리의 주석 key가 아님(RETOUCH_400_8)",
             content = [],
         ),
-        ApiResponse(responseCode = "403", description = "부부가 아니거나, 마감/미공개 갤러리", content = []),
+        ApiResponse(responseCode = "403", description = "클라이언트가 아니거나, 종료/미공개 갤러리", content = []),
         ApiResponse(responseCode = "404", description = "요청 목록에 없는 사진(RETOUCH_404_1)", content = []),
     )
     fun updatePhoto(
@@ -133,7 +138,7 @@ interface RetouchControllerDocs {
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "발급 성공"),
-        ApiResponse(responseCode = "403", description = "부부가 아니거나, 마감/미공개 갤러리", content = []),
+        ApiResponse(responseCode = "403", description = "클라이언트가 아니거나, 종료/미공개 갤러리", content = []),
         ApiResponse(responseCode = "404", description = "존재하지 않는 갤러리", content = []),
     )
     fun issueAnnotationUploadUrl(loginUser: LoginUser, galleryId: Long): ResponseEntity<IssueAnnotationUploadUrlResponse>
@@ -159,7 +164,7 @@ interface RetouchControllerDocs {
             description = "요청할 사진이 없음(RETOUCH_400_6), 계약 횟수 소진(RETOUCH_400_1)",
             content = [],
         ),
-        ApiResponse(responseCode = "403", description = "부부가 아니거나, 마감/미공개 갤러리", content = []),
+        ApiResponse(responseCode = "403", description = "클라이언트가 아니거나, 종료/미공개 갤러리", content = []),
     )
     fun submitRound(loginUser: LoginUser, galleryId: Long): ResponseEntity<RetouchOverviewResponse>
 
@@ -167,7 +172,8 @@ interface RetouchControllerDocs {
         summary = "보정 회차 상세 조회",
         description = """
             회차 하나의 요청 전부를 항목별 원본·주석·결과 URL과 함께 준다 — 전/후 비교 화면이
-            이 응답 하나로 그려진다. resultUrl이 null인 항목은 아직 작가의 응답이 없는 것이다.
+            이 응답 하나로 그려진다. 스튜디오 클라이언트에게 resultUrl은 작가의 보내기 전까지 숨긴다.
+            작가는 아직 제출하지 않은 초안의 사진과 클라이언트의 별점을 볼 수 없다.
 
             갤러리를 볼 수 있는 사람이면 누구나 조회한다. 끝난 회차도 조회된다 — 부부는 마감
             뒤에도 회차별 결과를 다시 볼 수 있어야 한다.
@@ -263,4 +269,20 @@ interface RetouchControllerDocs {
         galleryId: Long,
         roundNo: Int,
     ): ResponseEntity<RetouchOverviewResponse>
+    @Operation(summary = "선택 사진의 N차 보정 요청 제출", description = "스튜디오 갤러리 전용이다. requests에는 photoId, requestText, annotationKey, points를 담는다. 선택에 없는 사진은 거절한다.")
+    fun submitRequests(loginUser: LoginUser, galleryId: Long, roundNo: Int, request: SubmitRetouchRequestsRequest): ResponseEntity<RetouchOverviewResponse>
+
+    @Operation(summary = "보정 파일명 자동 매칭", description = "확장자를 제외한 파일명을 비교한다. 후보가 여러 개면 photoId=null이며 클라이언트가 후보를 선택해 upload-urls의 photoId로 보낸다.")
+    fun matchResults(loginUser: LoginUser, galleryId: Long, roundNo: Int, request: MatchRetouchResultsRequest): ResponseEntity<MatchRetouchResultsResponse>
+
+    @Operation(summary = "클라이언트 보정 확정", description = "스튜디오 갤러리 전용이다. 최신 회차를 작가가 보낸 후에만 확정할 수 있으며 갤러리는 읽기 전용 보관 상태가 된다.")
+    fun confirm(loginUser: LoginUser, galleryId: Long): ResponseEntity<RetouchOverviewResponse>
+
+    @Operation(summary = "보정 결과 업로드 URL 발급", description = "개인 갤러리의 1회 요청서에 대한 편의 경로. 개설자와 파트너 모두 업로드한다.")
+    fun issuePersonalResultUploadUrls(loginUser: LoginUser, galleryId: Long, request: IssueResultUploadUrlsRequest): ResponseEntity<IssueResultUploadUrlsResponse>
+
+    @Operation(summary = "보정 결과 업로드 완료", description = "개인 갤러리는 별도 보내기 없이 바로 조회할 수 있다. 스튜디오에서는 /rounds/1/send 전까지 결과가 숨겨진다.")
+    fun completePersonalResults(loginUser: LoginUser, galleryId: Long, request: CompleteResultsRequest): ResponseEntity<RetouchRoundDetailResponse>
+    @Operation(summary = "보정 요청 AI 정제안", description = "원문은 변경하지 않고 제안만 반환한다. LLM 비활성 환경은 available=false, refinedText=null을 반환한다.")
+    fun refine(loginUser: LoginUser, galleryId: Long, request: RefineRetouchRequest): ResponseEntity<RefineRetouchResponse>
 }

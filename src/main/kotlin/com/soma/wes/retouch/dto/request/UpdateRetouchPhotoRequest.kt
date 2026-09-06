@@ -1,6 +1,7 @@
 package com.soma.wes.retouch.dto.request
 
 import com.soma.wes.retouch.domain.RetouchPhoto
+import com.soma.wes.retouch.domain.RetouchPoint
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.Size
 
@@ -17,4 +18,6 @@ data class UpdateRetouchPhotoRequest(
             "그대로 보낸다 — 이 갤러리의 주석 경로가 아닌 key는 400으로 거절된다. null이면 지운다.",
     )
     val annotationKey: String? = null,
+
+    val points: List<RetouchPoint> = emptyList(),
 )

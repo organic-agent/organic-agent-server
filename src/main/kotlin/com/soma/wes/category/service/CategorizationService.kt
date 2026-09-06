@@ -26,7 +26,7 @@ class CategorizationService(
 ) {
     @Transactional
     fun run(galleryId: Long, userId: Long): CategorizationJobResponse {
-        galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requireUploader(galleryId, userId)
         return runAsAdmin(galleryId)
     }
 

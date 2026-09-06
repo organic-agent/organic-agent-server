@@ -31,21 +31,31 @@ class GalleryServiceTest @Autowired constructor(
     private val workspaceMemberRepository: WorkspaceMemberRepository,
 ) {
     @Test
-    fun `PERSONAL 작업공간에도 갤러리를 만들 수 있다`() {
+    fun `PERSONAL 작업공간은 일반 생성 API로 결제를 우회할 수 없다`() {
         val user = userFixture.사용자()
         val personal = workspaceRepository.findByPersonalOwnerUserId(user.requiredId)!!
 
-        val result = galleryService.create(
-            user.requiredId,
-            CreateGalleryRequest(personal.requiredId, "개인 본식", maxRetouchRoundCount = 3),
-        )
+        assertThatThrownBy {
+            galleryService.create(
+                user.requiredId,
+                CreateGalleryRequest(personal.requiredId, "개인 본식", maxRetouchRoundCount = 3),
+            )
+        }.isInstanceOf(GalleryException::class.java)
+            .extracting("errorCode").isEqualTo(GalleryErrorCode.PERSONAL_CHECKOUT_REQUIRED)
+    }
 
-        assertThat(result.workspaceId).isEqualTo(personal.requiredId)
-        assertThat(result.createdByUserId).isEqualTo(user.requiredId)
-        assertThat(result.status).isEqualTo(GalleryStatus.DRAFT)
-        assertThat(result.workflowStatus).isEqualTo(GalleryWorkflowStatus.DRAFT)
-        assertThat(result.stage).isEqualTo(GalleryStage.UPLOAD)
-        assertThat(result.maxRetouchRoundCount).isEqualTo(3)
+    @Test
+    fun `삭제된 작업공간은 이전 멤버십이 남아 있어도 갤러리를 생성할 수 없다`() {
+        val owner = studioFixture.작가()
+        val studio = studioFixture.소유_스튜디오(owner)
+        val workspace = workspaceRepository.findById(studio.workspaceId).orElseThrow()
+        workspace.deletedAt = java.time.ZonedDateTime.now()
+        workspaceRepository.saveAndFlush(workspace)
+
+        assertThatThrownBy {
+            galleryService.create(owner.requiredId, CreateGalleryRequest(studio.workspaceId, "새 갤러리"))
+        }.isInstanceOf(com.soma.wes.studio.exception.StudioException::class.java)
+            .extracting("errorCode").isEqualTo(com.soma.wes.studio.exception.StudioErrorCode.STUDIO_NOT_FOUND)
     }
 
     @Test

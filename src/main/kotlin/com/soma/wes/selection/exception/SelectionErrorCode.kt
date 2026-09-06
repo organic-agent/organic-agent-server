@@ -42,6 +42,11 @@ enum class SelectionErrorCode(
     /** 한 장도 고르지 않은 앨범을 제출하려는 경우. */
     EMPTY_SELECTION(HttpStatus.BAD_REQUEST, "SELECTION_400_6", "고른 사진이 없어 제출할 수 없습니다."),
 
+    EXACT_TARGET_REQUIRED(HttpStatus.BAD_REQUEST, "SELECTION_400_7", "정확히 목표 장수를 선택해야 전달하거나 내보낼 수 있습니다."),
+    PERSONAL_EXPORT_REQUIRED(HttpStatus.CONFLICT, "SELECTION_409_6", "개인 갤러리는 제출 대신 요청서를 내보내야 합니다."),
+    SELECTION_ALREADY_EXPORTED(HttpStatus.CONFLICT, "SELECTION_409_5", "요청서를 내보낸 선택 목록은 변경할 수 없습니다."),
+    PHOTO_ORGANIZATION_REQUIRED(HttpStatus.CONFLICT, "SELECTION_409_4", "사진 정리를 폴더로 저장한 후 선택할 수 있습니다."),
+
     /** 앨범에 없는 사진을 빼려는 경우. */
     PHOTO_NOT_SELECTED(HttpStatus.NOT_FOUND, "SELECTION_404_1", "선택 앨범에 없는 사진입니다."),
 

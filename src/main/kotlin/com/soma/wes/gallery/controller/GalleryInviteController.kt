@@ -30,7 +30,7 @@ class GalleryInviteController(
     private val galleryInviteService: GalleryInviteService,
 ) : GalleryInviteControllerDocs {
 
-    @PostMapping("/galleries/{galleryId}/invites")
+    @PostMapping("/galleries/{galleryId}/invites", "/galleries/{galleryId}/invite-link")
     override fun issue(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
@@ -72,6 +72,14 @@ class GalleryInviteController(
         val result = galleryInviteService.accept(token, loginUser.id)
 
         return ResponseEntity.ok(result)
+    }
+
+    @PostMapping("/invites/partner/{token}/accept")
+    override fun acceptPartner(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable token: String,
+    ): ResponseEntity<GalleryInviteAcceptResponse> {
+        return ResponseEntity.ok(galleryInviteService.acceptPartner(token, loginUser.id))
     }
 
     @GetMapping("/invites/{token}")

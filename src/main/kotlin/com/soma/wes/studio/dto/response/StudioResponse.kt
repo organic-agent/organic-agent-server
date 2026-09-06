@@ -1,6 +1,7 @@
 package com.soma.wes.studio.dto.response
 
 import com.soma.wes.studio.domain.Studio
+import com.soma.wes.workspace.domain.WorkspaceRole
 import io.swagger.v3.oas.annotations.media.Schema
 import java.time.ZonedDateTime
 
@@ -15,10 +16,11 @@ data class StudioResponse(
     val contact: String?,
     val description: String?,
     val createdAt: ZonedDateTime?,
+    val role: WorkspaceRole? = null,
 ) {
 
     companion object {
-        fun from(studio: Studio) = StudioResponse(
+        fun from(studio: Studio, role: WorkspaceRole? = null) = StudioResponse(
             id = studio.requiredId,
             workspaceId = studio.workspaceId,
             name = studio.name,
@@ -27,6 +29,7 @@ data class StudioResponse(
             contact = studio.contact,
             description = studio.description,
             createdAt = studio.createdAt,
+            role = role,
         )
     }
 }

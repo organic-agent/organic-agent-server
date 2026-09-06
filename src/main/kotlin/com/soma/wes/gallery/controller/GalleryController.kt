@@ -8,6 +8,7 @@ import com.soma.wes.gallery.dto.request.ChangeSelectionDeadlineRequest
 import com.soma.wes.gallery.dto.request.ChangeShootTypeRequest
 import com.soma.wes.gallery.dto.request.ChangeWorkflowStatusRequest
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
+import com.soma.wes.gallery.dto.request.RequestSelectionIncreaseRequest
 import com.soma.wes.gallery.dto.request.RenameGalleryRequest
 import com.soma.wes.gallery.dto.request.ReopenGalleryRequest
 import com.soma.wes.gallery.dto.response.GalleryResponse
@@ -171,6 +172,16 @@ class GalleryController(
         val result = galleryService.reopen(galleryId, loginUser.id, request)
 
         return ResponseEntity.ok(result)
+    }
+
+    @PostMapping("/{galleryId}/max-selectable-increase-request")
+    override fun requestSelectionIncrease(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @Valid @RequestBody request: RequestSelectionIncreaseRequest,
+    ): ResponseEntity<Unit> {
+        galleryService.requestSelectionIncrease(galleryId, loginUser.id, request)
+        return ResponseEntity.noContent().build()
     }
 
     @DeleteMapping("/{galleryId}")

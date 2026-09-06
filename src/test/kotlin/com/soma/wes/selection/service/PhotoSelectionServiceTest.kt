@@ -19,6 +19,11 @@ import com.soma.wes.selection.exception.SelectionException
 import com.soma.wes.selection.repository.PhotoSelectionItemRepository
 import com.soma.wes.selection.repository.PhotoSelectionRepository
 import com.soma.wes.support.IntegrationTest
+import com.soma.wes.retouch.domain.RetouchPoint
+import com.soma.wes.retouch.dto.request.RetouchRequestItem
+import com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest
+import com.soma.wes.retouch.service.RetouchService
+import com.soma.wes.retouch.repository.RetouchRoundRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.assertj.core.api.SoftAssertions.assertSoftly
@@ -43,6 +48,8 @@ class PhotoSelectionServiceTest @Autowired constructor(
     private val photoSelectionRepository: PhotoSelectionRepository,
     private val photoSelectionItemRepository: PhotoSelectionItemRepository,
     private val galleryRepository: GalleryRepository,
+    private val retouchService: RetouchService,
+    private val retouchRoundRepository: RetouchRoundRepository,
 ) {
 
     @Nested
@@ -277,7 +284,7 @@ class PhotoSelectionServiceTest @Autowired constructor(
         @Test
         fun `제출하면 목록이 잠기고 작가가 되돌리면 다시 열린다`() {
             // given
-            val fixture = galleryFixture.멤버와_열린_갤러리(maxSelectablePhotoCount = 3)
+            val fixture = galleryFixture.멤버와_열린_갤러리(maxSelectablePhotoCount = 2)
             val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 3)
             select(fixture, photoIds.take(2))
 
@@ -287,7 +294,6 @@ class PhotoSelectionServiceTest @Autowired constructor(
                 softly.assertThat(submitted.status).isEqualTo(PhotoSelectionStatus.SUBMITTED)
                 softly.assertThat(galleryRepository.findById(fixture.galleryId).orElseThrow().stage)
                     .isEqualTo(GalleryStage.SELECTION_COMPLETED)
-                // 계약 장수에 못 미쳐도 제출된다. 화면은 목표와 현재 장수를 보고 미리 물어본다.
                 softly.assertThat(submitted.selectedCount).isEqualTo(2)
                 softly.assertThat(submitted.submittedAt).isNotNull()
             }
@@ -316,6 +322,7 @@ class PhotoSelectionServiceTest @Autowired constructor(
                     .isEqualTo(GalleryStage.SELECTION_IN_PROGRESS)
             }
 
+            photoSelectionService.deselectPhoto(fixture.galleryId, photoIds.first(), fixture.member.id!!)
             select(fixture, photoIds.drop(2))
         }
 
@@ -323,7 +330,7 @@ class PhotoSelectionServiceTest @Autowired constructor(
         fun `부부는 제출을 되돌릴 수 없다`() {
             // 부부가 스스로 되돌릴 수 있으면 제출이라는 잠금이 아무것도 잠그지 않는다.
             // given
-            val fixture = galleryFixture.멤버와_열린_갤러리(maxSelectablePhotoCount = 3)
+            val fixture = galleryFixture.멤버와_열린_갤러리(maxSelectablePhotoCount = 1)
             select(fixture, photoFixture.업로드된_사진(fixture.galleryId, count = 1))
             photoSelectionService.submit(fixture.galleryId, fixture.member.id!!)
 
@@ -548,6 +555,101 @@ class PhotoSelectionServiceTest @Autowired constructor(
     }
 
     // --- helpers ---
+
+    @Nested
+    @DisplayName("와이어프레임의 선택과 요청을 함께 전달할 때")
+    inner class WireframeSubmission {
+        @Test
+        fun `정확한 장수를 채우지 않으면 선택과 보정 모두 제출되지 않는다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리(maxSelectablePhotoCount = 2)
+            select(fixture, photoFixture.업로드된_사진(fixture.galleryId, count = 1))
+
+            // when & then
+            assertThatThrownBy { photoSelectionService.submit(fixture.galleryId, fixture.member.requiredId) }
+                .isInstanceOf(SelectionException::class.java).extracting("errorCode")
+                .isEqualTo(SelectionErrorCode.EXACT_TARGET_REQUIRED)
+            assertThat(retouchRoundRepository.count()).isZero()
+            assertThat(photoSelectionService.get(fixture.galleryId, fixture.member.requiredId).status)
+                .isEqualTo(PhotoSelectionStatus.SELECTING)
+        }
+
+        @Test
+        fun `선택 사진은 메모 유무와 관계없이 기본 보정에 포함되고 지점 요청은 보존된다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리(maxSelectablePhotoCount = 2, maxRetouchRoundCount = 2)
+            val ids = photoFixture.업로드된_사진(fixture.galleryId, count = 2)
+            select(fixture, ids)
+            val point = RetouchPoint(x = 0.2, y = 0.3, text = "잡티", refinedText = "잡티를 지워 주세요", useRefinedText = true)
+
+            // when
+            photoSelectionService.submit(fixture.galleryId, fixture.member.requiredId, SubmitRetouchRequestsRequest(
+                requests = listOf(RetouchRequestItem(photoId = ids.first(), requestText = "자연스럽게", points = listOf(point))),
+            ))
+            val result = retouchService.get(fixture.galleryId, fixture.member.requiredId)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(result.remainingRoundCount).isEqualTo(1)
+                softly.assertThat(result.currentRound!!.photos).hasSize(2)
+                softly.assertThat(result.currentRound!!.photos.first().points).containsExactly(point)
+                softly.assertThat(result.currentRound!!.photos.last().requestText).isNull()
+            }
+        }
+
+        @Test
+        fun `선택하지 않은 사진의 요청이 섞이면 선택 제출도 되돌린다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리(maxSelectablePhotoCount = 1)
+            val ids = photoFixture.업로드된_사진(fixture.galleryId, count = 2)
+            select(fixture, ids.take(1))
+
+            // when & then
+            assertThatThrownBy { photoSelectionService.submit(fixture.galleryId, fixture.member.requiredId,
+                SubmitRetouchRequestsRequest(requests = listOf(RetouchRequestItem(photoId = ids.last())))) }
+                .isInstanceOf(RetouchException::class.java).extracting("errorCode")
+                .isEqualTo(RetouchErrorCode.PHOTO_NOT_SELECTED)
+            assertThat(photoSelectionService.get(fixture.galleryId, fixture.member.requiredId).status)
+                .isEqualTo(PhotoSelectionStatus.SELECTING)
+            assertThat(retouchRoundRepository.count()).isZero()
+        }
+
+        @Test
+        fun `재오픈 후 사진을 바꿔 제출하면 제외한 초안 요청은 휴지통으로 이동한다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리(maxSelectablePhotoCount = 1)
+            val ids = photoFixture.업로드된_사진(fixture.galleryId, count = 2)
+            select(fixture, ids.take(1))
+            photoSelectionService.submit(fixture.galleryId, fixture.member.requiredId)
+            photoSelectionService.withdraw(fixture.galleryId, fixture.photographer.requiredId)
+            photoSelectionService.deselectPhoto(fixture.galleryId, ids.first(), fixture.member.requiredId)
+            select(fixture, ids.takeLast(1))
+
+            // when
+            photoSelectionService.submit(fixture.galleryId, fixture.member.requiredId)
+
+            // then
+            val result = retouchService.get(fixture.galleryId, fixture.member.requiredId)
+            assertThat(result.currentRound!!.photos.map { it.photo.photoId }).containsExactly(ids.last())
+            assertThat(result.rounds).hasSize(1)
+        }
+
+        @Test
+        fun `정규화 범위를 벗어난 지점은 저장 전에 거절한다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리(maxSelectablePhotoCount = 1)
+            val ids = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
+            select(fixture, ids)
+
+            // when & then
+            assertThatThrownBy { photoSelectionService.submit(fixture.galleryId, fixture.member.requiredId,
+                SubmitRetouchRequestsRequest(requests = listOf(RetouchRequestItem(photoId = ids.single(),
+                    points = listOf(RetouchPoint(x = 2.0, y = 0.3, text = "잡티")))))) }
+                .isInstanceOf(RetouchException::class.java).extracting("errorCode")
+                .isEqualTo(RetouchErrorCode.INVALID_POINT)
+            assertThat(retouchRoundRepository.count()).isZero()
+        }
+    }
 
     private fun select(fixture: OpenGallery, photoIds: List<Long>) {
         photoSelectionService.select(fixture.galleryId, fixture.member.id!!, SelectPhotosRequest(photoIds))

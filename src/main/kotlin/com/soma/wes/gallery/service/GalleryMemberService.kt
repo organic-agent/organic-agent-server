@@ -11,6 +11,10 @@ import com.soma.wes.notification.domain.UserNotificationType
 import com.soma.wes.notification.service.UserNotificationPublisher
 import com.soma.wes.user.repository.UserRepository
 import com.soma.wes.workspace.domain.WorkspaceRole
+import com.soma.wes.workspace.domain.WorkspaceType
+import com.soma.wes.workspace.repository.WorkspaceRepository
+import com.soma.wes.gallery.exception.GalleryException
+import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -24,6 +28,7 @@ class GalleryMemberService(
     private val galleryAccessPolicy: GalleryAccessPolicy,
     private val workspaceMemberRepository: WorkspaceMemberRepository,
     private val notificationPublisher: UserNotificationPublisher,
+    private val workspaceRepository: WorkspaceRepository,
 ) {
 
     /**
@@ -31,7 +36,14 @@ class GalleryMemberService(
      */
     @Transactional(readOnly = true)
     fun list(galleryId: Long, userId: Long): List<GalleryMemberResponse> {
-        galleryAccessPolicy.requireViewer(galleryId, userId)
+        val gallery = galleryAccessPolicy.requireViewer(galleryId, userId)
+        val workspace = workspaceRepository.findById(gallery.workspaceId).orElse(null)
+        if (workspace?.type == WorkspaceType.PERSONAL) {
+            val members = workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId)
+            val users = userRepository.findAllById(members.map { it.userId }).associateBy { it.requiredId }
+            return members.mapNotNull { member -> users[member.userId]?.let { GalleryMemberResponse.personal(member, it) } }
+                .sortedBy { it.role != com.soma.wes.gallery.dto.response.GalleryParticipantRole.OWNER }
+        }
 
         val members = galleryMemberRepository.findAllByGalleryId(galleryId)
         val usersById = userRepository.findAllById(members.map { it.userId })
@@ -49,7 +61,24 @@ class GalleryMemberService(
     fun remove(galleryId: Long, memberId: Long, userId: Long) {
         galleryAccessPolicy.requireManager(galleryId, userId)
         // 정원을 바꾸는 경로는 전부 갤러리 행을 잠그고 시작한다.
-        galleryRepository.requireWithLockById(galleryId)
+        val gallery = galleryRepository.requireWithLockById(galleryId)
+        val workspace = workspaceRepository.findById(gallery.workspaceId).orElse(null)
+        if (workspace?.type == WorkspaceType.PERSONAL) {
+            workspaceRepository.findWithLockById(gallery.workspaceId)
+            val target = workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId)
+                .find { it.requiredId == memberId } ?: throw GalleryException(GalleryErrorCode.MEMBER_NOT_FOUND)
+            if (target.role == WorkspaceRole.OWNER) throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+            workspaceMemberRepository.delete(target)
+            notificationPublisher.publish(
+                userIds = listOf(target.userId),
+                type = UserNotificationType.MEMBERSHIP_REMOVED,
+                scope = UserNotificationScope.GALLERY,
+                scopeId = galleryId,
+                title = "갤러리 소속이 해제되었습니다",
+                message = "개설자가 파트너 멤버십을 해제했습니다.",
+            )
+            return
+        }
 
         val member = galleryMemberRepository.requireByIdAndGalleryId(memberId, galleryId)
         galleryMemberRepository.delete(member)
@@ -66,12 +95,26 @@ class GalleryMemberService(
     @Transactional
     fun leave(galleryId: Long, userId: Long) {
         val gallery = galleryRepository.requireWithLockById(galleryId)
+        val workspace = workspaceRepository.findById(gallery.workspaceId).orElse(null)
+        if (workspace?.type == WorkspaceType.PERSONAL) {
+            workspaceRepository.findWithLockById(gallery.workspaceId)
+            val target = workspaceMemberRepository.findByWorkspaceIdAndUserId(gallery.workspaceId, userId)
+                ?: throw GalleryException(GalleryErrorCode.MEMBER_NOT_FOUND)
+            if (target.role == WorkspaceRole.OWNER) throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+            workspaceMemberRepository.delete(target)
+            notifyLeave(galleryId, gallery.workspaceId, gallery.title)
+            return
+        }
         val member = galleryMemberRepository.findByGalleryIdAndUserId(galleryId, userId)
             ?: throw com.soma.wes.gallery.exception.GalleryException(
                 com.soma.wes.gallery.exception.GalleryErrorCode.MEMBER_NOT_FOUND,
             )
         galleryMemberRepository.delete(member)
-        val owners = workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId)
+        notifyLeave(galleryId, gallery.workspaceId, gallery.title)
+    }
+
+    private fun notifyLeave(galleryId: Long, workspaceId: Long, title: String) {
+        val owners = workspaceMemberRepository.findAllByWorkspaceId(workspaceId)
             .filter { it.role == WorkspaceRole.OWNER }
             .map { it.userId }
         notificationPublisher.publish(
@@ -80,7 +123,7 @@ class GalleryMemberService(
             scope = UserNotificationScope.GALLERY,
             scopeId = galleryId,
             title = "갤러리 멤버가 나갔습니다",
-            message = "${gallery.title}에서 고객 한 명이 나갔습니다.",
+            message = "${title}에서 고객 한 명이 나갔습니다.",
         )
     }
 }

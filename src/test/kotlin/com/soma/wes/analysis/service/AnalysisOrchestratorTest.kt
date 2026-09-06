@@ -8,6 +8,8 @@ import com.soma.wes.analysis.domain.AnalysisStatus
 import com.soma.wes.analysis.repository.AnalysisJobRepository
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
+import com.soma.wes.notification.domain.UserNotificationType
+import com.soma.wes.notification.service.UserNotificationService
 import com.soma.wes.photo.domain.PhotoAnalysis
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.repository.PhotoRepository
@@ -42,6 +44,8 @@ class AnalysisOrchestratorTest @Autowired constructor(
     private val transactionTemplate: TransactionTemplate,
     private val clock: Clock,
     private val jdbcTemplate: JdbcTemplate,
+    private val completionNotifications: AnalysisCompletionNotificationService,
+    private val notifications: UserNotificationService,
 ) {
 
     private lateinit var fixture: OpenGallery
@@ -58,6 +62,14 @@ class AnalysisOrchestratorTest @Autowired constructor(
     private fun job(jobId: Long): AnalysisJob = analysisJobRepository.findById(jobId).orElseThrow()
 
     private fun stages(jobId: Long): List<AnalysisStage> = stageInvoker.callsOf(jobId).map { it.stage }
+
+    private fun assertCompletionNotifiedOnce(jobId: Long) {
+        assertThat(job(jobId).completionNotifiedAt).isNotNull()
+        for (user in listOf(fixture.photographer, fixture.member)) {
+            assertThat(notifications.list(user.requiredId, null, null)
+                .filter { it.type == UserNotificationType.ANALYSIS_COMPLETED }).hasSize(1)
+        }
+    }
 
     @Nested
     @DisplayName("EMBED 단계를 관측으로 열고 닫을 때")
@@ -196,6 +208,8 @@ class AnalysisOrchestratorTest @Autowired constructor(
             // then
             assertThat(job(jobId).status).isEqualTo(AnalysisStatus.DONE)
             assertThat(stages(jobId)).hasSize(2)
+            orchestrator.sweep()
+            assertCompletionNotifiedOnce(jobId)
         }
 
         @Test
@@ -273,6 +287,7 @@ class AnalysisOrchestratorTest @Autowired constructor(
             AnalysisProperties(lambdaReportsStage = true),
             transactionTemplate,
             clock,
+            completionNotifications,
         )
 
         @Test
@@ -305,6 +320,8 @@ class AnalysisOrchestratorTest @Autowired constructor(
                 softly.assertThat(job.result).containsKeys("score", "categorize")
                 softly.assertThat(stages(jobId)).hasSize(3)
             }
+            reporting.sweep()
+            assertCompletionNotifiedOnce(jobId)
         }
 
         @Test

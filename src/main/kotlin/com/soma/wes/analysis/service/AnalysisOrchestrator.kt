@@ -35,6 +35,7 @@ class AnalysisOrchestrator(
     private val properties: AnalysisProperties,
     private val transactionTemplate: TransactionTemplate,
     private val clock: Clock,
+    private val completionNotifications: AnalysisCompletionNotificationService,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -72,6 +73,8 @@ class AnalysisOrchestrator(
             }
             call?.let(::invoke)
         }
+        // 방금 끝난 잡과 옛 Lambda가 status만 DONE으로 닫은 잡을 함께 처리한다.
+        completionNotifications.sweep()
     }
 
     /**

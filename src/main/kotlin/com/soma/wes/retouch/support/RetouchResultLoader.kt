@@ -1,6 +1,8 @@
 package com.soma.wes.retouch.support
 
 import com.soma.wes.retouch.domain.RetouchPhoto
+import com.soma.wes.retouch.domain.RetouchRoundStatus
+import com.soma.wes.retouch.repository.RetouchRoundRepository
 import com.soma.wes.retouch.exception.RetouchErrorCode
 import com.soma.wes.retouch.exception.RetouchException
 import com.soma.wes.retouch.repository.RetouchPhotoRepository
@@ -12,6 +14,7 @@ import org.springframework.stereotype.Component
 @Component
 class RetouchResultLoader(
     private val retouchPhotoRepository: RetouchPhotoRepository,
+    private val retouchRoundRepository: RetouchRoundRepository,
 ) {
 
     /**
@@ -31,13 +34,14 @@ class RetouchResultLoader(
             .findAllByGalleryIdAndIdIn(galleryId, retouchPhotoIdByPhotoId.values.toSet())
             .associateBy { it.requiredId }
 
+        val sentRoundIds = sentRoundIds(galleryId)
         retouchPhotoIdByPhotoId.forEach { (photoId, retouchPhotoId) ->
             val item = itemsById[retouchPhotoId]
                 ?: throw RetouchException(RetouchErrorCode.RETOUCH_PHOTO_NOT_IN_GALLERY)
             if (item.photoId != photoId) {
                 throw RetouchException(RetouchErrorCode.RETOUCH_PHOTO_MISMATCH)
             }
-            if (!item.hasResult) {
+            if (!item.hasResult || item.roundId !in sentRoundIds) {
                 throw RetouchException(RetouchErrorCode.RESULT_NOT_UPLOADED)
             }
         }
@@ -52,6 +56,11 @@ class RetouchResultLoader(
             return emptyList()
         }
 
+        val sentIds = sentRoundIds(galleryId)
         return retouchPhotoRepository.findAllByGalleryIdAndIdIn(galleryId, retouchPhotoIds)
+            .filter { it.roundId in sentIds }
     }
+    private fun sentRoundIds(galleryId: Long): Set<Long> =
+        retouchRoundRepository.findAllByGalleryIdOrderByRoundNoAsc(galleryId)
+            .filter { it.status == RetouchRoundStatus.COMPLETED }.mapTo(mutableSetOf()) { it.requiredId }
 }

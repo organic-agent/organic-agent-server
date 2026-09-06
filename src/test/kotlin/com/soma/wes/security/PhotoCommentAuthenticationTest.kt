@@ -60,7 +60,7 @@ class PhotoCommentAuthenticationTest @Autowired constructor(
             gallery.galleryId, managerId, MoveCategoryPhotosRequest(listOf(photoId), detail.id),
         )
         val session = collabSessionService.open(
-            gallery.galleryId, managerId, OpenCollabSessionRequest(conceptFolderId = concept.id, name = "친구 의견"),
+            gallery.galleryId, gallery.member.requiredId, OpenCollabSessionRequest(conceptFolderId = concept.id, name = "친구 의견"),
         )
         guestToken = collabGuestService.enter(
             session.collabUrl.substringAfterLast('/'), EnterCollabRequest("하객"),

@@ -100,7 +100,7 @@ class CollabSessionAccessTest @Autowired constructor(
             // "우리가 발급했던 링크가 맞고 지금은 쓸 수 없다"를 알아야 새 링크를 안내할 수 있다.
             // given
             val session = openSession()
-            collabSessionService.revoke(fixture.galleryId, session.sessionId, fixture.photographer.id!!)
+            collabSessionService.revoke(fixture.galleryId, session.sessionId, fixture.member.requiredId)
 
             // when & then
             assertThatThrownBy { collabSessionAccess.requireReadable(session.collabToken) }
@@ -316,18 +316,13 @@ class CollabSessionAccessTest @Autowired constructor(
         }
 
         @Test
-        fun `스튜디오 OWNER는 로그인 참여자가 될 수 있다`() {
-            val session = openSession()
-            val access = collabSessionAccess.requireReadable(session.collabToken)
-
-            val participant = collabSessionAccess.requireParticipant(
-                access,
-                fixture.photographer.requiredId,
-                null,
-            )
-
-            assertThat(participant.userId).isEqualTo(fixture.photographer.requiredId)
+        fun `스튜디오 OWNER도 클라이언트의 로그인 참여자가 될 수 없다`() {
+            val access = collabSessionAccess.requireReadable(openSession().collabToken)
+            assertThatThrownBy { collabSessionAccess.requireParticipant(access, fixture.photographer.requiredId, null) }
+                .isInstanceOf(CollabException::class.java)
+                .extracting("errorCode").isEqualTo(CollabErrorCode.PARTICIPANT_READ_ONLY)
         }
+
     }
 
     // --- helpers ---
@@ -348,7 +343,7 @@ class CollabSessionAccessTest @Autowired constructor(
         }
         return collabSessionService.open(
             target.galleryId,
-            target.photographer.requiredId,
+            target.member.requiredId,
             OpenCollabSessionRequest(targetConceptId, name),
         )
     }

@@ -39,7 +39,7 @@ class CollabFixture(
         )
         val session = sessionService.open(
             gallery.galleryId,
-            gallery.photographer.requiredId,
+            gallery.member.requiredId,
             OpenCollabSessionRequest(conceptFolderId = concept.id, name = "본식 의견"),
         )
         return SharedCollab(gallery = gallery, session = session, detailId = detail.id, photoId = photoId)

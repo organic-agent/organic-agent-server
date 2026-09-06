@@ -64,7 +64,8 @@ class Studio(
         get() = workspaceId
 
     fun update(name: String, galleryUrl: String, contact: String?, description: String?) {
-        this.name = name
+        validateProfile(name, contact, description)
+        this.name = name.trim()
         this.galleryUrl = validateGalleryUrl(galleryUrl)
         this.contact = contact
         this.description = description
@@ -78,14 +79,22 @@ class Studio(
             galleryUrl: String,
             contact: String?,
             description: String?,
-        ) =
-            Studio(
+        ): Studio {
+            validateProfile(name, contact, description)
+            return Studio(
                 userId = userId,
-                name = name,
+                name = name.trim(),
                 galleryUrl = validateGalleryUrl(galleryUrl),
                 contact = contact,
                 description = description,
             )
+        }
+
+        fun validateProfile(name: String, contact: String?, description: String?) {
+            if (name.isBlank() || name.length > 100 || (contact?.length ?: 0) > 100 || (description?.length ?: 0) > 500) {
+                throw StudioException(StudioErrorCode.INVALID_STUDIO_PROFILE)
+            }
+        }
 
         /**
          * 주소가 밖에서 들어오는 모든 곳([of]·[update]·주소 확인)이 쓴다.

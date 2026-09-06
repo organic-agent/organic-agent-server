@@ -132,15 +132,17 @@ class Gallery(
     }
 
     fun close() {
-        if (status != GalleryStatus.OPEN) {
+        if (stage == GalleryStage.ARCHIVED) return
+        if (status == GalleryStatus.DRAFT) {
             throw GalleryException(GalleryErrorCode.INVALID_STATUS_TRANSITION)
         }
         status = GalleryStatus.CLOSED
-        stage = GalleryStage.SELECTION_COMPLETED
+        stage = GalleryStage.ARCHIVED
+        workflowStatus = GalleryWorkflowStatus.ARCHIVED
     }
 
     fun reopen(selectionDeadline: ZonedDateTime?, at: ZonedDateTime) {
-        if (status != GalleryStatus.CLOSED) {
+        if (stage == GalleryStage.ARCHIVED || (status != GalleryStatus.CLOSED && stage != GalleryStage.SELECTION_IN_PROGRESS)) {
             throw GalleryException(GalleryErrorCode.INVALID_STATUS_TRANSITION)
         }
         validateDeadlineNotPassed(selectionDeadline, at)
@@ -154,6 +156,42 @@ class Gallery(
         this.workflowStatus = workflowStatus
         if (workflowStatus == GalleryWorkflowStatus.ARCHIVED) {
             stage = GalleryStage.ARCHIVED
+        }
+    }
+
+    @Column(name = "photo_organization_required", nullable = false)
+    var photoOrganizationRequired: Boolean = false
+
+    @Column(name = "folders_saved_at")
+    var foldersSavedAt: ZonedDateTime? = null
+
+    @Column(name = "retouch_confirmed_at")
+    var retouchConfirmedAt: ZonedDateTime? = null
+
+    @Column(name = "archived_until")
+    var archivedUntil: ZonedDateTime? = null
+
+    @Column(name = "plan_expires_at")
+    var planExpiresAt: ZonedDateTime? = null
+
+    @Column(name = "plan_max_photo_count")
+    var planMaxPhotoCount: Int? = null
+
+    fun markFoldersSaved(at: ZonedDateTime) {
+        if (foldersSavedAt != null) throw GalleryException(GalleryErrorCode.FOLDERS_ALREADY_SAVED)
+        foldersSavedAt = at
+    }
+
+    fun markRetouchConfirmed(at: ZonedDateTime) {
+        retouchConfirmedAt = at
+        status = GalleryStatus.CLOSED
+        stage = GalleryStage.ARCHIVED
+        workflowStatus = GalleryWorkflowStatus.ARCHIVED
+    }
+
+    fun requireWritable(at: ZonedDateTime) {
+        if (stage == GalleryStage.ARCHIVED || planExpiresAt?.let { !it.isAfter(at) } == true) {
+            throw GalleryException(GalleryErrorCode.GALLERY_ARCHIVED)
         }
     }
 
@@ -204,7 +242,7 @@ class Gallery(
                 maxSelectablePhotoCount = maxSelectablePhotoCount,
                 maxRetouchRoundCount = maxRetouchRoundCount,
                 shootType = shootType,
-            )
+            ).also { it.photoOrganizationRequired = true }
         }
 
         private fun validateMaxSelectablePhotoCount(maxSelectablePhotoCount: Int?) {

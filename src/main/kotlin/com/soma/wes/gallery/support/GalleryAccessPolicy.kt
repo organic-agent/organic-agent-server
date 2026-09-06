@@ -52,7 +52,8 @@ class GalleryAccessPolicy(
     @Transactional
     fun requireCategoryEditor(galleryId: Long, userId: Long): Gallery {
         val gallery = galleryRepository.requireWithLockById(galleryId)
-        if (isManager(gallery, userId)) {
+        gallery.requireWritable(ZonedDateTime.now(clock))
+        if (isManager(gallery, userId) || isPersonalParticipant(gallery, userId)) {
             return gallery
         }
 
@@ -62,22 +63,60 @@ class GalleryAccessPolicy(
         return gallery
     }
 
-    /** 보정 결과 업로드·완료는 STUDIO 작업공간 구성원만 담당한다. */
+    /** 개인 갤러리의 두 참여자는 업로드를 함께 하되, 계약 설정은 소유자만 바꾼다. */
+    @Transactional(readOnly = true)
+    fun requireUploader(galleryId: Long, userId: Long): Gallery {
+        val gallery = galleryRepository.requireById(galleryId)
+        if (!isManager(gallery, userId) && !isPersonalParticipant(gallery, userId)) {
+            throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        }
+        gallery.requireWritable(ZonedDateTime.now(clock))
+        return gallery
+    }
+
     @Transactional(readOnly = true)
     fun requireRetouchProcessor(galleryId: Long, userId: Long): Gallery {
         val gallery = galleryRepository.requireById(galleryId)
-        val workspace = workspaceRepository.findById(gallery.workspaceId).orElse(null)
-            ?: throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
-        if (workspace.type != WorkspaceType.STUDIO ||
-            !studioRepository.existsByIdAndSuspendedAtIsNull(gallery.workspaceId) ||
-            !workspaceMemberRepository.existsByWorkspaceIdAndUserIdAndRoleIn(
-                gallery.workspaceId,
-                userId,
-                ACTIVE_WORKSPACE_ROLES,
-            )
-        ) {
+        if (!isManager(gallery, userId) && !isPersonalParticipant(gallery, userId)) {
             throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
         }
+        gallery.requireWritable(ZonedDateTime.now(clock))
+        return gallery
+    }
+
+    /** 선택 마감 후에도 보정 요청은 계속되지만 종료된 갤러리에는 추가할 수 없다. */
+    @Transactional(readOnly = true)
+    fun requireRetouchRequester(galleryId: Long, userId: Long): Gallery {
+        val gallery = galleryRepository.requireById(galleryId)
+        requireParticipant(gallery, userId)
+        gallery.requireWritable(ZonedDateTime.now(clock))
+        return gallery
+    }
+
+    @Transactional(readOnly = true)
+    fun canInspectRetouchDrafts(galleryId: Long, userId: Long): Boolean {
+        val gallery = galleryRepository.requireById(galleryId)
+        return isManager(gallery, userId) || isPersonalParticipant(gallery, userId)
+    }
+
+    @Transactional(readOnly = true)
+    fun isStudioManager(galleryId: Long, userId: Long): Boolean {
+        val gallery = galleryRepository.requireById(galleryId)
+        return workspaceRepository.findById(gallery.workspaceId).orElse(null)?.type == WorkspaceType.STUDIO &&
+            workspaceMemberRepository.findByWorkspaceIdAndUserId(gallery.workspaceId, userId) != null
+    }
+
+    @Transactional(readOnly = true)
+    fun isPersonalGallery(galleryId: Long): Boolean {
+        val gallery = galleryRepository.requireById(galleryId)
+        return workspaceRepository.findById(gallery.workspaceId).orElse(null)?.type == WorkspaceType.PERSONAL
+    }
+
+    /** 대기 화면에는 메타데이터만 공개하고 사진 조회는 기존 viewer 정책을 유지한다. */
+    @Transactional(readOnly = true)
+    fun requireMetadataViewer(galleryId: Long, userId: Long): Gallery {
+        val gallery = galleryRepository.requireById(galleryId)
+        if (!isManager(gallery, userId) && !isPersonalParticipant(gallery, userId)) findMember(galleryId, userId)
         return gallery
     }
 
@@ -100,9 +139,11 @@ class GalleryAccessPolicy(
         val gallery = galleryRepository.requireById(galleryId)
         val workspace = workspaceRepository.findById(gallery.workspaceId).orElse(null)
             ?: throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        val studioMember = workspace.type == WorkspaceType.STUDIO &&
+            workspaceMemberRepository.findByWorkspaceIdAndUserId(gallery.workspaceId, userId) != null
         val invited = galleryMemberRepository.findByGalleryIdAndUserId(galleryId, userId) != null
-        val personalOwner = workspace.type == WorkspaceType.PERSONAL && isManager(gallery, userId)
-        if (!invited && !personalOwner) {
+        val personalParticipant = workspace.type == WorkspaceType.PERSONAL && isPersonalParticipant(gallery, userId)
+        if (studioMember || (!invited && !personalParticipant)) {
             throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
         }
 
@@ -142,20 +183,12 @@ class GalleryAccessPolicy(
         }
     }
 
-    /** 공유 관리는 기존 작업공간 관리자와 초대 부부가 담당한다. 부부는 마감 후에도 링크를 닫을 수 있다. */
+    /** 게스트 의견과 링크는 클라이언트의 사적 협업 정보다. 작가에게는 공개하지 않는다. */
     @Transactional
     fun requireCollabManager(galleryId: Long, userId: Long, writable: Boolean): Gallery {
         val gallery = galleryRepository.requireWithLockById(galleryId)
-        if (isManager(gallery, userId)) {
-            return gallery
-        }
-
-        findMember(galleryId, userId)
-        if (writable) {
-            requireSelectable(gallery)
-        } else if (!gallery.isVisibleToMember) {
-            throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
-        }
+        requireParticipant(gallery, userId)
+        if (writable) gallery.requireWritable(ZonedDateTime.now(clock))
         return gallery
     }
 
@@ -165,7 +198,7 @@ class GalleryAccessPolicy(
     @Transactional(readOnly = true)
     fun requireViewer(galleryId: Long, userId: Long): Gallery {
         val gallery = galleryRepository.requireById(galleryId)
-        if (isManager(gallery, userId)) {
+        if (isManager(gallery, userId) || isPersonalParticipant(gallery, userId)) {
             return gallery
         }
 
@@ -183,7 +216,7 @@ class GalleryAccessPolicy(
     @Transactional(readOnly = true)
     fun requireManagerOrSelectionEditor(galleryId: Long, userId: Long): Gallery {
         val gallery = galleryRepository.requireById(galleryId)
-        if (isManager(gallery, userId)) {
+        if (isManager(gallery, userId) || isPersonalParticipant(gallery, userId)) {
             return gallery
         }
         return requireSelectionEditor(galleryId, userId)
@@ -194,6 +227,8 @@ class GalleryAccessPolicy(
         if (workspace.type == WorkspaceType.STUDIO &&
             !studioRepository.existsByIdAndSuspendedAtIsNull(gallery.workspaceId)
         ) return false
+        if (workspace.type == WorkspaceType.PERSONAL) return workspace.personalOwnerUserId == userId &&
+            workspaceMemberRepository.existsByWorkspaceIdAndUserIdAndRoleIn(gallery.workspaceId, userId, listOf(WorkspaceRole.OWNER))
         return workspaceMemberRepository.existsByWorkspaceIdAndUserIdAndRoleIn(
                 gallery.workspaceId,
                 userId,
@@ -201,11 +236,18 @@ class GalleryAccessPolicy(
             )
     }
 
+    private fun isPersonalParticipant(gallery: Gallery, userId: Long): Boolean {
+        val workspace = workspaceRepository.findById(gallery.workspaceId).orElse(null) ?: return false
+        return workspace.type == WorkspaceType.PERSONAL &&
+            workspaceMemberRepository.existsByWorkspaceIdAndUserIdAndRoleIn(gallery.workspaceId, userId, ACTIVE_WORKSPACE_ROLES)
+    }
+
     private fun findMember(galleryId: Long, userId: Long): GalleryMember =
         galleryMemberRepository.findByGalleryIdAndUserId(galleryId, userId)
             ?: throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
 
     private fun requireSelectable(gallery: Gallery) {
+        gallery.requireWritable(ZonedDateTime.now(clock))
         if (gallery.isDeadlinePassed(ZonedDateTime.now(clock))) {
             throw GalleryException(GalleryErrorCode.SELECTION_DEADLINE_PASSED)
         }
