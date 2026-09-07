@@ -126,6 +126,8 @@ TABLES="$TABLES, user_notifications, user_notification_settings"
 TABLES="$TABLES, studio_retouch_capabilities"
 # 관리자 쪽 갤러리·사진 참조 기록. FK가 없는 것도 있지만 가리키는 행이 사라지면 쓰레기라 함께 비운다.
 TABLES="$TABLES, admin_processing_jobs, admin_trash_entries, admin_trash_batches, admin_child_trash_records, admin_entity_revisions, product_purge_claims"
+# 선호 가중치 행. FK는 없지만 train_gallery_ids가 지워진 갤러리를 가리키게 되므로 함께 비운다.
+TABLES="$TABLES, preference_models"
 if [ "$SCOPE" = "all" ]; then
   TABLES="$TABLES, admin_notification_inbox_reads, admin_notification_inbox, admin_notification_outbox, admin_audit_logs"
   TABLES="$TABLES, admin_impersonation_sessions, admin_auth_events, admin_sessions, admin_accounts"
