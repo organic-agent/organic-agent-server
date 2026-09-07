@@ -6,6 +6,7 @@ import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.dto.request.CompleteUploadRequest
 import com.soma.wes.photo.dto.request.DeletePhotosRequest
 import com.soma.wes.photo.dto.request.IssueUploadUrlsRequest
+import com.soma.wes.photo.dto.request.ReissueUploadUrlsRequest
 import com.soma.wes.photo.dto.response.IssueUploadUrlsResponse
 import com.soma.wes.photo.dto.response.PhotoCountResponse
 import com.soma.wes.photo.dto.response.PhotoDetailResponse
@@ -38,6 +39,17 @@ class PhotoController(
         @Valid @RequestBody request: IssueUploadUrlsRequest,
     ): ResponseEntity<IssueUploadUrlsResponse> {
         val result = photoService.issueUploadUrls(galleryId, loginUser.id, request)
+
+        return ResponseEntity.ok(result)
+    }
+
+    @PostMapping("/upload-urls/reissue")
+    override fun reissueUploadUrls(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @Valid @RequestBody request: ReissueUploadUrlsRequest,
+    ): ResponseEntity<IssueUploadUrlsResponse> {
+        val result = photoService.reissueUploadUrls(galleryId, loginUser.id, request)
 
         return ResponseEntity.ok(result)
     }

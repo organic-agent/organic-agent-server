@@ -537,62 +537,6 @@ class AdminResourceServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `사진 상세는 기술 품질 결과를 구조화해 읽기 전용으로 노출한다`() {
-        val actor = adminAccountFixture.관리자("photo-quality-owner")
-        val galleryId = createGallery(actor.requiredId, "photo-quality")
-        val photo = service.create(
-            actor.requiredId,
-            AdminResourceType.PHOTO,
-            CreateAdminResourceRequest(
-                "기술 품질 확인 사진",
-                mapOf(
-                    "galleryId" to galleryId,
-                    "storageKey" to "galleries/$galleryId/quality.jpg",
-                    "originalFileName" to "quality.jpg",
-                    "contentType" to "image/jpeg",
-                ),
-            ),
-            "127.0.0.1",
-        )
-        val analyzedAt = OffsetDateTime.parse("2026-08-27T01:02:03Z")
-        jdbcClient.sql(
-            """
-            UPDATE photos
-            SET technical_quality_score = 87.25,
-                technical_quality_signals = '{"algorithmVersion":"technical-v1","sharpnessScore":91.5}'::JSONB,
-                quality_analyzed_at = :analyzedAt
-            WHERE id = :photoId
-            """.trimIndent(),
-        )
-            .param("analyzedAt", analyzedAt)
-            .param("photoId", photo.id)
-            .update()
-
-        val detail = service.get(AdminResourceType.PHOTO, photo.id)
-        assertThat((detail.fields["technicalQualityScore"] as Number).toDouble()).isEqualTo(87.25)
-        assertThat(detail.fields["technicalQualityAnalyzedAt"]).isEqualTo(analyzedAt)
-        val signals = detail.fields["technicalQualitySignals"] as Map<*, *>
-        assertThat(signals["algorithmVersion"]).isEqualTo("technical-v1")
-        assertThat(signals["sharpnessScore"]).isEqualTo(91.5)
-
-        assertThatThrownBy {
-            service.update(
-                actor.requiredId,
-                AdminResourceType.PHOTO,
-                photo.id,
-                UpdateAdminResourceRequest(
-                    "기술 품질 수동 위조 차단",
-                    photo.version,
-                    mapOf("technicalQualityScore" to 100),
-                ),
-                "127.0.0.1",
-            )
-        }.isInstanceOfSatisfying(AdminException::class.java) {
-            assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-        }
-    }
-
-    @Test
     fun `셀렉은 갤러리 생성과 함께 만들어지고 제출은 리비전 워크플로만 허용한다`() {
         val actor = adminAccountFixture.관리자("selection-state-owner")
         val galleryId = createGallery(actor.requiredId, "selection-state")

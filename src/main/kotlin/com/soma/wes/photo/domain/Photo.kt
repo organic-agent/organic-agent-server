@@ -14,9 +14,7 @@ import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
 import java.time.Instant
 import java.time.ZonedDateTime
-import org.hibernate.annotations.JdbcTypeCode
 import org.hibernate.annotations.SQLRestriction
-import org.hibernate.type.SqlTypes
 
 /**
  * 갤러리에 올라간 사진 한 장.
@@ -70,18 +68,17 @@ class Photo(
     @Column(name = "preview_key", length = 500)
     var previewKey: String? = null
 
-    @Column(name = "technical_quality_score")
-    var technicalQualityScore: Double? = null
-        protected set
+    /**
+     * 임베더에게 이 사진을 보낸 시각. 스윕이 UPLOADED·벡터 없음·null 인 사진을 배치로 집을 때 찍고,
+     * 벡터가 오지 않은 채 오래되면 null로 되돌려 다시 보낸다. 임베더는 일시 실패한 장만 null로 되돌린다.
+     * 값을 쓰는 곳은 배치 SQL([com.soma.wes.photo.repository.PhotoPipelineRepository])이라 엔티티에는 읽기만 있다.
+     */
+    @Column(name = "dispatched_at")
+    val dispatchedAt: ZonedDateTime? = null
 
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "technical_quality_signals", columnDefinition = "jsonb")
-    var technicalQualitySignals: Map<String, Any?>? = null
-        protected set
-
-    @Column(name = "quality_analyzed_at")
-    var qualityAnalyzedAt: ZonedDateTime? = null
-        protected set
+    /** 임베더에게 보낸 횟수. 상한에 닿으면 [PhotoAnalysis.error]에 실패로 남기고 더 보내지 않는다. 배치 SQL이 올린다. */
+    @Column(name = "embed_attempts", nullable = false)
+    val embedAttempts: Int = 0
 
     /**
      * 이 사진 행을 만들 때 발급한 PUT URL의 실제 만료 시각. null은 URL을 발급하지 않는
@@ -126,32 +123,14 @@ class Photo(
         uploadUrlExpiresAt = expiresAt
     }
 
+    /** 원본이 S3에 있음을 표시한다. 프론트의 완료 통보와 서버의 HeadObject 보정이 부르며, 재통보는 멱등이다. */
     fun markUploaded() {
-        if (status == PhotoStatus.EMBEDDED) {
-            return
-        }
         status = PhotoStatus.UPLOADED
     }
 
-    /** [markEmbedded]와 같은 이유로 둔다 — 정상 경로는 Lambda의 UPDATE라 이 메서드를 지나지 않는다. */
+    /** 정상 경로는 임베더 Lambda의 UPDATE라 이 메서드를 지나지 않는다 — Mock 갤러리 복제와 테스트가 쓴다. */
     fun applyMetadata(metadata: PhotoMetadata) {
         this.metadata = metadata
-    }
-
-    /**
-     * 벡터가 [PhotoAnalysis]에 적재됐음을 표시한다. 벡터 자체는 이 엔티티에 없다 — 정상 경로는
-     * 임베더 Lambda가 두 테이블을 한 트랜잭션으로 쓰는 것이라 이 메서드를 지나지 않고,
-     * Mock 갤러리 복제와 테스트만 쓴다. 호출자가 같은 트랜잭션에서 [PhotoAnalysis]도 저장해야 한다.
-     */
-    fun markEmbedded() {
-        status = PhotoStatus.EMBEDDED
-    }
-
-    fun applyTechnicalQuality(score: Double, signals: Map<String, Any?>, analyzedAt: ZonedDateTime) {
-        require(score in 0.0..100.0) { "technical quality score must be between 0 and 100" }
-        technicalQualityScore = score
-        technicalQualitySignals = signals.toMap()
-        qualityAnalyzedAt = analyzedAt
     }
 
     companion object {
@@ -171,7 +150,7 @@ class Photo(
          * 원본 키를 그대로 넘기면 두 행이 한 객체를 참조해 storage_key 전역 유니크에 걸린다.
          * 촬영 정보는 값을 새로 떠서 담는다. detached 원본과 인스턴스를 나눠 가지면 한쪽 상태
          * 변경이 다른 엔티티에 새어 들어간다. 벡터는 [PhotoAnalysis]에 있으므로 호출자가 따로
-         * 복제한다 — 그래서 여기서는 [markEmbedded]만 한다.
+         * 복제한다 — 여기서는 원본이 있다는 표시([markUploaded])만 한다.
          */
         fun copyOf(
             source: Photo,
@@ -202,13 +181,7 @@ class Photo(
                     ),
                 )
             }
-            val qualityScore = source.technicalQualityScore
-            val qualitySignals = source.technicalQualitySignals
-            val qualityAnalyzedAt = source.qualityAnalyzedAt
-            if (qualityScore != null && qualitySignals != null && qualityAnalyzedAt != null) {
-                copy.applyTechnicalQuality(qualityScore, qualitySignals, qualityAnalyzedAt)
-            }
-            copy.markEmbedded()
+            copy.markUploaded()
         }
     }
 }

@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.core.io.ClassPathResource
 
-/** 마이그레이션의 GRANT 계약(V1 embedder·photoselect, V14 preference)이 Lambda의 실제 SQL을 실행할 수 있는지 검증한다. */
+/** 마이그레이션의 GRANT 계약(V15 embedder, V1 photoselect, V14 preference)이 Lambda의 실제 SQL을 실행할 수 있는지 검증한다. */
 @IntegrationTest
 class AdminEmbedderPrivilegeContractTest @Autowired constructor(
     private val dataSource: DataSource,
@@ -98,7 +98,8 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
         }
     }
 
-    private fun embedderGrantBlock(): String = grantBlock("V1__baseline.sql", "EMBEDDER_GRANT_CONTRACT")
+    /** V15 가 V1 의 embedder 블록을 통째로 대체한다 — V1 블록은 지금 스키마에 없는 컬럼을 가리켜 실행할 수 없다. */
+    private fun embedderGrantBlock(): String = grantBlock("V15__pipeline_v2_photo_layer.sql", "EMBEDDER_GRANT_CONTRACT")
 
     private fun photoselectGrantBlock(): String = grantBlock("V1__baseline.sql", "PHOTOSELECT_GRANT_CONTRACT")
 
@@ -166,18 +167,30 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
             """.trimIndent(),
         )
         val statementsUsedByWorker = listOf(
-            // fetch_targets
+            // fetch_targets — v2 는 wes 가 배정한 photoIds 를 받아 검증만 한다
             """
             EXPLAIN SELECT p.id, p.storage_key
             FROM photos p
             JOIN galleries g ON g.id = p.gallery_id
-            WHERE p.gallery_id = -1 AND p.status <> 'PENDING'
+            WHERE p.gallery_id = -1 AND p.id = ANY(ARRAY[-1]::bigint[]) AND p.status = 'UPLOADED'
               AND p.deleted_at IS NULL AND g.deleted_at IS NULL
               AND NOT EXISTS (
                   SELECT 1 FROM photo_analysis a
                   WHERE a.photo_id = p.id AND a.embedding IS NOT NULL
               )
             ORDER BY p.id
+            """.trimIndent(),
+            // 일시 실패한 장은 배정을 되돌려 wes 스윕이 다시 보내게 한다
+            """
+            EXPLAIN UPDATE photos SET dispatched_at = NULL, updated_at = now()
+            WHERE id = ANY(ARRAY[-1]::bigint[]) AND deleted_at IS NULL
+            """.trimIndent(),
+            // 결정적 실패는 분석 행의 error 에 남긴다
+            """
+            EXPLAIN INSERT INTO photo_analysis (photo_id, error, created_at, updated_at)
+            VALUES (-1, 'DECODE_FAILED', now(), now())
+            ON CONFLICT (photo_id) DO UPDATE
+            SET error = EXCLUDED.error, version = photo_analysis.version + 1, updated_at = now()
             """.trimIndent(),
             // store_embeddings / complete_admin_derivative가 읽는 COALESCE·version·active 경계
             """
@@ -201,7 +214,7 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
                 width = COALESCE(NULL, width),
                 height = COALESCE(NULL, height),
                 byte_size = COALESCE(NULL, byte_size),
-                status = 'EMBEDDED', version = version + 1, updated_at = now()
+                version = version + 1, updated_at = now()
             WHERE id = -1 AND storage_key = 'stale-key' AND deleted_at IS NULL
               AND EXISTS (
                   SELECT 1 FROM galleries g
@@ -227,7 +240,7 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
             """
             EXPLAIN WITH target AS (
                 UPDATE photos p
-                SET status = 'EMBEDDED', version = version + 1, updated_at = now()
+                SET version = version + 1, updated_at = now()
                 WHERE p.id = -1 AND p.gallery_id = -1 AND p.storage_key = 'key' AND p.deleted_at IS NULL
                   AND EXISTS (
                       SELECT 1 FROM admin_photo_revisions r
@@ -243,23 +256,11 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
                 version = photo_analysis.version + 1,
                 updated_at = now()
             """.trimIndent(),
-            // complete_admin_quality + final job CAS
-            """
-            EXPLAIN UPDATE photos p
-            SET technical_quality_score = 80,
-                technical_quality_signals = '{}'::JSONB,
-                quality_analyzed_at = now(), version = version + 1, updated_at = now()
-            WHERE p.id = -1 AND p.gallery_id = -1 AND p.storage_key = 'key'
-              AND p.deleted_at IS NULL
-              AND EXISTS (
-                  SELECT 1 FROM admin_photo_revisions r
-                  WHERE r.id = -1 AND r.photo_id = p.id AND r.storage_key = p.storage_key
-              )
-            """.trimIndent(),
+            // final job CAS
             """
             EXPLAIN UPDATE admin_processing_jobs
             SET status = 'SUCCEEDED', failure_code = NULL, updated_at = now()
-            WHERE id = -1 AND attempt_count = 1 AND job_type = 'QUALITY_ANALYSIS'
+            WHERE id = -1 AND attempt_count = 1 AND job_type = 'EMBEDDING'
               AND target_type = 'PHOTO' AND target_id = -1 AND revision_id = -1
               AND status IN ('DISPATCHING', 'DISPATCHED')
               AND payload ->> 'galleryId' = '-1' AND payload ->> 'storageKey' = 'key'

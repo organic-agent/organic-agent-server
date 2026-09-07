@@ -616,9 +616,6 @@ class AdminWorkflowRepository(
                 exposure_time = NULL,
                 f_number = NULL,
                 iso = NULL,
-                technical_quality_score = NULL,
-                technical_quality_signals = NULL,
-                quality_analyzed_at = NULL,
                 upload_url_expires_at = NULL,
                 version = version + 1,
                 updated_at = CURRENT_TIMESTAMP
@@ -644,7 +641,7 @@ class AdminWorkflowRepository(
             """.trimIndent(),
         ).param("replacementId", replacementId).update()
         if (replacementUpdated != 1) throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
-        val jobIds = listOf("DERIVATIVE", "EMBEDDING", "QUALITY_ANALYSIS").map { jobType ->
+        val jobIds = listOf("DERIVATIVE", "EMBEDDING").map { jobType ->
             createProcessingJob(
                 jobType = jobType,
                 targetType = AdminResourceType.PHOTO,
@@ -865,7 +862,7 @@ class AdminWorkflowRepository(
         val limit = (requestedCount ?: configuredLimit).coerceAtMost(configuredLimit)
         if (limit !in 1..1000) throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         val inputConditions = mapOf(
-            "algorithm" to "DETERMINISTIC_DIVERSE_V2_TECHNICAL_QUALITY",
+            "algorithm" to "DETERMINISTIC_DIVERSE_V3_RATING_RESOLUTION",
             "galleryId" to galleryId,
             "requestedCount" to limit,
             "qualityWeight" to QUALITY_WEIGHT,
@@ -892,14 +889,13 @@ class AdminWorkflowRepository(
             """
             SELECT p.id, pa.embedding::TEXT AS embedding,
                    COALESCE(AVG(r.score), 0.0) AS rating,
-                   COALESCE(p.width::BIGINT * p.height::BIGINT, 0) AS pixels,
-                   p.technical_quality_score
+                   COALESCE(p.width::BIGINT * p.height::BIGINT, 0) AS pixels
             FROM photos p
             JOIN photo_analysis pa ON pa.photo_id = p.id
             LEFT JOIN photo_ratings r ON r.photo_id = p.id
             WHERE p.gallery_id = :galleryId AND p.deleted_at IS NULL
-              AND p.status = 'EMBEDDED' AND pa.embedding IS NOT NULL
-            GROUP BY p.id, pa.embedding, p.width, p.height, p.technical_quality_score
+              AND pa.embedding IS NOT NULL
+            GROUP BY p.id, pa.embedding, p.width, p.height
             ORDER BY p.id
             """.trimIndent(),
         )
@@ -909,8 +905,6 @@ class AdminWorkflowRepository(
                 embedding = parseVector(rs.getString("embedding")),
                 rating = rs.getDouble("rating"),
                 pixels = rs.getLong("pixels"),
-                technicalQualityScore = rs.getObject("technical_quality_score")
-                    ?.let { value -> (value as Number).toDouble() },
             ) }
             .list()
         if (candidates.isEmpty()) {
@@ -1248,13 +1242,7 @@ class AdminWorkflowRepository(
         val scored = candidates.map { candidate ->
             val ratingScore = (candidate.rating / 5.0).coerceIn(0.0, 1.0)
             val resolutionScore = kotlin.math.ln1p(candidate.pixels.toDouble()) / kotlin.math.ln1p(maxPixels.toDouble())
-            val legacyQuality = ratingScore * 0.8 + resolutionScore * 0.2
-            val quality = candidate.technicalQualityScore
-                ?.takeIf(Double::isFinite)
-                ?.div(100.0)
-                ?.coerceIn(0.0, 1.0)
-                ?: legacyQuality
-            candidate.copy(quality = quality)
+            candidate.copy(quality = ratingScore * 0.8 + resolutionScore * 0.2)
         }
         val remaining = scored.toMutableList()
         val selected = mutableListOf<AiCandidate>()
@@ -1793,7 +1781,6 @@ class AdminWorkflowRepository(
         val embedding: DoubleArray,
         val rating: Double,
         val pixels: Long,
-        val technicalQualityScore: Double?,
         val quality: Double = 0.0,
     )
 

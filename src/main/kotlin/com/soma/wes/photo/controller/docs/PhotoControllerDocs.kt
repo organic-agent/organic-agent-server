@@ -6,6 +6,7 @@ import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.dto.request.CompleteUploadRequest
 import com.soma.wes.photo.dto.request.DeletePhotosRequest
 import com.soma.wes.photo.dto.request.IssueUploadUrlsRequest
+import com.soma.wes.photo.dto.request.ReissueUploadUrlsRequest
 import com.soma.wes.photo.dto.response.IssueUploadUrlsResponse
 import com.soma.wes.photo.dto.response.PhotoCountResponse
 import com.soma.wes.photo.dto.response.PhotoDetailResponse
@@ -34,11 +35,12 @@ interface PhotoControllerDocs {
             업로드 1단계. 파일 목록마다 사진 행을 PENDING으로 만들고 S3 PUT용 서명 URL을 돌려준다.
             이미지 바이트는 이 서버를 거치지 않는다 — 프론트가 받은 URL로 S3에 직접 올린다.
 
-            PUT 할 때 발급 요청에 적은 것과 같은 Content-Type을 보내야 한다. 그 값이 서명에
-            포함되어 있어서, 다르면 S3가 SignatureDoesNotMatch로 거절한다.
+            리사이즈를 끝낸 배치 단위로 부른다. PUT 할 때 발급 요청에 적은 것과 같은 Content-Type·Content-Length를
+            보내고 x-amz-checksum-crc32c 헤더를 붙여야 한다. 셋 다 서명에 포함되어 있어서, 다르면 S3가
+            SignatureDoesNotMatch로 거절한다. 크기 상한을 넘는 파일은 발급 단계에서 400이다.
 
-            업로드가 끝나면 반드시 완료 통보(POST /complete)를 보내야 한다. 통보가 없으면
-            사진은 PENDING에 머물고 임베딩 대상이 되지 않는다.
+            업로드가 끝나면 완료 통보(POST /complete)를 보낸다. 통보가 없어도 서버가 발급 1분 뒤부터 S3를 직접
+            확인해 올라온 사진을 UPLOADED로 옮기지만, 통보가 빠르다. 24시간이 지나도 올라오지 않은 사진은 휴지통으로 간다.
         """,
     )
     @ApiResponses(
@@ -58,6 +60,10 @@ interface PhotoControllerDocs {
                         ExampleObject(
                             name = "임베딩이 읽을 수 없는 형식",
                             value = """{"code": "PHOTO_400_2", "message": "지원하지 않는 이미지 형식입니다."}""",
+                        ),
+                        ExampleObject(
+                            name = "크기 상한 초과",
+                            value = """{"code": "PHOTO_400_7", "message": "업로드할 사진 크기가 허용 범위를 벗어났습니다."}""",
                         ),
                     ],
                 ),
@@ -87,13 +93,63 @@ interface PhotoControllerDocs {
     ): ResponseEntity<IssueUploadUrlsResponse>
 
     @Operation(
+        summary = "업로드 URL 재발급",
+        description = """
+            끊긴 업로드의 재개. 탭을 다시 연 프론트가 자기가 기억하는 PENDING 사진 id로 새 PUT URL을 받는다.
+            사진 행을 새로 만들지 않으므로 같은 사진이 두 번 생기지 않는다.
+
+            이미 올라온(UPLOADED) 사진이 하나라도 섞여 있으면 전부 거절한다 — 새 URL로 원본이 덮이는 일을 막는다.
+        """,
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "재발급 성공"),
+        ApiResponse(
+            responseCode = "404",
+            description = "이 갤러리에 없는 사진 id가 섞여 있음",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "다른 갤러리의 사진",
+                            value = """{"code": "PHOTO_404_1", "message": "존재하지 않는 사진입니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(
+            responseCode = "409",
+            description = "이미 올라온 사진",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "업로드 끝난 사진",
+                            value = """{"code": "PHOTO_409_1", "message": "이미 업로드가 끝난 사진입니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    )
+    fun reissueUploadUrls(
+        loginUser: LoginUser,
+        galleryId: Long,
+        request: ReissueUploadUrlsRequest,
+    ): ResponseEntity<IssueUploadUrlsResponse>
+
+    @Operation(
         summary = "업로드 완료 통보",
         description = """
             업로드 2단계. S3 PUT을 마친 사진들을 PENDING에서 UPLOADED로 옮긴다.
             S3 업로드는 프론트가 직접 하므로 서버는 끝난 사실을 알 방법이 없다.
 
-            여러 번 보내도 안전하다. 이미 UPLOADED인 사진은 그대로고, 임베딩까지 끝난 사진은
-            EMBEDDED를 유지한다.
+            여러 번 보내도 안전하다. 이미 UPLOADED인 사진은 그대로다. 임베딩·점수 진행은 사진 상태가 아니라
+            집계(GET /summary)와 분석 잡 응답으로 본다.
         """,
     )
     @ApiResponses(
@@ -297,10 +353,10 @@ interface PhotoControllerDocs {
     fun get(loginUser: LoginUser, galleryId: Long, photoId: Long): ResponseEntity<PhotoDetailResponse>
 
     @Operation(
-        summary = "사진 상태 집계",
+        summary = "업로드·분석 진행 집계",
         description = """
-            AI 분석(임베딩 단계)은 비동기라 응답을 기다릴 수 없다. 진행 상황은 이 집계의 embedded 수가
-            늘어나는 것으로 확인한다. total과 embedded가 같아지면 클러스터링을 시작할 수 있다.
+            임베딩·점수·분류는 비동기라 응답을 기다릴 수 없다. 진행은 uploaded → embedded → scored → categorized 가
+            차오르는 것으로 본다. failed 는 결정적으로 실패해 AI 대상에서 빠진 사진이다.
         """,
     )
     @ApiResponses(

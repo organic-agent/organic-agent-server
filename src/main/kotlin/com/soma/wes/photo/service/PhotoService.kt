@@ -9,12 +9,12 @@ import com.soma.wes.global.page.PageRequests
 import com.soma.wes.global.page.PageResponse
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.domain.Photo
-import com.soma.wes.photo.domain.PhotoAnalysis
 import com.soma.wes.photo.domain.PhotoRating
 import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.dto.request.CompleteUploadRequest
 import com.soma.wes.photo.dto.request.DeletePhotosRequest
 import com.soma.wes.photo.dto.request.IssueUploadUrlsRequest
+import com.soma.wes.photo.dto.request.ReissueUploadUrlsRequest
 import com.soma.wes.photo.dto.response.IssueUploadUrlsResponse
 import com.soma.wes.photo.dto.response.IssuedUploadResponse
 import com.soma.wes.photo.dto.response.PhotoCountResponse
@@ -23,7 +23,7 @@ import com.soma.wes.photo.dto.response.PhotoPageResponse
 import com.soma.wes.photo.dto.response.PhotoSummaryResponse
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
-import com.soma.wes.photo.repository.PhotoAnalysisRepository
+import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.support.PhotoViewAssembler
 import org.springframework.data.domain.Page
@@ -40,7 +40,7 @@ import java.time.ZonedDateTime
 @Service
 class PhotoService(
     private val photoRepository: PhotoRepository,
-    private val photoAnalysisRepository: PhotoAnalysisRepository,
+    private val photoPipelineRepository: PhotoPipelineRepository,
     private val galleryAccessPolicy: GalleryAccessPolicy,
     private val galleryRepository: GalleryRepository,
     private val photoStorage: PhotoStorage,
@@ -85,6 +85,7 @@ class PhotoService(
             if (it.contentType.lowercase() !in ALLOWED_CONTENT_TYPES) {
                 throw PhotoException(PhotoErrorCode.UNSUPPORTED_CONTENT_TYPE)
             }
+            validateContentLength(it.contentLength)
         }
 
         // 이미 있는 사진 뒤에 이어 붙인다. 같은 갤러리에 두 배치를 동시에 발급하면 순서가
@@ -101,14 +102,9 @@ class PhotoService(
             )
         }
 
-        val uploads = photoRepository.saveAll(photos).map { photo ->
-            val presigned = photoStorage.presignUpload(photo.storageKey, photo.contentType)
-            photo.recordUploadUrlExpiration(presigned.expiresAt)
-            IssuedUploadResponse(
-                photoId = photo.requiredId,
-                storageKey = photo.storageKey,
-                uploadUrl = presigned.url,
-            )
+        val contentLengths = request.files.map { it.contentLength }
+        val uploads = photoRepository.saveAll(photos).mapIndexed { index, photo ->
+            issue(photo, contentLengths[index])
         }
 
         return IssueUploadUrlsResponse(
@@ -117,9 +113,50 @@ class PhotoService(
         )
     }
 
+    /** 크기는 서명에 들어가므로 여기서 상한만 보면 된다 — 다른 크기의 객체는 S3가 거절한다. */
+    private fun validateContentLength(contentLength: Long) {
+        if (contentLength <= 0 || contentLength > properties.maxUploadBytes) {
+            throw PhotoException(PhotoErrorCode.INVALID_CONTENT_LENGTH)
+        }
+    }
+
+    private fun issue(photo: Photo, contentLength: Long): IssuedUploadResponse {
+        val presigned = photoStorage.presignUpload(photo.storageKey, photo.contentType, contentLength)
+        photo.recordUploadUrlExpiration(presigned.expiresAt)
+        return IssuedUploadResponse(
+            photoId = photo.requiredId,
+            storageKey = photo.storageKey,
+            uploadUrl = presigned.url,
+        )
+    }
+
     /**
-     * 업로드 2단계. S3 PUT을 마친 사진들을 통보받아 [UPLOADED][PhotoStatus.UPLOADED]로 옮기고,
-     * [PhotoAnalysis] 빈 행을 함께 만든다. 여기까지 온 사진만 임베딩 대상이 된다.
+     * 끊긴 업로드의 재개. 탭을 다시 연 프론트가 자기가 기억하는 PENDING 사진 id로 새 PUT URL을 받는다 — 사진 행을 새로
+     * 만들지 않으므로 같은 사진이 두 번 생기지 않는다. 이미 올라온 사진은 거절한다(새 URL로 원본을 덮어쓰게 두지 않는다).
+     */
+    @Transactional
+    fun reissueUploadUrls(galleryId: Long, userId: Long, request: ReissueUploadUrlsRequest): IssueUploadUrlsResponse {
+        galleryAccessPolicy.requireUploader(galleryId, userId)
+
+        val photos = checkAndLoadPhotos(galleryId, request.photos.map { it.photoId })
+        if (photos.any { it.status != PhotoStatus.PENDING }) {
+            throw PhotoException(PhotoErrorCode.PHOTO_ALREADY_UPLOADED)
+        }
+        val contentLengthById = request.photos.associate { it.photoId to it.contentLength }
+        contentLengthById.values.forEach(::validateContentLength)
+
+        val uploads = photos.map { photo -> issue(photo, contentLengthById.getValue(photo.requiredId)) }
+
+        return IssueUploadUrlsResponse(
+            uploads = uploads,
+            uploadUrlTtlSeconds = properties.uploadUrlTtl.seconds,
+        )
+    }
+
+    /**
+     * 업로드 2단계. S3 PUT을 마친 사진들을 통보받아 [UPLOADED][PhotoStatus.UPLOADED]로 옮긴다. 여기까지 온 사진을
+     * 스윕이 임베더에게 보낸다. 분석 행은 임베더가 만들므로 여기서 미리 만들지 않는다. 재통보는 멱등이다.
+     * 통보가 오지 않은 사진은 [com.soma.wes.photo.support.PendingUploadSweeper]가 S3를 직접 확인해 같은 상태로 옮긴다.
      */
     @Transactional
     fun completeUpload(galleryId: Long, userId: Long, request: CompleteUploadRequest): PhotoCountResponse {
@@ -127,23 +164,7 @@ class PhotoService(
 
         val photos = checkAndLoadPhotos(galleryId, request.photoIds)
         photos.forEach { it.markUploaded() }
-        createMissingAnalysisRows(photos)
         return PhotoCountResponse(photos.size)
-    }
-
-    /**
-     * 분석 행을 사진과 함께 태어나게 한다 — 행의 존재·생명주기는 이 서버가, 컬럼 값은
-     * Lambda(임베더·AI 분석 배치)가 소유한다. 잡 테이블(PENDING 행 생성 → 워커 전이)과 같은 규약.
-     *
-     * 이미 있는 행은 건드리지 않는다 — 재통보([Photo.markUploaded]처럼 멱등)가 임베딩이 적힌
-     * 행을 빈 행으로 되돌리면 안 된다.
-     */
-    private fun createMissingAnalysisRows(photos: List<Photo>) {
-        val photoIds = photos.mapNotNull { it.id }
-        val existing = photoAnalysisRepository.findAllByPhotoIdIn(photoIds).mapTo(mutableSetOf()) { it.photoId }
-        photoAnalysisRepository.saveAll(
-            photoIds.filterNot { it in existing }.map { PhotoAnalysis(photoId = it) },
-        )
     }
 
     /**
@@ -256,16 +277,15 @@ class PhotoService(
         )
     }
 
-    /** 임베딩 진행 상황을 확인하는 곳. Lambda는 비동기라 이 집계 말고는 알 방법이 없다. */
+    /** 업로드·분석 진행을 한 번에 본다. 임베더·GPU 워커는 비동기라 이 집계 말고는 알 방법이 없다. */
     @Transactional(readOnly = true)
     fun summarize(galleryId: Long, userId: Long): PhotoSummaryResponse {
         galleryAccessPolicy.requireViewer(galleryId, userId)
 
-        return PhotoSummaryResponse(
-            total = photoRepository.countByGalleryId(galleryId),
-            pending = photoRepository.countByGalleryIdAndStatus(galleryId, PhotoStatus.PENDING),
-            uploaded = photoRepository.countByGalleryIdAndStatus(galleryId, PhotoStatus.UPLOADED),
-            embedded = photoRepository.countByGalleryIdAndStatus(galleryId, PhotoStatus.EMBEDDED),
+        val progress = photoPipelineRepository.progressOf(
+            galleryId = galleryId,
+            liveSince = ZonedDateTime.now(clock).minus(properties.pendingFirstCheckAfter),
         )
+        return PhotoSummaryResponse.from(progress)
     }
 }

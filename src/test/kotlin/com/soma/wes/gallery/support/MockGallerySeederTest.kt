@@ -70,7 +70,7 @@ class MockGallerySeederTest @Autowired constructor(
                 softly.assertThat(templates).hasSize(2)
                 softly.assertThat(templates.map { it.id }).containsExactly(first.id, second.id)
                 softly.assertThat(templates).allSatisfy { photo ->
-                    assertThat(photo.status).isEqualTo(PhotoStatus.EMBEDDED)
+                    assertThat(photo.status).isEqualTo(PhotoStatus.UPLOADED)
                 }
             }
         }
@@ -218,7 +218,7 @@ class MockGallerySeederTest @Autowired constructor(
                     softly.assertThat(copy.displayOrder).isEqualTo(index)
                     softly.assertThat(copy.storageKey).isEqualTo(plans[index].storageKey)
                     softly.assertThat(copy.previewKey).isEqualTo(plans[index].previewKey)
-                    softly.assertThat(copy.status).isEqualTo(PhotoStatus.EMBEDDED)
+                    softly.assertThat(copy.status).isEqualTo(PhotoStatus.UPLOADED)
                     softly.assertThat(vectorOf(copy)).isEqualTo(vectorOf(sources[index]))
                     // 업로드 URL을 발급한 적 없는 복제 행 — 값이 있으면 휴지통 즉시 삭제가 막힌다.
                     softly.assertThat(copy.uploadUrlExpiresAt).isNull()
@@ -303,7 +303,7 @@ class MockGallerySeederTest @Autowired constructor(
                 if (withPreview) {
                     photo.previewKey = "previews/${photo.storageKey.substringBeforeLast('.')}.jpg"
                 }
-                photo.markEmbedded()
+                photo.markUploaded()
             },
         )
         photoAnalysisRepository.save(

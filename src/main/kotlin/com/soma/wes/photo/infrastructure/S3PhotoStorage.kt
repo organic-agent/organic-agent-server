@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import software.amazon.awssdk.core.exception.SdkException
 import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier
@@ -45,11 +46,14 @@ class S3PhotoStorage(
         return "${galleryPrefix(galleryId)}${UUID.randomUUID()}$suffix"
     }
 
-    override fun presignUpload(key: String, contentType: String): PresignedUploadDto {
+    override fun presignUpload(key: String, contentType: String, contentLength: Long?): PresignedUploadDto {
         val putRequest = PutObjectRequest.builder()
             .bucket(properties.bucket)
             .key(key)
             .contentType(contentType)
+            .contentLength(contentLength)
+            // 브라우저가 x-amz-checksum-crc32c 를 보내면 S3가 바이트 무결성을 검증한다. 헤더는 서명에 들어가므로 프론트는 반드시 보낸다.
+            .checksumAlgorithm(ChecksumAlgorithm.CRC32_C)
             .build()
 
         val presignRequest = PutObjectPresignRequest.builder()

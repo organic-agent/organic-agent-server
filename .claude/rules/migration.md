@@ -37,6 +37,13 @@ paths:
   embedder·score·categorize)이 직접 INSERT/UPDATE 한다. 엔티티의 그 컬럼은 읽기 전용 `val`이고,
   컬럼을 바꾸면 AI repo(`score/store.py`·`categorize/store.py`·`embedder/db.py`)도 함께 바꾼다.
   전용 DB 유저(`embedder`, `photoselect`)의 GRANT도 새 테이블마다 필요하다.
+- **사진 한 장의 분석 진행은 `photo_analysis` 행 하나가 말한다**(V15, 파이프라인 v2). `photos.status`는 PENDING·UPLOADED 둘뿐이고
+  "S3에 원본이 있나"만 답한다 — 임베딩·점수·백분위 여부는 `embedding`·`clip_embedding`·`technical_pct` 유무로, 결정적 실패는
+  `photo_analysis.error`(임베더·score·이 서버가 공유하는 유일한 실패 표시)로 본다. 분석 행은 이 서버가 미리 만들지 않고 임베더가
+  첫 배치에서 UPSERT로 만든다. 진행을 셀 때는 LEFT JOIN(`PhotoPipelineRepository.progressOf`).
+- `photos.dispatched_at`·`embed_attempts`는 이 서버가 임베더 배정에 쓴다(V15). 임베더는 일시 실패한 장의 `dispatched_at`만
+  NULL로 되돌리고 `status`는 건드리지 않는다. 옛 품질 점수(`technical_quality_*`)와 관리자 `QUALITY_ANALYSIS` 잡은 V15에서 지웠다.
+  embedder GRANT 계약은 V15 블록이 V1 블록을 통째로 대체한다(V1은 적용된 파일이라 고치지 않는다).
 - `ai_analysis_jobs`는 이 서버(`analysis` 도메인)와 Lambda가 나눠 쓴다(V4). 이 서버: `stage`·`stage_attempts`·
   `dispatched_at`·`observed_progress`·`force`와 잡을 닫는 `status` DONE/FAILED. Lambda: `stage_status`의 시작(claim)·끝,
   `heartbeat_at`, `result`의 단계별 키(`||` 병합), `error`. 단계 상태를 아직 쓰지 않는 Lambda(AI Phase 0 이전,

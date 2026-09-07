@@ -88,7 +88,7 @@ class AdminWorkflowExecutionRepository(
         WITH picked AS (
             SELECT id
             FROM admin_processing_jobs
-            WHERE job_type IN ('DERIVATIVE', 'EMBEDDING', 'QUALITY_ANALYSIS')
+            WHERE job_type IN ('DERIVATIVE', 'EMBEDDING')
               AND (
                 status = 'DISPATCHED'
                 OR (
