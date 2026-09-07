@@ -29,6 +29,7 @@ paths:
 
 - `EMBEDDING_DIMENSION`: `PhotoAnalysis.EMBEDDING_DIMENSION` ↔ 마이그레이션의 `vector(n)` ↔
   인프라 repo의 `embedding_dimension`(Lambda의 `EMBED_DIM`). 하나를 바꾸면 셋 다 바꾼다.
+  `preference_models.w_emb`(V14)는 DINOv3 ⊕ CLIP이라 `vector(2n)`이다 — 같이 바꾼다.
 
 ## AI가 쓰는 테이블
 
@@ -49,6 +50,15 @@ paths:
   (백분위·연사·그룹은 전부 있거나 전부 없음). 배치가 쓰는 컬럼 묶음을 바꾸면 이 두 제약도 같이 본다.
 - `ai_selection_jobs`·`ai_recommendations`·`ai_pair_verdicts`는 2026-09-04부터 이 서버가 쓴다
   (추천 실행기 `AiSelectionJobRunner`, 비교샷 `PairVerdictJudge`). AI repo는 더 이상 이 테이블을 쓰지 않는다.
+- `preference_models`(V14)는 AI repo Lambda `preference`(`preference/store.py`, DB 유저 `photoselect`)가
+  INSERT/UPDATE 한다 — 갤러리 마감마다 가중치 행을 새로 넣고, 게이트를 통과하면 이전 `active`를 내리고 새 행을
+  `active=true`로 둔다(부분 유니크 인덱스로 활성 행은 하나). 이 서버는 읽기만 한다. 컬럼 순서 계약은
+  `feature_spec`(`pref-v1`)이고, 컬럼을 바꾸면 AI repo `preference/store.py`·`features.py`도 함께 바꾼다.
+- **GRANT는 마이그레이션 안에 둔다.** Lambda 전용 role은 Terraform 밖의 수동 생성이라, 새 테이블의 GRANT는
+  `IF EXISTS (SELECT 1 FROM pg_roles …)` DO 블록을 `-- {NAME}_GRANT_CONTRACT_BEGIN/END` 마커로 감싸
+  같은 마이그레이션에 넣는다(V1 embedder·photoselect, V14 preference). 운영(role 있음)은 배포 시 Flyway가 걸고
+  로컬·테스트(role 없음)는 건너뛴다. `AdminEmbedderPrivilegeContractTest`가 그 블록을 꺼내 Lambda의 실제 SQL을
+  role로 실행하므로 계약을 늘리면 거기에 SQL도 보탠다. identity 컬럼은 시퀀스 GRANT가 필요 없다.
 
 ## 새 테이블의 부수 작업
 

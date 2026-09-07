@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.core.io.ClassPathResource
 
-/** 단일 V1 baseline의 column grant가 worker의 실제 SET/WHERE 표현식을 실행할 수 있는지 검증한다. */
+/** 마이그레이션의 GRANT 계약(V1 embedder·photoselect, V14 preference)이 Lambda의 실제 SQL을 실행할 수 있는지 검증한다. */
 @IntegrationTest
 class AdminEmbedderPrivilegeContractTest @Autowired constructor(
     private val dataSource: DataSource,
@@ -67,33 +67,104 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
         }
     }
 
-    private fun embedderGrantBlock(): String {
-        val migration = ClassPathResource("db/migration/V1__baseline.sql")
-            .inputStream.bufferedReader().use { it.readText() }
-        val contractStart = migration.indexOf("-- EMBEDDER_GRANT_CONTRACT_BEGIN")
-        val contractEnd = migration.indexOf("-- EMBEDDER_GRANT_CONTRACT_END", contractStart)
-        check(contractStart >= 0 && contractEnd >= 0) { "V1 embedder grant contract not found" }
-        val contract = migration.substring(contractStart, contractEnd)
-        val start = contract.indexOf("DO \$\$")
-        val end = contract.indexOf("\$\$;", start)
-        check(start >= 0 && end >= 0) { "V1 embedder grant block not found" }
-        return contract.substring(start, end + 3)
+    @Test
+    fun `photoselect role은 preference 학습기가 쓰는 SQL을 실행할 수 있다`() {
+        dataSource.connection.use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute("DROP ROLE IF EXISTS photoselect")
+                statement.execute("CREATE ROLE photoselect NOLOGIN")
+                try {
+                    statement.execute("SET search_path TO ''")
+                    statement.execute(photoselectGrantBlock())
+                    statement.execute(preferenceGrantBlock())
+                    statement.execute("RESET search_path")
+                    statement.execute("SET ROLE photoselect")
+                    try {
+                        statementsUsedByPreferenceTrainer.forEach { sql -> statement.execute(sql) }
+                        statement.executeQuery("SELECT id, active FROM preference_models ORDER BY id").use { result ->
+                            check(result.next() && !result.getBoolean("active")) { "첫 행의 active가 내려가야 한다" }
+                            check(result.next() && result.getBoolean("active")) { "두 번째 행이 active여야 한다" }
+                            check(!result.next())
+                        }
+                    } finally {
+                        statement.execute("RESET ROLE")
+                    }
+                } finally {
+                    statement.execute("RESET search_path")
+                    statement.execute("DROP OWNED BY photoselect")
+                    statement.execute("DROP ROLE photoselect")
+                }
+            }
+        }
     }
 
-    private fun photoselectGrantBlock(): String {
-        val migration = ClassPathResource("db/migration/V1__baseline.sql")
+    private fun embedderGrantBlock(): String = grantBlock("V1__baseline.sql", "EMBEDDER_GRANT_CONTRACT")
+
+    private fun photoselectGrantBlock(): String = grantBlock("V1__baseline.sql", "PHOTOSELECT_GRANT_CONTRACT")
+
+    private fun preferenceGrantBlock(): String = grantBlock("V14__preference_models.sql", "PREFERENCE_GRANT_CONTRACT")
+
+    /** 마이그레이션 파일의 `-- {marker}_BEGIN` … `_END` 사이에 있는 DO 블록 하나를 꺼낸다. */
+    private fun grantBlock(migrationFile: String, marker: String): String {
+        val migration = ClassPathResource("db/migration/$migrationFile")
             .inputStream.bufferedReader().use { it.readText() }
-        val contractStart = migration.indexOf("-- PHOTOSELECT_GRANT_CONTRACT_BEGIN")
-        val contractEnd = migration.indexOf("-- PHOTOSELECT_GRANT_CONTRACT_END", contractStart)
-        check(contractStart >= 0 && contractEnd >= 0) { "V1 photoselect grant contract not found" }
+        val contractStart = migration.indexOf("-- ${marker}_BEGIN")
+        val contractEnd = migration.indexOf("-- ${marker}_END", contractStart)
+        check(contractStart >= 0 && contractEnd >= 0) { "$migrationFile $marker not found" }
         val contract = migration.substring(contractStart, contractEnd)
         val start = contract.indexOf("DO \$\$")
         val end = contract.indexOf("\$\$;", start)
-        check(start >= 0 && end >= 0) { "V1 photoselect grant block not found" }
+        check(start >= 0 && end >= 0) { "$migrationFile $marker DO block not found" }
         return contract.substring(start, end + 3)
     }
 
     private companion object {
+        // AI repo preference/store.py — DbStore.list_closed_galleries · read_gallery · write_model
+        val statementsUsedByPreferenceTrainer = listOf(
+            """
+            EXPLAIN SELECT g.id FROM galleries g
+            WHERE g.status = 'CLOSED'
+              AND EXISTS (SELECT 1 FROM photo_selections s JOIN photo_selection_items i ON i.selection_id = s.id
+                          WHERE s.gallery_id = g.id AND s.deleted_at IS NULL)
+              AND EXISTS (SELECT 1 FROM photos p JOIN photo_analysis a ON a.photo_id = p.id
+                          WHERE p.gallery_id = g.id AND p.deleted_at IS NULL AND a.model_version IS NOT NULL)
+            ORDER BY g.updated_at, g.id
+            """.trimIndent(),
+            "EXPLAIN SELECT shoot_type FROM galleries WHERE id = -1",
+            """
+            EXPLAIN SELECT p.id, p.original_file_name, p.display_order,
+                   a.technical_pct, a.aesthetic_pct, a.sub_scores, a.subjects,
+                   a.cluster_id, a.cluster_rank, a.embed_group_id,
+                   a.embedding, a.clip_embedding, a.embedding_model, a.model_version
+            FROM photos p
+            JOIN photo_analysis a ON a.photo_id = p.id
+            WHERE p.gallery_id = -1 AND p.deleted_at IS NULL
+              AND a.model_version IS NOT NULL AND a.embedding IS NOT NULL AND a.clip_embedding IS NOT NULL
+            ORDER BY p.display_order, p.id
+            """.trimIndent(),
+            """
+            EXPLAIN SELECT i.photo_id
+            FROM photo_selection_items i
+            JOIN photo_selections s ON s.id = i.selection_id
+            WHERE s.gallery_id = -1 AND s.deleted_at IS NULL
+            """.trimIndent(),
+            // write_model: 첫 학습은 active 행이 없으므로 INSERT만, 다음 학습은 이전 active를 내리고 INSERT
+            """
+            INSERT INTO preference_models
+                (embedding_model, model_version, feature_spec, w_scalar, w_emb, bias, lambda,
+                 n_galleries, n_positives, train_gallery_ids, holdout, active)
+            VALUES ('dinov3', 'score-v3', 'pref-v1', ARRAY[0.1, 0.2], array_fill(0.0, ARRAY[1536])::vector, 0.0, 0.5,
+                    1, 30, ARRAY[8]::bigint[], '{"rows": []}'::jsonb, true)
+            """.trimIndent(),
+            "UPDATE preference_models SET active = false WHERE active",
+            """
+            INSERT INTO preference_models
+                (embedding_model, model_version, feature_spec, w_scalar, w_emb, bias, lambda,
+                 n_galleries, n_positives, train_gallery_ids, holdout, active)
+            VALUES ('dinov3', 'score-v3', 'pref-v1', ARRAY[0.1, 0.2], array_fill(0.0, ARRAY[1536])::vector, 0.0, 0.5,
+                    2, 60, ARRAY[8, 9]::bigint[], '{"rows": []}'::jsonb, true)
+            """.trimIndent(),
+        )
         val statementsUsedByWorker = listOf(
             // fetch_targets
             """
