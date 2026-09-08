@@ -4,8 +4,9 @@
 #
 #   scripts/gpu/score-worker.sh
 #
-# AI repo `score worker --gpu --once --no-idle-stop`: photo_analysis 에서 벡터는 있고 점수가 없는 사진을 32장씩 SKIP LOCKED 로 집어
-# CLIP·점수·피사체를 적고, 쌓인 것을 다 처리하면 끝난다(운영 워커는 유휴 30초 뒤 자기 인스턴스를 정지한다 — 로컬은 그냥 종료).
+# AI repo `score worker --gpu --no-idle-stop`: photo_analysis 에서 벡터는 있고 점수가 없는 사진을 32장씩 SKIP LOCKED 로 집어
+# CLIP·점수·피사체를 적고, 쌓인 것을 다 처리해 유휴 30초(WORKER_IDLE_STOP_SECONDS)가 지나면 끝난다(운영 워커는 이때 자기
+# 인스턴스를 정지한다 — 로컬은 그냥 종료). `--once`는 배치 하나만 처리하고 끝나는 옵션이라 쓰지 않는다.
 # 노트북에 CUDA 가 없으면 CPU 로 돈다. 추가 인자는 SCORE_WORKER_ARGS 로 넘긴다.
 set -euo pipefail
 WES_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -19,6 +20,6 @@ ai_env "$WES_ROOT"
 
 PY="$(ai_python "$AI_ROOT" score)"
 # shellcheck disable=SC2206
-ARGS=(worker --gpu --once --no-idle-stop ${SCORE_WORKER_ARGS:-})
+ARGS=(worker --gpu --no-idle-stop ${SCORE_WORKER_ARGS:-})
 echo "[score-worker] python -m score ${ARGS[*]}  db=$DB_USER@$DB_HOST:$DB_PORT/$DB_NAME bucket=$S3_BUCKET"
 exec "$PY" -m score "${ARGS[@]}"
