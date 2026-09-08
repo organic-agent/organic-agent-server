@@ -42,11 +42,21 @@ data class AnalysisProperties(
 ) {
 
     /**
-     * GPU score 워커(PR-C). 꺼져 있으면 점수는 score Lambda 폴백이 낸다 — ANALYZING 잡이 벡터는 있는데 점수가 없는 사진을
-     * 갤러리당 [fallbackInterval]마다 한 번씩 배치로 보낸다(score는 UPSERT라 겹쳐도 같은 값을 덮을 뿐이다).
+     * GPU score 워커. [enabled]면 스윕이 backlog를 보고 EC2 인스턴스(태그 `Name`=[tag])를 켜고, 워커의 유휴 30초 자기 정지가
+     * 실패했을 때 [idleStopAfter] 무진행이면 끈다. 워커가 [fallbackAfter] 동안 뜨지 않거나 점수가 멈추면 score Lambda 폴백을
+     * 갤러리당 [fallbackInterval]마다 보낸다. 꺼져 있으면 폴백만 돈다(score는 UPSERT라 겹쳐도 같은 값을 덮을 뿐이다).
      */
     data class Gpu(
         val enabled: Boolean = false,
+        /** 워커 인스턴스를 찾는 EC2 `Name` 태그 값. */
+        val tag: String = "wes-score-gpu",
+        /** 켠 뒤 이 시간 안에는 끄지도, 폴백을 보내지도 않는다 — 부팅·모델 로드 시간이다. */
+        val startGrace: Duration = Duration.ofMinutes(5),
+        /** backlog가 0인데 워커가 켜져 있고 이 시간 동안 점수 진행이 없으면 끈다. 워커 자기 정지(30초)가 1차이고 이것은 안전망이다. */
+        val idleStopAfter: Duration = Duration.ofMinutes(2),
+        /** backlog가 있는데 워커가 이 시간 동안 뜨지 않거나, 켜져 있는데 이 시간 동안 점수가 늘지 않으면 Lambda 폴백. */
+        val fallbackAfter: Duration = Duration.ofMinutes(10),
+        /** 같은 갤러리에 폴백을 다시 보내는 최소 간격. */
         val fallbackInterval: Duration = Duration.ofMinutes(10),
     )
 

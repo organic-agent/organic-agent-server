@@ -39,6 +39,12 @@ enum class AnalysisErrorCode(
      */
     STAGE_INVOCATION_FAILED(HttpStatus.BAD_GATEWAY, "PHOTO_502_1", "AI 분석 실행을 시작하지 못했습니다."),
 
+    /**
+     * GPU 워커 인스턴스를 켜거나 끄는 호출 자체가 실패한 경우(EC2 권한·API 오류). 스윕이 잡아 로그로 남기고 다음 걸음에 다시 본다 —
+     * 점수는 그동안 score Lambda 폴백이 낸다.
+     */
+    SCORE_WORKER_CONTROL_FAILED(HttpStatus.BAD_GATEWAY, "PHOTO_502_6", "GPU 워커를 제어하지 못했습니다."),
+
     /** 잡이 지나는 호출(embedder·categorize, GPU가 없으면 score) 중 실행기가 설정되지 않은 것이 있는 경우. 로컬·테스트에는 Lambda가 없는 것이 정상이다. */
     STAGE_NOT_CONFIGURED(HttpStatus.SERVICE_UNAVAILABLE, "PHOTO_503_1", "AI 분석 실행이 설정되지 않았습니다."),
 }
