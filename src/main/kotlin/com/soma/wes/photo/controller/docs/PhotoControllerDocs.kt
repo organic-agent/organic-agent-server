@@ -35,9 +35,11 @@ interface PhotoControllerDocs {
             업로드 1단계. 파일 목록마다 사진 행을 PENDING으로 만들고 S3 PUT용 서명 URL을 돌려준다.
             이미지 바이트는 이 서버를 거치지 않는다 — 프론트가 받은 URL로 S3에 직접 올린다.
 
-            리사이즈를 끝낸 배치 단위로 부른다. PUT 할 때 발급 요청에 적은 것과 같은 Content-Type·Content-Length를
-            보내고 x-amz-checksum-crc32c 헤더를 붙여야 한다. 셋 다 서명에 포함되어 있어서, 다르면 S3가
-            SignatureDoesNotMatch로 거절한다. 크기 상한을 넘는 파일은 발급 단계에서 400이다.
+            리사이즈를 끝낸 배치 단위로 부른다. 발급 요청에 파일마다 Content-Type·바이트 수·CRC32C(base64)를 적고, PUT 할 때
+            같은 Content-Type·Content-Length 헤더와 x-amz-checksum-crc32c 헤더에 같은 값을 보내야 한다. 셋 다 서명에
+            포함되어 있어서 하나라도 빠지거나 다르면 S3가 403(SignatureDoesNotMatch)으로 거절하고, 체크섬이 실제 바이트와
+            다르면 400(BadDigest)으로 거절한다. 다른 x-amz-* 헤더는 서명에 없으니 붙이지 않는다.
+            크기 상한을 넘거나 체크섬 형식이 틀린 파일은 발급 단계에서 400이다.
 
             업로드가 끝나면 완료 통보(POST /complete)를 보낸다. 통보가 없어도 서버가 발급 1분 뒤부터 S3를 직접
             확인해 올라온 사진을 UPLOADED로 옮기지만, 통보가 빠르다. 24시간이 지나도 올라오지 않은 사진은 휴지통으로 간다.
@@ -64,6 +66,10 @@ interface PhotoControllerDocs {
                         ExampleObject(
                             name = "크기 상한 초과",
                             value = """{"code": "PHOTO_400_7", "message": "업로드할 사진 크기가 허용 범위를 벗어났습니다."}""",
+                        ),
+                        ExampleObject(
+                            name = "체크섬 형식 오류",
+                            value = """{"code": "PHOTO_400_8", "message": "업로드할 사진의 CRC32C 체크섬 형식이 올바르지 않습니다."}""",
                         ),
                     ],
                 ),
@@ -98,11 +104,32 @@ interface PhotoControllerDocs {
             끊긴 업로드의 재개. 탭을 다시 연 프론트가 자기가 기억하는 PENDING 사진 id로 새 PUT URL을 받는다.
             사진 행을 새로 만들지 않으므로 같은 사진이 두 번 생기지 않는다.
 
+            새 서명이므로 처음 발급과 똑같이 바이트 수와 CRC32C(base64)를 적고, PUT 헤더도 처음과 같은 규칙으로 보낸다.
             이미 올라온(UPLOADED) 사진이 하나라도 섞여 있으면 전부 거절한다 — 새 URL로 원본이 덮이는 일을 막는다.
         """,
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "재발급 성공"),
+        ApiResponse(
+            responseCode = "400",
+            description = "크기 상한 초과 또는 체크섬 형식 오류",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "크기 상한 초과",
+                            value = """{"code": "PHOTO_400_7", "message": "업로드할 사진 크기가 허용 범위를 벗어났습니다."}""",
+                        ),
+                        ExampleObject(
+                            name = "체크섬 형식 오류",
+                            value = """{"code": "PHOTO_400_8", "message": "업로드할 사진의 CRC32C 체크섬 형식이 올바르지 않습니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
         ApiResponse(
             responseCode = "404",
             description = "이 갤러리에 없는 사진 id가 섞여 있음",

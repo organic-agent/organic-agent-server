@@ -940,7 +940,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse()
             replacementKey
         }
-        whenever(photoStorage.presignUpload(eq(replacementKey), eq("image/jpeg"), anyOrNull())).thenAnswer {
+        whenever(photoStorage.presignUpload(eq(replacementKey), eq("image/jpeg"), anyOrNull(), anyOrNull())).thenAnswer {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse()
             presignCount++
             PresignedUploadDto(
@@ -1160,7 +1160,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             """.trimIndent(),
         ).query { rs, _ -> rs.getString("evidence") }.list().joinToString()
         assertThat(persistedAudit).doesNotContain("secret-signature", "upload.example.test")
-        verify(photoStorage, times(2)).presignUpload(eq(replacementKey), eq("image/jpeg"), anyOrNull())
+        verify(photoStorage, times(2)).presignUpload(eq(replacementKey), eq("image/jpeg"), anyOrNull(), anyOrNull())
         verify(photoStorage).exists(replacementKey)
         verify(exactPhotoInvoker, never()).invoke(any())
     }
@@ -1563,7 +1563,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
         val secondItemId = (secondItem.details.getValue("retouchPhotoId") as Number).toLong()
 
         val issuedKeys = mutableListOf<String>()
-        whenever(photoStorage.presignUpload(any(), any(), anyOrNull())).thenAnswer { invocation ->
+        whenever(photoStorage.presignUpload(any(), any(), anyOrNull(), anyOrNull())).thenAnswer { invocation ->
             issuedKeys += invocation.getArgument<String>(0)
             PresignedUploadDto("https://upload.example/${issuedKeys.size}", Instant.now().plusSeconds(3_600))
         }

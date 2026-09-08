@@ -72,7 +72,7 @@ class AdminRetouchArtifactServiceTest @Autowired constructor(
 
         val signedKeys = mutableListOf<String>()
         var signatureSequence = 0
-        whenever(photoStorage.presignUpload(any(), any(), anyOrNull())).thenAnswer { invocation ->
+        whenever(photoStorage.presignUpload(any(), any(), anyOrNull(), anyOrNull())).thenAnswer { invocation ->
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse()
             val storageKey = invocation.getArgument<String>(0)
             signedKeys += storageKey
@@ -389,7 +389,7 @@ class AdminRetouchArtifactServiceTest @Autowired constructor(
         )
         val itemId = number(createdItem.details, "retouchPhotoId")
 
-        whenever(photoStorage.presignUpload(any(), any(), anyOrNull())).thenReturn(
+        whenever(photoStorage.presignUpload(any(), any(), anyOrNull(), anyOrNull())).thenReturn(
             PresignedUploadDto(
                 "https://upload.example/annotation-lifecycle?signature=private",
                 Instant.now().plusSeconds(3_600),

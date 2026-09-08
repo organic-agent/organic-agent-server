@@ -58,6 +58,8 @@ class PhotoService(
             "image/heic",
             "image/heif",
         )
+
+        private val CRC32C_BASE64 = Regex(Photo.CRC32C_BASE64_PATTERN)
     }
 
     /**
@@ -86,6 +88,7 @@ class PhotoService(
                 throw PhotoException(PhotoErrorCode.UNSUPPORTED_CONTENT_TYPE)
             }
             validateContentLength(it.contentLength)
+            validateCrc32c(it.crc32c)
         }
 
         // 이미 있는 사진 뒤에 이어 붙인다. 같은 갤러리에 두 배치를 동시에 발급하면 순서가
@@ -102,9 +105,9 @@ class PhotoService(
             )
         }
 
-        val contentLengths = request.files.map { it.contentLength }
         val uploads = photoRepository.saveAll(photos).mapIndexed { index, photo ->
-            issue(photo, contentLengths[index])
+            val file = request.files[index]
+            issue(photo, contentLength = file.contentLength, crc32c = file.crc32c)
         }
 
         return IssueUploadUrlsResponse(
@@ -120,8 +123,20 @@ class PhotoService(
         }
     }
 
-    private fun issue(photo: Photo, contentLength: Long): IssuedUploadResponse {
-        val presigned = photoStorage.presignUpload(photo.storageKey, photo.contentType, contentLength)
+    /** 체크섬은 서명에 그대로 들어간다. 형식만 보면 되고, 실제 바이트와 맞는지는 S3가 PUT 때 대조한다. */
+    private fun validateCrc32c(crc32c: String) {
+        if (!CRC32C_BASE64.matches(crc32c)) {
+            throw PhotoException(PhotoErrorCode.INVALID_CHECKSUM)
+        }
+    }
+
+    private fun issue(photo: Photo, contentLength: Long, crc32c: String): IssuedUploadResponse {
+        val presigned = photoStorage.presignUpload(
+            key = photo.storageKey,
+            contentType = photo.contentType,
+            contentLength = contentLength,
+            crc32c = crc32c,
+        )
         photo.recordUploadUrlExpiration(presigned.expiresAt)
         return IssuedUploadResponse(
             photoId = photo.requiredId,
@@ -142,10 +157,16 @@ class PhotoService(
         if (photos.any { it.status != PhotoStatus.PENDING }) {
             throw PhotoException(PhotoErrorCode.PHOTO_ALREADY_UPLOADED)
         }
-        val contentLengthById = request.photos.associate { it.photoId to it.contentLength }
-        contentLengthById.values.forEach(::validateContentLength)
+        val requestById = request.photos.associateBy { it.photoId }
+        requestById.values.forEach {
+            validateContentLength(it.contentLength)
+            validateCrc32c(it.crc32c)
+        }
 
-        val uploads = photos.map { photo -> issue(photo, contentLengthById.getValue(photo.requiredId)) }
+        val uploads = photos.map { photo ->
+            val photoRequest = requestById.getValue(photo.requiredId)
+            issue(photo, contentLength = photoRequest.contentLength, crc32c = photoRequest.crc32c)
+        }
 
         return IssueUploadUrlsResponse(
             uploads = uploads,

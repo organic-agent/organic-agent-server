@@ -33,6 +33,12 @@ enum class PhotoErrorCode(
     /** 발급 요청의 바이트 수가 상한을 넘거나 0 이하다. 프론트가 리사이즈를 건너뛴 신호라 발급 단계에서 막는다. */
     INVALID_CONTENT_LENGTH(HttpStatus.BAD_REQUEST, "PHOTO_400_7", "업로드할 사진 크기가 허용 범위를 벗어났습니다."),
 
+    /**
+     * 발급 요청의 CRC32C가 base64 8자 형식이 아니다. 값이 서명에 그대로 들어가므로 여기서 거르지 않으면 S3가 PUT을 거절할
+     * 때까지 드러나지 않는다.
+     */
+    INVALID_CHECKSUM(HttpStatus.BAD_REQUEST, "PHOTO_400_8", "업로드할 사진의 CRC32C 체크섬 형식이 올바르지 않습니다."),
+
     /** URL 재발급은 아직 올라오지 않은(PENDING) 사진에만 뜻이 있다. 이미 올라온 사진에 새 PUT URL을 주면 원본이 덮인다. */
     PHOTO_ALREADY_UPLOADED(HttpStatus.CONFLICT, "PHOTO_409_1", "이미 업로드가 끝난 사진입니다."),
 

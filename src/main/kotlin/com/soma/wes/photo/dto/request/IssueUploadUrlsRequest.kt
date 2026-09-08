@@ -1,9 +1,11 @@
 package com.soma.wes.photo.dto.request
 
+import com.soma.wes.photo.domain.Photo
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotEmpty
+import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.Size
 
@@ -37,5 +39,14 @@ data class IssueUploadUrlsRequest(
             example = "1843200",
         )
         val contentLength: Long,
+
+        @field:NotBlank
+        @field:Pattern(regexp = Photo.CRC32C_BASE64_PATTERN)
+        @field:Schema(
+            description = "PUT 할 바이트의 CRC32C를 base64로 적은 값. x-amz-checksum-crc32c 헤더로 서명에 들어가므로 "
+                + "PUT 할 때 같은 헤더에 같은 값을 보내야 하고, S3가 받은 바이트와 대조해 다르면 거절한다.",
+            example = "wdRDgw==",
+        )
+        val crc32c: String,
     )
 }

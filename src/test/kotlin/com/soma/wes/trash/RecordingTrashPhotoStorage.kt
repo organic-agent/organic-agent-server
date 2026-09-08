@@ -41,7 +41,7 @@ class RecordingTrashPhotoStorage : PhotoStorage {
         return "${galleryPrefix(galleryId)}${UUID.randomUUID()}$suffix"
     }
 
-    override fun presignUpload(key: String, contentType: String, contentLength: Long?): PresignedUploadDto =
+    override fun presignUpload(key: String, contentType: String, contentLength: Long?, crc32c: String?): PresignedUploadDto =
         PresignedUploadDto(url = "https://storage.test/upload/$key", expiresAt = Instant.now().plusSeconds(1800))
 
     override fun presignView(key: String): String = "https://storage.test/view/$key"
