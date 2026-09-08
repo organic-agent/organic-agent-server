@@ -51,6 +51,9 @@ paths:
   단계·모드·force·result 컬럼은 없다 — 사진별 진행은 `photo_analysis` 행이 말하고, 임베더 배정은 잡과 무관하게 스윕이 한다
   (`EmbedDispatcher`, `photos.dispatched_at`·`embed_attempts`). 재분석은 `photo_analysis` 행 삭제(`PhotoPipelineRepository.resetAnalysis`)다.
   `AnalysisJob`은 `@DynamicUpdate`다 — Lambda가 쓰는 `error`를 이 서버의 오래된 스냅샷이 덮지 않게 바뀐 컬럼만 UPDATE한다.
+- 폴더 물질화 기록 테이블(`categorization_jobs`·`categorization_job_photos`)은 V17에서 지웠다 — "처리한 사진"은
+  `photo_category_assignments`가 말하고, 물질화 진입점은 `AiCategoryFolderService.materializeFromAnalysis`(인가 없음, 멱등) 하나다.
+  관리자 리소스 `CATEGORIZATION_JOB`도 함께 지웠고 `AdminAuditTargetType`의 값만 옛 감사 로그 읽기용으로 남는다(V2의 ALBUM과 같은 방식).
 - `photo_analysis`는 세 주체가 나눠 쓴다 — 임베더가 `embedding·embedding_model`, SCORE 잡이
   `subjects·sub_scores·clip_embedding·model_version`, CATEGORIZE 잡이 `technical_pct·aesthetic_pct·cluster_*·
   embed_group_id`. 두 잡 사이에 `model_version`만 있고 백분위가 없는 창이 있으므로 "분석 완료"는

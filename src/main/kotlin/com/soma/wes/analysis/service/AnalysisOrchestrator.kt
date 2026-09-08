@@ -195,7 +195,7 @@ class AnalysisOrchestrator(
      */
     private fun materialize(action: Action.Materialize) {
         val outcome = try {
-            val folders = aiCategoryFolderService.createFromAnalysisAsAdmin(action.galleryId)
+            val folders = aiCategoryFolderService.materializeFromAnalysis(action.galleryId)
             Materialized.Created(
                 folders = folders.size,
                 details = folders.sumOf { it.details.size },

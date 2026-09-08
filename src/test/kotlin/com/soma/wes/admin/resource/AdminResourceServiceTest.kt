@@ -390,21 +390,6 @@ class AdminResourceServiceTest @Autowired constructor(
             ),
             "127.0.0.1",
         )
-        val jobId = jdbcClient.sql(
-            """
-            INSERT INTO categorization_jobs
-                (gallery_id, mode, status, started_at, completed_at, version, created_at, updated_at)
-            VALUES (:galleryId, 'INITIAL', 'SUCCEEDED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
-                    0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            RETURNING id
-            """.trimIndent(),
-        ).param("galleryId", gallery.id).query { rs, _ -> rs.getLong(1) }.single()
-        jdbcClient.sql(
-            """
-            INSERT INTO categorization_job_photos (job_id, gallery_id, photo_id, status, processed_at)
-            VALUES (:jobId, :galleryId, :photoId, 'ASSIGNED', CURRENT_TIMESTAMP)
-            """.trimIndent(),
-        ).param("jobId", jobId).param("galleryId", gallery.id).param("photoId", photo.id).update()
         val selectionId = jdbcClient.sql("SELECT id FROM photo_selections WHERE gallery_id = :galleryId")
             .param("galleryId", gallery.id).query { rs, _ -> rs.getLong(1) }.single()
         jdbcClient.sql(
@@ -421,8 +406,6 @@ class AdminResourceServiceTest @Autowired constructor(
 
         assertThat(assignment.id).isEqualTo(photo.id)
         assertThat(rating.id).isEqualTo(photo.id)
-        assertThat(service.get(AdminResourceType.CATEGORIZATION_JOB, jobId).fields["status"])
-            .isEqualTo("SUCCEEDED")
         assertThat(service.search("부모님", setOf(AdminResourceType.DETAIL_FOLDER), 0, 20).contents.map { it.id })
             .containsExactly(firstDetail.id)
 
@@ -442,23 +425,13 @@ class AdminResourceServiceTest @Autowired constructor(
             .containsEntry("workflowStatus", "DRAFT")
             .containsEntry("stage", "UPLOAD")
             .containsEntry("categoryAssignments", 1L)
-            .containsEntry("categorizationJobs", 1L)
             .containsEntry("ratings", 1L)
         assertThat(galleryContext.sections).containsKeys(
-            "conceptFolders", "detailFolders", "categoryAssignments", "categorizationJobs", "photoRatings",
+            "conceptFolders", "detailFolders", "categoryAssignments", "photoRatings",
             "userNotifications", "userNotificationSettings",
         )
         val photoContext = contextService.get(AdminResourceType.PHOTO, photo.id)
-        assertThat(photoContext.sections).containsKeys("categoryAssignment", "categorizationJobs", "rating")
-        val jobPhotoRow = contextService.get(AdminResourceType.CATEGORIZATION_JOB, jobId)
-            .sections.getValue("photos").single()
-        assertThat(jobPhotoRow)
-            .containsEntry("photoId", photo.id)
-            .containsEntry("galleryId", gallery.id)
-            .containsEntry("photoStatus", "PENDING")
-            .containsEntry("categorizationStatus", "ASSIGNED")
-            .containsEntry("failureCode", null)
-        assertThat(jobPhotoRow["processedAt"]).isNotNull()
+        assertThat(photoContext.sections).containsKeys("categoryAssignment", "rating")
         val selectionItemRow = contextService.get(AdminResourceType.SELECTION, selectionId)
             .sections.getValue("items").single()
         assertThat(selectionItemRow)
@@ -491,7 +464,7 @@ class AdminResourceServiceTest @Autowired constructor(
         )
         assertThat(rerated.fields["score"]).isEqualTo(5)
 
-        listOf(AdminResourceType.WORKSPACE to studio.id, AdminResourceType.CATEGORIZATION_JOB to jobId)
+        listOf(AdminResourceType.WORKSPACE to studio.id)
             .forEach { (type, id) ->
                 assertThatThrownBy {
                     cascadeTrashService.delete(
@@ -505,17 +478,6 @@ class AdminResourceServiceTest @Autowired constructor(
                     assertThat(it.errorCode).isEqualTo(AdminErrorCode.RESOURCE_DELETE_UNSUPPORTED)
                 }
             }
-        assertThatThrownBy {
-            service.create(
-                actor.requiredId,
-                AdminResourceType.CATEGORIZATION_JOB,
-                CreateAdminResourceRequest("직접 작업 생성 차단", emptyMap()),
-                "127.0.0.1",
-            )
-        }.isInstanceOfSatisfying(AdminException::class.java) {
-            assertThat(it.errorCode).isEqualTo(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-        }
-
         service.delete(
             actor.requiredId,
             AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,

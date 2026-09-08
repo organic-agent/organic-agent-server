@@ -1,10 +1,5 @@
 package com.soma.wes.category.repository
 
-import com.soma.wes.category.domain.CategorizationJob
-import com.soma.wes.category.domain.CategorizationJobPhoto
-import com.soma.wes.category.domain.CategorizationJobPhotoId
-import com.soma.wes.category.domain.CategorizationMode
-import com.soma.wes.category.domain.CategorizationStatus
 import com.soma.wes.category.domain.ConceptFolder
 import com.soma.wes.category.domain.DetailFolder
 import com.soma.wes.category.domain.PhotoCategoryAssignment
@@ -45,22 +40,4 @@ interface PhotoCategoryAssignmentRepository : JpaRepository<PhotoCategoryAssignm
     fun findAllPhotoIdsByGalleryId(@Param("galleryId") galleryId: Long): List<Long>
     fun deleteAllByDetailFolderId(detailFolderId: Long)
     fun deleteAllByDetailFolderIdIn(detailFolderIds: Collection<Long>)
-}
-
-interface CategorizationJobRepository : JpaRepository<CategorizationJob, Long> {
-    fun existsByGalleryIdAndModeAndStatus(
-        galleryId: Long,
-        mode: CategorizationMode,
-        status: CategorizationStatus,
-    ): Boolean
-    fun findFirstByGalleryIdOrderByCreatedAtDesc(galleryId: Long): CategorizationJob?
-}
-
-interface CategorizationJobPhotoRepository : JpaRepository<CategorizationJobPhoto, CategorizationJobPhotoId> {
-    fun findAllByPhotoIdIn(photoIds: Collection<Long>): List<CategorizationJobPhoto>
-    /** 갤러리에서 어느 카테고리화 잡이든 한 번 처리한 사진 id. */
-    @Query("SELECT DISTINCT j.photoId FROM CategorizationJobPhoto j WHERE j.galleryId = :galleryId")
-    fun findAllPhotoIdsByGalleryId(@Param("galleryId") galleryId: Long): List<Long>
-    fun countByJobId(jobId: Long): Long
-    fun findAllByJobIdOrderByPhotoId(jobId: Long): List<CategorizationJobPhoto>
 }

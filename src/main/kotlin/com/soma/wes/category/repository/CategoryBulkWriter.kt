@@ -1,6 +1,5 @@
 package com.soma.wes.category.repository
 
-import com.soma.wes.category.domain.CategorizationPhotoStatus
 import com.soma.wes.category.domain.CategorySource
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
@@ -10,9 +9,8 @@ import java.sql.Timestamp
 import java.time.ZonedDateTime
 
 /**
- * AI 폴더 실체화가 만드는 수천 행의 대량 적재. `photo_category_assignments`(PK = photo_id)와
- * `categorization_job_photos`(복합 키)는 id를 앱이 정하는 엔티티라 Spring Data `saveAll`이 행마다
- * 존재 확인 SELECT + INSERT 두 왕복을 한다 — 7천 장이면 3만 번 가까운 RDS 왕복으로 100초가 걸렸다(#160).
+ * AI 폴더 실체화가 만드는 수천 행의 대량 적재. `photo_category_assignments`(PK = photo_id)는 id를 앱이 정하는 엔티티라
+ * Spring Data `saveAll`이 행마다 존재 확인 SELECT + INSERT 두 왕복을 한다 — 7천 장이면 3만 번 가까운 RDS 왕복으로 100초가 걸렸다(#160).
  * 여기서는 JDBC 배치로 한 번에 보낸다. 엔티티는 조회와 단건 갱신에만 쓴다.
  *
  * 호출자의 트랜잭션 안에서만 돈다(MANDATORY) — 폴더 INSERT와 같은 트랜잭션이어야 부분 실패가 남지 않는다.
@@ -36,20 +34,6 @@ class CategoryBulkWriter(
             VALUES (?, ?, ?, NULL, ?, NULL, ?, 0, ?, ?)
             """.trimIndent(),
             photoIds.map { photoId -> arrayOf<Any>(galleryId, photoId, detailFolderId, CategorySource.AI.name, at, at, at) },
-        )
-    }
-
-    /** 카테고리화 잡의 사진별 결과 행. [status]는 사진마다 ASSIGNED 또는 UNCLASSIFIED. */
-    @Transactional(propagation = Propagation.MANDATORY)
-    fun insertJobPhotos(galleryId: Long, jobId: Long, status: Map<Long, CategorizationPhotoStatus>, processedAt: ZonedDateTime) {
-        if (status.isEmpty()) return
-        val at = Timestamp.from(processedAt.toInstant())
-        jdbcTemplate.batchUpdate(
-            """
-            INSERT INTO categorization_job_photos (gallery_id, job_id, photo_id, status, failure_code, processed_at)
-            VALUES (?, ?, ?, ?, NULL, ?)
-            """.trimIndent(),
-            status.map { (photoId, s) -> arrayOf<Any>(galleryId, jobId, photoId, s.name, at) },
         )
     }
 }

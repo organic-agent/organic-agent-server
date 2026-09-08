@@ -7,7 +7,6 @@ import com.soma.wes.collab.support.CollabCategoryReactionCleaner
 import com.soma.wes.collab.support.CollabLinkResolver
 import com.soma.wes.collab.support.CollabPhotoMembership
 import com.soma.wes.collab.support.CollabPhotoViewAssembler
-import com.soma.wes.category.service.CategorizationService
 import com.soma.wes.category.service.CategoryService
 import com.soma.wes.category.repository.CategoryBulkWriter
 import com.soma.wes.category.service.AiCategoryFolderService
@@ -105,7 +104,6 @@ import org.springframework.context.annotation.Import
     AiConceptAssignmentLoader::class,
     CategoryBulkWriter::class,
     AiCategoryFolderService::class,
-    CategorizationService::class,
 )
 class AdminDomainDependenciesConfiguration {
     /**

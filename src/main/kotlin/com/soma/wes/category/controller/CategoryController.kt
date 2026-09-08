@@ -4,10 +4,8 @@ import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.category.dto.request.CreateConceptFolderRequest
 import com.soma.wes.category.dto.request.CreateDetailFolderRequest
 import com.soma.wes.category.dto.request.MoveCategoryPhotosRequest
-import com.soma.wes.category.dto.response.CategorizationJobResponse
 import com.soma.wes.category.dto.response.ConceptFolderResponse
 import com.soma.wes.category.dto.response.DetailFolderResponse
-import com.soma.wes.category.service.CategorizationService
 import com.soma.wes.category.service.AiCategoryFolderService
 import com.soma.wes.category.service.CategoryService
 import jakarta.validation.Valid
@@ -29,7 +27,6 @@ import org.springframework.web.bind.annotation.RestController
 @Tag(name = "[Category]", description = "Concept/Detail 카테고리와 비동기 분류 API")
 class CategoryController(
     private val categoryService: CategoryService,
-    private val categorizationService: CategorizationService,
     private val aiCategoryFolderService: AiCategoryFolderService,
 ) {
     @PostMapping("/concept-folders")
@@ -107,25 +104,5 @@ class CategoryController(
     ): ResponseEntity<Unit> {
         categoryService.deleteConcept(galleryId, conceptId, loginUser.id)
         return ResponseEntity.noContent().build()
-    }
-
-    @PostMapping("/categorization-jobs")
-    @Operation(summary = "사진 카테고리 분류 작업 시작")
-    fun runCategorization(
-        @AuthenticationPrincipal loginUser: LoginUser,
-        @PathVariable galleryId: Long,
-    ): ResponseEntity<CategorizationJobResponse> {
-        return ResponseEntity.status(HttpStatus.CREATED).body(categorizationService.run(galleryId, loginUser.id))
-    }
-
-    @GetMapping("/categorization-jobs/latest")
-    @Operation(summary = "최근 사진 카테고리 분류 작업 조회")
-    fun latestCategorization(
-        @AuthenticationPrincipal loginUser: LoginUser,
-        @PathVariable galleryId: Long,
-    ): ResponseEntity<CategorizationJobResponse> {
-        val result = categorizationService.latest(galleryId, loginUser.id)
-            ?: return ResponseEntity.notFound().build()
-        return ResponseEntity.ok(result)
     }
 }

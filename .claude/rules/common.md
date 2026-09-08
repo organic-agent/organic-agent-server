@@ -25,8 +25,8 @@ support가 service를, infrastructure가 service·repository를 참조하면 안
 
 - 외부 입력으로 만드는 엔티티·값객체는 companion의 정적 팩토리(`of`)로만 만들고 검증을 거기 둔다
   (domain.md 참조).
-- 검증이 필요 없는 단순 연결 행(`CategorizationJobPhoto`)과 DTO는 생성자를 직접 써도 된다.
-  이때 **인자 2개 이상이면 named argument로 쓴다** — `CategorizationJobPhoto(jobId = ..., photoId = ...)`.
+- 검증이 필요 없는 단순 연결 행(`AiConceptAssignment`)과 DTO는 생성자를 직접 써도 된다.
+  이때 **인자 2개 이상이면 named argument로 쓴다** — `StageCall.Embed(galleryId = ..., photoIds = ...)`.
 
 ## 상수
 

@@ -35,13 +35,11 @@ class AdminResourceContextRepository(
             addAll(references(AdminResourceType.COLLABORATION, "SELECT id FROM collab_sessions WHERE gallery_id = :id", id))
             addAll(references(AdminResourceType.RETOUCH_REQUEST, "SELECT id FROM retouch_rounds WHERE gallery_id = :id", id))
             addAll(references(AdminResourceType.CONCEPT_FOLDER, "SELECT id FROM concept_folders WHERE gallery_id = :id", id))
-            addAll(references(AdminResourceType.CATEGORIZATION_JOB, "SELECT id FROM categorization_jobs WHERE gallery_id = :id", id))
         }
         AdminResourceType.PHOTO -> linkedSetOf<ResourceReference>().apply {
             addAll(references(AdminResourceType.GALLERY, "SELECT gallery_id AS id FROM photos WHERE id = :id", id))
             addAll(references(AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT, "SELECT photo_id AS id FROM photo_category_assignments WHERE photo_id = :id", id))
             addAll(references(AdminResourceType.PHOTO_RATING, "SELECT photo_id AS id FROM photo_ratings WHERE photo_id = :id", id))
-            addAll(references(AdminResourceType.CATEGORIZATION_JOB, "SELECT job_id AS id FROM categorization_job_photos WHERE photo_id = :id", id))
         }
         AdminResourceType.CONCEPT_FOLDER -> linkedSetOf<ResourceReference>().apply {
             addAll(references(AdminResourceType.GALLERY, "SELECT gallery_id AS id FROM concept_folders WHERE id = :id", id))
@@ -57,10 +55,6 @@ class AdminResourceContextRepository(
             add(ResourceReference(AdminResourceType.PHOTO, id))
             addAll(references(AdminResourceType.DETAIL_FOLDER, "SELECT detail_folder_id AS id FROM photo_category_assignments WHERE photo_id = :id", id))
             addAll(references(AdminResourceType.USER, "SELECT assigned_by_user_id AS id FROM photo_category_assignments WHERE photo_id = :id AND assigned_by_user_id IS NOT NULL", id))
-        }
-        AdminResourceType.CATEGORIZATION_JOB -> linkedSetOf<ResourceReference>().apply {
-            addAll(references(AdminResourceType.GALLERY, "SELECT gallery_id AS id FROM categorization_jobs WHERE id = :id", id))
-            addAll(references(AdminResourceType.PHOTO, "SELECT photo_id AS id FROM categorization_job_photos WHERE job_id = :id", id))
         }
         AdminResourceType.PHOTO_RATING -> linkedSetOf<ResourceReference>().apply {
             add(ResourceReference(AdminResourceType.PHOTO, id))
@@ -145,7 +139,6 @@ class AdminResourceContextRepository(
                     (SELECT COUNT(*) FROM concept_folders WHERE gallery_id = :id AND deleted_at IS NULL) AS concept_folders,
                     (SELECT COUNT(*) FROM detail_folders d JOIN concept_folders c ON c.id = d.concept_folder_id WHERE c.gallery_id = :id AND d.deleted_at IS NULL AND c.deleted_at IS NULL) AS detail_folders,
                     (SELECT COUNT(*) FROM photo_category_assignments a JOIN detail_folders d ON d.id = a.detail_folder_id JOIN concept_folders c ON c.id = d.concept_folder_id WHERE c.gallery_id = :id) AS category_assignments,
-                    (SELECT COUNT(*) FROM categorization_jobs WHERE gallery_id = :id) AS categorization_jobs,
                     (SELECT COUNT(*) FROM photo_ratings r JOIN photos p ON p.id = r.photo_id WHERE p.gallery_id = :id) AS ratings,
                     (SELECT COUNT(*) FROM photo_selection_items i JOIN photo_selections s ON s.id = i.selection_id WHERE s.gallery_id = :id) AS selected_photos,
                     (SELECT CASE WHEN revoked_at IS NOT NULL THEN 'REVOKED'
@@ -171,7 +164,6 @@ class AdminResourceContextRepository(
             "conceptFolders" to rs.getLong("concept_folders"),
             "detailFolders" to rs.getLong("detail_folders"),
             "categoryAssignments" to rs.getLong("category_assignments"),
-            "categorizationJobs" to rs.getLong("categorization_jobs"),
             "ratings" to rs.getLong("ratings"),
             "selectedPhotos" to rs.getLong("selected_photos"),
             "inviteStatus" to rs.getString("invite_status"),
@@ -234,10 +226,6 @@ class AdminResourceContextRepository(
             "galleryId" to rs.getLong("gallery_id"),
             "conceptFolderId" to rs.getLong("concept_folder_id"),
         ) }
-        AdminResourceType.CATEGORIZATION_JOB -> singleFacts(
-            "SELECT COUNT(*) AS processed_photos FROM categorization_job_photos WHERE job_id = :id",
-            id,
-        ) { rs -> linkedMapOf("processedPhotos" to rs.getLong("processed_photos")) }
         AdminResourceType.PHOTO_RATING -> singleFacts(
             "SELECT p.gallery_id FROM photo_ratings r JOIN photos p ON p.id = r.photo_id WHERE r.photo_id = :id",
             id,
@@ -643,27 +631,6 @@ class AdminResourceContextRepository(
                 "assignedAt" to rs.getObject("assigned_at"),
                 "version" to rs.getLong("version"),
             ) },
-            "categorizationJobs" to rows(
-                """
-                    SELECT j.id, j.mode, j.status, j.started_at, j.completed_at, j.failure_code,
-                           j.version, COUNT(p.photo_id) AS photo_count
-                    FROM categorization_jobs j
-                    LEFT JOIN categorization_job_photos p ON p.job_id = j.id
-                    WHERE j.gallery_id = :id
-                    GROUP BY j.id
-                    ORDER BY j.id DESC LIMIT 100
-                """.trimIndent(),
-                id,
-            ) { rs -> linkedMapOf(
-                "id" to rs.getLong("id"),
-                "mode" to rs.getString("mode"),
-                "status" to rs.getString("status"),
-                "startedAt" to rs.getObject("started_at"),
-                "completedAt" to rs.getObject("completed_at"),
-                "failureCode" to rs.getString("failure_code"),
-                "version" to rs.getLong("version"),
-                "photoCount" to rs.getLong("photo_count"),
-            ) },
             "photoRatings" to rows(
                 """
                     SELECT r.id, r.photo_id, r.score, r.rated_by, r.version, r.created_at, r.updated_at
@@ -762,25 +729,6 @@ class AdminResourceContextRepository(
                 "assignedSource" to rs.getString("assigned_source"),
                 "confidence" to rs.getObject("confidence"),
                 "assignedAt" to rs.getObject("assigned_at"),
-                "version" to rs.getLong("version"),
-            ) },
-            "categorizationJobs" to rows(
-                """
-                    SELECT j.id, j.gallery_id, j.mode, j.status, j.started_at,
-                           j.completed_at, j.failure_code, j.version
-                    FROM categorization_job_photos p
-                    JOIN categorization_jobs j ON j.id = p.job_id
-                    WHERE p.photo_id = :id ORDER BY j.id DESC LIMIT 100
-                """.trimIndent(),
-                id,
-            ) { rs -> linkedMapOf(
-                "id" to rs.getLong("id"),
-                "galleryId" to rs.getLong("gallery_id"),
-                "mode" to rs.getString("mode"),
-                "status" to rs.getString("status"),
-                "startedAt" to rs.getObject("started_at"),
-                "completedAt" to rs.getObject("completed_at"),
-                "failureCode" to rs.getString("failure_code"),
                 "version" to rs.getLong("version"),
             ) },
             "rating" to rows(
@@ -939,52 +887,7 @@ class AdminResourceContextRepository(
                 id,
             ),
         )
-        AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT -> linkedMapOf(
-            "categorizationJobs" to rows(
-                """
-                    SELECT j.id, j.gallery_id, j.mode, j.status, j.started_at, j.completed_at,
-                           j.failure_code, j.version
-                    FROM categorization_job_photos p
-                    JOIN categorization_jobs j ON j.id = p.job_id
-                    WHERE p.photo_id = :id ORDER BY j.id DESC LIMIT 100
-                """.trimIndent(),
-                id,
-            ) { rs -> linkedMapOf(
-                "id" to rs.getLong("id"),
-                "galleryId" to rs.getLong("gallery_id"),
-                "mode" to rs.getString("mode"),
-                "status" to rs.getString("status"),
-                "startedAt" to rs.getObject("started_at"),
-                "completedAt" to rs.getObject("completed_at"),
-                "failureCode" to rs.getString("failure_code"),
-                "version" to rs.getLong("version"),
-            ) },
-        )
-        AdminResourceType.CATEGORIZATION_JOB -> linkedMapOf(
-            "photos" to rows(
-                """
-                    SELECT p.photo_id, p.gallery_id, photo.original_file_name,
-                           photo.status AS upload_status, p.status AS categorization_status,
-                           p.failure_code, p.processed_at,
-                           a.detail_folder_id, a.assigned_source
-                    FROM categorization_job_photos p
-                    JOIN photos photo ON photo.id = p.photo_id
-                    LEFT JOIN photo_category_assignments a ON a.photo_id = p.photo_id
-                    WHERE p.job_id = :id ORDER BY p.photo_id LIMIT 100
-                """.trimIndent(),
-                id,
-            ) { rs -> linkedMapOf(
-                "photoId" to rs.getLong("photo_id"),
-                "galleryId" to rs.getLong("gallery_id"),
-                "fileName" to rs.getString("original_file_name"),
-                "photoStatus" to rs.getString("upload_status"),
-                "categorizationStatus" to rs.getString("categorization_status"),
-                "failureCode" to rs.getString("failure_code"),
-                "processedAt" to rs.getObject("processed_at"),
-                "detailFolderId" to rs.getObject("detail_folder_id"),
-                "assignedSource" to rs.getString("assigned_source"),
-            ) },
-        )
+        AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT -> emptyMap()
         AdminResourceType.PHOTO_RATING -> emptyMap()
         AdminResourceType.SELECTION -> linkedMapOf(
             "aiJobs" to rows(

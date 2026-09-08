@@ -1,8 +1,5 @@
 package com.soma.wes.category.service
 
-import com.soma.wes.category.domain.CategorizationJob
-import com.soma.wes.category.domain.CategorizationMode
-import com.soma.wes.category.domain.CategorizationStatus
 import com.soma.wes.category.domain.CategorySource
 import com.soma.wes.category.domain.ConceptFolder
 import com.soma.wes.category.domain.DetailFolder
@@ -10,10 +7,7 @@ import com.soma.wes.category.dto.response.ConceptFolderResponse
 import com.soma.wes.category.dto.response.DetailFolderResponse
 import com.soma.wes.category.exception.CategoryErrorCode
 import com.soma.wes.category.exception.CategoryException
-import com.soma.wes.category.domain.CategorizationPhotoStatus
 import com.soma.wes.category.repository.CategoryBulkWriter
-import com.soma.wes.category.repository.CategorizationJobPhotoRepository
-import com.soma.wes.category.repository.CategorizationJobRepository
 import com.soma.wes.category.repository.ConceptFolderRepository
 import com.soma.wes.category.repository.DetailFolderRepository
 import com.soma.wes.category.repository.PhotoCategoryAssignmentRepository
@@ -33,7 +27,10 @@ import org.springframework.transaction.annotation.Transactional
  *
  * 갤러리 락을 쥔 동기 트랜잭션 하나다. 그래서 큰 갤러리에서도 수 초 안에 끝나야 한다 — 7천 장에서 4분이 걸려
  * ALB(60초)가 먼저 끊고 재시도가 락에 줄을 섰던 일(#160)이 이 클래스의 읽기·적재·응답 형태를 정했다:
- * 분석 행은 벡터 없는 프로젝션으로, 배정·잡 사진 행은 JDBC 배치로, 응답은 방금 만든 것을 다시 읽지 않고 메모리에서.
+ * 분석 행은 벡터 없는 프로젝션으로, 배정 행은 JDBC 배치로, 응답은 방금 만든 것을 다시 읽지 않고 메모리에서.
+ *
+ * 진입점은 둘이다 — 작가의 버튼([createFromAnalysis], 인가 있음)과 인가를 이미 마친 호출자를 위한 [materializeFromAnalysis]
+ * (분석 잡의 자동 물질화, 부부의 폴더 확정, 관리자 워크플로). 관리자 전용 경로는 없다.
  */
 @Service
 class AiCategoryFolderService(
@@ -42,8 +39,6 @@ class AiCategoryFolderService(
     private val conceptRepository: ConceptFolderRepository,
     private val detailRepository: DetailFolderRepository,
     private val assignmentRepository: PhotoCategoryAssignmentRepository,
-    private val categorizationJobRepository: CategorizationJobRepository,
-    private val categorizationJobPhotoRepository: CategorizationJobPhotoRepository,
     private val bulkWriter: CategoryBulkWriter,
     private val photoAnalysisRepository: PhotoAnalysisRepository,
     private val aiConceptAssignmentLoader: AiConceptAssignmentLoader,
@@ -57,9 +52,12 @@ class AiCategoryFolderService(
         return createFromAnalysisLocked(galleryId)
     }
 
-    /** 관리자 API가 사용자 신원을 가장하지 않고 같은 분석 결과를 물질화하는 진입점. */
+    /**
+     * 인가 없는 시스템 진입점 — 호출자가 이미 인가를 마쳤거나 사용자 신원이 없는 경우(분석 잡 스윕의 자동 물질화,
+     * 부부의 폴더 확정 `FolderOrganizationService`, 관리자 워크플로). 같은 잡의 세트가 이미 있으면 그것을 돌려준다(멱등).
+     */
     @Transactional
-    fun createFromAnalysisAsAdmin(galleryId: Long): List<ConceptFolderResponse> =
+    fun materializeFromAnalysis(galleryId: Long): List<ConceptFolderResponse> =
         createFromAnalysisLocked(galleryId)
 
     private fun createFromAnalysisLocked(galleryId: Long): List<ConceptFolderResponse> {
@@ -71,10 +69,10 @@ class AiCategoryFolderService(
             .findAllByGalleryIdAndAnalysisJobIdOrderBySortOrderAscIdAsc(galleryId, latest.jobId)
         if (existingSet.isNotEmpty()) return responsesOf(existingSet)
 
+        // 이미 폴더에 든 사진(사용자가 옮긴 것 포함)은 다시 배정하지 않는다 — 재물질화가 USER 배정을 건드리지 않는 이유가 이 한 줄이다.
         val allMembers = loadMembers(galleryId)
-        val processedIds = categorizationJobPhotoRepository.findAllPhotoIdsByGalleryId(galleryId).toSet()
         val assignedIds = assignmentRepository.findAllPhotoIdsByGalleryId(galleryId).toSet()
-        val members = allMembers.filter { it.photoId !in processedIds && it.photoId !in assignedIds }
+        val members = allMembers.filter { it.photoId !in assignedIds }
         if (members.isEmpty()) throw CategoryException(CategoryErrorCode.NO_PHOTOS_TO_ORGANIZE)
 
         val plans = planner.plan(
@@ -119,9 +117,6 @@ class AiCategoryFolderService(
             ConceptFolderResponse.of(concept, details)
         }
 
-        // 계획은 모든 대상 사진을 어느 세부 폴더엔가 넣는다("기타" 포함). 그래서 배정된 사진 = 계획에 든 사진이다.
-        val assignedPhotoIds = plans.flatMapTo(mutableSetOf()) { plan -> plan.details.flatMap { it.photoIds } }
-        recordCategorization(galleryId, members.map { it.photoId }, assignedPhotoIds)
         return responses
     }
 
@@ -138,25 +133,6 @@ class AiCategoryFolderService(
                 clusterId = it.clusterId,
             )
         }
-
-    private fun recordCategorization(galleryId: Long, photoIds: List<Long>, assignedPhotoIds: Set<Long>) {
-        val initialCompleted = categorizationJobRepository.existsByGalleryIdAndModeAndStatus(
-            galleryId,
-            CategorizationMode.INITIAL,
-            CategorizationStatus.SUCCEEDED,
-        )
-        val mode = if (initialCompleted) CategorizationMode.INCREMENTAL else CategorizationMode.INITIAL
-        val now = ZonedDateTime.now(clock)
-        val job = categorizationJobRepository.save(CategorizationJob(galleryId, mode).also { it.startedAt = now })
-        val completedAt = ZonedDateTime.now(clock)
-        bulkWriter.insertJobPhotos(
-            galleryId,
-            job.requiredId,
-            photoIds.associateWith { if (it in assignedPhotoIds) CategorizationPhotoStatus.ASSIGNED else CategorizationPhotoStatus.UNCLASSIFIED },
-            completedAt,
-        )
-        job.complete(completedAt)
-    }
 
     private fun responsesOf(concepts: List<ConceptFolder>): List<ConceptFolderResponse> {
         val details = detailRepository.findAllByConceptFolderIdIn(concepts.map { it.requiredId })

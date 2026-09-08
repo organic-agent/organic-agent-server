@@ -18,7 +18,7 @@ import com.soma.wes.admin.resource.repository.AdminResourceContextRepository
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
 import com.soma.wes.admin.resource.repository.AdminWorkflowRepository
 import com.soma.wes.admin.resource.repository.AdminNotificationInboxRepository
-import com.soma.wes.category.service.CategorizationService
+import com.soma.wes.category.service.AiCategoryFolderService
 import com.soma.wes.collab.support.CollabLinkResolver
 import com.soma.wes.gallery.domain.GalleryInviteKind
 import com.soma.wes.gallery.service.GalleryInviteService
@@ -58,7 +58,7 @@ class AdminWorkflowService(
     private val tokenGenerator: SecureTokenGenerator,
     private val galleryInviteUrlResolver: GalleryInviteUrlResolver,
     private val collabLinkResolver: CollabLinkResolver,
-    private val categorizationService: CategorizationService,
+    private val aiCategoryFolderService: AiCategoryFolderService,
     private val objectMapper: ObjectMapper,
     private val transactionTemplate: TransactionTemplate,
     private val clock: Clock,
@@ -329,13 +329,12 @@ class AdminWorkflowService(
         }
         AdminWorkflowAction.RUN_CATEGORIZATION -> {
             requireType(type, AdminResourceType.GALLERY)
-            val result = categorizationService.runAsAdmin(id)
+            val folders = aiCategoryFolderService.materializeFromAnalysis(id)
             workflowRepository.bumpResourceVersion(type, id, request.expectedVersion)
             WorkflowExecution(details = mapOf(
-                "jobId" to result.id,
-                "mode" to result.mode.name,
-                "jobStatus" to result.status.name,
-                "processedPhotoCount" to result.processedPhotoCount,
+                "conceptFolderCount" to folders.size,
+                "detailFolderCount" to folders.sumOf { it.details.size },
+                "assignedPhotoCount" to folders.sumOf { concept -> concept.details.sumOf { it.photoIds.size } },
             ))
         }
         AdminWorkflowAction.REISSUE_GALLERY_INVITE -> {
