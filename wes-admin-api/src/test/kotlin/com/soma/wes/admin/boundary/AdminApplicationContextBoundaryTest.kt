@@ -12,7 +12,6 @@ import com.soma.wes.auth.support.OAuthRegistrations
 import com.soma.wes.auth.support.OAuthStateCleaner
 import com.soma.wes.auth.token.config.JwtProperties
 import com.soma.wes.category.repository.ConceptFolderRepository
-import com.soma.wes.category.service.CategorizationService
 import com.soma.wes.category.service.CategoryService
 import com.soma.wes.category.service.AiCategoryFolderService
 import com.soma.wes.category.support.AiCategoryFolderPlanner
@@ -149,7 +148,6 @@ class AdminApplicationContextBoundaryTest @Autowired constructor(
             AiCategoryFolderPlanner::class.java,
             AiConceptAssignmentLoader::class.java,
             AiCategoryFolderService::class.java,
-            CategorizationService::class.java,
         )
 
         assertAbsent(

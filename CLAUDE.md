@@ -71,6 +71,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     로컬 wes 에서 `app.analysis.gpu.enabled=true` 면 `GpuController` 가 "켜기" 자리에서 이것을 띄운다(`LocalProcessScoreWorkerPool`).
   - `local-ai.sh <galleryId> [--skip-embed] [--skip-analyze]` — 위 셋을 잡 없이 갤러리 전체로 순서대로 도는 지름길(배정·폴더는
     저장되지 않음). 로컬 pg + dev 버킷(`/wes/local/app.storage.bucket`)을 쓴다.
+  - `load/clone-gallery-photos.sh [local|remote] --source G --count N [--strip embed|score|categorize]` — 부하 실측용. 원본 갤러리의
+    사진·분석 행을 새 갤러리 N개로 복제한다(같은 S3 객체를 가리켜 업로드 없음). `--strip`으로 그 단계부터 파이프라인이 다시 돌게 한다.
   - AI venv는 `scripts/lib/ai-venv.sh`가 `<모듈>/.venv`에 만든다(score venv에 categorize 포함).
 
 ## 규칙 참조

@@ -67,7 +67,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `관리자 분류 실행은 사용자 위임 없이 초기 증분 작업을 만들고 갤러리 버전을 올린다`() {
+    fun `관리자 분류 실행은 사용자 위임 없이 AI 폴더를 물질화하고 갤러리 버전을 올리며 재실행은 같은 세트를 돌려준다`() {
         val actor = adminAccountFixture.관리자("workflow-categorization")
         val graph = createGraph(actor.requiredId, "categorization", withPhoto = true)
         prepareAiCategoryAnalysis(graph.gallery.id, graph.photo!!.id)
@@ -82,20 +82,16 @@ class AdminWorkflowServiceTest @Autowired constructor(
         )
 
         assertThat(initial.details)
-            .containsEntry("mode", "INITIAL")
-            .containsEntry("jobStatus", "SUCCEEDED")
-            .containsEntry("processedPhotoCount", 1)
-        val initialJobId = (initial.details.getValue("jobId") as Number).toLong()
-        assertThat(resourceService.get(AdminResourceType.CATEGORIZATION_JOB, initialJobId).fields)
-            .containsEntry("galleryId", graph.gallery.id)
-            .containsEntry("status", "SUCCEEDED")
+            .containsEntry("conceptFolderCount", 1)
+            .containsEntry("detailFolderCount", 1)
+            .containsEntry("assignedPhotoCount", 1)
         assertThat(
             contextService.get(AdminResourceType.GALLERY, graph.gallery.id)
-                .sections.getValue("categorizationJobs").map { it["id"] },
+                .sections.getValue("categoryAssignments").map { it["photoId"] },
         )
-            .contains(initialJobId)
+            .contains(graph.photo.id)
 
-        val incremental = execute(
+        val again = execute(
             actor.requiredId,
             AdminResourceType.GALLERY,
             graph.gallery.id,
@@ -104,10 +100,10 @@ class AdminWorkflowServiceTest @Autowired constructor(
             idempotencyKey = "categorization-incremental-001",
         )
 
-        assertThat(incremental.details)
-            .containsEntry("mode", "INCREMENTAL")
-            .containsEntry("jobStatus", "SUCCEEDED")
-            .containsEntry("processedPhotoCount", 0)
+        // 같은 잡의 세트가 이미 있으므로 새 폴더 없이 그대로 돌려준다.
+        assertThat(again.details)
+            .containsEntry("conceptFolderCount", 1)
+            .containsEntry("assignedPhotoCount", 1)
         assertThat(resourceService.get(AdminResourceType.GALLERY, graph.gallery.id).version).isEqualTo(2)
     }
 

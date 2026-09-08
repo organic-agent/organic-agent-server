@@ -24,7 +24,7 @@ class FolderOrganizationService(
         val gallery = galleryRepository.requireWithLockById(galleryId)
         gallery.markFoldersSaved(ZonedDateTime.now(clock))
         val existing = categoryService.list(galleryId, userId)
-        val result = if (existing.isNotEmpty()) existing else aiCategoryFolderService.createFromAnalysisAsAdmin(galleryId)
+        val result = if (existing.isNotEmpty()) existing else aiCategoryFolderService.materializeFromAnalysis(galleryId)
         gallery.markSelectionInProgress()
         return result
     }

@@ -838,7 +838,6 @@ class AdminWorkflowRepository(
             AdminResourceType.CONCEPT_FOLDER -> "concept_folders" to "id"
             AdminResourceType.DETAIL_FOLDER -> "detail_folders" to "id"
             AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT -> "photo_category_assignments" to "photo_id"
-            AdminResourceType.CATEGORIZATION_JOB -> "categorization_jobs" to "id"
             AdminResourceType.PHOTO_RATING -> "photo_ratings" to "photo_id"
             AdminResourceType.SELECTION -> "photo_selections" to "id"
             AdminResourceType.COLLABORATION -> "collab_sessions" to "id"

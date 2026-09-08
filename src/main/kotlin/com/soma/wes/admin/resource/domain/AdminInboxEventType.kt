@@ -27,7 +27,6 @@ enum class AdminInboxEventType(private val description: String) {
             AdminResourceType.CONCEPT_FOLDER -> "컨셉 폴더"
             AdminResourceType.DETAIL_FOLDER -> "세부 폴더"
             AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT -> "사진 카테고리 배정"
-            AdminResourceType.CATEGORIZATION_JOB -> "카테고리 분류 작업"
             AdminResourceType.PHOTO_RATING -> "사진 별점"
             AdminResourceType.SELECTION -> "셀렉"
             AdminResourceType.COLLABORATION -> "협업"

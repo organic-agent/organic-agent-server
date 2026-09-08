@@ -206,13 +206,13 @@ class AdminAuditSnapshotCodec(
             "collaborationLinks", "selectionReferences", "retouchReferences",
             "galleryMemberships", "joinedGalleries", "ownedStudios", "notifications",
             "aiJobs", "activeSessions", "workspaces", "conceptFolders", "detailFolders",
-            "categoryAssignments", "categorizationJobs", "photoRatings", "categoryAssignment", "rating",
+            "categoryAssignments", "photoRatings", "categoryAssignment", "rating",
             "userNotifications", "userNotificationSettings",
         )
         private val STRUCTURAL_COUNT_KEYS = setOf(
             "ADMIN_ACCOUNT", "USER", "STUDIO", "GALLERY", "PHOTO", "SELECTION", "COLLABORATION",
             "RETOUCH_REQUEST", "WORKSPACE", "CONCEPT_FOLDER", "DETAIL_FOLDER",
-            "PHOTO_CATEGORY_ASSIGNMENT", "CATEGORIZATION_JOB", "PHOTO_RATING", "WORKSPACE_MEMBER",
+            "PHOTO_CATEGORY_ASSIGNMENT", "PHOTO_RATING", "WORKSPACE_MEMBER",
             "GALLERY_MEMBER", "COLLAB_COMMENT", "COLLAB_LIKE",
             "RETOUCH_ITEM",
         )
