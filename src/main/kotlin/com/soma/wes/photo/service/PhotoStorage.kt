@@ -18,9 +18,17 @@ interface PhotoStorage {
      * 프론트가 직접 PUT 할 URL.
      * [contentType]이 서명에 포함되므로 업로드할 때 같은 값을 보내야 서명이 맞는다. [contentLength]를 주면 그 바이트 수도
      * 서명에 들어가 다른 크기의 객체는 S3가 거절한다 — 서버가 객체를 받지 않고도 크기 상한을 지키는 유일한 길이다(presigned PUT에는
-     * 범위 조건이 없다). 원본 사진 업로드는 항상 주고, 보정 주석처럼 크기를 미리 알 수 없는 업로드는 비운다.
+     * 범위 조건이 없다). [crc32c]를 주면 그 값이 `x-amz-checksum-crc32c` 헤더로 서명에 들어가 브라우저가 같은 헤더를 보내야 하고,
+     * S3가 받은 바이트의 CRC32C를 그 값과 대조한다. 서버는 바디를 만지지 않으므로 값은 클라이언트가 계산해 온다 — 값 없이
+     * 알고리즘만 지정하면 SDK가 자기 내부 헤더를 서명에 넣어 어떤 브라우저도 맞출 수 없다.
+     * 원본 사진 업로드는 둘 다 항상 주고, 보정 주석·관리자 교체처럼 크기를 미리 알 수 없는 업로드는 둘 다 비운다.
      */
-    fun presignUpload(key: String, contentType: String, contentLength: Long? = null): PresignedUploadDto
+    fun presignUpload(
+        key: String,
+        contentType: String,
+        contentLength: Long? = null,
+        crc32c: String? = null,
+    ): PresignedUploadDto
 
     /** 비공개 버킷의 사진을 브라우저가 그릴 수 있게 하는 유일한 통로. */
     fun presignView(key: String): String

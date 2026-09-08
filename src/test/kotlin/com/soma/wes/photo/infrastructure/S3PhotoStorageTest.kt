@@ -20,6 +20,7 @@ import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse
+import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.s3.model.S3Error
 import software.amazon.awssdk.services.s3.model.S3Exception
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
@@ -86,6 +87,52 @@ class S3PhotoStorageTest {
             // then
             assertThat(result.url).isEqualTo("https://example.test/upload?X-Amz-Signature=test")
             assertThat(result.expiresAt).isEqualTo(expiresAt)
+        }
+
+        @Test
+        fun `체크섬 값을 받으면 그 값을 x-amz-checksum-crc32c 로 서명하고 알고리즘만 따로 지정하지 않는다`() {
+            // 값 없이 checksumAlgorithm(CRC32_C)만 지정하면 SDK가 자기 내부 헤더(x-amz-sdk-checksum-algorithm)를 서명에
+            // 넣고 체크섬 헤더는 서명하지 않아, 브라우저가 무엇을 보내든 S3가 403으로 거절한다.
+            // given
+            stubPresigner()
+
+            // when
+            storage.presignUpload("galleries/1/photo.jpg", "image/jpeg", contentLength = 1024, crc32c = "wdRDgw==")
+
+            // then
+            val request = capturedPutRequest()
+            assertThat(request.checksumCRC32C()).isEqualTo("wdRDgw==")
+            assertThat(request.checksumAlgorithm()).isNull()
+            assertThat(request.contentLength()).isEqualTo(1024L)
+        }
+
+        @Test
+        fun `체크섬과 크기를 모르는 업로드는 둘 다 서명에서 뺀다`() {
+            // 보정 주석·관리자 교체처럼 크기를 미리 알 수 없는 업로드. 서명에 체크섬 관련 헤더가 하나라도 남으면 올릴 수 없다.
+            // given
+            stubPresigner()
+
+            // when
+            storage.presignUpload("galleries/1/retouch/annotations/a.png", "image/png")
+
+            // then
+            val request = capturedPutRequest()
+            assertThat(request.checksumCRC32C()).isNull()
+            assertThat(request.checksumAlgorithm()).isNull()
+            assertThat(request.contentLength() as Long?).isNull()
+        }
+
+        private fun stubPresigner() {
+            val signed = mock<PresignedPutObjectRequest>()
+            whenever(signed.url()).thenReturn(URI("https://example.test/upload?X-Amz-Signature=test").toURL())
+            whenever(signed.expiration()).thenReturn(Instant.parse("2026-08-09T03:30:00Z"))
+            whenever(s3Presigner.presignPutObject(any<PutObjectPresignRequest>())).thenReturn(signed)
+        }
+
+        private fun capturedPutRequest(): PutObjectRequest {
+            val requests = argumentCaptor<PutObjectPresignRequest>()
+            verify(s3Presigner).presignPutObject(requests.capture())
+            return requests.firstValue.putObjectRequest()
         }
     }
 

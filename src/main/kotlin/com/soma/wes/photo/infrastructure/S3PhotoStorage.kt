@@ -9,7 +9,6 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import software.amazon.awssdk.core.exception.SdkException
 import software.amazon.awssdk.services.s3.S3Client
-import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier
@@ -46,14 +45,21 @@ class S3PhotoStorage(
         return "${galleryPrefix(galleryId)}${UUID.randomUUID()}$suffix"
     }
 
-    override fun presignUpload(key: String, contentType: String, contentLength: Long?): PresignedUploadDto {
+    override fun presignUpload(
+        key: String,
+        contentType: String,
+        contentLength: Long?,
+        crc32c: String?,
+    ): PresignedUploadDto {
         val putRequest = PutObjectRequest.builder()
             .bucket(properties.bucket)
             .key(key)
             .contentType(contentType)
             .contentLength(contentLength)
-            // 브라우저가 x-amz-checksum-crc32c 를 보내면 S3가 바이트 무결성을 검증한다. 헤더는 서명에 들어가므로 프론트는 반드시 보낸다.
-            .checksumAlgorithm(ChecksumAlgorithm.CRC32_C)
+            // 값을 주면 x-amz-checksum-crc32c 헤더가 서명에 들어가 브라우저가 같은 헤더를 보내야 한다. checksumAlgorithm(CRC32_C)로
+            // 알고리즘만 지정하면 안 된다 — 바디가 없는 presign에서 SDK는 x-amz-sdk-checksum-algorithm 헤더를 서명에 넣고 정작
+            // 체크섬 헤더는 서명하지 않아, 브라우저가 체크섬을 보내든 말든 S3가 403으로 거절한다.
+            .checksumCRC32C(crc32c)
             .build()
 
         val presignRequest = PutObjectPresignRequest.builder()

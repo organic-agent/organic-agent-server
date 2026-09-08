@@ -20,6 +20,7 @@ Parameter Store(`/wes/prod/app.mock-gallery.template-gallery-id`)에 넣고 앱�
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import mimetypes
 import sys
@@ -41,6 +42,14 @@ CONTENT_TYPES = {
 POLL_INTERVAL_SECONDS = 10
 POLL_TIMEOUT_SECONDS = 15 * 60
 
+# CRC32C(Castagnoli, 반사 다항식 0x82F63B78) 테이블. S3 x-amz-checksum-crc32c 는 이 값 4바이트를 base64로 적는다.
+_CRC32C_TABLE = []
+for _n in range(256):
+    _c = _n
+    for _ in range(8):
+        _c = (_c >> 1) ^ 0x82F63B78 if _c & 1 else _c >> 1
+    _CRC32C_TABLE.append(_c)
+
 
 def main() -> int:
     args = parse_args()
@@ -60,13 +69,26 @@ def main() -> int:
     else:
         print(f"기존 갤러리에 이어서: id={gallery_id}")
 
+    # 바이트 수와 CRC32C 는 서명에 들어간다 — 발급 요청에 적은 값 그대로 PUT 헤더로 보내야 한다.
+    bodies = {f: f.read_bytes() for f in files}
+    checksums = {f: crc32c_base64(bodies[f]) for f in files}
     uploads = api.post(
         f"/api/v1/galleries/{gallery_id}/photos/upload-urls",
-        {"files": [{"fileName": f.name, "contentType": CONTENT_TYPES[f.suffix.lower()]} for f in files]},
+        {
+            "files": [
+                {
+                    "fileName": f.name,
+                    "contentType": CONTENT_TYPES[f.suffix.lower()],
+                    "contentLength": len(bodies[f]),
+                    "crc32c": checksums[f],
+                }
+                for f in files
+            ],
+        },
     )["uploads"]
 
     for file, upload in zip(files, uploads):
-        put_object(upload["uploadUrl"], file, CONTENT_TYPES[file.suffix.lower()])
+        put_object(upload["uploadUrl"], file, bodies[file], CONTENT_TYPES[file.suffix.lower()], checksums[file])
     print(f"S3 업로드 완료: {len(files)}장")
 
     api.post(
@@ -100,10 +122,21 @@ def collect_files(directory: Path) -> list[Path]:
     return sorted(f for f in directory.iterdir() if f.is_file() and f.suffix.lower() in CONTENT_TYPES)
 
 
-def put_object(url: str, file: Path, content_type: str) -> None:
-    # presign에 서명된 것과 같은 Content-Type을 보내야 한다. 다르면 S3가 403을 돌려준다.
-    request = urllib.request.Request(url, data=file.read_bytes(), method="PUT")
+def crc32c_base64(data: bytes) -> str:
+    crc = 0xFFFFFFFF
+    for byte in data:
+        crc = _CRC32C_TABLE[(crc ^ byte) & 0xFF] ^ (crc >> 8)
+    crc ^= 0xFFFFFFFF
+    return base64.b64encode(crc.to_bytes(4, "big")).decode("ascii")
+
+
+def put_object(url: str, file: Path, body: bytes, content_type: str, crc32c: str) -> None:
+    # Content-Type·Content-Length·x-amz-checksum-crc32c 셋이 서명에 들어 있다. 하나라도 다르면 S3가 403을 돌려주고,
+    # 체크섬이 바이트와 안 맞으면 400(BadDigest)이다. 다른 x-amz-* 헤더는 서명에 없으니 붙이지 않는다.
+    request = urllib.request.Request(url, data=body, method="PUT")
     request.add_header("Content-Type", content_type)
+    request.add_header("Content-Length", str(len(body)))
+    request.add_header("x-amz-checksum-crc32c", crc32c)
     with urllib.request.urlopen(request) as response:
         if response.status not in (200, 204):
             raise RuntimeError(f"S3 PUT 실패: {file.name} → {response.status}")

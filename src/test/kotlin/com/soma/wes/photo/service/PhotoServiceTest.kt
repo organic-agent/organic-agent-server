@@ -30,6 +30,9 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.web.util.UriComponentsBuilder
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.time.LocalDateTime
 
@@ -72,8 +75,8 @@ class PhotoServiceTest @Autowired constructor(
                 fixture.photographer.id!!,
                 IssueUploadUrlsRequest(
                     files = listOf(
-                        IssueUploadUrlsRequest.FileRequest(fileName = "DSC_0001.JPG", contentType = "image/jpeg", contentLength = 1024),
-                        IssueUploadUrlsRequest.FileRequest(fileName = "DSC_0002.HEIC", contentType = "image/heic", contentLength = 1024),
+                        IssueUploadUrlsRequest.FileRequest(fileName = "DSC_0001.JPG", contentType = "image/jpeg", contentLength = 1024, crc32c = "wdRDgw=="),
+                        IssueUploadUrlsRequest.FileRequest(fileName = "DSC_0002.HEIC", contentType = "image/heic", contentLength = 1024, crc32c = "wdRDgw=="),
                     ),
                 ),
             )
@@ -96,6 +99,48 @@ class PhotoServiceTest @Autowired constructor(
         }
 
         @Test
+        fun `서명은 Content-Length 와 x-amz-checksum-crc32c 만 요구하고 SDK 내부 헤더는 요구하지 않는다`() {
+            // 브라우저가 맞출 수 있는 헤더만 서명에 있어야 한다. x-amz-sdk-checksum-algorithm 이 서명에 끼면 어떤 클라이언트도
+            // 올릴 수 없고, 체크섬 헤더가 서명에서 빠지면 서명 안 된 x-amz-* 헤더로 S3가 거절한다.
+            // when
+            val result = photoService.issueUploadUrls(
+                fixture.galleryId,
+                fixture.photographer.id!!,
+                IssueUploadUrlsRequest(
+                    files = listOf(
+                        IssueUploadUrlsRequest.FileRequest(fileName = "a.jpg", contentType = "image/jpeg", contentLength = 1024, crc32c = "wdRDgw=="),
+                    ),
+                ),
+            )
+
+            // then
+            val signedHeaders = signedHeadersOf(result.uploads.single().uploadUrl)
+            assertThat(signedHeaders)
+                .contains("content-length", "content-type", "x-amz-checksum-crc32c")
+                .doesNotContain("x-amz-sdk-checksum-algorithm")
+        }
+
+        @Test
+        fun `체크섬 형식이 틀리면 발급 단계에서 막는다`() {
+            // 값이 서명에 그대로 들어가므로, 여기서 거르지 않으면 S3가 PUT을 거절할 때까지 드러나지 않는다.
+            // when & then
+            assertThatThrownBy {
+                photoService.issueUploadUrls(
+                    fixture.galleryId,
+                    fixture.photographer.id!!,
+                    IssueUploadUrlsRequest(
+                        files = listOf(
+                            IssueUploadUrlsRequest.FileRequest(fileName = "a.jpg", contentType = "image/jpeg", contentLength = 1024, crc32c = "c1d44383"),
+                        ),
+                    ),
+                )
+            }
+                .isInstanceOf(PhotoException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(PhotoErrorCode.INVALID_CHECKSUM)
+        }
+
+        @Test
         fun `임베딩이 읽을 수 없는 형식은 발급 단계에서 막는다`() {
             // 여기서 막지 않으면 업로드는 전부 성공하고 임베딩만 조용히 실패해,
             // 사진이 영영 UPLOADED에 머무는 것으로만 드러난다.
@@ -106,7 +151,7 @@ class PhotoServiceTest @Autowired constructor(
                     fixture.photographer.id!!,
                     IssueUploadUrlsRequest(
                         files = listOf(
-                            IssueUploadUrlsRequest.FileRequest(fileName = "raw.arw", contentType = "image/x-sony-arw", contentLength = 1024),
+                            IssueUploadUrlsRequest.FileRequest(fileName = "raw.arw", contentType = "image/x-sony-arw", contentLength = 1024, crc32c = "wdRDgw=="),
                         ),
                     ),
                 )
@@ -130,6 +175,7 @@ class PhotoServiceTest @Autowired constructor(
                                 fileName = "huge.jpg",
                                 contentType = "image/jpeg",
                                 contentLength = 21L * 1024 * 1024,
+                                crc32c = "wdRDgw==",
                             ),
                         ),
                     ),
@@ -152,7 +198,7 @@ class PhotoServiceTest @Autowired constructor(
                     stranger.id!!,
                     IssueUploadUrlsRequest(
                         files = listOf(
-                            IssueUploadUrlsRequest.FileRequest(fileName = "a.jpg", contentType = "image/jpeg", contentLength = 1024),
+                            IssueUploadUrlsRequest.FileRequest(fileName = "a.jpg", contentType = "image/jpeg", contentLength = 1024, crc32c = "wdRDgw=="),
                         ),
                     ),
                 )
@@ -176,7 +222,7 @@ class PhotoServiceTest @Autowired constructor(
             val result = photoService.reissueUploadUrls(
                 fixture.galleryId,
                 fixture.photographer.id!!,
-                ReissueUploadUrlsRequest(photoIds.map { ReissueUploadUrlsRequest.PhotoRequest(photoId = it, contentLength = 2048) }),
+                ReissueUploadUrlsRequest(photoIds.map { ReissueUploadUrlsRequest.PhotoRequest(photoId = it, contentLength = 2048, crc32c = "wdRDgw==") }),
             )
 
             // then
@@ -201,7 +247,7 @@ class PhotoServiceTest @Autowired constructor(
                 photoService.reissueUploadUrls(
                     fixture.galleryId,
                     fixture.photographer.id!!,
-                    ReissueUploadUrlsRequest(photoIds.map { ReissueUploadUrlsRequest.PhotoRequest(photoId = it, contentLength = 2048) }),
+                    ReissueUploadUrlsRequest(photoIds.map { ReissueUploadUrlsRequest.PhotoRequest(photoId = it, contentLength = 2048, crc32c = "wdRDgw==") }),
                 )
             }
                 .isInstanceOf(PhotoException::class.java)
@@ -667,10 +713,18 @@ class PhotoServiceTest @Autowired constructor(
         return photo.storageKey
     }
 
+    /** presigned URL 의 `X-Amz-SignedHeaders` — 브라우저가 PUT 때 똑같이 보내야 하는 헤더 목록. */
+    private fun signedHeadersOf(uploadUrl: String): List<String> =
+        UriComponentsBuilder.fromUriString(uploadUrl).build().queryParams
+            .getFirst("X-Amz-SignedHeaders")
+            .let { checkNotNull(it) { "서명 헤더 목록이 없다: $uploadUrl" } }
+            .let { URLDecoder.decode(it, StandardCharsets.UTF_8) }
+            .split(";")
+
     /** 발급 자체가 파이프라인의 1단계라 픽스처가 아니라 서비스로 만든다. */
     private fun issueUploadUrls(count: Int): List<Long> {
         val files = (1..count).map {
-            IssueUploadUrlsRequest.FileRequest(fileName = "photo-$it.jpg", contentType = "image/jpeg", contentLength = 1024)
+            IssueUploadUrlsRequest.FileRequest(fileName = "photo-$it.jpg", contentType = "image/jpeg", contentLength = 1024, crc32c = "wdRDgw==")
         }
 
         return photoService.issueUploadUrls(
