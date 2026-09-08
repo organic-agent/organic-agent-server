@@ -94,7 +94,7 @@ class MockGalleryServiceTest @Autowired constructor(
             photos.forEachIndexed { index, photo ->
                 assertSoftly { softly ->
                     softly.assertThat(photo.displayOrder).isEqualTo(index)
-                    softly.assertThat(photo.status).isEqualTo(PhotoStatus.EMBEDDED)
+                    softly.assertThat(photo.status).isEqualTo(PhotoStatus.UPLOADED)
                     softly.assertThat(vectorOf(photo)).isEqualTo(vectorOf(templates[index]))
                     softly.assertThat(photo.metadata?.cameraMake).isEqualTo("Canon")
                     // 키는 일반 갤러리와 같은 자기 키 공간이다. 삭제·리셋 경로가 그대로 집는다.
@@ -236,7 +236,7 @@ class MockGalleryServiceTest @Autowired constructor(
             val photo = photoRepository.save(
                 templatePhoto(index, withPreview).also { photo ->
                     photo.applyMetadata(PhotoMetadata(cameraMake = "Canon", width = 1024, height = 768))
-                    photo.markEmbedded()
+                    photo.markUploaded()
                 },
             )
             photoAnalysisRepository.save(
@@ -311,7 +311,7 @@ class RecordingPhotoStorage : PhotoStorage {
         return "${galleryPrefix(galleryId)}${UUID.randomUUID()}$suffix"
     }
 
-    override fun presignUpload(key: String, contentType: String): PresignedUploadDto =
+    override fun presignUpload(key: String, contentType: String, contentLength: Long?): PresignedUploadDto =
         PresignedUploadDto(url = "https://storage.test/upload/$key", expiresAt = Instant.now().plusSeconds(1800))
 
     override fun presignView(key: String): String = "https://storage.test/view/$key"

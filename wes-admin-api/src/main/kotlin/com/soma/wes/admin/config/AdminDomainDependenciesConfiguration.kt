@@ -28,6 +28,7 @@ import com.soma.wes.global.config.WebMvcConfig
 import com.soma.wes.global.exception.GlobalExceptionHandler
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.infrastructure.S3PhotoStorage
+import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.photo.service.PhotoService
 import com.soma.wes.photo.support.PhotoViewAssembler
 import com.soma.wes.notification.service.UserNotificationPublisher
@@ -83,6 +84,7 @@ import org.springframework.context.annotation.Import
     GalleryAccessPolicy::class,
     GalleryService::class,
     PhotoService::class,
+    PhotoPipelineRepository::class,
     PhotoSelectionService::class,
     CollabSessionQueryService::class,
     CategoryService::class,

@@ -12,6 +12,7 @@ import com.soma.wes.photo.domain.PhotoMetadata
 import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.dto.request.CompleteUploadRequest
 import com.soma.wes.photo.dto.request.IssueUploadUrlsRequest
+import com.soma.wes.photo.dto.request.ReissueUploadUrlsRequest
 import com.soma.wes.photo.dto.response.PhotoPageResponse
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
@@ -71,8 +72,8 @@ class PhotoServiceTest @Autowired constructor(
                 fixture.photographer.id!!,
                 IssueUploadUrlsRequest(
                     files = listOf(
-                        IssueUploadUrlsRequest.FileRequest(fileName = "DSC_0001.JPG", contentType = "image/jpeg"),
-                        IssueUploadUrlsRequest.FileRequest(fileName = "DSC_0002.HEIC", contentType = "image/heic"),
+                        IssueUploadUrlsRequest.FileRequest(fileName = "DSC_0001.JPG", contentType = "image/jpeg", contentLength = 1024),
+                        IssueUploadUrlsRequest.FileRequest(fileName = "DSC_0002.HEIC", contentType = "image/heic", contentLength = 1024),
                     ),
                 ),
             )
@@ -105,7 +106,7 @@ class PhotoServiceTest @Autowired constructor(
                     fixture.photographer.id!!,
                     IssueUploadUrlsRequest(
                         files = listOf(
-                            IssueUploadUrlsRequest.FileRequest(fileName = "raw.arw", contentType = "image/x-sony-arw"),
+                            IssueUploadUrlsRequest.FileRequest(fileName = "raw.arw", contentType = "image/x-sony-arw", contentLength = 1024),
                         ),
                     ),
                 )
@@ -113,6 +114,30 @@ class PhotoServiceTest @Autowired constructor(
                 .isInstanceOf(PhotoException::class.java)
                 .extracting("errorCode")
                 .isEqualTo(PhotoErrorCode.UNSUPPORTED_CONTENT_TYPE)
+        }
+
+        @Test
+        fun `크기 상한을 넘는 파일은 발급 단계에서 막는다`() {
+            // 크기는 서명에 들어가므로 서버가 볼 수 있는 유일한 지점이 발급이다.
+            // when & then
+            assertThatThrownBy {
+                photoService.issueUploadUrls(
+                    fixture.galleryId,
+                    fixture.photographer.id!!,
+                    IssueUploadUrlsRequest(
+                        listOf(
+                            IssueUploadUrlsRequest.FileRequest(
+                                fileName = "huge.jpg",
+                                contentType = "image/jpeg",
+                                contentLength = 21L * 1024 * 1024,
+                            ),
+                        ),
+                    ),
+                )
+            }
+                .isInstanceOf(PhotoException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(PhotoErrorCode.INVALID_CONTENT_LENGTH)
         }
 
         @Test
@@ -127,7 +152,7 @@ class PhotoServiceTest @Autowired constructor(
                     stranger.id!!,
                     IssueUploadUrlsRequest(
                         files = listOf(
-                            IssueUploadUrlsRequest.FileRequest(fileName = "a.jpg", contentType = "image/jpeg"),
+                            IssueUploadUrlsRequest.FileRequest(fileName = "a.jpg", contentType = "image/jpeg", contentLength = 1024),
                         ),
                     ),
                 )
@@ -135,6 +160,53 @@ class PhotoServiceTest @Autowired constructor(
                 .isInstanceOf(GalleryException::class.java)
                 .extracting("errorCode")
                 .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        }
+    }
+
+    @Nested
+    @DisplayName("업로드 URL을 재발급할 때")
+    inner class ReissueUploadUrls {
+
+        @Test
+        fun `아직 올라오지 않은 사진에 새 URL을 주고 행은 새로 만들지 않는다`() {
+            // given
+            val photoIds = issueUploadUrls(count = 2)
+
+            // when
+            val result = photoService.reissueUploadUrls(
+                fixture.galleryId,
+                fixture.photographer.id!!,
+                ReissueUploadUrlsRequest(photoIds.map { ReissueUploadUrlsRequest.PhotoRequest(photoId = it, contentLength = 2048) }),
+            )
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(result.uploads.map { it.photoId }).containsExactlyInAnyOrderElementsOf(photoIds)
+                softly.assertThat(result.uploads).allSatisfy { assertThat(it.uploadUrl).contains("X-Amz-Signature") }
+                softly.assertThat(photoRepository.countByGalleryId(fixture.galleryId)).isEqualTo(2L)
+            }
+        }
+
+        @Test
+        fun `이미 올라온 사진이 섞여 있으면 전부 거절한다`() {
+            // 새 URL로 원본이 덮이는 일을 막는다.
+            // given
+            val photoIds = issueUploadUrls(count = 2)
+            photoService.completeUpload(
+                fixture.galleryId, fixture.photographer.id!!, CompleteUploadRequest(listOf(photoIds.first())),
+            )
+
+            // when & then
+            assertThatThrownBy {
+                photoService.reissueUploadUrls(
+                    fixture.galleryId,
+                    fixture.photographer.id!!,
+                    ReissueUploadUrlsRequest(photoIds.map { ReissueUploadUrlsRequest.PhotoRequest(photoId = it, contentLength = 2048) }),
+                )
+            }
+                .isInstanceOf(PhotoException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(PhotoErrorCode.PHOTO_ALREADY_UPLOADED)
         }
     }
 
@@ -170,11 +242,10 @@ class PhotoServiceTest @Autowired constructor(
         }
 
         @Test
-        fun `완료 통보가 분석 행을 함께 만든다`() {
-            // 행의 존재는 이 서버 소유, 컬럼 값은 Lambda 소유 — 사진은 빈 분석 행과 함께 태어난다.
+        fun `완료 통보는 분석 행을 만들지 않는다`() {
+            // 분석 행은 임베더가 첫 배치에서 UPSERT 로 만든다 — 진행 집계는 없는 행을 "아직"으로 읽는다.
             // given
             val photoIds = issueUploadUrls(count = 2)
-            assertThat(photoAnalysisRepository.findAllByPhotoIdIn(photoIds)).isEmpty()
 
             // when
             photoService.completeUpload(
@@ -182,18 +253,12 @@ class PhotoServiceTest @Autowired constructor(
             )
 
             // then
-            val rows = photoAnalysisRepository.findAllByPhotoIdIn(photoIds)
-            assertThat(rows).hasSize(2)
-            assertThat(rows).allSatisfy { row ->
-                assertThat(row.embedding).isNull()
-                assertThat(row.isAnalyzed).isFalse()
-            }
+            assertThat(photoAnalysisRepository.findAllByPhotoIdIn(photoIds)).isEmpty()
         }
 
         @Test
-        fun `이미 있는 분석 행은 건드리지 않는다`() {
-            // 재통보(markUploaded처럼 멱등)가 임베딩이 적힌 행을 빈 행으로 되돌리면 안 된다.
-            // given — 분석 행에 벡터가 먼저 적재된 상태
+        fun `재통보는 멱등이고 벡터가 있는 사진의 집계는 임베딩으로 센다`() {
+            // given — 벡터가 먼저 적재된 사진
             val photoIds = issueUploadUrls(count = 1)
             photoFixture.벡터_적재(
                 photoIds.first(),
@@ -204,10 +269,18 @@ class PhotoServiceTest @Autowired constructor(
             photoService.completeUpload(
                 fixture.galleryId, fixture.photographer.id!!, CompleteUploadRequest(photoIds),
             )
+            photoService.completeUpload(
+                fixture.galleryId, fixture.photographer.id!!, CompleteUploadRequest(photoIds),
+            )
 
             // then
-            val row = photoAnalysisRepository.findAllByPhotoIdIn(photoIds).single()
-            assertThat(row.embedding).isNotNull()
+            val summary = photoService.summarize(fixture.galleryId, fixture.photographer.id!!)
+            assertSoftly { softly ->
+                softly.assertThat(summary.uploaded).isEqualTo(1L)
+                softly.assertThat(summary.embedded).isEqualTo(1L)
+                softly.assertThat(summary.scored).isEqualTo(0L)
+                softly.assertThat(summary.failed).isEqualTo(0L)
+            }
         }
 
         @Test
@@ -597,7 +670,7 @@ class PhotoServiceTest @Autowired constructor(
     /** 발급 자체가 파이프라인의 1단계라 픽스처가 아니라 서비스로 만든다. */
     private fun issueUploadUrls(count: Int): List<Long> {
         val files = (1..count).map {
-            IssueUploadUrlsRequest.FileRequest(fileName = "photo-$it.jpg", contentType = "image/jpeg")
+            IssueUploadUrlsRequest.FileRequest(fileName = "photo-$it.jpg", contentType = "image/jpeg", contentLength = 1024)
         }
 
         return photoService.issueUploadUrls(

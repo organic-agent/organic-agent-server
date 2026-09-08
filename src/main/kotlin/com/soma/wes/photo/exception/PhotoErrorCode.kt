@@ -30,6 +30,12 @@ enum class PhotoErrorCode(
      */
     INVALID_SCORE(HttpStatus.BAD_REQUEST, "PHOTO_400_4", "별점은 1점에서 5점 사이여야 합니다."),
 
+    /** 발급 요청의 바이트 수가 상한을 넘거나 0 이하다. 프론트가 리사이즈를 건너뛴 신호라 발급 단계에서 막는다. */
+    INVALID_CONTENT_LENGTH(HttpStatus.BAD_REQUEST, "PHOTO_400_7", "업로드할 사진 크기가 허용 범위를 벗어났습니다."),
+
+    /** URL 재발급은 아직 올라오지 않은(PENDING) 사진에만 뜻이 있다. 이미 올라온 사진에 새 PUT URL을 주면 원본이 덮인다. */
+    PHOTO_ALREADY_UPLOADED(HttpStatus.CONFLICT, "PHOTO_409_1", "이미 업로드가 끝난 사진입니다."),
+
     // PHOTO_400_5는 페이지 번호 검증용이었으나 com.soma.wes.global.page.PageRequests가
     // 거절 대신 절삭하도록 바뀌며 사라졌다. 뒤 번호를 당기면 살아 있는 코드의 계약이
     // 바뀌므로 구멍을 그대로 둔다.

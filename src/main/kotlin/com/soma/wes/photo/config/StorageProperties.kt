@@ -40,4 +40,21 @@ data class StorageProperties(
      * 쓰여 `?size=1000` 요청 하나가 서명 URL 1000개를 만들 수 있었다.
      */
     val maxBatchSize: Int,
+
+    /**
+     * 원본 한 장의 바이트 상한. 프론트가 리사이즈를 끝낸 뒤 실제 크기로 URL을 받고, 그 값이 서명에 들어가므로
+     * 서버는 발급 때 이 상한만 보면 된다 — 초과 크기의 객체는 S3가 서명 불일치로 거절한다.
+     */
+    val maxUploadBytes: Long,
+
+    /**
+     * 완료 통보 없이 남은 PENDING 사진을 서버가 스스로 확인하는 규칙. 프론트가 죽어도 S3에 올라간 원본은
+     * 갤러리에 나타나야 한다.
+     * - [pendingFirstCheckAfter]: 발급 뒤 이 시간이 지나면 처음 HeadObject 로 확인한다.
+     * - [pendingRecheckEvery]: 아직 없으면 이 간격으로 다시 본다(방치된 행 하나가 하루에 수백 번 호출을 만들지 않게).
+     * - [pendingGiveUpAfter]: 발급 뒤 이 시간이 지나도 없으면 휴지통으로 보낸다. 탭을 다시 열어 이어 올리는 재개를 고려해 넉넉히 둔다.
+     */
+    val pendingFirstCheckAfter: Duration,
+    val pendingRecheckEvery: Duration,
+    val pendingGiveUpAfter: Duration,
 )

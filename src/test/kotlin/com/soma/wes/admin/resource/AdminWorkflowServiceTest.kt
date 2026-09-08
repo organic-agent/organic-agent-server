@@ -26,6 +26,8 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.slf4j.MDC
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.eq
 import org.mockito.kotlin.never
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
@@ -933,10 +935,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
         jdbcClient.sql(
             """
             UPDATE photos
-            SET exposure_time='1/200', f_number=2.8, iso=400,
-                technical_quality_score=91.5,
-                technical_quality_signals='{"algorithmVersion":"old"}'::JSONB,
-                quality_analyzed_at=CURRENT_TIMESTAMP
+            SET exposure_time='1/200', f_number=2.8, iso=400
             WHERE id=:photoId
             """.trimIndent(),
         ).param("photoId", photo.id).update()
@@ -945,7 +944,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse()
             replacementKey
         }
-        whenever(photoStorage.presignUpload(replacementKey, "image/jpeg")).thenAnswer {
+        whenever(photoStorage.presignUpload(eq(replacementKey), eq("image/jpeg"), anyOrNull())).thenAnswer {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse()
             presignCount++
             PresignedUploadDto(
@@ -1026,7 +1025,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
         )
 
         assertThat(completed.details["processingStatus"]).isEqualTo("PENDING")
-        assertThat(completed.details["processingJobIds"] as List<*>).hasSize(3)
+        assertThat(completed.details["processingJobIds"] as List<*>).hasSize(2)
         assertThat(replay.replayed).isTrue()
         assertThat(
             jdbcClient.sql("SELECT COUNT(*) FROM admin_photo_revisions WHERE photo_id = :photoId")
@@ -1036,7 +1035,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             jdbcClient.sql(
                 "SELECT COUNT(*) FROM admin_processing_jobs WHERE target_type = 'PHOTO' AND target_id = :photoId AND status = 'PENDING'",
             ).param("photoId", photo.id).query { rs, _ -> rs.getLong(1) }.single(),
-        ).isEqualTo(3)
+        ).isEqualTo(2)
         assertThat(
             jdbcClient.sql("SELECT storage_key FROM photos WHERE id = :photoId")
                 .param("photoId", photo.id).query { rs, _ -> rs.getString(1) }.single(),
@@ -1044,10 +1043,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
         assertThat(
             jdbcClient.sql(
                 """
-                SELECT technical_quality_score IS NULL
-                       AND technical_quality_signals IS NULL
-                       AND quality_analyzed_at IS NULL
-                       AND exposure_time IS NULL
+                SELECT exposure_time IS NULL
                        AND f_number IS NULL
                        AND iso IS NULL
                 FROM photos WHERE id=:photoId
@@ -1168,7 +1164,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             """.trimIndent(),
         ).query { rs, _ -> rs.getString("evidence") }.list().joinToString()
         assertThat(persistedAudit).doesNotContain("secret-signature", "upload.example.test")
-        verify(photoStorage, times(2)).presignUpload(replacementKey, "image/jpeg")
+        verify(photoStorage, times(2)).presignUpload(eq(replacementKey), eq("image/jpeg"), anyOrNull())
         verify(photoStorage).exists(replacementKey)
         verify(embeddingInvoker, never()).invoke(any(), any())
     }
@@ -1450,79 +1446,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `AI 초안 품질은 분석 점수를 우선 쓰고 미분석 사진은 별점과 해상도로 계산한다`() {
-        val actor = adminAccountFixture.관리자("workflow-quality-selection-owner")
-        val graph = createGraph(actor.requiredId, "quality-selection")
-        val selection = selectionForGallery(graph.gallery.id)
-        val analyzedHigh = createPhoto(actor.requiredId, graph.gallery.id, "quality-analyzed-high")
-        val analyzedLow = createPhoto(actor.requiredId, graph.gallery.id, "quality-analyzed-low")
-        val legacyHigh = createPhoto(actor.requiredId, graph.gallery.id, "quality-legacy-high")
-        listOf(analyzedHigh, analyzedLow, legacyHigh).forEach { photo ->
-            setEmbedded(photo.id, unitVector(0), 2400, 1600)
-        }
-        jdbcClient.sql(
-            """
-            UPDATE photos
-            SET technical_quality_score = CASE id
-                    WHEN :highId THEN 92.0
-                    WHEN :lowId THEN 12.0
-                    ELSE NULL
-                END,
-                technical_quality_signals = CASE
-                    WHEN id IN (:highId, :lowId) THEN '{"algorithmVersion":"technical-v1"}'::JSONB
-                    ELSE NULL
-                END,
-                quality_analyzed_at = CASE
-                    WHEN id IN (:highId, :lowId) THEN CURRENT_TIMESTAMP
-                    ELSE NULL
-                END
-            WHERE id IN (:highId, :lowId, :legacyId)
-            """.trimIndent(),
-        )
-            .param("highId", analyzedHigh.id)
-            .param("lowId", analyzedLow.id)
-            .param("legacyId", legacyHigh.id)
-            .update()
-        listOf(
-            analyzedHigh.id to 1,
-            analyzedLow.id to 5,
-            legacyHigh.id to 5,
-        ).forEach { (photoId, rating) ->
-            jdbcClient.sql(
-                """
-                INSERT INTO photo_ratings (photo_id, score, rated_by, created_at, updated_at)
-                VALUES (:photoId, :score, :ratedBy, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                """.trimIndent(),
-            )
-                .param("photoId", photoId)
-                .param("score", rating)
-                .param("ratedBy", graph.user.id)
-                .update()
-        }
-
-        val draft = execute(
-            actor.requiredId,
-            AdminResourceType.SELECTION,
-            selection.id,
-            AdminWorkflowAction.CREATE_AI_SELECTION_DRAFT,
-            0,
-            "selection-technical-quality-001",
-            mapOf("requestedCount" to 2),
-        )
-
-        assertThat(draft.details["photoIds"] as List<*>)
-            .containsExactly(legacyHigh.id, analyzedHigh.id)
-        assertThat(
-            jdbcClient.sql(
-                "SELECT input_conditions->>'algorithm' FROM admin_ai_selection_jobs WHERE selection_id = :selectionId",
-            )
-                .param("selectionId", selection.id)
-                .query { rs, _ -> rs.getString(1) }
-                .single(),
-        ).isEqualTo("DETERMINISTIC_DIVERSE_V2_TECHNICAL_QUALITY")
-    }
-
-    @Test
     fun `선택 변경 전 리비전은 기존 보정에 고정된다`() {
         val actor = adminAccountFixture.관리자("workflow-revision-link-owner")
         val graph = createGraph(actor.requiredId, "revision-link", withPhoto = true)
@@ -1644,7 +1567,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
         val secondItemId = (secondItem.details.getValue("retouchPhotoId") as Number).toLong()
 
         val issuedKeys = mutableListOf<String>()
-        whenever(photoStorage.presignUpload(any(), any())).thenAnswer { invocation ->
+        whenever(photoStorage.presignUpload(any(), any(), anyOrNull())).thenAnswer { invocation ->
             issuedKeys += invocation.getArgument<String>(0)
             PresignedUploadDto("https://upload.example/${issuedKeys.size}", Instant.now().plusSeconds(3_600))
         }
@@ -2024,7 +1947,7 @@ private fun createConceptFolder(galleryId: Long, name: String): Long = jdbcClien
 
     private fun setEmbedded(photoId: Long, embedding: String, width: Int, height: Int) {
         jdbcClient.sql(
-            "UPDATE photos SET status = 'EMBEDDED', width = :width, height = :height WHERE id = :id",
+            "UPDATE photos SET status = 'UPLOADED', width = :width, height = :height WHERE id = :id",
         )
             .param("width", width)
             .param("height", height)

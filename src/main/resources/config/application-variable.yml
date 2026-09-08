@@ -80,9 +80,15 @@ app:
     # 15분으로는 확대해 보는 도중에 만료된다. 만료된 URL은 이미지가 사라지는 것이 아니라
     # S3가 403을 돌려주는 것이라, 사용자에게는 사진이 깨진 것처럼 보인다.
     original-url-ttl: 1h
-    # 한 요청에서 발급할 수 있는 URL 개수이자 한 번에 담을 수 있는 사진 수.
+    # 한 요청에서 발급할 수 있는 URL 개수이자 한 번에 담을 수 있는 사진 수. 프론트는 리사이즈를 끝낸 배치 단위로 받는다.
     # 목록 조회의 페이지 크기 상한은 코드 상수(global/page/PageRequests.MAX_SIZE)가 따로 담당한다.
-    max-batch-size: 1000
+    max-batch-size: 500
+    # 원본 한 장의 바이트 상한(20MB). 프론트가 2048px 로 리사이즈해 올리므로 정상 사진은 1~2MB 다 — 초과는 리사이즈를 건너뛴 신호다.
+    max-upload-bytes: 20971520
+    # 완료 통보 없이 남은 PENDING 사진의 서버 확인 규칙(첫 확인 · 재확인 간격 · 포기).
+    pending-first-check-after: 1m
+    pending-recheck-every: 10m
+    pending-give-up-after: 24h
 
   embedding:
     # prod는 Parameter Store(app.embedding.function-name)가 덮어쓴다.

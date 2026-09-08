@@ -45,7 +45,11 @@ class S3PhotoStorageTest {
         uploadUrlTtl = Duration.ofMinutes(30),
         viewUrlTtl = Duration.ofMinutes(15),
         originalUrlTtl = Duration.ofHours(1),
-        maxBatchSize = 1000,
+        maxBatchSize = 500,
+        maxUploadBytes = 20L * 1024 * 1024,
+        pendingFirstCheckAfter = Duration.ofMinutes(1),
+        pendingRecheckEvery = Duration.ofMinutes(10),
+        pendingGiveUpAfter = Duration.ofHours(24),
     )
 
     @Nested

@@ -88,7 +88,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
 
         jdbcClient.sql("UPDATE photos SET deleted_at=CURRENT_TIMESTAMP WHERE id=:id")
             .param("id", graph.photos[1].id).update()
-        val deletedTargetJob = processingJob("QUALITY_ANALYSIS", AdminResourceType.PHOTO, graph.photos[1].id)
+        val deletedTargetJob = processingJob("EMBEDDING", AdminResourceType.PHOTO, graph.photos[1].id)
         executor.runOnce()
         assertThat(processingState(deletedTargetJob)).isEqualTo(State("CANCELED", 0, "TARGET_DELETED"))
         verify(embeddingInvoker, times(2)).invoke(any<ExactPhotoProcessingRequest>())
@@ -98,7 +98,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
     fun `결과가 없는 stale DISPATCHED는 timeout 실패와 감사를 원자 기록하고 즉시 재호출하지 않는다`() {
         val graph = graph("executor-dispatched-timeout", photoCount = 1)
         val photo = graph.photos.single()
-        val jobId = processingJob("QUALITY_ANALYSIS", AdminResourceType.PHOTO, photo.id)
+        val jobId = processingJob("EMBEDDING", AdminResourceType.PHOTO, photo.id)
         val shortTimeoutExecutor = AdminWorkflowExecutor(
             repository = workflowExecutionRepository,
             properties = AdminWorkflowExecutorProperties(
@@ -468,7 +468,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
         revisionId: Long? = null,
     ): Long {
         val isExactPhotoJob = targetType == AdminResourceType.PHOTO &&
-            jobType in setOf("DERIVATIVE", "EMBEDDING", "QUALITY_ANALYSIS")
+            jobType in setOf("DERIVATIVE", "EMBEDDING")
         val photo = if (isExactPhotoJob) {
             jdbcClient.sql(
                 """

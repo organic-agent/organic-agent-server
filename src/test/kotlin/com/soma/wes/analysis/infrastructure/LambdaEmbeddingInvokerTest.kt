@@ -31,7 +31,7 @@ class LambdaEmbeddingInvokerTest {
         val request = ExactPhotoProcessingRequest(
             jobId = 11,
             attemptCount = 2,
-            jobType = "QUALITY_ANALYSIS",
+            jobType = "EMBEDDING",
             photoId = 31,
             galleryId = 41,
             storageKey = "galleries/41/revision-51.jpg",
@@ -47,7 +47,7 @@ class LambdaEmbeddingInvokerTest {
         val payload = objectMapper.readTree(invocation.firstValue.payload().asUtf8String())
         assertThat(payload["jobId"].asLong()).isEqualTo(11)
         assertThat(payload["attemptCount"].asInt()).isEqualTo(2)
-        assertThat(payload["jobType"].asText()).isEqualTo("QUALITY_ANALYSIS")
+        assertThat(payload["jobType"].asText()).isEqualTo("EMBEDDING")
         assertThat(payload["photoId"].asLong()).isEqualTo(31)
         assertThat(payload["galleryId"].asLong()).isEqualTo(41)
         assertThat(payload["storageKey"].asText()).isEqualTo("galleries/41/revision-51.jpg")

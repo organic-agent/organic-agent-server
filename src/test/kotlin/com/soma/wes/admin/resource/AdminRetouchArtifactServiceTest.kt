@@ -22,6 +22,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
@@ -71,7 +72,7 @@ class AdminRetouchArtifactServiceTest @Autowired constructor(
 
         val signedKeys = mutableListOf<String>()
         var signatureSequence = 0
-        whenever(photoStorage.presignUpload(any(), any())).thenAnswer { invocation ->
+        whenever(photoStorage.presignUpload(any(), any(), anyOrNull())).thenAnswer { invocation ->
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse()
             val storageKey = invocation.getArgument<String>(0)
             signedKeys += storageKey
@@ -388,7 +389,7 @@ class AdminRetouchArtifactServiceTest @Autowired constructor(
         )
         val itemId = number(createdItem.details, "retouchPhotoId")
 
-        whenever(photoStorage.presignUpload(any(), any())).thenReturn(
+        whenever(photoStorage.presignUpload(any(), any(), anyOrNull())).thenReturn(
             PresignedUploadDto(
                 "https://upload.example/annotation-lifecycle?signature=private",
                 Instant.now().plusSeconds(3_600),

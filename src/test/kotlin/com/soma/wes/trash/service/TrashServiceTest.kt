@@ -471,7 +471,7 @@ class TrashServiceTest @Autowired constructor(
      */
     private fun uploadPhotos(count: Int): List<Long> {
         val files = (1..count).map {
-            IssueUploadUrlsRequest.FileRequest(fileName = "photo-${TestSequence.next()}.jpg", contentType = "image/jpeg")
+            IssueUploadUrlsRequest.FileRequest(fileName = "photo-${TestSequence.next()}.jpg", contentType = "image/jpeg", contentLength = 1024)
         }
         val issued = photoService.issueUploadUrls(
             fixture.galleryId, fixture.photographer.id!!, IssueUploadUrlsRequest(files),

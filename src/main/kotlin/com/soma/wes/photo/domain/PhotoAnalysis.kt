@@ -19,12 +19,13 @@ import org.hibernate.type.SqlTypes
  * 임베딩·태그·점수·클러스터는 모델이 바뀔 때마다 갤러리 단위로 통째 다시 적는다. 목록 조회가
  * 768차원 벡터를 읽지 않게 하는 효과도 같다(`PhotoRating`과 같은 이유).
  *
- * 행 자체는 업로드 확정(PhotoService.completeUpload)이 빈 값으로 만든다 — 행의 존재·생명주기는
- * 이 서버 소유, 컬럼 값은 Lambda 소유(잡 테이블과 같은 규약). 값을 쓰는 주체는 둘이다.
- * 임베더 Lambda가 [embedding]·[embeddingModel]을 `INSERT … ON CONFLICT`로
- * 채우고, AI 분석 배치(full 잡)가 그룹·피사체·점수·클러스터를 채운다. 이 서버는 두 값 모두 정상
- * 경로에서는 쓰지 않는다 — [embeddedBy]는 Mock 갤러리 복제와 테스트가 쓰는 우회로다. 분석 컬럼은
- * 읽기 전용이라 `val`이고, `face_boxes`(jsonb)는 이 서버가 읽지 않아 매핑하지 않았다.
+ * 이 행 하나가 사진의 분석 진행을 말한다 — [embedding](임베더) → [clipEmbedding]·[subScores](score) →
+ * [technicalPct]·[embedGroupId](categorize), 실패는 [error]. 사진 쪽 상태([Photo.status])는 "S3에 있나"만 답한다.
+ *
+ * 행은 임베더가 첫 배치에서 `INSERT … ON CONFLICT`로 만든다 — 이 서버는 미리 빈 행을 만들지 않고, 진행을 셀 때는
+ * LEFT JOIN으로 없는 행을 "아직"으로 읽는다. 행을 지우는 것(재분석 리셋)은 이 서버의 일이고, 컬럼 값은 Lambda·GPU 워커
+ * 소유라 읽기 전용 `val`이다. [embeddedBy]는 Mock 갤러리 복제와 테스트가 쓰는 우회로다. `face_boxes`(jsonb)는 이 서버가
+ * 읽지 않아 매핑하지 않았다.
  */
 @Entity
 @Table(name = "photo_analysis")
@@ -90,6 +91,13 @@ class PhotoAnalysis(
     val analyzedAt: ZonedDateTime? = null
 
     /**
+     * 이 사진의 분석이 결정적으로 실패한 이유. 임베더(디코드 불가)·score(미리보기 없음)·이 서버(재시도 상한)가 쓰고,
+     * 채워진 사진은 배정·집기·기대 장수에서 빠진다. 사진 상태에 실패 값을 두지 않는 대신 여기 하나로 드러낸다.
+     */
+    @Column(name = "error")
+    val error: String? = null
+
+    /**
      * 분석 배치의 세부 점수(`sharpness`·`sharpness_pct`·`highlight_clip`·`shadow_clip`·`technical_score`·
      * `aesthetic_score` …). 비교샷 판정과 추천 이유의 재료다. 행을 만들 때는 빈 객체다(DB 기본값과 같다).
      */
@@ -107,6 +115,9 @@ class PhotoAnalysis(
      */
     val isAnalyzed: Boolean
         get() = modelVersion != null && technicalPct != null && aestheticPct != null
+
+    val isFailed: Boolean
+        get() = error != null
 
     companion object {
 

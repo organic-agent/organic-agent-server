@@ -54,7 +54,7 @@ class AdminWorkflowExecutor(
             return
         }
         when (job.jobType) {
-            "DERIVATIVE", "EMBEDDING", "QUALITY_ANALYSIS" -> executeExactPhotoProcessing(job)
+            "DERIVATIVE", "EMBEDDING" -> executeExactPhotoProcessing(job)
             else -> failBeforeSend(job, "UNKNOWN_JOB_TYPE")
         }
     }
