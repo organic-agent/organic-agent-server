@@ -71,13 +71,14 @@ class Photo(
     /**
      * 임베더에게 이 사진을 보낸 시각. 스윕이 UPLOADED·벡터 없음·null 인 사진을 배치로 집을 때 찍고,
      * 벡터가 오지 않은 채 오래되면 null로 되돌려 다시 보낸다. 임베더는 일시 실패한 장만 null로 되돌린다.
-     * 값을 쓰는 곳은 배치 SQL([com.soma.wes.photo.repository.PhotoPipelineRepository])이라 엔티티에는 읽기만 있다.
+     * 값을 쓰는 곳은 배치 SQL([com.soma.wes.photo.repository.PhotoPipelineRepository])이라 엔티티에는 읽기만 있다 —
+     * JPA가 UPDATE에 이 컬럼을 넣으면 오래된 스냅샷이 스윕의 배정을 덮으므로 매핑에서 쓰기를 막는다.
      */
-    @Column(name = "dispatched_at")
+    @Column(name = "dispatched_at", insertable = false, updatable = false)
     val dispatchedAt: ZonedDateTime? = null
 
     /** 임베더에게 보낸 횟수. 상한에 닿으면 [PhotoAnalysis.error]에 실패로 남기고 더 보내지 않는다. 배치 SQL이 올린다. */
-    @Column(name = "embed_attempts", nullable = false)
+    @Column(name = "embed_attempts", nullable = false, insertable = false, updatable = false)
     val embedAttempts: Int = 0
 
     /**

@@ -34,17 +34,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   발급하고 브라우저가 직접 올리고 받는다. 대용량 원본이 서버 메모리·대역폭을 먹지 않게 하려는
   원칙이지, 서버가 S3를 읽지 말라는 뜻이 아니다 — AI 호출(Bedrock 이미지 블록 등)을 위해
   미리보기(`previews/`) 몇 장을 읽는 것은 무방하다. 임베딩·프리뷰·EXIF·분석 점수처럼 모델이
-  사진을 봐야 하는 일은 갤러리당 한 번(`InvocationType.EVENT`) 호출되는 Lambda의 일이다 —
+  사진을 봐야 하는 일은 사진 50장 배치 단위로(`InvocationType.EVENT`) 호출되는 Lambda·GPU 워커의 일이다 —
   사진당 호출은 없다.
 - 객체 키는 `galleries/{galleryId}/…`이고 미리보기는 `previews/` + 원본 키다. 환경은 키가 아니라
   버킷으로 갈린다 — prod는 운영 버킷, local 프로필은 인프라 `module.storage_dev`의 dev 버킷
   (`/wes/local/app.storage.bucket`). 키 조립은 `PhotoStorage.galleryPrefix`를 지난다.
-- Lambda는 셋이고 순서가 고정된 하나의 흐름이다 — `embedder`(미리보기·DINOv3 벡터·EXIF) → `score`(CLIP·미학·기술
-  점수·피사체) → `categorize`(백분위·연사·그룹 + Bedrock 이름·배정). 코드는 sibling repo `../../organic-agent-ai`의
-  최상위 디렉토리 하나 = 함수 하나(AI #35). 이 repo는 트리거·순서·상태·재호출을 `analysis` 도메인이 소유하고
-  (`ai_analysis_jobs` 상태 기계, `StageInvoker`, 30초 스윕), 스키마를 소유한다. `category`(폴더 세트 실체화)와
-  `recommendation`(추천·비교샷 + LLM)은 완성된 `photo_analysis`·배정 행만 읽는다. 설계·호환 규칙은
-  `docs/plans/analysis-domain.md`, 컬럼 소유는 `.claude/rules/migration.md`.
+- AI 실행기는 셋이다 — `embedder`(미리보기·DINOv3 벡터·EXIF, Lambda) → `score`(CLIP·미학·기술 점수·피사체, GPU 워커 또는
+  Lambda 폴백) → `categorize`(백분위·연사·그룹 + Bedrock 이름·배정, Lambda). 코드는 sibling repo `../../organic-agent-ai`의
+  최상위 디렉토리 하나 = 함수 하나(AI #35). **사진 한 장의 진행은 `photo_analysis` 행 하나가 말한다**(파이프라인 v2):
+  `analysis` 도메인의 5초 스윕이 업로드된 사진을 50장씩 임베더에 배정하고(`EmbedDispatcher`, `{galleryId, photoIds}`), 잡
+  (`ai_analysis_jobs`: ANALYZING → CATEGORIZING → DONE | FAILED)은 점수가 다 차기를 관측해 categorize를 한 번 부른 뒤
+  AI 폴더를 자동 물질화하고 알림을 보낸다(`AnalysisOrchestrator`, `StageInvoker`). Lambda는 잡 상태를 쓰지 않는다(categorize 실패
+  시 `error` 한 컬럼 예외). 재분석 = `photo_analysis` 삭제(관리자 재처리). `category`(폴더 세트 실체화)와
+  `recommendation`(추천·비교샷 + LLM)은 완성된 `photo_analysis`·배정 행만 읽는다. 설계는 `docs/plans/pipeline-v2-wes.md`
+  (이전 설계 `docs/plans/analysis-domain.md`는 §12부터 대체됨), 컬럼 소유는 `.claude/rules/migration.md`.
 - 인프라는 sibling repo `../../organic-agent-infra` (Terraform: VPC/ALB/EC2/RDS, 사진 S3 버킷
   + 로컬 개발용 dev 버킷, 임베딩 Lambda). `EMBEDDING_DIMENSION`은 이 repo 두 곳과 인프라 repo까지 세 곳이 일치해야
   한다 (`.claude/rules/migration.md`).
@@ -58,12 +61,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     계정은 기본 보존(토큰 유지). TRUNCATE 목록 규칙은 `.claude/rules/migration.md` 참조.
   - `delete-accounts.sh [local|remote] --email a@x.com [--email …] [--with-s3]` — 특정 OAuth 계정과
     그 계정에 딸린 워크스페이스·갤러리·사진·S3 객체만 삭제. 다른 사용자·관리자 계정은 남긴다.
-  - `lambda/{embedder,score,categorize}.sh --gallery-id G [--job-id J] [--force]` — **로컬 Lambda 대역.** 운영 Lambda 함수
-    하나 = 스크립트 하나(AI repo 최상위 모듈과 같은 이름), 인자는 Lambda 페이로드 키 그대로. 로컬 wes(local 프로필)의
-    `analysis` 도메인이 "AI 분석" 버튼에서 단계마다 이것을 띄운다(`LocalProcessStageInvoker`, 운영의
-    EVENT 자리). score는 `--job-id`가 있으면 AI repo 계약대로 categorize.sh를 이어 부른다. 접속 정보는 `lib/ai-env.sh`.
-  - `local-ai.sh <galleryId> [--force] [--only-embed]` — 위 셋을 잡 없이 순서대로 도는 지름길(배정은 저장되지 않음).
-    로컬 pg + dev 버킷(`/wes/local/app.storage.bucket`)을 쓴다.
+  - `lambda/{embedder,score}.sh --gallery-id G --photo-ids 1,2,3` · `lambda/categorize.sh --gallery-id G --job-id J` — **로컬 Lambda
+    대역.** 운영 Lambda 함수 하나 = 스크립트 하나(AI repo 최상위 모듈과 같은 이름), 인자는 Lambda 페이로드 키 그대로. 로컬 wes
+    (local 프로필)의 `analysis` 스윕이 배정·categorize 때 이것을 띄운다(`LocalProcessStageInvoker`, 운영의 EVENT 자리).
+    접속 정보는 `lib/ai-env.sh`.
+  - `local-ai.sh <galleryId> [--skip-embed] [--skip-analyze]` — 위 셋을 잡 없이 갤러리 전체로 순서대로 도는 지름길(배정·폴더는
+    저장되지 않음). 로컬 pg + dev 버킷(`/wes/local/app.storage.bucket`)을 쓴다.
   - AI venv는 `scripts/lib/ai-venv.sh`가 `<모듈>/.venv`에 만든다(score venv에 categorize 포함).
 
 ## 규칙 참조

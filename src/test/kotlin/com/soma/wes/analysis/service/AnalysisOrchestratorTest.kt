@@ -1,22 +1,21 @@
 package com.soma.wes.analysis.service
 
-import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.domain.AnalysisJob
-import com.soma.wes.analysis.domain.AnalysisMode
-import com.soma.wes.analysis.domain.AnalysisStage
 import com.soma.wes.analysis.domain.AnalysisStatus
 import com.soma.wes.analysis.repository.AnalysisJobRepository
+import com.soma.wes.category.repository.ConceptFolderRepository
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
 import com.soma.wes.notification.domain.UserNotificationType
 import com.soma.wes.notification.service.UserNotificationService
 import com.soma.wes.photo.domain.PhotoAnalysis
 import com.soma.wes.photo.fixture.PhotoFixture
-import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.recommendation.fixture.RecommendationFixture
 import com.soma.wes.support.FakeStageInvoker
 import com.soma.wes.support.IntegrationTest
-import java.time.Clock
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.BeforeEach
@@ -25,26 +24,22 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.jdbc.core.JdbcTemplate
-import org.springframework.transaction.support.TransactionTemplate
 
 /**
- * 상태 기계 검증. Lambda는 [FakeStageInvoker]가 호출을 기록만 하고, Lambda가 DB에 쓰는 일(claim·DONE·status)은
- * jdbc로 직접 흉내 낸다. 시간은 컬럼을 과거로 돌려 재현한다.
+ * 상태 기계 검증. Lambda는 [FakeStageInvoker]가 호출을 기록만 하고, Lambda·GPU 워커가 DB에 쓰는 일(벡터·점수·백분위·배정·error)은
+ * 픽스처와 jdbc로 직접 흉내 낸다. 시간은 컬럼을 과거로 돌려 재현한다.
  */
 @IntegrationTest
 class AnalysisOrchestratorTest @Autowired constructor(
     private val orchestrator: AnalysisOrchestrator,
     private val analysisService: AnalysisService,
     private val analysisJobRepository: AnalysisJobRepository,
-    private val photoRepository: PhotoRepository,
+    private val conceptFolderRepository: ConceptFolderRepository,
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
     private val recommendationFixture: RecommendationFixture,
     private val stageInvoker: FakeStageInvoker,
-    private val transactionTemplate: TransactionTemplate,
-    private val clock: Clock,
     private val jdbcTemplate: JdbcTemplate,
-    private val completionNotifications: AnalysisCompletionNotificationService,
     private val notifications: UserNotificationService,
 ) {
 
@@ -56,62 +51,105 @@ class AnalysisOrchestratorTest @Autowired constructor(
         fixture = galleryFixture.멤버와_열린_갤러리()
     }
 
-    private fun requestFull(force: Boolean = false): Long =
-        analysisService.request(fixture.galleryId, fixture.photographer.id!!, AnalysisMode.FULL, force).jobId
+    private fun request(): Long = analysisService.request(fixture.galleryId, fixture.photographer.id!!).jobId
 
     private fun job(jobId: Long): AnalysisJob = analysisJobRepository.findById(jobId).orElseThrow()
 
-    private fun stages(jobId: Long): List<AnalysisStage> = stageInvoker.callsOf(jobId).map { it.stage }
+    /** 벡터·점수까지 있는 사진 — 잡이 바로 CATEGORIZING 으로 갈 수 있는 상태. */
+    private fun scoredPhotos(count: Int): List<Long> =
+        photoFixture.임베딩된_사진(fixture.galleryId, count).onEach { photoFixture.점수_적재(it) }
 
-    private fun assertCompletionNotifiedOnce(jobId: Long) {
-        assertThat(job(jobId).completionNotifiedAt).isNotNull()
-        for (user in listOf(fixture.photographer, fixture.member)) {
-            assertThat(notifications.list(user.requiredId, null, null)
-                .filter { it.type == UserNotificationType.ANALYSIS_COMPLETED }).hasSize(1)
-        }
+    /** categorize Lambda 역할 — 백분위·그룹을 채우고 잡의 배정을 남긴다. */
+    private fun categorizeByLambda(jobId: Long, photos: List<Long>, embedGroupId: Int = 1) {
+        photos.forEach { photoFixture.백분위_적재(it, embedGroupId) }
+        recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = embedGroupId, parentName = "야외 자연", conceptName = "해변")
     }
 
+    private fun completionNotificationsOf(userId: Long): Int =
+        notifications.list(userId, null, null).count { it.type == UserNotificationType.ANALYSIS_COMPLETED }
+
     @Nested
-    @DisplayName("EMBED 단계를 관측으로 열고 닫을 때")
-    inner class Embed {
+    @DisplayName("ANALYZING 에서")
+    inner class Analyzing {
 
         @Test
-        fun `요청은 EMBED를 한 번 보내고 벡터가 다 차면 다음 단계로 넘어간다`() {
+        fun `올라온 사진은 잡과 무관하게 배정되고 점수가 다 차면 CATEGORIZING 으로 넘어간다`() {
             // given — 업로드만 된 사진 둘
             val photos = photoFixture.업로드된_사진(fixture.galleryId, count = 2)
-            val jobId = requestFull()
-            assertThat(job(jobId).stageStatus).isEqualTo(AnalysisStatus.RUNNING)
+            val jobId = request()
 
-            // when — 아직 한 장도 안 됐다: 기다린다
+            // when — 첫 스윕: 임베더에 배정, 잡은 기다린다
             orchestrator.sweep()
-            assertThat(stages(jobId)).containsExactly(AnalysisStage.EMBED)
+            assertThat(stageInvoker.embedCalls.single().photoIds).containsExactlyElementsOf(photos)
+            assertThat(job(jobId).status).isEqualTo(AnalysisStatus.ANALYZING)
 
-            // 임베더가 한 장을 적재하면 진행으로 친다
-            photoFixture.벡터_적재(photos[0], FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also { it[0] = 1f })
+            // 두 번째 스윕: 이미 배정된 사진은 다시 보내지 않는다
             orchestrator.sweep()
-            assertThat(job(jobId).observedProgress).isEqualTo(1)
-            assertThat(stages(jobId)).containsExactly(AnalysisStage.EMBED)
+            assertThat(stageInvoker.embedCalls).hasSize(1)
 
-            // 전부 적재되면 EMBED가 닫히고 SCORE가 나간다
-            photoFixture.벡터_적재(photos[1], FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also { it[1] = 1f })
+            // 임베더 역할: 벡터 적재 → 아직 점수가 없으니 기다린다(GPU 가 없어 score 폴백이 나간다)
+            photos.forEach { photoFixture.벡터_적재(it, FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also { v -> v[0] = 1f }) }
+            orchestrator.sweep()
+            assertThat(job(jobId).status).isEqualTo(AnalysisStatus.ANALYZING)
+            assertThat(stageInvoker.scoreCalls.single().photoIds).containsExactlyElementsOf(photos)
+
+            // score 역할: 점수 적재 → CATEGORIZING
+            photos.forEach { photoFixture.점수_적재(it) }
             orchestrator.sweep()
 
             // then
             val job = job(jobId)
             assertSoftly { softly ->
-                softly.assertThat(stages(jobId)).containsExactly(AnalysisStage.EMBED, AnalysisStage.SCORE)
-                softly.assertThat(job.stage).isEqualTo(AnalysisStage.SCORE)
-                softly.assertThat(job.stageStatus).isEqualTo(AnalysisStatus.PENDING)
-                softly.assertThat(job.stageAttempts).isEqualTo(1)
-                softly.assertThat(job.status).isEqualTo(AnalysisStatus.RUNNING)
+                softly.assertThat(job.status).isEqualTo(AnalysisStatus.CATEGORIZING)
+                softly.assertThat(job.attempts).isEqualTo(1)
+                softly.assertThat(job.dispatchedAt).isNotNull()
+                softly.assertThat(stageInvoker.categorizeCalls.map { it.jobId }).containsExactly(jobId)
+                softly.assertThat(stageInvoker.categorizeCalls.single().galleryId).isEqualTo(fixture.galleryId)
             }
         }
 
         @Test
-        fun `이미 임베딩된 갤러리는 다음 스윕에서 EMBED를 닫고 바로 SCORE로 넘어간다`() {
+        fun `아직 올라오는 중인 PENDING 사진이 있으면 점수가 다 찼어도 기다린다`() {
+            // given — 점수까지 있는 사진 하나 + 방금 발급된 PENDING 하나
+            scoredPhotos(1)
+            val pending = photoFixture.대기중_사진(fixture.galleryId, count = 1).single()
+            val jobId = request()
+
+            // when — 살아 있는 PENDING 은 곧 UPLOADED 가 될 사진이다
+            orchestrator.sweep()
+            assertThat(job(jobId).status).isEqualTo(AnalysisStatus.ANALYZING)
+            assertThat(stageInvoker.categorizeCalls).isEmpty()
+
+            // 발급이 오래되면 "올라오는 중"이 아니다 — 보정 스윕이 처리할 행이고 기대 장수에도 들지 않는다
+            jdbcTemplate.update("UPDATE photos SET created_at = now() - interval '3 minutes' WHERE id = ?", pending)
+            orchestrator.sweep()
+
+            // then
+            assertThat(job(jobId).status).isEqualTo(AnalysisStatus.CATEGORIZING)
+            assertThat(stageInvoker.categorizeCalls).hasSize(1)
+        }
+
+        @Test
+        fun `실패로 표시된 사진은 기대 장수에서 빠져 나머지가 다 차면 넘어간다`() {
             // given
-            photoFixture.임베딩된_사진(fixture.galleryId, count = 2)
-            val jobId = requestFull()
+            scoredPhotos(2)
+            val failed = photoFixture.업로드된_사진(fixture.galleryId, count = 1).single()
+            photoFixture.분석_실패(failed)
+
+            // when — 요청 직후 한 걸음에서 이미 다 찼다
+            val jobId = request()
+
+            // then
+            assertThat(job(jobId).status).isEqualTo(AnalysisStatus.CATEGORIZING)
+            assertThat(stageInvoker.categorizeCalls.map { it.jobId }).containsExactly(jobId)
+        }
+
+        @Test
+        fun `대상 사진이 전부 사라지면 FAILED 로 닫는다`() {
+            // given
+            val photo = photoFixture.업로드된_사진(fixture.galleryId, count = 1).single()
+            val jobId = request()
+            photoFixture.분석_실패(photo, error = "EMBED_ATTEMPTS_EXCEEDED")
 
             // when
             orchestrator.sweep()
@@ -119,284 +157,195 @@ class AnalysisOrchestratorTest @Autowired constructor(
             // then
             val job = job(jobId)
             assertSoftly { softly ->
-                softly.assertThat(job.status).isEqualTo(AnalysisStatus.RUNNING)
-                softly.assertThat(job.stage).isEqualTo(AnalysisStage.SCORE)
-                softly.assertThat(job.stageStatus).isEqualTo(AnalysisStatus.PENDING)
-                softly.assertThat(stages(jobId)).containsExactly(AnalysisStage.EMBED, AnalysisStage.SCORE)
-            }
-        }
-
-        @Test
-        fun `force는 보낸 뒤 갱신된 벡터만 진행으로 센다`() {
-            // given — 벡터가 이미 있어도 force면 다시 써야 끝이다
-            val photos = photoFixture.임베딩된_사진(fixture.galleryId, count = 2)
-            val jobId = requestFull(force = true)
-            jdbcTemplate.update("UPDATE photo_analysis SET updated_at = now() - interval '1 hour' WHERE photo_id IN (?, ?)", photos[0], photos[1])
-
-            // when — 아무것도 갱신되지 않았다: EMBED에 머문다
-            orchestrator.sweep()
-            assertThat(job(jobId).stage).isEqualTo(AnalysisStage.EMBED)
-            assertThat(stages(jobId)).containsExactly(AnalysisStage.EMBED)
-
-            // 임베더가 다시 적재한 것처럼 갱신 시각을 올린다
-            jdbcTemplate.update(
-                "UPDATE photo_analysis SET updated_at = now() + interval '1 minute' WHERE photo_id IN (?, ?)",
-                photos[0],
-                photos[1],
-            )
-            orchestrator.sweep()
-
-            // then — EMBED가 닫히고 SCORE로 (force는 score에도 전달된다)
-            assertThat(job(jobId).stage).isEqualTo(AnalysisStage.SCORE)
-            assertThat(stageInvoker.callsOf(jobId).last().force).isTrue()
-        }
-
-        @Test
-        fun `진행이 멈추면 다시 보내고 상한을 넘기면 실패로 닫는다`() {
-            // given
-            photoFixture.업로드된_사진(fixture.galleryId, count = 1)
-            val jobId = requestFull()
-
-            // when — 하트비트를 정체 판정보다 오래전으로
-            stall(jobId)
-            orchestrator.sweep()
-
-            // then — 다시 보냈다
-            assertThat(stages(jobId)).containsExactly(AnalysisStage.EMBED, AnalysisStage.EMBED)
-            assertThat(job(jobId).stageAttempts).isEqualTo(2)
-
-            // 상한까지 정체가 반복되면 포기한다
-            stall(jobId)
-            orchestrator.sweep()
-            stall(jobId)
-            orchestrator.sweep()
-            val job = job(jobId)
-            assertSoftly { softly ->
-                softly.assertThat(stages(jobId)).hasSize(3)
                 softly.assertThat(job.status).isEqualTo(AnalysisStatus.FAILED)
-                softly.assertThat(job.error).contains("EMBED").contains("3회")
+                softly.assertThat(job.error).contains("분석할 사진이 없습니다")
+                softly.assertThat(job.finishedAt).isNotNull()
             }
         }
 
-        private fun stall(jobId: Long) {
-            jdbcTemplate.update("UPDATE ai_analysis_jobs SET heartbeat_at = now() - interval '30 minutes' WHERE id = ?", jobId)
-        }
-    }
-
-    @Nested
-    @DisplayName("옛 계약(status로 시작을 알리는 Lambda)일 때")
-    inner class LegacyLambda {
-
         @Test
-        fun `SCORE를 한 번 보낸 뒤에는 다시 보내지 않고 Lambda가 닫은 DONE을 그대로 받아들인다`() {
-            // given — 임베딩이 끝난 갤러리라 EMBED는 첫 스윕에서 닫힌다
-            photoFixture.임베딩된_사진(fixture.galleryId, count = 1)
-            val jobId = requestFull()
-            orchestrator.sweep()
-            assertThat(stages(jobId)).containsExactly(AnalysisStage.EMBED, AnalysisStage.SCORE)
-            assertThat(job(jobId).status).isEqualTo(AnalysisStatus.RUNNING)
+        fun `GPU 가 없으면 벡터만 있는 사진을 score 폴백으로 보내되 같은 갤러리는 간격 안에 다시 보내지 않는다`() {
+            // given — 벡터는 있고 점수는 없는 사진 셋
+            val photos = photoFixture.임베딩된_사진(fixture.galleryId, count = 3)
 
-            // when — 옛 Lambda는 집힘을 알리지 않는다. 재시도 창이 지나도 다시 보내면 같은 갤러리를 두 번 돌리므로 기다린다
-            jdbcTemplate.update("UPDATE ai_analysis_jobs SET dispatched_at = now() - interval '1 hour' WHERE id = ?", jobId)
+            // when — 요청 직후 한 걸음에서 폴백이 나간다
+            request()
             orchestrator.sweep()
-            assertThat(stages(jobId)).hasSize(2)
-
-            // categorize가 체인 끝에서 DONE을 찍는다 — 종료 상태는 그대로다
-            jdbcTemplate.update("UPDATE ai_analysis_jobs SET status = 'DONE', finished_at = now() WHERE id = ?", jobId)
             orchestrator.sweep()
 
             // then
-            assertThat(job(jobId).status).isEqualTo(AnalysisStatus.DONE)
-            assertThat(stages(jobId)).hasSize(2)
-            orchestrator.sweep()
-            assertCompletionNotifiedOnce(jobId)
+            assertThat(stageInvoker.scoreCalls).hasSize(1)
+            assertThat(stageInvoker.scoreCalls.single().photoIds).containsExactlyElementsOf(photos)
         }
 
         @Test
-        fun `NAMING은 CATEGORIZE 하나만 보낸다`() {
+        fun `두 스윕이 같은 잡을 동시에 밟아도 categorize 는 한 번만 나간다`() {
             // given
-            photoFixture.임베딩된_사진(fixture.galleryId, count = 1)
-            recommendationFixture.분석_잡(fixture.galleryId, mode = "FULL", status = "DONE")
-
-            // when
-            val jobId = analysisService.request(fixture.galleryId, fixture.photographer.id!!, AnalysisMode.NAMING).jobId
-            orchestrator.sweep()
-
-            // then
-            assertThat(stages(jobId)).containsExactly(AnalysisStage.CATEGORIZE)
-        }
-
-        @Test
-        fun `호출이 실패하면 잡을 닫지 않고 다음 스윕이 바로 다시 보낸다`() {
-            // given
-            photoFixture.업로드된_사진(fixture.galleryId, count = 1)
+            scoredPhotos(2)
+            // 요청의 afterCommit 걸음이 먼저 넘기지 않도록 실행기를 한 번 실패시켜 잡을 ANALYZING 에 남겨 둔다
             stageInvoker.failNext = true
-            val jobId = requestFull()
-            assertThat(stages(jobId)).isEmpty()
-            assertThat(job(jobId).stageStatus).isEqualTo(AnalysisStatus.PENDING)
+            val jobId = request()
+            jdbcTemplate.update("UPDATE ai_analysis_jobs SET status = 'ANALYZING', attempts = 0, dispatched_at = NULL WHERE id = ?", jobId)
 
-            // when
-            orchestrator.sweep()
-
-            // then
-            val job = job(jobId)
-            assertSoftly { softly ->
-                softly.assertThat(stages(jobId)).containsExactly(AnalysisStage.EMBED)
-                softly.assertThat(job.status).isEqualTo(AnalysisStatus.RUNNING)
-                softly.assertThat(job.stageAttempts).isEqualTo(2)
+            // when — 두 스레드가 같은 걸음을 동시에
+            val barrier = CyclicBarrier(2)
+            val pool = Executors.newFixedThreadPool(2)
+            try {
+                val steps = (1..2).map { pool.submit { barrier.await(5, TimeUnit.SECONDS); orchestrator.dispatch(jobId) } }
+                steps.forEach { it.get(30, TimeUnit.SECONDS) }
+            } finally {
+                pool.shutdownNow()
             }
+
+            // then — CAS: 진 쪽은 EVENT 를 보내지 않는다
+            assertThat(job(jobId).status).isEqualTo(AnalysisStatus.CATEGORIZING)
+            assertThat(stageInvoker.categorizeCalls).hasSize(1)
+            assertThat(job(jobId).attempts).isEqualTo(1)
         }
-
-        @Test
-        fun `같은 잡을 두 번 dispatch해도 한 번만 보낸다`() {
-            // given
-            photoFixture.업로드된_사진(fixture.galleryId, count = 1)
-            val jobId = requestFull()
-
-            // when
-            orchestrator.dispatch(jobId)
-            orchestrator.dispatch(jobId)
-
-            // then
-            assertThat(stages(jobId)).containsExactly(AnalysisStage.EMBED)
-        }
-
-        @Test
-        fun `단계 없이 만들어진 옛 잡은 손대지 않는다`() {
-            // given — V4 이전 행: stage NULL
-            val jobId = recommendationFixture.분석_잡(fixture.galleryId, mode = "FULL", status = "PENDING")
-
-            // when
-            orchestrator.sweep()
-
-            // then
-            assertThat(stageInvoker.calls).isEmpty()
-            assertThat(job(jobId).status).isEqualTo(AnalysisStatus.PENDING)
-        }
-
     }
 
     @Nested
-    @DisplayName("단계 상태를 쓰는 Lambda(Phase 0 이후)일 때")
-    inner class ReportingLambda {
-
-        private val reporting = AnalysisOrchestrator(
-            analysisJobRepository,
-            photoRepository,
-            stageInvoker,
-            AnalysisProperties(lambdaReportsStage = true),
-            transactionTemplate,
-            clock,
-            completionNotifications,
-        )
+    @DisplayName("CATEGORIZING 에서")
+    inner class Categorizing {
 
         @Test
-        fun `단계마다 부르고 DONE을 받으면 다음 단계로, 마지막이 끝나면 잡을 닫는다`() {
+        fun `배정과 백분위가 오면 폴더를 만들고 DONE 으로 닫으며 알림을 한 번 보낸다`() {
             // given
-            photoFixture.임베딩된_사진(fixture.galleryId, count = 1)
-            val jobId = requestFull()
-            reporting.sweep()
-            assertThat(stages(jobId)).containsExactly(AnalysisStage.EMBED, AnalysisStage.SCORE)
+            val photos = scoredPhotos(3)
+            val jobId = request()
+            assertThat(job(jobId).status).isEqualTo(AnalysisStatus.CATEGORIZING)
 
-            // when — score가 단계를 집고 끝낸다
-            claimStage(jobId)
-            reporting.sweep()
-            assertThat(job(jobId).status).isEqualTo(AnalysisStatus.RUNNING)
-            assertThat(stages(jobId)).hasSize(2)
-            finishStage(jobId, """{"score": {"processed": 1}}""")
-            reporting.sweep()
-            assertThat(stages(jobId)).containsExactly(AnalysisStage.EMBED, AnalysisStage.SCORE, AnalysisStage.CATEGORIZE)
-
-            // categorize도 끝낸다
-            claimStage(jobId)
-            finishStage(jobId, """{"categorize": {"groups": 3}}""")
-            reporting.sweep()
+            // when — categorize 역할
+            categorizeByLambda(jobId, photos)
+            orchestrator.sweep()
+            orchestrator.sweep()
 
             // then
             val job = job(jobId)
             assertSoftly { softly ->
                 softly.assertThat(job.status).isEqualTo(AnalysisStatus.DONE)
-                softly.assertThat(job.stage).isEqualTo(AnalysisStage.CATEGORIZE)
-                softly.assertThat(job.result).containsKeys("score", "categorize")
-                softly.assertThat(stages(jobId)).hasSize(3)
+                softly.assertThat(job.finishedAt).isNotNull()
+                softly.assertThat(job.error).isNull()
+                softly.assertThat(conceptFolderRepository.existsByGalleryIdAndAnalysisJobId(fixture.galleryId, jobId)).isTrue()
+                softly.assertThat(completionNotificationsOf(fixture.photographer.requiredId)).isEqualTo(1)
+                softly.assertThat(completionNotificationsOf(fixture.member.requiredId)).isEqualTo(1)
+                softly.assertThat(stageInvoker.categorizeCalls).hasSize(1)
             }
-            reporting.sweep()
-            assertCompletionNotifiedOnce(jobId)
         }
 
         @Test
-        fun `보낸 뒤 아무도 집지 않으면 재시도 창이 지난 뒤 다시 보내고 상한을 넘기면 실패다`() {
+        fun `배정은 왔지만 백분위가 덜 찼으면 기다린다`() {
             // given
-            photoFixture.임베딩된_사진(fixture.galleryId, count = 1)
-            val jobId = requestFull()
-            reporting.sweep()
-            assertThat(stages(jobId).last()).isEqualTo(AnalysisStage.SCORE)
+            val photos = scoredPhotos(2)
+            val jobId = request()
+            recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 1, parentName = "야외 자연", conceptName = "해변")
+            photoFixture.백분위_적재(photos[0])
 
-            // when — 창 안에는 기다린다
-            reporting.sweep()
-            assertThat(stages(jobId)).hasSize(2)
+            // when
+            orchestrator.sweep()
 
-            // 창이 지나면 다시 보낸다
+            // then
+            assertThat(job(jobId).status).isEqualTo(AnalysisStatus.CATEGORIZING)
+            assertThat(conceptFolderRepository.countByGalleryId(fixture.galleryId)).isZero()
+        }
+
+        @Test
+        fun `새로 넣을 사진이 없으면 폴더 추가 없이 DONE 이고 알림도 없다`() {
+            // given — 첫 잡이 폴더를 만들었다
+            val photos = scoredPhotos(2)
+            val first = request()
+            categorizeByLambda(first, photos)
+            orchestrator.sweep()
+            assertThat(job(first).status).isEqualTo(AnalysisStatus.DONE)
+            val folders = conceptFolderRepository.countByGalleryId(fixture.galleryId)
+
+            // when — 같은 사진으로 다시 요청, categorize 는 같은 결과를 다시 남긴다
+            val second = request()
+            recommendationFixture.컨셉_배정(second, fixture.galleryId, embedGroupId = 1, parentName = "야외 자연", conceptName = "해변")
+            orchestrator.sweep()
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(job(second).status).isEqualTo(AnalysisStatus.DONE)
+                softly.assertThat(conceptFolderRepository.countByGalleryId(fixture.galleryId)).isEqualTo(folders)
+                softly.assertThat(completionNotificationsOf(fixture.photographer.requiredId)).isEqualTo(1)
+            }
+        }
+
+        @Test
+        fun `Lambda 가 error 를 남기면 FAILED 로 닫는다`() {
+            // given
+            scoredPhotos(1)
+            val jobId = request()
+
+            // when
+            jdbcTemplate.update("UPDATE ai_analysis_jobs SET error = 'bedrock timeout', updated_at = now() WHERE id = ?", jobId)
+            orchestrator.sweep()
+
+            // then
+            val job = job(jobId)
+            assertSoftly { softly ->
+                softly.assertThat(job.status).isEqualTo(AnalysisStatus.FAILED)
+                softly.assertThat(job.error).isEqualTo("bedrock timeout")
+                softly.assertThat(job.finishedAt).isNotNull()
+            }
+        }
+
+        @Test
+        fun `시간 안에 결과가 없으면 다시 보내고 상한을 넘기면 FAILED 다`() {
+            // given
+            scoredPhotos(1)
+            val jobId = request()
+            assertThat(stageInvoker.categorizeCalls).hasSize(1)
+
+            // when — 타임아웃 안에는 기다린다
+            orchestrator.sweep()
+            assertThat(stageInvoker.categorizeCalls).hasSize(1)
+
+            // 타임아웃이 지나면 다시 보낸다
             expireDispatch(jobId)
-            reporting.sweep()
-            assertThat(stages(jobId)).hasSize(3)
-            assertThat(job(jobId).stageAttempts).isEqualTo(2)
+            orchestrator.sweep()
+            assertThat(stageInvoker.categorizeCalls).hasSize(2)
+            assertThat(job(jobId).attempts).isEqualTo(2)
 
             expireDispatch(jobId)
-            reporting.sweep()
+            orchestrator.sweep()
             expireDispatch(jobId)
-            reporting.sweep()
+            orchestrator.sweep()
 
             // then — 3회를 넘긴 네 번째는 포기
             val job = job(jobId)
             assertSoftly { softly ->
-                softly.assertThat(stages(jobId)).hasSize(4)
+                softly.assertThat(stageInvoker.categorizeCalls).hasSize(3)
                 softly.assertThat(job.status).isEqualTo(AnalysisStatus.FAILED)
-                softly.assertThat(job.error).contains("SCORE")
+                softly.assertThat(job.error).contains("3회")
             }
         }
 
         @Test
-        fun `단계 FAILED는 잡 FAILED로 닫고, 하트비트가 끊기면 다시 보낸다`() {
+        fun `호출이 실패하면 잡을 닫지 않고 다음 스윕이 바로 다시 보낸다`() {
             // given
-            photoFixture.임베딩된_사진(fixture.galleryId, count = 1)
-            val jobId = requestFull()
-            reporting.sweep()
-            claimStage(jobId)
+            scoredPhotos(1)
+            stageInvoker.failNext = true
+            val jobId = request()
+            assertThat(stageInvoker.categorizeCalls).isEmpty()
+            assertThat(job(jobId).dispatchedAt).isNull()
 
-            // when — 하트비트가 정체 판정보다 오래전
-            jdbcTemplate.update("UPDATE ai_analysis_jobs SET heartbeat_at = now() - interval '30 minutes' WHERE id = ?", jobId)
-            reporting.sweep()
-            assertThat(stages(jobId)).containsExactly(AnalysisStage.EMBED, AnalysisStage.SCORE, AnalysisStage.SCORE)
-
-            // 다시 집은 Lambda가 실패를 남긴다
-            claimStage(jobId)
-            jdbcTemplate.update("UPDATE ai_analysis_jobs SET stage_status = 'FAILED', error = 'model load failed' WHERE id = ?", jobId)
-            reporting.sweep()
+            // when
+            orchestrator.sweep()
 
             // then
             val job = job(jobId)
-            assertThat(job.status).isEqualTo(AnalysisStatus.FAILED)
-            assertThat(job.error).isEqualTo("model load failed")
+            assertSoftly { softly ->
+                softly.assertThat(stageInvoker.categorizeCalls).hasSize(1)
+                softly.assertThat(job.status).isEqualTo(AnalysisStatus.CATEGORIZING)
+                softly.assertThat(job.attempts).isEqualTo(2)
+                softly.assertThat(job.dispatchedAt).isNotNull()
+            }
         }
 
         private fun expireDispatch(jobId: Long) {
-            jdbcTemplate.update("UPDATE ai_analysis_jobs SET dispatched_at = now() - interval '10 minutes' WHERE id = ?", jobId)
-        }
-
-        private fun claimStage(jobId: Long) {
-            jdbcTemplate.update(
-                "UPDATE ai_analysis_jobs SET stage_status = 'RUNNING', heartbeat_at = now() WHERE id = ? AND stage_status = 'PENDING'",
-                jobId,
-            )
-        }
-
-        private fun finishStage(jobId: Long, partial: String) {
-            jdbcTemplate.update(
-                "UPDATE ai_analysis_jobs SET stage_status = 'DONE', result = COALESCE(result, '{}'::jsonb) || ?::jsonb WHERE id = ?",
-                partial,
-                jobId,
-            )
+            jdbcTemplate.update("UPDATE ai_analysis_jobs SET dispatched_at = now() - interval '30 minutes' WHERE id = ?", jobId)
         }
     }
 }

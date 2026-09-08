@@ -13,8 +13,9 @@ import com.soma.wes.category.repository.CategoryBulkWriter
 import com.soma.wes.category.service.AiCategoryFolderService
 import com.soma.wes.category.support.AiCategoryFolderPlanner
 import com.soma.wes.global.config.AwsLambdaConfig
-import com.soma.wes.analysis.config.EmbeddingProperties
-import com.soma.wes.analysis.infrastructure.LambdaEmbeddingInvoker
+import com.soma.wes.analysis.config.AnalysisProperties
+import com.soma.wes.analysis.infrastructure.LambdaExactPhotoInvoker
+import com.soma.wes.analysis.infrastructure.LambdaStageInvoker
 import com.soma.wes.gallery.config.GalleryLifecycleProperties
 import com.soma.wes.gallery.config.GalleryInviteProperties
 import com.soma.wes.gallery.config.MockGalleryProperties
@@ -62,7 +63,7 @@ import org.springframework.context.annotation.Import
     AdminWorkflowExecutorProperties::class,
     StorageProperties::class,
     TrashProperties::class,
-    EmbeddingProperties::class,
+    AnalysisProperties::class,
     MockGalleryProperties::class,
     GalleryInviteProperties::class,
     GalleryLifecycleProperties::class,
@@ -78,7 +79,8 @@ import org.springframework.context.annotation.Import
     SecureTokenGenerator::class,
     S3PhotoStorage::class,
     AwsLambdaConfig::class,
-    LambdaEmbeddingInvoker::class,
+    LambdaExactPhotoInvoker::class,
+    LambdaStageInvoker::class,
     GalleryInviteUrlResolver::class,
     CollabLinkResolver::class,
     GalleryAccessPolicy::class,

@@ -1,7 +1,7 @@
 package com.soma.wes.analysis.infrastructure
 
 import com.soma.wes.analysis.config.AnalysisProperties
-import com.soma.wes.analysis.domain.AnalysisStage
+import com.soma.wes.analysis.dto.StageCall
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
 import java.io.File
@@ -18,36 +18,40 @@ class LocalProcessStageInvokerUnitTest {
     lateinit var dir: File
 
     @Test
-    fun `디렉토리가 비어 있거나 그 단계의 스크립트가 없으면 사용할 수 없다`() {
-        assertThat(AnalysisStage.entries.none { LocalProcessStageInvoker(AnalysisProperties()).isAvailable(it) }).isTrue()
+    fun `디렉토리가 비어 있거나 그 호출의 스크립트가 없으면 사용할 수 없다`() {
+        val unconfigured = LocalProcessStageInvoker(AnalysisProperties())
+        assertThat(listOf(StageCall.Embed::class, StageCall.Score::class, StageCall.Categorize::class).none { unconfigured.isAvailable(it) }).isTrue()
 
         fakeScript("score.sh")
         val invoker = LocalProcessStageInvoker(AnalysisProperties(localScriptDir = dir.path))
         assertSoftly { softly ->
-            softly.assertThat(invoker.isAvailable(AnalysisStage.SCORE)).isTrue()
-            softly.assertThat(invoker.isAvailable(AnalysisStage.EMBED)).isFalse()
-            softly.assertThat(invoker.isAvailable(AnalysisStage.CATEGORIZE)).isFalse()
+            softly.assertThat(invoker.isAvailable(StageCall.Score::class)).isTrue()
+            softly.assertThat(invoker.isAvailable(StageCall.Embed::class)).isFalse()
+            softly.assertThat(invoker.isAvailable(StageCall.Categorize::class)).isFalse()
         }
     }
 
     @Test
-    fun `단계와 같은 이름의 스크립트를 Lambda 페이로드 키 인자로 띄우고 기다리지 않는다`() {
+    fun `호출과 같은 이름의 스크립트를 Lambda 페이로드 키 인자로 띄우고 기다리지 않는다`() {
         // given: 받은 인자를 파일에 적는 가짜 스크립트 — 함수 이름은 AI repo 모듈과 같다(embedder·score·categorize)
-        val recorded = fakeScript("embedder.sh")
+        val embedder = fakeScript("embedder.sh")
+        val categorize = fakeScript("categorize.sh")
         val invoker = LocalProcessStageInvoker(AnalysisProperties(localScriptDir = dir.path))
 
         // when
-        invoker.invoke(AnalysisStage.EMBED, jobId = 9, galleryId = 42, force = true)
+        invoker.invoke(StageCall.Embed(galleryId = 42, photoIds = listOf(1, 2, 3)))
+        invoker.invoke(StageCall.Categorize(galleryId = 42, jobId = 9))
 
         // then: 비동기라 잠깐 기다려 본다
-        waitFor { recorded.exists() }
-        assertThat(recorded.readText().trim()).isEqualTo("--gallery-id 42 --job-id 9 --force")
+        waitFor { embedder.exists() && categorize.exists() }
+        assertThat(embedder.readText().trim()).isEqualTo("--gallery-id 42 --photo-ids 1,2,3")
+        assertThat(categorize.readText().trim()).isEqualTo("--gallery-id 42 --job-id 9")
     }
 
     @Test
     fun `프로세스를 못 띄우면 호출 실패 코드다`() {
         val invoker = LocalProcessStageInvoker(AnalysisProperties(localScriptDir = dir.path))
-        assertThatThrownBy { invoker.invoke(AnalysisStage.CATEGORIZE, jobId = 1, galleryId = 1, force = false) }
+        assertThatThrownBy { invoker.invoke(StageCall.Categorize(galleryId = 1, jobId = 1)) }
             .isInstanceOf(AnalysisException::class.java)
             .extracting("errorCode")
             .isEqualTo(AnalysisErrorCode.STAGE_INVOCATION_FAILED)

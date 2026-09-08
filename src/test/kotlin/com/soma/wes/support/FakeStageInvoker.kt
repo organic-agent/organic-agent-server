@@ -1,9 +1,11 @@
 package com.soma.wes.support
 
-import com.soma.wes.analysis.domain.AnalysisStage
+import com.soma.wes.analysis.dto.StageCall
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
 import com.soma.wes.analysis.service.StageInvoker
+import java.util.Collections
+import kotlin.reflect.KClass
 
 /**
  * 테스트용 실행기 — 호출을 기록만 하고 아무것도 돌리지 않는다. Lambda가 DB에 쓰는 일은 테스트가 직접 흉내 낸다.
@@ -11,23 +13,33 @@ import com.soma.wes.analysis.service.StageInvoker
  */
 class FakeStageInvoker : StageInvoker {
 
-    data class Call(val stage: AnalysisStage, val jobId: Long, val galleryId: Long, val force: Boolean)
-
-    val calls: MutableList<Call> = mutableListOf()
+    /** 동시성 테스트(스윕 둘)가 같은 목록에 기록하므로 동기화한다. */
+    val calls: MutableList<StageCall> = Collections.synchronizedList(mutableListOf())
     var available: Boolean = true
     var failNext: Boolean = false
 
-    override fun isAvailable(stage: AnalysisStage): Boolean = available
+    override fun isAvailable(call: KClass<out StageCall>): Boolean = available
 
-    override fun invoke(stage: AnalysisStage, jobId: Long, galleryId: Long, force: Boolean) {
+    override fun invoke(call: StageCall) {
         if (failNext) {
             failNext = false
             throw AnalysisException(AnalysisErrorCode.STAGE_INVOCATION_FAILED)
         }
-        calls += Call(stage = stage, jobId = jobId, galleryId = galleryId, force = force)
+        calls += call
     }
 
-    fun callsOf(jobId: Long): List<Call> = calls.filter { it.jobId == jobId }
+    val embedCalls: List<StageCall.Embed>
+        get() = calls.toList().filterIsInstance<StageCall.Embed>()
+
+    val scoreCalls: List<StageCall.Score>
+        get() = calls.toList().filterIsInstance<StageCall.Score>()
+
+    val categorizeCalls: List<StageCall.Categorize>
+        get() = calls.toList().filterIsInstance<StageCall.Categorize>()
+
+    /** 임베더에 보낸 사진 id 전부(갤러리 무관). */
+    val embeddedPhotoIds: List<Long>
+        get() = embedCalls.flatMap { it.photoIds }
 
     fun reset() {
         calls.clear()

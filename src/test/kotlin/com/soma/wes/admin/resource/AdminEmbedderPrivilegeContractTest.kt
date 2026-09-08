@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.core.io.ClassPathResource
 
-/** 마이그레이션의 GRANT 계약(V15 embedder, V1 photoselect, V14 preference)이 Lambda의 실제 SQL을 실행할 수 있는지 검증한다. */
+/** 마이그레이션의 GRANT 계약(V15 embedder, V16 photoselect, V14 preference)이 Lambda의 실제 SQL을 실행할 수 있는지 검증한다. */
 @IntegrationTest
 class AdminEmbedderPrivilegeContractTest @Autowired constructor(
     private val dataSource: DataSource,
@@ -38,7 +38,7 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
     }
 
     @Test
-    fun `photoselect 권한 부여는 빈 search path에서도 public 테이블에 적용된다`() {
+    fun `photoselect 권한 부여는 빈 search path에서도 public 테이블에 적용되고 잡 테이블은 error 컬럼만 쓴다`() {
         dataSource.connection.use { connection ->
             connection.createStatement().use { statement ->
                 statement.execute("DROP ROLE IF EXISTS photoselect")
@@ -52,11 +52,20 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
                         SELECT
                             has_table_privilege('photoselect', 'public.galleries', 'SELECT'),
                             has_table_privilege('photoselect', 'public.photo_analysis', 'INSERT'),
-                            has_table_privilege('photoselect', 'public.ai_analysis_jobs', 'UPDATE')
+                            has_column_privilege('photoselect', 'public.ai_analysis_jobs', 'error', 'UPDATE'),
+                            has_column_privilege('photoselect', 'public.ai_analysis_jobs', 'status', 'UPDATE'),
+                            has_table_privilege('photoselect', 'public.ai_analysis_jobs', 'SELECT')
                         """.trimIndent(),
                     ).use { result ->
                         check(result.next())
-                        check(result.getBoolean(1) && result.getBoolean(2) && result.getBoolean(3))
+                        check(result.getBoolean(1) && result.getBoolean(2) && result.getBoolean(3) && result.getBoolean(5))
+                        check(!result.getBoolean(4)) { "photoselect 는 잡 상태를 쓰면 안 된다 — 잡을 닫는 것은 wes 다" }
+                    }
+                    statement.execute("SET ROLE photoselect")
+                    try {
+                        statementsUsedByCategorize.forEach { sql -> statement.execute(sql) }
+                    } finally {
+                        statement.execute("RESET ROLE")
                     }
                 } finally {
                     statement.execute("RESET search_path")
@@ -101,7 +110,8 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
     /** V15 가 V1 의 embedder 블록을 통째로 대체한다 — V1 블록은 지금 스키마에 없는 컬럼을 가리켜 실행할 수 없다. */
     private fun embedderGrantBlock(): String = grantBlock("V15__pipeline_v2_photo_layer.sql", "EMBEDDER_GRANT_CONTRACT")
 
-    private fun photoselectGrantBlock(): String = grantBlock("V1__baseline.sql", "PHOTOSELECT_GRANT_CONTRACT")
+    /** V16 이 V1 의 photoselect 블록을 통째로 대체한다 — 잡 테이블의 UPDATE 를 error 컬럼으로 좁혔다. */
+    private fun photoselectGrantBlock(): String = grantBlock("V16__pipeline_v2_job_layer.sql", "PHOTOSELECT_GRANT_CONTRACT")
 
     private fun preferenceGrantBlock(): String = grantBlock("V14__preference_models.sql", "PREFERENCE_GRANT_CONTRACT")
 
@@ -120,6 +130,20 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
     }
 
     private companion object {
+        // AI repo categorize — 잡 테이블에 쓰는 유일한 문장. 상태·결과는 쓰지 않고 실패 이유만 남긴다(계획서 §7 C1).
+        val statementsUsedByCategorize = listOf(
+            "EXPLAIN UPDATE ai_analysis_jobs SET error = 'bedrock timeout', updated_at = now() WHERE id = -1",
+            "EXPLAIN SELECT id, gallery_id, status FROM ai_analysis_jobs WHERE id = -1",
+            """
+            EXPLAIN INSERT INTO ai_concept_assignments (
+                job_id, gallery_id, embed_group_id, parent_name, concept_name,
+                confidence, assigned_by, needs_review, created_at, updated_at
+            )
+            VALUES (-1, -1, 1, '웨딩', '본식', 0.9, 'vlm', false, now(), now())
+            ON CONFLICT (job_id, embed_group_id) DO UPDATE
+            SET parent_name = EXCLUDED.parent_name, concept_name = EXCLUDED.concept_name, updated_at = now()
+            """.trimIndent(),
+        )
         // AI repo preference/store.py — DbStore.list_closed_galleries · read_gallery · write_model
         val statementsUsedByPreferenceTrainer = listOf(
             """

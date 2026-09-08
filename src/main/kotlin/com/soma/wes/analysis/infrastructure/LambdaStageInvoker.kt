@@ -1,11 +1,11 @@
 package com.soma.wes.analysis.infrastructure
 
 import com.soma.wes.analysis.config.AnalysisProperties
-import com.soma.wes.analysis.config.EmbeddingProperties
-import com.soma.wes.analysis.domain.AnalysisStage
+import com.soma.wes.analysis.dto.StageCall
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
 import com.soma.wes.analysis.service.StageInvoker
+import kotlin.reflect.KClass
 import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Component
@@ -16,32 +16,26 @@ import software.amazon.awssdk.services.lambda.model.InvocationType
 import software.amazon.awssdk.services.lambda.model.InvokeRequest
 
 /**
- * 운영 실행기 — 단계마다 다른 Lambda 함수를 EVENT로 부른다. 로컬 프로필에서는 [LocalProcessStageInvoker]가 이 자리를 대신한다.
+ * 운영 실행기 — 호출 종류마다 다른 Lambda 함수를 EVENT로 부른다. 로컬 프로필에서는 [LocalProcessStageInvoker]가 이 자리를 대신한다.
  *
- * 페이로드는 각 Lambda의 현재 계약 그대로다:
- * - embedder `{galleryId, force, analysisJobId}` — `jobId` 키는 관리자 사진 교체 이벤트로 해석되므로 여기서는 쓰지 않는다.
- * - score `{galleryId, jobId, force}`, categorize `{galleryId, jobId}`.
+ * 페이로드는 AI repo 계약 그대로다:
+ * - embedder·score `{galleryId, photoIds}` — `jobId` 키는 임베더가 관리자 사진 교체 이벤트로 해석하므로 쓰지 않는다.
+ * - categorize `{galleryId, jobId}`.
  */
 @Component
 @Profile("!local")
 class LambdaStageInvoker(
     private val lambdaClient: LambdaClient,
-    private val embeddingProperties: EmbeddingProperties,
-    private val analysisProperties: AnalysisProperties,
+    private val properties: AnalysisProperties,
 ) : StageInvoker {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    override fun isAvailable(stage: AnalysisStage): Boolean = functionNameOf(stage).isNotBlank()
+    override fun isAvailable(call: KClass<out StageCall>): Boolean = properties.functionNameOf(call).isNotBlank()
 
-    override fun invoke(stage: AnalysisStage, jobId: Long, galleryId: Long, force: Boolean) {
-        val functionName = functionNameOf(stage)
-        // 페이로드를 문자열로 조립해도 안전한 이유: 전부 Long·Boolean이라 사용자 문자열이 끼어들 자리가 없다.
-        val payload = when (stage) {
-            AnalysisStage.EMBED -> """{"galleryId":$galleryId,"force":$force,"analysisJobId":$jobId}"""
-            AnalysisStage.SCORE -> """{"galleryId":$galleryId,"jobId":$jobId,"force":$force}"""
-            AnalysisStage.CATEGORIZE -> """{"galleryId":$galleryId,"jobId":$jobId}"""
-        }
+    override fun invoke(call: StageCall) {
+        val functionName = properties.functionNameOf(call::class)
+        val payload = payloadOf(call)
 
         val statusCode = try {
             lambdaClient.invoke(
@@ -54,24 +48,31 @@ class LambdaStageInvoker(
             ).statusCode()
         } catch (e: SdkException) {
             // 계산 실패가 아니라 호출 실패다(권한·스로틀링·함수 없음).
-            log.error("분석 Lambda 호출 실패: stage={}, jobId={}, function={}", stage, jobId, functionName, e)
+            log.error("분석 Lambda 호출 실패: call={}, function={}", call, functionName, e)
             throw AnalysisException(AnalysisErrorCode.STAGE_INVOCATION_FAILED)
         }
         if (statusCode != ACCEPTED) {
-            log.error("분석 Lambda가 비정상 응답을 반환함: stage={}, jobId={}, function={}, status={}", stage, jobId, functionName, statusCode)
+            log.error("분석 Lambda가 비정상 응답을 반환함: call={}, function={}, status={}", call, functionName, statusCode)
             throw AnalysisException(AnalysisErrorCode.STAGE_INVOCATION_FAILED)
         }
-        log.info("분석 Lambda 호출: stage={}, jobId={}, galleryId={}, function={}", stage, jobId, galleryId, functionName)
-    }
-
-    private fun functionNameOf(stage: AnalysisStage): String = when (stage) {
-        AnalysisStage.EMBED -> embeddingProperties.functionName
-        AnalysisStage.SCORE -> analysisProperties.scoreFunctionName
-        AnalysisStage.CATEGORIZE -> analysisProperties.categorizeFunctionName
+        log.info("분석 Lambda 호출: {} function={}", describe(call), functionName)
     }
 
     companion object {
         /** EVENT 호출이 큐에 들어갔을 때 Lambda가 돌려주는 상태 코드. */
         private const val ACCEPTED = 202
+
+        /** 페이로드를 문자열로 조립해도 안전한 이유: 전부 Long이라 사용자 문자열이 끼어들 자리가 없다. */
+        fun payloadOf(call: StageCall): String = when (call) {
+            is StageCall.Embed -> """{"galleryId":${call.galleryId},"photoIds":${call.photoIds.joinToString(",", "[", "]")}}"""
+            is StageCall.Score -> """{"galleryId":${call.galleryId},"photoIds":${call.photoIds.joinToString(",", "[", "]")}}"""
+            is StageCall.Categorize -> """{"galleryId":${call.galleryId},"jobId":${call.jobId}}"""
+        }
+
+        private fun describe(call: StageCall): String = when (call) {
+            is StageCall.Embed -> "embed gallery=${call.galleryId} photos=${call.photoIds.size}"
+            is StageCall.Score -> "score gallery=${call.galleryId} photos=${call.photoIds.size}"
+            is StageCall.Categorize -> "categorize gallery=${call.galleryId} job=${call.jobId}"
+        }
     }
 }

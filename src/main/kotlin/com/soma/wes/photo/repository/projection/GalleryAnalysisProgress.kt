@@ -25,6 +25,10 @@ data class GalleryAnalysisProgress(
     val categorized: Long,
 ) {
 
+    /** S3에 원본이 있는 사진 전부 — 대상과 실패를 합친 것. */
+    val uploaded: Long
+        get() = expected + failed
+
     val isFullyScored: Boolean
         get() = expected > 0 && scored == expected
 }

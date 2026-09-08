@@ -2,15 +2,22 @@ package com.soma.wes.analysis.service
 
 import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.domain.AnalysisJob
-import com.soma.wes.analysis.domain.AnalysisStage
 import com.soma.wes.analysis.domain.AnalysisStatus
-import com.soma.wes.analysis.dto.StageDispatchDto
+import com.soma.wes.analysis.dto.StageCall
 import com.soma.wes.analysis.exception.AnalysisException
+import com.soma.wes.analysis.repository.AiConceptAssignmentRepository
 import com.soma.wes.analysis.repository.AnalysisJobRepository
-import com.soma.wes.photo.domain.PhotoStatus
-import com.soma.wes.photo.repository.PhotoRepository
+import com.soma.wes.analysis.support.AnalysisCompletionNotifier
+import com.soma.wes.category.exception.CategoryErrorCode
+import com.soma.wes.category.exception.CategoryException
+import com.soma.wes.category.service.AiCategoryFolderService
+import com.soma.wes.global.exception.BusinessException
+import com.soma.wes.photo.repository.PhotoPipelineRepository
+import com.soma.wes.photo.repository.projection.GalleryAnalysisProgress
 import java.time.Clock
+import java.time.Duration
 import java.time.ZonedDateTime
+import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.LoggerFactory
 import org.springframework.orm.ObjectOptimisticLockingFailureException
 import org.springframework.stereotype.Service
@@ -18,24 +25,27 @@ import org.springframework.transaction.TransactionDefinition
 import org.springframework.transaction.support.TransactionTemplate
 
 /**
- * 분석 잡의 상태 기계. 요청 직후([dispatch])와 주기 스윕([sweep])이 같은 [step]을 지난다 — 요청 경로가 유실돼도
- * 스윕이 같은 판단을 다시 내리므로 별도의 복구 로직이 없다. 상태가 전부 DB에 있어 스윕 한 번이 곧 기동 복구다.
+ * 분석 잡의 상태 기계 — ANALYZING → CATEGORIZING → DONE | FAILED. 잡은 Lambda를 세 번 부르지 않는다. 임베더 배정은
+ * 잡과 무관하게 [EmbedDispatcher]가 하고, 잡은 `photo_analysis`를 **관측**해 점수가 다 차면 categorize를 한 번 보내고,
+ * 배정이 오면 폴더를 물질화한 뒤 닫는다. 요청 직후([dispatch])와 주기 스윕([sweep])이 같은 [step]을 지나므로 별도의
+ * 복구 로직이 없다 — 상태가 전부 DB에 있어 스윕 한 번이 곧 기동 복구다.
  *
- * 한 잡의 한 걸음은 짧은 트랜잭션 하나다(전이 결정 + 컬럼 갱신). Lambda 호출은 트랜잭션 밖이다 — 커넥션을 문 채
- * 네트워크를 기다리지 않고, 호출이 실패하면 [AnalysisJob.dispatchFailed]로 되돌려 다음 스윕이 다시 보낸다.
- *
- * 같은 잡을 두 번 부르는 일은 세 겹으로 막는다: 이 서버의 `dispatched_at` 창, 임베더의 갤러리 advisory lock,
- * 단계 상태를 쓰는 Lambda의 claim CAS. 어느 하나가 뚫려도 두 번째 호출은 아무것도 하지 않고 끝난다.
+ * 한 잡의 한 걸음은 짧은 트랜잭션 하나다(관측 + 전이). Lambda 호출과 물질화는 그 트랜잭션 밖이다 — 커넥션을 문 채
+ * 네트워크를 기다리지 않고, 물질화(갤러리 락, 수 초~수십 초)는 자기 트랜잭션으로 돈다. 스윕 둘이 같은 잡을 보면
+ * `version`(낙관적 잠금)이 한쪽을 버리고 그쪽은 EVENT를 보내지 않는다(ANALYZING→CATEGORIZING CAS).
  */
 @Service
 class AnalysisOrchestrator(
     private val analysisJobRepository: AnalysisJobRepository,
-    private val photoRepository: PhotoRepository,
+    private val photoPipelineRepository: PhotoPipelineRepository,
+    private val aiConceptAssignmentRepository: AiConceptAssignmentRepository,
     private val stageInvoker: StageInvoker,
+    private val embedDispatcher: EmbedDispatcher,
+    private val aiCategoryFolderService: AiCategoryFolderService,
+    private val completionNotifier: AnalysisCompletionNotifier,
     private val properties: AnalysisProperties,
     private val transactionTemplate: TransactionTemplate,
     private val clock: Clock,
-    private val completionNotifications: AnalysisCompletionNotificationService,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -48,175 +58,212 @@ class AnalysisOrchestrator(
         propagationBehavior = TransactionDefinition.PROPAGATION_REQUIRES_NEW
     }
 
-    /** 요청이 커밋된 직후. 첫 단계를 보낸다 — 스윕이 30초 뒤 같은 판단을 내리므로 놓쳐도 늦어질 뿐이다. */
+    /** score Lambda 폴백을 갤러리마다 마지막으로 보낸 시각. 컬럼 없이 간다 — 인스턴스가 여럿이면 겹칠 수 있고, score는 UPSERT라 무방하다. */
+    private val scoreFallbackSentAt = ConcurrentHashMap<Long, ZonedDateTime>()
+
+    /** 요청이 커밋된 직후 한 걸음. 스윕이 5초 뒤 같은 판단을 내리므로 놓쳐도 늦어질 뿐이다. */
     fun dispatch(jobId: Long) {
-        val call = try {
-            tx.execute { analysisJobRepository.findById(jobId).orElse(null)?.let { step(it) } }
-        } catch (e: ObjectOptimisticLockingFailureException) {
-            log.debug("분석 잡 {} 은 스윕이 먼저 집었다", jobId)
-            null
-        }
-        call?.let(::invoke)
+        stepJob(jobId)
     }
 
-    /** 살아 있는 잡 전부를 한 걸음씩. 잡마다 트랜잭션을 따로 열어 하나의 실패가 나머지를 막지 않게 한다. */
+    /** 임베더 배정 → 살아 있는 잡 전부 한 걸음씩. 잡마다 트랜잭션을 따로 열어 하나의 실패가 나머지를 막지 않게 한다. */
     fun sweep() {
+        try {
+            embedDispatcher.dispatch()
+        } catch (e: RuntimeException) {
+            log.error("embed dispatch 실패 — 잡 걸음은 계속한다", e)
+        }
+
         val jobIds = tx.execute {
             analysisJobRepository.findAllByStatusInOrderByIdAsc(AnalysisStatus.ACTIVE).map { it.requiredId }
         }!!
         jobIds.forEach { jobId ->
-            val call = try {
-                tx.execute { analysisJobRepository.findById(jobId).orElse(null)?.let { step(it) } }
-            } catch (e: ObjectOptimisticLockingFailureException) {
-                log.debug("분석 잡 {} 은 다른 경로가 먼저 갱신했다 — 다음 스윕에서 다시 본다", jobId)
-                null
+            try {
+                stepJob(jobId)
+            } catch (e: RuntimeException) {
+                log.error("분석 잡 {} 걸음 실패 — 다음 스윕에서 다시 본다", jobId, e)
             }
-            call?.let(::invoke)
         }
-        // 방금 끝난 잡과 옛 Lambda가 status만 DONE으로 닫은 잡을 함께 처리한다.
-        completionNotifications.sweep()
+    }
+
+    private fun stepJob(jobId: Long) {
+        val action = try {
+            tx.execute { analysisJobRepository.findById(jobId).orElse(null)?.let { step(it) } }
+        } catch (e: ObjectOptimisticLockingFailureException) {
+            log.debug("분석 잡 {} 은 다른 경로가 먼저 갱신했다 — 다음 스윕에서 다시 본다", jobId)
+            null
+        }
+        when (action) {
+            is Action.Invoke -> invoke(action)
+            is Action.Materialize -> materialize(action)
+            null -> Unit
+        }
+    }
+
+    /** 잡 하나를 지금 상태에서 관측해 옮긴다. 돌려주는 값은 "트랜잭션이 끝난 뒤 할 일" 하나다. */
+    private fun step(job: AnalysisJob): Action? {
+        val now = ZonedDateTime.now(clock)
+        return when (job.status) {
+            AnalysisStatus.ANALYZING -> stepAnalyzing(job, now)
+            AnalysisStatus.CATEGORIZING -> stepCategorizing(job, now)
+            AnalysisStatus.DONE, AnalysisStatus.FAILED -> null
+        }
     }
 
     /**
-     * 잡 하나를 지금 상태에서 갈 수 있는 데까지 옮긴다. 단계가 끝나면 다음 단계로 넘어가 그 자리에서 보내고,
-     * 잡이 끝나면 닫는다. 돌려주는 값은 "트랜잭션이 끝난 뒤 부를 것" 하나 — 걸음마다 EVENT는 최대 하나다.
+     * 점수가 기대 장수만큼 찼고 아직 올라오는 사진이 없으면 CATEGORIZING으로. 대상이 한 장도 남지 않으면(전부 실패·삭제) 닫는다.
+     * GPU 워커가 없으면(`gpu.enabled=false`) 벡터는 있는데 점수가 없는 사진을 score Lambda에 배치로 보낸다 — 갤러리당 일정 간격.
      */
-    private fun step(job: AnalysisJob): StageDispatchDto? {
-        if (!job.status.isActive) return null
-        val now = ZonedDateTime.now(clock)
+    private fun stepAnalyzing(job: AnalysisJob, now: ZonedDateTime): Action? {
+        val progress = progressOf(job, now)
 
-        var transitions = 0
-        while (transitions++ < MAX_TRANSITIONS) {
-            // V4 이전에 만들어져 단계가 없는 잡은 AI 쪽이 닫는다 — 이 서버는 손대지 않는다.
-            val stage = job.stage ?: return null
-            when (job.stageStatus) {
-                AnalysisStatus.DONE -> {
-                    val next = job.mode.next(stage)
-                    if (next == null) {
-                        job.finish(now)
-                        log.info("AI 분석 완료: jobId={}, galleryId={}, mode={}", job.requiredId, job.galleryId, job.mode)
-                        return null
-                    }
-                    job.advance(next)
-                }
-                AnalysisStatus.FAILED -> {
-                    job.fail(job.error ?: "$stage 단계가 실패했습니다", now)
-                    log.warn("AI 분석 실패: jobId={}, stage={}, error={}", job.requiredId, stage, job.error)
-                    return null
-                }
-                else -> {
-                    val outcome = if (stage == AnalysisStage.EMBED) stepEmbed(job, now) else stepLambdaStage(job, stage, now)
-                    when (outcome) {
-                        is Outcome.Dispatch -> return outcome.call
-                        Outcome.Wait -> return null
-                        Outcome.Changed -> Unit
-                    }
-                }
-            }
+        if (progress.livePending == 0L && progress.pending == 0L && progress.expected == 0L) {
+            job.fail("분석할 사진이 없습니다(실패 ${progress.failed}장)", now)
+            scoreFallbackSentAt.remove(job.galleryId)
+            logTransition(job, "ANALYZING->FAILED", progress, now)
+            return null
+        }
+        if (progress.livePending == 0L && progress.isFullyScored) {
+            job.startCategorizing(now)
+            logTransition(job, "ANALYZING->CATEGORIZING", progress, now)
+            return Action.Invoke(job.requiredId, listOf(StageCall.Categorize(galleryId = job.galleryId, jobId = job.requiredId)))
+        }
+        if (!properties.gpu.enabled && progress.embedded > progress.scored && isScoreFallbackDue(job.galleryId, now)) {
+            val photoIds = photoPipelineRepository.findUnscoredPhotoIds(job.galleryId)
+            if (photoIds.isEmpty()) return null
+            val calls = photoIds.chunked(properties.embedBatchSize).map { StageCall.Score(galleryId = job.galleryId, photoIds = it) }
+            return Action.Invoke(job.requiredId, calls)
         }
         return null
     }
 
-    /**
-     * EMBED는 임베더가 잡을 모르므로 이 서버가 `photo_analysis`를 관측해 단계를 열고 닫는다.
-     * 진행(완료 사진 수)이 늘면 살아 있는 것이고, 전부 채워지면 끝이며, 한동안 늘지 않으면 정체다.
-     */
-    private fun stepEmbed(job: AnalysisJob, now: ZonedDateTime): Outcome {
-        val progress = countEmbedded(job)
-
-        if (job.stageStatus == AnalysisStatus.PENDING) {
-            return dispatchOrGiveUp(job, AnalysisStage.EMBED, now) { job.openStageByObserver(progress.done.toInt(), now) }
-        }
-        job.observeProgress(progress.done.toInt(), now)
-        if (progress.isComplete) {
-            job.completeStage(now)
-            return Outcome.Changed
-        }
-        if (isStalled(job, now)) {
-            log.warn("EMBED 정체: jobId={}, galleryId={}, 진행 {}/{}", job.requiredId, job.galleryId, progress.done, progress.targets)
-            job.requeueStage()
-            return Outcome.Changed
-        }
-        return Outcome.Wait
+    private fun isScoreFallbackDue(galleryId: Long, now: ZonedDateTime): Boolean {
+        val last = scoreFallbackSentAt[galleryId] ?: return true
+        return last.plus(properties.gpu.fallbackInterval).isBefore(now)
     }
 
-    private fun countEmbedded(job: AnalysisJob): EmbedProgress {
-        val targets = photoRepository.countByGalleryIdAndStatusNot(job.galleryId, PhotoStatus.PENDING)
+    /**
+     * categorize의 결과(배정 행 + 백분위)가 다 왔으면 물질화로. Lambda가 `error`를 남겼으면 FAILED.
+     * 보낸 지 오래됐는데 결과가 없으면 다시 보내고, 상한을 넘기면 FAILED.
+     */
+    private fun stepCategorizing(job: AnalysisJob, now: ZonedDateTime): Action? {
+        job.error?.let { error ->
+            job.fail(error, now)
+            log.warn("analysis job={} gallery={} CATEGORIZING->FAILED error={}", job.requiredId, job.galleryId, error)
+            return null
+        }
+
+        val progress = progressOf(job, now)
+        if (aiConceptAssignmentRepository.existsByJobId(job.requiredId) && progress.categorized == progress.expected) {
+            return Action.Materialize(jobId = job.requiredId, galleryId = job.galleryId)
+        }
+
         val dispatchedAt = job.dispatchedAt
-        // force는 이미 있던 벡터를 다시 쓰므로 "벡터가 있다"로는 진행을 알 수 없다 — 보낸 시각 이후 갱신된 행만 센다.
-        val done = if (job.force && dispatchedAt != null) {
-            photoRepository.countByGalleryIdAndStatusNotAndEmbeddedSince(job.galleryId, PhotoStatus.PENDING, dispatchedAt)
-        } else {
-            targets - photoRepository.countByGalleryIdAndStatusNotAndNotEmbedded(job.galleryId, PhotoStatus.PENDING)
+        if (dispatchedAt != null && dispatchedAt.plus(properties.categorizeTimeout).isAfter(now)) return null
+        if (job.attempts >= properties.categorizeMaxAttempts) {
+            job.fail("categorize 를 ${properties.categorizeMaxAttempts}회 시도했지만 끝나지 않았습니다", now)
+            logTransition(job, "CATEGORIZING->FAILED", progress, now)
+            return null
         }
-        return EmbedProgress(targets = targets, done = done)
+        job.redispatchCategorize(now)
+        log.warn("analysis job={} gallery={} categorize redispatch attempts={}", job.requiredId, job.galleryId, job.attempts)
+        return Action.Invoke(job.requiredId, listOf(StageCall.Categorize(galleryId = job.galleryId, jobId = job.requiredId)))
     }
 
-    /**
-     * SCORE·CATEGORIZE. 단계 상태를 쓰는 Lambda([AnalysisProperties.lambdaReportsStage])면 `stage_status`로 집힘·정체를 보고
-     * 안 집히면 다시 보낸다. 옛 Lambda는 단계 상태를 쓰지 않아 집힘을 알 수 없으므로 한 번 보낸 뒤 손을 뗀다 — 재전송·정체
-     * 감지 없이 AI 쪽이 `status`를 DONE·FAILED로 닫을 때까지 기다린다(다시 보내면 같은 갤러리를 두 번 돌린다).
-     */
-    private fun stepLambdaStage(job: AnalysisJob, stage: AnalysisStage, now: ZonedDateTime): Outcome {
-        if (!properties.lambdaReportsStage) {
-            return if (job.dispatchedAt == null) dispatchOrGiveUp(job, stage, now) {} else Outcome.Wait
-        }
-        if (job.isStageClaimed) {
-            if (isStalled(job, now)) {
-                log.warn("{} 정체: jobId={}, galleryId={}", stage, job.requiredId, job.galleryId)
-                job.requeueStage()
-                return Outcome.Changed
+    private fun progressOf(job: AnalysisJob, now: ZonedDateTime): GalleryAnalysisProgress =
+        photoPipelineRepository.progressOf(job.galleryId, liveSince = now.minus(properties.uploadQuietAfter))
+
+    private fun invoke(action: Action.Invoke) {
+        for (call in action.calls) {
+            try {
+                stageInvoker.invoke(call)
+            } catch (e: AnalysisException) {
+                // 호출 실패는 잡을 닫지 않는다 — 시각을 지워 다음 스윕이 타임아웃을 기다리지 않고 다시 보내게 한다. 상한은 시도 수가 지킨다.
+                log.warn("AI 분석 호출 실패 — 스윕이 다시 보낸다: job={} call={} code={}", action.jobId, call, e.errorCode.code)
+                if (call is StageCall.Categorize) {
+                    tx.executeWithoutResult { analysisJobRepository.findById(action.jobId).ifPresent { it.dispatchFailed() } }
+                }
+                return
             }
-            return Outcome.Wait
+            if (call is StageCall.Score) scoreFallbackSentAt[call.galleryId] = ZonedDateTime.now(clock)
+        }
+    }
+
+    /**
+     * 자기 트랜잭션(갤러리 락)으로 폴더를 만들고, 다음 트랜잭션에서 잡을 닫으며 알림을 발행한다. 두 스윕이 겹치면 두 번째
+     * 물질화는 이미 있는 세트를 돌려주고 잡은 이미 닫혀 있어 알림도 한 번이다. "새로 넣을 사진 없음"은 할 일이 없는 것이라 DONE.
+     */
+    private fun materialize(action: Action.Materialize) {
+        val outcome = try {
+            val folders = aiCategoryFolderService.createFromAnalysisAsAdmin(action.galleryId)
+            Materialized.Created(
+                folders = folders.size,
+                details = folders.sumOf { it.details.size },
+                assigned = folders.sumOf { concept -> concept.details.sumOf { it.photoIds.size } },
+            )
+        } catch (e: BusinessException) {
+            // 갤러리가 사라졌거나(GalleryException) 배정이 없는 등 규칙 위반은 다시 돌려도 같으므로 잡을 닫는다.
+            if (e is CategoryException && e.errorCode == CategoryErrorCode.NO_PHOTOS_TO_ORGANIZE) {
+                Materialized.NothingNew
+            } else {
+                Materialized.Failed(e.errorCode.message)
+            }
         }
 
-        val dispatchedAt = job.dispatchedAt
-        if (dispatchedAt != null && dispatchedAt.plus(properties.dispatchRetryAfter).isAfter(now)) return Outcome.Wait
-        return dispatchOrGiveUp(job, stage, now) {}
-    }
-
-    private fun isStalled(job: AnalysisJob, now: ZonedDateTime): Boolean {
-        val last = job.heartbeatAt ?: job.dispatchedAt ?: return false
-        return last.plus(properties.stallAfter).isBefore(now)
-    }
-
-    private fun dispatchOrGiveUp(job: AnalysisJob, stage: AnalysisStage, now: ZonedDateTime, onDispatch: () -> Unit): Outcome {
-        if (job.stageAttempts >= properties.maxAttempts) {
-            job.fail("$stage 단계를 ${properties.maxAttempts}회 시도했지만 끝나지 않았습니다", now)
-            log.warn("AI 분석 포기: jobId={}, stage={}, attempts={}", job.requiredId, stage, job.stageAttempts)
-            return Outcome.Wait
-        }
-        job.dispatch(now)
-        onDispatch()
-        return Outcome.Dispatch(StageDispatchDto(jobId = job.requiredId, galleryId = job.galleryId, stage = stage, force = job.force))
-    }
-
-    private fun invoke(call: StageDispatchDto) {
         try {
-            stageInvoker.invoke(call.stage, call.jobId, call.galleryId, call.force)
-            log.info("AI 분석 단계 호출: jobId={}, galleryId={}, stage={}, force={}", call.jobId, call.galleryId, call.stage, call.force)
-        } catch (e: AnalysisException) {
-            // 호출 실패는 잡을 닫지 않는다 — 시각을 지워 다음 스윕이 기다리지 않고 다시 보내게 한다. 상한은 시도 수가 지킨다.
-            log.warn("AI 분석 단계 호출 실패 — 스윕이 다시 보낸다: jobId={}, stage={}, code={}", call.jobId, call.stage, e.errorCode.code)
             tx.executeWithoutResult {
-                analysisJobRepository.findById(call.jobId).ifPresent { it.dispatchFailed() }
+                val job = analysisJobRepository.findById(action.jobId).orElse(null) ?: return@executeWithoutResult
+                if (job.status != AnalysisStatus.CATEGORIZING) return@executeWithoutResult
+                val now = ZonedDateTime.now(clock)
+                scoreFallbackSentAt.remove(job.galleryId)
+                when (outcome) {
+                    is Materialized.Created -> {
+                        job.finish(now)
+                        completionNotifier.notifyFoldersCreated(job.galleryId)
+                        log.info(
+                            "analysis job={} gallery={} CATEGORIZING->DONE folders={} details={} assigned={} elapsed={}s total={}s",
+                            job.requiredId, job.galleryId, outcome.folders, outcome.details, outcome.assigned,
+                            secondsSince(job.dispatchedAt, now), secondsSince(job.createdAt, now),
+                        )
+                    }
+                    Materialized.NothingNew -> {
+                        job.finish(now)
+                        log.info(
+                            "analysis job={} gallery={} CATEGORIZING->DONE folders=0 details=0 assigned=0 elapsed={}s total={}s",
+                            job.requiredId, job.galleryId, secondsSince(job.dispatchedAt, now), secondsSince(job.createdAt, now),
+                        )
+                    }
+                    is Materialized.Failed -> {
+                        job.fail(outcome.error, now)
+                        log.warn("analysis job={} gallery={} CATEGORIZING->FAILED error={}", job.requiredId, job.galleryId, outcome.error)
+                    }
+                }
             }
+        } catch (e: ObjectOptimisticLockingFailureException) {
+            log.debug("분석 잡 {} 은 다른 스윕이 먼저 닫았다", action.jobId)
         }
     }
 
-    private data class EmbedProgress(val targets: Long, val done: Long) {
-        val isComplete: Boolean
-            get() = done >= targets
+    private fun logTransition(job: AnalysisJob, transition: String, progress: GalleryAnalysisProgress, now: ZonedDateTime) {
+        log.info(
+            "analysis job={} gallery={} {} expected={} embedded={} scored={} failed={} elapsed={}s",
+            job.requiredId, job.galleryId, transition,
+            progress.expected, progress.embedded, progress.scored, progress.failed, secondsSince(job.createdAt, now),
+        )
     }
 
-    private sealed interface Outcome {
-        data class Dispatch(val call: StageDispatchDto) : Outcome
-        data object Wait : Outcome
-        data object Changed : Outcome
+    private fun secondsSince(from: ZonedDateTime?, now: ZonedDateTime): Long =
+        from?.let { Duration.between(it, now).seconds } ?: 0
+
+    /** 걸음 트랜잭션이 끝난 뒤 할 일. */
+    private sealed interface Action {
+        data class Invoke(val jobId: Long, val calls: List<StageCall>) : Action
+        data class Materialize(val jobId: Long, val galleryId: Long) : Action
     }
 
-    companion object {
-        /** 한 걸음에서 지날 수 있는 전이 수의 상한. 단계 수(3)에 완료→다음 단계 전이를 더한 것보다 넉넉하다. */
-        private const val MAX_TRANSITIONS = 8
+    private sealed interface Materialized {
+        data class Created(val folders: Int, val details: Int, val assigned: Int) : Materialized
+        data object NothingNew : Materialized
+        data class Failed(val error: String) : Materialized
     }
 }

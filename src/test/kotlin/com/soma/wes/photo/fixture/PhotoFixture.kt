@@ -5,12 +5,14 @@ import com.soma.wes.photo.domain.PhotoAnalysis
 import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.support.TestSequence
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
 
 @Component
 class PhotoFixture(
     private val photoRepository: PhotoRepository,
     private val photoAnalysisRepository: PhotoAnalysisRepository,
+    private val jdbcTemplate: JdbcTemplate,
 ) {
 
     fun 업로드된_사진(galleryId: Long, count: Int): List<Long> = 사진(galleryId, count, uploaded = true)
@@ -32,6 +34,43 @@ class PhotoFixture(
         photoAnalysisRepository.saveAndFlush(
             PhotoAnalysis.embeddedBy(photoId = photoId, vector = vector, model = EMBEDDING_MODEL),
         )
+
+    /** score(GPU 워커·Lambda 폴백)가 CLIP 벡터·점수를 적재한 것을 흉내 낸다 — 벡터가 이미 있는 사진에만. */
+    fun 점수_적재(photoId: Long) {
+        jdbcTemplate.update(
+            """
+            UPDATE photo_analysis
+            SET clip_embedding = embedding, subjects = 'couple', model_version = 'score-test', analyzed_at = now(), updated_at = now()
+            WHERE photo_id = ? AND embedding IS NOT NULL
+            """.trimIndent(),
+            photoId,
+        )
+    }
+
+    /** categorize 가 백분위·연사·임베딩 그룹을 적재한 것을 흉내 낸다 — 점수가 이미 있는 사진에만. */
+    fun 백분위_적재(photoId: Long, embedGroupId: Int = 1) {
+        jdbcTemplate.update(
+            """
+            UPDATE photo_analysis
+            SET technical_pct = 80.0, aesthetic_pct = 70.0, cluster_id = 1, cluster_rank = 0, embed_group_id = ?, updated_at = now()
+            WHERE photo_id = ? AND clip_embedding IS NOT NULL
+            """.trimIndent(),
+            embedGroupId,
+            photoId,
+        )
+    }
+
+    /** 임베더·score 가 사진 단위 결정적 실패를 남긴 것을 흉내 낸다. 이 사진은 기대 장수에서 빠진다. */
+    fun 분석_실패(photoId: Long, error: String = "DECODE_FAILED") {
+        jdbcTemplate.update(
+            """
+            INSERT INTO photo_analysis (photo_id, error, created_at, updated_at) VALUES (?, ?, now(), now())
+            ON CONFLICT (photo_id) DO UPDATE SET error = EXCLUDED.error, updated_at = now()
+            """.trimIndent(),
+            photoId,
+            error,
+        )
+    }
 
     private fun 사진(galleryId: Long, count: Int, uploaded: Boolean): List<Long> =
         (1..count).map { index ->
