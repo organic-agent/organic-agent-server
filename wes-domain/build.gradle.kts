@@ -40,6 +40,8 @@ dependencies {
     api("io.awspring.cloud:spring-cloud-aws-starter-parameter-store")
     api("io.awspring.cloud:spring-cloud-aws-starter-s3")
     api("software.amazon.awssdk:lambda")
+    // GPU score 워커 EC2 켜기·끄기(analysis 도메인의 Ec2ScoreWorkerPool).
+    api("software.amazon.awssdk:ec2")
     api("software.amazon.awssdk:bedrockruntime")
     // Bedrock 클라이언트의 소켓 타임아웃을 직접 잡기 위해 컴파일 의존으로 올린다(원래는 런타임 전이).
     api("software.amazon.awssdk:apache-client")

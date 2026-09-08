@@ -44,8 +44,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   최상위 디렉토리 하나 = 함수 하나(AI #35). **사진 한 장의 진행은 `photo_analysis` 행 하나가 말한다**(파이프라인 v2):
   `analysis` 도메인의 5초 스윕이 업로드된 사진을 50장씩 임베더에 배정하고(`EmbedDispatcher`, `{galleryId, photoIds}`), 잡
   (`ai_analysis_jobs`: ANALYZING → CATEGORIZING → DONE | FAILED)은 점수가 다 차기를 관측해 categorize를 한 번 부른 뒤
-  AI 폴더를 자동 물질화하고 알림을 보낸다(`AnalysisOrchestrator`, `StageInvoker`). Lambda는 잡 상태를 쓰지 않는다(categorize 실패
-  시 `error` 한 컬럼 예외). 재분석 = `photo_analysis` 삭제(관리자 재처리). `category`(폴더 세트 실체화)와
+  AI 폴더를 자동 물질화하고 알림을 보낸다(`AnalysisOrchestrator`, `StageInvoker`). 점수는 GPU EC2 워커가 `photo_analysis`를 직접
+  집어 내고 wes는 켜고 끄기만 한다(`GpuController`·`ScoreWorkerPool`, `app.analysis.gpu.*`; 끄기는 워커의 유휴 30초 자기 정지가
+  1차, wes는 2분 무진행 안전망). 워커가 없거나 멈추면 score Lambda 폴백을 `{galleryId, photoIds}`로 보낸다. Lambda는 잡 상태를
+  쓰지 않는다(categorize 실패 시 `error` 한 컬럼 예외). 재분석 = `photo_analysis` 삭제(관리자 재처리). `category`(폴더 세트 실체화)와
   `recommendation`(추천·비교샷 + LLM)은 완성된 `photo_analysis`·배정 행만 읽는다. 설계는 `docs/plans/pipeline-v2-wes.md`
   (이전 설계 `docs/plans/analysis-domain.md`는 §12부터 대체됨), 컬럼 소유는 `.claude/rules/migration.md`.
 - 인프라는 sibling repo `../../organic-agent-infra` (Terraform: VPC/ALB/EC2/RDS, 사진 S3 버킷
@@ -65,6 +67,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     대역.** 운영 Lambda 함수 하나 = 스크립트 하나(AI repo 최상위 모듈과 같은 이름), 인자는 Lambda 페이로드 키 그대로. 로컬 wes
     (local 프로필)의 `analysis` 스윕이 배정·categorize 때 이것을 띄운다(`LocalProcessStageInvoker`, 운영의 EVENT 자리).
     접속 정보는 `lib/ai-env.sh`.
+  - `gpu/score-worker.sh` — **로컬 GPU 워커 대역.** 운영의 EC2 score 워커 한 대에 해당한다(AI repo `score worker --gpu --once`).
+    로컬 wes 에서 `app.analysis.gpu.enabled=true` 면 `GpuController` 가 "켜기" 자리에서 이것을 띄운다(`LocalProcessScoreWorkerPool`).
   - `local-ai.sh <galleryId> [--skip-embed] [--skip-analyze]` — 위 셋을 잡 없이 갤러리 전체로 순서대로 도는 지름길(배정·폴더는
     저장되지 않음). 로컬 pg + dev 버킷(`/wes/local/app.storage.bucket`)을 쓴다.
   - AI venv는 `scripts/lib/ai-venv.sh`가 `<모듈>/.venv`에 만든다(score venv에 categorize 포함).

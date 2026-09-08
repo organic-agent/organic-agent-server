@@ -17,7 +17,6 @@ import com.soma.wes.photo.repository.projection.GalleryAnalysisProgress
 import java.time.Clock
 import java.time.Duration
 import java.time.ZonedDateTime
-import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.LoggerFactory
 import org.springframework.orm.ObjectOptimisticLockingFailureException
 import org.springframework.stereotype.Service
@@ -41,6 +40,7 @@ class AnalysisOrchestrator(
     private val aiConceptAssignmentRepository: AiConceptAssignmentRepository,
     private val stageInvoker: StageInvoker,
     private val embedDispatcher: EmbedDispatcher,
+    private val gpuController: GpuController,
     private val aiCategoryFolderService: AiCategoryFolderService,
     private val completionNotifier: AnalysisCompletionNotifier,
     private val properties: AnalysisProperties,
@@ -58,20 +58,22 @@ class AnalysisOrchestrator(
         propagationBehavior = TransactionDefinition.PROPAGATION_REQUIRES_NEW
     }
 
-    /** score Lambda 폴백을 갤러리마다 마지막으로 보낸 시각. 컬럼 없이 간다 — 인스턴스가 여럿이면 겹칠 수 있고, score는 UPSERT라 무방하다. */
-    private val scoreFallbackSentAt = ConcurrentHashMap<Long, ZonedDateTime>()
-
     /** 요청이 커밋된 직후 한 걸음. 스윕이 5초 뒤 같은 판단을 내리므로 놓쳐도 늦어질 뿐이다. */
     fun dispatch(jobId: Long) {
         stepJob(jobId)
     }
 
-    /** 임베더 배정 → 살아 있는 잡 전부 한 걸음씩. 잡마다 트랜잭션을 따로 열어 하나의 실패가 나머지를 막지 않게 한다. */
+    /** 임베더 배정 → GPU 제어·score 폴백 → 살아 있는 잡 전부 한 걸음씩. 단계마다 실패를 가둬 하나의 실패가 나머지를 막지 않게 한다. */
     fun sweep() {
         try {
             embedDispatcher.dispatch()
         } catch (e: RuntimeException) {
             log.error("embed dispatch 실패 — 잡 걸음은 계속한다", e)
+        }
+        try {
+            gpuController.control()
+        } catch (e: RuntimeException) {
+            log.error("gpu control 실패 — 잡 걸음은 계속한다", e)
         }
 
         val jobIds = tx.execute {
@@ -112,14 +114,13 @@ class AnalysisOrchestrator(
 
     /**
      * 점수가 기대 장수만큼 찼고 아직 올라오는 사진이 없으면 CATEGORIZING으로. 대상이 한 장도 남지 않으면(전부 실패·삭제) 닫는다.
-     * GPU 워커가 없으면(`gpu.enabled=false`) 벡터는 있는데 점수가 없는 사진을 score Lambda에 배치로 보낸다 — 갤러리당 일정 간격.
+     * 점수를 내는 것(GPU 워커·Lambda 폴백)은 [GpuController]의 일이라 여기서는 기다리기만 한다.
      */
     private fun stepAnalyzing(job: AnalysisJob, now: ZonedDateTime): Action? {
         val progress = progressOf(job, now)
 
         if (progress.livePending == 0L && progress.pending == 0L && progress.expected == 0L) {
             job.fail("분석할 사진이 없습니다(실패 ${progress.failed}장)", now)
-            scoreFallbackSentAt.remove(job.galleryId)
             logTransition(job, "ANALYZING->FAILED", progress, now)
             return null
         }
@@ -128,18 +129,7 @@ class AnalysisOrchestrator(
             logTransition(job, "ANALYZING->CATEGORIZING", progress, now)
             return Action.Invoke(job.requiredId, listOf(StageCall.Categorize(galleryId = job.galleryId, jobId = job.requiredId)))
         }
-        if (!properties.gpu.enabled && progress.embedded > progress.scored && isScoreFallbackDue(job.galleryId, now)) {
-            val photoIds = photoPipelineRepository.findUnscoredPhotoIds(job.galleryId)
-            if (photoIds.isEmpty()) return null
-            val calls = photoIds.chunked(properties.embedBatchSize).map { StageCall.Score(galleryId = job.galleryId, photoIds = it) }
-            return Action.Invoke(job.requiredId, calls)
-        }
         return null
-    }
-
-    private fun isScoreFallbackDue(galleryId: Long, now: ZonedDateTime): Boolean {
-        val last = scoreFallbackSentAt[galleryId] ?: return true
-        return last.plus(properties.gpu.fallbackInterval).isBefore(now)
     }
 
     /**
@@ -180,12 +170,9 @@ class AnalysisOrchestrator(
             } catch (e: AnalysisException) {
                 // 호출 실패는 잡을 닫지 않는다 — 시각을 지워 다음 스윕이 타임아웃을 기다리지 않고 다시 보내게 한다. 상한은 시도 수가 지킨다.
                 log.warn("AI 분석 호출 실패 — 스윕이 다시 보낸다: job={} call={} code={}", action.jobId, call, e.errorCode.code)
-                if (call is StageCall.Categorize) {
-                    tx.executeWithoutResult { analysisJobRepository.findById(action.jobId).ifPresent { it.dispatchFailed() } }
-                }
+                tx.executeWithoutResult { analysisJobRepository.findById(action.jobId).ifPresent { it.dispatchFailed() } }
                 return
             }
-            if (call is StageCall.Score) scoreFallbackSentAt[call.galleryId] = ZonedDateTime.now(clock)
         }
     }
 
@@ -215,7 +202,6 @@ class AnalysisOrchestrator(
                 val job = analysisJobRepository.findById(action.jobId).orElse(null) ?: return@executeWithoutResult
                 if (job.status != AnalysisStatus.CATEGORIZING) return@executeWithoutResult
                 val now = ZonedDateTime.now(clock)
-                scoreFallbackSentAt.remove(job.galleryId)
                 when (outcome) {
                     is Materialized.Created -> {
                         job.finish(now)

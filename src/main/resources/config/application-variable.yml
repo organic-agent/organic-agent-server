@@ -111,9 +111,16 @@ app:
     # categorize EVENT 뒤 이 시간 안에 배정 행이 없으면 다시 보낸다(7천 장 약 70초보다 넉넉히). 상한을 넘기면 잡 FAILED.
     categorize-timeout: PT20M
     categorize-max-attempts: 3
-    # GPU score 워커(PR-C). 꺼져 있으면 벡터는 있는데 점수가 없는 사진을 score Lambda 에 갤러리당 이 간격으로 배치 전송한다.
+    # GPU score 워커. 켜져 있으면 스윕이 backlog(점수 없는 UPLOADED 사진)를 보고 EC2 인스턴스(Name 태그 = tag)를 켠다. 끄기는
+    # 워커의 유휴 30초 자기 정지가 1차이고 idle-stop-after 는 그것이 실패했을 때의 안전망이다. 워커가 fallback-after 동안 뜨지 않거나
+    # 점수가 멈추면 score Lambda 폴백을 갤러리당 fallback-interval 마다 보낸다. 꺼져 있으면(로컬·테스트·GPU 배포 전) 폴백만 돈다.
+    # prod 는 Parameter Store(app.analysis.gpu.enabled)가 켠다.
     gpu:
       enabled: false
+      tag: wes-score-gpu
+      start-grace: PT5M
+      idle-stop-after: PT2M
+      fallback-after: PT10M
       fallback-interval: PT10M
     # 임베더 배정과 살아 있는 잡을 한 걸음씩 옮기는 스윕 주기.
     sweep-interval: PT5S

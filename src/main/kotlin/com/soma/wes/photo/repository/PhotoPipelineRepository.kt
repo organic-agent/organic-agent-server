@@ -16,8 +16,9 @@ import org.springframework.stereotype.Repository
  * 전부 `deleted_at IS NULL`을 직접 건다(native SQL은 `@SQLRestriction` 밖이다). 분석 행은 임베더가 첫 배치에서
  * 만들므로 LEFT JOIN 해 없는 행을 "아직"으로 읽는다.
  *
- * 세 묶음이 있다 — 진행 카운트([progressOf]), PENDING 보정([findPendingToCheck]·[markUploaded]·[touchPending]·[moveToTrash]),
- * 임베더 배정과 리셋([claimForEmbedding]·[releaseStaleDispatches]·[markEmbedAttemptsExceeded]·[resetAnalysis]).
+ * 네 묶음이 있다 — 진행 카운트([progressOf]), PENDING 보정([findPendingToCheck]·[markUploaded]·[touchPending]·[moveToTrash]),
+ * 임베더 배정과 리셋([claimForEmbedding]·[releaseStaleDispatches]·[markEmbedAttemptsExceeded]·[resetAnalysis]),
+ * GPU 제어·score 폴백([countScoreBacklog]·[countScored]·[findGalleryIdsWithUnscoredPhotos]·[findUnscoredPhotoIds]).
  */
 @Repository
 class PhotoPipelineRepository(
@@ -259,6 +260,49 @@ class PhotoPipelineRepository(
     )
         .query { rs, _ -> rs.getInt(1) }
         .single()
+
+    /**
+     * GPU 워커가 곧 집게 될 일의 양 — 업로드됐고 실패하지 않았는데 점수가 없는 사진 전부(아직 벡터도 없는 사진 포함).
+     * 켤지 말지의 기준이다: 벡터가 오기 전에 미리 켜 두면 부팅 시간이 임베딩과 겹친다.
+     */
+    fun countScoreBacklog(): Long = jdbcClient.sql(
+        """
+        SELECT count(*)
+        FROM photos p
+        LEFT JOIN photo_analysis a ON a.photo_id = p.id
+        WHERE p.status = 'UPLOADED' AND p.deleted_at IS NULL
+          AND a.clip_embedding IS NULL AND a.error IS NULL
+        """.trimIndent(),
+    )
+        .query { rs, _ -> rs.getLong(1) }
+        .single()
+
+    /** 점수가 있는 사진 전체 수. 스윕 사이에 늘었으면 워커가 살아 있는 것이다(무진행 판정의 재료). */
+    fun countScored(): Long = jdbcClient.sql(
+        """
+        SELECT count(*)
+        FROM photo_analysis a
+        JOIN photos p ON p.id = a.photo_id
+        WHERE p.deleted_at IS NULL AND a.clip_embedding IS NOT NULL
+        """.trimIndent(),
+    )
+        .query { rs, _ -> rs.getLong(1) }
+        .single()
+
+    /** score 폴백을 보낼 갤러리 — 벡터는 있는데 점수가 없는 사진이 있는 갤러리를 오래 기다린 순으로. */
+    fun findGalleryIdsWithUnscoredPhotos(): List<Long> = jdbcClient.sql(
+        """
+        SELECT p.gallery_id
+        FROM photos p
+        JOIN photo_analysis a ON a.photo_id = p.id
+        WHERE p.status = 'UPLOADED' AND p.deleted_at IS NULL
+          AND a.embedding IS NOT NULL AND a.clip_embedding IS NULL AND a.error IS NULL
+        GROUP BY p.gallery_id
+        ORDER BY min(p.id)
+        """.trimIndent(),
+    )
+        .query { rs, _ -> rs.getLong("gallery_id") }
+        .list()
 
     /** score 폴백 대상 — 벡터는 있는데 점수(CLIP)가 없고 실패하지 않은 사진. 배정 컬럼 없이 갤러리 전체를 매번 다시 본다. */
     fun findUnscoredPhotoIds(galleryId: Long): List<Long> = jdbcClient.sql(
