@@ -1,6 +1,5 @@
 package com.soma.wes.analysis.controller.docs
 
-import com.soma.wes.analysis.dto.request.AnalysisRequest
 import com.soma.wes.analysis.dto.response.AnalysisJobResponse
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.global.exception.ErrorResponse
@@ -14,26 +13,23 @@ import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 
-@Tag(name = "[AI Analysis]", description = "갤러리 AI 분석(미리보기·임베딩 → 점수 → 그룹·이름) 잡 API (담당 작가 전용)")
+@Tag(name = "[AI Analysis]", description = "갤러리 AI 분석(임베딩·점수 관측 → 그룹·이름 → AI 폴더 생성) 잡 API (담당 작가 전용)")
 interface AnalysisControllerDocs {
 
     @Operation(
         summary = "갤러리 AI 분석 요청",
         description = """
-            갤러리 전수 분석을 시작한다. 단계 셋이 순서대로 돈다 — EMBED(미리보기·DINOv3 벡터·EXIF) →
-            SCORE(CLIP 벡터·미학·기술 점수·피사체) → CATEGORIZE(백분위·연사·임베딩 그룹, Bedrock 이름·배정).
-            AI 폴더 생성(POST /concept-folders/ai)은 마지막 단계의 결과 위에서 돈다.
+            갤러리의 AI 폴더를 만드는 잡을 시작한다. 본문은 없다. 프론트는 업로드 큐가 비면 자동으로 부르고, 작가가 버튼으로도 부른다.
 
-            비동기다. 즉시 202로 돌아오고 상태는 GET으로 폴링한다. 서버가 단계마다 Lambda를 부르고 앞 단계가
-            끝나면 다음을 이어 부른다. stage·stageStatus로 어느 단계까지 왔는지, progress로 진행률을 본다.
+            비동기다. 즉시 202로 돌아오고 상태는 GET으로 폴링한다. 사진별 임베딩·점수는 잡과 무관하게 서버가 업로드된 사진을
+            배치로 밀고 있고(프론트가 죽어도 이어진다), 잡은 점수가 다 차기를 관측해(ANALYZING) 그룹·이름 붙이기(CATEGORIZING)를
+            한 번 부른 뒤 AI 폴더를 자동으로 만들고 DONE으로 닫는다. progress가 사진 수 기준 진행이다.
 
-            본문 없이 부르면 FULL이다. 작가가 보는 결과는 언제나 카테고리까지 끝난 사진이다 — 임베딩만 따로 도는
-            모드는 없다. 이미 임베딩된 사진은 첫 단계가 건너뛰므로 사진을 더 올린 뒤 다시 눌러도 안전하다.
-            mode=NAMING은 이름·배정만 다시 돌린다 — VLM 호출이 실패했거나 작가 정의 컨셉을 바꾼 경우를 위한 짧은 잡이고, FULL이 DONE인
-            적이 없으면 409_4로 거절한다. force=true는 이미 있는 벡터·점수까지 다시 계산한다.
+            이미 벡터·점수가 있는 사진은 다시 계산하지 않는다 — 사진을 더 올린 뒤 다시 눌러도 새 사진만 처리된다.
+            전량 재계산(모델 교체)은 관리자 재처리(분석 리셋)의 일이다.
 
-            업로드가 끝난 사진이 한 장도 없으면 409_2다. 모드와 무관하게 진행 중(PENDING·RUNNING)인 잡이
-            있으면 새 잡을 만들지 않고 409_1이다. 끝난 뒤 다시 요청하면 갤러리 전체를 새 기준으로 다시 적재한다.
+            업로드가 끝난 사진이 한 장도 없으면 409_2다. 진행 중(ANALYZING·CATEGORIZING)인 잡이 있으면 새 잡을 만들지 않고
+            409_1이다. 끝난 뒤 다시 요청하면 새 잡이 만들어지고, 새로 올라온 사진이 없으면 폴더 추가 없이 DONE으로 닫힌다.
         """,
     )
     @ApiResponses(
@@ -56,7 +52,7 @@ interface AnalysisControllerDocs {
         ),
         ApiResponse(
             responseCode = "409",
-            description = "진행 중인 잡이 있거나, 분석할 사진이 없거나, NAMING인데 FULL이 끝난 적 없음",
+            description = "진행 중인 잡이 있거나, 분석할 사진이 없음",
             content = [
                 Content(
                     mediaType = MediaType.APPLICATION_JSON_VALUE,
@@ -70,17 +66,13 @@ interface AnalysisControllerDocs {
                             name = "업로드된 사진 없음",
                             value = """{"code": "RECOMMENDATION_409_2", "message": "업로드가 끝난 사진이 없어 AI 분석을 시작할 수 없습니다."}""",
                         ),
-                        ExampleObject(
-                            name = "NAMING인데 FULL이 끝난 적 없음",
-                            value = """{"code": "RECOMMENDATION_409_4", "message": "사진별 분석(full)이 끝난 적이 없어 이름 붙이기를 시작할 수 없습니다."}""",
-                        ),
                     ],
                 ),
             ],
         ),
         ApiResponse(
             responseCode = "503",
-            description = "요청한 모드의 단계 중 실행기(Lambda·로컬 스크립트)가 설정되지 않은 것이 있음. 로컬·테스트에는 없는 것이 정상이다.",
+            description = "실행기(Lambda·로컬 스크립트)가 설정되지 않음. 로컬·테스트에는 없는 것이 정상이다.",
             content = [
                 Content(
                     mediaType = MediaType.APPLICATION_JSON_VALUE,
@@ -95,13 +87,13 @@ interface AnalysisControllerDocs {
             ],
         ),
     )
-    fun request(loginUser: LoginUser, galleryId: Long, request: AnalysisRequest?): ResponseEntity<AnalysisJobResponse>
+    fun request(loginUser: LoginUser, galleryId: Long): ResponseEntity<AnalysisJobResponse>
 
     @Operation(
         summary = "갤러리 AI 분석 상태",
         description = """
-            가장 최근 분석 잡의 상태. 요청 후 폴링해 DONE이 되면 AI 폴더 생성과 부부 화면의 AI 추천이 열린다.
-            stage는 지금 어느 단계인지(EMBED → SCORE → CATEGORIZE), stageStatus는 그 단계가 실행기에 잡혔는지다.
+            가장 최근 분석 잡의 상태와 지금 진행. 요청 후 폴링해 DONE이 되면 AI 폴더가 만들어져 있고 부부 화면의 AI 추천이 열린다.
+            progress는 사진 수 기준(expected·embedded·scored·categorized·failed)이고 /photos/summary 와 같은 값이다.
             FAILED면 error에 이유가 있고, 다시 요청하면 새 잡이 만들어진다.
         """,
     )

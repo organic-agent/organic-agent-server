@@ -44,11 +44,13 @@ paths:
 - `photos.dispatched_at`·`embed_attempts`는 이 서버가 임베더 배정에 쓴다(V15). 임베더는 일시 실패한 장의 `dispatched_at`만
   NULL로 되돌리고 `status`는 건드리지 않는다. 옛 품질 점수(`technical_quality_*`)와 관리자 `QUALITY_ANALYSIS` 잡은 V15에서 지웠다.
   embedder GRANT 계약은 V15 블록이 V1 블록을 통째로 대체한다(V1은 적용된 파일이라 고치지 않는다).
-- `ai_analysis_jobs`는 이 서버(`analysis` 도메인)와 Lambda가 나눠 쓴다(V4). 이 서버: `stage`·`stage_attempts`·
-  `dispatched_at`·`observed_progress`·`force`와 잡을 닫는 `status` DONE/FAILED. Lambda: `stage_status`의 시작(claim)·끝,
-  `heartbeat_at`, `result`의 단계별 키(`||` 병합), `error`. 단계 상태를 아직 쓰지 않는 Lambda(AI Phase 0 이전,
-  `app.analysis.lambda-reports-stage=false`)는 `status`를 직접 RUNNING·DONE으로 옮기고 이 서버가 그 경우를 함께 다룬다.
-  EMBED 단계는 임베더가 잡을 모른다 — 이 서버가 `photo_analysis`를 관측해 열고 닫는다.
+- `ai_analysis_jobs`(V16, 파이프라인 v2)는 갤러리 한 번의 "폴더 만들기"만 맡는 한 층 상태 기계다 —
+  `status` ANALYZING → CATEGORIZING → DONE | FAILED, 컬럼은 `id`·`gallery_id`·`status`·`dispatched_at`(categorize EVENT 시각)·
+  `attempts`(categorize 호출 수)·`finished_at`·`error`·`version`·`created_at`·`updated_at`뿐이다. 이 서버가 상태 전부를 쓰고,
+  Lambda(categorize, DB 유저 `photoselect`)는 실패했을 때 `error` 한 컬럼만 쓴다(GRANT `UPDATE (error, updated_at)`).
+  단계·모드·force·result 컬럼은 없다 — 사진별 진행은 `photo_analysis` 행이 말하고, 임베더 배정은 잡과 무관하게 스윕이 한다
+  (`EmbedDispatcher`, `photos.dispatched_at`·`embed_attempts`). 재분석은 `photo_analysis` 행 삭제(`PhotoPipelineRepository.resetAnalysis`)다.
+  `AnalysisJob`은 `@DynamicUpdate`다 — Lambda가 쓰는 `error`를 이 서버의 오래된 스냅샷이 덮지 않게 바뀐 컬럼만 UPDATE한다.
 - `photo_analysis`는 세 주체가 나눠 쓴다 — 임베더가 `embedding·embedding_model`, SCORE 잡이
   `subjects·sub_scores·clip_embedding·model_version`, CATEGORIZE 잡이 `technical_pct·aesthetic_pct·cluster_*·
   embed_group_id`. 두 잡 사이에 `model_version`만 있고 백분위가 없는 창이 있으므로 "분석 완료"는
@@ -63,7 +65,8 @@ paths:
   `feature_spec`(`pref-v1`)이고, 컬럼을 바꾸면 AI repo `preference/store.py`·`features.py`도 함께 바꾼다.
 - **GRANT는 마이그레이션 안에 둔다.** Lambda 전용 role은 Terraform 밖의 수동 생성이라, 새 테이블의 GRANT는
   `IF EXISTS (SELECT 1 FROM pg_roles …)` DO 블록을 `-- {NAME}_GRANT_CONTRACT_BEGIN/END` 마커로 감싸
-  같은 마이그레이션에 넣는다(V1 embedder·photoselect, V14 preference). 운영(role 있음)은 배포 시 Flyway가 걸고
+  같은 마이그레이션에 넣는다(V15 embedder, V16 photoselect, V14 preference — V1 블록은 적용된 파일이라 고치지 않고 통째로 대체한다).
+  운영(role 있음)은 배포 시 Flyway가 걸고
   로컬·테스트(role 없음)는 건너뛴다. `AdminEmbedderPrivilegeContractTest`가 그 블록을 꺼내 Lambda의 실제 SQL을
   role로 실행하므로 계약을 늘리면 거기에 SQL도 보탠다. identity 컬럼은 시퀀스 GRANT가 필요 없다.
 

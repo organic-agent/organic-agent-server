@@ -54,16 +54,16 @@ class RecommendationFixture(
         jdbcTemplate.update("UPDATE photos SET preview_key = ?, updated_at = now() WHERE id = ?", previewKey, photoId)
     }
 
-    /** 분석 배치가 남긴 갤러리 분석 잡. 기본은 DONE — 폴더 생성의 전제다. */
-    fun 분석_잡(galleryId: Long, mode: String = "FULL", status: String = "DONE"): Long =
+    /** 갤러리 분석 잡. 기본은 DONE — 폴더 생성의 전제다. 살아 있는 상태(ANALYZING·CATEGORIZING)는 갤러리당 하나뿐이다. */
+    fun 분석_잡(galleryId: Long, status: String = "DONE"): Long =
         jdbcTemplate.queryForObject(
             """
-            INSERT INTO ai_analysis_jobs (gallery_id, mode, status, started_at, finished_at, created_at, updated_at)
-            VALUES (?, ?, ?, now(), now(), now(), now())
+            INSERT INTO ai_analysis_jobs (gallery_id, status, finished_at, created_at, updated_at)
+            VALUES (?, ?, CASE WHEN ? IN ('DONE', 'FAILED') THEN now() END, now(), now())
             RETURNING id
             """.trimIndent(),
             Long::class.java,
-            galleryId, mode, status,
+            galleryId, status, status,
         )!!
 
     /** AI 워커가 적재하는 추천 행. reason은 2단계라 기본 null이다. */

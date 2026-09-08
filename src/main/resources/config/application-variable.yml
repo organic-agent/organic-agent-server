@@ -90,30 +90,33 @@ app:
     pending-recheck-every: 10m
     pending-give-up-after: 24h
 
-  embedding:
-    # prod는 Parameter Store(app.embedding.function-name)가 덮어쓴다.
-    # 로컬·테스트에는 Lambda가 없으므로 빈 값이 정상이다 — 기동이 아니라 호출 시점에 실패한다.
-    function-name: ""
-
   analysis:
-    # 분석 파이프라인(EMBED → SCORE → CATEGORIZE) 오케스트레이션. 임베더 함수는 app.embedding.function-name.
-    # prod는 Parameter Store(app.analysis.score-function-name, categorize-function-name)가 덮어쓴다. 비면 호출 시점에 503.
+    # 분석 파이프라인 — 임베더 배정(스윕) · 잡(ANALYZING → CATEGORIZING → DONE) · Lambda 함수 이름.
+    # prod는 Parameter Store(app.analysis.embedder-function-name, score-function-name, categorize-function-name)가 덮어쓴다.
+    # 로컬·테스트에는 Lambda가 없으므로 빈 값이 정상이다 — 기동이 아니라 호출 시점에 503.
+    embedder-function-name: ""
     score-function-name: ""
     categorize-function-name: ""
     # local 프로필만: Lambda 대신 띄울 대역 스크립트 디렉토리(작업 디렉토리 기준). 함수 하나 = <디렉토리>/<함수>.sh.
     # 프로필 블록(application.yml)이 채운다.
     local-script-dir: ""
-    # Lambda가 ai_analysis_jobs.stage_status·heartbeat_at을 쓰는가(AI repo Phase 0 이후 true). false면 옛 계약 —
-    # score가 categorize를 직접 체인 호출하고 categorize가 status를 DONE으로 닫는다. 이 서버는 SCORE를 한 번만 보내고 맡긴다.
-    lambda-reports-stage: false
-    # EVENT를 보낸 뒤 이 시간 안에 단계가 잡히지 않으면 다시 보낸다. 컨테이너 Lambda의 콜드 스타트보다 길어야 한다.
-    dispatch-retry-after: PT5M
-    # 하트비트(EMBED는 관측한 진행)가 이 시간 이상 끊기면 정체로 보고 단계를 다시 줄에 세운다.
-    stall-after: PT20M
-    # 한 단계를 이 횟수까지 부른다. 넘으면 잡을 FAILED로 닫는다.
-    max-attempts: 3
-    # 살아 있는 잡을 한 걸음씩 옮기는 스윕 주기.
-    sweep-interval: PT30S
+    # 임베더 배정: EVENT 하나에 담는 사진 수 · 동시에 떠 있는 배치 수 상한(인프라 예약 동시성 ≥ 이 값) ·
+    # 벡터 없이 이 시간이 지나면 배정을 되돌려 다시 보냄 · 사진 한 장의 배정 상한(넘으면 photo_analysis.error).
+    embed-batch-size: 50
+    embed-max-in-flight: 32
+    embed-redispatch-after: PT10M
+    embed-max-attempts: 3
+    # 이 시간 안에 발급된 PENDING 사진은 "아직 올라오는 중"으로 보고 점수 완료 판정을 미룬다.
+    upload-quiet-after: PT2M
+    # categorize EVENT 뒤 이 시간 안에 배정 행이 없으면 다시 보낸다(7천 장 약 70초보다 넉넉히). 상한을 넘기면 잡 FAILED.
+    categorize-timeout: PT20M
+    categorize-max-attempts: 3
+    # GPU score 워커(PR-C). 꺼져 있으면 벡터는 있는데 점수가 없는 사진을 score Lambda 에 갤러리당 이 간격으로 배치 전송한다.
+    gpu:
+      enabled: false
+      fallback-interval: PT10M
+    # 임베더 배정과 살아 있는 잡을 한 걸음씩 옮기는 스윕 주기.
+    sweep-interval: PT5S
 
   llm:
     # Bedrock(Anthropic Messages) 호출. 꺼져 있으면 비교샷은 템플릿 판정, 추천 이유는 폴백 문장이다.

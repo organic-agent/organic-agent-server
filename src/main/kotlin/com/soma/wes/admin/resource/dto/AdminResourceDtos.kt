@@ -137,7 +137,6 @@ data class AdminReprocessRequest(
     @field:NotBlank
     @field:Size(max = 128)
     val idempotencyKey: String,
-    val force: Boolean = false,
 )
 
 data class AdminReprocessResponse(

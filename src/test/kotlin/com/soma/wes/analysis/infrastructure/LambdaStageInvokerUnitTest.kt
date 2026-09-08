@@ -1,11 +1,9 @@
 package com.soma.wes.analysis.infrastructure
 
 import com.soma.wes.analysis.config.AnalysisProperties
-import com.soma.wes.analysis.config.EmbeddingProperties
-import com.soma.wes.analysis.domain.AnalysisStage
+import com.soma.wes.analysis.dto.StageCall
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
-import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.Test
@@ -28,16 +26,15 @@ class LambdaStageInvokerUnitTest {
     private val objectMapper = JsonMapper.builder().build()
     private val invoker = LambdaStageInvoker(
         lambdaClient,
-        EmbeddingProperties(functionName = "wes-embedder"),
-        AnalysisProperties(scoreFunctionName = "wes-score", categorizeFunctionName = ""),
+        AnalysisProperties(embedderFunctionName = "wes-embedder", scoreFunctionName = "wes-score", categorizeFunctionName = ""),
     )
 
     @Test
-    fun `단계마다 함수와 페이로드 계약이 다르다`() {
+    fun `호출 종류마다 함수와 페이로드 계약이 다르다`() {
         whenever(lambdaClient.invoke(any<InvokeRequest>())).thenReturn(InvokeResponse.builder().statusCode(202).build())
 
-        invoker.invoke(AnalysisStage.EMBED, jobId = 7, galleryId = 3, force = true)
-        invoker.invoke(AnalysisStage.SCORE, jobId = 7, galleryId = 3, force = false)
+        invoker.invoke(StageCall.Embed(galleryId = 3, photoIds = listOf(10, 11, 12)))
+        invoker.invoke(StageCall.Score(galleryId = 3, photoIds = listOf(10)))
 
         val requests = argumentCaptor<InvokeRequest>()
         verify(lambdaClient, times(2)).invoke(requests.capture())
@@ -48,36 +45,46 @@ class LambdaStageInvokerUnitTest {
         assertSoftly { softly ->
             softly.assertThat(embed.functionName()).isEqualTo("wes-embedder")
             softly.assertThat(embed.invocationType()).isEqualTo(InvocationType.EVENT)
-            // 임베더는 jobId 키를 관리자 사진 교체로 해석한다 — 갤러리 잡은 analysisJobId로 보낸다.
+            // 임베더는 jobId 키를 관리자 사진 교체로 해석한다 — 배정 페이로드에는 갤러리와 사진 목록뿐이다.
             softly.assertThat(embedPayload.has("jobId")).isFalse()
-            softly.assertThat(embedPayload["analysisJobId"].asLong()).isEqualTo(7)
             softly.assertThat(embedPayload["galleryId"].asLong()).isEqualTo(3)
-            softly.assertThat(embedPayload["force"].asBoolean()).isTrue()
+            softly.assertThat(embedPayload["photoIds"].toString()).isEqualTo("[10,11,12]")
             softly.assertThat(score.functionName()).isEqualTo("wes-score")
-            softly.assertThat(scorePayload["jobId"].asLong()).isEqualTo(7)
-            softly.assertThat(scorePayload["force"].asBoolean()).isFalse()
+            softly.assertThat(scorePayload["galleryId"].asLong()).isEqualTo(3)
+            softly.assertThat(scorePayload["photoIds"].toString()).isEqualTo("[10]")
+            softly.assertThat(scorePayload.has("jobId")).isFalse()
         }
     }
 
     @Test
-    fun `함수 이름이 비어 있는 단계는 사용할 수 없다`() {
+    fun `categorize 페이로드는 갤러리와 잡 id다`() {
+        val payload = objectMapper.readTree(LambdaStageInvoker.payloadOf(StageCall.Categorize(galleryId = 8, jobId = 13)))
         assertSoftly { softly ->
-            softly.assertThat(invoker.isAvailable(AnalysisStage.EMBED)).isTrue()
-            softly.assertThat(invoker.isAvailable(AnalysisStage.SCORE)).isTrue()
-            softly.assertThat(invoker.isAvailable(AnalysisStage.CATEGORIZE)).isFalse()
+            softly.assertThat(payload["galleryId"].asLong()).isEqualTo(8)
+            softly.assertThat(payload["jobId"].asLong()).isEqualTo(13)
+            softly.assertThat(payload.has("photoIds")).isFalse()
+        }
+    }
+
+    @Test
+    fun `함수 이름이 비어 있는 호출은 사용할 수 없다`() {
+        assertSoftly { softly ->
+            softly.assertThat(invoker.isAvailable(StageCall.Embed::class)).isTrue()
+            softly.assertThat(invoker.isAvailable(StageCall.Score::class)).isTrue()
+            softly.assertThat(invoker.isAvailable(StageCall.Categorize::class)).isFalse()
         }
     }
 
     @Test
     fun `SDK 예외와 202가 아닌 응답은 호출 실패 코드다`() {
         whenever(lambdaClient.invoke(any<InvokeRequest>())).thenThrow(SdkClientException.create("no credentials"))
-        assertThatThrownBy { invoker.invoke(AnalysisStage.SCORE, jobId = 1, galleryId = 1, force = false) }
+        assertThatThrownBy { invoker.invoke(StageCall.Score(galleryId = 1, photoIds = listOf(1))) }
             .isInstanceOf(AnalysisException::class.java)
             .extracting("errorCode")
             .isEqualTo(AnalysisErrorCode.STAGE_INVOCATION_FAILED)
 
         whenever(lambdaClient.invoke(any<InvokeRequest>())).thenReturn(InvokeResponse.builder().statusCode(500).build())
-        assertThatThrownBy { invoker.invoke(AnalysisStage.SCORE, jobId = 1, galleryId = 1, force = false) }
+        assertThatThrownBy { invoker.invoke(StageCall.Score(galleryId = 1, photoIds = listOf(1))) }
             .isInstanceOf(AnalysisException::class.java)
             .extracting("errorCode")
             .isEqualTo(AnalysisErrorCode.STAGE_INVOCATION_FAILED)

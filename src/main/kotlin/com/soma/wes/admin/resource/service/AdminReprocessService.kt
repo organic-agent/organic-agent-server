@@ -7,26 +7,41 @@ import com.soma.wes.admin.resource.dto.AdminReprocessRequest
 import com.soma.wes.admin.resource.dto.AdminReprocessResponse
 import com.soma.wes.admin.resource.repository.AdminIdempotencyStore
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
+import com.soma.wes.analysis.domain.AnalysisJob
+import com.soma.wes.analysis.domain.AnalysisStatus
+import com.soma.wes.analysis.dto.StageCall
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
-import com.soma.wes.analysis.service.EmbeddingInvoker
-import com.soma.wes.photo.domain.PhotoStatus
-import org.slf4j.LoggerFactory
-import org.springframework.jdbc.core.simple.JdbcClient
-import org.springframework.stereotype.Service
+import com.soma.wes.analysis.repository.AnalysisJobRepository
+import com.soma.wes.analysis.service.StageInvoker
+import com.soma.wes.photo.repository.PhotoPipelineRepository
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.time.Clock
+import java.time.ZonedDateTime
+import org.slf4j.LoggerFactory
+import org.springframework.stereotype.Service
+import org.springframework.transaction.support.TransactionTemplate
 
+/**
+ * 관리자 갤러리 재처리 = 분석 데이터 리셋. 갤러리의 `photo_analysis` 행을 지우고 임베더 배정 추적을 초기화하면
+ * 스윕이 사진 전부를 다시 배정하고(임베딩 → 점수), 잡이 없으면 하나 만들어 categorize·폴더 물질화까지 이어진다.
+ * Lambda를 직접 부르지 않는다 — 부르는 것은 스윕의 일이고, 여기서는 "다시 할 대상"만 만든다.
+ */
 @Service
 class AdminReprocessService(
     private val resourceRepository: AdminResourceRepository,
     private val idempotencyStore: AdminIdempotencyStore,
-    private val jdbcClient: JdbcClient,
-    private val embeddingInvoker: EmbeddingInvoker,
+    private val photoPipelineRepository: PhotoPipelineRepository,
+    private val analysisJobRepository: AnalysisJobRepository,
+    private val stageInvoker: StageInvoker,
+    private val transactionTemplate: TransactionTemplate,
+    private val clock: Clock,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
+    /** 멱등성 저장소는 자기 트랜잭션(REQUIRES_NEW)이라 이 메서드는 트랜잭션이 없고, 리셋과 잡 생성만 하나로 묶는다. */
     fun reprocess(
         actorAdminId: Long,
         type: AdminResourceType,
@@ -45,12 +60,12 @@ class AdminReprocessService(
         if (gallery.deleted || gallery.version != request.expectedVersion) {
             throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
         }
-        if (!embeddingInvoker.isAvailable) {
+        if (!stageInvoker.isAvailable(StageCall.Embed::class)) {
             throw AnalysisException(AnalysisErrorCode.STAGE_NOT_CONFIGURED)
         }
 
-        val targets = countTargets(id, request.force)
-        val requestHash = sha256("$type:$id:${request.expectedVersion}:${request.force}:${request.reason.trim()}")
+        val targets = countTargets(id)
+        val requestHash = sha256("$type:$id:${request.expectedVersion}:${request.reason.trim()}")
         val reservation = idempotencyStore.reserve(
             action = ACTION,
             idempotencyKey = request.idempotencyKey,
@@ -77,9 +92,11 @@ class AdminReprocessService(
         }
 
         try {
-            embeddingInvoker.invoke(id, request.force)
+            val (reset, jobCreated) = transactionTemplate.execute {
+                photoPipelineRepository.resetAnalysis(id) to ensureAnalysisJob(id)
+            }!!
             idempotencyStore.complete(ACTION, request.idempotencyKey, targets)
-            log.info("관리자 임베딩 재처리 요청: galleryId={}, force={}, 대상={}장", id, request.force, targets)
+            log.info("관리자 분석 재처리(리셋): galleryId={}, 대상={}장, 지운 분석 행={}, 잡 생성={}", id, targets, reset, jobCreated)
         } catch (e: RuntimeException) {
             idempotencyStore.fail(ACTION, request.idempotencyKey, e.javaClass.simpleName)
             throw e
@@ -94,27 +111,16 @@ class AdminReprocessService(
         )
     }
 
-    private fun countTargets(galleryId: Long, force: Boolean): Long {
-        val embeddingCondition = if (force) {
-            ""
-        } else {
-            " AND NOT EXISTS (SELECT 1 FROM photo_analysis a WHERE a.photo_id = p.id AND a.embedding IS NOT NULL)"
-        }
-        return jdbcClient.sql(
-            """
-                SELECT COUNT(*)
-                FROM photos p
-                WHERE p.gallery_id = :galleryId
-                  AND p.deleted_at IS NULL
-                  AND p.status <> :pendingStatus
-                  $embeddingCondition
-            """.trimIndent(),
-        )
-            .param("galleryId", galleryId)
-            .param("pendingStatus", PhotoStatus.PENDING.name)
-            .query { rs, _ -> rs.getLong(1) }
-            .single()
+    /** 살아 있는 잡이 있으면 그 잡이 리셋된 사진을 다시 관측한다. 없으면 하나 만든다 — 폴더 물질화까지 자동으로 잇기 위해서다. */
+    private fun ensureAnalysisJob(galleryId: Long): Boolean {
+        if (analysisJobRepository.existsByGalleryIdAndStatusIn(galleryId, AnalysisStatus.ACTIVE)) return false
+        analysisJobRepository.save(AnalysisJob(galleryId = galleryId))
+        return true
     }
+
+    /** 리셋 뒤 다시 임베딩될 사진 수 — S3 객체가 없을 수 있는 PENDING 은 제외한다. */
+    private fun countTargets(galleryId: Long): Long =
+        photoPipelineRepository.progressOf(galleryId, liveSince = ZonedDateTime.now(clock)).uploaded
 
     private fun sha256(value: String): String =
         MessageDigest.getInstance("SHA-256")

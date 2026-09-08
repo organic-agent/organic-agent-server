@@ -25,7 +25,7 @@ data class PhotoSummaryResponse(
         fun from(progress: GalleryAnalysisProgress): PhotoSummaryResponse = PhotoSummaryResponse(
             total = progress.total,
             pending = progress.pending,
-            uploaded = progress.expected + progress.failed,
+            uploaded = progress.uploaded,
             embedded = progress.embedded,
             scored = progress.scored,
             categorized = progress.categorized,

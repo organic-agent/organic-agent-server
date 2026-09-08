@@ -15,7 +15,7 @@ import com.soma.wes.admin.resource.service.AdminObservabilityLinkService
 import com.soma.wes.admin.resource.service.AdminOperationsOverviewService
 import com.soma.wes.admin.resource.service.AdminWorkflowService
 import com.soma.wes.admin.resource.repository.AdminChildTrashRepository
-import com.soma.wes.analysis.service.EmbeddingInvoker
+import com.soma.wes.analysis.service.ExactPhotoInvoker
 import com.soma.wes.photo.dto.PresignedUploadDto
 import com.soma.wes.photo.service.PhotoStorage
 import com.soma.wes.support.IntegrationTest
@@ -59,11 +59,11 @@ class AdminWorkflowServiceTest @Autowired constructor(
     private lateinit var photoStorage: PhotoStorage
 
     @MockitoBean
-    private lateinit var embeddingInvoker: EmbeddingInvoker
+    private lateinit var exactPhotoInvoker: ExactPhotoInvoker
 
     @BeforeEach
     fun setUp() {
-        whenever(embeddingInvoker.isAvailable).thenReturn(true)
+        whenever(exactPhotoInvoker.isAvailable).thenReturn(true)
     }
 
     @Test
@@ -1166,7 +1166,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
         assertThat(persistedAudit).doesNotContain("secret-signature", "upload.example.test")
         verify(photoStorage, times(2)).presignUpload(eq(replacementKey), eq("image/jpeg"), anyOrNull())
         verify(photoStorage).exists(replacementKey)
-        verify(embeddingInvoker, never()).invoke(any(), any())
+        verify(exactPhotoInvoker, never()).invoke(any())
     }
 
     @Test
@@ -1247,7 +1247,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
                 """.trimIndent(),
             ).query { rs, _ -> rs.getString(1) }.single(),
         ).isEqualTo("COMPLETED")
-        verify(embeddingInvoker, never()).invoke(any(), any())
+        verify(exactPhotoInvoker, never()).invoke(any())
     }
 
     @Test
@@ -1324,7 +1324,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
                 """.trimIndent(),
             ).query { rs, _ -> rs.getLong(1) }.single(),
         ).isZero()
-        verify(embeddingInvoker, never()).invoke(any(), any())
+        verify(exactPhotoInvoker, never()).invoke(any())
     }
 
     @Test
@@ -1442,7 +1442,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
                 "SELECT COUNT(*) FROM admin_ai_selection_jobs WHERE selection_id = :selectionId AND status = 'SUCCEEDED'",
             ).param("selectionId", emptySelection.id).query { rs, _ -> rs.getLong(1) }.single(),
         ).isZero()
-        verify(embeddingInvoker, never()).invoke(any(), any())
+        verify(exactPhotoInvoker, never()).invoke(any())
     }
 
     @Test
@@ -1879,10 +1879,9 @@ private fun createGraph(actorAdminId: Long, suffix: String, withPhoto: Boolean =
         val jobId = jdbcClient.sql(
             """
             INSERT INTO ai_analysis_jobs (
-                gallery_id, mode, status, started_at, finished_at, created_at, updated_at
+                gallery_id, status, finished_at, created_at, updated_at
             )
-            VALUES (:galleryId, 'FULL', 'DONE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
-                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (:galleryId, 'DONE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
             """.trimIndent(),
         ).param("galleryId", galleryId).query { rs, _ -> rs.getLong("id") }.single()

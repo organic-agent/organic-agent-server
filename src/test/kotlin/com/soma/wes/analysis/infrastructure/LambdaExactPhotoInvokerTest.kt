@@ -1,6 +1,6 @@
 package com.soma.wes.analysis.infrastructure
 
-import com.soma.wes.analysis.config.EmbeddingProperties
+import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.service.ExactPhotoProcessingRequest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -11,23 +11,29 @@ import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import software.amazon.awssdk.services.lambda.LambdaClient
 import software.amazon.awssdk.services.lambda.model.InvocationType
+import software.amazon.awssdk.services.lambda.model.InvokeRequest
 import software.amazon.awssdk.services.lambda.model.InvokeResponse
 import tools.jackson.databind.json.JsonMapper
 
-class LambdaEmbeddingInvokerTest {
+class LambdaExactPhotoInvokerTest {
 
     private val lambdaClient = mock<LambdaClient>()
     private val objectMapper = JsonMapper.builder().build()
-    private val invoker = LambdaEmbeddingInvoker(
+    private val invoker = LambdaExactPhotoInvoker(
         lambdaClient,
-        EmbeddingProperties("wes-embedder"),
+        AnalysisProperties(embedderFunctionName = "wes-embedder"),
         objectMapper,
     )
 
     @Test
+    fun `임베더 함수 이름이 있어야 사용할 수 있다`() {
+        assertThat(invoker.isAvailable).isTrue()
+        assertThat(LambdaExactPhotoInvoker(lambdaClient, AnalysisProperties(), objectMapper).isAvailable).isFalse()
+    }
+
+    @Test
     fun `exact photo 이벤트를 Lambda EVENT 호출 계약 그대로 직렬화한다`() {
-        whenever(lambdaClient.invoke(any<software.amazon.awssdk.services.lambda.model.InvokeRequest>()))
-            .thenReturn(InvokeResponse.builder().statusCode(202).build())
+        whenever(lambdaClient.invoke(any<InvokeRequest>())).thenReturn(InvokeResponse.builder().statusCode(202).build())
         val request = ExactPhotoProcessingRequest(
             jobId = 11,
             attemptCount = 2,
@@ -40,7 +46,7 @@ class LambdaEmbeddingInvokerTest {
 
         invoker.invoke(request)
 
-        val invocation = argumentCaptor<software.amazon.awssdk.services.lambda.model.InvokeRequest>()
+        val invocation = argumentCaptor<InvokeRequest>()
         verify(lambdaClient).invoke(invocation.capture())
         assertThat(invocation.firstValue.functionName()).isEqualTo("wes-embedder")
         assertThat(invocation.firstValue.invocationType()).isEqualTo(InvocationType.EVENT)

@@ -17,27 +17,20 @@ enum class AnalysisErrorCode(
     ANALYSIS_JOB_NOT_FOUND(HttpStatus.NOT_FOUND, "RECOMMENDATION_404_1", "AI 분석을 요청한 적이 없습니다."),
 
     /**
-     * 갤러리에 아직 끝나지 않은(PENDING·RUNNING) 분석 잡이 있는 경우.
+     * 갤러리에 아직 끝나지 않은(ANALYZING·CATEGORIZING) 분석 잡이 있는 경우.
      *
-     * 같은 갤러리를 두 배치가 동시에 적재하면 백분위·클러스터 번호가 서로 다른 기준으로 섞인다.
+     * 같은 갤러리를 두 categorize가 동시에 적재하면 백분위·그룹 번호가 서로 다른 기준으로 섞인다.
      * 앞선 잡이 끝난 뒤 다시 요청하면 된다. DB의 부분 유니크가 최종 방어선이다.
      */
     ANALYSIS_JOB_ALREADY_ACTIVE(HttpStatus.CONFLICT, "RECOMMENDATION_409_1", "이미 진행 중인 AI 분석이 있습니다."),
 
     /**
-     * 업로드가 끝난 사진이 한 장도 없는 경우.
+     * 분석 대상(업로드가 끝났고 실패하지 않은) 사진이 한 장도 없는 경우.
      *
-     * 빈 잡을 만들어 두면 임베더가 0장을 처리하고 관측이 곧바로 완료로 닫혀 "분석이 끝났다"처럼 보인다.
+     * 빈 잡을 만들어 두면 관측이 곧바로 닫혀 "분석이 끝났다"처럼 보인다.
      * URL만 발급된 PENDING 사진은 S3 객체가 없을 수 있어 세지 않는다.
      */
     NO_PHOTOS_TO_ANALYZE(HttpStatus.CONFLICT, "RECOMMENDATION_409_2", "업로드가 끝난 사진이 없어 AI 분석을 시작할 수 없습니다."),
-
-    /**
-     * NAMING을 요청했는데 FULL 잡이 DONE인 적이 없는 경우.
-     *
-     * 이름 붙이기는 FULL이 남긴 임베딩 그룹·CLIP 벡터 위에서 돈다 — 사진별 분석이 먼저다.
-     */
-    FULL_ANALYSIS_NOT_DONE(HttpStatus.CONFLICT, "RECOMMENDATION_409_4", "사진별 분석(full)이 끝난 적이 없어 이름 붙이기를 시작할 수 없습니다."),
 
     /**
      * Lambda·서브프로세스 호출 자체가 실패한 경우(권한·스로틀링·함수 없음). 계산 실패가 아니다 —
@@ -46,6 +39,6 @@ enum class AnalysisErrorCode(
      */
     STAGE_INVOCATION_FAILED(HttpStatus.BAD_GATEWAY, "PHOTO_502_1", "AI 분석 실행을 시작하지 못했습니다."),
 
-    /** 요청한 모드의 단계 중 실행기가 설정되지 않은 것이 있는 경우. 로컬·테스트에는 Lambda가 없는 것이 정상이다. */
+    /** 잡이 지나는 호출(embedder·categorize, GPU가 없으면 score) 중 실행기가 설정되지 않은 것이 있는 경우. 로컬·테스트에는 Lambda가 없는 것이 정상이다. */
     STAGE_NOT_CONFIGURED(HttpStatus.SERVICE_UNAVAILABLE, "PHOTO_503_1", "AI 분석 실행이 설정되지 않았습니다."),
 }

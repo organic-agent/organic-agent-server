@@ -8,7 +8,7 @@ import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.repository.AdminWorkflowExecutionRepository
 import com.soma.wes.admin.resource.repository.AdminWorkflowExecutionRepository.ProcessingExecutionJob
 import com.soma.wes.admin.resource.repository.WorkflowExecutionException
-import com.soma.wes.analysis.service.EmbeddingInvoker
+import com.soma.wes.analysis.service.ExactPhotoInvoker
 import com.soma.wes.analysis.service.ExactPhotoProcessingRequest
 import com.soma.wes.global.exception.BusinessException
 import org.slf4j.LoggerFactory
@@ -21,7 +21,7 @@ import org.springframework.transaction.support.TransactionTemplate
 class AdminWorkflowExecutor(
     private val repository: AdminWorkflowExecutionRepository,
     private val properties: AdminWorkflowExecutorProperties,
-    private val embeddingInvoker: EmbeddingInvoker,
+    private val exactPhotoInvoker: ExactPhotoInvoker,
     private val auditService: AdminAuditService,
     private val transactionTemplate: TransactionTemplate,
 ) {
@@ -61,7 +61,7 @@ class AdminWorkflowExecutor(
 
     private fun executeExactPhotoProcessing(job: ProcessingExecutionJob) {
         val requestSeed = try {
-            if (!embeddingInvoker.isAvailable) throw WorkflowExecutionException("PHOTO_PROCESSING_NOT_CONFIGURED")
+            if (!exactPhotoInvoker.isAvailable) throw WorkflowExecutionException("PHOTO_PROCESSING_NOT_CONFIGURED")
             if (job.targetType != AdminResourceType.PHOTO) throw WorkflowExecutionException("PHOTO_TARGET_REQUIRED")
             ExactPhotoRequestSeed(
                 galleryId = job.payload.long("galleryId")
@@ -92,7 +92,7 @@ class AdminWorkflowExecutor(
         val startedJob = job.copy(attemptCount = startedAttempt)
 
         try {
-            embeddingInvoker.invoke(
+            exactPhotoInvoker.invoke(
                 ExactPhotoProcessingRequest(
                     jobId = startedJob.id,
                     attemptCount = startedJob.attemptCount,

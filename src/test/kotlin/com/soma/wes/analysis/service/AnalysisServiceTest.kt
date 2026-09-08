@@ -1,7 +1,5 @@
 package com.soma.wes.analysis.service
 
-import com.soma.wes.analysis.domain.AnalysisMode
-import com.soma.wes.analysis.domain.AnalysisStage
 import com.soma.wes.analysis.domain.AnalysisStatus
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
@@ -10,6 +8,7 @@ import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
+import com.soma.wes.photo.domain.PhotoAnalysis
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.support.FakeStageInvoker
 import com.soma.wes.support.IntegrationTest
@@ -42,26 +41,42 @@ class AnalysisServiceTest @Autowired constructor(
     }
 
     @Nested
-    @DisplayName("분석(FULL)을 요청할 때")
+    @DisplayName("분석을 요청할 때")
     inner class Request {
 
         @Test
-        fun `업로드가 끝난 사진이 있으면 잡을 만들고 커밋 뒤 첫 단계를 부른다`() {
-            // given — 임베딩 전이라도 받는다. EMBED가 같은 잡의 첫 단계다.
+        fun `업로드가 끝난 사진이 있으면 ANALYZING 잡을 만들고 진행을 돌려준다`() {
+            // given — 임베딩 전이라도 받는다. 배정은 스윕이 한다.
             photoFixture.업로드된_사진(fixture.galleryId, count = 2)
 
             // when
-            val response = analysisService.request(fixture.galleryId, fixture.photographer.id!!, AnalysisMode.FULL)
+            val response = analysisService.request(fixture.galleryId, fixture.photographer.id!!)
 
             // then
             assertSoftly { softly ->
                 softly.assertThat(response.galleryId).isEqualTo(fixture.galleryId)
-                softly.assertThat(response.mode).isEqualTo(AnalysisMode.FULL)
-                softly.assertThat(response.status).isEqualTo(AnalysisStatus.PENDING)
-                softly.assertThat(response.stage).isEqualTo(AnalysisStage.EMBED)
+                softly.assertThat(response.status).isEqualTo(AnalysisStatus.ANALYZING)
+                softly.assertThat(response.progress.expected).isEqualTo(2)
+                softly.assertThat(response.progress.embedded).isZero()
                 softly.assertThat(response.error).isNull()
+                softly.assertThat(response.finishedAt).isNull()
             }
-            assertThat(stageInvoker.callsOf(response.jobId).map { it.stage }).containsExactly(AnalysisStage.EMBED)
+            // 요청 자체는 Lambda 를 부르지 않는다 — 점수가 없으니 categorize 도, 벡터가 없으니 score 폴백도 나갈 것이 없다.
+            assertThat(stageInvoker.categorizeCalls).isEmpty()
+        }
+
+        @Test
+        fun `이미 점수가 다 찬 갤러리는 커밋 직후 categorize 가 나간다`() {
+            // given
+            val photos = photoFixture.임베딩된_사진(fixture.galleryId, count = 2)
+            photos.forEach { photoFixture.점수_적재(it) }
+
+            // when
+            val response = analysisService.request(fixture.galleryId, fixture.photographer.id!!)
+
+            // then — afterCommit 의 한 걸음이 ANALYZING→CATEGORIZING 을 지났다
+            assertThat(analysisJobRepository.findById(response.jobId).orElseThrow().status).isEqualTo(AnalysisStatus.CATEGORIZING)
+            assertThat(stageInvoker.categorizeCalls.map { it.jobId }).containsExactly(response.jobId)
         }
 
         @Test
@@ -71,7 +86,20 @@ class AnalysisServiceTest @Autowired constructor(
             photoFixture.대기중_사진(fixture.galleryId, count = 2)
 
             // when & then
-            assertThatThrownBy { analysisService.request(fixture.galleryId, fixture.photographer.id!!, AnalysisMode.FULL) }
+            assertThatThrownBy { analysisService.request(fixture.galleryId, fixture.photographer.id!!) }
+                .isInstanceOf(AnalysisException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(AnalysisErrorCode.NO_PHOTOS_TO_ANALYZE)
+        }
+
+        @Test
+        fun `실패로 표시된 사진만 있으면 거절한다`() {
+            // given
+            val photos = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
+            photoFixture.분석_실패(photos[0])
+
+            // when & then
+            assertThatThrownBy { analysisService.request(fixture.galleryId, fixture.photographer.id!!) }
                 .isInstanceOf(AnalysisException::class.java)
                 .extracting("errorCode")
                 .isEqualTo(AnalysisErrorCode.NO_PHOTOS_TO_ANALYZE)
@@ -84,7 +112,7 @@ class AnalysisServiceTest @Autowired constructor(
             stageInvoker.available = false
 
             // when & then
-            assertThatThrownBy { analysisService.request(fixture.galleryId, fixture.photographer.id!!, AnalysisMode.FULL) }
+            assertThatThrownBy { analysisService.request(fixture.galleryId, fixture.photographer.id!!) }
                 .isInstanceOf(AnalysisException::class.java)
                 .extracting("errorCode")
                 .isEqualTo(AnalysisErrorCode.STAGE_NOT_CONFIGURED)
@@ -95,31 +123,30 @@ class AnalysisServiceTest @Autowired constructor(
         fun `진행 중인 잡이 있으면 새 잡을 만들지 않는다`() {
             // given
             photoFixture.업로드된_사진(fixture.galleryId, count = 1)
-            val first = analysisService.request(fixture.galleryId, fixture.photographer.id!!, AnalysisMode.FULL)
+            val first = analysisService.request(fixture.galleryId, fixture.photographer.id!!)
 
             // when & then
-            assertThatThrownBy { analysisService.request(fixture.galleryId, fixture.photographer.id!!, AnalysisMode.FULL) }
+            assertThatThrownBy { analysisService.request(fixture.galleryId, fixture.photographer.id!!) }
                 .isInstanceOf(AnalysisException::class.java)
                 .extracting("errorCode")
                 .isEqualTo(AnalysisErrorCode.ANALYSIS_JOB_ALREADY_ACTIVE)
             assertThat(analysisJobRepository.count()).isEqualTo(1L)
-            assertThat(analysisJobRepository.findById(first.jobId).orElseThrow().status).isEqualTo(AnalysisStatus.RUNNING)
+            assertThat(analysisJobRepository.findById(first.jobId).orElseThrow().status).isEqualTo(AnalysisStatus.ANALYZING)
         }
 
         @Test
         fun `앞선 잡이 끝났으면 다시 요청할 수 있다`() {
             // given
             photoFixture.업로드된_사진(fixture.galleryId, count = 1)
-            val first = analysisService.request(fixture.galleryId, fixture.photographer.id!!, AnalysisMode.FULL)
-            finishByLambda(first.jobId)
+            val first = analysisService.request(fixture.galleryId, fixture.photographer.id!!)
+            finish(first.jobId)
 
             // when
-            val second = analysisService.request(fixture.galleryId, fixture.photographer.id!!, AnalysisMode.FULL, force = true)
+            val second = analysisService.request(fixture.galleryId, fixture.photographer.id!!)
 
             // then
             assertThat(second.jobId).isNotEqualTo(first.jobId)
             assertThat(analysisJobRepository.count()).isEqualTo(2L)
-            assertThat(stageInvoker.callsOf(second.jobId).single().force).isTrue()
         }
 
         @Test
@@ -128,47 +155,10 @@ class AnalysisServiceTest @Autowired constructor(
             photoFixture.업로드된_사진(fixture.galleryId, count = 1)
 
             // when & then
-            assertThatThrownBy { analysisService.request(fixture.galleryId, fixture.member.id!!, AnalysisMode.FULL) }
+            assertThatThrownBy { analysisService.request(fixture.galleryId, fixture.member.id!!) }
                 .isInstanceOf(GalleryException::class.java)
                 .extracting("errorCode")
                 .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
-        }
-    }
-
-    @Nested
-    @DisplayName("이름 붙이기(NAMING)를 요청할 때")
-    inner class RequestNaming {
-
-        @Test
-        fun `FULL이 DONE이면 CATEGORIZE 단계 하나짜리 잡을 만든다`() {
-            // given
-            photoFixture.임베딩된_사진(fixture.galleryId, count = 1)
-            val full = analysisService.request(fixture.galleryId, fixture.photographer.id!!, AnalysisMode.FULL)
-            finishByLambda(full.jobId)
-
-            // when
-            val naming = analysisService.request(fixture.galleryId, fixture.photographer.id!!, AnalysisMode.NAMING)
-
-            // then
-            assertSoftly { softly ->
-                softly.assertThat(naming.mode).isEqualTo(AnalysisMode.NAMING)
-                softly.assertThat(naming.stage).isEqualTo(AnalysisStage.CATEGORIZE)
-                softly.assertThat(naming.jobId).isNotEqualTo(full.jobId)
-            }
-            assertThat(stageInvoker.callsOf(naming.jobId).map { it.stage }).containsExactly(AnalysisStage.CATEGORIZE)
-        }
-
-        @Test
-        fun `FULL이 끝난 적 없으면 거절한다`() {
-            // 이름 붙이기는 FULL이 남긴 임베딩 그룹 위에서 돈다 — 재료가 없으면 받지 않는다.
-            // given
-            photoFixture.임베딩된_사진(fixture.galleryId, count = 1)
-
-            // when & then
-            assertThatThrownBy { analysisService.request(fixture.galleryId, fixture.photographer.id!!, AnalysisMode.NAMING) }
-                .isInstanceOf(AnalysisException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(AnalysisErrorCode.FULL_ANALYSIS_NOT_DONE)
         }
     }
 
@@ -177,29 +167,34 @@ class AnalysisServiceTest @Autowired constructor(
     inner class Latest {
 
         @Test
-        fun `가장 최근 잡을 돌려준다`() {
+        fun `가장 최근 잡과 지금 진행을 돌려준다`() {
             // given
-            photoFixture.임베딩된_사진(fixture.galleryId, count = 1)
-            val first = analysisService.request(fixture.galleryId, fixture.photographer.id!!, AnalysisMode.FULL)
-            finishByLambda(first.jobId)
-            val second = analysisService.request(fixture.galleryId, fixture.photographer.id!!, AnalysisMode.FULL)
+            val photos = photoFixture.업로드된_사진(fixture.galleryId, count = 2)
+            val first = analysisService.request(fixture.galleryId, fixture.photographer.id!!)
+            finish(first.jobId)
+            val second = analysisService.request(fixture.galleryId, fixture.photographer.id!!)
+            photoFixture.벡터_적재(photos[0], FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also { it[0] = 1f })
 
             // when
             val latest = analysisService.latest(fixture.galleryId, fixture.photographer.id!!)
 
-            // then
-            assertThat(latest.jobId).isEqualTo(second.jobId)
+            // then — 진행은 잡이 아니라 지금 DB 의 분석 행에서 온다
+            assertSoftly { softly ->
+                softly.assertThat(latest.jobId).isEqualTo(second.jobId)
+                softly.assertThat(latest.progress.expected).isEqualTo(2)
+                softly.assertThat(latest.progress.embedded).isEqualTo(1)
+                softly.assertThat(latest.progress.scored).isZero()
+            }
         }
 
         @Test
-        fun `Lambda가 바꾼 상태와 오류를 그대로 보여 준다`() {
-            // 옛 계약의 Lambda는 status·error를 직접 쓴다 — 그 값을 읽어야 한다.
+        fun `FAILED 잡의 오류를 그대로 보여 준다`() {
             // given
-            photoFixture.임베딩된_사진(fixture.galleryId, count = 1)
-            val job = analysisService.request(fixture.galleryId, fixture.photographer.id!!, AnalysisMode.FULL)
+            photoFixture.업로드된_사진(fixture.galleryId, count = 1)
+            val job = analysisService.request(fixture.galleryId, fixture.photographer.id!!)
             jdbcTemplate.update(
-                "UPDATE ai_analysis_jobs SET status = 'FAILED', started_at = now(), finished_at = now(), error = ? WHERE id = ?",
-                "CUDA out of memory",
+                "UPDATE ai_analysis_jobs SET status = 'FAILED', finished_at = now(), error = ? WHERE id = ?",
+                "bedrock timeout",
                 job.jobId,
             )
 
@@ -209,7 +204,7 @@ class AnalysisServiceTest @Autowired constructor(
             // then
             assertSoftly { softly ->
                 softly.assertThat(latest.status).isEqualTo(AnalysisStatus.FAILED)
-                softly.assertThat(latest.error).isEqualTo("CUDA out of memory")
+                softly.assertThat(latest.error).isEqualTo("bedrock timeout")
                 softly.assertThat(latest.finishedAt).isNotNull()
             }
         }
@@ -224,11 +219,7 @@ class AnalysisServiceTest @Autowired constructor(
         }
     }
 
-    /** 체인 끝의 Lambda(categorize)가 잡을 닫는 것을 흉내 낸다. */
-    private fun finishByLambda(jobId: Long) {
-        jdbcTemplate.update(
-            "UPDATE ai_analysis_jobs SET status = 'DONE', started_at = now(), finished_at = now() WHERE id = ?",
-            jobId,
-        )
+    private fun finish(jobId: Long) {
+        jdbcTemplate.update("UPDATE ai_analysis_jobs SET status = 'DONE', finished_at = now() WHERE id = ?", jobId)
     }
 }

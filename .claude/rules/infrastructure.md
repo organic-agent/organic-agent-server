@@ -12,9 +12,9 @@ paths:
 ## Port와 Adapter
 
 - 도메인은 자기 `service` 패키지에 **port 인터페이스**를 선언한다. 이름과 시그니처는 도메인
-  어휘로 쓰고 벤더 타입을 노출하지 않는다 (`PhotoStorage.presignUpload`, `EmbeddingInvoker.invoke`).
+  어휘로 쓰고 벤더 타입을 노출하지 않는다 (`PhotoStorage.presignUpload`, `StageInvoker.invoke`).
 - `{domain}/infrastructure`의 **어댑터**가 그것을 구현하며, 기술 이름을 앞에 붙인다
-  (`S3PhotoStorage`, `LambdaEmbeddingInvoker`). 서비스는 port만 주입받는다.
+  (`S3PhotoStorage`, `LambdaStageInvoker`). 서비스는 port만 주입받는다.
 - SDK 클라이언트 빈과 프로퍼티는 그 도메인의 `config`에 둔다 (`embedding/config/AwsLambdaConfig`).
   두 번째 도메인이 같은 클라이언트를 쓰게 되는 날에만 `global/config`로 올린다.
 

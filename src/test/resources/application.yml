@@ -104,10 +104,8 @@ app:
     pending-first-check-after: 1m
     pending-recheck-every: 10m
     pending-give-up-after: 24h
-  embedding:
-    # 테스트에는 Lambda가 없다. 비어 있는 것이 정상이고, 호출 시점에 503으로 실패한다.
-    function-name: ""
   analysis:
+    # 테스트에는 Lambda가 없다(함수 이름 빈 값). 실행기는 FakeStageInvoker 가 대신하고 호출을 기록만 한다.
     # 테스트는 오케스트레이터를 직접 부른다 — 백그라운드 스윕이 끼어들면 호출 기록 단언이 흔들린다.
     sweep-interval: PT1H
   llm:
