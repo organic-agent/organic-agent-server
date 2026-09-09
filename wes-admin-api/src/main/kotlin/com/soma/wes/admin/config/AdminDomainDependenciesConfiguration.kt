@@ -1,5 +1,7 @@
 package com.soma.wes.admin.config
 
+import com.soma.wes.activity.repository.ActivityRepository
+import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.admin.resource.config.AdminWorkflowExecutorProperties
 import com.soma.wes.collab.config.CollabProperties
 import com.soma.wes.collab.service.CollabSessionQueryService
@@ -69,6 +71,8 @@ import org.springframework.context.annotation.Import
     CollabProperties::class,
 )
 @Import(
+    ActivityRepository::class,
+    ActivityRecorder::class,
     TimeConfig::class,
     SchedulingConfig::class,
     WebMvcConfig::class,

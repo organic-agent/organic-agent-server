@@ -1,5 +1,6 @@
 package com.soma.wes.gallery.service
 
+import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.gallery.config.GalleryLifecycleProperties
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.dto.request.RequestSelectionIncreaseRequest
@@ -48,6 +49,7 @@ class GalleryService(
     private val notificationPublisher: UserNotificationPublisher,
     private val workspaceRepository: WorkspaceRepository,
     private val lifecycleProperties: GalleryLifecycleProperties,
+    private val activityRecorder: ActivityRecorder,
 ) {
 
     @Transactional
@@ -67,6 +69,7 @@ class GalleryService(
             ),
         )
         photoSelectionRepository.save(PhotoSelection(galleryId = gallery.requiredId))
+        activityRecorder.recordGallery(gallery.requiredId)
         return GalleryResponse.from(gallery)
     }
 
@@ -109,6 +112,7 @@ class GalleryService(
 
         gallery.changeMaxSelectablePhotoCount(request.maxSelectablePhotoCount)
         publishToClients(gallery, UserNotificationType.SELECTION_INCREASE_APPROVED, "목표 장수가 변경되었어요", "변경된 목표 장수: ${request.maxSelectablePhotoCount ?: "제한 없음"}")
+        activityRecorder.recordGallery(gallery.requiredId)
         return GalleryResponse.from(gallery)
     }
 
@@ -123,6 +127,7 @@ class GalleryService(
         gallery.requireWritable(ZonedDateTime.now(clock))
 
         gallery.changeMaxRetouchRoundCount(request.maxRetouchRoundCount)
+        activityRecorder.recordGallery(gallery.requiredId)
         return GalleryResponse.from(gallery)
     }
 
@@ -134,6 +139,7 @@ class GalleryService(
         gallery.requireWritable(ZonedDateTime.now(clock))
 
         gallery.changeShootType(request.shootType)
+        activityRecorder.recordGallery(gallery.requiredId)
         return GalleryResponse.from(gallery)
     }
 
@@ -144,6 +150,7 @@ class GalleryService(
         gallery.requireWritable(ZonedDateTime.now(clock))
 
         gallery.rename(request.title)
+        activityRecorder.recordGallery(gallery.requiredId)
         return GalleryResponse.from(gallery)
     }
 
@@ -165,6 +172,7 @@ class GalleryService(
             throw GalleryException(GalleryErrorCode.INVALID_SELECTION_DEADLINE)
         }
         gallery.changeSelectionDeadline(request.selectionDeadline, ZonedDateTime.now(clock))
+        activityRecorder.recordGallery(gallery.requiredId)
         return GalleryResponse.from(gallery)
     }
 
@@ -176,6 +184,7 @@ class GalleryService(
 
         gallery.open()
         publishToClients(gallery, UserNotificationType.GALLERY_OPENED, "갤러리가 열렸어요", "사진 정리를 시작해 주세요.")
+        activityRecorder.recordGallery(gallery.requiredId)
         return GalleryResponse.from(gallery)
     }
 
@@ -188,6 +197,7 @@ class GalleryService(
         if (gallery.archivedUntil == null) lifecycleProperties.archivedRetentionDays?.let {
             gallery.archivedUntil = ZonedDateTime.now(clock).plusDays(it.toLong())
         }
+        activityRecorder.recordGallery(gallery.requiredId)
         return GalleryResponse.from(gallery)
     }
 
@@ -201,6 +211,7 @@ class GalleryService(
         val gallery = galleryRepository.requireWithLockById(galleryId)
         gallery.requireWritable(ZonedDateTime.now(clock))
         gallery.changeWorkflowStatus(request.workflowStatus)
+        activityRecorder.recordGallery(gallery.requiredId)
         return GalleryResponse.from(gallery)
     }
 
@@ -212,6 +223,7 @@ class GalleryService(
 
         gallery.reopen(request.selectionDeadline, ZonedDateTime.now(clock))
         publishToClients(gallery, UserNotificationType.GALLERY_REOPENED, "선택이 다시 열렸어요", "새 마감 기한을 확인해 주세요.")
+        activityRecorder.recordGallery(gallery.requiredId)
         return GalleryResponse.from(gallery)
     }
 
@@ -228,6 +240,7 @@ class GalleryService(
         galleryAccessPolicy.requireManager(galleryId, userId)
         val gallery = galleryRepository.requireWithLockById(galleryId)
 
+        activityRecorder.recordGallery(galleryId)
         gallery.moveToTrash(ZonedDateTime.now(clock))
     }
 
@@ -245,6 +258,7 @@ class GalleryService(
             type = UserNotificationType.SELECTION_INCREASE_REQUESTED, scope = UserNotificationScope.GALLERY,
             scopeId = galleryId, title = "계약 장수 상향 요청", message = "${request.requestedCount}장 요청: ${request.message.orEmpty()}",
         )
+        activityRecorder.recordGallery(galleryId)
     }
 
     private fun publishToClients(gallery: Gallery, type: UserNotificationType, title: String, message: String) {

@@ -52,6 +52,7 @@ class RetouchServiceTest @Autowired constructor(
     private val galleryRepository: GalleryRepository,
     private val testStorage: RetouchTestStorage,
     private val ratingService: PhotoRatingService,
+    private val activity: com.soma.wes.activity.repository.ActivityRepository,
 ) {
 
     @Nested
@@ -772,6 +773,7 @@ class RetouchServiceTest @Autowired constructor(
 
             // when
             val newKey = "galleries/${fixture.galleryId}/retouch/results/1/retry.png"
+            jdbcClient.sql("update gallery_activity set last_activity_at = timestamp with time zone '2000-01-01 00:00:00Z'").update()
             val result = retouchService.completeResults(
                 fixture.galleryId, 1, fixture.photographer.id!!,
                 CompleteResultsRequest(
@@ -792,6 +794,8 @@ class RetouchServiceTest @Autowired constructor(
                 softly.assertThat(result.photos.single().resultUrl).contains("X-Amz-Signature")
                 softly.assertThat(item.resultKey).isEqualTo(newKey)
                 softly.assertThat(item.resultContentType).isEqualTo("image/png")
+                softly.assertThat(activity.findGalleryActivity(listOf(fixture.galleryId)).getValue(fixture.galleryId).toInstant())
+                    .isAfter(java.time.Instant.parse("2000-01-01T00:00:00Z"))
             }
         }
 

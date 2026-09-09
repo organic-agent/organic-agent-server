@@ -104,6 +104,71 @@ class AiSelectionJobRunnerTest @Autowired constructor(
         photoIds.joinToString(",", prefix = """{"reasons":[""", postfix = "]}") { """{"photo_id":"$it","reason":"${text(it)}"}""" }
 
     @Nested
+    inner class NaturalLanguageAndCount {
+        @Test
+        fun `폴더에서 지정한 장수를 뽑고 이미 선택한 사진은 뺀다`() {
+            val w = world()
+            llm.isEnabled = false
+            val selectionId = selectionFixture.셀렉(fixture.galleryId)
+            selectionFixture.담긴_사진(selectionId, listOf(w.garden.first()))
+            val response = aiRecommendationService.request(fixture.galleryId, fixture.member.id!!,
+                AiRecommendationRequest(detailFolderId = w.gardenFolderId, targetCount = 2))
+            runner.run(response.jobId)
+            val job = aiSelectionJobRepository.findById(response.jobId).orElseThrow()
+            val photos = aiRecommendationRepository.findAllBySelectionIdAndRound(selectionId, 1)
+            assertThat(job.status).isEqualTo(AiJobStatus.DONE)
+            assertThat(photos.map { it.photoId }).containsExactly(w.garden.last())
+            val exposed = aiRecommendationService.list(fixture.galleryId, fixture.member.id!!, null).job!!
+            assertThat(exposed.recommendedCount).isEqualTo(1)
+            assertThat(exposed.shortfallCount).isEqualTo(1)
+        }
+
+        @Test
+        fun `전체 갤러리의 명시한 장수는 폴더별 반올림으로 초과하지 않는다`() {
+            world()
+            llm.isEnabled = false
+            val response = aiRecommendationService.request(fixture.galleryId, fixture.member.id!!,
+                AiRecommendationRequest(targetCount = 2))
+            runner.run(response.jobId)
+            assertThat(aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1)).hasSize(2)
+            assertThat(aiSelectionJobRepository.findById(response.jobId).orElseThrow().status).isEqualTo(AiJobStatus.DONE)
+        }
+
+        @Test
+        fun `문장의 범위와 장수를 저장하고 복구 시 다시 해석하지 않는다`() {
+            val w = world()
+            llm.respondWith("""{"status":"RESOLVED","scope":"FOLDERS","detailFolderIds":["${w.gardenFolderId}"],"targetCount":2}""")
+            val response = aiRecommendationService.request(fixture.galleryId, fixture.member.id!!,
+                AiRecommendationRequest(prompt = "정원 사진에서 2장 골라줘"))
+            runner.run(response.jobId)
+            val first = aiSelectionJobRepository.findById(response.jobId).orElseThrow()
+            assertThat(first.status).isEqualTo(AiJobStatus.DONE)
+            assertThat(first.resolvedQuery?.detailFolderIds).containsExactly(w.gardenFolderId)
+            assertThat(first.resolvedQuery?.targetCount).isEqualTo(2)
+            assertThat(aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1).map { it.photoId })
+                .containsExactlyInAnyOrderElementsOf(w.garden)
+            val calls = llm.calls
+            jdbcTemplate.update("UPDATE ai_selection_jobs SET status = 'PENDING' WHERE id = ?", response.jobId)
+            llm.isEnabled = false
+            runner.run(response.jobId)
+            assertThat(aiSelectionJobRepository.findById(response.jobId).orElseThrow().status).isEqualTo(AiJobStatus.DONE)
+            assertThat(llm.calls).isEqualTo(calls)
+            assertThat(aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1)).hasSize(2)
+        }
+
+        @Test
+        fun `AI가 다른 갤러리 폴더를 반환하면 추천을 만들지 않고 실패한다`() {
+            world()
+            llm.respondWith("""{"status":"RESOLVED","scope":"FOLDERS","detailFolderIds":["99999999"],"targetCount":2}""")
+            val response = aiRecommendationService.request(fixture.galleryId, fixture.member.id!!,
+                AiRecommendationRequest(prompt = "정원에서 2장 골라줘"))
+            runner.run(response.jobId)
+            assertThat(aiSelectionJobRepository.findById(response.jobId).orElseThrow().status).isEqualTo(AiJobStatus.FAILED)
+            assertThat(aiRecommendationRepository.findAllBySelectionId(response.selectionId)).isEmpty()
+        }
+    }
+
+    @Nested
     @DisplayName("첫 라운드(draft)를 돌릴 때")
     inner class Draft {
 

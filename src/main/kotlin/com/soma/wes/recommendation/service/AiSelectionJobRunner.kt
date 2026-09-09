@@ -19,6 +19,7 @@ import com.soma.wes.recommendation.repository.AiRecommendationRepository
 import com.soma.wes.recommendation.repository.AiSelectionJobRepository
 import com.soma.wes.recommendation.support.FolderFitRule
 import com.soma.wes.recommendation.support.FolderQuota
+import com.soma.wes.recommendation.support.ExactRecommendationQuota
 import com.soma.wes.recommendation.support.MmrSelector
 import com.soma.wes.recommendation.support.ReasonMaterial
 import com.soma.wes.recommendation.support.RecommendationScoring
@@ -62,6 +63,7 @@ class AiSelectionJobRunner(
     private val properties: LlmProperties,
     private val transactionTemplate: TransactionTemplate,
     private val clock: Clock,
+    private val queryInterpreter: RecommendationQueryInterpreter,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -74,6 +76,7 @@ class AiSelectionJobRunner(
         }
         val timing = StageTiming()
         try {
+            resolveQuery(jobId, timing)
             val world = timing.measure("load") { transactionTemplate.execute { load(jobId) }!! }
             val draft = timing.measure("plan") { plan(world) }
             val roundNo = timing.measure("persist") { transactionTemplate.execute { persistRound(world, draft) }!! }
@@ -94,6 +97,28 @@ class AiSelectionJobRunner(
 
     // ── 읽기 ──
 
+    /** 외부 AI 호출 중에는 트랜잭션을 잡지 않는다. 저장한 해석 결과는 복구 시 다시 해석하지 않는다. */
+    private fun resolveQuery(jobId: Long, timing: StageTiming) {
+        val context = transactionTemplate.execute {
+            val job = aiSelectionJobRepository.findById(jobId).orElseThrow()
+            if (job.resolvedQuery != null || (job.prompt == null && job.targetCount == null)) return@execute null
+            val selection = photoSelectionRepository.findById(job.selectionId).orElseThrow()
+            val folders = job.folderSetJobId?.let { folderSetReader.setFolders(selection.galleryId, it) }.orEmpty().toMutableList()
+            job.detailFolderId?.let { id ->
+                val folder = folderSetReader.detailFolder(selection.galleryId, id)
+                    ?: throw IllegalStateException("추천할 세부폴더가 없습니다.")
+                if (folders.none { it.detailFolderId == id }) folders += folder
+            }
+            QueryContext(job.prompt, job.targetCount, job.detailFolderId, folders)
+        } ?: return
+        val resolved = timing.measure("query") {
+            queryInterpreter.interpret(context.prompt, context.targetCount, context.detailFolderId, context.folders)
+        }
+        transactionTemplate.execute {
+            aiSelectionJobRepository.findById(jobId).orElseThrow().resolveQuery(resolved)
+        }
+    }
+
     private fun load(jobId: Long): World {
         val job = aiSelectionJobRepository.findById(jobId).orElseThrow()
         val selection = photoSelectionRepository.findById(job.selectionId).orElseThrow()
@@ -113,16 +138,16 @@ class AiSelectionJobRunner(
 
         // 범위. 폴더 하나면 그 폴더만 대상이되, 쿼터(폴더별 n장)는 전체 라운드였을 때와 같은 몫으로 정한다 —
         // 그래야 폴더 하나만 다시 받아도 장수가 널뛰지 않는다. 세트 폴더는 그 몫의 재료로만 읽는다.
-        val scopeFolderId = job.detailFolderId
+        val scopeFolderIds = job.resolvedQuery?.detailFolderIds ?: job.detailFolderId?.let(::listOf)
         val setFolders = job.folderSetJobId?.let { folderSetReader.setFolders(galleryId, it) }.orEmpty()
-        val folders = when (scopeFolderId) {
+        val folders = when (scopeFolderIds) {
             null -> setFolders.ifEmpty {
                 throw IllegalStateException("AI 폴더 세트 ${job.folderSetJobId} 에 폴더가 없다")
             }
-            else -> listOf(
-                folderSetReader.detailFolder(galleryId, scopeFolderId)
-                    ?: throw IllegalStateException("세부폴더 $scopeFolderId 가 없다"),
-            )
+            else -> scopeFolderIds.map { id ->
+                folderSetReader.detailFolder(galleryId, id)
+                    ?: throw IllegalStateException("세부폴더 $id 가 없다")
+            }
         }
 
         val selected = photoSelectionItemRepository.findAllBySelectionId(selection.requiredId).mapTo(mutableSetOf()) { it.photoId }
@@ -135,10 +160,11 @@ class AiSelectionJobRunner(
             selectionId = selection.requiredId,
             galleryId = galleryId,
             rows = rows,
-            embeddings = loadEmbeddings(rows, folders, scopeFolderId),
+            embeddings = loadEmbeddings(rows, folders, scopeFolderIds),
             folders = folders,
-            quotaFolders = if (scopeFolderId == null) folders else setFolders.ifEmpty { folders },
-            scopeFolderId = scopeFolderId,
+            quotaFolders = if (scopeFolderIds == null) folders else setFolders.ifEmpty { folders },
+            scopeFolderIds = scopeFolderIds,
+            requestedCount = job.resolvedQuery?.targetCount,
             selected = selected,
             rejected = rejected,
             target = gallery.maxSelectablePhotoCount ?: DEFAULT_TARGET,
@@ -155,10 +181,10 @@ class AiSelectionJobRunner(
     private fun loadEmbeddings(
         rows: List<RecommendablePhotoDto>,
         folders: List<FolderSetDetailDto>,
-        scopeFolderId: Long?,
+        scopeFolderIds: List<Long>?,
     ): Array<FloatArray> {
         val rowIds = rows.map { it.photoId }
-        val wanted = if (scopeFolderId == null) {
+        val wanted = if (scopeFolderIds == null) {
             rowIds
         } else {
             val analyzed = rowIds.toSet()
@@ -180,7 +206,7 @@ class AiSelectionJobRunner(
         // 폴더 범위 잡은 그 폴더만 돈다(미분류 없음). 쿼터의 재료(quotaFolders)는 전체 세트 기준이다.
         val inQuotaSet = world.quotaFolders.flatMapTo(mutableSetOf()) { it.photoIds }
         val unfiled = rows.map { it.photoId }.filter { it !in inQuotaSet }
-        val scoped = world.scopeFolderId != null
+        val scoped = world.scopeFolderIds != null
         val quotaFolders = world.quotaFolders.map { VirtualFolder(it.detailFolderId, it.conceptName, it.detailName, it.photoIds) } +
             listOfNotNull(unfiled.takeIf { it.isNotEmpty() }?.let { VirtualFolder(null, UNFILED, UNFILED, it) })
         val folders = if (scoped) {
@@ -191,7 +217,7 @@ class AiSelectionJobRunner(
 
         val selectedIdx = world.selected.mapNotNull { indexById[it] }
         val nSelected = selectedIdx.size
-        val remaining = world.target - nSelected
+        val remaining = world.requestedCount ?: (world.target - nSelected)
 
         // 점수 (갤러리 내 백분위 그대로)
         val priorRaw = RecommendationScoring.prior(
@@ -215,15 +241,13 @@ class AiSelectionJobRunner(
         val quotaSizes = (quotaFolders + folders.filter { f -> quotaFolders.none { it.folderId == f.folderId } })
             .filter { it.photoIds.isNotEmpty() }
             .associate { it.folderId to it.photoIds.size }
-        val quota = FolderQuota.quota(quotaSizes, remaining)
         val clusterIds = IntArray(n) { rows[it].clusterId }
         val byCluster = rows.indices.filter { it !in exclude }.groupBy { rows[it].clusterId }
 
         val picks = mutableListOf<PlannedPick>()
         val perFolder = linkedMapOf<String, Int>()
         val misfitPhotoIds = mutableListOf<Long>()
-        folders.sortedByDescending { it.photoIds.size }.forEach { folder ->
-            if (folder.photoIds.isEmpty()) return@forEach
+        val membersByFolder = folders.associate { folder ->
             val allMembers = folder.photoIds.mapNotNull { indexById[it] }
             // 폴더와 동떨어진 사진(실수로 옮겨 온 사진)은 후보에서 뺀다. 미분류는 원래 잡동사니라 판정하지 않는다.
             val misfit = if (folder.folderId == null) emptySet() else FolderFitRule.misfits(world.embeddings, allMembers)
@@ -232,6 +256,13 @@ class AiSelectionJobRunner(
                 log.info("폴더 {}›{} 에서 동떨어진 사진 {}장 제외: {}", folder.parentName, folder.name, misfit.size, misfit.map { rows[it].photoId })
             }
             val members = allMembers.filter { it !in exclude && it !in misfit }
+            folder.folderId to members
+        }
+        val quota = if (world.requestedCount == null) FolderQuota.quota(quotaSizes, remaining) else
+            ExactRecommendationQuota.allocate(membersByFolder.mapValues { (_, members) -> members.map { clusterIds[it] }.distinct().size }, remaining)
+        folders.sortedByDescending { it.photoIds.size }.forEach { folder ->
+            if (folder.photoIds.isEmpty()) return@forEach
+            val members = membersByFolder.getValue(folder.folderId)
             val folderPicks = MmrSelector.selectInFolder(score, world.embeddings, members, clusterIds, quota.getValue(folder.folderId))
             perFolder["${folder.parentName}›${folder.name}"] = folderPicks.size
             folderPicks.forEach { pick ->
@@ -316,7 +347,7 @@ class AiSelectionJobRunner(
         val now = ZonedDateTime.now(clock)
         // 리셋 — 이 잡의 범위에 든 사진의 기존 추천을 지운다. 폴더 범위면 그 폴더의 지금 사진, 전체면 분석된
         // 사진 전부다. 범위 밖 사진(다른 폴더, 옮겨 나간 사진)의 추천은 남고, 거절 행도 남긴다.
-        val scopePhotoIds = when (world.scopeFolderId) {
+        val scopePhotoIds = when (world.scopeFolderIds) {
             null -> world.rows.map { it.photoId }
             else -> world.folders.flatMap { it.photoIds }
         }
@@ -394,7 +425,9 @@ class AiSelectionJobRunner(
         return linkedMapOf(
             "gallery" to world.galleryId, "pipeline" to "v3", "round" to roundNo, "done" to false, "k" to draft.picks.size,
             "selected" to draft.selected, "target" to world.target, "remaining" to draft.remaining,
-            "folders" to draft.folders, "unfiled" to draft.unfiled, "scopeFolderId" to world.scopeFolderId,
+            "folders" to draft.folders, "unfiled" to draft.unfiled, "scopeFolderId" to world.scopeFolderIds?.singleOrNull(),
+            "scopeDetailFolderIds" to world.scopeFolderIds, "requestedCount" to world.requestedCount,
+            "shortfallCount" to world.requestedCount?.let { (it - draft.picks.size).coerceAtLeast(0) },
             "perFolder" to draft.perFolder, "reasonDistribution" to reasonDistribution,
             "misfit" to draft.misfitPhotoIds.size, "misfitPhotoIds" to draft.misfitPhotoIds,
             "preferenceOn" to draft.preferenceOn, "llm" to llm.isEnabled, "reasonReady" to reasonReady,
@@ -416,6 +449,13 @@ class AiSelectionJobRunner(
     private fun round4(v: Double) = round(v * 10000) / 10000
 
     private class JobRef(val id: Long, val mode: AiSelectionMode, val round: Int?)
+
+    private data class QueryContext(
+        val prompt: String?,
+        val targetCount: Int?,
+        val detailFolderId: Long?,
+        val folders: List<FolderSetDetailDto>,
+    )
 
     /**
      * 단계별 소요를 잡 result에 남기기 위한 초시계. 운영에서 "어디가 느린가"를 로그 시각을 맞춰 보지 않고
@@ -458,7 +498,8 @@ class AiSelectionJobRunner(
         /** 폴더별 몫(쿼터)을 정할 때 쓰는 세트 전체. 전체 라운드면 folders와 같다. */
         val quotaFolders: List<FolderSetDetailDto>,
         /** 범위 세부폴더. null이면 전체 라운드. */
-        val scopeFolderId: Long?,
+        val scopeFolderIds: List<Long>?,
+        val requestedCount: Int?,
         val selected: Set<Long>,
         val rejected: Set<Long>,
         val target: Int,

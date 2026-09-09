@@ -1,5 +1,6 @@
 package com.soma.wes.recommendation.service
 
+import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.category.support.AiCategoryFolderSetReader
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.config.StorageProperties
@@ -49,6 +50,7 @@ class AiRecommendationService(
     private val photoViewAssembler: PhotoViewAssembler,
     private val properties: StorageProperties,
     private val jobLauncher: AiSelectionJobLauncher,
+    private val activityRecorder: ActivityRecorder,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -70,6 +72,10 @@ class AiRecommendationService(
     @Transactional
     fun request(galleryId: Long, userId: Long, request: AiRecommendationRequest): AiSelectionJobResponse {
         galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
+
+        if (request.prompt?.let { it.isBlank() || it.length > 1000 } == true ||
+            request.targetCount?.let { it !in 1..500 } == true
+        ) throw RecommendationException(RecommendationErrorCode.INVALID_QUERY)
 
         val detailFolderId = request.detailFolderId?.also { detailFolderId ->
             aiFolderSetReader.detailFolder(galleryId, detailFolderId)
@@ -97,11 +103,14 @@ class AiRecommendationService(
                     mode = mode,
                     folderSetJobId = folderSetJobId,
                     detailFolderId = detailFolderId,
+                    prompt = request.prompt?.trim(),
+                    targetCount = request.targetCount,
                 ),
             )
         } catch (e: DataIntegrityViolationException) {
             throw RecommendationException(RecommendationErrorCode.SELECTION_JOB_ALREADY_ACTIVE)
         }
+        activityRecorder.recordGallery(galleryId)
 
         log.info(
             "AI 추천 요청: galleryId={}, selectionId={}, mode={}, folderSetJobId={}, detailFolderId={}, jobId={}",
@@ -154,6 +163,7 @@ class AiRecommendationService(
 
         val job = aiSelectionJobRepository.findFirstBySelectionIdOrderByIdDesc(selectionId)
             ?.let { AiSelectionJobResponse.from(it) }
+            ?.let { if (studioViewer) it.copy(prompt = null) else it }
         val latestRound = aiRecommendationRepository.findFirstBySelectionIdOrderByRoundDesc(selectionId)?.round
             ?: return AiRecommendationListResponse(
                 round = null,

@@ -1,5 +1,6 @@
 package com.soma.wes.user.service
 
+import com.soma.wes.activity.repository.ActivityRepository
 import com.soma.wes.auth.service.AuthTokenProvider
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
@@ -30,6 +31,7 @@ class UserService(
     private val galleryMemberRepository: GalleryMemberRepository,
     private val notificationPublisher: UserNotificationPublisher,
     private val authTokenProvider: AuthTokenProvider,
+    private val activityRepository: ActivityRepository,
 ) {
 
     @Transactional(readOnly = true)
@@ -63,6 +65,9 @@ class UserService(
         val memberGalleries = galleryRepository.findAllById(galleryMemberships.map { it.galleryId })
         val galleries = (personalGalleries + memberGalleries).associateBy { it.requiredId }
 
+        val workspaceActivity = activityRepository.findWorkspaceActivity(workspaces.keys)
+        val galleryActivity = activityRepository.findGalleryActivity(galleries.keys)
+
         val studioRows = memberships.mapNotNull { membership ->
             val workspace = workspaces[membership.workspaceId]
                 ?.takeIf { it.type == WorkspaceType.STUDIO } ?: return@mapNotNull null
@@ -74,7 +79,7 @@ class UserService(
                 galleryId = null,
                 name = studio.name,
                 role = membership.role,
-                lastActivityAt = listOfNotNull(studio.updatedAt, studio.createdAt, membership.updatedAt, membership.createdAt).maxOrNull(),
+                lastActivityAt = listOfNotNull(studio.updatedAt, studio.createdAt, membership.updatedAt, membership.createdAt, workspaceActivity[workspace.requiredId]).maxOrNull(),
                 workspaceType = WorkspaceType.STUDIO,
             )
         }
@@ -92,7 +97,7 @@ class UserService(
                 } else {
                     personalWorkspaceRoles[gallery.workspaceId] ?: WorkspaceRole.OWNER
                 },
-                lastActivityAt = gallery.updatedAt ?: gallery.createdAt,
+                lastActivityAt = listOfNotNull(gallery.updatedAt, gallery.createdAt, galleryActivity[gallery.requiredId]).maxOrNull(),
                 workspaceType = if (gallery.workspaceId in personalWorkspaceIds) WorkspaceType.PERSONAL else WorkspaceType.STUDIO,
             )
         }

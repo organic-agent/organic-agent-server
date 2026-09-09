@@ -1,5 +1,6 @@
 package com.soma.wes.retouch.service
 
+import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.gallery.config.GalleryLifecycleProperties
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryStage
@@ -74,6 +75,7 @@ class RetouchService(
     private val photoRepository: PhotoRepository,
     private val transactionTemplate: TransactionTemplate,
     private val lifecycleProperties: GalleryLifecycleProperties,
+    private val activityRecorder: ActivityRecorder,
 ) {
 
     companion object {
@@ -132,6 +134,7 @@ class RetouchService(
             },
         )
 
+        activityRecorder.recordGallery(galleryId)
         return overviewOf(gallery, userId)
     }
 
@@ -180,6 +183,7 @@ class RetouchService(
         if (!productChildTrashService.removeUserRetouchItem(round.requiredId, photoId)) {
             throw RetouchException(RetouchErrorCode.PHOTO_NOT_IN_ROUND)
         }
+        activityRecorder.recordGallery(galleryId)
     }
 
     /**
@@ -203,6 +207,7 @@ class RetouchService(
 
         validateAnnotationKey(galleryId, request.annotationKey)
         item.writeRequest(request.requestText, request.annotationKey, request.points)
+        activityRecorder.recordGallery(galleryId)
 
         return retouchViewAssembler.toResponses(galleryId, listOf(item)).first()
     }
@@ -261,6 +266,7 @@ class RetouchService(
             title = "보정 요청이 도착했습니다",
             message = "${gallery.title}의 보정 요청이 제출되었습니다.",
         )
+        activityRecorder.recordGallery(galleryId)
         return overviewOf(gallery, userId)
     }
 
@@ -322,6 +328,7 @@ class RetouchService(
         }
 
         gallery.markRetouchStarted()
+        activityRecorder.recordGallery(galleryId)
         return IssueResultUploadUrlsResponse(
             uploads = uploads,
             uploadUrlTtlSeconds = properties.uploadUrlTtl.seconds,
@@ -374,6 +381,7 @@ class RetouchService(
             request.results.forEach { result ->
                 itemsByPhotoId.getValue(result.photoId).writeResult(result.resultKey, result.contentType.lowercase())
             }
+            activityRecorder.recordGallery(galleryId)
             val hideRating = galleryAccessPolicy.isStudioManager(galleryId, userId)
             RetouchRoundDetailResponse.of(
                 round = lockedRound,
@@ -435,6 +443,7 @@ class RetouchService(
             title = "보정 결과가 준비되었습니다",
             message = "${gallery.title}의 보정 결과를 확인할 수 있습니다.",
         )
+        activityRecorder.recordGallery(galleryId)
         return overviewOf(gallery, userId)
     }
 
@@ -488,6 +497,7 @@ class RetouchService(
             title = "보정 요청이 도착했습니다",
             message = "${gallery.title}의 ${roundNo}차 보정 요청이 제출되었습니다.",
         )
+        activityRecorder.recordGallery(galleryId)
         return overviewOf(gallery, userId)
     }
 
@@ -549,6 +559,7 @@ class RetouchService(
             title = "보정이 확정되었습니다",
             message = "${gallery.title}의 보정이 최종 확정되었습니다.",
         )
+        activityRecorder.recordGallery(galleryId)
         return overviewOf(gallery, userId)
     }
 

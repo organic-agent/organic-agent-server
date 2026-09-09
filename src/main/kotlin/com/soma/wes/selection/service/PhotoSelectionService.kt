@@ -1,5 +1,6 @@
 package com.soma.wes.selection.service
 
+import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryStage
 import com.soma.wes.gallery.repository.GalleryRepository
@@ -61,6 +62,7 @@ class PhotoSelectionService(
     private val galleryMemberRepository: GalleryMemberRepository,
     private val retouchRoundRepository: RetouchRoundRepository,
     private val retouchPhotoRepository: RetouchPhotoRepository,
+    private val activityRecorder: ActivityRecorder,
 ) {
 
     /**
@@ -121,6 +123,7 @@ class PhotoSelectionService(
             },
         )
 
+        activityRecorder.recordGallery(galleryId)
         return responseOf(gallery, selection)
     }
 
@@ -154,6 +157,7 @@ class PhotoSelectionService(
             request.photoIds.toSet(),
         )
 
+        activityRecorder.recordGallery(galleryId)
         return responseOf(gallery, selection)
     }
 
@@ -173,6 +177,7 @@ class PhotoSelectionService(
         if (photoSelectionItemRepository.deleteBySelectionIdAndPhotoId(selection.requiredId, photoId) == 0L) {
             throw SelectionException(SelectionErrorCode.PHOTO_NOT_SELECTED)
         }
+        activityRecorder.recordGallery(galleryId)
     }
 
     /**
@@ -214,6 +219,7 @@ class PhotoSelectionService(
             throw RetouchException(RetouchErrorCode.INVALID_ROUND_STATUS)
         }
         gallery.markSelectionCompleted()
+        activityRecorder.recordGallery(galleryId)
         notificationPublisher.publish(
             userIds = workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId)
                 .map { it.userId },
@@ -263,6 +269,7 @@ class PhotoSelectionService(
             title = "사진 선택이 다시 열렸습니다",
             message = "${gallery.title}에서 사진을 다시 선택할 수 있습니다.",
         )
+        activityRecorder.recordGallery(galleryId)
         return responseOf(gallery, selection).copy(photos = emptyList())
     }
 

@@ -31,6 +31,10 @@ enum class RecommendationErrorCode(
     FOLDER_SET_NOT_FOUND(HttpStatus.NOT_FOUND, "RECOMMENDATION_404_2", "요청한 AI 폴더 세트를 찾을 수 없습니다."),
     DETAIL_FOLDER_NOT_FOUND(HttpStatus.NOT_FOUND, "RECOMMENDATION_404_4", "추천할 세부폴더를 찾을 수 없습니다."),
 
+    INVALID_QUERY(HttpStatus.BAD_REQUEST, "RECOMMENDATION_400_2", "추천 문장은 1~1000자, 장수는 1~500이어야 합니다."),
+    QUERY_NOT_UNDERSTOOD(HttpStatus.UNPROCESSABLE_ENTITY, "RECOMMENDATION_422_1", "추천할 폴더와 장수를 명확히 지정해 주세요. 폴더 범위와 장수 조건만 지원합니다."),
+    QUERY_AI_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "RECOMMENDATION_503_1", "자연어 추천을 사용할 수 없습니다. 폴더와 장수를 직접 지정해 주세요."),
+
     COMPARE_SAME_PHOTO(HttpStatus.BAD_REQUEST, "RECOMMENDATION_400_1", "같은 사진 두 장은 비교할 수 없습니다."),
 
     /** 비교 대상 사진이 이 갤러리에 없는 경우. 휴지통에 들어간 사진도 없는 것이다. */

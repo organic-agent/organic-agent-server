@@ -35,6 +35,8 @@ import org.springframework.context.annotation.Import
 
 @DataJpaTest
 @Import(
+    com.soma.wes.activity.service.ActivityRecorder::class,
+    com.soma.wes.activity.repository.ActivityRepository::class,
     TestcontainersConfiguration::class,
     TimeConfig::class,
     GalleryAccessPolicy::class,

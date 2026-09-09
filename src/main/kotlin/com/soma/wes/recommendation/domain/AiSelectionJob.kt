@@ -46,7 +46,23 @@ class AiSelectionJob(
     @Column(name = "detail_folder_id", updatable = false)
     val detailFolderId: Long? = null,
 
+    @Column(name = "request_prompt", updatable = false, length = 1000)
+    val prompt: String? = null,
+
+    @Column(name = "requested_target_count", updatable = false)
+    val targetCount: Int? = null,
+
 ) : BaseEntity() {
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "resolved_query", columnDefinition = "jsonb")
+    var resolvedQuery: ResolvedRecommendationQuery? = null
+        protected set
+
+    fun resolveQuery(query: ResolvedRecommendationQuery) {
+        check(resolvedQuery == null) { "이미 해석한 추천 조건은 변경할 수 없습니다." }
+        resolvedQuery = query
+    }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

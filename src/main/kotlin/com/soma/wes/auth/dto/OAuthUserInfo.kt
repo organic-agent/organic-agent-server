@@ -11,4 +11,5 @@ data class OAuthUserInfo(
     val providerId: String,
     val nickname: String,
     val email: String?,
+    val profileImageUrl: String? = null,
 )

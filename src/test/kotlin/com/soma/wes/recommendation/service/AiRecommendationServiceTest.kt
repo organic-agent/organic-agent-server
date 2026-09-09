@@ -70,6 +70,28 @@ class AiRecommendationServiceTest @Autowired constructor(
     inner class Request {
 
         @Test
+        fun `문장과 장수를 원본 잡에 저장한다`() {
+            aiFolderSet()
+            val response = aiRecommendationService.request(fixture.galleryId, fixture.member.id!!,
+                AiRecommendationRequest(prompt = "해변에서 10장 골라줘", targetCount = 3))
+            assertThat(response.prompt).isEqualTo("해변에서 10장 골라줘")
+            assertThat(response.targetCount).isEqualTo(3)
+            assertThat(jdbcTemplate.queryForObject("SELECT requested_target_count FROM ai_selection_jobs WHERE id = ?", Int::class.java, response.jobId))
+                .isEqualTo(3)
+        }
+
+        @Test
+        fun `비어 있는 문장과 범위 밖 장수는 잡을 만들지 않는다`() {
+            aiFolderSet()
+            listOf(AiRecommendationRequest(prompt = "  "), AiRecommendationRequest(prompt = "가".repeat(1001)),
+                AiRecommendationRequest(targetCount = 0), AiRecommendationRequest(targetCount = 501)).forEach { request ->
+                assertThatThrownBy { aiRecommendationService.request(fixture.galleryId, fixture.member.id!!, request) }
+                    .extracting("errorCode").isEqualTo(RecommendationErrorCode.INVALID_QUERY)
+            }
+            assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM ai_selection_jobs", Int::class.java)).isZero()
+        }
+
+        @Test
         fun `AI 폴더 세트가 있으면 PENDING 잡을 만든다`() {
             // given
             val set = aiFolderSet()

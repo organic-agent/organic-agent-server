@@ -23,6 +23,7 @@ class KakaoUserInfoExtractor : OAuthUserInfoExtractor {
             providerId = attributes.requireString("id"),
             nickname = profile?.get("nickname") as? String ?: "카카오 사용자",
             email = account?.get("email") as? String,
+            profileImageUrl = profile?.get("profile_image_url").asProfileImageUrl(),
         )
     }
 }

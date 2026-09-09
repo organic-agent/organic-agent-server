@@ -1,5 +1,6 @@
 package com.soma.wes.collab.service
 
+import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.collab.domain.CollabSession
 import com.soma.wes.collab.domain.CollabParticipant
 import com.soma.wes.collab.domain.CollabPhotoComment
@@ -29,15 +30,16 @@ class CollabGuestService(
     private val photoViewAssembler: CollabPhotoViewAssembler,
     private val productChildTrashService: ProductChildTrashService,
     private val tokenGenerator: SecureTokenGenerator,
+    private val activityRecorder: ActivityRecorder,
 ) {
     @Transactional
     fun enter(collabToken: String, request: EnterCollabRequest): CollabGuestResponse {
         val access = sessionAccess.requireReadable(collabToken)
-        return CollabGuestResponse.from(
-            participantRepository.save(
-                CollabParticipant.guest(access.sessionId, tokenGenerator.generate(), request.nickname),
-            ),
+        val guest = participantRepository.save(
+            CollabParticipant.guest(access.sessionId, tokenGenerator.generate(), request.nickname),
         )
+        activityRecorder.recordGallery(access.session.galleryId)
+        return CollabGuestResponse.from(guest)
     }
 
     @Transactional
@@ -45,6 +47,7 @@ class CollabGuestService(
         val access = sessionAccess.requireReadable(collabToken)
         val guest = sessionAccess.requireGuest(access, guestToken)
         guest.nickname = CollabParticipant.requireValidNickname(request.nickname)
+        activityRecorder.recordGallery(access.session.galleryId)
         return CollabGuestResponse.from(guest)
     }
 
@@ -71,6 +74,7 @@ class CollabGuestService(
                 content = CollabPhotoComment.requireValidContent(request.content),
             ),
         )
+        activityRecorder.recordGallery(access.session.galleryId)
         return CollabCommentResponse(comment.requiredId, participant.nickname, comment.content, comment.createdAt, true)
     }
 
@@ -98,6 +102,7 @@ class CollabGuestService(
         if (!productChildTrashService.deleteParticipantComment(access.sessionId, commentId, participant.requiredId)) {
             throw CollabException(CollabErrorCode.COMMENT_NOT_FOUND)
         }
+        activityRecorder.recordGallery(access.session.galleryId)
     }
 
     @Transactional
@@ -120,6 +125,7 @@ class CollabGuestService(
             )
         ) return
         likeRepository.save(CollabPhotoLike(access.sessionId, photoId, participant.requiredId))
+        activityRecorder.recordGallery(access.session.galleryId)
     }
 
     @Transactional
@@ -135,7 +141,9 @@ class CollabGuestService(
         val access = sessionAccess.requireWritable(collabToken, photoId)
         val participant = sessionAccess.requireParticipant(access, userId, guestToken)
         requireSharedPhoto(access.session, photoId)
-        productChildTrashService.cancelParticipantLike(access.sessionId, photoId, participant.requiredId)
+        if (productChildTrashService.cancelParticipantLike(access.sessionId, photoId, participant.requiredId)) {
+            activityRecorder.recordGallery(access.session.galleryId)
+        }
     }
 
     @Transactional

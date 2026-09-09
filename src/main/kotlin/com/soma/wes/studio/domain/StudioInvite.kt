@@ -18,6 +18,8 @@ class StudioInvite(
     val token: String,
     @Column(name = "expires_at", nullable = false)
     val expiresAt: ZonedDateTime,
+    @Column(name = "issued_by_user_id", updatable = false)
+    val issuedByUserId: Long? = null,
 ) : BaseEntity() {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

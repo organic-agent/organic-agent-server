@@ -1,5 +1,6 @@
 package com.soma.wes.photo.service
 
+import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.repository.requireWithLockById
@@ -47,6 +48,7 @@ class PhotoService(
     private val photoViewAssembler: PhotoViewAssembler,
     private val properties: StorageProperties,
     private val clock: Clock,
+    private val activityRecorder: ActivityRecorder,
 ) {
 
     companion object {
@@ -110,6 +112,7 @@ class PhotoService(
             issue(photo, contentLength = file.contentLength, crc32c = file.crc32c)
         }
 
+        if (photos.isNotEmpty()) activityRecorder.recordGallery(galleryId)
         return IssueUploadUrlsResponse(
             uploads = uploads,
             uploadUrlTtlSeconds = properties.uploadUrlTtl.seconds,
@@ -168,6 +171,7 @@ class PhotoService(
             issue(photo, contentLength = photoRequest.contentLength, crc32c = photoRequest.crc32c)
         }
 
+        if (photos.isNotEmpty()) activityRecorder.recordGallery(galleryId)
         return IssueUploadUrlsResponse(
             uploads = uploads,
             uploadUrlTtlSeconds = properties.uploadUrlTtl.seconds,
@@ -185,6 +189,7 @@ class PhotoService(
 
         val photos = checkAndLoadPhotos(galleryId, request.photoIds)
         photos.forEach { it.markUploaded() }
+        if (photos.isNotEmpty()) activityRecorder.recordGallery(galleryId)
         return PhotoCountResponse(photos.size)
     }
 
@@ -205,6 +210,7 @@ class PhotoService(
         val photos = checkAndLoadPhotos(galleryId, request.photoIds)
         val now = ZonedDateTime.now(clock)
         photos.forEach { it.moveToTrash(now) }
+        if (photos.isNotEmpty()) activityRecorder.recordGallery(galleryId)
         return PhotoCountResponse(photos.size)
     }
 

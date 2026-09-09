@@ -1,5 +1,6 @@
 package com.soma.wes.gallery.service
 
+import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryInvite
 import com.soma.wes.gallery.domain.GalleryInviteKind
@@ -51,6 +52,8 @@ class GalleryInviteService(
     private val clock: Clock,
     private val studioInviteService: StudioInviteService,
     private val notificationPublisher: UserNotificationPublisher,
+    private val userRepository: com.soma.wes.user.repository.UserRepository,
+    private val activityRecorder: ActivityRecorder,
 ) {
     companion object {
         val VALIDITY: Duration = Duration.ofDays(7)
@@ -90,8 +93,10 @@ class GalleryInviteService(
                 kind = request.kind,
                 maxUses = request.maxUses,
                 expiresAt = expiresAt,
+                issuedByUserId = userId,
             ),
         )
+        activityRecorder.recordGallery(galleryId)
         return toResponse(invite, now)
     }
 
@@ -131,6 +136,8 @@ class GalleryInviteService(
             usedCount = invite.usedCount,
             remainingUses = (invite.maxUses - invite.usedCount).coerceAtLeast(0),
             expiresAt = invite.expiresAt,
+            inviterNickname = (invite.issuedByUserId
+                ?: workspace.personalOwnerUserId)?.let { userRepository.findById(it).orElse(null)?.nickname },
         )
     }
 
@@ -143,6 +150,7 @@ class GalleryInviteService(
         galleryRepository.requireWithLockById(galleryId).requireWritable(ZonedDateTime.now(clock))
         galleryInviteRepository.requireByIdAndGalleryId(inviteId, galleryId)
             .revoke(ZonedDateTime.now(clock))
+        activityRecorder.recordGallery(galleryId)
     }
 
     @Transactional
@@ -185,6 +193,7 @@ class GalleryInviteService(
             }
         }
         invite.consume()
+        activityRecorder.recordGallery(gallery.requiredId)
         notificationPublisher.publish(
             userIds = workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId)
                 .map { it.userId }.filterNot { it == userId },

@@ -122,7 +122,7 @@ TABLES="$TABLES, admin_selection_revisions, photo_selection_items, photo_selecti
 TABLES="$TABLES, retouch_photos, retouch_rounds"
 TABLES="$TABLES, photos"
 TABLES="$TABLES, test_checkouts, studio_invites, gallery_invites, gallery_members, galleries"
-TABLES="$TABLES, user_notifications, user_notification_settings"
+TABLES="$TABLES, user_notifications, user_notification_settings, gallery_activity, workspace_activity"
 TABLES="$TABLES, studio_retouch_capabilities"
 # 관리자 쪽 갤러리·사진 참조 기록. FK가 없는 것도 있지만 가리키는 행이 사라지면 쓰레기라 함께 비운다.
 TABLES="$TABLES, admin_processing_jobs, admin_trash_entries, admin_trash_batches, admin_child_trash_records, admin_entity_revisions, product_purge_claims"

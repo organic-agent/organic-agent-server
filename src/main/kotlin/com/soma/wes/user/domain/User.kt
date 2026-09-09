@@ -46,6 +46,9 @@ class User(
     @Column(nullable = false, length = 20)
     var role: Role = Role.USER,
 
+    @Column(name = "profile_image_url", length = 2048)
+    var profileImageUrl: String? = null,
+
 ) : BaseEntity() {
 
     @Column(name = "deleted_at")
@@ -71,8 +74,9 @@ class User(
         this.nickname = nickname
     }
 
-    fun syncProviderEmail(email: String?) {
+    fun syncProviderProfile(email: String?, profileImageUrl: String?) {
         this.email = email
+        this.profileImageUrl = profileImageUrl
     }
 
     companion object {

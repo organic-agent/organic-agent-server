@@ -15,7 +15,7 @@ import org.springframework.http.ResponseEntity
 interface UserNotificationControllerDocs {
     @Operation(
         summary = "내 알림 목록",
-        description = "scope와 scopeId로 스튜디오 또는 갤러리 범위를 좁힐 수 있다. 지정하지 않으면 전체 범위의 최근 30일 알림을 최신순으로 반환한다. readAt이 null인 항목 수가 읽지 않음 수다.",
+        description = "scope=STUDIO는 스튜디오의 직접 알림과 소속 갤러리 알림을 함께 반환한다. 소속은 발생 시점 기준이며 부모 삭제 후에도 유지된다. GALLERY는 지정 갤러리만 조회한다. 지정하지 않으면 전체 범위의 최근 30일 알림을 최신순으로 반환한다. readAt이 null인 항목 수가 읽지 않음 수다.",
     )
     fun list(
         loginUser: LoginUser,
@@ -29,7 +29,7 @@ interface UserNotificationControllerDocs {
     @Operation(summary = "내 알림 수신 설정 조회")
     fun getSettings(loginUser: LoginUser): ResponseEntity<UserNotificationSettingsResponse>
 
-    @Operation(summary = "내 알림 수신 설정 저장", description = "이메일과 브라우저 알림 토글을 한 번에 저장한다.")
+    @Operation(summary = "내 알림 수신 설정 저장", description = "이메일과 브라우저 알림 토글을 한 번에 저장한다. 현재 수신 설정 저장 API이며 실제 이메일 발송은 추후 구현한다.")
     fun updateSettings(
         loginUser: LoginUser,
         request: UpdateUserNotificationSettingsRequest,

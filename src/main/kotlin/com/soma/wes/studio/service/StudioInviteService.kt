@@ -1,5 +1,6 @@
 package com.soma.wes.studio.service
 
+import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.gallery.domain.GalleryInviteKind
 import com.soma.wes.gallery.domain.GalleryInviteStatus
 import com.soma.wes.gallery.dto.response.GalleryInviteAcceptResponse
@@ -36,6 +37,8 @@ class StudioInviteService(
     private val urlResolver: GalleryInviteUrlResolver,
     private val notificationPublisher: UserNotificationPublisher,
     private val clock: Clock,
+    private val userRepository: com.soma.wes.user.repository.UserRepository,
+    private val activityRecorder: ActivityRecorder,
 ) {
     @Transactional
     fun issue(workspaceId: Long, userId: Long): StudioInviteResponse {
@@ -51,7 +54,9 @@ class StudioInviteService(
             workspaceId = workspaceId,
             token = tokenGenerator.generate(),
             expiresAt = now.plusDays(VALID_DAYS),
+            issuedByUserId = userId,
         ))
+        activityRecorder.recordWorkspace(workspaceId)
         return response(invite, now)
     }
 
@@ -104,6 +109,7 @@ class StudioInviteService(
             usedCount = invite.usedCount,
             remainingUses = null,
             expiresAt = invite.expiresAt,
+            inviterNickname = invite.issuedByUserId?.let { userRepository.findById(it).orElse(null)?.nickname },
         )
     }
 
@@ -131,6 +137,7 @@ class StudioInviteService(
                 role = WorkspaceRole.MEMBER,
             ))
             invite.usedCount += 1
+            activityRecorder.recordWorkspace(invite.workspaceId)
             notificationPublisher.publish(
                 userIds = recipients,
                 type = UserNotificationType.INVITE_ACCEPTED,

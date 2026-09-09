@@ -21,6 +21,7 @@ class NaverUserInfoExtractor : OAuthUserInfoExtractor {
             providerId = response.requireString("id"),
             nickname = response["nickname"] as? String ?: "네이버 사용자",
             email = response["email"] as? String,
+            profileImageUrl = response["profile_image"].asProfileImageUrl(),
         )
     }
 }

@@ -1,5 +1,6 @@
 package com.soma.wes.selection.service
 
+import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.repository.requireWithLockById
 import com.soma.wes.gallery.support.GalleryAccessPolicy
@@ -28,6 +29,7 @@ class PhotoSelectionExportService(
     private val retouchPhotoRepository: RetouchPhotoRepository,
     private val requestWriter: RetouchRequestService,
     private val clock: Clock,
+    private val activityRecorder: ActivityRecorder,
 ) {
     @Transactional
     fun export(galleryId: Long, userId: Long): ByteArray {
@@ -50,6 +52,7 @@ class PhotoSelectionExportService(
                 requests = emptyList(),
                 at = ZonedDateTime.now(clock),
             )
+            activityRecorder.recordGallery(galleryId)
         }
         val notesByPhoto = round?.let { retouchPhotoRepository.findAllByRoundId(it.requiredId) }
             .orEmpty().associateBy { it.photoId }

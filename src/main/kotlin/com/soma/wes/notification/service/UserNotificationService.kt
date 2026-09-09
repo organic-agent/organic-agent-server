@@ -29,8 +29,14 @@ class UserNotificationService(
         return recent(userId, scope, scopeId).map(UserNotificationResponse::from)
     }
 
-    private fun recent(userId: Long, scope: UserNotificationScope?, scopeId: Long?): List<UserNotification> =
-        notificationRepository.findRecent(userId, ZonedDateTime.now(clock).minusDays(RECENT_DAYS), scope, scopeId)
+    private fun recent(userId: Long, scope: UserNotificationScope?, scopeId: Long?): List<UserNotification> {
+        val since = ZonedDateTime.now(clock).minusDays(RECENT_DAYS)
+        return if (scope == UserNotificationScope.STUDIO) {
+            notificationRepository.findRecentForStudio(userId, since, scopeId)
+        } else {
+            notificationRepository.findRecent(userId, since, scope, scopeId)
+        }
+    }
 
     @Transactional
     fun read(userId: Long, request: ReadUserNotificationsRequest): ReadUserNotificationsResponse {
@@ -91,12 +97,18 @@ class UserNotificationService(
         require((scope == UserNotificationScope.GLOBAL) == (scopeId == null)) {
             "GLOBAL만 scopeId 없이 저장할 수 있습니다."
         }
+        val studioWorkspaceId = when (scope) {
+            UserNotificationScope.STUDIO -> scopeId
+            UserNotificationScope.GALLERY -> scopeId?.let(notificationRepository::findStudioWorkspaceIdForHistory)
+            UserNotificationScope.GLOBAL -> null
+        }
         val notifications = userIds.distinct().map { userId ->
             UserNotification(
                 userId = userId,
                 type = type,
                 scope = scope,
                 scopeId = scopeId,
+                studioWorkspaceId = studioWorkspaceId,
                 title = title,
                 message = message,
             )
