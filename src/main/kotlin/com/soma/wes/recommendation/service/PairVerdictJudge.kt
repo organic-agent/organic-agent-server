@@ -63,7 +63,7 @@ class PairVerdictJudge(
             return Prepared(cached = existing.toDto(cached = true))
         }
 
-        // 행은 업로드 확정 때 빈 값으로 먼저 생긴다 — 분석 컬럼이 채워진 행만 재료가 된다.
+        // 행은 임베더가 첫 배치에서 UPSERT로 만들고 점수·백분위가 뒤따라 채워진다 — 분석이 끝난 행(isAnalyzed)만 재료가 된다.
         val analyses = photoAnalysisRepository.findAllByPhotoIdIn(listOf(photoA, photoB))
             .filter { it.isAnalyzed }
             .associateBy { it.photoId }
