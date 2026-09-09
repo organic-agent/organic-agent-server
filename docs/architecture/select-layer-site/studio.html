@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>0. 스튜디오 — 셀렉 계층</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">전체 아키텍처</a><span class="sep">/</span>
+  <span class="here">0. 스튜디오</span>
+  <span class="spacer"></span>
+  <a href="rating.html">1. 별점 →</a>
+</nav>
+
+<div class="eyebrow">wes · studio · workspace · gallery · user 도메인</div>
+<h1>스튜디오 — 워크스페이스가 소유 단위이고, 스튜디오는 그 위의 프로필이다</h1>
+<p class="lede">갤러리·멤버십·인가의 축은 <strong>워크스페이스</strong>(<code>PERSONAL | STUDIO</code>)다. 스튜디오는 STUDIO 워크스페이스와 PK 를 공유하는 1:1 프로필 테이블(공개 주소·연락처·소개·정지)이고,
+<code>studio_members</code> 는 테이블이 아니라 <code>workspace_members</code> 의 별칭이다. 작가는 스튜디오를 만들어 직원을 링크로 초대하고, 갤러리를 만들어 사진을 올린 뒤 공개하고, 부부를 링크로 초대한다.
+모든 하위 기능(별점·비교샷·협업·보정·선택)의 인가는 <code>GalleryAccessPolicy</code> 한 클래스가 결정한다.</p>
+<p class="meta">코드 기준 wes main@45981bf · 2026-09-09 · <code>studio/</code> · <code>workspace/</code> · <code>gallery/</code> · <code>user/</code>. 기존 <code>wes-architecture-2026-08.md</code> 의 <code>galleries.studio_id</code>·<code>requirePhotographer</code> 는 옛 이름</p>
+
+<h2 id="arch">관계도 · 생애</h2>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1200, height: 640,
+  groups: [
+    { x: 300, y: 40, w: 300, h: 300, label: '워크스페이스 (소유 단위)' },
+    { x: 640, y: 40, w: 540, h: 580, label: '갤러리 (셀렉 단위)' },
+  ],
+  nodes: [
+    { id: 'U', lane: 'browser', x: 20, y: 60, w: 220, kicker: 'users · role USER|ADMIN', title: '작가 (OAuth 로그인)',
+      lines: ['POST /studios → OWNER', '직원 초대 링크 (7일, 무제한)'] },
+    { id: 'CP', lane: 'browser', x: 20, y: 380, w: 220, kicker: '부부 · 초대 링크', title: '갤러리 멤버',
+      lines: ['GET /invites/{token} 미리보기', 'POST /invites/{token}/accept', 'OAuth state 에 토큰 보관'] },
+    { id: 'W', lane: 'wes', x: 320, y: 80, w: 260, kicker: 'workspaces · type STUDIO', title: 'Workspace',
+      lines: ['workspace_members (OWNER | MEMBER)', 'studio_invites (활성 1개)'], href: '#model' },
+    { id: 'S', lane: 'wes', x: 320, y: 210, w: 260, kicker: 'studios · PK = workspace_id', title: 'Studio 프로필',
+      lines: ['gallery_url 유니크 · 예약어 22개', 'contact · description · suspended_at'], href: '#studio' },
+    { id: 'PW', lane: 'wes', x: 320, y: 420, w: 260, kicker: 'workspaces · type PERSONAL', title: '개인 워크스페이스 (지연 생성)',
+      lines: ['personal_owner_user_id 유니크', '파트너 = workspace_members(MEMBER)', '갤러리는 결제 소비 후 개설'], href: '#personal' },
+    { id: 'G', lane: 'wes', x: 660, y: 80, w: 240, kicker: 'galleries · workspace_id', title: 'Gallery',
+      lines: ['status DRAFT|OPEN|CLOSED', 'stage UPLOAD → … → ARCHIVED', 'maxSelectablePhotoCount · deadline'], href: '#gallery' },
+    { id: 'GI', lane: 'wes', x: 940, y: 80, w: 220, kicker: 'gallery_invites', title: '부부 초대 링크',
+      lines: ['kind GALLERY_MEMBER (기본)', 'maxUses 2 · 7일 · 활성 1개'], href: '#invite' },
+    { id: 'GM', lane: 'wes', x: 940, y: 230, w: 220, kicker: 'gallery_members · 최대 2', title: '부부 (CLIENT)',
+      lines: ['행의 존재 = 수락', '신랑/신부 구분 없음'] },
+    { id: 'AP', lane: 'wes', x: 660, y: 300, w: 240, kicker: 'gallery/support', title: 'GalleryAccessPolicy',
+      lines: ['requireManager · Uploader · Viewer', 'requireSelectionEditor (작가 거부)', 'requireParticipant* · Collab · Retouch*'], href: '#policy' },
+    { id: 'F', lane: 'wes', x: 660, y: 460, w: 500, kicker: '하위 기능', title: '별점 · 비교샷 · 협업 · 보정 · 선택',
+      lines: ['전부 GalleryAccessPolicy 를 지난다'], href: 'index.html#big' },
+    { id: 'SEL', lane: 'db', shape: 'db', x: 940, y: 340, w: 220, title: 'photo_selections', lines: ['갤러리 생성 시 함께 INSERT'], href: 'selection.html' },
+  ],
+  edges: [
+    { from: 'U', to: 'W', fromAt: .4, toAt: .4, label: '생성 · OWNER', color: 'browser' },
+    { from: 'W', to: 'S', fromSide: 'b', toSide: 't', label: '1:1 PK 공유', color: 'wes' },
+    { from: 'U', to: 'PW', fromAt: .8, toAt: .3, via: [[270, null]], label: '개인 작가', labelAt: 1, dashed: true, color: 'browser' },
+    { from: 'W', to: 'G', fromAt: .5, toAt: .5, label: 'POST /galleries {workspaceId}', color: 'wes' },
+    { from: 'PW', to: 'G', fromAt: .5, toAt: .9, via: [[620, null]], label: 'POST /galleries/personal', labelAt: 1, dashed: true, color: 'wes' },
+    { from: 'G', to: 'GI', fromAt: .3, toAt: .5, label: 'issue (requireManager)', color: 'wes' },
+    { from: 'G', to: 'SEL', fromAt: .8, toAt: .3, via: [[920, null]], label: '', dashed: true },
+    { from: 'GI', to: 'GM', fromSide: 'b', toSide: 't', label: 'accept → INSERT', color: 'wes' },
+    { from: 'CP', to: 'GM', fromAt: .5, toAt: .8, via: [[290, null], [null, 640], [1060, 640]], label: '링크 수락 (requireNotManager · 정원 2)', labelAt: 2, color: 'browser' },
+    { from: 'G', to: 'AP', fromSide: 'b', toSide: 't', label: 'status · stage · deadline · plan', dashed: true },
+    { from: 'GM', to: 'AP', fromAt: .5, toSide: 'r', toAt: .5, via: [[920, null]], label: '부부 여부', labelAt: 1, dashed: true },
+    { from: 'W', to: 'AP', fromSide: 'b', fromAt: .9, toSide: 'l', toAt: .5, via: [[null, 360], [640, 360]], label: '작가 여부 (studio suspended 검사)', labelAt: 1, dashed: true },
+    { from: 'AP', to: 'F', fromSide: 'b', toSide: 't', toAt: .25, label: '허용 / 403', color: 'wes' },
+  ],
+});
+</script>
+
+<h2 id="model">개념 관계 — 워크스페이스 · 스튜디오 · 갤러리</h2>
+<div class="role"><b>한다</b><span><code>Workspace</code> 가 갤러리와 멤버십을 소유한다. STUDIO 타입이면 <code>Studio</code> 행(공개 프로필)이 같은 PK 로 붙고, PERSONAL 타입이면 소유자 한 명과 파트너가 <code>workspace_members</code> 로 들어간다. 갤러리는 <code>workspace_id</code> 하나로 두 경우를 같이 다룬다.</span><b>왜</b><span>스튜디오 작가와 개인 작가(스튜디오 없음)가 같은 갤러리·셀렉 기능을 써야 한다. "소유 단위"를 워크스페이스로 추상화하면 인가(<code>isManager</code>)·초대·알림이 타입 분기 몇 개로 끝나고, 스튜디오 고유의 것(공개 주소·정지)은 프로필 테이블로 분리된다. <code>studio_members</code> 를 별도 테이블로 두지 않은 것도 같은 이유다.</span><b>없으면</b><span>개인 작가용 API 를 통째로 복제하거나, 스튜디오 정지가 갤러리 인가에 반영되지 않는다.</span></div>
+<pre><code>User(1) ──OWNER──▶ Workspace(STUDIO) ──1:1 PK──▶ Studio(gallery_url, contact, suspended_at)
+  │                      ├── WorkspaceMember(OWNER | MEMBER)   ← 작가·직원   (= StudioMember typealias)
+  │                      ├── StudioInvite(token, 7일, 활성 1개, 인원 무제한)
+  │                      └── Gallery(N) ── GalleryMember(≤2, 부부) · GalleryInvite(kind, maxUses)
+  └──personal_owner_user_id──▶ Workspace(PERSONAL) ── WorkspaceMember(OWNER 본인, MEMBER 파트너) ── Gallery(N)</code></pre>
+<div class="tablewrap"><table>
+<tr><th></th><th>Workspace</th><th>Studio</th></tr>
+<tr><td>테이블</td><td><code>workspaces</code></td><td><code>studios</code> (PK = workspace_id, FK CASCADE)</td></tr>
+<tr><td>역할</td><td>갤러리·멤버십의 소유 단위, 인가의 축</td><td>STUDIO 워크스페이스의 공개 프로필</td></tr>
+<tr><td>필드</td><td><code>type · name · personal_owner_user_id</code></td><td><code>name · gallery_url(유니크) · contact · description · inflow_channel(deprecated) · suspended_at</code></td></tr>
+<tr><td>PERSONAL</td><td>있음(지연 생성)</td><td>행 없음</td></tr>
+<tr><td>정지</td><td>—</td><td><code>suspended_at</code> — <code>existsByIdAndSuspendedAtIsNull</code> 이 인가·목록·갤러리 생성 전 경로에서 검사</td></tr>
+</table></div>
+
+<h2 id="studio">스튜디오 API — /api/v1/studios</h2>
+<div class="role"><b>한다</b><span>스튜디오를 만들고(생성자가 OWNER), 프로필을 고치고, 직원을 <strong>링크</strong>로 초대하고, 역할을 바꾸고, 내보내고, 탈퇴하고, 스튜디오를 지운다. 이메일 지정 초대는 없고 수락은 갤러리 초대와 공유하는 <code>POST /api/v1/invites/{token}/accept</code> 가 처리한다.</span><b>왜</b><span>작은 스튜디오가 직원을 붙이는 일은 "링크 하나 보내기"면 충분하고, 링크는 7일·활성 1개·인원 무제한으로 단순하게 둔다. 마지막 OWNER 보호(<code>LAST_OWNER_PROTECTED</code>)와 OWNER 강제 해제 금지는 스튜디오가 주인 없이 남지 않게 한다. 삭제는 <code>workspaces</code> 행 삭제 한 번으로 FK CASCADE 가 스튜디오·멤버·갤러리·초대를 함께 지운다.</span><b>없으면</b><span>직원마다 계정을 만들어 주거나, 마지막 관리자가 나가 아무도 못 만지는 스튜디오가 남는다.</span></div>
+<div class="tablewrap"><table>
+<tr><th>메서드 · 경로</th><th>인가</th><th>동작</th></tr>
+<tr><td><code>POST /</code></td><td>로그인</td><td><code>{name ≤100, galleryUrl, contact?, description?}</code> → <code>workspaces(STUDIO)</code> + <code>workspace_members(OWNER)</code> + <code>studios</code>. 201</td></tr>
+<tr><td><code>GET /gallery-url/availability?galleryUrl=</code></td><td>로그인</td><td>정규화(ASCII·소문자) · <code>^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$</code> · 예약어 22개(api, admin, login, gallery, photos, users, actuator, swagger …)</td></tr>
+<tr><td><code>GET /</code> · <code>GET /{ws}</code> · <code>GET /me</code></td><td>멤버 · 멤버 · 멤버십 1개일 때</td><td><code>StudioResponse{id, workspaceId, name, galleryUrl, contact, description, role}</code></td></tr>
+<tr><td><code>PATCH /{ws}</code> · <code>PATCH /me</code></td><td>OWNER</td><td>프로필 수정(<code>studios.name</code> 과 <code>workspaces.name</code> 동기화)</td></tr>
+<tr><td><code>POST /{ws}/invite-link</code> · <code>GET /{ws}/invite-link</code></td><td>멤버(OWNER·MEMBER)</td><td>기존 활성 링크 폐기 → 새 토큰(7일). 상태 <code>ACTIVE · EXPIRED · REVOKED</code> 는 계산값. 수락 시 <code>workspace_members(MEMBER)</code> + <code>INVITE_ACCEPTED</code> 알림</td></tr>
+<tr><td><code>GET /{ws}/members</code> · <code>PATCH /{ws}/members/{m}/role</code> · <code>DELETE /{ws}/members/{m}</code></td><td>멤버 · OWNER · OWNER</td><td><code>memberId = workspace_members.id</code>. 마지막 OWNER 강등 차단 · OWNER 강제 해제 금지 · <code>MEMBERSHIP_REMOVED</code> 알림</td></tr>
+<tr><td><code>DELETE /{ws}/members/me</code></td><td>본인</td><td>마지막 OWNER 는 <code>STUDIO_409_11 LAST_OWNER_PROTECTED</code>. <code>WORKSPACE_MEMBER_LEFT</code> 알림</td></tr>
+<tr><td><code>DELETE /{ws}</code> · <code>DELETE /me</code></td><td>OWNER</td><td><code>workspaces</code> 삭제 → CASCADE. 멤버 + 산하 갤러리 멤버 전원에게 <code>WORKSPACE_DELETED</code>(GLOBAL)</td></tr>
+</table></div>
+<p>오류: <code>STUDIO_400_1</code> 잘못된 주소 · <code>400_3</code> 스튜디오 선택 필요 · <code>400_4</code> 프로필 · <code>403_1</code> OWNER 아님 · <code>403_2</code> 접근 거부 · <code>404_1</code> 없음 · <code>409_2</code> 주소 중복 · <code>409_11</code> 마지막 OWNER. <code>403_3</code>·<code>409_1</code> 은 정의만 있고 미사용. 워크스페이스 API 는 <code>GET /api/v1/workspaces</code>(내 멤버십 목록) 하나뿐이며 멤버 관리는 전부 스튜디오 API 가 대신한다.</p>
+
+<h2 id="personal">개인 작가 — 스튜디오 없이</h2>
+<div class="role"><b>한다</b><span>PERSONAL 워크스페이스를 로그인·개인 갤러리 개설 시 지연 생성하고(<code>ensurePersonalWorkspace</code>, "{닉네임}의 작업공간"), 갤러리는 <code>POST /galleries/personal</code> 로 결제(<code>test_checkouts</code>)를 소비해 만든다. 파트너는 <code>PERSONAL_PARTNER</code> 초대로 <code>workspace_members(MEMBER)</code> 가 된다.</span><b>왜</b><span>혼자 찍고 혼자 고르는 사용자도 있다. 스튜디오 갤러리 생성 API(<code>POST /galleries</code>)는 PERSONAL 워크스페이스에 402 <code>PERSONAL_CHECKOUT_REQUIRED</code> 를 던져 결제 경로로 보낸다. 개인 갤러리는 생성 즉시 OPEN 이고 <code>planExpiresAt · planMaxPhotoCount</code> 가 박혀 플랜 만료 시 스케줄러가 자동 close 한다.</span><b>없으면</b><span>개인 사용자가 빈 스튜디오를 만들어야 하거나, 플랜 상한 없이 무제한 업로드가 된다.</span></div>
+<p>개인 갤러리에서 "부부/파트너"는 <code>gallery_members</code> 가 아니라 <code>workspace_members</code> 다. 그래서 정책의 "개인 참가자"(<code>isPersonalParticipant</code>)는 PERSONAL 워크스페이스의 아무 멤버이고, 보정 처리(<code>requireRetouchProcessor</code>)도 개인 갤러리에서는 참가자 본인이 한다.</p>
+
+<h2 id="gallery">갤러리 — 생성 · 상태 · 상한</h2>
+<div class="role"><b>한다</b><span>작가가 <code>{workspaceId, title, selectionDeadline?, maxSelectablePhotoCount?, maxRetouchRoundCount?, shootType}</code> 로 갤러리를 만들면 <code>status=DRAFT · stage=UPLOAD</code> 로 시작하고 <strong>빈 셀렉 앨범이 같이 INSERT</strong> 된다. 사진을 올리고 분석·폴더 정리를 마친 뒤 <code>open()</code> 하면 부부가 볼 수 있다.</span><b>왜</b><span>갤러리는 "한 촬영의 셀렉 계약"이라 계약 조건(장수·마감·보정 횟수)이 갤러리에 있다. 세 상태 축이 따로 있는 이유가 다르다 — <code>status</code> 는 부부의 열람·선택 가능 여부, <code>stage</code> 는 작가 화면의 진행 스테퍼, <code>workflowStatus</code> 는 자유 태그. 앨범을 갤러리 생성 시 함께 만드는 것은 조회가 행을 만들지 않게 하려는 것이다.</span><b>없으면</b><span>DRAFT 상태에서 부부가 미완성 갤러리를 보거나, 계약 장수가 셀렉·보정에 흩어져 관리된다.</span></div>
+<div class="tablewrap"><table>
+<tr><th>축</th><th>값</th><th>뜻</th></tr>
+<tr><td><code>status</code></td><td><code>DRAFT · OPEN · CLOSED</code></td><td>초대된 사람의 열람/선택 가능 여부. <code>isVisibleToMember = status != DRAFT</code></td></tr>
+<tr><td><code>stage</code></td><td><code>UPLOAD · SELECTION_IN_PROGRESS · SELECTION_COMPLETED · RETOUCH · DELIVERY · ARCHIVED</code></td><td>작가 화면 스테퍼·목록 필터</td></tr>
+<tr><td><code>workflowStatus</code></td><td><code>DRAFT · IN_PROGRESS · COMPLETED · ARCHIVED</code></td><td>자유 전이(검증 없음)</td></tr>
+</table></div>
+<pre><code id="stage">create ─────────────────────────▶ DRAFT / UPLOAD
+   FolderOrganizationService.save: markFoldersSaved + markSelectionInProgress
+   open()  (DRAFT 만, requireManager + requireWritable) ──▶ OPEN / SELECTION_IN_PROGRESS  + 알림 GALLERY_OPENED
+   부부 submit ─▶ OPEN / SELECTION_COMPLETED        withdraw ─▶ SELECTION_IN_PROGRESS      reopen(newDeadline)
+   보정 회차 REQUESTED ─▶ OPEN / RETOUCH  ─ send ─▶ OPEN / DELIVERY ─ confirm ─▶ CLOSED / ARCHIVED (archivedUntil)
+   close() ─▶ CLOSED / ARCHIVED / workflow ARCHIVED        moveToTrash ─▶ deleted_at (휴지통)
+   개인 플랜: planExpiresAt 경과 → GalleryLifecycleService 가 자동 close + PLAN_EXPIRED 알림</code></pre>
+<div class="note warn"><div class="t">DB CHECK 불일치</div>
+<code>ck_galleries_stage</code> 는 <code>'ALBUM'</code> 을 허용하고 <code>'DELIVERY'</code> 를 허용하지 않는다(<code>V1__baseline.sql:1348-1350</code>). 코드 enum 은 <code>DELIVERY</code> 다. 보정 회차 <code>send</code>(<code>markDeliveryReady</code>)가 운영 DB 에서 CHECK 위반을 낼 수 있다.</div>
+<div class="tablewrap"><table>
+<tr><th>상한</th><th>뜻</th><th>정하는 곳</th><th>강제되는 곳</th></tr>
+<tr><td><code>maxSelectablePhotoCount</code></td><td>계약 장수 — 부부가 최종 고를 장수</td><td>작가(<code>PATCH /max-selectable-photo-count</code>) 또는 개인 개설자. 부부는 상향 요청(<code>SELECTION_INCREASE_REQUESTED</code> 알림)</td><td>제출 시 정확 일치(<code>requireExactTarget</code>)</td></tr>
+<tr><td><code>planMaxPhotoCount</code></td><td>플랜 업로드 상한</td><td>결제(<code>test_checkouts.max_photo_count</code>)</td><td>업로드 발급 시 <code>GALLERY_409_3</code></td></tr>
+<tr><td><code>maxRetouchRoundCount</code></td><td>계약 보정 횟수</td><td>생성 시</td><td>보정 회차 생성·제출·N차</td></tr>
+<tr><td><code>selectionDeadline</code></td><td>선택 마감</td><td>생성·<code>reopen</code></td><td><code>requireSelectable</code>(별점·담기·비교샷·댓글 쓰기·협업 반응)</td></tr>
+</table></div>
+
+<h2 id="invite">부부 초대 — GalleryInvite</h2>
+<div class="role"><b>한다</b><span>작가가 갤러리 초대 링크(<code>kind=GALLERY_MEMBER</code>, <code>maxUses</code> 기본 2, 7일, 활성 1개)를 발급하고, 신랑·신부가 각자 링크로 로그인·미리보기·수락하면 <code>gallery_members</code> 행이 생긴다(정원 2). 개인 갤러리는 <code>PERSONAL_PARTNER</code> 초대로 <code>workspace_members</code> 에 들어간다.</span><b>왜</b><span>부부는 공동 계정이 없으므로 각자 로그인해야 하고, 링크만 있으면 되도록 토큰이 OAuth <code>state</code> 를 타고 콜백까지 살아남는다. 담당 작가가 자기 갤러리 초대를 수락하지 못하게(<code>requireNotManager</code>) 막는 것은 "작가는 고객 대신 고를 수 없다"는 원칙이다. 초대 종류를 워크스페이스 타입에 묶어(<code>validateKind</code>) 스튜디오 갤러리에 파트너 초대가 섞이지 않게 한다.</span><b>없으면</b><span>작가가 부부 계정을 대신 만들거나, 초대 링크가 무한히 재사용된다.</span><b>입출력</b><span><code>POST /galleries/{g}/invites {kind?, maxUses?, expiresAt?}</code> → <code>inviteUrl = app.invite.base-url + "/" + token</code> · <code>POST /invites/{token}/accept</code> → 멤버 행</span></div>
+<pre><code>issue ──▶ ACTIVE ──┬─ revoke / 재발급 ─▶ REVOKED (410 GALLERY_410_2)      우선 1
+                   ├─ now ≥ expiresAt ─▶ EXPIRED (410 GALLERY_410_1)      우선 2
+                   ├─ usedCount ≥ maxUses ∨ gallery_members ≥ 2 ─▶ FULL (409 GALLERY_409_1)
+                   └─ (미리보기) 이미 멤버 ─▶ ALREADY_MEMBER (수락은 멱등 200)
+담당 작가 수락 → 403 GALLERY_403_3 MANAGER_CANNOT_ACCEPT_INVITE</code></pre>
+
+<h2 id="policy">GalleryAccessPolicy — 모든 하위 기능의 공통 관문</h2>
+<div class="role"><b>한다</b><span>"누가 작가인가(<code>isManager</code>: STUDIO 멤버 ∧ 정지 아님, 또는 PERSONAL 소유자)", "누가 부부인가(<code>gallery_members</code>)", "누가 개인 참가자인가"를 한 곳에서 판정하고, 기능별 <code>require*</code> 메서드로 노출한다. 갤러리 상태·마감·플랜 검사(<code>requireWritable · requireSelectable</code>)도 여기 붙는다.</span><b>왜</b><span>설계 원칙 둘을 코드 한 곳에 못 박기 위해서다 — <strong>작가는 고객 대신 사진을 고를 수 없다</strong>(<code>requireSelectionEditor</code> 가 스튜디오 멤버를 명시 거부), <strong>부부의 사적 정보(별점·댓글·하객 의견)는 작가에게 비공개</strong>(<code>requireParticipant*</code> 가 스튜디오 멤버 거부). 서비스마다 멤버십 쿼리를 쓰면 이 원칙이 한 곳에서 깨진다.</span><b>없으면</b><span>작가가 부부 계정 없이 담기를 누르거나, 하객 의견이 작가 화면에 보인다.</span></div>
+<div class="tablewrap"><table>
+<tr><th>메서드</th><th>작가</th><th>개인 참가자</th><th>부부</th><th>추가 가드</th><th>쓰는 기능</th></tr>
+<tr><td><code>requireManager</code></td><td>✅</td><td>PERSONAL 소유자만</td><td>❌</td><td>—</td><td>공개·마감·초대 발급·제출 취소·휴지통</td></tr>
+<tr><td><code>requireUploader</code></td><td>✅</td><td>✅</td><td>❌</td><td><code>requireWritable</code></td><td>업로드 · AI 분석 · 폴더 물질화</td></tr>
+<tr><td><code>requireViewer</code></td><td>✅</td><td>✅</td><td>✅ (DRAFT 제외)</td><td><code>isVisibleToMember</code></td><td>사진 목록 · 셀렉 조회 · 추천 조회 · 보정 조회</td></tr>
+<tr><td><code>requireSelectionEditor</code></td><td><strong>❌ 명시 거부</strong></td><td>✅</td><td>✅</td><td><code>requireSelectable</code>(writable ∧ 마감 전 ∧ OPEN)</td><td><a href="rating.html">별점</a> · <a href="compare.html">비교샷</a> · 추천 요청 · <a href="selection.html">담기·빼기·제출</a> · 폴더 확정</td></tr>
+<tr><td><code>requireCategoryEditor</code></td><td>✅</td><td>✅</td><td>✅</td><td>갤러리 락 + writable + 부부는 <code>requireSelectable</code> + 앨범 <code>requireEditable</code></td><td>카테고리 이동·수정</td></tr>
+<tr><td><code>requireParticipantViewer</code> / <code>Writer</code></td><td><strong>❌</strong></td><td>✅</td><td>✅</td><td>Writer 는 갤러리 락 + <code>requireSelectable</code></td><td>부부 댓글 · 협업 결과 조회 · CSV 내보내기</td></tr>
+<tr><td><code>requireCollabManager(writable)</code></td><td><strong>❌</strong></td><td>✅</td><td>✅</td><td>갤러리 락 (+ writable)</td><td><a href="collab.html">협업 세션</a> 개설·수정·폐기</td></tr>
+<tr><td><code>requireRetouchRequester</code></td><td>❌</td><td>✅</td><td>✅</td><td><code>requireWritable</code>(마감 무관)</td><td><a href="retouch.html">보정 요청</a></td></tr>
+<tr><td><code>requireRetouchProcessor</code></td><td>✅</td><td>✅</td><td>❌</td><td><code>requireWritable</code></td><td>보정 결과 업로드·보내기</td></tr>
+<tr><td><code>requireNotManager</code></td><td>거부 대상</td><td>—</td><td>—</td><td>—</td><td>초대 수락</td></tr>
+</table></div>
+<p><code>requireSelectable</code> 3단: <code>requireWritable</code>(ARCHIVED·플랜 만료 → <code>GALLERY_403_6</code>) → 마감 경과(<code>403_4</code>) → <code>status != OPEN</code>(<code>403_2</code>). "windowOpen" 이라는 심볼은 서버에 없다 — 프론트 policy 의 이름이고 서버 대응은 <code>requireSelectable</code> 이다.</p>
+
+<h2 id="notify">알림 — 스튜디오·갤러리 이벤트</h2>
+<div class="tablewrap"><table>
+<tr><th>이벤트</th><th>타입 · scope</th><th>수신자</th></tr>
+<tr><td>초대 수락</td><td><code>INVITE_ACCEPTED</code> STUDIO / GALLERY</td><td>워크스페이스 멤버(수락자 제외)</td></tr>
+<tr><td>멤버 탈퇴 · 강제 해제 · 스튜디오 삭제</td><td><code>WORKSPACE_MEMBER_LEFT · GALLERY_MEMBER_LEFT · MEMBERSHIP_REMOVED · WORKSPACE_DELETED</code></td><td>OWNER 들 · 본인 · 전원</td></tr>
+<tr><td>갤러리 공개 · 재오픈</td><td><code>GALLERY_OPENED · GALLERY_REOPENED</code> GALLERY</td><td>부부</td></tr>
+<tr><td>계약 장수 상향 요청 · 변경</td><td><code>SELECTION_INCREASE_REQUESTED · _APPROVED</code></td><td>작가 · 부부</td></tr>
+<tr><td>플랜 만료 · 마감 D-3 · 플랜 만료 D-3</td><td><code>PLAN_EXPIRED · DEADLINE_REMINDER · PLAN_EXPIRY_REMINDER</code></td><td>작가 + 부부 (<code>GalleryLifecycleScheduler</code> 1시간, <code>publishOnce</code> 중복 방지)</td></tr>
+<tr><td>셀렉·보정·분석</td><td><code>SELECTION_SUBMITTED · SELECTION_REOPENED · RETOUCH_REQUESTED · RETOUCH_COMPLETED · RETOUCH_CONFIRMED · ANALYSIS_COMPLETED</code></td><td>각 페이지 참조</td></tr>
+</table></div>
+<p>발행은 <code>UserNotificationPublisher</code> 포트. 새 타입을 추가하면 <code>V9</code> 의 <code>ck_user_notifications_type</code> CHECK 도 갱신해야 한다. <code>user_notifications.studio_workspace_id</code> 는 FK 없는 이력 컬럼.</p>
+
+<h2 id="flow">작가가 갤러리를 만들어 부부가 셀렉을 시작하기까지</h2>
+<pre><code> 1 POST /studios {name, galleryUrl}          → workspaces(STUDIO) + workspace_members(OWNER) + studios
+ 2 POST /studios/{ws}/invite-link            → 직원 링크(7일) · POST /invites/{token}/accept → MEMBER
+ 3 POST /galleries {workspaceId, title, deadline, maxSelectablePhotoCount, shootType}
+      PERSONAL 이면 402 · suspended 면 404 → galleries(DRAFT/UPLOAD) + photo_selections(빈 앨범)
+ 4 업로드 · AI 분석 · 폴더 정리 (requireUploader)  → markFoldersSaved + markSelectionInProgress
+ 5 POST /galleries/{g}/open (requireManager)  → OPEN / SELECTION_IN_PROGRESS · 알림 GALLERY_OPENED
+ 6 POST /galleries/{g}/invites {kind=GALLERY_MEMBER, maxUses=2} → inviteUrl
+ 7 신랑·신부 각자: OAuth(inviteToken) → GET /invites/{token} 미리보기 → POST /invites/{token}/accept
+      작가 본인 403 · 정원 2 → 409 · gallery_members INSERT · 작가에게 INVITE_ACCEPTED
+ 8 부부: 사진 목록(requireViewer) → 별점 · 담기 · 비교샷 · 협업 · 보정 (requireSelectionEditor 등)</code></pre>
+
+<h2 id="files">코드 위치 · 테스트</h2>
+<div class="tablewrap"><table>
+<tr><th>역할</th><th>파일</th></tr>
+<tr><td>스튜디오</td><td><code>studio/controller/StudioController.kt</code> · <code>service/StudioService.kt</code> · <code>StudioInviteService.kt</code> · <code>domain/Studio.kt</code>(galleryUrl 규칙 :99-129) · <code>StudioInvite.kt</code> · <code>StudioMember.kt</code>(typealias) · <code>exception/StudioErrorCode.kt</code></td></tr>
+<tr><td>워크스페이스</td><td><code>workspace/domain/Workspace.kt</code> · <code>WorkspaceMember.kt</code> · <code>service/WorkspaceService.kt</code>(ensurePersonalWorkspace :18) · <code>controller/WorkspaceController.kt</code></td></tr>
+<tr><td>갤러리</td><td><code>gallery/domain/Gallery.kt</code>(open :126 · close :134 · reopen :144 · requireWritable :192 · mark* :180-212) · <code>GalleryStatus/Stage/WorkflowStatus.kt</code> · <code>service/GalleryService.kt</code> · <code>PersonalGalleryService.kt</code> · <code>GalleryLifecycleService.kt</code> · <code>GalleryInviteService.kt</code> · <code>GalleryMemberService.kt</code></td></tr>
+<tr><td>인가</td><td><code>gallery/support/GalleryAccessPolicy.kt</code> (isManager :225 · requireSelectionEditor :138 · requireSelectable :249 · requireParticipant :171)</td></tr>
+<tr><td>알림</td><td><code>notification/domain/UserNotification.kt:59-85</code> · <code>service/UserNotificationPublisher.kt</code> · <code>gallery/support/GalleryLifecycleScheduler.kt</code></td></tr>
+<tr><td>스키마</td><td><code>V1__baseline.sql</code>(users :1262 · workspaces :1277 · workspace_members :1296 · studios :1313 · galleries :1330 · gallery_invites :856 · gallery_members :892) · <code>V9</code>(studio_invites) · <code>V11</code>(plan·folders_saved 등) · <code>V18</code>(issued_by · profile_image)</td></tr>
+<tr><td>테스트</td><td><code>StudioServiceTest</code> · <code>StudioInviteServiceTest</code> · <code>GalleryAccessPolicyTest</code> · <code>GalleryInviteServiceTest</code>(536줄) · <code>GalleryMemberServiceTest</code> · <code>GalleryServiceTest</code> · <code>GalleryLifecycleServiceTest</code> · <code>PersonalGalleryServiceTest</code> · <code>PersonalMembershipTest</code> · <code>UserServiceTest</code>. <strong>workspace 패키지 전용 테스트는 없다</strong>(간접 검증)</td></tr>
+</table></div>
+
+<div class="pager">
+  <a href="index.html">← 전체 아키텍처</a>
+  <a href="rating.html">1. 사진 별점 →</a>
+</div>
+</main>
+</body>
+</html>

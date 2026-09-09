@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>5. 서비스 연결 (목표) — 선호 가중치 층</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">전체 아키텍처</a><span class="sep">/</span>
+  <span class="here">5. 서비스 연결 (목표)</span>
+  <span class="spacer"></span>
+  <a href="evaluate.html">← 4. 평가·게이트</a>
+  <a href="roadmap.html">6. 로드맵·제약 →</a>
+</nav>
+
+<div class="eyebrow">wes · recommendation 도메인 · gallery 도메인 · <span class="tag warn">목표 — 아직 없는 코드</span></div>
+<h1>서비스 연결 — 사진 한 장과 벡터가 만나는 지점</h1>
+<p class="lede">이 페이지는 <strong>wes 에 앞으로 붙을 코드</strong>의 자리를 설명한다. 지금 추천 잡(<code>AiSelectionJobRunner.plan</code>)은 <code>score = z(prior) [+ 균형·유형 항]</code> 으로 순위를 매기고
+폴더 쿼터·MMR 로 고른다(<a href="../ai-recommendation-site/plan.html">이웃 문서</a>). 선호 층은 그 식에 <strong>항 하나</strong> — <code>λ·z(pref)</code> — 를 더할 뿐이다.
+추천이다 아니다를 가르는 문턱값은 없고, 몇 장을 어디서 고르느냐는 지금 있는 쿼터와 MMR 이 정한다. 그리고 갤러리가 CLOSED 될 때 Lambda 를 한 번 부른다.</p>
+<div class="note warn"><div class="t">현재 코드에서 확인한 사실 (2026-09-09, wes main@1503a9a)</div>
+<code>RecommendationScoring.combine</code> 에 pref 항이 없다 · 러너의 <code>loadEmbeddings</code> 는 DINOv3(<code>embedding</code>)만, 그것도 범위 폴더 사진만 읽는다 · <code>GalleryService.close()</code> 는 상태만 바꾸고 아무것도 부르지 않는다 · <code>preference_models</code> 를 읽는 Repository 가 없다.
+아래는 전부 설계이며, 붙이는 순서와 남은 일은 <a href="roadmap.html">6.</a></div>
+<p class="meta">자리: <code>recommendation/support/RecommendationScoring.kt</code> · <code>recommendation/service/AiSelectionJobRunner.kt</code>(load · plan) · <code>gallery/service/GalleryService.kt</code>(close) · 참고 <code>analysis/service/port/StageInvoker.kt</code></p>
+
+<h2 id="arch">추천 잡 안에서 — pref 항이 들어가는 자리</h2>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1200, height: 560,
+  groups: [{ x: 300, y: 40, w: 640, h: 490, label: 'wes · AiSelectionJobRunner.run → load → plan (ai-job 스레드)' }],
+  nodes: [
+    { id: 'PA', lane: 'db', shape: 'db', x: 20, y: 60, w: 200, h: 130, title: 'photo_analysis',
+      lines: ['pct · subjects · cluster · group', 'embedding · clip_embedding'], href: 'entities.html#inputs' },
+    { id: 'PM', lane: 'db', shape: 'db', x: 20, y: 330, w: 200, title: 'preference_models',
+      lines: ['active · 버전 키 일치'], href: 'entities.html#preference_models' },
+    { id: 'LD', lane: 'wes', x: 320, y: 60, w: 250, kicker: '지금 · load', title: 'world 로딩',
+      lines: ['분석 요약 · DINOv3 (범위만)', '폴더 세트 · 담은 사진 · 거절'], href: '../ai-recommendation-site/plan.html#load' },
+    { id: 'LD2', lane: 'warn', x: 320, y: 190, w: 250, kicker: '목표 · load 확장', title: 'CLIP + 갤러리 전체 벡터',
+      lines: ['clip_embedding 도 읽는다', '평균은 분석 완료 사진 전체로'], href: '#wes' },
+    { id: 'PR', lane: 'wes', x: 640, y: 60, w: 240, kicker: '지금 · plan', title: 'prior → z',
+      lines: ['0.5·technical_pct + 0.5·aesthetic_pct', '[+ W_BALANCE·z(deficit) + W_PREF·z(lift)]'], href: '#prior' },
+    { id: 'PF', lane: 'warn', x: 640, y: 190, w: 240, kicker: '목표 · plan', title: 'pref → z',
+      lines: ['x 조립 (pref-v1)', 'w_s·x_s + w_e·(x_e − mean) + bias'], href: '#fuse' },
+    { id: 'CB', lane: 'warn', x: 640, y: 330, w: 240, kicker: '목표 · RecommendationScoring.combine', title: 'score = z(prior) + λ·z(pref) + …',
+      lines: ['active 행 없으면 λ 항 없음', '= 지금 점수와 비트 단위로 같다'], href: '#fuse' },
+    { id: 'MQ', lane: 'wes', x: 640, y: 450, w: 240, kicker: '지금 · 그대로', title: ['FolderFitRule → FolderQuota', '→ MmrSelector'],
+      lines: ['클러스터당 1장 · MMR λ=0.7'], href: '../ai-recommendation-site/plan.html#mmr' },
+    { id: 'AR', lane: 'db', shape: 'db', x: 1010, y: 450, w: 180, title: 'ai_recommendations', lines: ['rank · score_breakdown{pref_z}'] },
+  ],
+  edges: [
+    { from: 'PA', to: 'LD', fromAt: .4, toAt: .5, label: '읽기', dashed: true },
+    { from: 'PA', to: 'LD2', fromAt: .8, toAt: .5, label: 'clip_embedding (목표)', dashed: true, color: 'warn' },
+    { from: 'PM', to: 'PF', fromAt: .5, toSide: 'l', toAt: .8, via: [[600, null]], label: 'active 행 1개 (목표)\n버전 키 · feature_spec 일치', labelAt: 0, labelDy: 14, dashed: true, color: 'warn' },
+    { from: 'LD', to: 'PR', label: 'rows', color: 'wes' },
+    { from: 'LD2', to: 'PF', label: 'rows + 1,536 벡터', color: 'warn' },
+    { from: 'PR', to: 'CB', fromSide: 'r', fromAt: .5, toSide: 'r', toAt: .3, via: [[915, null], [null, 357]], label: 'z(prior)', labelAt: 1, color: 'wes' },
+    { from: 'PF', to: 'CB', fromSide: 'b', fromAt: .5, toSide: 't', toAt: .5, label: 'z(pref) · λ', color: 'warn' },
+    { from: 'CB', to: 'MQ', fromSide: 'b', toSide: 't', label: 'score[]', color: 'wes' },
+    { from: 'MQ', to: 'AR', label: 'INSERT', color: 'wes' },
+  ],
+});
+</script>
+
+<h2 id="prior">prior 는 어디서 만들고 어디서 쓰나</h2>
+<p>재료는 배치가 DB 에 적고, prior 자체는 추천 잡이 매번 메모리에서 만든다. 선호 층도 같은 모양이다 — 가중치 행은 DB 에, pref 점수는 추천 잡이 그 자리에서 내적으로.</p>
+<div class="tablewrap"><table>
+<tr><th>단계</th><th>하는 일</th><th>놓이는 곳</th></tr>
+<tr><td>score (GPU 워커 · Lambda)</td><td class="wrap">ARNIQA(spaq) 기술 점수, CLIP+LAION 미학 점수 — 사진 한 장의 절대 점수. CLIP 임베딩·피사체·연사 클러스터도 여기</td><td><code>photo_analysis.sub_scores · clip_embedding · subjects · cluster_id</code></td></tr>
+<tr><td>categorize (Lambda)</td><td class="wrap">갤러리 안에서 두 점수를 백분위(0~100)로. 컨셉 그룹</td><td><code>technical_pct · aesthetic_pct · embed_group_id</code></td></tr>
+<tr><td>wes <code>AiSelectionJobRunner.plan</code></td><td class="wrap">추천 잡이 돌 때 메모리에서 <code>0.5·tech + 0.5·aes</code> → z → (담은 사진 5장 이상이면 deficit·lift 항) → 쿼터·MMR. <code>prior_z</code> 는 근거 문장 재료로도</td><td>DB 에 없음</td></tr>
+<tr><td><span class="tag warn">목표</span> 같은 자리</td><td class="wrap">active 행을 읽어 사진마다 내적 → z → <code>λ·z(pref)</code> 항 추가. <code>score_breakdown</code> 에 <code>pref_z</code> 남김</td><td>DB 에 없음 (행만 있음)</td></tr>
+</table></div>
+
+<h2 id="fuse">내적 → pref → 융합</h2>
+<div class="role"><b>한다</b><span>사진마다 "이 사진이 다른 부부들이 고른 방향과 얼마나 닮았나"를 뜻하는 실수 하나를 만들고, prior 와 <strong>각각 갤러리 안에서 z 정규화한 뒤</strong> λ 로 비중을 정해 더한다.</span><b>왜</b><span>prior(백분위 평균)와 pref(로짓)는 단위가 다르다. z 로 맞추면 λ 가 "prior 한 표준편차 대비 pref 몇 표준편차"라는 뜻이 된다. 문턱값을 두지 않는 이유는 이 층이 배운 것이 부부 평균이라 개별 사진을 잘라낼 근거가 되지 못하기 때문이다 — 순위만 옮긴다.</span><b>없으면</b><span>prior 만으로는 부부가 고른 장면의 절반이 후보 90 밖이다(갤러리 8 실측 recall 0.5).</span><b>입출력</b><span>행 <code>{w_scalar, w_emb, bias, lambda}</code> + 갤러리 사진 전체 → <code>score[]</code></span></div>
+<pre><code>pref(p)  = w_scalar · x_scalar(p) + w_emb · x_emb(p) + bias            x_emb 는 갤러리 평균을 뺀 것
+score(p) = z(prior(p)) + λ · z(pref(p))  [+ W_BALANCE·z(deficit) + W_PREF·z(lift)]      prior = 0.5·technical_pct + 0.5·aesthetic_pct
+λ        = preference_models.lambda = n / (n + n₀)      active 행 없음 → λ 항 없음 → 지금 점수 그대로</code></pre>
+<p><strong>예.</strong> 기술 40 · 미학 70 · 커플 컷이면 prior 55. 임베딩이 "베일을 든 신부 클로즈업" 방향이고 w_emb 가 그 방향을 양수로 배웠다면 pref 가 큰 양수. z 를 취해 prior +0.3, pref +1.8, λ 0.5 이면 score 1.2 — prior 만으로는 중간이던 사진이 폴더 안 상위로 올라간다.
+반대 방향이면 조금 내려간다. 어느 쪽이든 잘라내지 않으므로 후보에서 사라지지는 않는다. 그 뒤는 지금 코드 그대로 — <code>FolderQuota</code> 가 폴더별 장수를 정하고 <code>MmrSelector</code> 가 연사 클러스터당 최고점 1장만 남기고 MMR 로 고른다.</p>
+
+<h2 id="wes">wes 에 붙을 코드 — 2단계 안</h2>
+<pre><code>// 1. active 행 — embedding_model · model_version 이 이 갤러리의 photo_analysis 와 같고 feature_spec 이 pref-v1 인 것. 없으면 아래 전부 건너뜀
+val model = preferenceModelRepository.findActive(embeddingModel, modelVersion, FEATURE_SPEC) ?: return combinedAsIs
+
+// 2. 특징 조립 + 내적 (갤러리 평균을 먼저 구한다 — 범위 폴더가 아니라 분석 완료 사진 전체로)
+val mean = meanOf(rows) { concat(l2(it.embedding), l2(it.clipEmbedding)) }
+val pref = DoubleArray(n) { i ->
+    val xs = scalars(rows[i], groupSize, clusterSize, order)          // 11, pref-v1 순서 (artifact.html#features)
+    val xe = concat(l2(rows[i].embedding), l2(rows[i].clipEmbedding)) - mean
+    dot(model.wScalar, xs) + dot(model.wEmb, xe) + model.bias
+}
+
+// 3. RecommendationScoring.combine 에 항 하나
+val score = z(priorRaw) + model.lambda * z(pref) /* + 기존 deficit · lift */</code></pre>
+<div class="tablewrap"><table>
+<tr><th>바뀌는 곳</th><th>무엇</th><th>지금</th></tr>
+<tr><td><code>recommendation/repository</code></td><td class="wrap"><code>PreferenceModelRepository.findActive(embeddingModel, modelVersion, featureSpec)</code> — 읽기 전용. 엔티티 <code>PreferenceModel</code>(<code>w_emb</code> 는 pgvector 1536)</td><td>없음</td></tr>
+<tr><td><code>AiSelectionJobRunner.load</code></td><td class="wrap">CLIP 임베딩도 읽고, 평균 계산을 위해 갤러리의 분석 완료 사진 전체 벡터를 읽는다. 지금은 범위 폴더 사진의 DINOv3 만(<code>findAllEmbeddingByPhotoIdIn</code>)</td><td>DINOv3 · 범위만</td></tr>
+<tr><td><code>AiSelectionJobRunner.plan</code></td><td class="wrap">스칼라 11 조립(<code>features.py</code> 와 같은 순서·같은 정규화) → 내적 → <code>combine</code> 에 전달. <code>score_breakdown</code> 에 <code>pref_z</code>, <code>result</code> 에 모델 id</td><td>없음</td></tr>
+<tr><td><code>RecommendationScoring.combine</code></td><td class="wrap">인자 <code>prefRaw: DoubleArray?, lambda: Double</code> 추가. null 이면 지금과 같은 결과</td><td>prior + 균형·유형 항만</td></tr>
+<tr><td>테스트</td><td class="wrap">Python <code>features.build</code> 와 Kotlin 조립이 같은 x 를 내는지 — 고정 갤러리 픽스처로 두 쪽 값을 비교하는 계약 테스트. 그리고 "active 행 없음 → 점수 동일" 회귀 테스트</td><td>없음</td></tr>
+</table></div>
+<div class="note warn"><div class="t">이름 충돌 주의 — 지금 코드의 "pref" 는 다른 것이다</div>
+<code>RecommendationScoring.W_PREF</code> · 러너의 <code>prefOn</code> · 잡 <code>result.preferenceOn</code> 은 <strong>이 세션의 부부가 담은 사진의 피사체 유형 lift</strong>(in-session affinity)를 뜻한다. 담은 사진이 5장 이상이고 subjects 가 있을 때만 켜지는 항이다.
+선호 가중치 층은 <strong>다른 부부들에게서 배운 평균</strong>이며 별개다. 붙일 때 이름을 가르는 것이 좋다 — 예: 기존 항은 <code>affinity</code>, 이 층은 <code>learnedPref</code>. 부부별 편차는 기존 in-session 항이, 평균 취향은 이 층이 맡는 분업이다.</div>
+
+<h2 id="trigger">트리거 — 갤러리가 CLOSED 될 때</h2>
+<div class="role"><b>한다</b><span><code>GalleryService.close()</code>(또는 보정 확정 <code>markRetouchConfirmed</code>)로 갤러리가 CLOSED 가 되면 커밋 뒤 <code>preference</code> Lambda 를 EVENT 로 부른다. 페이로드 <code>{"galleryId": N}</code>.</span><b>왜</b><span>라벨(최종 선택)이 확정되는 시점이 마감이다. 학습은 어차피 마감 갤러리 전부를 다시 모으므로 galleryId 는 로그용이고, 호출을 놓쳐도 다음 마감에서 따라잡는다. 응답을 기다리지 않는다(EVENT) — 학습이 갤러리 마감을 막으면 안 된다.</span><b>없으면</b><span>수동 CLI 로만 학습된다(지금 상태).</span><b>입출력</b><span>CLOSED 전이 → <code>StageInvoker</code> 와 같은 모양의 포트 → Lambda EVENT. 결과는 <code>preference_models</code> 행으로만 관측</span></div>
+<div class="tablewrap"><table>
+<tr><th>선택지</th><th>장점</th><th>단점</th></tr>
+<tr><td>A. CLOSED 전이 훅 (기본 설계)</td><td class="wrap">마감 직후 최신 행. 분석 파이프라인의 <code>StageInvoker</code>(EVENT · 로컬은 <code>LocalProcessStageInvoker</code>) 패턴을 그대로 쓴다</td><td class="wrap">wes 에 포트·설정·로컬 대역 스크립트(<code>scripts/lambda/preference.sh</code>)가 필요. 재오픈 → 재마감이면 두 번 돈다(무해 — 같은 결과)</td></tr>
+<tr><td>B. EventBridge 하루 1회 스케줄</td><td class="wrap">wes 코드 변경 없음. 새 마감이 없으면 같은 결과를 다시 쓸 뿐</td><td class="wrap">최대 하루 지연. 행이 매일 하나씩 쌓인다(이력 표로는 오히려 장점)</td></tr>
+</table></div>
+<p class="small">마감 즉시일 필요는 없다. B 로 시작해 A 를 나중에 붙여도 된다 — 결정은 <a href="roadmap.html#open">6. 열린 결정</a>.</p>
+
+<h2 id="files">코드 위치 (자리)</h2>
+<div class="tablewrap"><table>
+<tr><th>역할</th><th>파일</th></tr>
+<tr><td>점수식</td><td><code>recommendation/support/RecommendationScoring.kt</code> (combine · z · prior)</td></tr>
+<tr><td>추천 잡</td><td><code>recommendation/service/AiSelectionJobRunner.kt</code> (load :198 · loadEmbeddings :257 · plan :276)</td></tr>
+<tr><td>임베딩 읽기</td><td><code>photo/repository/PhotoAnalysisRepository.kt</code> (findAllEmbeddingByPhotoIdIn :62)</td></tr>
+<tr><td>마감</td><td><code>gallery/service/GalleryService.kt</code> (close :192) · <code>gallery/domain/Gallery.kt</code> (close :134 · markRetouchConfirmed :185)</td></tr>
+<tr><td>외부 실행 포트 (본보기)</td><td><code>analysis/service/port/StageInvoker.kt</code> · <code>analysis/infrastructure/LambdaStageInvoker.kt</code> · <code>LocalProcessStageInvoker.kt</code></td></tr>
+</table></div>
+
+<div class="pager">
+  <a href="evaluate.html">← 4. 평가와 게이트</a>
+  <a href="roadmap.html">6. 로드맵과 제약 →</a>
+</div>
+</main>
+</body>
+</html>

@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>엔티티 필드 사전 — AI 폴더 추천</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+<style>
+  .who{display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:.68rem;letter-spacing:.04em;padding:0 6px;border-radius:3px;white-space:nowrap;line-height:1.6;margin-right:2px}
+  .who.b{background:var(--browser-soft);color:var(--browser)}
+  .who.w{background:var(--accent-soft);color:var(--accent-ink)}
+  .who.r{background:var(--lambda-soft);color:var(--lambda)}
+  .who.u{background:var(--warn-soft);color:var(--warn)}
+  .who.j{background:var(--db-soft);color:var(--db)}
+  .toc{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 4px}
+  .toc a{font-family:"IBM Plex Mono",monospace;font-size:.78rem;padding:3px 9px;border:1px solid var(--line);border-radius:14px;text-decoration:none;color:var(--ink-2);background:var(--surface)}
+  .toc a:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .ent{margin-top:56px;padding-top:18px;border-top:1px solid var(--line)}
+  .ent h2{border-top:0;margin-top:0;padding-top:0}
+  .ent .sub{font-family:"IBM Plex Mono",monospace;font-size:.78rem;color:var(--ink-3);margin:4px 0 10px}
+  .ent table{table-layout:fixed}
+  .ent td,.ent td code,.ent td:first-child{white-space:normal;overflow-wrap:anywhere}
+  td.col code{font-weight:600}
+  th.n{width:16%} th.t{width:10%} th.m{width:34%} th.w{width:10%} th.h{width:30%}
+  .tl{display:grid;grid-template-columns:130px minmax(0,1fr);gap:6px 14px;font-size:.86rem;margin:14px 0}
+  .tl .st{font-family:"IBM Plex Mono",monospace;font-size:.74rem;color:var(--accent);padding-top:2px;text-align:right}
+  .tl .fx{color:var(--ink-2);overflow-wrap:anywhere}
+</style>
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">전체 아키텍처</a><span class="sep">/</span>
+  <span class="here">엔티티 필드 사전</span>
+  <span class="spacer"></span>
+  <a href="request.html">2. 요청·조회</a><a href="job.html">3. 잡 실행</a><a href="query.html">4. 질의</a><a href="plan.html">5. 계획</a><a href="reasons.html">6. 이유</a>
+</nav>
+
+<div class="eyebrow">wes · recommendation / selection 엔티티 · category 읽기 DTO</div>
+<h1>엔티티 필드 사전 — 추천이 쓰는 행과 읽는 행</h1>
+<p class="lede">추천 도메인이 <strong>쓰는</strong> 테이블은 <code>ai_selection_jobs</code> 와 <code>ai_recommendations</code> 둘이다. 셀렉(<code>photo_selections · photo_selection_items</code>)과 폴더 세트는 읽기만 한다.
+각 컬럼을 <em>뜻 · 쓰는 주체 · 채워지거나 바뀌는 시점</em>으로 적는다. 분석 결과 테이블(<code>photo_analysis</code> 등)은 <a href="../pipeline-v2-site/entities.html">분석 파이프라인 사전</a> 에 있다.</p>
+<p class="meta">코드 기준 wes main@45981bf · 2026-09-09 · <code>recommendation/domain</code> · <code>selection/domain</code> · <code>category/dto/FolderSetDetailDto</code> · V1 · V7 · V19</p>
+
+<div class="toc">
+  <a href="#ai_selection_jobs">ai_selection_jobs</a><a href="#ai_recommendations">ai_recommendations</a>
+  <a href="#photo_selections">photo_selections</a><a href="#photo_selection_items">photo_selection_items</a><a href="#folderset">FolderSetDetailDto</a>
+</div>
+<p class="small">쓰는 주체 — <span class="who b">브라우저</span> 프론트 요청 · <span class="who w">wes</span> 요청·조회 서비스 · <span class="who r">runner</span> 잡 실행기(ai-job 스레드) · <span class="who u">사용자</span> 셀렉 편집 API · <span class="who j">JPA</span> 감사·낙관적 잠금</p>
+
+<h2 id="timeline">잡 한 번의 시간순 — 어느 단계에서 어떤 컬럼이 채워지나</h2>
+<div class="tl">
+  <div class="st">① 요청</div><div class="fx"><span class="who b">브라우저</span>→<span class="who w">wes</span> <code>photo_selections</code> 가 없으면 INSERT. <code>ai_selection_jobs</code> INSERT: <code>selection_id · mode · folder_set_job_id · detail_folder_id · request_prompt · requested_target_count · status=PENDING</code>.</div>
+  <div class="st">② claim</div><div class="fx"><span class="who r">runner</span> <code>status=RUNNING · started_at</code> (조건부 UPDATE).</div>
+  <div class="st">③ 질의</div><div class="fx"><span class="who r">runner</span> prompt 가 있으면 <code>resolved_query</code>(한 번만).</div>
+  <div class="st">④ 1단계</div><div class="fx"><span class="who r">runner</span> 범위 사진의 <code>ai_recommendations</code> DELETE(거절 제외) → INSERT <code>round · rank · folder_id · score_breakdown · presented_at</code>, <code>reason=NULL</code>. 같은 트랜잭션에 <code>ai_selection_jobs.round</code>.</div>
+  <div class="st">⑤ 2단계</div><div class="fx"><span class="who r">runner</span> 10장 배치마다 <code>ai_recommendations.reason</code> UPDATE.</div>
+  <div class="st">⑥ 종료</div><div class="fx"><span class="who r">runner</span> <code>status=DONE · finished_at · result</code> 또는 <code>FAILED · finished_at · error</code>.</div>
+  <div class="st">⑦ 편집</div><div class="fx"><span class="who u">사용자</span> 담기·빼기는 <code>photo_selection_items</code> INSERT/DELETE(셀렉 API). 다음 refine 라운드의 제외·선호 재료가 된다. <code>rejected_at</code> 을 쓰는 API 는 아직 없다.</div>
+  <div class="st">⑧ 복구</div><div class="fx"><span class="who w">wes</span> 기동 시 RUNNING 잡 <code>status=PENDING · started_at=NULL</code>. <code>round</code> 가 있으면 다시 집었을 때 ⑤ 만 돈다.</div>
+</div>
+
+<section class="ent" id="ai_selection_jobs">
+<h2>ai_selection_jobs — <code>AiSelectionJob</code></h2>
+<p class="sub">recommendation/domain/AiSelectionJob.kt · 부분 유니크 uk_ai_selection_jobs_active (selection_id) WHERE status IN (PENDING, RUNNING) · V7 detail_folder_id · V19 request_prompt · requested_target_count · resolved_query</p>
+<p>셀렉 하나의 추천 잡. 행이 큐이자 프론트 폴링 상태다. wes 요청 서비스가 만들고 실행기가 집어 닫는다. <code>admin_ai_selection_jobs</code> 는 관리자 워크플로의 다른 테이블이다.</p>
+<div class="states"><span class="st on">PENDING</span><span class="ar">→ claim →</span><span class="st on">RUNNING</span><span class="ar">→</span><span class="st">DONE</span><span class="ar">│</span><span class="st bad">FAILED</span><span class="ar">│ 기동 복구 → PENDING</span></div>
+<div class="tablewrap"><table>
+<tr><th class="n">컬럼</th><th class="t">타입</th><th class="m">뜻</th><th class="w">쓰는 주체</th><th class="h">채워지는 · 바뀌는 시점</th></tr>
+<tr><td class="col"><code>id</code></td><td>bigint IDENTITY</td><td>잡 id. 프론트 폴링 키, <code>Launcher.inFlight</code> 키</td><td><span class="who w">wes</span></td><td>① <code>saveAndFlush</code></td></tr>
+<tr><td class="col"><code>selection_id</code></td><td>bigint FK</td><td>갤러리의 셀렉(<code>photo_selections</code>). 셀렉당 활성 잡 하나</td><td><span class="who w">wes</span></td><td>① 셀렉이 없으면 먼저 만든다</td></tr>
+<tr><td class="col"><code>mode</code></td><td>varchar(10) CHECK</td><td><code>draft</code>(첫 라운드, 담긴 사진 없어도 돈다) │ <code>refine</code>(담기·빼기를 반영한 다음 라운드). DB 값은 소문자(AI repo 계약), 응답은 대문자</td><td><span class="who w">wes</span></td><td>① 셀렉에 추천 행이 하나라도 있으면 refine. 프론트가 고르지 않는다</td></tr>
+<tr><td class="col"><code>folder_set_job_id</code></td><td>bigint FK → ai_analysis_jobs ON DELETE SET NULL</td><td>기준 AI 폴더 세트(= <code>concept_folders.analysis_job_id</code>). 잡 실행 시 <code>setFolders</code> 의 키. 프론트가 현재 세트와 비교하라고 둔 값이지만 현재 web 은 비교하지 않는다</td><td><span class="who w">wes</span></td><td>① 요청의 <code>analysisJobId</code>(존재 검증) 또는 <code>latestSetJobId</code>. 폴더 범위 요청은 NULL 허용</td></tr>
+<tr><td class="col"><code>detail_folder_id</code></td><td>bigint</td><td>범위. NULL 이면 갤러리 전체(세트 폴더 + 미분류), 있으면 그 폴더의 현재 사진만 다시 추천</td><td><span class="who w">wes</span></td><td>① 요청값(존재 검증, 세트 밖 폴더 허용). 현재 web 은 항상 채운다</td></tr>
+<tr><td class="col"><code>request_prompt</code></td><td>varchar(1000)</td><td>작가·부부가 적은 추천 조건 문장</td><td><span class="who w">wes</span></td><td>① trim. 1~1000자 아니면 400_2. 스튜디오 뷰어 응답에서는 마스킹</td></tr>
+<tr><td class="col"><code>requested_target_count</code></td><td>int CHECK 1~500</td><td>명시한 새 추천 장수. 있으면 쿼터가 <code>ExactRecommendationQuota</code> 로 바뀐다</td><td><span class="who w">wes</span></td><td>①</td></tr>
+<tr><td class="col"><code>resolved_query</code></td><td>jsonb</td><td>질의 해석 결과 <code>{detailFolderIds, targetCount}</code>. 복구 재실행 때 재해석을 막는다</td><td><span class="who r">runner</span></td><td>③ <code>job.resolveQuery</code> — 한 번만(<code>check(resolvedQuery == null)</code>)</td></tr>
+<tr><td class="col"><code>round</code></td><td>int</td><td>이 잡이 만든 추천 라운드 번호. 1단계가 끝났다는 표시이자 복구 분기 기준</td><td><span class="who r">runner</span></td><td>④ <code>persistRound</code> 끝에 <code>assignRound</code>. draft=1, refine=이전+1</td></tr>
+<tr><td class="col"><code>status</code></td><td>varchar(20) CHECK</td><td><code>PENDING → RUNNING → DONE │ FAILED</code>. <code>ACTIVE={PENDING, RUNNING}</code> 가 부분 유니크·409_6 기준</td><td><span class="who w">wes</span> <span class="who r">runner</span></td><td>① PENDING → ② <code>claim</code>(WHERE PENDING) → ⑥ <code>finish/fail</code> → ⑧ <code>requeue</code></td></tr>
+<tr><td class="col"><code>started_at</code></td><td>timestamptz</td><td>집은 시각</td><td><span class="who r">runner</span> <span class="who w">wes</span></td><td>② claim 이 now · ⑧ requeue 가 NULL</td></tr>
+<tr><td class="col"><code>finished_at</code></td><td>timestamptz</td><td>끝난 시각</td><td><span class="who r">runner</span></td><td>⑥</td></tr>
+<tr><td class="col"><code>error</code></td><td>text</td><td>실패 이유 "<code>예외명: 메시지</code>"(4000자 컷). 질의 해석의 422_1/503_1 도 여기로만 드러난다</td><td><span class="who r">runner</span></td><td>⑥ <code>fail</code></td></tr>
+<tr><td class="col"><code>result</code></td><td>jsonb</td><td>요약: <code>k · selected · target · remaining · perFolder · reasonDistribution · misfitPhotoIds · shortfallCount · llm · reasonReady · timing …</code>(<a href="job.html#finish">3.</a>). 응답에는 <code>recommendedCount=k · shortfallCount</code> 만</td><td><span class="who r">runner</span></td><td>⑥ <code>finish</code>. 복구면 <code>recovered=true</code></td></tr>
+<tr><td class="col"><code>version</code> · <code>created_at</code> · <code>updated_at</code></td><td></td><td>감사·낙관적 잠금</td><td><span class="who j">JPA</span></td><td>갱신마다. <code>claim</code> JPQL 은 <code>updated_at</code> 을 직접 now 로</td></tr>
+</table></div>
+</section>
+
+<section class="ent" id="ai_recommendations">
+<h2>ai_recommendations — <code>AiRecommendation</code></h2>
+<p class="sub">recommendation/domain/AiRecommendation.kt · UNIQUE (selection_id, round, photo_id) · FK selection_id → photo_selections CASCADE · photo_id → photos · folder_id → detail_folders SET NULL · 인덱스 (selection_id, round) · (selection_id, photo_id)</p>
+<p>라운드 단위로 쌓이는 추천 한 건. refine 은 이전 라운드를 고치지 않고 새 라운드를 통째로 적으며, 범위 사진의 옛 행은 1단계에서 지운다(거절 행 제외). 조회는 사진별 최신 라운드 한 행만 본다.</p>
+<div class="tablewrap"><table>
+<tr><th class="n">컬럼</th><th class="t">타입</th><th class="m">뜻</th><th class="w">쓰는 주체</th><th class="h">채워지는 · 바뀌는 시점</th></tr>
+<tr><td class="col"><code>id</code></td><td>bigint IDENTITY</td><td>PK</td><td><span class="who r">runner</span></td><td>④ INSERT</td></tr>
+<tr><td class="col"><code>selection_id</code> · <code>photo_id</code></td><td>bigint</td><td>셀렉 · 사진. 셀렉이 지워지면 CASCADE</td><td><span class="who r">runner</span></td><td>④. 불변</td></tr>
+<tr><td class="col"><code>round</code></td><td>int</td><td>라운드 번호 = 만든 잡의 <code>round</code>. 조회는 <code>groupBy(photo).maxBy(round)</code></td><td><span class="who r">runner</span></td><td>④</td></tr>
+<tr><td class="col"><code>rank</code></td><td>int</td><td>폴더 안 순위, 1 이 대표. <code>MmrSelector.folderRank</code>(연사 dedup 후 점수 내림차순) — MMR 선택 순서가 아니다. 화면의 "✦ N"</td><td><span class="who r">runner</span></td><td>④</td></tr>
+<tr><td class="col"><code>folder_id</code></td><td>bigint FK SET NULL</td><td><strong>추천 당시</strong> 세부폴더(재현용). 미분류는 NULL. 응답의 <code>folderId</code> 는 현재 배정이라 다를 수 있다</td><td><span class="who r">runner</span></td><td>④. 폴더가 지워지면 SET NULL</td></tr>
+<tr><td class="col"><code>score_breakdown</code></td><td>jsonb</td><td><code>pipeline · score · prior_z · balance_z · affinity_z · technical_pct · aesthetic_pct · cluster_id · folder · folder_size · folder_rank · folder_quota · alternatives[{photo_id, why_not}] · primary_reason · facts · reason_fallback · (subjects)</code>. 응답에 노출되지 않는다. 복구 경로가 2단계 재료로 다시 읽는다</td><td><span class="who r">runner</span></td><td>④</td></tr>
+<tr><td class="col"><code>reason</code></td><td>text</td><td>추천 이유 문장(LLM 또는 템플릿). 응답 <code>reasonReady = reason != null</code></td><td><span class="who r">runner</span></td><td>④ NULL → ⑤ 배치마다 <code>fillReason</code> UPDATE. 복구는 NULL 인 행만 다시</td></tr>
+<tr><td class="col"><code>presented_at</code></td><td>timestamptz</td><td>노출 시각</td><td><span class="who r">runner</span></td><td>④ now</td></tr>
+<tr><td class="col"><code>rejected_at</code></td><td>timestamptz</td><td>거절 시각. 채워진 행은 조회에서 숨기고 다음 라운드 후보에서 빼며 1단계 DELETE 에서 남긴다</td><td>—</td><td><strong>현재 쓰는 코드가 없다</strong>(엔티티는 <code>val</code>, 세터 없음). 통합 테스트만 JDBC 로 직접 넣는다. 거절 API 는 계획 문서의 "남은 것"</td></tr>
+<tr><td class="col"><code>accepted_at</code> · <code>unselected_at</code> · <code>accept_mode</code></td><td>timestamptz · varchar CHECK (single, bulk)</td><td>담기 반응 기록용으로 스키마에만 있다</td><td>—</td><td>엔티티에 매핑되지 않았다. 반응 API 가 생길 때 매핑 예정</td></tr>
+<tr><td class="col"><code>version</code> · <code>created_at</code> · <code>updated_at</code></td><td></td><td>감사</td><td><span class="who j">JPA</span></td><td>INSERT · reason UPDATE</td></tr>
+</table></div>
+</section>
+
+<section class="ent" id="photo_selections">
+<h2>photo_selections — <code>PhotoSelection</code> (읽기 · 없으면 생성)</h2>
+<p class="sub">selection/domain/PhotoSelection.kt · 갤러리당 1행 · @SQLRestriction("deleted_at is null")</p>
+<p>부부의 셀렉 앨범. 추천 잡의 부모(<code>ai_selection_jobs.selection_id</code>)다. 추천 요청 때 없으면 만들고, <code>requireEditable()</code> 로 제출 여부를 검사한다.</p>
+<div class="tablewrap"><table>
+<tr><th class="n">컬럼</th><th class="t">타입</th><th class="m">뜻</th><th class="w">쓰는 주체</th><th class="h">추천과의 관계</th></tr>
+<tr><td class="col"><code>id</code> · <code>gallery_id</code></td><td>bigint</td><td>PK · 갤러리(1:1)</td><td><span class="who w">wes</span></td><td>추천 요청이 첫 셀렉 행을 만들 수 있다</td></tr>
+<tr><td class="col"><code>status</code></td><td>varchar(20)</td><td><code>SELECTING</code> │ <code>SUBMITTED</code></td><td><span class="who u">사용자</span></td><td>SUBMITTED 면 추천 요청 거절(<code>SELECTION_409_1</code>). 스튜디오 뷰어의 <code>selected</code> 노출은 SUBMITTED 일 때만</td></tr>
+<tr><td class="col"><code>submitted_at</code> · <code>submitted_by_user_id</code></td><td></td><td>제출 시각·사용자</td><td><span class="who u">사용자</span></td><td>—</td></tr>
+<tr><td class="col"><code>deleted_at</code></td><td>timestamptz</td><td>소프트 삭제</td><td><span class="who w">wes</span></td><td>지워진 셀렉의 추천은 CASCADE 로 함께 사라진다</td></tr>
+</table></div>
+</section>
+
+<section class="ent" id="photo_selection_items">
+<h2>photo_selection_items — <code>PhotoSelectionItem</code> (읽기 전용)</h2>
+<p class="sub">selection/domain/PhotoSelectionItem.kt · UNIQUE (selection_id, photo_id)</p>
+<p>"담은 사진". 추천 도메인은 이 테이블을 <strong>읽기만</strong> 한다 — 제외 집합(담은 사진은 다시 추천하지 않음), 선호·균형 통계(<code>selected[]</code>), 응답의 <code>selected</code>. 담기·빼기 자체는 셀렉 API(<code>POST/DELETE …/photo-selection/photos</code>)다.</p>
+<div class="tablewrap"><table>
+<tr><th class="n">컬럼</th><th class="t">타입</th><th class="m">뜻</th><th class="w">쓰는 주체</th><th class="h">추천과의 관계</th></tr>
+<tr><td class="col"><code>selection_id</code> · <code>photo_id</code></td><td>bigint</td><td>셀렉 · 사진</td><td><span class="who u">사용자</span></td><td><code>findAllBySelectionId</code> → 제외 · 선호 재료 · selected</td></tr>
+<tr><td class="col"><code>gallery_id</code> · <code>added_by_user_id</code> · <code>sort_order</code></td><td></td><td>갤러리 · 담은 사용자 · 앨범 순서</td><td><span class="who u">사용자</span></td><td>—</td></tr>
+<tr><td class="col"><code>retouch_photo_id</code></td><td>bigint</td><td>보정본 연결</td><td><span class="who u">사용자</span></td><td>—</td></tr>
+</table></div>
+</section>
+
+<section class="ent" id="folderset">
+<h2>FolderSetDetailDto — 폴더 세트 읽기 경계 (테이블 아님)</h2>
+<p class="sub">category/dto/FolderSetDetailDto.kt · category/support/AiCategoryFolderSetReader.kt</p>
+<p>추천이 카테고리 도메인에서 받는 전부. 폴더 엔티티·<code>category</code> 칩·<code>needsReview</code> 는 넘어오지 않는다.</p>
+<div class="tablewrap"><table>
+<tr><th class="n">필드</th><th class="t">출처</th><th class="m">뜻</th><th class="w">누가 읽나</th><th class="h">쓰이는 곳</th></tr>
+<tr><td class="col"><code>detailFolderId</code></td><td><code>detail_folders.id</code></td><td>세부폴더 id</td><td><span class="who r">runner</span> <span class="who w">wes</span></td><td>범위 · 쿼터 키 · 응답 <code>folderId</code>(현재 배정)</td></tr>
+<tr><td class="col"><code>conceptName</code> · <code>detailName</code></td><td><code>concept_folders.name</code> · <code>detail_folders.name</code></td><td>상위·하위 이름</td><td><span class="who r">runner</span></td><td>질의 해석 입력, <code>score_breakdown.folder</code>·이유 문장의 "부모›이름"</td></tr>
+<tr><td class="col"><code>photoIds</code></td><td><code>photo_category_assignments</code> 현재 배정</td><td>폴더 사진 목록(빈 폴더 포함)</td><td><span class="who r">runner</span></td><td>후보 · 쿼터 |f| · FolderFitRule 중심</td></tr>
+<tr><td class="col"><code>displayName</code></td><td>파생</td><td>"컨셉 › 세부"</td><td><span class="who r">runner</span></td><td>이유 문장 재료</td></tr>
+</table></div>
+<div class="tablewrap"><table>
+<tr><th>리더 메서드</th><th>반환</th><th>추천에서의 쓰임</th></tr>
+<tr><td><code>latestSetJobId(galleryId)</code></td><td><code>max(concept_folders.analysis_job_id)</code></td><td>요청 시 <code>folder_set_job_id</code> 기본값</td></tr>
+<tr><td><code>setExists(galleryId, jobId)</code></td><td>boolean</td><td>요청의 <code>analysisJobId</code> 검증</td></tr>
+<tr><td><code>setFolders(galleryId, jobId)</code></td><td><code>List&lt;FolderSetDetailDto&gt;</code>(컨셉 sortOrder,id 순)</td><td>world 의 <code>quotaFolders</code></td></tr>
+<tr><td><code>detailFolder(galleryId, id)</code></td><td>DTO 또는 null(세트 밖 폴더도)</td><td>요청 검증 · 범위 폴더</td></tr>
+<tr><td><code>detailIdsByPhotoId(photoIds)</code></td><td>사진 → 현재 세부폴더</td><td>목록 응답의 <code>folderId</code> 와 필터</td></tr>
+</table></div>
+</section>
+
+<h2 id="rules">읽을 때 기억할 규칙</h2>
+<ul>
+  <li><strong>쓰기는 두 테이블.</strong> 요청 서비스는 <code>ai_selection_jobs</code> 만, 실행기는 잡의 상태 컬럼과 <code>ai_recommendations</code> 만 쓴다. 셀렉·폴더·분석 결과는 읽기 전용이다.</li>
+  <li><strong>라운드는 append.</strong> 새 라운드가 이전 라운드를 덮지 않는다. 화면이 보는 것은 사진별 최신 라운드 한 행이고, 1단계 DELETE 는 범위 사진의 옛 행만 정리한다(거절 행 제외).</li>
+  <li><strong>반응 컬럼은 예약 상태.</strong> <code>rejected_at</code> 은 읽기만, <code>accepted_at · unselected_at · accept_mode</code> 는 매핑조차 없다. 담기 반응은 <code>photo_selection_items</code> 를 읽어 대신한다.</li>
+  <li><strong><code>round</code> 가 복구의 열쇠.</strong> 잡의 <code>round</code> 가 있으면 추천은 이미 저장된 것이고 이유만 다시 채운다. 없으면 처음부터.</li>
+</ul>
+
+<div class="pager">
+  <a href="reasons.html">← 6. 이유 문장</a>
+  <a href="index.html">전체 아키텍처로 ↑</a>
+</div>
+</main>
+</body>
+</html>

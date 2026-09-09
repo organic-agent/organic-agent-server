@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>3. 학습 — 선호 가중치 층</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">전체 아키텍처</a><span class="sep">/</span>
+  <span class="here">3. 학습</span>
+  <span class="spacer"></span>
+  <a href="artifact.html">← 2. 산출물·특징</a>
+  <a href="evaluate.html">4. 평가·게이트 →</a>
+</nav>
+
+<div class="eyebrow">AI repo · preference/job.py · train.py · store.py · <span class="tag warn">목표</span></div>
+<h1>학습 — 마감마다 전부 다시 푼다</h1>
+<p class="lede">갤러리 n 이 CLOSED 가 되면 Lambda 가 <code>job.run_train</code> 을 돈다. 마감된 라벨 갤러리 <strong>전부</strong>를 모아 먼저 홀드아웃을 재고, 그 다음
+전부를 한 표로 합쳐 벡터를 새로 푼다. 이전 벡터는 버린다. 갤러리 하나가 아니라 누적 데이터가 모델이므로 페이로드의 <code>galleryId</code> 는 로그용이다.
+학습 자체는 갤러리 8 실측에서 0.06초 — 시간은 대부분 DB 읽기다.</p>
+<p class="meta"><code>preference/job.py</code>(run_train · run_sanity) · <code>train.py</code>(make_sample · fit · train) · <code>store.py</code>(DbStore · LocalStore) · <code>config.py</code>(Knobs)</p>
+
+<h2 id="arch">run_train 한 번</h2>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1200, height: 470,
+  nodes: [
+    { id: 'H', lane: 'lambda', x: 20, y: 60, w: 210, kicker: 'handler.handler', title: 'EVENT {galleryId}',
+      lines: ['DbStore 열기', 'run_train → 결과 dict', '연결 닫기'] },
+    { id: 'S0', lane: 'lambda', x: 320, y: 60, w: 250, kicker: '① store', title: 'list_closed_galleries()',
+      lines: ['CLOSED · 선택 ≥1 · 분석 완료', '마감 순', 'read_gallery · read_selected'], href: '#run' },
+    { id: 'PG', lane: 'db', shape: 'db', x: 660, y: 50, w: 200, h: 140, title: 'Postgres (읽기)',
+      lines: ['galleries', 'photos ⋈ photo_analysis', 'photo_selections ⋈ items'], href: 'entities.html#inputs' },
+    { id: 'S1', lane: 'lambda', x: 320, y: 200, w: 250, kicker: '② evaluate.gate', title: '시험 — 홀드아웃 + 판정',
+      lines: ['갤러리 하나 빼고 학습 → 그 갤러리에서 recall', 'n개 줄 → 부호 검정 · 악화 비율 · 안정성', 'verdict {passed, reasons, rows…}'], href: 'evaluate.html' },
+    { id: 'S2', lane: 'lambda', x: 320, y: 350, w: 250, kicker: '③ train.train', title: '학습 — 전부 합쳐 한 번',
+      lines: ['make_sample × n → 한 표', 'fit: 가중 로지스틱 + L2 두 강도', 'PreferenceModel (λ 포함)'], href: '#fit' },
+    { id: 'S3', lane: 'lambda', x: 660, y: 350, w: 230, kicker: '④ store.write_model', title: '저장',
+      lines: ['model.holdout = verdict', 'active = verdict.passed', '테이블 없으면 로컬 JSON'], href: '#run' },
+    { id: 'PM', lane: 'db', shape: 'db', x: 1000, y: 340, w: 170, title: 'preference_models', lines: ['INSERT 행 하나'], href: 'entities.html#preference_models' },
+    { id: 'X', lane: 'warn', x: 20, y: 380, w: 250, kicker: '중단', title: 'SystemExit',
+      lines: ['embedding_model · model_version 이', '갤러리 사이에서 섞임'] },
+  ],
+  edges: [
+    { from: 'H', to: 'S0', label: 'run_train(store)', color: 'lambda' },
+    { from: 'S0', to: 'PG', fromAt: .5, toAt: .5, label: 'SELECT', dashed: true },
+    { from: 'S0', to: 'S1', fromSide: 'b', toSide: 't', label: 'LabeledGallery × n\n(선택 없는 갤러리는 건너뜀)', color: 'lambda' },
+    { from: 'S1', to: 'S2', fromSide: 'b', toSide: 't', label: 'verdict', color: 'lambda' },
+    { from: 'S2', to: 'S3', label: 'model', color: 'lambda' },
+    { from: 'S3', to: 'PM', label: 'INSERT\n(passed → 이전 active 내림)', color: 'lambda' },
+    { from: 'S0', to: 'X', fromSide: 'l', fromAt: .8, toSide: 't', toAt: .5, via: [[285, null], [null, 340], [145, 340]], label: '버전 섞임', labelAt: 1, color: 'warn' },
+  ],
+});
+</script>
+
+<h2 id="run">순서 — 시험이 학습보다 먼저다</h2>
+<div class="role"><b>한다</b><span>마감 갤러리를 모아 ① 읽기 → ② 홀드아웃·게이트 → ③ 전체 학습 → ④ 저장. 게이트를 통과한 실행만 <code>active</code>.</span><b>왜</b><span>홀드아웃은 <strong>아직 학습에 넣지 않은 갤러리</strong>에서, 넣기 직전에 재야 한다. 학습에 들어간 갤러리에서 재면 자기가 배운 것을 다시 푸는 것이라 점수가 부풀려진다(v1 실측: in-sample 0.86 vs 하나 빼고 0.55). 그래서 ②가 ③보다 앞이다.</span><b>없으면</b><span>매번 "잘 맞는다"는 점수만 남고, 새 부부에게 실제로 도움이 되는지 알 수 없는 채로 추천에 붙는다.</span><b>입출력</b><span><code>run_train(store, settings, gallery_ids?)</code> → <code>{status, model_id, stored, n_galleries, n_positives, lambda, active, gate{…}, elapsed_s}</code></span></div>
+<ol class="steps">
+  <li><b>읽기.</b> <code>list_closed_galleries()</code> — <code>galleries.status='CLOSED'</code> 이고 삭제 안 된 선택이 1장 이상 있고 <code>photo_analysis.model_version</code> 이 채워진 갤러리, 마감 순. 갤러리마다 <code>read_gallery</code>(사진·분석 전체 행)와 <code>read_selected</code>(선택 photo_id). 선택이 재료 안에 없으면 그 갤러리는 건너뛴다. 갤러리들의 <code>embedding_model · model_version</code> 이 섞여 있으면 한 행에 담을 수 없으므로 중단.</li>
+  <li><b>시험.</b> <code>evaluate.gate</code> — leave-one-gallery-out 으로 갤러리마다 성적 한 줄, 쌓인 줄로 세 조건 판정. 갤러리 2개 미만이면 "측정 불가"를 이유에 적고 통과시키지 않는다. 상세는 <a href="evaluate.html">4.</a></li>
+  <li><b>학습.</b> <code>train.train</code> — 갤러리 n 개의 라벨 표본을 이어 붙여 로지스틱 회귀 한 번. λ(n) 도 여기서 계산.</li>
+  <li><b>저장.</b> <code>store.write_model</code> — <code>holdout</code> 에 verdict, <code>active</code> 에 passed 를 넣어 INSERT. passed 면 같은 트랜잭션에서 <code>UPDATE … SET active=false WHERE active</code> 를 먼저. 테이블이 없으면 None 을 돌려주고 CLI 는 <code>out/preference/models/</code> 에 JSON 으로 남긴다.</li>
+</ol>
+
+<div class="note"><div class="t">헷갈리기 쉬운 점 둘</div>
+<strong>갤러리별 벡터는 없다.</strong> "갤러리 1 벡터, 2 벡터를 합쳐 하나로"가 아니다. 데이터를 합친 뒤 벡터를 한 번 푼다. 갤러리별로 풀면 각 벡터가 그 부부의 30장을 외우고, 합쳐도 외운 것의 평균이다. 한 표로 풀면 부부마다 다른 취향은 서로 상쇄되어 벡터에 들어가지 못하고 여러 부부에게 공통인 방향만 남는다. 그래서 결과는 "부부 평균 취향"이다.<br><br>
+<strong>홀드아웃은 학습하지 않는다. 재기만 한다.</strong> 홀드아웃에서 나오는 것은 벡터가 아니라 점수 한 줄이다. 시험은 언제나 학습에 넣지 않은 갤러리에서 본다.</div>
+
+<h2 id="labels">라벨 규칙 — make_sample</h2>
+<div class="role"><b>한다</b><span>갤러리 하나의 사진을 양성·음성·라벨 없음으로 나누고 표본 가중치를 매긴다.</span><b>왜</b><span>연사 클러스터 안의 사진들은 거의 같은 벡터다. 부부가 그중 한 장만 골랐다고 형제들에 음성을 주면, 없는 경계를 억지로 그리게 되어 학습이 망가진다. 클러스터를 단위로 라벨을 주면 이 문제가 사라지고 양성·음성 불균형도 함께 완화된다.</span><b>없으면</b><span>사진 단위로 라벨을 주면 양성 30 대 음성 7,000 의 불균형 위에 형제 컷의 모순 라벨이 얹힌다.</span><b>입출력</b><span><code>LabeledGallery</code> → <code>Sample{idx, y, w}</code></span></div>
+<div class="tablewrap"><table>
+<tr><th></th><th>정의</th><th>가중치</th><th>왜</th></tr>
+<tr><td>양성</td><td class="wrap">부부의 최종 선택(<code>photo_selection_items</code>). 골든 데이터에서는 A컷·B컷 모두</td><td class="wrap">같은 연사 클러스터에 둘 이상이면 1/count — 클러스터당 합 1</td><td class="wrap">한 장면을 여러 장 골랐다고 그 장면이 여러 배 중요해지지 않게</td></tr>
+<tr><td>음성</td><td class="wrap">양성이 없는 연사 클러스터의 대표 1장(<code>cluster_rank</code> 0, 없으면 첫 행). 단독 사진은 자기만의 클러스터</td><td>클러스터당 1</td><td class="wrap">클러스터 대표만 — 형제끼리 중복 라벨을 막고 불균형도 완화</td></tr>
+<tr><td>라벨 없음</td><td class="wrap">양성의 연사 형제</td><td>—</td><td class="wrap">거의 같은 벡터에 반대 라벨을 주면 없는 경계를 그리게 된다</td></tr>
+</table></div>
+<p>클래스 가중치는 양성 합 0.5 · 음성 합 0.5 (balanced). 갤러리마다 표본 가중치 합이 1 이라 <strong>큰 갤러리가 지배하지 않는다</strong>. 양성이 하나도 없거나(선택이 재료 밖) 음성이 없으면(모든 클러스터에 선택이 있음) <code>ValueError</code>.</p>
+
+<h2 id="fit">모델 — 두 강도 L2 로지스틱 회귀</h2>
+<div class="role"><b>한다</b><span>가중 로지스틱 손실 + λ_s‖w_s‖² + λ_e‖w_e‖² 를 scipy L-BFGS-B 로 푼다. bias 는 정규화하지 않는다. torch 없음.</span><b>왜</b><span>갤러리당 양성이 수십 개인데 임베딩은 1,536차원이라 정규화 없이는 외운다. 스칼라(11)는 약하게, 임베딩은 강하게 두 강도로 누른다. 그리고 <strong>정규화 강도를 블록의 분산 규모로 보정</strong>한다 — 임베딩 1,536차원은 좌표당 분산이 1/1536 수준이라 보정 없이 <code>l2·‖w‖²</code> 을 쓰면 값의 뜻이 차원 수에 묻힌다.</span><b>없으면</b><span>l2 손잡이 하나로는 스칼라를 살리면 임베딩이 외우고, 임베딩을 누르면 스칼라가 죽는다.</span><b>입출력</b><span><code>fit(xs, xe, y, w, knobs)</code> → <code>(w_scalar, w_emb, bias)</code></span></div>
+<pre><code>reg = [ l2_scalar · trace(Cov(x_s))/11 ] × 11  ⊕  [ l2_emb · trace(Cov(x_e))/1536 ] × 1536  ⊕  [ 0 ]   # bias
+loss(θ) = Σ w_i · ( log(1 + e^{m_i}) − y_i·m_i ) / Σ w_i  +  Σ reg_j · θ_j²        m = X θ
+θ* = L-BFGS-B(θ₀ = 0, maxiter 500)   →   w_scalar = θ[:11], w_emb = θ[11:1547], bias = θ[-1]</code></pre>
+<div class="tablewrap"><table>
+<tr><th>손잡이 (<code>Knobs</code>)</th><th>기본</th><th>환경변수</th><th>뜻</th></tr>
+<tr><td><code>l2_scalar</code></td><td>1e-2</td><td><code>PREF_L2_SCALAR</code></td><td>스칼라 블록 L2 (약하게)</td></tr>
+<tr><td><code>l2_emb</code></td><td>0.1</td><td><code>PREF_L2_EMB</code></td><td>임베딩 블록 L2 (강하게)</td></tr>
+<tr><td><code>n0</code></td><td>5.0</td><td><code>PREF_N0</code></td><td>λ(n) = n/(n+n0)</td></tr>
+<tr><td><code>k_multiplier</code></td><td>3</td><td>—</td><td>recall@K 의 K = 3 × 양성 수</td></tr>
+<tr><td><code>gate_p · gate_worse_ratio · gate_stability_window · gate_stability_tol</code></td><td>0.05 · 0.30 · 3 · 0.05</td><td>—</td><td><a href="evaluate.html#gate">게이트 3조건</a></td></tr>
+<tr><td><code>max_iter</code></td><td>500</td><td>—</td><td>L-BFGS 반복 상한. 수렴 못 하면 경고만</td></tr>
+</table></div>
+
+<h2 id="sanity">sanity — 학습이 아니라 파이프라인 확인</h2>
+<p><code>run_sanity(gallery_id, selected_ids)</code> 는 갤러리 하나를 in-sample 로 학습하고 같은 갤러리를 재정렬해 양성이 후보 범위(K)에 드는지 본다. 성능 지표가 아니다 — 1,547차원이 30장을 외우므로 당연히 든다.
+특징 조립·라벨·학습·dedup 순위가 끝까지 도는지를 보는 것이고, prior 단독 값을 함께 남겨 훗날 비교의 첫 줄로 쓴다. 통과 기준은 <code>pref.recall_cluster ≥ 0.999</code>. 갤러리 8 결과는 <a href="evaluate.html#measured">4.</a></p>
+
+<h2 id="files">코드 위치 · 실행</h2>
+<div class="tablewrap"><table>
+<tr><th>역할</th><th>파일 · 명령</th></tr>
+<tr><td>잡 순서</td><td><code>preference/preference/job.py</code> (run_train · run_sanity · _load)</td></tr>
+<tr><td>라벨 · 학습</td><td><code>preference/preference/train.py</code> (make_sample · _block_scale · fit · train)</td></tr>
+<tr><td>읽기 · 쓰기</td><td><code>preference/preference/store.py</code> (DbStore: read_gallery · read_selected · list_closed_galleries · write_model / LocalStore: npz 캐시) · <code>db.py</code></td></tr>
+<tr><td>진입점</td><td><code>handler.py</code>(Lambda) · <code>__main__.py</code>(CLI export / sanity / train — 같은 job 함수)</td></tr>
+<tr><td>로컬 실행</td><td class="wrap"><code>cd preference &amp;&amp; ../score/.venv/bin/python -m preference export --gallery-id 8 --golden golden/파일명_정리.xlsx</code> → <code>… sanity --gallery-id 8 --local</code> → <code>… train [--gallery-ids 8,9] [--local]</code>. DB 는 wes <code>scripts/db-tunnel.sh</code> + <code>DB_HOST=localhost DB_PORT=15432 …</code>. venv 는 score 의 것을 같이 쓴다(numpy · scipy · psycopg · pgvector)</td></tr>
+</table></div>
+
+<div class="pager">
+  <a href="artifact.html">← 2. 산출물과 특징</a>
+  <a href="evaluate.html">4. 평가와 게이트 →</a>
+</div>
+</main>
+</body>
+</html>

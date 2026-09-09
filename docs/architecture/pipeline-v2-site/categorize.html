@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>5. 서버 categorize 호출 — 파이프라인 v2</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">전체 아키텍처</a><span class="sep">/</span>
+  <span class="here">5. 서버 categorize 호출</span>
+  <span class="spacer"></span>
+  <a href="score.html">← 4. 스코어</a>
+  <a href="folders.html">6. 폴더 생성 →</a>
+</nav>
+
+<div class="eyebrow">wes · analysis 도메인 잡 상태 기계 → categorize Lambda</div>
+<h1>분류 시작부터 완료까지 관리</h1>
+<p class="lede">wes는 갤러리의 분석 잡을 관리합니다. 업로드 대기 구간이 끝나고 <strong>대상 사진의 점수가 모두 준비되면</strong> categorize Lambda를 호출합니다. 분류 결과가 저장되면 폴더를 만들고 잡을 완료합니다.</p>
+<p class="meta">코드 기준 wes main@1503a9a · 2026-09-09</p>
+<nav class="section-links" aria-label="이 페이지 목차"><a href="#arch">아키텍처</a><a href="#request">① 잡 생성</a><a href="#analyzing">② stepAnalyzing</a><a href="#categorizing">③ stepCategorizing</a><a href="#done">④ 물질화 → DONE</a><a href="#job">ai_analysis_jobs</a></nav>
+
+<h2 id="arch">아키텍처</h2>
+<p class="small">실선은 호출·저장, 점선은 조회·상태 확인입니다. 박스를 누르면 해당 단계의 설명으로 이동합니다.</p>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1080, height: 670,
+  groups: [{ x: 255, y: 40, w: 290, h: 570, color: '#C13E70', tint: '#FDECF3', label: 'wes · analysis 도메인' }],
+  nodes: [
+    { id: 'B', lane: 'browser', x: 20, y: 60, w: 180, kicker: '브라우저 · 업로드 끝', technicalTitle: 'POST /ai-analysis', title: '분석 시작 요청',
+      lines: ['요청 본문 없음 · 비동기 접수', '진행 중인 잡이 있으면 중복 거절'] },
+    { id: 'BP', lane: 'browser', x: 20, y: 250, w: 180, kicker: '폴링 3s / 10s', technicalTitle: 'GET /ai-analysis', title: '진행 상태 조회',
+      lines: ['status · progress', 'DONE → 폴더 재조회'] },
+    { id: 'AS', lane: 'wes', x: 270, y: 60, w: 260, kicker: '요청', technicalTitle: 'AnalysisService.request', title: '분석 잡 생성',
+      lines: ['uploader · 실행기 설정 · expected ≥ 1', '활성 잡 없음 (부분 유니크)', '잡 생성 후 분석 진행 확인'], href: '#request' },
+    { id: 'OR', lane: 'wes', x: 270, y: 250, w: 260, kicker: 'sweep ③ · 활성 잡마다', technicalTitle: 'AnalysisOrchestrator.stepJob', title: '잡 진행 상태 확인',
+      lines: ['REQUIRES_NEW · version CAS', '점수 완료 → 분류 결과 확인'], href: '#analyzing' },
+    { id: 'SI', lane: 'wes', x: 270, y: 400, w: 260, kicker: '포트', technicalTitle: 'StageInvoker.invoke(Categorize)', title: '분류 Lambda 호출',
+      lines: ['EVENT {galleryId, jobId} · 1회', '20분 무응답 → 재시도 (최대 3회 호출)'] },
+    { id: 'MT', lane: 'wes', x: 270, y: 520, w: 260, kicker: 'category · 6.', technicalTitle: 'materializeFromAnalysis', title: '분류 결과로 폴더 생성',
+      lines: ['갤러리 락 · 자기 트랜잭션 → DONE + 알림'], href: 'folders.html' },
+    { id: 'L3', lane: 'lambda', x: 630, y: 400, w: 230, kicker: '5.1 Lambda · 클릭', title: 'categorize',
+      lines: ['백분위 · 연사 · 그룹 저장', '그룹 이름과 배정 저장', '실패 → ai_analysis_jobs.error'], href: 'categorize-lambda.html' },
+    { id: 'BR', lane: 'lambda', x: 650, y: 560, w: 190, kicker: 'Bedrock · 국외', title: 'Sonnet 4.6', lines: ['대표 ≤2장/그룹 ⇄ 이름'] },
+    { id: 'PG', lane: 'db', shape: 'db', x: 880, y: 60, w: 180, h: 260, title: 'Postgres',
+      lines: ['ai_analysis_jobs (wes 소유)', 'photo_analysis 백분위·그룹', 'ai_concept_assignments', 'concept/detail_folders'] },
+  ],
+  edges: [
+    { from: 'B', to: 'AS', label: '요청', color: 'browser' },
+    { from: 'BP', to: 'AS', fromAt: .5, toAt: .9, label: 'latest', dashed: true, color: 'browser' },
+    { from: 'AS', to: 'PG', fromAt: .5, toAt: .1, label: 'INSERT (ANALYZING)', color: 'wes' },
+    { from: 'AS', to: 'OR', fromSide: 'b', toSide: 't', label: 'afterCommit dispatch(jobId) · 이후 5초 스윕', color: 'wes' },
+    { from: 'PG', to: 'OR', fromSide: 'l', fromAt: .35, toSide: 'r', toAt: .3, via: [[580, 151]], label: 'progress 카운트 · jobs.error\n배정 행 존재 관측', labelAt: 0, dashed: true },
+    { from: 'OR', to: 'SI', fromSide: 'b', toSide: 't', label: 'livePending 0 ∧ scored == expected\n→ CATEGORIZING (CAS)', color: 'wes' },
+    { from: 'SI', to: 'L3', label: 'EVENT', color: 'wes' },
+    { from: 'L3', to: 'PG', toAt: .65, label: 'write_groups · write_assignments\n실패: error 만', color: 'lambda' },
+    { from: 'L3', to: 'BR', fromSide: 'b', toSide: 't', bidir: true, color: 'lambda' },
+    { from: 'OR', to: 'MT', fromAt: .8, toSide: 'r', toAt: .5, via: [[565, null], [null, 555]], label: '분류 완료\n→ 폴더 생성', labelAt: 1, color: 'wes' },
+    { from: 'MT', to: 'PG', fromSide: 'b', toSide: 'b', via: [[400, 650], [970, 650]], label: '폴더 INSERT → job.finish(DONE) + 알림', labelAt: 1, color: 'wes' },
+  ],
+});
+</script>
+
+<div class="states">
+  <span class="st on">ANALYZING</span><span class="ar">→ livePending 0 ∧ scored == expected →</span>
+  <span class="st on">CATEGORIZING</span><span class="ar">→ 배정 행 ∧ categorized == expected → 물질화 →</span>
+  <span class="st">DONE</span>
+  <span class="ar">│ error / 3회 타임아웃 / 사진 0장 →</span><span class="st bad">FAILED</span>
+</div>
+
+<h2 id="request">① 잡 생성 — POST /ai-analysis</h2>
+<div class="role"><b>한다</b><span>"이 갤러리 폴더 만들어 달라"를 <strong>ai_analysis_jobs 행(ANALYZING)</strong> 하나로 만든다. 게이트는 uploader 권한, 실행기 설정, 업로드된 사진 ≥1, 활성 잡 없음. 커밋 뒤 즉시 한 걸음 돌린다.</span><b>왜</b><span>임베딩·점수는 잡 없이도 돌지만 그룹·이름·폴더는 갤러리 단위로 "한 번" 해야 하고, 그 한 번을 누가 언제 시작했는지가 필요하다. 갤러리당 활성 잡 하나(부분 유니크)라야 categorize 가 두 번 돌지 않는다. 본문이 없는 이유는 mode·force 를 없앤 v2 결정이다.</span><b>없으면</b><span>같은 갤러리에 잡이 둘 생겨 폴더 세트가 둘 만들어지거나, 사진이 하나도 없는 갤러리에 빈 잡이 굳는다.</span><b>입출력</b><span><code>POST /ai-analysis</code> → 202 <code>{jobId, status, progress}</code> · 409 <code>RECOMMENDATION_409_1/2</code></span></div>
+<ol class="steps">
+  <li><b>인가</b> <code>requireUploader</code>.</li>
+  <li><b>실행기 설정 확인</b> — Embed·Categorize 함수 이름, 그리고 <code>gpu.enabled=false</code> 일 때만 Score 도 필수. 비면 503 <code>PHOTO_503_1 STAGE_NOT_CONFIGURED</code>.</li>
+  <li><b>진행 카운트</b> <code>progressOf(gallery, liveSince = now − 2분)</code>. <code>expected == 0</code> → 409 <code>RECOMMENDATION_409_2 NO_PHOTOS_TO_ANALYZE</code>.</li>
+  <li><b>활성 잡 검사</b> <code>existsByGalleryIdAndStatusIn(ACTIVE)</code> → 409 <code>RECOMMENDATION_409_1</code>. 부분 유니크 <code>uk_ai_analysis_jobs_active</code> 충돌도 같은 코드.</li>
+  <li><b>INSERT</b> <code>AnalysisJob(galleryId)</code> 상태 기본 ANALYZING → <code>saveAndFlush</code>.</li>
+  <li><b>afterCommit</b> <code>orchestrator.dispatch(jobId)</code> = 즉시 <code>stepJob</code> 한 번(점수가 이미 다 있으면 바로 CATEGORIZING). 응답 202 + <code>{jobId, galleryId, status, progress{expected, embedded, scored, categorized, failed}, error, createdAt, finishedAt}</code>.</li>
+</ol>
+<p><strong>409_1 을 받은 프론트</strong>는 <code>GET /ai-analysis</code> 를 한 번 읽고, 잡이 CATEGORIZING 이면 "끝나면 이어서" 예약, ANALYZING 이면 그 잡이 새 사진을 흡수한다고 보고 넘어간다.</p>
+
+<div class="note"><div class="t">트랜잭션 밖에서 실행할 작업 하나</div>
+<code>OrchestratorActionDto</code>는 잡의 상태를 확인한 뒤 수행할 작업을 담습니다.
+<code>Invoke(jobId, call)</code>의 call은 <code>StageCallDto.Categorize</code> 한 건입니다.
+임베딩 배정과 score 폴백은 스윕에서 각각 실행되며 이 액션에 포함되지 않습니다.
+폴더 생성은 <code>Materialize(jobId, galleryId)</code>로 전달합니다.</div>
+
+<h2 id="analyzing">② stepAnalyzing — 관측만 한다</h2>
+<div class="role"><b>한다</b><span>매 걸음 카운트를 다시 세어 <code>livePending == 0 ∧ scored == expected</code> 면 <strong>CAS 로 CATEGORIZING 에 들어가며</strong> categorize 를 딱 한 번 보낸다. 사진이 0장이면 FAILED.</span><b>왜</b><span>"점수가 다 찼다"는 사실은 DB 에만 있으므로 잡이 관측해야 한다. 업로드 도중 뒤늦게 온 사진(2분 창)을 흡수하려면 expected 를 매번 다시 세야 하고, 스윕 둘이 같은 잡을 밟아도 EVENT 가 한 번만 나가야 하므로 <code>version</code> 조건의 CAS 로 전이한다.</span><b>없으면</b><span>점수가 덜 찬 채 분류가 시작돼 일부 사진이 "기타"로 가거나, 두 스윕이 categorize 를 두 번 불러 Bedrock 비용이 두 배가 된다.</span></div>
+<pre><code>progress = progressOf(galleryId, liveSince = now − uploadQuietAfter(2m))
+if livePending == 0 ∧ pending == 0 ∧ expected == 0:
+    job.fail("분석할 사진이 없습니다(실패 N장)")            # ANALYZING→FAILED
+elif livePending == 0 ∧ expected &gt; 0 ∧ scored == expected:
+    job.startCategorizing(now)                          # CATEGORIZING, dispatched_at=now, attempts=1
+    log  analysis job=J gallery=G ANALYZING-&gt;CATEGORIZING expected= embedded= scored= failed= elapsed=…s
+    return OrchestratorActionDto.Invoke(jobId, StageCallDto.Categorize(galleryId, jobId))   # 트랜잭션 커밋 뒤 EVENT
+else: return null                                       # 다음 스윕</code></pre>
+<ul>
+  <li><strong>흡수 규칙.</strong> <code>expected</code>(UPLOADED ∧ error 없음)를 매 걸음 다시 세고, 최근 2분 안에 발급된 PENDING(<code>livePending</code>)이 있으면 넘어가지 않는다. 업로드 중간에 잡을 만들어도 뒤늦게 올라온 사진이 같은 잡에 들어간다.</li>
+  <li><strong>CAS.</strong> 걸음은 <code>REQUIRES_NEW</code> 트랜잭션 하나이고 <code>AnalysisJob.version</code>(낙관적 잠금)이 조건이다. 스윕 둘이 같은 잡을 밟으면 진 쪽은 <code>ObjectOptimisticLockingFailureException</code> 으로 걸음을 버리고 EVENT 를 보내지 않는다.</li>
+  <li><strong>호출 실패.</strong> Lambda 호출이 예외면 <code>job.dispatchFailed()</code> 로 <code>dispatched_at</code> 을 지워 다음 스윕이 즉시 재전송. 잡은 닫지 않는다.</li>
+</ul>
+
+<h2 id="categorizing">③ stepCategorizing — 결과 관측 · 타임아웃</h2>
+<div class="role"><b>한다</b><span>categorize 결과를 관측한다: 배정 행이 있고 백분위가 다 찼으면 물질화로, <code>error</code> 가 있으면 FAILED, 20분 무응답이면 3회까지 재전송.</span><b>왜</b><span>Lambda 는 잡 상태를 쓰지 않는다(실패 시 <code>error</code> 만). 그래서 "끝났다"를 배정 행 존재와 <code>technical_pct</code> 카운트로 읽고, "죽었다"를 타임아웃으로 판단해야 한다. categorize 가 UPSERT 라 재전송이 겹쳐도 안전하다.</span><b>없으면</b><span>Lambda 가 조용히 죽으면 잡이 CATEGORIZING 으로 굳고, 배정만 보고 넘어가면 백분위가 비어 추천이 틀린다.</span></div>
+<pre><code>if job.error != null:                      job.fail(error)                    # Lambda 가 남긴 실패 → FAILED
+elif existsAssignments(jobId) ∧ categorized == expected:
+    return OrchestratorActionDto.Materialize(jobId, galleryId)                              # → 6. 폴더 물질화 → DONE
+elif dispatched_at + 20m &gt; now:            return null                       # 아직 기다림
+elif attempts ≥ 3:                         job.fail("categorize 를 3회 시도했지만 끝나지 않았습니다")
+else: job.redispatchCategorize(now); return OrchestratorActionDto.Invoke(jobId, StageCallDto.Categorize(galleryId, jobId))        # attempts+1, 재전송</code></pre>
+<p><code>categorized</code> 는 <code>technical_pct IS NOT NULL</code> 카운트 — categorize 가 갤러리 전체를 다시 계산해 <code>write_groups</code> 하면 채워진다. 배정 행 존재(<code>ai_concept_assignments.job_id</code>)는 naming 까지 끝났다는 뜻. 둘 다 맞아야 물질화한다. categorize 는 재실행 안전(UPSERT)이라 재전송이 겹쳐도 괜찮다.</p>
+
+<h2 id="done">④ 물질화 → DONE</h2>
+<div class="role"><b>한다</b><span>배정 행이 폴더가 되게 물질화를 자기 트랜잭션으로 부르고, 결과(Created / NothingNew / Failed)로 잡을 닫으며 Created 면 알림 1건을 같은 트랜잭션에서 보낸다.</span><b>왜</b><span>사용자 관점의 완료는 "폴더가 생겼다"이지 "배정 행이 생겼다"가 아니다. 물질화가 수 초~수십 초라 걸음 트랜잭션과 분리하고, 잡 닫기와 알림을 한 트랜잭션에 묶어 알림이 두 번 가거나 안 가는 일을 막는다.</span><b>없으면</b><span>폴더는 사용자가 버튼을 눌러야 생기고(v1), 알림이 잡과 어긋나 중복 발송된다.</span></div>
+<p><code>OrchestratorActionDto.Materialize</code> 는 걸음 트랜잭션이 끝난 뒤 <code>AiCategoryFolderService.materializeFromAnalysis(galleryId)</code> 를 자기 트랜잭션으로 부른다(갤러리 락, 수 초~수십 초). 그 결과로 또 다른 트랜잭션에서 잡을 닫는다.</p>
+<div class="tablewrap"><table>
+<tr><th>결과 (MaterializeOutcomeDto)</th><th>잡</th><th>알림</th><th>로그</th></tr>
+<tr><td><code>Created(folders, details, assigned)</code></td><td>DONE</td><td><code>ANALYSIS_COMPLETED</code> 1건(같은 트랜잭션)</td><td><code>analysis job=J gallery=G CATEGORIZING-&gt;DONE folders= details= assigned= elapsed=…s total=…s</code></td></tr>
+<tr><td><code>NothingNew</code>(<code>NO_PHOTOS_TO_ORGANIZE</code>, 새 사진 0장)</td><td>DONE</td><td>없음</td><td>같은 줄, <code>folders=0 details=0 assigned=0</code></td></tr>
+<tr><td><code>Failed</code>(그 외 <code>BusinessException</code>)</td><td>FAILED + error</td><td>없음</td><td>warn</td></tr>
+</table></div>
+<p>알고리즘 자체는 <a href="folders.html">6. 카테고리 폴더 물질화</a>, categorize 가 채운 컬럼이 어느 폴더 필드가 되는지는 <a href="folders.html#lineage">6. 값의 행선지</a>.</p>
+
+<h2 id="job">ai_analysis_jobs — 10컬럼, 한 층</h2>
+<div class="tablewrap"><table>
+<tr><th>컬럼</th><th>누가 쓰나</th><th>뜻</th></tr>
+<tr><td><code>id, gallery_id, version, created_at, updated_at</code></td><td>wes</td><td><code>version</code> 은 <code>BaseEntity @Version</code></td></tr>
+<tr><td><code>status</code> CHECK(ANALYZING, CATEGORIZING, DONE, FAILED)</td><td>wes</td><td>부분 유니크 <code>WHERE status IN ('ANALYZING','CATEGORIZING')</code> — 갤러리당 활성 잡 하나</td></tr>
+<tr><td><code>dispatched_at</code></td><td>wes</td><td>categorize EVENT 보낸 시각(타임아웃 기준)</td></tr>
+<tr><td><code>attempts</code></td><td>wes</td><td>categorize 호출 횟수, 3 상한</td></tr>
+<tr><td><code>finished_at</code></td><td>wes</td><td>DONE/FAILED 시각</td></tr>
+<tr><td><code>error</code></td><td><strong>categorize Lambda(실패 시) + wes</strong></td><td>Lambda 가 이 테이블에 쓰는 유일한 컬럼. photoselect GRANT <code>UPDATE (error, updated_at)</code>. <code>@DynamicUpdate</code> 인 이유</td></tr>
+</table></div>
+<p>잡 id 는 폴더 세트의 id 이기도 하다(<code>concept_folders.analysis_job_id</code>, <code>ai_selection_jobs.folder_set_job_id</code>). <code>force</code>·<code>mode</code>·<code>stage</code>·<code>result</code> 는 없다. 재분석 = 관리자 재처리가 <code>photo_analysis</code> 를 지우고 잡을 새로 만든다.</p>
+
+<h2 id="consts">상수</h2>
+<div class="tablewrap"><table>
+<tr><th>키 (app.analysis.*)</th><th>값</th><th>뜻</th></tr>
+<tr><td><code>upload-quiet-after</code></td><td>PT2M</td><td><code>livePending</code> 창. 잡 응답·오케스트레이터 기준(요약 API 는 1분)</td></tr>
+<tr><td><code>categorize-timeout</code></td><td>PT20M</td><td><code>dispatched_at</code> 뒤 이만큼 무응답이면 재전송</td></tr>
+<tr><td><code>categorize-max-attempts</code></td><td>3</td><td>도달하면 FAILED</td></tr>
+<tr><td><code>categorize-function-name</code></td><td>SSM</td><td>Lambda 함수 이름(<code>wes-categorize</code>)</td></tr>
+</table></div>
+
+<h2 id="files">코드 위치</h2>
+<div class="tablewrap"><table>
+<tr><th>역할</th><th>파일</th></tr>
+<tr><td>API</td><td><code>analysis/controller/AnalysisController.kt</code> · <code>analysis/service/AnalysisService.kt</code> · <code>dto/response/AnalysisJobResponse.kt</code> · <code>AnalysisProgressResponse.kt</code></td></tr>
+<tr><td>상태 기계</td><td><code>analysis/service/AnalysisOrchestrator.kt</code> (stepJob · stepAnalyzing · stepCategorizing · invoke · materialize · logTransition)</td></tr>
+<tr><td>내부 전달 DTO</td><td><code>analysis/dto/OrchestratorActionDto.kt</code> · <code>analysis/dto/MaterializeOutcomeDto.kt</code> · <code>analysis/dto/StageCallDto.kt</code></td></tr>
+<tr><td>실행 포트</td><td><code>analysis/service/port/StageInvoker.kt</code></td></tr>
+<tr><td>엔티티</td><td><code>analysis/domain/AnalysisJob.kt</code> · <code>AnalysisStatus.kt</code> · <code>analysis/domain/AiConceptAssignment.kt</code></td></tr>
+<tr><td>배정 조회</td><td><code>analysis/repository/AiConceptAssignmentRepository.kt</code>(existsByJobId) · <code>analysis/support/AiConceptAssignmentLoader.kt</code></td></tr>
+<tr><td>오류 코드</td><td><code>analysis/exception/AnalysisErrorCode.kt</code></td></tr>
+<tr><td>Lambda 쪽</td><td>AI repo <code>categorize/</code> → <a href="categorize-lambda.html">5.1 categorize Lambda 상세</a></td></tr>
+</table></div>
+
+<div class="pager">
+  <a href="score.html">← 4. 서버 스코어 제어</a>
+  <a href="categorize-lambda.html">5.1 categorize Lambda 상세 →</a>
+</div>
+</main>
+</body>
+</html>

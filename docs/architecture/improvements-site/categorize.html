@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>4. categorize 리팩터 #108 — 개선 이력</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">개선 이력 · 비용</a><span class="sep">/</span>
+  <span class="here">4. categorize 리팩터 #108</span>
+  <span class="spacer"></span>
+  <a href="resize-gpu.html">← 3. 리사이즈 · GPU</a>
+  <a href="cost.html">5. 비용 →</a>
+</nav>
+
+<div class="eyebrow">organic-agent-ai <code>categorize/</code> · 이슈 #106 → PR #108 (머지 2026-09-09 14:31 UTC, <code>b1ce8e8</code>) · <span class="tag warn">배포 뒤 운영 1회 실측 — 총 시간 개선 없음, 09-10 재측정 예정</span></div>
+<h1>같은 갤러리를 두 번 읽던 것을 한 번으로, 대표 사진 240회 왕복을 한 번 + 병렬로</h1>
+<p class="lede">categorize Lambda의 시간 대부분은 계산이 아니라 DB·S3 왕복이었습니다(822장 32초, 7,183장 65초). <code>pipeline.group</code>이 분석 행·DINOv3·CLIP을 읽고 concat 공간을 만든 뒤 <code>naming.run</code>이 셋을 <strong>다시</strong> 읽고 <strong>다시</strong> 만들었고, 대표 사진은 한 장씩 직렬로 내려받았습니다. #108은 읽기를 한 SELECT로 합치고 <code>Grouped</code>를 naming에 넘기며, 대표 사진은 SELECT 한 번 + 16스레드 병렬 다운로드로 바꿨습니다. <strong>1차 운영 실측에서는 naming 쪽 I/O가 실제로 줄었지만 총 시간(70초)은 그대로였습니다</strong> — 총 시간의 2/3가 그룹 단계 계산과 Bedrock 직렬 호출이라서입니다.</p>
+<p class="meta">근거 이슈 #106 원문 · PR #108(6파일 +304/−100, 브랜치 커밋 <code>d2b1e25</code>) · <code>categorize/categorize/{store,pipeline,naming,gallery}.py</code> · <code>categorize/README.md</code> L55–59 · CloudWatch <code>/aws/lambda/wes-categorize</code> 2026-09-09 14:55 UTC · 기준선 <code>upload-timing-2026-09-06.md</code> L71, L120</p>
+<nav class="section-links" aria-label="이 페이지 목차"><a href="#what">categorize가 하는 일</a><a href="#problem">문제</a><a href="#fix">개선</a><a href="#arch">전후 흐름</a><a href="#measure">측정 (09-09 1차)</a><a href="#chain">같은 실행의 전체 체인</a><a href="#todo">재측정 전 할 일</a><a href="#files">읽을 경로</a></nav>
+
+<h2 id="what">categorize가 하는 일 — 요약</h2>
+<p>입력은 전부 DB에 있다. embedder의 DINOv3(<code>photo_analysis.embedding</code>), score의 CLIP(<code>clip_embedding</code>)과 점수·피사체·<code>clip_parent</code>(<code>sub_scores</code>). 백분위 → 연사 클러스터(<code>cluster.py</code>) → concat 공간 <code>X = E ⊕ C</code>의 average-linkage 계층 클러스터(<code>concept.py</code>, 적응 임계) → <code>store.write_groups</code> → naming(<code>naming.py</code>): 커버리지 목표까지 큰 그룹부터 대표 1~2장을 골라 <strong>Bedrock Sonnet</strong> VLM 호출로 <code>(parent, concept)</code> 이름을 붙이고, 작은 그룹은 최근접 중심 배정 → <code>ai_concept_assignments</code>. 상세는 <a href="../pipeline-v2-site/categorize-lambda.html">pipeline-v2-site 5.1</a>.</p>
+
+<h2 id="problem">문제 — 이슈 #106 원문</h2>
+<blockquote class="note">"categorize 람다의 시간 대부분이 계산이 아니라 <strong>DB·S3 왕복</strong>에 든다(822장 32초, 7,183장 65초 실측)."</blockquote>
+<ol class="steps">
+  <li><b>같은 데이터를 두 번 읽는다.</b> <code>pipeline.group</code>이 분석 행·DINOv3·CLIP을 읽고 X를 만든 뒤, <code>naming.run</code>이 셋을 다시 읽고 X를 다시 만든다. 7천 장이면 768차원 벡터 두 종류 약 44MB를 두 번 나르고 pgvector 파싱도 두 번. 읽기 자체도 <code>read_analysis</code>·<code>read_embeddings</code>·<code>read_clip_embeddings</code> 세 쿼리가 같은 <code>photo_analysis ⋈ photos</code>를 따로 스캔.</li>
+  <li><b>대표 사진을 한 장씩 직렬로 내려받는다.</b> 커버리지 85%면 그룹 60~120개, spread 큰 그룹은 2장이라 최대 240회 왕복. 왕복당 50~100ms면 그것만 10~25초(추정).</li>
+</ol>
+<p class="small">기준 실측: <code>upload-timing-2026-09-06.md</code> L71 (7,183장 <strong>65초</strong>, 그룹 76, Bedrock 3회, 최대 메모리 788MB), L120 (68초 재실행).</p>
+
+<h2 id="fix">개선 — PR #108</h2>
+<div class="tablewrap"><table>
+<tr><th>바뀐 곳</th><th>전</th><th>후</th></tr>
+<tr><td><code>store.py:248-283</code> <code>DbStore.read_gallery</code></td><td><code>read_analysis</code> · <code>read_embeddings</code> · <code>read_clip_embeddings</code> 세 쿼리</td><td>행 8컬럼 + <code>embedding</code> + <code>clip_embedding</code>을 <strong>한 SELECT</strong>. <code>embedding_model</code> 섞이면 <code>RuntimeError</code></td></tr>
+<tr><td><code>pipeline.py:121-171</code> <code>group</code> · <code>run</code></td><td>group 뒤 naming이 다시 읽고 concat 재계산</td><td><code>group</code>이 <code>(Grouped, CategorizeResult)</code>를 반환하고 <code>run</code>이 <code>naming.run(..., grouped=grouped)</code>로 넘김. 독립 NAMING 잡만 <code>naming._load → read_gallery</code></td></tr>
+<tr><td><code>store.py:205-244</code> <code>preview_paths</code></td><td>대표 사진마다 SELECT + 직렬 GET</td><td>로컬 캐시 확인 → <code>SELECT id, preview_key FROM photos WHERE id = ANY(%s)</code> <strong>한 번</strong> → <code>ThreadPoolExecutor(max_workers=min(16, n))</code> 병렬 다운로드. <code>PREVIEW_DOWNLOAD_WORKERS = 16</code>(score 프리페치와 동일)</td></tr>
+<tr><td><code>naming.py:181-192</code> <code>_rep_images</code></td><td>직렬 축소</td><td>JPEG 축소(긴 변 768)도 최대 8스레드 병렬</td></tr>
+</table></div>
+<div class="datastrip">
+  <div class="cell"><b>산출물 (이슈 §3)</b>갤러리당 DB 읽기 4쿼리 → 2쿼리, 벡터 전송 1회 · 대표 사진 SELECT N회 → 1회, 다운로드 병렬</div>
+  <div class="cell"><b>테스트</b><code>tests/test_categorize.py</code> 27 → 32개. <code>…reads_gallery_once…</code>(L498–509, <code>reads == 1</code>) · <code>…fetches_all_representatives_in_one_batch</code>(L511–520) · <code>…read_gallery_is_one_query</code>(L554–569) · <code>…batches_select_and_downloads_concurrently</code>(L582–616, 가짜 스토리지 0.05s×3, <code>elapsed &lt; 0.14</code>)</div>
+  <div class="cell"><b>실행</b><code>cd categorize &amp;&amp; ../score/.venv/bin/python -m pytest -q</code></div>
+</div>
+
+<h2 id="arch">전후 흐름</h2>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1160, height: 460, title: 'categorize 리팩터 전후: 갤러리 두 번 읽기에서 한 번 읽기로, 대표 사진 직렬 다운로드에서 배치 SELECT와 병렬 다운로드로',
+  groups: [
+    { x: 10, y: 20, w: 1140, h: 150, label: 'before — group 과 naming 이 각각 읽는다 · 대표 사진 N회 왕복', color: '#8A6D3B', tint: '#F7F1E7' },
+    { x: 10, y: 290, w: 1140, h: 150, label: 'after (#108) — read_gallery 한 번 · Grouped 전달 · preview_paths 배치 + 병렬', color: '#2F7D4F', tint: '#EAF5EE' },
+  ],
+  nodes: [
+    { id: 'G1', lane: 'lambda', x: 30, y: 60, w: 230, kicker: 'pipeline.group', title: '읽기 3쿼리 + concat', lines: ['read_analysis · read_embeddings', 'read_clip_embeddings'] },
+    { id: 'N1', lane: 'lambda', x: 330, y: 60, w: 230, kicker: 'naming.run', title: '다시 읽기 3쿼리 + concat 재계산', lines: ['벡터 44MB × 2회'] },
+    { id: 'R1', lane: 'lambda', x: 630, y: 60, w: 230, kicker: 'naming 대표 사진', title: '한 장씩 SELECT + GET', lines: ['≤ 240회 직렬 왕복', '10~25초 (추정)'] },
+    { id: 'B1', lane: 'warn', x: 930, y: 70, w: 200, kicker: 'Bedrock Sonnet', title: '3회 직렬', lines: ['(parent, concept) 이름'] },
+    { id: 'G2', lane: 'lambda', x: 30, y: 330, w: 230, kicker: 'pipeline.group', title: 'read_gallery 한 SELECT', lines: ['행 8컬럼 + 벡터 2종', '→ (Grouped, Result)'] },
+    { id: 'N2', lane: 'lambda', x: 330, y: 330, w: 230, kicker: 'naming.run(grouped=)', title: '읽기 0회', lines: ['X 재계산 없음'] },
+    { id: 'R2', lane: 'lambda', x: 630, y: 330, w: 230, kicker: 'store.preview_paths', title: 'SELECT 1회 + 병렬 GET', lines: ['ThreadPool ≤16 · 축소 ≤8', '실측 ≈2초'] },
+    { id: 'B2', lane: 'warn', x: 930, y: 340, w: 200, kicker: 'Bedrock Sonnet', title: '3회 직렬 ≈24s', lines: ['변화 없음 — 다음 병목'] },
+    { id: 'PG', lane: 'db', shape: 'db', x: 470, y: 190, w: 180, title: 'photo_analysis ⋈ photos', lines: ['embedding · clip_embedding'] },
+  ],
+  edges: [
+    { from: 'G1', to: 'N1', label: 'CategorizeResult', color: 'lambda' },
+    { from: 'N1', to: 'R1', color: 'lambda' },
+    { from: 'R1', to: 'B1', label: 'JPEG 768 ×1~2', color: 'lambda' },
+    { from: 'G2', to: 'N2', label: 'Grouped (행 + X)', color: 'lambda' },
+    { from: 'N2', to: 'R2', color: 'lambda' },
+    { from: 'R2', to: 'B2', label: 'JPEG 768 ×1~2', color: 'lambda' },
+    { from: 'G1', to: 'PG', fromSide: 'b', toSide: 'l', toAt: .3, via: [[145, 214]], label: '3 쿼리', labelAt: 0, dashed: true, color: 'db' },
+    { from: 'N1', to: 'PG', fromSide: 'b', toSide: 't', label: '3 쿼리 (중복)', labelAt: 1, dashed: true, color: 'db' },
+    { from: 'G2', to: 'PG', fromSide: 't', toSide: 'l', toAt: .7, via: [[145, 245]], label: '1 쿼리', labelAt: 0, dashed: true, color: 'db' },
+    { from: 'R1', to: 'PG', fromSide: 'b', toSide: 'r', toAt: .3, via: [[745, 214]], label: 'preview_key ×N', labelAt: 0, dashed: true, color: 'db' },
+    { from: 'R2', to: 'PG', fromSide: 't', toSide: 'r', toAt: .7, via: [[745, 245]], label: 'id = ANY(…) ×1', labelAt: 0, dashed: true, color: 'db' },
+  ],
+});
+</script>
+
+<h2 id="measure">측정 — 로컬과 운영 1차 (2026-09-09)</h2>
+<div class="tablewrap"><table>
+<tr><th>측정</th><th>값</th></tr>
+<tr><td>로컬 (Postgres 갤러리 1, 822장, <code>python -m categorize --gallery-id 1</code>)</td><td>55그룹, <strong>0.9초</strong> (S3·Bedrock 제외)</td></tr>
+<tr><td><strong>운영 (09-09 23:55 KST, 갤러리 13, 7,189장, #108 배포 뒤 첫 잡)</strong></td><td>Lambda Duration <strong>73.4s</strong> (Billed 76.1s, Init 2.6s, 최대 메모리 773MB) · 자체 <code>elapsedSeconds</code> <strong>70.3</strong> (그룹 76, 연사 클러스터 948, naming 27.5s, Bedrock 3회). 기준선 65~68s(09-06, 7,183장) 대비 <strong>전체 시간 개선 없음</strong></td></tr>
+</table></div>
+<h3>시간 분해 (CloudWatch 타임스탬프)</h3>
+<div class="flow">
+  <div class="node"><b>START 14:55:13.8</b><br>Init 2.6s</div>
+  <div class="node"><b>"그룹 적재" 14:55:59.7 · 45.8s</b><br>read_gallery + 백분위 + 연사 + 계층 클러스터 + write_groups<br><span class="small">이 구간에 로그가 없어 읽기/계산을 나눌 수 없다</span></div>
+  <div class="node"><b>naming 27.5s</b><br>Bedrock 3회 ≈24s (14:56:03 → 14:56:27, 직렬)<br>S3 대표 사진 다운로드+축소 <b>≈2s</b></div>
+  <div class="node"><b>END 14:56:27</b><br>elapsed 70.3s</div>
+</div>
+<div class="note"><b>해석.</b> #108이 노린 I/O 절감은 naming 쪽에서 실제로 났다(직렬 추정 10~25s → 2s). 그러나 총 시간의 2/3가 그룹 단계 계산과 Bedrock 직렬 호출이라 elapsed 총계에는 묻힌다. 잡음 범위 안이다.</div>
+<div class="note warn"><b>회귀 경고.</b> <code>Connection pool is full, discarding connection: …s3… Connection pool size: 10</code> 6건. 16스레드 병렬 다운로드가 boto3 기본 커넥션 풀(10)을 넘는다. <code>botocore.config.Config(max_pool_connections=16)</code>으로 S3 클라이언트를 만들어야 한다. <strong>2026-09-10 origin/main 기준 아직 미수정</strong> — <code>categorize/categorize/storage.py</code>의 Config에 retries만 있다.</div>
+
+<h2 id="chain">같은 실행의 v2 전체 체인 실측 (09-09 23:48 KST, 갤러리 13, 7,189장 · 2.11GB)</h2>
+<div class="tablewrap"><table>
+<tr><th>시각 (UTC)</th><th>사건</th><th>근거</th></tr>
+<tr><td>14:48:06</td><td>첫 S3 PUT (업로드 시작)</td><td><code>s3api list-objects-v2 --prefix galleries/13/</code> LastModified 최소</td></tr>
+<tr><td>14:48:10</td><td>embedder 첫 배치 START · GPU 워커 <code>ec2:StartInstances</code></td><td><code>/aws/lambda/wes-embedder</code> · <code>describe-instances</code> LaunchTime</td></tr>
+<tr><td>14:54:14</td><td>마지막 S3 PUT — <strong>업로드 6분 08초</strong>, 실효 46Mbps (평소 61)</td><td>S3</td></tr>
+<tr><td>14:54:37</td><td>embedder 마지막 REPORT — 144배치(50장), 동시 최대 19/32, 콜드 스타트 19회</td><td>CloudWatch</td></tr>
+<tr><td>≈14:55:10</td><td>score 완료 (wes 5초 스윕이 관측해 categorize 호출)</td><td>추정</td></tr>
+<tr><td>14:55:13 → 14:56:27</td><td>categorize Lambda</td><td>CloudWatch</td></tr>
+<tr><td>14:55:39</td><td>GPU 워커 stop 요청 — score 끝 ≈30s 뒤 → <strong>워커 자기 정지(AI #107) 작동 확인</strong>, wes 2분 안전망 아님</td><td><code>StateTransitionReason</code></td></tr>
+<tr><td><strong>8분 21초</strong></td><td>첫 PUT → categorize END. 업로드 끝 기준 <strong>2분 13초</strong></td><td></td></tr>
+</table></div>
+<p class="small">비교: 09-06 샤딩 시대 같은 장수가 18.3분·Lambda $1.80. 09-08 Run D는 업로드 시작 기준 +7.5분 DONE이었고 이번은 8분 21초인데 차이는 회선(업로드 4:37 → 6:08)이지 분석이 아니다. 업로드 끝 뒤 꼬리(2분 13초)는 Run D와 같은 수준. 그래서 <strong>8분 21초는 대표값으로 쓰지 않는다</strong>.</p>
+<h3>이 실행의 비용 (단가는 <a href="cost.html#rates">5페이지</a>와 동일)</h3>
+<div class="tablewrap"><table>
+<tr><th>항목</th><th>값</th><th>비용</th></tr>
+<tr><td>embedder Lambda</td><td>144회, 과금합 3,575s, 3,008MB → <strong>10,502 GB-초</strong></td><td><strong>$0.175</strong></td></tr>
+<tr><td>GPU 워커 g6.xlarge</td><td>running 14:48:10 → 14:55:39 = <strong>449s</strong></td><td><strong>$0.123</strong></td></tr>
+<tr><td>categorize Lambda</td><td>223 GB-초</td><td>$0.004</td></tr>
+<tr><td>score Lambda 폴백</td><td>0회</td><td>$0</td></tr>
+<tr><td>Bedrock Sonnet 4.6</td><td>3회, in 17,304 / out 1,949 토큰 (표준 단가 $3/$15 per MTok. Bedrock 단가는 별도 목록이라 ±)</td><td>≈$0.08</td></tr>
+<tr><td><strong>합계 (S3 요청 제외)</strong></td><td></td><td><strong>≈$0.38</strong></td></tr>
+</table></div>
+
+<h2 id="todo">재측정 전 할 일 (09-10)</h2>
+<ol class="steps">
+  <li><code>read_gallery</code> 뒤에 로그 한 줄(행 수·소요), 계층 클러스터 뒤에 한 줄을 넣어 45.8s를 읽기/계산으로 나눈다.</li>
+  <li>S3 클라이언트 커넥션 풀 10 → 16 (<code>storage.py</code> Config에 <code>max_pool_connections=16</code>). 09-10 기준 미수정.</li>
+  <li>같은 갤러리 크기(7,189장)로 다시 돌려 <code>elapsedSeconds</code>·구간별 로그를 기준선 65~68s와 비교한다. 회선 변동이 없는 시간대로.</li>
+  <li>Bedrock 3회 직렬 ≈24s가 다음 병목이다 — 병렬 호출은 별도 이슈.</li>
+  <li>이슈가 갱신을 요구한 wes 문서: <a href="../pipeline-v2-site/categorize-lambda.html"><code>pipeline-v2-site/categorize-lambda.html</code></a>.</li>
+</ol>
+
+<h2 id="files">읽을 경로</h2>
+<div class="tablewrap"><table>
+<tr><th>역할</th><th>경로 (<code>organic-agent/</code> 기준)</th></tr>
+<tr><td>바뀐 파일</td><td><code>organic-agent-ai/categorize/categorize/store.py</code> · <code>pipeline.py</code> · <code>naming.py</code> · <code>gallery.py</code> · <code>categorize/README.md</code> L55–59 · <code>tests/test_categorize.py</code></td></tr>
+<tr><td>이슈 · PR</td><td>#106(CLOSED) · PR #108 MERGED 2026-09-09 14:31 UTC, 머지 <code>b1ce8e8</code>, 브랜치 <code>d2b1e25</code></td></tr>
+<tr><td>기준선 실측</td><td><code>organic-agent-ai/docs/experiments/upload-timing-2026-09-06.md</code> L71, L120</td></tr>
+<tr><td>파이프라인 설명</td><td><code>categorize/categorize/pipeline.py:1-20</code> · <code>naming.py:1-22</code> · <a href="../pipeline-v2-site/categorize-lambda.html">pipeline-v2-site 5.1</a></td></tr>
+</table></div>
+
+<div class="pager">
+  <a href="resize-gpu.html">← 3. 2048 리사이즈 + score GPU 전환</a>
+  <a href="cost.html">5. 비용 →</a>
+</div>
+</main>
+</body>
+</html>

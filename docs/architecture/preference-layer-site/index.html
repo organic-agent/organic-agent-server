@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>선호 가중치 층 — 아키텍처 지도 (목표)</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+<style>
+  .legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:.8rem;color:var(--ink-2);margin:10px 0 0}
+  .legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+  .legend .b::before{background:var(--browser)} .legend .w::before{background:var(--accent)} .legend .l::before{background:var(--lambda)} .legend .d::before{background:var(--db)} .legend .x::before{background:var(--warn)}
+  .map{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin:16px 0}
+  .map a{display:block;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px 14px;text-decoration:none;color:var(--ink)}
+  .map a:hover{border-color:var(--accent);box-shadow:0 4px 14px rgba(0,0,0,.08)}
+  .map .n{font-family:"IBM Plex Mono",monospace;font-size:.7rem;color:var(--accent);letter-spacing:.08em}
+  .map .t{font-weight:600;margin:2px 0 4px}
+  .map .d{font-size:.8rem;color:var(--ink-2)}
+  .h2row{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-top:56px;padding-top:18px;border-top:1px solid var(--line)}
+  .h2row h2{margin-top:0;padding-top:0;border-top:0}
+  .btn{display:inline-block;padding:6px 12px;white-space:nowrap;border:1px solid var(--accent);border-radius:6px;background:var(--accent-soft);color:var(--accent-ink);text-decoration:none;font-size:.9rem;font-weight:500}
+  .btn:hover{background:var(--accent);color:#fff}
+  .status td:first-child{white-space:nowrap}
+</style>
+</head>
+<body>
+<main>
+<nav class="nav">
+  <span class="here">전체 아키텍처</span>
+  <span class="spacer"></span>
+  <a href="artifact.html">2. 산출물·특징</a>
+  <a href="train.html">3. 학습</a>
+  <a href="evaluate.html">4. 평가·게이트</a>
+  <a href="serving.html">5. 서비스 연결</a>
+  <a href="roadmap.html">6. 로드맵·제약</a>
+  <a href="entities.html">엔티티 사전</a>
+</nav>
+
+<div class="eyebrow">organic-agent · AI repo <code>preference/</code> + wes recommendation 도메인 · <span class="tag warn">앞으로의 개선점 · 목표</span></div>
+<h1>선호 가중치 층 — 부부가 고른 사진으로 "k-웨딩 선호"를 계속 배운다</h1>
+<p class="lede">부부가 수천 장 중 수십 장을 고른 최종 선택(<code>photo_selection_items</code>)이 서비스에 쌓인다. 이 데이터로 <strong>가중치 벡터 한 행</strong>을
+학습해 두고, 추천 잡이 사진마다 내적 한 번으로 "다른 부부들이 고른 방향과 얼마나 닮았나"를 점수에 더한다. 갤러리가 CLOSED 될 때마다
+Lambda 가 마감 갤러리 전부로 다시 학습하고, 학습에 안 쓴 갤러리에서 prior 대비 <strong>유의하게 나아진 실행만</strong> active 로 올려 추천에 붙는다.</p>
+
+<div class="note warn"><div class="t">이 문서의 위치 — 현재 구조가 아니라 목표</div>
+이웃 문서(<code>../pipeline-v2-site/</code>·<code>../ai-recommendation-site/</code>)는 지금 돌고 있는 코드를 설명한다. 이 문서는 다르다.
+<strong>지금 서비스에 붙어 있는 것은 빈 테이블 <code>preference_models</code>(V14) 하나뿐</strong>이고, 학습기는 AI repo 에 1단계 코드(#66)로만 있으며
+Lambda 배포·wes 호출·추천 점수 연결은 전부 앞으로 할 일이다. 아래 그림에서 <span class="tag warn">목표</span> 로 표시한 상자와 점선 주황 화살표는 아직 없는 코드다.
+무엇을 왜 이렇게 만들 것인지, 어디까지 왔는지를 정리한 계획 지도로 읽는다. 진행 상태는 <a href="roadmap.html">6. 로드맵·제약</a>.</div>
+
+<p class="meta">코드 기준 AI repo <code>preference/</code> 44bcfda(#66, 2026-09-07) · wes main@1503a9a(V14 #162) · 2026-09-09 정리. 원본 설명은 AI repo <code>preference/docs/preference-layer.md</code>·<code>preference/README.md</code>. 편집법은 같은 폴더 <code>README.md</code></p>
+<div class="legend"><span class="b">브라우저</span><span class="w">wes (Spring)</span><span class="l">preference Lambda (AI repo)</span><span class="d">Postgres</span><span class="x">목표 — 아직 없는 코드</span></div>
+
+<div class="h2row"><h2 id="big">전체 흐름 — 선택이 쌓이고, 마감마다 배우고, 추천에 붙는다</h2><a class="btn" href="entities.html">엔티티 필드 사전 ↗</a></div>
+<p class="small">실선 = 호출·쓰기, 점선 = 읽기. 주황 = 목표(미구현). 박스를 클릭하면 상세 페이지. 노드·화살표 정의는 이 파일 하단 <code>&lt;script&gt;</code>.</p>
+<div id="d-big"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-big', {
+  width: 1250, height: 730,
+  groups: [
+    { x: 270, y: 50, w: 290, h: 640, label: 'wes · Spring 서버' },
+    { x: 640, y: 50, w: 290, h: 640, label: 'preference Lambda · AI repo (1단계 코드만, 배포 전)' },
+    { x: 1010, y: 50, w: 230, h: 640, label: 'RDS Postgres' },
+  ],
+  nodes: [
+    { id: 'B1', lane: 'browser', x: 20, y: 110, w: 200, kicker: '브라우저 · 지금', title: '부부 선택 화면',
+      lines: ['수천 장 중 수십 장 담기', '최종 제출'] },
+
+    { id: 'W1', lane: 'wes', x: 290, y: 90, w: 250, kicker: 'selection · 지금', title: 'PhotoSelectionService.submit',
+      lines: ['부부의 최종 선택 저장', '= 학습의 양성 라벨'], href: 'train.html#labels' },
+    { id: 'W2', lane: 'wes', x: 290, y: 230, w: 250, kicker: 'gallery · 지금', title: 'GalleryService.close()',
+      lines: ['OPEN → CLOSED · ARCHIVED', '지금은 아무것도 부르지 않는다'] },
+    { id: 'W3', lane: 'warn', x: 290, y: 380, w: 250, kicker: '목표 · 2단계', title: 'CLOSED 전이 훅',
+      lines: ['StageInvoker 처럼 EVENT 호출', 'payload {galleryId}', '대안: EventBridge 하루 1회'], href: 'serving.html#trigger' },
+    { id: 'W4', lane: 'warn', x: 290, y: 540, w: 250, kicker: '목표 · 2단계', title: 'AiSelectionJobRunner.plan — pref 항',
+      lines: ['active 행 읽기 (버전 일치)', 'x 조립 → 내적 → z', 'score = z(prior) + λ·z(pref)'], href: 'serving.html#wes' },
+
+    { id: 'L1', lane: 'lambda', x: 660, y: 90, w: 250, kicker: 'handler → job.run_train ①', title: '마감 갤러리 수집',
+      lines: ['list_closed_galleries()', 'read_gallery · read_selected', '모델 버전 섞이면 중단'], href: 'train.html#run' },
+    { id: 'L2', lane: 'lambda', x: 660, y: 240, w: 250, kicker: '② 시험 · evaluate.gate', title: '홀드아웃 + 게이트',
+      lines: ['leave-one-gallery-out', 'recall@K cluster · 부호 검정', '3 조건 → passed'], href: 'evaluate.html' },
+    { id: 'L3', lane: 'lambda', x: 660, y: 390, w: 250, kicker: '③ 학습 · train.train', title: '전부 합쳐 한 번 푼다',
+      lines: ['라벨: 양성 · 음성 · 제외', '로지스틱 회귀 (scipy L-BFGS)', 'w 1,547 + bias + λ'], href: 'train.html' },
+    { id: 'L4', lane: 'lambda', x: 660, y: 540, w: 250, kicker: '④ 저장 · store.write_model', title: '행 하나 INSERT',
+      lines: ['passed 면 active=true', '이전 active 는 같은 트랜잭션에서 내림'], href: 'artifact.html' },
+
+    { id: 'PG', lane: 'db', shape: 'db', x: 1030, y: 100, w: 190, h: 150, title: 'Postgres (읽기)',
+      lines: ['galleries (CLOSED)', 'photos ⋈ photo_analysis', 'photo_selection_items'], href: 'entities.html#inputs' },
+    { id: 'PM', lane: 'db', shape: 'db', x: 1030, y: 420, w: 190, title: 'preference_models',
+      lines: ['V14 · 테이블만 있음 · 빈 상태', 'active ≤ 1 (부분 유니크)'], href: 'entities.html#preference_models' },
+  ],
+  edges: [
+    { from: 'B1', to: 'W1', fromAt: .5, toAt: .5, label: '제출', color: 'browser' },
+    { from: 'W1', to: 'PG', fromAt: .3, toSide: 't', toAt: .5, via: [[600, null], [null, 28], [1125, 28]], label: 'INSERT photo_selection_items', labelAt: 2, color: 'wes' },
+    { from: 'W2', to: 'W3', fromSide: 'b', toSide: 't', label: 'CLOSED', color: 'warn', dashed: true },
+    { from: 'W3', to: 'L1', fromAt: .5, toAt: .5, via: [[610, null], [null, 145]], label: 'EVENT {galleryId}\n(목표)', labelAt: 1, color: 'warn', dashed: true },
+    { from: 'L1', to: 'PG', fromAt: .5, toAt: .5, label: '마감 갤러리 전부\n사진 · 분석 · 선택', dashed: true },
+    { from: 'L1', to: 'L2', fromSide: 'b', toSide: 't', label: '갤러리 n개', color: 'lambda' },
+    { from: 'L2', to: 'L3', fromSide: 'b', toSide: 't', label: 'verdict', color: 'lambda' },
+    { from: 'L3', to: 'L4', fromSide: 'b', toSide: 't', label: 'model', color: 'lambda' },
+    { from: 'L4', to: 'PM', fromAt: .5, toAt: .5, via: [[960, null], [null, 470]], label: 'INSERT\n(active?)', labelAt: 1, color: 'lambda' },
+    { from: 'PM', to: 'W4', fromSide: 'b', fromAt: .5, toSide: 'b', toAt: .5, via: [[null, 700], [415, 700]], label: 'active 행 읽기 — embedding_model · model_version 일치 (목표)', labelAt: 1, color: 'warn', dashed: true },
+  ],
+});
+</script>
+
+<h2 id="status">어디까지 왔나 — 있는 것과 없는 것</h2>
+<div class="states">
+  <span class="st on">1단계 · 학습기 코드</span><span class="ar">→</span>
+  <span class="st on">V14 테이블 · GRANT</span><span class="ar">→</span>
+  <span class="st">2단계 · Lambda 배포 (ECR · infra)</span><span class="ar">→</span>
+  <span class="st">2단계 · wes 호출 · 추천 연결</span><span class="ar">→</span>
+  <span class="st">3단계 · 마감 갤러리 누적 → 게이트 첫 통과</span>
+</div>
+<div class="tablewrap"><table class="status">
+<tr><th>것</th><th>상태</th><th>어디에</th></tr>
+<tr><td>학습기 · 평가 하네스 · sanity CLI · 테스트 11</td><td><span class="tag wes">있음</span></td><td class="wrap">AI repo <code>preference/</code> 44bcfda(#66). 로컬에서 갤러리 8 로 sanity 를 돌린 실측이 <a href="evaluate.html#measured">4.</a></td></tr>
+<tr><td><code>preference_models</code> 테이블 · <code>photoselect</code> role GRANT · 권한 계약 테스트</td><td><span class="tag wes">있음</span></td><td class="wrap">wes V14(#162) · <code>AdminEmbedderPrivilegeContractTest</code>. 행은 0개</td></tr>
+<tr><td>ECR <code>wes-preference</code> · Lambda 함수 · VPC/RDS 접근 · <code>deploy-lambda.yml</code> 모듈</td><td><span class="tag warn">없음</span></td><td class="wrap">infra repo 에 preference 언급 없음. AI repo 워크플로 선택지는 embedder·score·categorize 셋뿐. <code>preference/deploy.sh</code>·<code>Dockerfile</code> 은 있다</td></tr>
+<tr><td>wes 가 CLOSED 전이에서 Lambda 를 부르는 코드</td><td><span class="tag warn">없음</span></td><td class="wrap"><code>GalleryService.close()</code> 는 상태만 바꾼다. 설계는 <a href="serving.html#trigger">5.</a></td></tr>
+<tr><td>wes 추천 잡이 active 행을 읽어 pref 항을 더하는 코드</td><td><span class="tag warn">없음</span></td><td class="wrap"><code>RecommendationScoring.combine</code> 에 항이 없고, 러너는 CLIP 임베딩을 읽지 않는다. 설계는 <a href="serving.html#wes">5.</a></td></tr>
+<tr><td>라벨 갤러리 (실제 마감 + 선택)</td><td><span class="tag warn">0개</span></td><td class="wrap">RDS 의 <code>photo_selection_items</code> 는 0건. 홀드아웃은 갤러리 2개부터, 게이트는 5개부터 판정 가능</td></tr>
+</table></div>
+
+<h2 id="functions">기능 한눈에 — 무엇을 해주고 왜 있는가</h2>
+<p class="small">상세 페이지의 각 함수 제목 아래에 "한다 · 왜 · 없으면 · 입출력" 카드가 있다. 여기는 그 요약이다.</p>
+<div class="fn">
+  <a href="artifact.html#row"><div class="k">2 · model.PreferenceModel</div><div class="t">가중치 벡터 한 행</div><div class="d">모델 파일이 아니라 <em>숫자 1,548개</em>(스칼라 11 · 임베딩 1,536 · bias · λ). 은닉층이 없어 추론에 런타임이 필요 없고, 행 하나로 "무엇으로 배웠고 얼마나 나아졌나"까지 남긴다.</div></a>
+  <a href="artifact.html#features"><div class="k">2 · features.build</div><div class="t">특징 x — pref-v1 계약</div><div class="d">DB 에 이미 있는 값만으로 <em>1,547 자리</em>를 만든다. 순서가 계약이라 학습기와 wes 가 똑같이 조립해야 한다. 임베딩은 갤러리 평균을 뺀다.</div></a>
+  <a href="train.html#run"><div class="k">3 · job.run_train</div><div class="t">시험 → 학습 → 판정 → 저장</div><div class="d">마감 갤러리 전부를 모아 <em>홀드아웃을 먼저 재고</em> 그 다음 전체로 학습한다. 학습에 넣기 전에 새 갤러리로 시험해야 점수가 부풀지 않기 때문에 순서가 이렇다.</div></a>
+  <a href="train.html#labels"><div class="k">3 · train.make_sample</div><div class="t">라벨 규칙</div><div class="d">양성 = 최종 선택(클러스터당 1), 음성 = 선택 없는 연사 클러스터의 대표, <em>양성의 연사 형제는 라벨 없음</em>. 거의 같은 벡터에 반대 라벨을 주면 없는 경계를 그리게 된다.</div></a>
+  <a href="train.html#fit"><div class="k">3 · train.fit · train</div><div class="t">로지스틱 회귀 한 번</div><div class="d">갤러리별 벡터를 만들어 합치는 게 아니라 <em>데이터를 합쳐 한 번</em> 푼다. 부부마다 다른 취향은 상쇄되고 공통 방향만 남아 "부부 평균 취향"이 된다.</div></a>
+  <a href="evaluate.html#recall"><div class="k">4 · evaluate.recalls · auc</div><div class="t">recall@K (strict · cluster) · AUC</div><div class="d">순위를 <em>연사 클러스터당 1장으로 dedup 한 뒤</em> 잰다. wes MmrSelector 가 그렇게 보여주므로 실제 노출과 맞는 쪽이 cluster 다.</div></a>
+  <a href="evaluate.html#gate"><div class="k">4 · evaluate.gate</div><div class="t">active 조건 셋</div><div class="d">부호 검정 p&lt;0.05 · 악화 갤러리 ≤30% · 최근 3회 추가에서 안정. <em>절대값이 아니라 쌍 차이의 부호</em>로 본다 — 개선 폭이 완만할 것이기 때문.</div></a>
+  <a href="serving.html#fuse"><div class="k">5 · model.fuse (목표: wes)</div><div class="t">z(prior) + λ·z(pref)</div><div class="d">문턱값 없이 <em>순위만</em> 바꾼다. λ(n)=n/(n+5) 라 갤러리가 적으면 prior 에서 조금만 움직인다. active 행이 없으면 지금 점수와 비트 단위로 같다.</div></a>
+  <a href="serving.html#trigger"><div class="k">5 · wes (목표)</div><div class="t">CLOSED 전이 → EVENT</div><div class="d">갤러리가 마감될 때 Lambda 를 EVENT 로 부른다. galleryId 는 로그용이고 학습은 언제나 전부다. 하루 1회 EventBridge 로 대신해도 결과가 같다.</div></a>
+  <a href="roadmap.html"><div class="k">6 · 단계</div><div class="t">1 → 2 → 3</div><div class="d">코드(있음) → 배포·연결(없음) → <em>데이터가 쌓여야 게이트가 열린다</em>. 셋째는 코드로 당길 수 없다.</div></a>
+</div>
+
+<h2 id="principles">원칙 다섯</h2>
+<ul>
+  <li><strong>산출물은 행 하나다.</strong> ML 모델 파일도, S3 도, torch 도 없다. 로지스틱 회귀의 가중치 1,548개가 <code>preference_models</code> 한 행이고, 추론은 wes 가 내적 한 번. 임베딩·score 모델 버전이 행에 박혀 있어 버전이 바뀌면 wes 가 안 읽는다.</li>
+  <li><strong>매번 전부 다시 푼다.</strong> 갤러리별 벡터를 만들어 합치지 않는다. 마감 갤러리 전부의 사진·선택을 한 표로 합쳐 새로 풀고 이전 벡터는 버린다. 결과는 "부부 평균 취향"이고 부부별 편차는 기존 in-session 항(deficit·lift)이 맡는다.</li>
+  <li><strong>학습에 넣기 전에 시험한다.</strong> 홀드아웃은 벡터가 아니라 점수 한 줄을 만든다. 학습에 들어간 갤러리에서 재면 자기가 배운 걸 다시 푸는 셈이라 부풀려진다(in-sample 0.86 vs 하나 빼고 0.55). 나아진 게 유의할 때만 active.</li>
+  <li><strong>순위만 바꾸고 자르지 않는다.</strong> pref 는 z 정규화해 λ 만큼 더할 뿐, 사진을 후보에서 빼는 문턱값이 아니다. 몇 장을 어디서 고르느냐는 지금의 폴더 쿼터와 MMR 그대로.</li>
+  <li><strong>안 붙어 있을 때는 아무 영향도 없다.</strong> active 행이 없으면 λ 항이 없어 지금 추천과 같다. 붙은 뒤에도 n 이 작으면 λ 가 작다(n=1 → 0.17, n=5 → 0.5). 소규모 데이터의 안전장치다.</li>
+</ul>
+
+<h2 id="pages">페이지 지도</h2>
+<div class="map">
+  <a href="artifact.html"><div class="n">2</div><div class="t">산출물과 특징</div><div class="d">가중치 벡터 1,548개의 구성, 특징 x 의 자리 순서 계약(pref-v1), 갤러리 평균 빼기, λ 감쇠</div></a>
+  <a href="train.html"><div class="n">3</div><div class="t">학습</div><div class="d">run_train 4단계, 라벨 규칙(양성·음성·제외), 표본 가중치, 두 강도 L2 로지스틱과 블록 분산 보정, 손잡이(Knobs)</div></a>
+  <a href="evaluate.html"><div class="n">4</div><div class="t">평가와 게이트</div><div class="d">dedup 순위의 recall@K strict/cluster · AUC, leave-one-gallery-out, 게이트 3조건, 갤러리 8 + golden 30 실측</div></a>
+  <a href="serving.html"><div class="n">5</div><div class="t">서비스 연결 (목표)</div><div class="d">prior 는 어디서 오나, pref 내적과 융합식, wes 에 붙을 코드 자리, 트리거(CLOSED 전이 · EventBridge), 이름 충돌 주의</div></a>
+  <a href="roadmap.html"><div class="n">6</div><div class="t">로드맵과 제약</div><div class="d">1·2·3단계 남은 일 목록, 알려진 제약 다섯, 열린 결정(n₀·L2·트리거), 첫 게이트 통과까지의 길</div></a>
+  <a href="entities.html"><div class="n">사전</div><div class="t">엔티티 필드 사전</div><div class="d">preference_models 모든 컬럼 · holdout jsonb 구조 · 읽는 입력 테이블과 컬럼 · golden xlsx · 환경변수 · Lambda 페이로드 · CLI</div></a>
+</div>
+
+<h2 id="refs">정본 문서 · 코드</h2>
+<ul>
+  <li>학습기: AI repo <code>preference/preference/</code>(<code>handler.py</code> · <code>job.py</code> · <code>store.py</code> · <code>features.py</code> · <code>train.py</code> · <code>evaluate.py</code> · <code>model.py</code> · <code>golden.py</code> · <code>config.py</code>) · 테스트 <code>preference/tests/</code></li>
+  <li>설명: AI repo <code>preference/docs/preference-layer.md</code>(6절 본문 + 실측) · <code>preference/README.md</code>(진입) · 상세 설계 <code>docs/photoselect/plan-preference-layer.md</code>(AI repo 루트 docs, 로컬)</li>
+  <li>정답 데이터: AI repo <code>preference/golden/파일명_정리.xlsx</code>(갤러리 8 = <code>organic-agent/dataset/dataset2</code> 7,189장) — wes <code>src/test/resources/eval/</code> 의 정답은 연사 클러스터링 품질용이라 다른 것</li>
+  <li>wes: <code>src/main/resources/db/migration/V14__preference_models.sql</code> · <code>recommendation/support/RecommendationScoring.kt</code>(pref 항이 들어갈 자리) · <code>recommendation/service/AiSelectionJobRunner.kt</code></li>
+  <li>이웃 문서: <code>../ai-recommendation-site/</code>(지금의 추천 점수·쿼터·MMR) · <code>../pipeline-v2-site/</code>(x 의 재료를 만드는 분석 파이프라인)</li>
+</ul>
+</main>
+</body>
+</html>

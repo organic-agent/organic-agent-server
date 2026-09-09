@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>4. 서버 스코어 제어 — 파이프라인 v2</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">전체 아키텍처</a><span class="sep">/</span>
+  <span class="here">4. 서버 스코어 제어</span>
+  <span class="spacer"></span>
+  <a href="embed.html">← 3. 임베딩</a>
+  <a href="categorize.html">5. 사진 분류 →</a>
+</nav>
+
+<div class="eyebrow">wes · analysis 도메인 → GPU EC2 워커 / score Lambda 폴백</div>
+<h1>GPU 워커 실행과 대체 처리</h1>
+<p class="lede">wes는 분석할 사진이 있으면 GPU 워커를 켭니다. 워커는 DB에서 <strong>32장씩 직접 선택해 점수를 계산</strong>하고, 처리할 사진이 30초 동안 없으면 스스로 종료합니다. GPU를 사용할 수 없거나 진행이 멈추면 score Lambda가 대신 처리합니다.</p>
+<p class="meta">코드 기준 wes main@1503a9a · AI repo b473c61 · 2026-09-09 · 운영 SSM <code>app.analysis.gpu.enabled</code> 는 2026-09-08 켠 뒤 7,189장 7.5분 실측(메모리 기준). 아래 "지금 운영" 참조</p>
+<nav class="section-links" aria-label="이 페이지 목차"><a href="#arch">아키텍처</a><a href="#control">제어 규칙</a><a href="#pool">ScoreWorkerPool 어댑터</a><a href="#consts">상수</a><a href="#now">지금 운영 · 실측</a><a href="#files">코드 위치</a></nav>
+
+<h2 id="arch">아키텍처</h2>
+<p class="small">실선은 호출·저장, 점선은 조회·상태 확인입니다. 박스를 누르면 해당 단계의 설명으로 이동합니다.</p>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1200, height: 600,
+  groups: [{ x: 240, y: 40, w: 300, h: 500, color: '#A97700', tint: '#FFF5D7', label: 'wes · analysis 도메인' }],
+  nodes: [
+    { id: 'OR', lane: 'wes', x: 20, y: 200, w: 190, kicker: 'sweep ② · 매 5초', technicalTitle: 'ScoreWorkerSupervisor.control()', title: 'GPU 실행 판단',
+      lines: ['대기 사진 수 · 처리 진행 확인', '시작 · 정지 · 대체 처리 결정'], href: '#control' },
+    { id: 'RP', lane: 'wes', x: 20, y: 400, w: 190, kicker: 'JdbcClient', technicalTitle: 'PhotoPipelineRepository', title: '분석 대상 조회 · 배정',
+      lines: ['대기 사진 수 · 완료 사진 수', '점수 없는 사진 ID 조회'] },
+    { id: 'POOL', lane: 'wes', x: 255, y: 60, w: 270, kicker: '포트', technicalTitle: 'ScoreWorkerPool', title: '워커 시작 · 정지',
+      lines: ['prod: Ec2ScoreWorkerPool (tag Name)', 'local: LocalProcessScoreWorkerPool'], href: '#pool' },
+    { id: 'SI', lane: 'wes', x: 255, y: 400, w: 270, kicker: '포트 · 폴백', technicalTitle: 'StageInvoker.invoke(Score)', title: 'Lambda 대체 호출',
+      lines: ['갤러리당 10분에 1회', 'score-batch-size · 기본 50장'] },
+    { id: 'EC2', lane: 'gpu', x: 660, y: 60, w: 200, kicker: 'AWS', title: 'EC2 API',
+      lines: ['DescribeInstances tag:Name', 'StartInstances / StopInstances'] },
+    { id: 'G1', lane: 'gpu', x: 660, y: 220, w: 200, kicker: '4.1 GPU EC2 · 클릭', title: 'score 워커 (g6.xlarge)',
+      lines: ['잠기지 않은 사진 32장씩 선택', 'CLIP · LAION · ARNIQA · 피사체', '처리할 사진 없이 30초 → 종료'], href: 'score-worker.html' },
+    { id: 'L2', lane: 'lambda', x: 660, y: 420, w: 200, kicker: '4.1 Lambda 폴백 · 클릭', title: 'score Lambda',
+      lines: ['같은 Scorer · force UPSERT'], href: 'score-worker.html#lambda' },
+    { id: 'S3', lane: 's3', shape: 'db', x: 1000, y: 60, w: 180, title: 'S3', lines: ['previews/ GET'] },
+    { id: 'PG', lane: 'db', shape: 'db', x: 1000, y: 230, w: 180, h: 200, title: 'Postgres',
+      lines: ['photo_analysis: clip_embedding', 'subjects · sub_scores · error', 'model_version · analyzed_at'] },
+  ],
+  edges: [
+    { from: 'RP', to: 'OR', fromSide: 't', toSide: 'b', label: 'backlog · scored', dashed: true },
+    { from: 'RP', to: 'PG', fromSide: 'b', toSide: 'b', via: [[115, 560], [1090, 560]], label: 'UPLOADED ∧ clip_embedding IS NULL ∧ error IS NULL 카운트 (5초)', labelAt: 1, dashed: true },
+    { from: 'OR', to: 'POOL', fromAt: .2, label: 'snapshot()\nstart() / stop(id)', labelAt: 1, color: 'wes' },
+    { from: 'POOL', to: 'EC2', label: 'Describe / Start / Stop', color: 'wes' },
+    { from: 'EC2', to: 'G1', fromSide: 'b', fromAt: .3, toSide: 't', toAt: .3, label: '켜짐 → systemd → docker', color: 'gpu' },
+    { from: 'G1', to: 'EC2', fromSide: 't', fromAt: .8, toSide: 'b', toAt: .8, label: '유휴 30s → 자기 StopInstances', labelDx: 70, color: 'gpu' },
+    { from: 'OR', to: 'SI', fromAt: .8, toAt: .5, label: '10분 무진행 or GPU 꺼짐\n→ 폴백', color: 'wes' },
+    { from: 'SI', to: 'L2', label: 'EVENT\n{galleryId, photoIds[50]}', color: 'wes' },
+    { from: 'G1', to: 'PG', fromAt: .5, toAt: .4, label: '32장 FOR UPDATE SKIP LOCKED\n→ write_scores commit', labelAt: 1, color: 'gpu' },
+    { from: 'G1', to: 'S3', fromAt: .2, toSide: 'b', toAt: .5, label: 'GET ×16', labelAt: 1, color: 'gpu' },
+    { from: 'L2', to: 'PG', toAt: .85, label: '같은 UPSERT\n같은 error', labelAt: 1, dashed: true, color: 'lambda' },
+    { from: 'PG', to: 'OR', fromSide: 't', fromAt: .5, toSide: 't', toAt: .5, via: [[1090, 25], [115, 25]], label: 'scored == expected 가 되면 잡이 CATEGORIZING 으로 (5.)', labelAt: 1, dashed: true },
+  ],
+});
+</script>
+
+<h2 id="control">제어 규칙 — ScoreWorkerSupervisor.control()</h2>
+<div class="role"><b>한다</b><span>5초마다 backlog(점수 없는 UPLOADED)를 세고, 있으면 GPU EC2 를 켜고, 없고 무진행이면 끄며, 워커가 10분 무진행이거나 GPU 가 꺼져 있으면 score Lambda 로 폴백한다. 상태는 인메모리다.</span><b>왜</b><span>점수는 CLIP·ARNIQA 세 모델이라 GPU 가 CPU Lambda 보다 수십 배 싸고 빠르지만 켜 둔 채 놀리면 비용이다. 워커가 사진을 스스로 집으므로 wes 는 "켜기·끄기·안 되면 Lambda" 만 결정하면 된다. 정지의 1차는 워커의 유휴 30초 자기 정지이고 wes 의 2분은 안전망이다.</span><b>없으면</b><span>GPU 가 켜진 채 방치되거나(비용), 워커가 죽었을 때 점수가 영영 안 나와 잡이 CATEGORIZING 으로 못 넘어간다.</span><b>입출력</b><span>카운트 → <code>StartInstances / StopInstances</code> 또는 <code>StageCall.Score(galleryId, photoIds[50])</code></span></div>
+<p>상태는 전부 인메모리 필드(<code>lastScored · lastProgressAt · deliveringAt · lastStartAt</code>, 갤러리별 <code>fallbackSentAt</code>)다. wes 가 재시작하면 유예가 처음부터 다시 센다.</p>
+<ol class="steps">
+  <li><b>backlog 세기.</b> <code>countScoreBacklog()</code> = <code>UPLOADED ∧ clip_embedding IS NULL ∧ error IS NULL</code>(LEFT JOIN 이라 아직 임베딩도 없는 사진 포함). 즉 "앞으로 점수가 필요한 사진 수".</li>
+  <li><b>진행 관측.</b> <code>countScored()</code>(전역 <code>clip_embedding IS NOT NULL</code>)가 지난 걸음보다 늘었으면 <code>lastProgressAt = deliveringAt = now</code>.</li>
+  <li><b>워커풀 활성이면</b>(<code>gpu.enabled ∧ pool.isAvailable</code>) <code>controlWorkers</code>:
+    <ul>
+      <li><strong>켜기</strong> — <code>backlog &gt; 0 ∧ up 없음 ∧ (lastStartAt 없음 ∨ lastStartAt + 5분 &lt; now)</code> → <code>start()</code>. <code>up</code> = state RUNNING 또는 PENDING. 로그 <code>gpu start backlog=N workers=…</code></li>
+      <li><strong>끄기(안전망)</strong> — <code>backlog == 0 ∧ 워커 up ∧ launchedAt + 5분 지남 ∧ (lastProgressAt ?: launchedAt) + 2분 무진행</code> → <code>stop(instanceId)</code>. 로그 <code>gpu stop instance=… reason=idle-safety-net</code>. 1차 정지는 워커의 유휴 30초 자기 정지이고 이것은 2차다.</li>
+      <li>부팅 유예(5분) 안의 워커가 있으면 <code>deliveringAt = now</code> 로 폴백 타이머를 미룬다.</li>
+    </ul></li>
+  <li><b>backlog 0 이면</b> <code>deliveringAt = null</code> 하고 끝.</li>
+  <li><b>폴백 판단</b> <code>isFallbackDue</code>: 워커풀이 비활성이면 <em>즉시 true</em>(매 스윕). 활성이면 <code>deliveringAt</code> 이 없을 때 지금 시각을 찍고 false, 이후 <code>deliveringAt + 10분 &lt; now</code> 면 true. 기준은 <code>fallback-after</code> 하나다.</li>
+  <li><b>폴백 실행</b> <code>fallback()</code>: <code>isAvailable(Score)</code> 아니면 조용히 return → <code>findGalleryIdsWithUnscoredPhotos()</code>(<code>embedding 있음 ∧ clip 없음 ∧ error 없음</code>) 순회 → 갤러리별 <code>fallbackSentAt + 10분</code> 안이면 skip → 그 갤러리의 미점수 photoIds 전부를 <code>scoreBatchSize</code>(50)로 나눠 <code>StageCallDto.Score</code> EVENT → 성공 시 <code>fallbackSentAt[g] = now</code>. 로그 <code>score fallback gallery=G photos=N batches=B</code>. 한 호출이라도 실패하면 이번 폴백 전체 중단.</li>
+</ol>
+<div class="note"><div class="t">폴백과 워커가 겹치면</div>
+Lambda score 도 UPSERT 라 같은 값을 덮을 뿐이다. 사진마다 "점수 배정 시각"을 두지 않는다. 폴백은 드물다는 전제라 컬럼 없이 갤러리당 10분에 1회로만 억제한다.</div>
+
+<h2 id="pool">ScoreWorkerPool 어댑터</h2>
+<div class="role"><b>한다</b><span>EC2(태그로 찾기·켜기·끄기)와 로컬 스크립트를 <code>ScoreWorkerPool</code> 포트 뒤에 숨긴다.</span><b>왜</b><span>제어 규칙(언제 켜고 끄나)을 AWS SDK 와 분리해야 로컬에서 같은 규칙을 <code>scripts/gpu/score-worker.sh</code> 로 돌리고 테스트가 인스턴스 없이 규칙을 검증한다.</span><b>없으면</b><span>로컬 개발에서 GPU 경로를 확인할 수 없고, 규칙 테스트마다 EC2 를 흉내 내야 한다.</span></div>
+<p><code>ScoreWorkerSupervisor</code>는 실행 여부를 판단하는 서비스입니다. 외부 인스턴스 조작은 <code>analysis/service/port/ScoreWorkerPool</code>을 통과하며, 상태 조회 결과는 <code>ScoreWorkerDto</code>와 <code>ScoreWorkerStateDto</code>로 전달됩니다.</p>
+<div class="tablewrap"><table>
+<tr><th>환경</th><th>클래스</th><th>동작</th></tr>
+<tr><td>prod (<code>!local</code>)</td><td><code>Ec2ScoreWorkerPool</code></td><td class="wrap"><code>isAvailable = gpu.enabled ∧ gpu.tag 있음</code>. <code>snapshot()</code> = <code>DescribeInstances(Filter tag:Name = wes-score-gpu)</code> → 상태 pending/running/stopping 외는 STOPPED, <code>launchedAt = launchTime</code>. <code>start()</code> 는 STOPPED 인스턴스 <strong>하나</strong>만 <code>StartInstances</code>(없으면 warn). <code>stop(id)</code> = <code>StopInstances</code>. SDK 예외 → <code>SCORE_WORKER_CONTROL_FAILED</code>(502 PHOTO_502_6). wes EC2 롤에 Describe/Start/Stop 권한 필요</td></tr>
+<tr><td>local</td><td><code>LocalProcessScoreWorkerPool</code></td><td class="wrap"><code>scripts/gpu/score-worker.sh</code> 를 프로세스로 띄운다(instance id <code>"local"</code>). 살아 있으면 RUNNING, <code>stop()</code> 은 <code>destroy()</code>. 로그 <code>${tmpdir}/wes-gpu-score-worker.log</code>. 스크립트는 AI repo <code>score worker --gpu --no-idle-stop</code>(큐 비우고 유휴 30초 뒤 종료, 정지만 건너뜀)</td></tr>
+</table></div>
+
+<h2 id="consts">워커 제어와 Lambda 배치 설정</h2>
+<p>아래 워커 설정은 <code>app.analysis.gpu.*</code>입니다. score Lambda 배치 크기는 <code>app.analysis.score-batch-size</code>로 따로 설정합니다.</p>
+<div class="tablewrap"><table>
+<tr><th>키</th><th>값</th><th>쓰이는 곳</th></tr>
+<tr><td><code>enabled</code></td><td>false (SSM <code>/wes/prod/app.analysis.gpu.enabled</code> 가 덮음)</td><td>워커풀 활성 · <code>AnalysisService.request</code> 게이트(false 면 <code>scoreFunctionName</code> 도 필수)</td></tr>
+<tr><td><code>tag</code></td><td>wes-score-gpu</td><td>DescribeInstances 필터 <code>tag:Name</code></td></tr>
+<tr><td><code>start-grace</code></td><td>PT5M</td><td>재시작 최소 간격 · 부팅 유예(끄기 판단·폴백 타이머 미룸)</td></tr>
+<tr><td><code>idle-stop-after</code></td><td>PT2M</td><td>backlog 0 뒤 무진행 → wes 가 끄는 안전망</td></tr>
+<tr><td><code>fallback-after</code></td><td>PT10M</td><td>워커 활성인데 10분 무진행 → Lambda 폴백</td></tr>
+<tr><td><code>fallback-interval</code></td><td>PT10M</td><td>같은 갤러리 폴백 재발송 최소 간격</td></tr>
+<tr><td><code>app.analysis.score-batch-size</code></td><td>50</td><td>score Lambda 전용 배치 크기. 임베더 배치 설정과 독립</td></tr>
+</table></div>
+
+<h2 id="now">지금 운영 · 실측</h2>
+<ul>
+  <li>2026-09-08 운영 GPU 를 켜서 7,189장을 7.5분에, 2026-09-09 822장을 2분 8초에 점수 냈다(메모리 기록). AI 전달본 시점의 "gpu.enabled=false, Lambda 폴백이 운영 경로"는 그 이전 상태다 — 현재 값은 SSM 에서 확인.</li>
+  <li>워커 자기 정지가 한때 실패한 원인은 컨테이너에 리전이 없던 것(<code>NoRegionError</code>). 지금은 IMDSv2 <code>placement/region</code> 으로 리전을 얻는다.</li>
+  <li>워커는 <code>clip_embedding IS NULL</code> 만 보므로 <code>MODEL_VERSION</code> 을 올려도 옛 점수를 다시 집지 않는다. 재점수 절차는 아직 문서화되지 않았다(재분석 = <code>photo_analysis</code> 삭제).</li>
+</ul>
+
+<h2 id="files">코드 위치</h2>
+<div class="tablewrap"><table>
+<tr><th>역할</th><th>파일</th></tr>
+<tr><td>제어</td><td><code>analysis/service/ScoreWorkerSupervisor.kt</code> (control · controlWorkers · isFallbackDue · fallback)</td></tr>
+<tr><td>포트·DTO</td><td><code>analysis/service/port/ScoreWorkerPool.kt</code> · <code>analysis/dto/ScoreWorkerDto.kt</code>(isUp) · <code>ScoreWorkerStateDto.kt</code></td></tr>
+<tr><td>폴백 포트·DTO</td><td><code>analysis/service/port/StageInvoker.kt</code> · <code>analysis/dto/StageCallDto.kt</code>(Score)</td></tr>
+<tr><td>어댑터</td><td><code>analysis/infrastructure/Ec2ScoreWorkerPool.kt</code> · <code>LocalProcessScoreWorkerPool.kt</code> · <code>analysis/config/AwsEc2Config.kt</code></td></tr>
+<tr><td>카운트 SQL</td><td><code>photo/repository/PhotoPipelineRepository.kt</code> — <code>countScoreBacklog</code> :268 · <code>countScored</code> :281 · <code>findGalleryIdsWithUnscoredPhotos</code> :293 · <code>findUnscoredPhotoIds</code> :308</td></tr>
+<tr><td>로컬 대역</td><td><code>scripts/gpu/score-worker.sh</code> · <code>scripts/lambda/score.sh</code></td></tr>
+<tr><td>워커 쪽</td><td>AI repo <code>score/</code> → <a href="score-worker.html">4.1 score 워커 상세</a></td></tr>
+</table></div>
+
+<div class="pager">
+  <a href="embed.html">← 3. 서버 임베딩 배정</a>
+  <a href="score-worker.html">4.1 score 워커 상세 →</a>
+</div>
+</main>
+</body>
+</html>

@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>3.1 embedder Lambda 상세 — 파이프라인 v2</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">전체 아키텍처</a><span class="sep">/</span>
+  <a href="embed.html">3. 서버 임베딩 배정</a><span class="sep">/</span>
+  <span class="here">3.1 embedder Lambda</span>
+</nav>
+
+<div class="eyebrow">AI repo · embedder 모듈 · Lambda (컨테이너, CPU)</div>
+<h1>미리보기와 이미지 벡터 생성</h1>
+<p class="lede">embedder는 S3의 사진을 읽어 회전 방향을 반영하고, 긴 변 1,024px의 JPEG 미리보기를 만듭니다. <strong>저장한 미리보기로 DINOv3 벡터를 계산</strong>하고 촬영 정보(EXIF)를 함께 기록합니다. 다음 분석 단계도 이 미리보기를 사용합니다.</p>
+<p class="meta">AI repo b473c61 · <code>embedder/embedder/*</code> · Lambda 3008MB · 900s · 예약 동시성 32 · ephemeral 512MB (인프라 <code>modules/analysis</code>)</p>
+<nav class="section-links" aria-label="이 페이지 목차"><a href="#arch">배치 흐름</a><a href="#model">모델</a><a href="#exif">EXIF → photos 컬럼 (metadata.py)</a><a href="#sql">쓰는 SQL</a><a href="#resp">응답 · 실패 표시</a><a href="#consts">상수 (embedder/embedder/config.py)</a></nav>
+
+<h2 id="arch">배치 흐름 — job.run</h2>
+<div class="role"><b>한다</b><span>wes 가 보낸 50장을 8장 배치로 돌며 원본을 받아 회전·1024 축소 → <code>previews/</code> PUT → <strong>올린 그 바이트로</strong> DINOv3 768d 벡터 → EXIF 와 함께 한 트랜잭션 commit 한다.</span><b>왜</b><span>미리보기는 파이프라인 전체(score·categorize·wes LLM)가 여는 유일한 파생본이라 임베더가 만드는 것이 자연스럽고, PUT 뒤에 그 바이트로 임베딩해야 "벡터는 있는데 미리보기가 없는" 상태가 구조적으로 없다. 8장마다 commit 하면 Lambda 가 도중에 죽어도 진행이 남는다. EXIF 는 원본을 이미 디코딩해 들고 있는 여기서 읽는 것이 가장 싸다.</span><b>없으면</b><span>HEIC·24MP 원본을 score 워커가 매번 디코딩하고, 벡터와 미리보기가 어긋나 워커가 404 를 만나며, 50장 처리 중 타임아웃이면 전부 잃는다.</span><b>입출력</b><span><code>{galleryId, photoIds}</code> → <code>photo_analysis.embedding</code> · <code>photos.preview_key + EXIF</code>, 응답 <code>{processed, failed, stopped, remaining}</code></span></div>
+<p class="small">실선은 호출·저장, 점선은 조회·상태 확인입니다. 박스를 누르면 해당 단계의 설명으로 이동합니다.</p>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1120, height: 470,
+  groups: [{ x: 10, y: 130, w: 1100, h: 150, color: '#A97700', tint: '#FFF5D7', label: 'embedder Lambda · job.run — 8장 배치 단위' }],
+  nodes: [
+    { id: 'H', lane: 'lambda', x: 20, y: 170, w: 130, technicalTitle: 'handler.py', title: '배치 요청 수신', lines: ['{galleryId, photoIds}'] },
+    { id: 'F', lane: 'lambda', x: 170, y: 170, w: 140, technicalTitle: 'db.fetch_by_ids', title: '대상 사진 조회', lines: ['요청한 사진 ID로 조회'] },
+    { id: 'D', lane: 'lambda', x: 330, y: 170, w: 140, title: '원본 GET', lines: ['4 스레드 · 2배치 프리페치'] },
+    { id: 'P', lane: 'lambda', x: 490, y: 170, w: 150, technicalTitle: 'images.prepare', title: '미리보기 준비', lines: ['축소 디코드 → 1024', 'exif_transpose · RGB'] },
+    { id: 'U', lane: 'lambda', x: 660, y: 170, w: 150, technicalTitle: '① to_jpeg → PUT', title: '① 미리보기 저장', lines: ['previews/…jpg · q82'] },
+    { id: 'E', lane: 'lambda', x: 830, y: 170, w: 130, title: '② DINOv3', lines: ['올린 그 바이트로', 'CLS → L2 → 768d'] },
+    { id: 'ST', lane: 'lambda', x: 980, y: 170, w: 125, technicalTitle: 'store → commit', title: '결과 저장', lines: ['8장마다'] },
+    { id: 'M', lane: 'lambda', x: 330, y: 340, w: 200, technicalTitle: 'metadata.extract', title: '촬영 정보 추출', lines: ['원본 EXIF 9개 필드 · 추출 실패 허용'] },
+    { id: 'S3', lane: 's3', shape: 'db', x: 480, y: 20, w: 200, title: 'S3', lines: ['galleries/ 원본 · previews/'] },
+    { id: 'PG', lane: 'db', shape: 'db', x: 720, y: 330, w: 260, title: 'Postgres', lines: ['photo_analysis embedding UPSERT', 'photos preview_key · EXIF (CAS)'] },
+  ],
+  edges: [
+    { from: 'H', to: 'F', color: 'lambda' }, { from: 'F', to: 'D', color: 'lambda' }, { from: 'D', to: 'P', color: 'lambda' },
+    { from: 'P', to: 'U', color: 'lambda' }, { from: 'U', to: 'E', color: 'lambda' }, { from: 'E', to: 'ST', color: 'lambda' },
+    { from: 'D', to: 'S3', fromSide: 't', toSide: 'b', toAt: .25, label: 'GET', color: 'lambda' },
+    { from: 'U', to: 'S3', fromSide: 't', toSide: 'b', toAt: .75, label: 'PUT previews', color: 'lambda' },
+    { from: 'F', to: 'PG', fromSide: 'b', toSide: 'l', toAt: .3, via: [[null, 310], [560, 310]], label: 'photos WHERE id = ANY', labelAt: 1, dashed: true },
+    { from: 'D', to: 'M', fromSide: 'b', fromAt: .5, toSide: 't', toAt: .5, label: '원본 바이트', color: 'lambda' },
+    { from: 'M', to: 'PG', toAt: .7, label: 'EXIF → store 가 함께 씀', color: 'lambda' },
+    { from: 'ST', to: 'PG', fromSide: 'b', toSide: 'r', toAt: .4, label: 'UPSERT + CAS UPDATE\n같은 트랜잭션', color: 'lambda' },
+  ],
+});
+</script>
+
+<h2 id="model">모델</h2>
+<div class="role"><b>한다</b><span>DINOv3 ViT-B/16 의 CLS 토큰을 L2 정규화한 768차원 벡터를 만든다. 모델 id·revision 은 고정.</span><b>왜</b><span>연사 판정(코사인 ≥ 0.96)과 임베딩 그룹(concat 공간)의 한 축이 이 벡터다. 자기지도 학습 모델이라 라벨 없이도 "같은 장면"을 가깝게 놓고, 정규화해 두면 내적이 곧 코사인이라 뒤 단계 계산이 단순하다. revision 을 고정해야 갤러리 안 벡터가 한 모델에서 나온다.</span><b>없으면</b><span>갤러리 안에 두 모델의 벡터가 섞이면 거리 임계값이 무의미해지고 categorize 가 거부한다.</span></div>
+<div class="tablewrap"><table>
+<tr><th>항목</th><th>값</th></tr>
+<tr><td>모델</td><td><code>facebook/dinov3-vitb16-pretrain-lvd1689m</code>, revision <code>5931719e…</code> 고정 (<code>EMBED_MODEL_ID</code> / <code>EMBED_MODEL_REVISION</code>)</td></tr>
+<tr><td>전처리</td><td><code>AutoImageProcessor(images=…)</code> 하나 — 별도 리사이즈·정규화 코드 없음</td></tr>
+<tr><td>출력</td><td><code>last_hidden_state[:, 0]</code>(CLS) → <code>F.normalize(dim=-1)</code> → 768d. 차원 불일치면 RuntimeError</td></tr>
+<tr><td>장치</td><td>cuda → mps → cpu. Lambda 는 CPU(torch CPU 휠). 프로세스당 1개(<code>lru_cache</code>)</td></tr>
+<tr><td>컨테이너</td><td><code>public.ecr.aws/lambda/python:3.12</code>, 가중치를 빌드 시 굽고 런타임 <code>HF_HUB_OFFLINE=1</code></td></tr>
+<tr><td>차원 상수</td><td><code>EMBEDDING_DIMENSION = 768</code> — wes 두 곳(<code>PhotoAnalysis</code>·마이그레이션)과 인프라까지 세 곳이 일치해야 한다</td></tr>
+</table></div>
+
+<h2 id="exif">EXIF → photos 컬럼 (metadata.py)</h2>
+<div class="role"><b>한다</b><span>회전 전 원본에서 촬영 시각·카메라·노출·조리개·ISO·크기·바이트를 뽑아 <code>photos</code> 컬럼에 COALESCE 로 채운다. 실패해도 사진은 살린다.</span><b>왜</b><span>연사 판정은 카메라(make+model)별로 파티션하고 <code>taken_at</code> 순으로 창을 민다. 화면의 촬영 정보와 정렬도 여기서 온다. 이 서버(wes)는 이미지 바이트를 만지지 않으므로 EXIF 를 읽을 수 있는 곳이 임베더뿐이다.</span><b>없으면</b><span>연사가 시각 순이 아니라 id 순으로 묶여 다른 순간이 한 클러스터가 되거나, 촬영 정보 화면이 빈다.</span></div>
+<div class="tablewrap"><table>
+<tr><th>컬럼</th><th>태그</th><th>비고</th></tr>
+<tr><td><code>taken_at</code></td><td>Exif IFD <code>DateTimeOriginal</code> → 없으면 <code>DateTime</code></td><td><code>%Y:%m:%d %H:%M:%S</code>, tz 없음</td></tr>
+<tr><td><code>camera_make</code> / <code>camera_model</code></td><td><code>Make</code> / <code>Model</code></td><td>100자 컷, NUL 제거. categorize 연사 파티션 키</td></tr>
+<tr><td><code>exposure_time</code></td><td><code>ExposureTime</code></td><td>"1/200" 또는 "2.5", 30자</td></tr>
+<tr><td><code>f_number</code> / <code>iso</code></td><td><code>FNumber</code> / <code>ISOSpeedRatings</code></td><td>float / 튜플이면 첫 값</td></tr>
+<tr><td><code>width</code> / <code>height</code></td><td>Orientation ∈ {5,6,7,8} 이면 스왑</td><td>사람이 보는 방향</td></tr>
+<tr><td><code>byte_size</code></td><td>원본 바이트 길이</td><td></td></tr>
+</table></div>
+<p>브라우저가 리사이즈하며 원본 APP1(Exif)을 되살리고 Orientation 을 1 로 바꿔 두므로(<a href="upload.html#resize">2. 업로드</a>), 여기서 <code>exif_transpose</code> 는 이미 선 사진을 다시 돌리지 않는다.</p>
+
+<h2 id="sql">쓰는 SQL — db.store_embeddings (한 트랜잭션)</h2>
+<div class="role"><b>한다</b><span><code>photo_analysis</code> 벡터 두 컬럼을 UPSERT 하고, <code>photos</code> 의 미리보기 키·EXIF 를 <code>WHERE id AND storage_key</code> 조건(CAS)으로 UPDATE 한다. 상태 컬럼은 건드리지 않는다.</span><b>왜</b><span>UPSERT 라 wes 가 빈 행을 미리 만들 필요가 없고, 재실행에 안전하다. CAS 는 선별 뒤 관리자가 사진을 교체했거나 휴지통에 보냈으면 0행으로 끝내 오래된 결과가 덮지 않게 한다. status 를 쓰지 않는 것은 "S3 에 있나"만 사진 상태가 답한다는 v2 원칙이다.</span><b>없으면</b><span>교체된 사진에 옛 미리보기 키가 들어가거나, 임베더가 상태를 쓰면 상태 enum 이 실행기마다 늘어난다.</span></div>
+<pre><code>INSERT INTO photo_analysis (photo_id, embedding, embedding_model, created_at, updated_at)
+VALUES (…, now(), now())
+ON CONFLICT (photo_id) DO UPDATE SET embedding = EXCLUDED.embedding, embedding_model = EXCLUDED.embedding_model,
+    version = photo_analysis.version + 1, updated_at = now();
+-- 벡터 두 컬럼만. score·categorize 컬럼은 건드리지 않는다
+
+UPDATE photos SET preview_key = %s,
+    taken_at = COALESCE(%s, taken_at), camera_make = COALESCE(…), … , byte_size = COALESCE(…),
+    version = version + 1, updated_at = now()
+WHERE id = %s AND storage_key = %s AND deleted_at IS NULL
+  AND EXISTS (SELECT 1 FROM galleries g WHERE g.id = photos.gallery_id AND g.deleted_at IS NULL);
+-- CAS: 선별 뒤 사진 교체·휴지통이면 0행. status 는 SET 절에 없다</code></pre>
+<div class="note"><div class="t">"preview_key 있음 = 임베딩 있음"</div>
+두 문장이 같은 commit 에 묶이므로 이 등식이 성립한다. 그래서 wes 는 <code>PhotoStatus</code> 에 EMBEDDED 를 두지 않고, score 워커·categorize 는 <code>preview_key IS NOT NULL</code> 을 조건으로 쓴다.</div>
+
+<h2 id="resp">응답 · 실패 표시</h2>
+<pre><code>{ galleryId, photoIds: 50, targets, processed, failed: [storage_key…], metadataFailed: [storage_key…],
+  stopped, remaining, elapsedSeconds }</code></pre>
+<ul>
+  <li><code>processed</code> = photos UPDATE rowcount 누적. <code>remaining = targets − attempted</code>.</li>
+  <li><strong>embedder 는 <code>photo_analysis.error</code> 도 <code>photos.dispatched_at</code> 도 쓰지 않는다.</strong> 실패는 응답의 <code>failed[]</code>(CloudWatch)뿐이고, 되돌림·상한 표시(<code>EMBED_ATTEMPTS_EXCEEDED</code>)는 wes 스윕 몫이다(<a href="embed.html#when">3.</a>). wes 계획서의 "임베더가 결정적 실패 시 error 를 쓴다"는 아직 구현되지 않았다.</li>
+  <li>EVENT 호출이라 wes 는 응답을 받지 않는다. 진행은 DB 에서 관측.</li>
+</ul>
+
+<h2 id="consts">상수 (embedder/embedder/config.py)</h2>
+<div class="tablewrap"><table>
+<tr><th>env</th><th>기본</th><th>뜻</th></tr>
+<tr><td><code>EMBED_BATCH_SIZE</code></td><td>8</td><td>commit 단위</td></tr>
+<tr><td><code>EMBED_DOWNLOAD_WORKERS</code></td><td>4</td><td>S3 GET 스레드</td></tr>
+<tr><td><code>RESIZE_LONG_EDGE</code></td><td>1024</td><td>미리보기 긴 변</td></tr>
+<tr><td><code>PREVIEW_QUALITY</code></td><td>82</td><td>JPEG 품질</td></tr>
+<tr><td><code>EMBED_DIM</code></td><td>768</td><td>차원 검증</td></tr>
+<tr><td>(코드) <code>PREFETCH_BATCHES</code> / <code>DRAFT_GAP</code></td><td>2 / 1.5</td><td>프리페치 깊이 / 축소 디코드 문턱</td></tr>
+<tr><td><code>stop_margin_seconds</code></td><td>60</td><td>데드라인 여유</td></tr>
+</table></div>
+
+<h2 id="admin">관리자 사진 교체 요청</h2>
+<p>서버는 일반 배치(<code>Embed</code>)와 관리자 사진 교체(<code>ExactPhoto</code>)를
+같은 <code>StageInvoker</code>로 전달합니다. 일반 배치는 <code>{galleryId, photoIds}</code>,
+관리자 교체는 <code>{jobId, attemptCount, jobType, photoId, galleryId, storageKey, revisionId}</code>입니다.
+<code>jobId</code>가 있는 요청은 관리자 처리 경로로 분기하므로 일반 배치에 이 키를 추가하면 안 됩니다.</p>
+<p>서버 연동 기준은 main@1503a9a입니다. 로컬 대역은 관리자 교체를 지원하지 않습니다.
+<a href="embed.html#exact-photo">호출 흐름과 필드별 설명 보기 →</a></p>
+
+<h2 id="files">코드 위치 (AI repo)</h2>
+<div class="tablewrap"><table>
+<tr><th>역할</th><th>파일</th></tr>
+<tr><td>입구</td><td><code>embedder/embedder/handler.py</code></td></tr>
+<tr><td>배치 루프</td><td><code>embedder/embedder/job.py</code> (장당 순서 :169-195 · commit :202-214 · stopped :143-152)</td></tr>
+<tr><td>이미지</td><td><code>embedder/embedder/images.py</code> (prepare :45 · preview_key_for :111 · to_jpeg :90)</td></tr>
+<tr><td>모델</td><td><code>embedder/embedder/model.py</code> · <code>config.py:84</code>(revision)</td></tr>
+<tr><td>EXIF</td><td><code>embedder/embedder/metadata.py</code></td></tr>
+<tr><td>DB</td><td><code>embedder/embedder/db.py</code> (fetch_by_ids :113 · store_embeddings :138)</td></tr>
+<tr><td>관리자 교체</td><td><code>embedder/embedder/admin_*.py</code> — wes <code>StageInvoker</code>가 <code>StageCallDto.ExactPhoto</code>를 같은 embedder 함수로 전달한다</td></tr>
+<tr><td>로컬 대역</td><td>wes <code>scripts/lambda/embedder.sh --gallery-id G --photo-ids …</code></td></tr>
+</table></div>
+<div class="note warn"><div class="t">주의</div>
+<code>embedder/Dockerfile</code> 은 revision 없이 가중치를 굽고 런타임은 <code>config.py</code> 의 커밋으로 오프라인 로드한다 — 핀이 어긋나면 로드 실패 가능. 임베딩 모델을 바꾸면 <code>embedding_model</code> 이 섞인 갤러리를 categorize 가 거부한다(재분석 필요).</div>
+
+<div class="pager">
+  <a href="embed.html">← 3. 서버 임베딩 배정</a>
+  <a href="score.html">4. 서버 스코어 제어 →</a>
+</div>
+</main>
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>3. 협업 셀렉 — 셀렉 계층</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">전체 아키텍처</a><span class="sep">/</span>
+  <span class="here">3. 협업 셀렉</span>
+  <span class="spacer"></span>
+  <a href="compare.html">← 2. 비교샷</a>
+  <a href="retouch.html">4. 보정 →</a>
+</nav>
+
+<div class="eyebrow">wes · collab 도메인 · 게스트 링크 · web 하객 화면</div>
+<h1>협업 셀렉 — 부부가 공유폴더 링크를 만들고, 하객이 로그인 없이 좋아요·댓글을 남긴다</h1>
+<p class="lede">협업 세션(<code>collab_sessions</code>)은 갤러리당 여러 개 만들 수 있는 <strong>공유폴더 링크</strong>다. 사진 목록은 컨셉 폴더에 동적으로 연결하거나(CONCEPT_FOLDER) 직접 고른 스냅샷(MANUAL)이고,
+하객은 닉네임만 등록하면 서버가 준 게스트 토큰으로 좋아요·댓글을 남긴다. 7일 만료·폐기·재발행이 있고 실시간 채널은 없다(폴링).
+<strong>협업 결과가 셀렉 앨범에 자동 반영되는 경로는 없다</strong> — 부부가 좋아요 수를 보고 직접 담는다. 작가에게는 링크·의견 모두 비공개다.</p>
+<p class="meta">코드 기준 wes main@45981bf · 2026-09-09 · <code>collab/controller/CollabSessionController.kt</code> · <code>CollabGuestController.kt</code> · <code>service/CollabSessionService.kt</code> · <code>CollabGuestService.kt</code> · <code>support/CollabSessionAccess.kt</code>. 기존 문서 <code>collab-session.md</code>·<code>collab-services.md</code> 는 옛 모델(votes·share_token·갤러리당 1:1)이라 코드가 우선</p>
+
+<h2 id="arch">흐름</h2>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1180, height: 640,
+  groups: [{ x: 300, y: 40, w: 560, h: 580, label: 'wes · collab 도메인' }],
+  nodes: [
+    { id: 'C', lane: 'browser', x: 20, y: 60, w: 220, kicker: '부부 · GuestSharePanel', title: '공유폴더 관리',
+      lines: ['만들기 · 이름 · 사진 추가/제거', '링크 복사 · 폐기 · 재발행', '좋아요/댓글 수 보기 (4분 폴링)'] },
+    { id: 'G', lane: 'browser', x: 20, y: 380, w: 220, kicker: '하객 · 링크만 · JWT 없음', title: 'GuestGallery',
+      lines: ['닉네임 등록 → X-Guest-Token', '좋아요 · 댓글', 'presigned TTL 기반 재조회'] },
+    { id: 'SS', lane: 'wes', x: 320, y: 60, w: 250, kicker: '/galleries/{g}/collab-sessions', title: 'CollabSessionService',
+      lines: ['requireCollabManager (작가 거부)', 'open: 컨셉 연결 또는 photoIds ≤200', 'rename · revoke · republish(7일)', 'addPhotos/removePhotos (MANUAL 만)'], href: '#session' },
+    { id: 'Q', lane: 'wes', x: 320, y: 250, w: 250, kicker: '조회', title: 'CollabSessionQueryService',
+      lines: ['requireParticipantViewer', 'findSharedPhotos (두 모드 한 쿼리)', '좋아요·댓글 수 GROUP BY'], href: '#photos' },
+    { id: 'GS', lane: 'wes', x: 320, y: 420, w: 250, kicker: '/collab/{collabToken} · permitAll', title: 'CollabGuestService',
+      lines: ['enter: requireReadable → 게스트 참여자', 'like/comment: requireWritable', '취소·삭제는 7일 휴지통(soft)'], href: '#guest' },
+    { id: 'AC', lane: 'wes', x: 610, y: 250, w: 230, kicker: 'support', title: 'CollabSessionAccess',
+      lines: ['readable: 폐기·만료·DRAFT', 'writable: OPEN ∧ 마감 전 ∧ !ARCHIVED', 'participant: JWT 우선, 아니면 토큰'], href: '#access' },
+    { id: 'DB', lane: 'db', shape: 'db', x: 900, y: 60, w: 250, h: 230, title: 'Postgres',
+      lines: ['collab_sessions (token · concept_folder_id)', 'collab_session_photos (MANUAL)', 'collab_participants (USER | GUEST)', 'collab_photo_likes (행 = 좋아요)', 'collab_photo_comments'] },
+    { id: 'CAT', lane: 'db', shape: 'db', x: 900, y: 400, w: 250, title: 'concept/detail_folders · 배정', lines: ['CONCEPT_FOLDER 모드의 동적 목록'] },
+    { id: 'SEL', lane: 'warn', x: 900, y: 520, w: 250, kicker: '접점 없음', title: 'photo_selections', lines: ['자동 반영 경로 없음 — 사람이 담는다'], href: 'selection.html' },
+  ],
+  edges: [
+    { from: 'C', to: 'SS', fromAt: .4, toAt: .4, label: 'JWT', color: 'browser' },
+    { from: 'C', to: 'Q', fromAt: .8, toAt: .3, via: [[270, null]], label: 'GET photos', labelAt: 1, dashed: true, color: 'browser' },
+    { from: 'G', to: 'GS', fromAt: .5, toAt: .5, label: 'X-Guest-Token', color: 'browser' },
+    { from: 'SS', to: 'DB', fromAt: .4, toAt: .2, label: 'INSERT / UPDATE', color: 'wes' },
+    { from: 'Q', to: 'AC', fromAt: .3, toAt: .3, label: '', dashed: true },
+    { from: 'GS', to: 'AC', fromAt: .3, toAt: .8, label: '세 개의 문', color: 'wes' },
+    { from: 'GS', to: 'DB', fromAt: .7, toAt: .8, via: [[880, null]], label: 'likes · comments · participants', labelAt: 1, color: 'wes' },
+    { from: 'Q', to: 'CAT', fromAt: .8, toAt: .5, via: [[600, null], [null, 440]], label: '컨셉 모드 조인', labelAt: 2, dashed: true },
+    { from: 'Q', to: 'DB', fromAt: .5, toAt: .6, via: [[590, null], [null, 200]], label: '집계', labelAt: 2, dashed: true },
+  ],
+});
+</script>
+
+<h2 id="model">개념 — 세션 · 모드 · 참여자</h2>
+<div class="tablewrap"><table>
+<tr><th>개념</th><th>뜻</th><th>핵심 규칙</th></tr>
+<tr><td><code>CollabSession</code></td><td>공유폴더 링크. 갤러리당 N개</td><td class="wrap"><code>collab_token</code> 유니크, <code>expires_at</code>(기본 7일), <code>revoked_at</code>, <code>cover_title/author</code>, <code>include_all_albums</code>. 컨셉 폴더당 1개(<code>uk_collab_sessions_concept_folder</code>)</td></tr>
+<tr><td><code>CollabSelectionMode</code></td><td>컬럼이 아니라 파생값 — <code>concept_folder_id == null ? MANUAL : CONCEPT_FOLDER</code></td><td class="wrap"><strong>CONCEPT_FOLDER</strong>: 컨셉 폴더 배정이 바뀌면 공유 목록도 바뀐다(동적). <strong>MANUAL</strong>: <code>collab_session_photos</code> 행이 목록(고정). 전환은 <code>convert-to-manual</code> 단방향(스냅샷 복사). <strong>이름과 달리 셀렉 앨범 반영 방식이 아니다</strong></td></tr>
+<tr><td><code>CollabParticipant</code></td><td>게스트와 로그인 사용자의 통합 신원</td><td class="wrap"><code>participant_type USER│GUEST</code>, USER 면 <code>user_id</code>, GUEST 면 서버 발급 <code>guest_token</code>. 닉네임 중복 허용, 재입장하면 새 참여자. 역할·정원 없음</td></tr>
+<tr><td><code>CollabSessionPhoto</code></td><td>MANUAL 모드의 사진 멤버십</td><td class="wrap">복합 FK <code>(photo_id, gallery_id) → photos</code> 로 갤러리 경계를 DB 가 강제. hard delete</td></tr>
+<tr><td><code>CollabPhotoLike</code> · <code>CollabPhotoComment</code></td><td>행의 존재가 곧 좋아요 · 댓글 ≤500자</td><td class="wrap">좋아요는 (세션, 사진, 참여자) 부분 유니크(soft delete 제외 → 재좋아요 가능). 댓글 수정 없음(지우고 다시 씀)</td></tr>
+</table></div>
+<div class="states"><span class="st on">ACTIVE</span><span class="ar">→ revoke →</span><span class="st bad">REVOKED (410_1)</span><span class="ar">│ expires_at 경과 →</span><span class="st bad">EXPIRED (410_2)</span><span class="ar">│ republish(새 토큰, +7일) →</span><span class="st on">ACTIVE</span><span class="ar">│ 컨셉 삭제 → soft delete</span></div>
+
+<h2 id="session">세션 관리 — CollabSessionService (부부)</h2>
+<div class="role"><b>한다</b><span>공유폴더를 만들고(컨셉 연결 또는 사진 직접 지정), 이름·표지를 바꾸고, 링크를 폐기하거나 새 토큰으로 재발행하며, MANUAL 폴더에 사진을 넣고 뺀다. 같은 컨셉에 이미 세션이 있으면 새로 만들지 않고 재발행해 돌려준다(멱등).</span><b>왜</b><span>부부가 가족·친구에게 "이 폴더 좀 봐 줘"를 보내는 기능이라 로그인 없는 링크가 필요하고, 링크는 언젠가 새어 나가므로 만료·폐기·재발행이 있어야 한다. 컨셉 폴더에 동적으로 붙는 모드는 AI 폴더를 그대로 공유하는 흔한 경우를 한 번의 클릭으로 만들고, MANUAL 은 "이 30장만"을 위한 것이다. 작가를 거부하는 것은 하객 의견이 부부의 사적 공간이기 때문이다.</span><b>없으면</b><span>부부가 사진을 내려받아 카톡으로 뿌리고 의견을 모아 다시 타이핑한다. 링크를 회수할 수 없다.</span><b>입출력</b><span><code>POST {conceptFolderId? | photoIds[≤200], name, coverTitle?, includeAllAlbums?}</code> → <code>CollabSessionResponse{sessionId, collabUrl, selectionMode, photoCount, expiresAt, …}</code></span></div>
+<div class="tablewrap"><table>
+<tr><th>메서드 · 경로 <code>/api/v1/galleries/{g}/collab-sessions</code></th><th>인가</th><th>동작</th></tr>
+<tr><td><code>POST</code></td><td><code>requireCollabManager(writable)</code></td><td class="wrap">컨셉과 photoIds 동시 지정 → <code>COLLAB_400_11</code>. photoIds 는 1~200·양수·같은 갤러리·PENDING 아님(사진 행 락). 컨셉이 이미 공유 중이면 재발행+이름 갱신 후 반환. 토큰 <code>SecureTokenGenerator</code>, 만료 +7일</td></tr>
+<tr><td><code>GET</code> · <code>GET /{id}</code> · <code>GET /{id}/photos</code>(size≤200) · <code>GET /{id}/photos/{p}/comments</code></td><td><code>requireParticipantViewer</code></td><td class="wrap">목록·상세·사진(좋아요·댓글 수 포함)·댓글</td></tr>
+<tr><td><code>PATCH /{id}</code></td><td>writable</td><td>이름·표지·includeAllAlbums 부분 변경</td></tr>
+<tr><td><code>DELETE /{id}</code></td><td><code>requireCollabManager(false)</code></td><td>폐기(<code>revoked_at</code>). 사진·의견은 남는다</td></tr>
+<tr><td><code>POST /{id}/republish</code></td><td>writable</td><td>새 토큰 · <code>revoked_at=null</code> · 만료 +7일</td></tr>
+<tr><td><code>POST /{id}/photos</code> · <code>DELETE /{id}/photos</code>(본문)</td><td>writable</td><td>MANUAL 만. CONCEPT_FOLDER 면 <code>COLLAB_409_1</code>(수동 전환 먼저). 이미 담긴 사진은 조용히 건너뜀</td></tr>
+<tr><td><code>POST /{id}/convert-to-manual</code></td><td>writable</td><td>현재 구성을 스냅샷으로 복사 → 컨셉 연결 해제</td></tr>
+<tr><td><code>DELETE /{id}/comments/{c}</code></td><td><code>requireCollabManager(false)</code></td><td>모더레이션(부부가 하객 댓글 삭제)</td></tr>
+</table></div>
+
+<h2 id="guest">하객 경로 — CollabGuestService (/api/v1/collab/{collabToken}, permitAll)</h2>
+<div class="role"><b>한다</b><span>링크만으로 랜딩을 보여주고, 닉네임을 받아 <strong>게스트 토큰</strong>을 발급하며, 그 토큰(<code>X-Guest-Token</code> 헤더)으로 좋아요·댓글을 받는다. JWT 가 있으면 로그인 참여자로 자동 등록한다(Bearer 우선).</span><b>왜</b><span>하객에게 회원가입을 시키면 아무도 참여하지 않는다. 대신 서버가 토큰을 발급해 "누가 눌렀는지"를 참여자 행으로 구분하고, 로그인 사용자(부부 본인·파트너)도 같은 참여자 모델에 올려 집계 코드를 하나로 둔다. 입장은 <code>requireReadable</code> 만 지나므로 마감된 갤러리에서도 보기·닉네임 등록은 되고 반응만 막힌다.</span><b>없으면</b><span>좋아요를 누가 눌렀는지 구분할 수 없어 멱등·취소가 불가능하고, 부부 본인의 반응이 하객 통계와 섞인다.</span><b>입출력</b><span><code>POST /guests {nickname}</code> → <code>{guestToken, participantId, participantType}</code> · <code>PUT/DELETE /photos/{p}/like</code> → 204 · <code>POST /photos/{p}/comments {content}</code> → 201</span></div>
+<div class="tablewrap"><table>
+<tr><th>메서드 · 경로</th><th>토큰</th><th>동작</th></tr>
+<tr><td><code>GET /</code></td><td>불필요</td><td><code>CollabLandingResponse{galleryTitle, photoCount, writable, coverTitle, coverAuthor, expiresAt, albums[]}</code></td></tr>
+<tr><td><code>POST /guests</code> · <code>PATCH /guests/me</code></td><td>발급 · 필수</td><td>닉네임 1~50자(<code>COLLAB_400_1</code>). 정원 없음</td></tr>
+<tr><td><code>GET /photos</code>(size≤50) · <code>GET /photos/{p}/comments</code></td><td>선택</td><td>토큰이 있으면 <code>liked</code> 채움. 별점은 항상 숨김(<code>toAnonymousResponses</code>)</td></tr>
+<tr><td><code>PUT /photos/{p}/like</code> · <code>DELETE</code></td><td>필수</td><td>멱등(있으면 204). 취소는 soft delete(7일 휴지통)</td></tr>
+<tr><td><code>POST /photos/{p}/comments</code> · <code>DELETE /comments/{c}</code></td><td>필수 · 본인만</td><td>≤500자(<code>COLLAB_400_2</code>). 남의 것 <code>COLLAB_403_3</code></td></tr>
+</table></div>
+
+<h2 id="access">세 개의 문 — CollabSessionAccess</h2>
+<div class="role"><b>한다</b><span><code>requireReadable</code>(폐기 → 410_1, 만료 → 410_2, DRAFT 갤러리 → 403_1), <code>requireWritable</code>(+ 갤러리가 OPEN ∧ 마감 전 ∧ !ARCHIVED ∧ 플랜 유효, 아니면 <code>FEEDBACK_CLOSED 403_2</code>), <code>requireParticipant</code>(JWT → USER 참여자 자동 생성, 스튜디오 멤버면 <code>PARTICIPANT_READ_ONLY 403_4</code>; 아니면 게스트 토큰, 없으면 <code>401_1</code>).</span><b>왜</b><span>링크 하나로 들어오는 경로라 "볼 수 있는가 / 반응할 수 있는가 / 누구인가"를 세 단계로 나눠야 마감 뒤에도 보기는 되고, 작가는 봐도 반응은 못 하며, 익명이라도 취소·삭제가 본인 것에만 되는 규칙을 한 곳에서 지킬 수 있다. 락 순서를 <strong>사진 → 세션</strong>으로 고정한 이유는 사진 삭제 트랜잭션과의 데드락 회피다.</span><b>없으면</b><span>폐기한 링크가 계속 열리거나, 마감 뒤에 하객이 의견을 바꾸거나, 작가가 자기 갤러리의 하객 의견에 끼어든다.</span></div>
+<pre><code>writable = gallery.status == OPEN ∧ !deadlinePassed ∧ stage != ARCHIVED ∧ planExpiresAt 미래
+readable 은 writable 이 false 여도 유지 — 보기·입장은 되고 좋아요·댓글만 403 COLLAB_403_2</code></pre>
+
+<h2 id="photos">사진 집합 · 집계 — 두 모드가 한 쿼리</h2>
+<div class="role"><b>한다</b><span><code>CollabSessionPhotoRepository.findSharedPhotos</code> 네이티브 쿼리 하나가 <code>concept_folder_id</code> 유무로 분기해 MANUAL 멤버십 또는 컨셉→세부→배정 조인을 돌려준다(PENDING·휴지통 제외, <code>display_order</code> 순). 좋아요·댓글 수는 <code>GROUP BY</code> 두 번, <code>liked</code> 는 참여자가 있을 때만.</span><b>왜</b><span>모든 화면과 인가(<code>COLLAB_404_2</code> 판정)가 <strong>같은 집합</strong>을 봐야 한다. 두 모드를 한 쿼리에 두면 "컨셉 모드에서는 보이는데 좋아요는 404" 같은 어긋남이 없다. 집계를 조회 시점에 하고 저장하지 않는 것은 실시간 채널이 없어 폴링마다 정확한 값을 주는 편이 단순하기 때문이다.</span><b>없으면</b><span>모드별 코드 경로가 갈려 한쪽만 고쳐지고, 캐시된 좋아요 수가 취소를 반영하지 못한다.</span></div>
+<p>페이징은 메모리 슬라이싱(전체 photoId 를 읽어 <code>subList</code>, size 1~200 clamp). 컨셉 폴더에서 사진이 나가면 <code>CollabCategoryReactionCleaner</code> 가 그 세션의 좋아요·댓글을 지우고, 컨셉이 삭제되면 세션을 soft delete 한다.</p>
+
+<h2 id="realtime">실시간성 · 셀렉 반영 · 접점</h2>
+<ul>
+  <li><strong>SSE·WebSocket 없음.</strong> 하객 화면은 presigned URL TTL 기반 타이머(<code>clamp(ttl×0.8, 1s, …)</code>)와 <code>focus/visibilitychange</code> 로 재조회, 워크스페이스는 4분 간격 폴링. 서버가 주는 힌트는 <code>viewUrlTtlSeconds</code> 뿐.</li>
+  <li><strong>셀렉 앨범 자동 반영 없음.</strong> <code>selection</code> 패키지에 collab 참조 0건, 역방향도 0건. 부부가 <code>likeCount</code> 를 보고 <a href="selection.html">담기 API</a> 를 따로 부른다. <code>CollabSelectionMode</code> 는 공유 목록 구성 방식일 뿐이다.</li>
+  <li><strong>알림 없음.</strong> 하객 좋아요·댓글은 <code>user_notifications</code> 를 만들지 않는다. 활동 기록(<code>ActivityRecorder</code>)은 모든 성공 변경에 남는다.</li>
+  <li><strong>휴지통.</strong> 좋아요 취소·댓글 삭제는 <code>ProductChildTrashService</code> 로 soft delete(7일). 관리자 <code>AdminChildTrashType.COLLAB_COMMENT / COLLAB_LIKE</code>.</li>
+  <li><strong>보안 설정.</strong> <code>PublicPaths</code> 의 <code>/api/v1/collab/**</code> permitAll. <code>collab/config</code> 에는 <code>app.collab.base-url</code>(프론트 주소, 링크 조립)만.</li>
+</ul>
+
+<h2 id="errors">오류 코드 (CollabErrorCode)</h2>
+<div class="tablewrap"><table>
+<tr><th>코드</th><th>HTTP</th><th>뜻</th></tr>
+<tr><td><code>COLLAB_400_1</code> · <code>400_2</code> · <code>400_9</code> · <code>400_10</code> · <code>400_11</code></td><td>400</td><td>닉네임 1~50 · 댓글 1~500 · 세션 이름 1~100 · 사진 id 1~200 · 컨셉+photoIds 동시 지정</td></tr>
+<tr><td><code>COLLAB_401_1</code> GUEST_NOT_IDENTIFIED</td><td>401</td><td>닉네임 등록 먼저</td></tr>
+<tr><td><code>COLLAB_403_1</code> SESSION_NOT_READY · <code>403_2</code> FEEDBACK_CLOSED · <code>403_3</code> COMMENT_NOT_OWNED · <code>403_4</code> PARTICIPANT_READ_ONLY</td><td>403</td><td>DRAFT 갤러리 · 반응 마감 · 남의 댓글 · 스튜디오 멤버</td></tr>
+<tr><td><code>COLLAB_404_1</code> · <code>404_2</code> · <code>404_3</code></td><td>404</td><td>세션 · 세션 밖 사진 · 댓글</td></tr>
+<tr><td><code>COLLAB_409_1</code></td><td>409</td><td>수동 전환 먼저</td></tr>
+<tr><td><code>COLLAB_410_1</code> SESSION_REVOKED · <code>410_2</code> SESSION_EXPIRED</td><td>410</td><td>폐기 · 만료</td></tr>
+</table></div>
+
+<h2 id="files">코드 위치 · 테스트</h2>
+<div class="tablewrap"><table>
+<tr><th>역할</th><th>파일</th></tr>
+<tr><td>API</td><td><code>collab/controller/CollabSessionController.kt</code> · <code>CollabGuestController.kt</code>(+docs) · <code>dto/request/OpenCollabSessionRequest.kt</code> · <code>CollabPhotoIdsRequest.kt</code> · <code>dto/response/*</code></td></tr>
+<tr><td>서비스</td><td><code>service/CollabSessionService.kt</code>(open :46 · addPhotos :82 · republish :180 · revoke :189 · LINK_TTL_DAYS :214) · <code>CollabSessionQueryService.kt</code> · <code>CollabGuestService.kt</code></td></tr>
+<tr><td>인가·지원</td><td><code>support/CollabSessionAccess.kt</code>(readable :57 · writable :89 · participant :127 · canUserReact :168) · <code>CollabPhotoMembership.kt</code> · <code>CollabPhotoViewAssembler.kt</code> · <code>CollabLinkResolver.kt</code> · <code>CollabCategoryReactionCleaner.kt</code> · <code>GuestTokenHeader.kt</code></td></tr>
+<tr><td>도메인·스키마</td><td><code>domain/CollabSession.kt</code> · <code>CollabParticipant.kt</code> · <code>CollabSessionPhoto.kt</code> · <code>CollabPhotoLike.kt</code> · <code>CollabPhotoComment.kt</code> · <code>V5</code>(participants) · <code>V6</code>(likes 유니크, guests DROP) · <code>V13</code>(manual shared folders)</td></tr>
+<tr><td>보안</td><td><code>security/PublicPaths.kt:16</code> · <code>collab/config/CollabProperties.kt</code></td></tr>
+<tr><td>web</td><td><code>src/lib/api/collab.ts</code> · <code>components/guest/GuestGallery.tsx</code> · <code>ActivityPanel.tsx</code> · <code>guestSession.ts</code> · <code>components/workspace/GuestSharePanel.tsx</code> · <code>SharedPhotoPicker.tsx</code></td></tr>
+<tr><td>테스트</td><td><code>CollabGuestWorkflowTest</code>(9) · <code>CollabManualFolderServiceTest</code>(11) · <code>CollabSessionQueryServiceTest</code>(6) · <code>CollabSessionServiceTest</code>(8) · <code>CollabSessionAccessTest</code>(16) · <code>CategoryCollabIntegrationTest</code> · <code>SharedFolderApiContractTest</code></td></tr>
+</table></div>
+
+<div class="pager">
+  <a href="compare.html">← 2. 비교샷 셀렉</a>
+  <a href="retouch.html">4. 보정 →</a>
+</div>
+</main>
+</body>
+</html>

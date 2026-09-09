@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>6. 이유 문장 — AI 폴더 추천</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">전체 아키텍처</a><span class="sep">/</span>
+  <span class="here">6. 이유 문장</span>
+  <span class="spacer"></span>
+  <a href="plan.html">← 5. 후보·점수·쿼터</a>
+  <a href="entities.html">엔티티 사전 →</a>
+</nav>
+
+<div class="eyebrow">wes · fillReasons · ReasonMaterial · ReasonPrompt · ReasonGenerator · Bedrock</div>
+<h1>이유 문장 — 재료는 서버가 재고, 말은 Sonnet 이 한다</h1>
+<p class="lede">2단계는 뽑힌 컷마다 "왜 이 컷인지"를 채운다. 서버가 코드북대로 잰 사실(<code>facts</code>)과 주 사유, 형제 컷 탈락 이유를 재료로 만들고, 미리보기(긴 변 768)와 형제 컷 이미지 ≤2장을 붙여
+10장씩 Bedrock 에 보낸다. LLM 이 꺼져 있거나 실패하거나 너무 길면 <strong>템플릿 문장</strong>으로 대신 채우므로 잡은 항상 DONE 이 된다. 배치가 끝날 때마다 <code>reason</code> UPDATE → 화면 툴팁이 채워진다.</p>
+<p class="meta"><code>AiSelectionJobRunner.fillReasons :450-489</code> · <code>support/ReasonMaterial.kt</code> · <code>support/ReasonPrompt.kt</code> · <code>service/ReasonGenerator.kt</code> · <code>infrastructure/BedrockStructuredLlmClient.kt</code> · <code>config/LlmProperties.kt</code></p>
+
+<h2 id="arch">흐름</h2>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1160, height: 520,
+  nodes: [
+    { id: 'R', lane: 'db', shape: 'db', x: 20, y: 60, w: 210, title: 'ai_recommendations', lines: ['round 의 reason IS NULL 행', 'score_breakdown(재료)'] },
+    { id: 'CH', lane: 'wes', x: 300, y: 60, w: 230, kicker: 'fillReasons', title: '10장 청크', lines: ['reasonsBatch = 10', 'reasonsVision 이면 이미지 읽기'] },
+    { id: 'S3', lane: 's3', shape: 'db', x: 300, y: 260, w: 230, title: 'S3 previews/', lines: ['PreviewImageReader.readJpeg 768', '형제 컷 ≤ 2장 · 실패는 텍스트만'] },
+    { id: 'GEN', lane: 'wes', x: 600, y: 60, w: 250, kicker: 'ReasonGenerator.generate', title: '템플릿 기본 → LLM 덮어쓰기',
+      lines: ['llm 꺼짐 → 템플릿 그대로', 'completeJson(SYSTEM, parts, SCHEMA)', '8192 tok · 3분 · 스로틀 재시도 2'], href: '#generator' },
+    { id: 'BR', lane: 'lambda', x: 920, y: 60, w: 220, kicker: 'Bedrock · 국외', title: 'Sonnet 4.6 (InvokeModel)',
+      lines: ['anthropic_version bedrock-2023-05-31', 'output_config json_schema', 'app.llm.enabled · region · model-id'], href: '#bedrock' },
+    { id: 'CHK', lane: 'wes', x: 600, y: 260, w: 250, kicker: '검증', title: '길이 상한',
+      lines: ['이미지 있는 컷 ≤ 600자', '없는 컷 ≤ 60자 · 초과면 템플릿'] },
+    { id: 'UP', lane: 'wes', x: 600, y: 400, w: 250, kicker: '배치마다 트랜잭션', title: 'reason UPDATE',
+      lines: ['fillReason(text)', 'timing.batch(size, llm, seconds)'] },
+    { id: 'R2', lane: 'db', shape: 'db', x: 920, y: 400, w: 220, title: 'ai_recommendations', lines: ['reason 채워짐 → reasonReady'] },
+  ],
+  edges: [
+    { from: 'R', to: 'CH', label: 'picks (reason NULL)', dashed: true },
+    { from: 'CH', to: 'S3', fromSide: 'b', toSide: 't', label: 'preview_key · 형제 preview_key', dashed: true },
+    { from: 'CH', to: 'GEN', label: 'chunk + 이미지', color: 'wes' },
+    { from: 'GEN', to: 'BR', bidir: true, label: '{reasons:[{photo_id, reason}]}', color: 'lambda' },
+    { from: 'GEN', to: 'CHK', fromSide: 'b', toSide: 't', label: '응답 / 실패면 템플릿', color: 'wes' },
+    { from: 'CHK', to: 'UP', fromSide: 'b', toSide: 't', color: 'wes' },
+    { from: 'UP', to: 'R2', label: 'UPDATE', color: 'wes' },
+    { from: 'UP', to: 'CH', fromSide: 'l', toSide: 'b', toAt: .5, via: [[560, null]], label: '다음 청크', labelAt: 1, color: 'wes' },
+  ],
+});
+</script>
+
+<h2 id="material">재료 — ReasonMaterial (plan 단계에서 미리 만든다)</h2>
+<div class="role"><b>한다</b><span>뽑힌 컷마다 서버가 <strong>사실(facts)</strong>을 잰다: 주 사유 하나, 품질·선명·노출 서술, 형제 컷이 밀린 이유, 폴더 순위. 그리고 LLM 없이도 쓸 템플릿 문장을 만든다.</span><b>왜</b><span>LLM 에게 "왜 좋은지 말해 봐"라고만 하면 숫자를 지어낸다. 서버가 코드북대로 잰 숫자와 표현만 주고 프롬프트에서 "여기 적힌 숫자만 쓴다"고 못 박아야 이유가 사실에 묶인다. 재료를 plan 단계에서 미리 만들어 <code>score_breakdown</code> 에 넣어 두면 복구 때 계산을 되풀이하지 않는다.</span><b>없으면</b><span>"상위 3%", "연사 7장 중 1위" 같은 근거 없는 문장이 나오거나, LLM 이 꺼졌을 때 이유가 아예 비어 잡이 실패한다.</span><b>입출력</b><span><code>pick, world</code> → <code>{primary_reason, facts[], alternatives[{photo_id, why_not}], reason_fallback}</code></span></div>
+<div class="tablewrap"><table>
+<tr><th>항목</th><th>규칙</th></tr>
+<tr><td>주 사유 우선순위</td><td><code>REASON_PRIORITY = balance → quality → sibling → folder → score → diversity</code></td></tr>
+<tr><td><code>quality</code></td><td class="wrap">백분위 상위 <code>QUALITY_TOP_PCT 15%</code> 일 때. 단 원점수가 하한 미만이면(<code>technical_score &lt; 0.35</code> 또는 <code>aesthetic_score &lt; 4.5</code>) 품질 재료를 만들지 않는다 — 문장에서 품질 표현을 빼는 게이트</td></tr>
+<tr><td>선명 · 노출</td><td class="wrap"><code>sharpness_pct ≥ 85</code> → "초점이 또렷함", <code>highlight_clip &lt; 0.01 ∧ shadow_clip &lt; 0.02</code> → "노출이 안정적". 페널티가 아니라 서술어 조건</td></tr>
+<tr><td><code>sibling</code> · <code>why_not</code></td><td class="wrap">같은 연사 클러스터의 탈락 컷마다: sharpness 비가 <code>SHARPNESS_RATIO</code> 초과 → "덜 선명함", technicalPct 차 &gt; <code>PCT_GAP</code> → "화질이 떨어짐", aestheticPct 차 &gt; PCT_GAP → "인상이 약함", 아니면 "거의 같은 컷"</td></tr>
+<tr><td><code>folder</code></td><td>폴더 1위일 때만 주 사유 후보. "부모›이름 N장 중 1위"</td></tr>
+<tr><td><code>score</code></td><td><code>prior_z &gt; 1.0</code> 이고 quality 가 없을 때</td></tr>
+<tr><td><code>balance</code></td><td>선호·균형 항이 켜져 있고 그 유형이 부족할 때. 숫자는 준 대로</td></tr>
+<tr><td><code>diversity</code></td><td>전부 탈락하면. "점수가 높다고 말하지 않는다"</td></tr>
+<tr><td><code>template(primary, material)</code></td><td>LLM 없이도 쓰는 폴백 문장. <code>score_breakdown.reason_fallback</code> 에 저장</td></tr>
+</table></div>
+
+<h2 id="generator">ReasonGenerator · fillReasons</h2>
+<div class="role"><b>한다</b><span><strong>fillReasons</strong> 는 라운드의 빈 <code>reason</code> 을 10장씩 묶어 이미지를 붙이고, <strong>ReasonGenerator</strong> 가 배치마다 Bedrock 에 물어 문장을 받아 검증한 뒤 UPDATE 한다. 실패·초과·꺼짐은 전부 템플릿으로 대체한다.</span><b>왜</b><span>이유는 "이 컷이면 됩니다"라고 설득하는 셀렉터의 말이라 사진을 실제로 본 문장이어야 힘이 있다(형제 컷과 비교가 가장 세다). 그래서 미리보기와 형제 컷을 보낸다. 다만 이유는 부가 정보라 LLM 장애가 추천 자체를 막으면 안 되므로 항상 템플릿이 기본값이고, 배치마다 저장해 화면이 조금씩 채워지게 한다.</span><b>없으면</b><span>LLM 한 번 실패로 잡 전체가 FAILED 되거나, 30장 이유가 다 나올 때까지 툴팁이 전부 비어 있거나, 800자짜리 장문이 툴팁에 들어간다.</span><b>입출력</b><span><code>picks(reason NULL)</code> → 배치마다 <code>reason</code> UPDATE, <code>timing.reasonBatches[{size, llm, seconds}]</code></span></div>
+<ol class="steps">
+  <li><b>대상.</b> 그 라운드에서 <code>reason == null</code> 인 행만. 복구 재실행도 같은 기준이라 이미 채운 컷은 다시 부르지 않는다.</li>
+  <li><b>청크.</b> <code>picks.chunked(reasonsBatch=10)</code>. 청크마다 <code>reasonsVision=true</code> 면 <code>PreviewImageReader.readJpeg(preview_key, imageLongEdge=768)</code> 로 이 컷 + 형제 컷 <code>reasonsSiblingImages=2</code> 장까지. 읽기 실패는 <code>warn("미리보기 읽기 실패")</code> 후 그 컷만 텍스트 재료.</li>
+  <li><b>기본값은 템플릿.</b> <code>ReasonGenerator.generate</code> 는 모든 컷을 <code>reason_fallback</code> 으로 채워 두고, <code>llm.isEnabled</code> 일 때만 <code>completeJson(system=ReasonPrompt.SYSTEM, parts=userParts(chunk), schema=SCHEMA, maxTokens=8192, timeout=3분, maxRetries=2)</code> 로 덮어쓴다.</li>
+  <li><b>검증.</b> 응답에 없는 photo_id · 빈 문장 · 길이 상한 초과(이미지 있는 컷 <code>MAX_REASON_CHARS 600</code>, 없는 컷 <code>MAX_TEXT_ONLY_CHARS 60</code>)는 템플릿 유지. 호출 실패는 <code>warn("이유 문장 호출 실패 (N장 템플릿 폴백)")</code> 후 그 배치 스킵.</li>
+  <li><b>저장.</b> 배치마다 트랜잭션에서 <code>fillReason</code> UPDATE + <code>timing.batch(size, fromLlm, seconds)</code>. 화면의 <code>reasonReady</code> 는 배치 단위로 뒤집힌다.</li>
+</ol>
+
+<h3>사용자 메시지 구조 (ReasonPrompt.userParts)</h3>
+<pre><code>INTRO: "다음 사진들의 추천 이유를 각각 써 주세요. photo_id 는 그대로 돌려주세요."
+이미지가 하나도 없는 배치 → 텍스트 한 덩어리
+이미지가 있으면 컷마다:
+  ### {photo_id}
+  주 사유: {primary_reason}
+  이 컷:  [image]
+  같은 순간의 다른 컷 (탈락, 이유: {why_not}):  [image] …
+  재료: {facts …}
+SCHEMA: { reasons: [{ photo_id: string, reason: string }] }  additionalProperties: false</code></pre>
+
+<h3>시스템 프롬프트 원문 (ReasonPrompt.SYSTEM)</h3>
+<pre><code>당신은 신랑신부 옆에 앉아 함께 사진을 고르는 베테랑 셀렉터다. 두 분은 고르기를 어려워하고, 당신의 일은
+"이 컷이면 됩니다"라고 확신을 실어 주는 것이다. 이미 뽑힌 사진마다 **왜 이 컷인지** 말한다.
+
+말투 — 아낌없이 칭찬하고 설득한다
+- 두 분을 한껏 띄운다. "조명이 정말 예술입니다", "이 시선이 제일 좋았습니다"처럼 감탄을 앞세운다.
+- 그러나 근거 없는 감탄은 아니다. 감탄 뒤에는 반드시 **사진에서 보이는 것** 또는 **수치**가 따라온다.
+- "~입니다/~요"를 섞은 구어체. 부부에게 직접 말하듯. 사진 id 같은 내부 표기는 문장에 넣지 않는다.
+- 모든 표현은 한국어로 쓴다.
+
+재료 두 가지
+1. 사진 — 이 컷과, 있으면 같은 순간에 찍힌 형제 컷 몇 장. 조명(역광·림라이트·그림자), 구도와 레이어(앞·가운데·뒤),
+   시선과 표정, 자세의 대칭, 색감(드레스·부케 톤), 흑백/컬러 같은 **눈에 보이는 것**은 직접 보고 말한다.
+   형제 컷이 있으면 "저 컷은 시선이 빗나갔고, 이 컷은 마주쳤어요"처럼 **비교로** 설득한다 — 이게 가장 세다.
+2. 수치·셈 — 아래 코드북대로 잰 것. **숫자·순위·장수는 여기 적힌 것만 쓴다.** 없는 숫자를 만들지 않는다.
+
+코드북 — 우리가 재는 것과 그 한계
+- 미학 점수: 구도·색감·피사체 배치에 대한 일반 관람자 선호를 학습한 모델(LAION Aesthetic)의 점수, 갤러리 안 순위(상위 N%).
+- 기술 점수: 초점·흔들림·노이즈·노출 이상을 재는 모델(ARNIQA)의 점수, 갤러리 안 순위.
+- 초점(선명도): 사진에서 직접 잰 디테일 양. "연사 안에서 가장 또렷"처럼 상대 비교.
+- 노출: 날아간 밝은 부분·뭉개진 어두운 부분의 비율. "노출이 안정적"까지만.
+- 형제: 같은 순간 연사 N장 중 이 컷이 남은 이유와 나머지가 밀린 이유(덜 선명함·화질·인상·거의 같음).
+- 폴더: 같은 배경·컨셉으로 묶인 폴더의 이름과 그 안에서의 순위. 폴더 이름은 문장에 그대로 써도 된다.
+- 균형: 담은 사진에서 어떤 유형(신부 단독·신랑 단독·두 분·단체)이 부족한지. 숫자는 준 대로.
+- 다양성: 점수는 평범하지만 앞서 고른 사진들과 배경이 겹치지 않아 뽑힌 컷. **점수가 높다고 말하지 않는다.**
+
+쓰는 법
+- 주 사유가 뼈대다. 그 위에 사진에서 본 것 2~3가지를 얹어 살을 붙인다. 형제 컷이 있으면 비교를 한 문단 넣는다.
+- 사진이 온 컷: 3~5문장, 200~400자. 문단은 최대 둘.
+- 사진이 안 온 컷("(사진 없음)"): 재료만으로 한 문장, 60자 안.
+- 사람 이름·장소 이름·촬영 상황(누가 왜)처럼 사진에도 재료에도 없는 것은 지어내지 않는다. 과장은 좋다, 거짓은 안 된다.
+- photo_id는 받은 그대로 돌려준다. 문장 안에는 넣지 않는다.
+
+예시 (사진이 온 컷, 형제 2장과 비교)
+"일단 조명이 정말 예술입니다. 역광인데도 두 분 얼굴에 그림자가 안 지고 림라이트가 살아 있어요 — 타이밍이 완벽했다는
+뜻이거든요. 앞쪽 부케, 가운데 두 분, 뒤쪽 조명 줄까지 레이어가 겹겹이 쌓여서 깊이감이 확 삽니다. 무엇보다 두 분 시선이
+진짜로 마주치고 있어요, 그게 제일 좋았습니다. 같은 순간의 나머지 두 장은 한 장은 살짝 흐리고, 한 장은 흑백이라 드레스의
+파스텔 블루가 안 보여서 아까웠어요. 연사 3장 중 초점도 이 컷이 가장 또렷합니다."
+
+예시 (사진 없음)
+- quality 미학 상위 1%·기술 상위 4% + 형제 5장 → "전체 인상 상위 1%에 화질도 상위권, 연사 5장 중 가장 또렷해요"
+- folder "야외 자연 › 해변 모래사장" 41장 중 1위 → "해변 모래사장 폴더 41장 중 점수가 가장 높은 컷이에요"</code></pre>
+
+<h2 id="bedrock">Bedrock 어댑터 · 설정</h2>
+<div class="role"><b>한다</b><span><strong>StructuredLlmClient</strong> 포트 뒤에서 Bedrock InvokeModel 을 부르고 JSON 스키마 응답을 돌려준다. 켜짐/꺼짐은 설정 하나로 빈이 바뀐다(<code>Bedrock…</code> / <code>Disabled…</code>).</span><b>왜</b><span>질의 해석·이유 문장·비교샷이 같은 호출 모양(system + parts + schema)을 쓰므로 어댑터 하나로 모은다. 스로틀링 재시도·타임아웃·refusal 처리 같은 벤더 사정을 도메인 코드에서 떼어 내고, 테스트는 <code>FakeStructuredLlmClient</code> 로 LLM 없이 돈다. 꺼짐 빈이 따로 있는 이유는 로컬·테스트·비용 통제에서 호출을 확실히 막기 위해서다.</span><b>없으면</b><span>도메인 서비스마다 Bedrock SDK 를 직접 다루고, 스위치를 꺼도 어딘가에서 호출이 새어 나간다.</span><b>입출력</b><span><code>LlmJsonRequestDto{system, parts[text|image], schema, maxTokens, timeout, maxRetries}</code> → <code>JsonNode</code> 또는 <code>LLM_CALL_FAILED</code></span></div>
+<div class="tablewrap"><table>
+<tr><th>구성</th><th>내용</th></tr>
+<tr><td>스위치</td><td class="wrap"><code>app.llm.enabled</code>(SSM, local·prod 모두 2026-09-05 부터 true). <code>LlmClientConfig</code>: true → <code>BedrockStructuredLlmClient</code>, 아니면 <code>DisabledStructuredLlmClient</code>(부르면 즉시 <code>LLM_CALL_FAILED</code>). <code>RecommendationProperties</code>·<code>app.recommendation.*</code> 는 없다 — 설정은 <code>app.llm.*</code> 하나</td></tr>
+<tr><td>클라이언트</td><td class="wrap"><code>AwsBedrockConfig</code>(<code>@ConditionalOnProperty app.llm.enabled=true</code>): Spring Cloud AWS 자격증명 재사용, <code>Region.of(region)</code>, <code>ApacheHttpClient.socketTimeout(reasonsTimeout)</code>, <code>AwsRetryStrategy.doNotRetry()</code>(재시도는 어댑터가)</td></tr>
+<tr><td>호출</td><td class="wrap"><code>InvokeModelRequest(modelId, application/json, body, apiCallTimeout=request.timeout)</code>. body = <code>{anthropic_version: "bedrock-2023-05-31", max_tokens, system, messages[{role:user, content:[text | image(base64 jpeg)]}], output_config.format: {type: json_schema, schema}}</code></td></tr>
+<tr><td>실패 처리</td><td class="wrap">스로틀링만 <code>maxRetries</code>(이유 2회)만큼 <code>500ms × attempt</code> 백오프 재시도. <code>stop_reason ∈ {refusal, max_tokens}</code> 또는 텍스트 없음 → 실패. JSON 아니면 실패(200자 로그). 로그 <code>bedrock {} · in {} / out {} tokens · stop={}</code></td></tr>
+<tr><td>국외 전송</td><td class="wrap">서울에 Sonnet 온디맨드가 없어 <code>global.anthropic.claude-sonnet-4-6</code> 크로스 리전 프로필 — 미리보기(768px)와 재료 텍스트가 국외로 나간다</td></tr>
+</table></div>
+<div class="tablewrap"><table>
+<tr><th><code>app.llm.*</code> (LlmProperties)</th><th>기본</th><th>쓰이는 곳</th></tr>
+<tr><td><code>enabled</code></td><td>false (SSM 이 덮음)</td><td>스위치</td></tr>
+<tr><td><code>region</code> · <code>model-id</code></td><td>ap-northeast-2 · global.anthropic.claude-sonnet-4-6</td><td>클라이언트</td></tr>
+<tr><td><code>image-long-edge</code></td><td>768</td><td>미리보기 리사이즈</td></tr>
+<tr><td><code>reasons-batch</code> · <code>reasons-max-tokens</code> · <code>reasons-timeout</code></td><td>10 · 8192 · 3분</td><td>이유 문장</td></tr>
+<tr><td><code>reasons-vision</code> · <code>reasons-sibling-images</code></td><td>true · 2</td><td>이미지 전송 여부 · 형제 컷 수</td></tr>
+<tr><td><code>compare-max-tokens</code> · <code>compare-timeout</code></td><td>1024 · 8s</td><td>비교샷(범위 밖)</td></tr>
+<tr><td>(질의 해석)</td><td>2048 tok · 20s</td><td>코드 상수(<a href="query.html">4.</a>)</td></tr>
+</table></div>
+
+<h2 id="files">코드 위치 · 테스트</h2>
+<div class="tablewrap"><table>
+<tr><th>역할</th><th>파일</th></tr>
+<tr><td>2단계</td><td><code>recommendation/service/AiSelectionJobRunner.kt:450-500</code>(fillReasons · readPreview)</td></tr>
+<tr><td>재료 · 프롬프트 · 생성</td><td><code>support/ReasonMaterial.kt</code> · <code>support/ReasonPrompt.kt</code>(SYSTEM :18 · SCHEMA :62 · userParts :85) · <code>service/ReasonGenerator.kt</code></td></tr>
+<tr><td>LLM 포트·어댑터</td><td><code>service/port/StructuredLlmClient</code> · <code>infrastructure/BedrockStructuredLlmClient.kt</code> · <code>BedrockMessagesCodec.kt</code> · <code>DisabledStructuredLlmClient.kt</code> · <code>support/PreviewImageReader</code></td></tr>
+<tr><td>설정</td><td><code>config/LlmProperties.kt</code> · <code>AwsBedrockConfig.kt</code> · <code>LlmClientConfig.kt</code> · <code>application-variable.yml:130-137</code> · <code>docs/architecture/parameter-store-mapping.md</code></td></tr>
+<tr><td>테스트</td><td><code>ReasonMaterialUnitTest</code> · <code>BedrockMessagesCodecUnitTest</code>(body 형태·응답 파싱) · <code>BedrockStructuredLlmClientSpikeTest</code>(실호출, <code>WES_BEDROCK_SPIKE=1</code>) · 테스트 더블 <code>FakeStructuredLlmClient</code></td></tr>
+</table></div>
+
+<div class="pager">
+  <a href="plan.html">← 5. 후보 · 점수 · 쿼터 · MMR</a>
+  <a href="entities.html">엔티티 필드 사전 →</a>
+</div>
+</main>
+</body>
+</html>

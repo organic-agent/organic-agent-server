@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>4. 평가와 게이트 — 선호 가중치 층</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">전체 아키텍처</a><span class="sep">/</span>
+  <span class="here">4. 평가와 게이트</span>
+  <span class="spacer"></span>
+  <a href="train.html">← 3. 학습</a>
+  <a href="serving.html">5. 서비스 연결 →</a>
+</nav>
+
+<div class="eyebrow">AI repo · preference/evaluate.py · <span class="tag warn">목표</span></div>
+<h1>평가와 게이트 — 새 부부에게 나아졌을 때만 붙인다</h1>
+<p class="lede">평가는 "추천 후보 범위 안에 부부가 고른 사진이 얼마나 들어오나"(recall@K)를 <strong>추천이 실제로 보여주는 순위</strong>에서 잰다. 학습에 안 쓴 갤러리에서만 재고(leave-one-gallery-out),
+prior 단독과 융합의 <strong>쌍 차이의 부호</strong>로 판정한다. 개선 폭이 완만할 것이라 절대값이 아니라 부호를 본다. 갤러리 수는 고정하지 않고 늘려가며 본다.</p>
+<p class="meta"><code>preference/evaluate.py</code>(dedup_order · recalls · auc · evaluate_gallery · logo · paired_diff · sign_test · gate) · <code>config.Knobs</code></p>
+
+<h2 id="arch">gate 한 번 — 갤러리 n개로 verdict 한 줄</h2>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1150, height: 470,
+  groups: [{ x: 300, y: 40, w: 560, h: 165, label: 'logo() — 갤러리마다 반복 (i = 1..n)' }],
+  nodes: [
+    { id: 'G', lane: 'lambda', x: 20, y: 80, w: 210, kicker: '입력', title: '라벨 갤러리 n개',
+      lines: ['2개 미만 → 측정 불가', '5개 미만 → 안정성 판단 불가'] },
+    { id: 'TR', lane: 'lambda', x: 320, y: 80, w: 240, kicker: 'train(rest)', title: '갤러리 i 를 뺀 n−1 개로 학습',
+      lines: ['임시 모델 (저장 안 함)'], href: 'train.html#fit' },
+    { id: 'EV', lane: 'lambda', x: 620, y: 80, w: 220, kicker: 'evaluate_gallery(held)', title: '갤러리 i 에서 재기',
+      lines: ['prior · pref · fused 세 점수식', 'recall strict · cluster · AUC'], href: '#recall' },
+    { id: 'D', lane: 'lambda', x: 320, y: 300, w: 240, kicker: 'paired_diff', title: 'fused − prior (recall_cluster)',
+      lines: ['갤러리마다 차이 하나 → n개'] },
+    { id: 'GT', lane: 'lambda', x: 620, y: 300, w: 220, kicker: 'gate', title: '3 조건 AND',
+      lines: ['부호 검정 p < 0.05', '악화 비율 ≤ 0.30', '최근 3회 추가 안정'], href: '#gate' },
+    { id: 'V', lane: 'db', shape: 'db', x: 930, y: 290, w: 190, title: 'verdict → holdout jsonb',
+      lines: ['passed · reasons', 'rows · curve · p_value …'], href: 'entities.html#holdout' },
+  ],
+  edges: [
+    { from: 'G', to: 'TR', label: 'n−1', color: 'lambda' },
+    { from: 'TR', to: 'EV', label: '모델', color: 'lambda' },
+    { from: 'EV', to: 'D', fromSide: 'b', fromAt: .5, toSide: 't', toAt: .5, via: [[null, 270], [440, 270]], label: 'GalleryEval × n', labelAt: 1, color: 'lambda' },
+    { from: 'D', to: 'GT', label: 'diff[n]', color: 'lambda' },
+    { from: 'GT', to: 'V', label: 'dict', color: 'lambda' },
+  ],
+});
+</script>
+
+<h2 id="recall">지표 — dedup 한 순위에서 잰다</h2>
+<div class="role"><b>한다</b><span>점수식마다 갤러리 사진을 정렬하되 <strong>연사 클러스터당 최고점 1장만 남긴 뒤</strong> 상위 K 를 본다. K = 3 × 양성 수.</span><b>왜</b><span>wes <code>MmrSelector.bestPerCluster</code> 가 그렇게 보여주기 때문이다. 갤러리 8 실측에서 양성 30장의 클러스터가 합쳐 1,109장(중앙값 35)이라 dedup 없이는 형제가 상위를 채워 지표가 노출과 어긋난다.</span><b>없으면</b><span>"상위 90 안에 들었다"가 화면에서 보이는 90장과 다른 뜻이 된다.</span><b>입출력</b><span><code>recalls(scores, pos, k, cluster_id)</code> → <code>(strict, cluster)</code> · <code>auc(scores, pos, neg)</code></span></div>
+<div class="tablewrap"><table>
+<tr><th>지표</th><th>정의</th><th>쓰임</th></tr>
+<tr><td>recall@K strict</td><td class="wrap">양성 <strong>그 사진</strong>이 클러스터 대표로 상위 K 에 올라온 비율</td><td class="wrap">참고. 형제 컷 중 어느 장인지는 이 특징으로 못 가르므로 낮은 게 정상</td></tr>
+<tr><td>recall@K cluster</td><td class="wrap">양성의 <strong>클러스터</strong>가 상위 K 에 든 비율 — 실제 노출과 맞는 쪽</td><td>게이트 · sanity 기준</td></tr>
+<tr><td>AUC</td><td class="wrap">(양성, 음성 대표) 쌍 중 양성 점수가 큰 비율. 동점 0.5</td><td>쌍 예측 정확도 참고</td></tr>
+</table></div>
+<p>세 점수식을 나란히 잰다: <code>prior</code> = z(0.5·tech + 0.5·aes) · <code>pref</code> = z(w·x + b) · <code>fused</code> = z(prior) + λ·z(pref). 게이트 비교는 <code>fused − prior</code> 다.</p>
+
+<h2 id="logo">leave-one-gallery-out</h2>
+<p><code>logo(galleries)</code> — 갤러리 i 를 빼고 나머지로 학습해 i 에서 평가, i = 1..n. 갤러리 2개 미만이면 빈 목록(측정 불가). 특징은 갤러리마다 한 번만 조립해 n 번의 학습에 재사용한다.
+갤러리 안에서 사진을 나누어 홀드아웃하지 않는 이유: 같은 부부·같은 촬영이라 낙관 편향이 생긴다. 새 부부에게 옮겨지는가가 질문이므로 단위는 갤러리다.</p>
+
+<h2 id="gate">게이트 — active 조건 셋</h2>
+<div class="role"><b>한다</b><span>홀드아웃 줄들로 세 조건을 모두 만족할 때만 <code>passed=true</code>. 모자라면 이유를 적고 통과시키지 않는다.</span><b>왜</b><span>이 층은 부부 평균만 배우므로 개선 폭이 완만할 것이다. 평균 recall 이 0.02 올랐다는 절대값은 잡음과 구분되지 않는다. 대신 "갤러리 대부분에서 나빠지지 않고 더 나아졌는가"를 부호로 묻고, 갤러리가 늘 때 성적이 무너지지 않는지(안정성)까지 본다.</span><b>없으면</b><span>갤러리 하나가 우연히 잘 맞은 실행이 active 가 되어 다른 부부의 추천을 흔든다.</span><b>입출력</b><span><code>gate(galleries, knobs)</code> → <code>{metric, n_galleries, passed, reasons[], rows[], curve[], mean_diff, p_value, worse_ratio, prior_mean, fused_mean}</code></span></div>
+<ol class="steps">
+  <li><b>부호 검정.</b> diff = fused − prior (recall_cluster) 의 갤러리별 부호로 단측 이항검정(개선). 동점 제외. <code>p ≥ 0.05</code> 면 실패. 갤러리 5개부터 유의할 수 있고 6개면 5/6 우연(11%)에도 열리므로 갤러리 수를 고정하지 않고 늘려가며 본다.</li>
+  <li><b>악화 비율.</b> diff &lt; 0 인 갤러리 비율이 <code>0.30</code> 을 넘으면 실패. 평균이 좋아도 셋 중 하나가 나빠지면 안 붙인다.</li>
+  <li><b>안정성.</b> 최근 3회 갤러리 추가에서(접두 크기 n−3..n 별 LOGO) 평균 차이가 <code>0.05</code> 넘게 줄면 실패. 갤러리 하나가 바꾸는 recall 폭이 1/m 이라 허용치를 0 으로 두면 잡음에 걸린다. 갤러리 5개 미만이면 "안정성 판단 불가".</li>
+</ol>
+<div class="states">
+  <span class="st">n &lt; 2</span><span class="ar">측정 불가 →</span>
+  <span class="st">2 ≤ n &lt; 5</span><span class="ar">홀드아웃 줄은 쌓이지만 안정성 판단 불가 →</span>
+  <span class="st on">n ≥ 5</span><span class="ar">세 조건 판정 → passed 면</span>
+  <span class="st on">active</span>
+</div>
+
+<h2 id="measured">실측 — 갤러리 8 (dataset2 7,189장) + golden 30 (A컷 20 · B컷 10)</h2>
+<p class="small">2026-09-07 로컬 sanity. 라벨 갤러리가 하나라 in-sample 이며 홀드아웃은 "측정 불가". 성능이 아니라 파이프라인 확인이다.</p>
+<div class="tablewrap"><table>
+<tr><th>점수식</th><th>recall@90 strict</th><th>recall@90 cluster</th><th>AUC</th></tr>
+<tr><td>prior 단독</td><td>0.000</td><td><strong>0.500</strong></td><td>0.721</td></tr>
+<tr><td>pref 단독 (λ=1)</td><td>0.333</td><td><strong>1.000</strong></td><td>0.999</td></tr>
+<tr><td>융합 λ(n=1)=0.167</td><td>0.033</td><td>0.567</td><td>0.795</td></tr>
+</table></div>
+<ul>
+  <li><strong>sanity 통과.</strong> 30장의 클러스터가 전부 상위 90 안(최저 57위). 1,547차원이 30장을 외우므로 당연하고, 성능이 아니다.</li>
+  <li><strong>prior 의 0.5 가 기준선.</strong> 지금 추천은 부부가 고른 장면의 절반을 후보 90 안에 못 넣는다. 이 층이 메우려는 간격이 이것이다.</li>
+  <li><strong>strict 가 낮은 것은 정상.</strong> 형제 컷 중 어느 장인지는 이 특징으로 못 가른다.</li>
+  <li><strong>학습 0.06초.</strong> 시간은 DB 읽기가 대부분. RDS 의 실제 <code>photo_selection_items</code> 는 0건이라 골든 xlsx 를 선택으로 넣어 돌렸다.</li>
+</ul>
+<div class="note"><div class="t">golden 데이터</div>AI repo <code>preference/golden/파일명_정리.xlsx</code> — 구분(A컷/B컷) · 번호 · 파일명 세 열. A컷 = 전체 보정, B컷 = 배경 보정. 학습에서는 둘 다 양성이다 — 부부가 골랐다는 사실이 라벨이고 보정 종류는 후처리 요청이지 선호가 아니다. <code>golden.py</code> 가 openpyxl 없이 zipfile + 정규식으로 읽어 파일명을 갤러리 8 의 <code>photos.original_file_name</code> 과 맞춘다. 원본 사진은 <code>organic-agent/dataset/dataset2</code>.
+<br><br>wes <code>src/test/resources/eval/README.md</code> 의 정답 데이터는 연사 클러스터링 품질(pairwise precision/recall)용 픽스처라 이것과 다르다.</div>
+
+<h2 id="files">코드 위치 · 테스트</h2>
+<div class="tablewrap"><table>
+<tr><th>역할</th><th>파일</th></tr>
+<tr><td>순위 · 지표</td><td><code>preference/preference/evaluate.py</code> (dedup_order · recalls · recall_at_k · auc · evaluate_gallery)</td></tr>
+<tr><td>홀드아웃 · 게이트</td><td>같은 파일 (logo · paired_diff · sign_test · gate). 손잡이는 <code>config.Knobs</code></td></tr>
+<tr><td>골든 로더</td><td><code>preference/preference/golden.py</code> (load_golden → GoldenItem{cut, file_name})</td></tr>
+<tr><td>테스트</td><td><code>preference/tests/</code> — 평가·게이트 케이스 포함 11건 (<code>../score/.venv/bin/python -m pytest -q</code>)</td></tr>
+</table></div>
+
+<div class="pager">
+  <a href="train.html">← 3. 학습</a>
+  <a href="serving.html">5. 서비스 연결 (목표) →</a>
+</div>
+</main>
+</body>
+</html>

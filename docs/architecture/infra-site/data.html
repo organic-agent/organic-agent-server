@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>4. 데이터 저장소 — wes 인프라</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">전체 인프라</a><span class="sep">/</span>
+  <span class="here">4. 데이터 저장소</span>
+  <span class="spacer"></span>
+  <a href="request.html">← 3. 공개 요청 경로</a>
+  <a href="ai.html">5. AI 실행기 →</a>
+</nav>
+
+<div class="eyebrow">modules/database · modules/storage ×2 · 수동 DB 계정</div>
+<h1>RDS PostgreSQL 하나, S3 버킷 셋</h1>
+<p class="lede">모든 상태는 <strong>RDS PostgreSQL 16.14 한 대</strong>(db.t4g.micro, Single-AZ)에 있고, 사진 바이트는 <strong>S3 사진 버킷</strong>에 <code>galleries/{galleryId}/…</code> 원본과 <code>previews/</code> 미리보기로 놓입니다. 환경은 키가 아니라 버킷으로 갈리며, 로컬 개발은 같은 모듈로 만든 dev 버킷을 씁니다. DB 계정 넷은 전부 Terraform 밖에서 손으로 만들고 비밀번호는 SSM SecureString에만 있습니다.</p>
+<p class="meta">인프라 main@42b33c6 · 2026-09-09 · <code>modules/database/main.tf</code> · <code>modules/storage/main.tf</code> · 계정·상한은 <code>docs/runbook.md</code></p>
+<nav class="section-links" aria-label="이 페이지 목차"><a href="#arch">아키텍처</a><a href="#rds">RDS</a><a href="#accounts">DB 계정과 커넥션 상한</a><a href="#s3">S3 버킷 셋</a><a href="#keys">키 구조와 접근 권한</a><a href="#files">코드 위치</a></nav>
+
+<h2 id="arch">아키텍처</h2>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1240, height: 570, title: '누가 어떤 계정·권한으로 RDS와 S3 버킷에 닿는가',
+  groups: [
+    { x: 20, y: 40, w: 330, h: 470, label: '읽고 쓰는 주체', color: '#398B46', tint: '#EFF8EE' },
+    { x: 470, y: 40, w: 300, h: 290, label: 'DB subnet · RDS', color: '#2A7F9E', tint: '#E9F3F6' },
+    { x: 860, y: 40, w: 360, h: 470, label: 'S3 · 리전 서비스', color: '#5F6B75', tint: '#EEF1F3' },
+  ],
+  nodes: [
+    { id: 'APP', lane: 'wes', x: 40, y: 80, w: 290, kicker: 'wes-app', title: 'wes-api', lines: ['wes_admin(40) · Flyway owner', 'S3 전체 Get/Put/Delete · List'] },
+    { id: 'ADM', lane: 'wes', x: 40, y: 185, w: 290, kicker: 'wes-admin', title: 'wes-admin-api', lines: ['wes_admin_api · Flyway OFF', 'S3 Get/Put/Delete'] },
+    { id: 'EMB', lane: 'lambda', x: 40, y: 290, w: 290, kicker: 'Lambda', title: 'embedder', lines: ['embedder(32)', '원본 GET · previews/ PUT만'] },
+    { id: 'SCO', lane: 'gpu', x: 40, y: 395, w: 290, kicker: 'Lambda score · categorize · GPU 워커', title: 'photoselect 계정', lines: ['photoselect(24) · verify-full', 'previews/ GET만'] },
+    { id: 'BR', lane: 'browser', shape: 'actor', x: 560, y: 400, w: 120, title: '브라우저' },
+    { id: 'RDS', lane: 'db', shape: 'db', x: 500, y: 80, w: 240, h: 190, title: ['RDS wes-db', 'PostgreSQL 16.14'], lines: ['db.t4g.micro · 20GB gp3 · 암호화', 'Single-AZ · 백업 0일', 'max_connections 79', 'pgvector · Flyway 소유 스키마'] },
+    { id: 'S3', lane: 's3', shape: 'db', x: 880, y: 80, w: 320, h: 150, title: 'wes-photos-<account>', lines: ['galleries/{galleryId}/{uuid}.jpg 원본', 'previews/galleries/… 1024px', '비공개 · SSE-S3 · CORS PUT/GET/HEAD'] },
+    { id: 'S3D', lane: 's3', shape: 'db', x: 880, y: 270, w: 150, title: 'wes-dev-photos-*', lines: ['로컬 개발', 'localhost CORS'] },
+    { id: 'S3F', lane: 's3', shape: 'db', x: 1050, y: 270, w: 150, title: 'test 아티팩트', lines: ['releases/ 30일', '테스트 프론트'] },
+    { id: 'ST', lane: 's3', shape: 'db', x: 880, y: 410, w: 320, title: 'wes-tf-state-<account>', lines: ['app/ · dns/ 키 · 네이티브 락 · 코드 밖'] },
+  ],
+  edges: [
+    { from: 'APP', to: 'RDS', fromAt: .4, toSide: 'l', toAt: .25, label: ':5432', color: 'wes' },
+    { from: 'ADM', to: 'RDS', fromAt: .4, toSide: 'l', toAt: .5, color: 'wes' },
+    { from: 'EMB', to: 'RDS', fromAt: .4, toSide: 'l', toAt: .7, color: 'lambda' },
+    { from: 'SCO', to: 'RDS', fromAt: .4, toSide: 'l', toAt: .88, label: '점수 UPSERT', labelAt: 0, color: 'gpu' },
+    { from: 'APP', to: 'S3', fromSide: 't', toSide: 'l', toAt: .3, via: [[185, 22], [800, 22], [800, 125]], label: '서명 URL 발급 · HeadObject · 삭제', labelAt: 1, color: 'wes' },
+    { from: 'EMB', to: 'S3', fromAt: .8, toSide: 'b', toAt: .3, via: [[430, 362], [430, 535], [850, 535], [850, 250], [976, 250]], label: '게이트웨이 EP', labelAt: 2, color: 'lambda' },
+    { from: 'BR', to: 'S3', fromSide: 'r', toSide: 'l', toAt: .7, via: [[820, 435], [820, 185]], label: '서명 PUT / GET', labelAt: 1, labelDx: -40, color: 'browser' },
+  ],
+});
+</script>
+
+<h2 id="rds">RDS</h2>
+<div class="tablewrap"><table>
+<tr><th>항목</th><th>값</th><th>비고</th></tr>
+<tr><td>식별자 · 엔진</td><td><code>wes-db</code> · postgres <strong>16.14</strong> · auto minor upgrade</td><td>pgvector 확장 사용 (로컬·테스트는 <code>pgvector/pgvector:pg16</code>)</td></tr>
+<tr><td>클래스 · 스토리지</td><td>db.t4g.micro · 20 GB gp3 · 암호화</td><td><code>max_connections</code> 79</td></tr>
+<tr><td>DB · 마스터</td><td><code>wes_db</code> · <code>wes_admin</code></td><td>앱이 Hikari + Flyway로 씀</td></tr>
+<tr><td>네트워크</td><td>서브넷 그룹 <code>wes-db</code>(DB 서브넷 2a·2c) · SG <code>wes-rds</code> · <code>publicly_accessible=false</code></td><td>운영 접속은 <code>scripts/db-tunnel.sh</code>(SSM 포트포워딩)</td></tr>
+<tr><td>가용성 · 백업</td><td><strong>multi_az false · backup_retention 0 · deletion_protection false · skip_final_snapshot true</strong></td><td>코드 주석은 "테스트 환경". 실제 고객 사진을 받는 순간 뒤집어야 할 값</td></tr>
+<tr><td>파라미터 그룹</td><td>없음 (기본)</td><td></td></tr>
+<tr><td>IAM DB 인증</td><td>플래그 on · 실제로는 조직 SCP가 <code>rds-db:connect</code>를 막아 비밀번호 인증만 사용</td><td>롤백 절차는 runbook</td></tr>
+<tr><td>비밀번호</td><td><code>/wes/prod/spring.datasource.password</code> 수동 SecureString → <code>ephemeral</code> 읽기 → <code>password_wo</code></td><td>state에 평문 없음. 바꾸려면 <code>db_password_version</code> 올려 apply</td></tr>
+</table></div>
+<p class="small">Terraform이 만드는 SSM 값은 <code>spring.datasource.url</code>(<code>?sslmode=require</code>)과 <code>spring.datasource.username</code> 둘입니다. RDS 서브넷 그룹은 2 AZ가 필수라 DB 서브넷이 두 곳이지만 인스턴스 자체는 한 AZ에만 있습니다.</p>
+
+<h2 id="accounts">DB 계정과 커넥션 상한</h2>
+<p>네 계정 모두 Terraform 밖에서 <code>CREATE USER</code>로 만들고 <code>ALTER ROLE … CONNECTION LIMIT</code>로 상한을 둡니다. 상한의 합이 <code>max_connections</code> 79를 넘지 않게 맞춘 값입니다.</p>
+<div class="tablewrap"><table>
+<tr><th>계정</th><th>쓰는 주체</th><th>상한</th><th>비밀번호 위치</th><th>권한</th></tr>
+<tr><td><code>wes_admin</code></td><td>wes-app (마스터)</td><td>40</td><td><code>/wes/prod/spring.datasource.password</code></td><td>스키마 소유 · Flyway</td></tr>
+<tr><td><code>embedder</code></td><td>embedder Lambda</td><td>32 (= 예약 동시성)</td><td><code>/wes/prod/embedder.db.password</code></td><td>photos 읽기 · photo_analysis UPSERT</td></tr>
+<tr><td><code>photoselect</code></td><td>score · categorize Lambda · GPU 워커</td><td>24 (2026-09-08 실측으로 8 → 24, #59)</td><td><code>/wes/prod/photoselect.db.password</code></td><td>photo_analysis · 배정 행</td></tr>
+<tr><td><code>wes_admin_api</code></td><td>wes-admin-api</td><td>문서에 명시 없음</td><td><code>/wes/admin-api/prod/spring.datasource.password</code></td><td>DDL 없음 · Flyway OFF · ddl-auto validate</td></tr>
+</table></div>
+<div class="note warn"><div class="t">문서 간 불일치</div><code>photoselect</code> 상한이 <code>docs/deploy-order.md</code>에는 8로, <code>docs/runbook.md</code>에는 24로 적혀 있습니다. runbook이 최신입니다.</div>
+
+<h2 id="s3">S3 버킷 셋 (+ state)</h2>
+<div class="tablewrap"><table>
+<tr><th>버킷</th><th>모듈 · prefix</th><th>설정</th><th>누가 쓰나</th></tr>
+<tr><td><code>wes-photos-&lt;account&gt;</code></td><td><code>module.storage</code> · SSM <code>/wes/prod/app.storage.bucket</code></td><td>public access block 4개 on · SSE-S3(AES256) · <strong>버저닝 없음</strong> · 라이프사이클: 미완료 멀티파트 7일 중단만(만료·전환 없음) · <code>force_destroy=true</code> · 버킷 정책 없음</td><td>운영 앱 · 관리자 API · Lambda · GPU · 브라우저(서명 URL)</td></tr>
+<tr><td><code>wes-dev-photos-&lt;account&gt;</code></td><td><code>module.storage_dev</code> · SSM <code>/wes/local/app.storage.bucket</code></td><td>같은 모듈 · <code>app_role_name=null</code>이라 IAM 정책 없음 · CORS <code>localhost:3000</code>, <code>localhost:5173</code></td><td>로컬 wes(local 프로필) · 로컬 Lambda 대역 스크립트</td></tr>
+<tr><td><code>wes-frontend-test-artifacts-&lt;account&gt;</code></td><td>frontend-test 모듈</td><td><code>force_destroy=false</code> · <code>releases/</code> 30일 만료 · 멀티파트 1일 · <code>DenyInsecureTransport</code> 정책</td><td>test-web CD가 PUT · 테스트 프론트 EC2가 GET</td></tr>
+<tr><td><code>wes-tf-state-&lt;account&gt;</code></td><td>코드 밖 · bootstrap</td><td>암호화 · 버저닝 · S3 네이티브 락(<code>use_lockfile</code>) · 키 <code>app/</code> · <code>dns/</code></td><td>tf_plan(읽기) · tf_apply(쓰기) · 로컬 운영자</td></tr>
+</table></div>
+<h3>CORS (사진 버킷)</h3>
+<pre><code>allowed_origins = SSM /wes/prod/cors.allowed-origins (콤마 목록) ∪ https://admin.easyselect.kr
+allowed_methods = PUT · GET · HEAD        # POST · DELETE 없음
+allowed_headers = *   expose_headers = ETag   max_age = 3000
+# 오리진 검증 ^https?://[^/*]+$ — 와일드카드·경로·끝 슬래시 금지</code></pre>
+
+<h2 id="keys">키 구조와 접근 권한</h2>
+<div class="datastrip">
+  <div class="cell"><b>galleries/{galleryId}/{uuid}.jpg</b>원본. 브라우저가 서명 PUT · 조립은 <code>PhotoStorage.galleryPrefix</code></div>
+  <div class="cell"><b>previews/galleries/{galleryId}/{uuid}.jpg</b>embedder가 만든 1024px 미리보기. score·categorize·GPU·wes(AI 호출용 몇 장)가 GET</div>
+  <div class="cell"><b>환경 분리</b>키가 아니라 버킷으로. prod = 운영 버킷, local = dev 버킷</div>
+</div>
+<div class="tablewrap"><table>
+<tr><th>주체</th><th>S3 권한</th><th>어디서</th></tr>
+<tr><td>wes-app 롤</td><td><code>Get/Put/DeleteObject</code> 버킷 전체 · <code>ListBucket</code></td><td><code>modules/storage</code> <code>photo-bucket</code></td></tr>
+<tr><td>wes-admin 롤</td><td><code>Get/Put/DeleteObject</code> 버킷 전체</td><td><code>modules/admin-access</code> <code>admin-api-runtime</code></td></tr>
+<tr><td>embedder 롤</td><td>GET 전체 · PUT <code>previews/*</code>만</td><td><code>modules/analysis</code></td></tr>
+<tr><td>score · categorize 롤 · GPU 워커 롤</td><td>GET <code>previews/*</code>만</td><td><code>modules/analysis</code> · <code>modules/score-gpu</code></td></tr>
+<tr><td>브라우저</td><td>서명 URL로 PUT(서명 헤더: Content-Type · Length · crc32c) / GET</td><td>wes가 발급 · <a href="../pipeline-v2-site/upload.html">업로드 상세</a></td></tr>
+</table></div>
+
+<h2 id="files">코드 위치</h2>
+<div class="tablewrap"><table>
+<tr><th>역할</th><th>파일 (organic-agent-infra)</th></tr>
+<tr><td>RDS · 서브넷 그룹 · 비밀번호 ephemeral · SSM url/username</td><td><code>modules/database/main.tf</code></td></tr>
+<tr><td>사진 버킷 · CORS · 라이프사이클 · 앱 롤 정책 · SSM bucket</td><td><code>modules/storage/main.tf</code> (운영·dev 두 번 인스턴스화, <code>main.tf:56-79</code>)</td></tr>
+<tr><td>테스트 아티팩트 버킷</td><td><code>modules/frontend-test/main.tf</code></td></tr>
+<tr><td>state 백엔드</td><td><code>backend.tf</code> · <code>dns/backend.tf</code></td></tr>
+<tr><td>계정 생성 · 상한 · 비밀번호 주입</td><td><code>docs/runbook.md</code>(DB 계정·Lambda DB_PASSWORD 절) · <code>docs/deploy-order.md</code> [2]·[7]</td></tr>
+<tr><td>서버 쪽</td><td>wes <code>.claude/rules/migration.md</code>(컬럼 소유·TRUNCATE 목록) · <code>scripts/db-tunnel.sh</code> · <code>scripts/reset-test-data.sh</code></td></tr>
+</table></div>
+
+<div class="pager">
+  <a href="request.html">← 3. 공개 요청 경로</a>
+  <a href="ai.html">5. AI 실행기 →</a>
+</div>
+</main>
+</body>
+</html>

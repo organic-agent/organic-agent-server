@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>6. 카테고리 폴더 물질화 — 파이프라인 v2</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">전체 아키텍처</a><span class="sep">/</span>
+  <span class="here">6. 카테고리 폴더 물질화</span>
+  <span class="spacer"></span>
+  <a href="categorize.html">← 5. categorize 호출</a>
+</nav>
+
+<div class="eyebrow">wes · category 도메인</div>
+<h1>분류 결과로 사진 폴더 만들기</h1>
+<p class="lede">wes는 AI가 정한 그룹 이름과 사진별 분석 결과를 읽어 <strong>상위 폴더·하위 폴더·사진 배정</strong>을 하나의 트랜잭션으로 저장합니다. 분석 완료 시 자동 실행되며, 수동 API로도 실행할 수 있습니다. 이미 배정된 사진은 유지합니다.</p>
+<p class="meta">코드 기준 main@1503a9a · 2026-09-09 · 진입점 이름은 <code>AiCategoryFolderService.materializeFromAnalysis</code>(#170 에서 개명)</p>
+<nav class="section-links" aria-label="이 페이지 목차"><a href="#when">언제 실행되나</a><a href="#lineage">값의 행선지</a><a href="#algo">알고리즘</a><a href="#data">읽는 것 · 쓰는 것</a><a href="#entities">도메인 엔티티</a><a href="#rerun">재물질화와 멱등성</a><a href="#notify">알림</a></nav>
+
+<h2 id="when">언제 실행되나 — 세 진입점</h2>
+<div class="role"><b>한다</b><span>잡이 CATEGORIZING 이고 배정 행과 백분위가 다 찼을 때 스윕이 자동으로, 또는 작가가 수동 API 로 <code>materializeFromAnalysis</code> 를 부른다. 갤러리 행 락 하나로 직렬화된다.</span><b>왜</b><span>자동 경로가 기본이라 사용자는 아무것도 누르지 않아도 폴더를 받는다. 수동 경로는 실패 뒤 재시도와 관리자 도구용이다. 락은 같은 갤러리의 물질화가 겹쳐 폴더 세트가 둘 생기는 것을 막는 가장 단순한 수단이다.</span><b>없으면</b><span>폴더가 버튼 한 번에만 생기거나, 스윕과 수동이 겹쳐 같은 잡의 폴더가 두 벌 생긴다.</span></div>
+<p class="small">실선은 호출·저장, 점선은 조회·상태 확인입니다. 박스를 누르면 해당 단계의 설명으로 이동합니다.</p>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1040, height: 640,
+  groups: [{ x: 285, y: 40, w: 300, h: 570, color: '#C13E70', tint: '#FDECF3', label: 'wes · category 도메인' }],
+  nodes: [
+    { id: 'OR', lane: 'wes', x: 20, y: 60, w: 210, kicker: '자동 · 스윕', technicalTitle: 'AnalysisOrchestrator', title: '분석 흐름 조율',
+      lines: ['CATEGORIZING ∧ 배정 행 있음', '∧ categorized == expected'], href: 'categorize.html#done' },
+    { id: 'API', lane: 'wes', x: 20, y: 220, w: 210, kicker: '수동', technicalTitle: 'POST /concept-folders/ai', title: '수동 폴더 생성 요청', lines: ['requireUploader · 201'] },
+    { id: 'FIN', lane: 'wes', x: 20, y: 500, w: 210, kicker: '잡 닫기 · 별도 트랜잭션', title: 'DONE / FAILED', lines: ['Created → 알림 ANALYSIS_COMPLETED', 'NothingNew → DONE · Failed → FAILED'] },
+    { id: 'SV', lane: 'wes', x: 300, y: 100, w: 270, kicker: 'AiCategoryFolderService', technicalTitle: 'materializeFromAnalysis', title: '분류 결과로 폴더 생성',
+      lines: ['갤러리 PESSIMISTIC_WRITE 락', '같은 잡의 폴더가 있으면 재사용', '이미 배정된 사진 제외 · 사용자 편집 유지'], href: '#algo' },
+    { id: 'PL', lane: 'wes', x: 300, y: 300, w: 270, kicker: 'support', technicalTitle: 'AiCategoryFolderPlanner', title: '폴더 구성 결정',
+      lines: ['(parent_name, concept_name) 로 묶기', '피사체 태그는 과반수로 결정', '검토 필요 표시 · 기타 폴더는 마지막'] },
+    { id: 'BW', lane: 'wes', x: 300, y: 480, w: 270, kicker: 'repository · MANDATORY', technicalTitle: 'CategoryBulkWriter', title: '사진 배정 일괄 저장', lines: ['사진과 폴더의 연결을 일괄 저장'] },
+    { id: 'PGR', lane: 'db', shape: 'db', x: 710, y: 60, w: 300, title: 'Postgres · 읽기',
+      lines: ['ai_concept_assignments (최신 jobId)', 'photo_analysis ⋈ photos (그룹·subjects·cluster)', 'photo_category_assignments → 제외 집합'] },
+    { id: 'PGW', lane: 'db', shape: 'db', x: 710, y: 330, w: 300, title: 'Postgres · 쓰기',
+      lines: ['concept_folders (name = parent_name)', 'detail_folders (name = concept_name, 칩)', 'photo_category_assignments (source = AI)'] },
+  ],
+  edges: [
+    { from: 'OR', to: 'SV', toAt: .3, label: '분류 완료 후\n폴더 생성', color: 'wes' },
+    { from: 'API', to: 'SV', toAt: .8, label: '수동 호출 (멱등)', color: 'wes' },
+    { from: 'SV', to: 'PGR', fromAt: .5, label: 'loadLatest · loadMembers\nfindAllPhotoIdsByGalleryId', dashed: true },
+    { from: 'SV', to: 'PL', fromSide: 'b', toSide: 't', label: 'members · assignments', color: 'wes' },
+    { from: 'PL', to: 'BW', fromSide: 'b', toSide: 't', label: 'plans → detail_folder_id + photoIds', color: 'wes' },
+    { from: 'PL', to: 'PGW', fromAt: .4, toAt: .35, label: 'concept / detail INSERT', color: 'wes' },
+    { from: 'BW', to: 'PGW', toAt: .85, label: '배정 batch INSERT', color: 'wes' },
+    { from: 'PL', to: 'FIN', fromSide: 'l', fromAt: .8, toSide: 't', label: 'Created / NothingNew / Failed\n→ 오케스트레이터가 잡을 닫는다', color: 'wes' },
+  ],
+});
+</script>
+
+<div class="tablewrap"><table>
+<tr><th>진입점</th><th>조건·인가</th><th>코드</th></tr>
+<tr><td><strong>자동</strong> — 잡 DONE 직전</td><td class="wrap">잡 상태 <code>CATEGORIZING</code> ∧ <code>existsByJobId(jobId)</code> ∧ 진행 카운트 <code>categorized == expected</code>. 걸음 트랜잭션(REQUIRES_NEW)이 끝난 <em>뒤</em> 자기 트랜잭션으로 실행, 잡 닫기는 또 다른 트랜잭션</td><td><code>analysis/service/AnalysisOrchestrator.kt</code></td></tr>
+<tr><td><strong>수동</strong> — <code>POST /galleries/{g}/concept-folders/ai</code></td><td class="wrap"><code>requireUploader</code>(워크스페이스 매니저 또는 개인 갤러리 참여자) ∧ 갤러리 쓰기 가능. 201 + <code>List&lt;ConceptFolderResponse&gt;</code></td><td><code>category/controller/CategoryController.kt:54-65</code> · <code>AiCategoryFolderService.kt:49-53</code></td></tr>
+<tr><td>그 밖</td><td class="wrap"><code>POST /folders/from-clusters</code>(<code>FolderOrganizationService</code>, 기존 폴더 없을 때만) · 관리자 워크플로 <code>RUN_CATEGORIZATION</code></td><td><code>category/service/FolderOrganizationService.kt:21-30</code> · <code>admin/.../AdminWorkflowOrchestrator.kt:330-339</code></td></tr>
+</table></div>
+
+<div class="note"><div class="t">잡 닫기 규칙</div>
+물질화 결과 <code>Created</code> → DONE + 알림 1건. <code>NothingNew</code>(새 사진 0장, <code>NO_PHOTOS_TO_ORGANIZE</code>) → DONE, 알림 없음, 로그 <code>folders=0 details=0 assigned=0</code>.
+그 외 <code>BusinessException</code> → FAILED + <code>error</code>. 스윕 둘이 같은 잡을 밟으면 <code>ai_analysis_jobs.version</code> 낙관적 락으로 한쪽만 닫는다.</div>
+
+<h2 id="lineage">categorize 산출물이 폴더가 되기까지 — 값의 행선지</h2>
+<p class="small">왼쪽은 categorize Lambda 가 DB 에 남기는 것, 가운데는 wes 가 그것을 관측·계산하는 코드, 오른쪽은 만들어지는 폴더 테이블입니다. 실선은 호출·저장, 점선은 조회·관측. Lambda 는 폴더를 만들지 않고 wes 스윕이 결과를 보고 만듭니다.</p>
+<div id="d-lineage"></div>
+<script>
+renderDiagram('#d-lineage', {
+  width: 1340, height: 740, title: 'categorize 가 채운 컬럼이 wes 관측·계획을 거쳐 폴더 테이블이 되는 흐름',
+  groups: [
+    { x: 10, y: 40, w: 330, h: 520, color: '#5B6B8C', tint: '#E1E6F0', label: 'categorize Lambda 가 남기는 것 (store.py)' },
+    { x: 500, y: 40, w: 360, h: 640, color: '#C13E70', tint: '#FDECF3', label: 'wes · 관측 → 물질화' },
+    { x: 1020, y: 270, w: 310, h: 450, color: '#398B46', tint: '#EFF8EE', label: '만들어지는 폴더 (category 테이블)' },
+  ],
+  nodes: [
+    { id: 'JE', lane: 'warn', shape: 'db', x: 30, y: 70, w: 290, title: 'ai_analysis_jobs.error · 실패 시만',
+      lines: ['status 는 쓰지 않는다'], href: 'categorize.html#job' },
+    { id: 'PA', lane: 'lambda', shape: 'db', x: 30, y: 180, w: 290, title: 'photo_analysis · UPDATE (write_groups)',
+      lines: ['technical_pct · aesthetic_pct', 'cluster_id · cluster_rank', 'embed_group_id', 'sub_scores +sharpness_pct·rank_reason', 'analyzed_at'], href: 'categorize-lambda.html#data' },
+    { id: 'CA', lane: 'lambda', shape: 'db', x: 30, y: 400, w: 290, title: 'ai_concept_assignments · INSERT (그룹당 1행)',
+      lines: ['job_id · embed_group_id', 'parent_name · concept_name', 'needs_review', 'confidence · assigned_by · clip_parent'], href: 'categorize-lambda.html#data' },
+    { id: 'OB', lane: 'wes', x: 520, y: 70, w: 320, kicker: 'analysis · 5초 스윕', technicalTitle: 'AnalysisOrchestrator.stepCategorizing', title: '결과 관측',
+      lines: ['existsByJobId(jobId)', 'categorized == expected', 'error 있으면 → FAILED', '둘 다 맞으면 → Materialize'], href: 'categorize.html#categorizing' },
+    { id: 'SV', lane: 'wes', x: 520, y: 250, w: 320, kicker: 'category · 갤러리 락 트랜잭션', technicalTitle: 'AiCategoryFolderService.materializeFromAnalysis', title: '폴더 물질화',
+      lines: ['최신 잡의 배정 읽기 · 같은 잡 세트 있으면 재사용', '이미 배정된 사진 제외'], href: '#algo' },
+    { id: 'PL', lane: 'wes', x: 520, y: 400, w: 320, kicker: 'category · support', technicalTitle: 'AiCategoryFolderPlanner.plan', title: '폴더 구성 계산',
+      lines: ['(parent_name, concept_name) 으로 묶기', 'subjects 과반 → 칩', 'needs_review OR → 검토 필요', 'embed_group_id, cluster_id 순 정렬'], href: '#algo' },
+    { id: 'BW', lane: 'wes', x: 520, y: 570, w: 320, kicker: 'category · repository', technicalTitle: 'CategoryBulkWriter.insertAiAssignments', title: '배정 일괄 INSERT',
+      lines: ['JDBC batch · source = AI'] },
+    { id: 'FIN', lane: 'wes', x: 1040, y: 70, w: 270, kicker: 'analysis · 별도 트랜잭션', technicalTitle: 'AnalysisOrchestrator.materialize', title: '잡 닫기 + 알림',
+      lines: ['Created → DONE · ANALYSIS_COMPLETED', 'NothingNew → DONE · Failed → FAILED'], href: 'categorize.html#done' },
+    { id: 'CF', lane: 'db', shape: 'db', x: 1040, y: 300, w: 270, title: 'concept_folders (상위)',
+      lines: ['name = parent_name', 'created_source = AI', 'analysis_job_id = jobId'] },
+    { id: 'DF', lane: 'db', shape: 'db', x: 1040, y: 440, w: 270, title: 'detail_folders (하위)',
+      lines: ['name = concept_name', 'category = subjects 과반', 'needs_review = OR(그룹)'] },
+    { id: 'PCA', lane: 'db', shape: 'db', x: 1040, y: 580, w: 270, title: 'photo_category_assignments',
+      lines: ['PK photo_id → detail_folder_id', 'assigned_source = AI', '순서: embed_group_id, cluster_id'] },
+  ],
+  edges: [
+    { from: 'JE', to: 'OB', fromAt: .5, toAt: .3, label: 'error → FAILED', dashed: true, color: 'warn' },
+    { from: 'PA', to: 'OB', fromAt: .25, toAt: .6, via: [[420, null], [null, 147]], label: 'technical_pct IS NOT NULL\n= categorized', labelAt: 0, labelDx: 45, dashed: true },
+    { from: 'CA', to: 'OB', fromAt: .25, toAt: .88, via: [[450, null], [null, 183]], label: 'existsByJobId', labelAt: 1, dashed: true },
+    { from: 'OB', to: 'SV', fromSide: 'b', toSide: 't', label: 'Materialize(jobId, galleryId)', color: 'wes' },
+    { from: 'SV', to: 'PA', fromSide: 'l', fromAt: .3, toSide: 'r', toAt: .7, label: 'loadMembers', labelAt: 0, dashed: true },
+    { from: 'SV', to: 'CA', fromSide: 'l', fromAt: .8, toSide: 'r', toAt: .5, via: [[400, null], [null, 468]], label: 'loadLatest', labelAt: 1, dashed: true },
+    { from: 'SV', to: 'PL', fromSide: 'b', toSide: 't', label: 'members · assignments', color: 'wes' },
+    { from: 'PL', to: 'BW', fromSide: 'b', toSide: 't', label: 'plans', color: 'wes' },
+    { from: 'PL', to: 'CF', fromAt: .2, toAt: .7, via: [[900, null], [null, 382]], label: 'parent_name → name', labelAt: 2, labelDx: -10, color: 'wes' },
+    { from: 'PL', to: 'DF', fromAt: .6, toAt: .35, label: 'concept_name → name', labelAt: 0, labelDx: 30, color: 'wes' },
+    { from: 'BW', to: 'PCA', fromAt: .5, toAt: .3, label: 'photoIds → batch INSERT', color: 'wes' },
+    { from: 'SV', to: 'FIN', fromAt: .3, toAt: .4, via: [[940, null], [null, 106]], label: 'MaterializeOutcomeDto', labelAt: 1, color: 'wes' },
+  ],
+});
+</script>
+
+<h3>컬럼별 행선지 — categorize 가 채운 값을 wes 의 누가 읽나</h3>
+<div class="tablewrap"><table>
+<tr><th>categorize 가 쓰는 값</th><th>뜻</th><th>wes 에서 읽는 곳</th><th>폴더에서 되는 것</th></tr>
+<tr><td><code>photo_analysis.technical_pct</code> · <code>aesthetic_pct</code></td><td class="wrap">갤러리 안 백분위 0~100. score 의 원점수를 갤러리 기준으로 순위화</td><td class="wrap"><code>GalleryAnalysisProgress.categorized</code>(<code>technical_pct IS NOT NULL</code>) · <code>PhotoAnalysis.isAnalyzed</code> · 추천 점수(<code>RecommendationScoring</code>)</td><td class="wrap"><strong>물질화 조건</strong>(<code>categorized == expected</code>)일 뿐 폴더 필드가 되지는 않는다</td></tr>
+<tr><td><code>photo_analysis.embed_group_id</code></td><td class="wrap">임베딩 계층 클러스터 번호. 컨셉 배정의 단위. −1 은 미배정</td><td class="wrap"><code>AiCategoryFolderPlanner.plan</code> — 사진 ↔ 배정 행을 잇는 키</td><td class="wrap">어느 (상위, 하위) 폴더로 갈지 결정. 세부 폴더 안 1차 정렬 키</td></tr>
+<tr><td><code>photo_analysis.cluster_id</code> · <code>cluster_rank</code></td><td class="wrap">근접 중복(연사) 클러스터와 그 안 순위. 0 이 대표</td><td class="wrap">planner 정렬(<code>cluster_id</code>) · 추천 후보 대표 1장(<code>cluster_rank = 0</code>) · 비교샷</td><td class="wrap">세부 폴더 안 2차 정렬 키. <code>cluster_rank</code> 는 폴더가 읽지 않는다</td></tr>
+<tr><td><code>photo_analysis.sub_scores</code> (+<code>sharpness_pct</code>·<code>rank_reason</code>)</td><td class="wrap">세부 점수 묶음을 통째로 다시 씀</td><td class="wrap">비교샷 판정·추천 이유(<code>PairFactCollector</code>·<code>ReasonMaterial</code>)</td><td class="wrap">폴더와 무관</td></tr>
+<tr><td><code>photo_analysis.analyzed_at</code></td><td class="wrap">categorize 완료 시각</td><td class="wrap">읽지 않음(표시용)</td><td class="wrap">—</td></tr>
+<tr><td><code>ai_concept_assignments.parent_name</code></td><td class="wrap">큰 분류('야외 자연'). 고정 목록 또는 '기타'</td><td class="wrap"><code>AiConceptAssignmentLoader.loadLatest</code> → planner</td><td class="wrap"><strong><code>concept_folders.name</code></strong>(상위 폴더). 배정이 없는 그룹·그룹 null 사진은 "기타"</td></tr>
+<tr><td><code>ai_concept_assignments.concept_name</code></td><td class="wrap">컨셉 이름('해변'). VLM 의 열린 답</td><td class="wrap">같음</td><td class="wrap"><strong><code>detail_folders.name</code></strong>(하위 폴더)</td></tr>
+<tr><td><code>ai_concept_assignments.needs_review</code></td><td class="wrap">CLIP 불일치·낮은 confidence·최근접 거리 초과</td><td class="wrap">planner — 폴더 안 그룹 중 하나라도 true 면 OR</td><td class="wrap"><strong><code>detail_folders.needs_review</code></strong></td></tr>
+<tr><td><code>ai_concept_assignments.job_id</code></td><td class="wrap">어느 잡의 배정인가. (job_id, embed_group_id) 유니크</td><td class="wrap"><code>existsByJobId</code>(관측) · <code>findFirstByGalleryIdOrderByJobIdDesc</code>(최신 잡)</td><td class="wrap"><strong><code>concept_folders.analysis_job_id</code></strong> — 같은 잡의 세트가 있으면 재사용(멱등)</td></tr>
+<tr><td><code>ai_concept_assignments.confidence</code> · <code>assigned_by</code> · <code>clip_parent</code> · <code>proposed_parent</code></td><td class="wrap">배정 근거·출처</td><td class="wrap">엔티티에 매핑만 되고 읽지 않는다</td><td class="wrap">—</td></tr>
+<tr><td><code>ai_analysis_jobs.error</code></td><td class="wrap">categorize 실패 사유. Lambda 가 이 테이블에 쓰는 유일한 컬럼</td><td class="wrap"><code>stepCategorizing</code> 첫 줄</td><td class="wrap">폴더 없이 FAILED</td></tr>
+</table></div>
+<p>score 가 채운 <code>subjects</code>(bride/groom/couple/group)는 categorize 가 건드리지 않지만 폴더에서 쓰인다 — 세부 폴더의 칩(<code>category</code>)은 소속 사진 <code>subjects</code> 의 엄격 과반이다. 컬럼 하나하나의 뜻과 채워지는 시점은 <a href="entities.html#timeline">엔티티 필드 사전</a>.</p>
+
+<h2 id="algo">알고리즘 — createFromAnalysisLocked</h2>
+<div class="role"><b>한다</b><span>최신 잡의 배정 행과 사진→그룹 매핑을 읽어 <strong>parent → ConceptFolder, concept → DetailFolder</strong> 로 폴더를 만들고, 아직 어느 폴더에도 없는 사진만 JDBC batch 로 배정한다. 같은 잡 세트가 있으면 그대로 반환(멱등).</span><b>왜</b><span>배정 행은 "그룹 → 이름"일 뿐 사진과 폴더의 관계가 아니다. 사진별로 그룹을 찾아 폴더에 넣고, 피사체 다수결로 칩을 달고, 리뷰 플래그를 폴더로 올려야 화면이 쓸 수 있다. "이미 배정된 사진 제외"가 사용자가 옮긴 사진을 보호하는 유일한 규칙이고, 멱등 단락은 재실행·중복 스윕을 무해하게 한다.</span><b>없으면</b><span>재분류 때 사용자가 손으로 옮긴 사진이 되돌아가거나, 재실행마다 폴더가 늘어난다.</span><b>입출력</b><span><code>galleryId</code> → <code>concept_folders · detail_folders · photo_category_assignments</code>, 반환 <code>List&lt;ConceptFolderResponse&gt;</code></span></div>
+<ol class="steps">
+  <li><b>갤러리 락.</b> <code>galleryRepository.requireWithLockById</code>(PESSIMISTIC_WRITE). 폴더·배정 테이블에는 락을 걸지 않는다. 같은 갤러리의 물질화는 직렬화된다.</li>
+  <li><b>최신 잡의 배정 읽기.</b> <code>AiConceptAssignmentLoader.loadLatest</code> — jobId가 가장 큰 배정 행들을 <code>LatestAssignmentsDto(jobId, assignments)</code>로 반환한다. 없으면 409 <code>ANALYSIS_NOT_COMPLETE</code>.</li>
+  <li><b>멱등 단락.</b> <code>(gallery_id, analysis_job_id = 최신 잡)</code> 인 <code>concept_folders</code> 가 이미 있으면 새로 만들지 않고 DB 에서 읽어 그대로 반환한다.</li>
+  <li><b>사진 → 그룹 조인.</b> <code>photo_analysis JOIN photos</code>(display_order, id 순)에서 <code>photoId · embedGroupId · subjects · clusterId</code> 네 컬럼만 읽는다(벡터 제외). 그룹이 null 인 미분석 사진도 포함해 "기타"로 보낸다.</li>
+  <li><b>USER 배정 보호.</b> <code>photo_category_assignments</code> 에 이미 있는 사진 전부(AI/USER 구분 없음)를 대상에서 뺀다. 이 한 줄이 재물질화가 사용자가 옮긴 사진을 건드리지 않는 근거다. 남은 사진이 0 이면 <code>NO_PHOTOS_TO_ORGANIZE</code>.</li>
+  <li><b>계획(planner).</b> 사진을 <code>(parent_name ?: "기타", concept_name ?: "기타")</code> 로 묶는다. <strong>용어가 뒤집혀 있다</strong> — AI 테이블의 <code>parent_name</code> 이 wes 의 <strong>ConceptFolder(상위)</strong>, <code>concept_name</code> 이 <strong>DetailFolder(하위)</strong> 이름이다.</li>
+  <li><b>세부폴더 칩 = 피사체 다수결.</b> 폴더 안 사진들의 <code>subjects</code>(bride/groom/couple/group)를 세어 최빈값이 <em>엄격 과반</em>(<code>count × 2 &gt; size</code>)일 때만 <code>DetailFolderCategory</code>(신부·신랑·두 분·단체) 채택. 동률이면 칩 없음.</li>
+  <li><b>needs_review 전파.</b> 폴더 안 사진의 그룹 배정 중 하나라도 <code>needs_review</code> 면 <code>DetailFolder.needsReview = true</code>(OR). <code>confidence</code>·<code>assigned_by</code>·<code>proposed_parent</code>·<code>clip_parent</code> 는 wes 가 읽지 않는다.</li>
+  <li><b>정렬.</b> 세부폴더 안 사진은 <code>embedGroupId, clusterId</code> 순(null 은 뒤로). 세부폴더·컨셉폴더는 "기타"를 맨 뒤로 보내고 사진 수 내림차순. 컨셉 <code>sortOrder</code> 는 기존 컨셉 개수 뒤로 이어붙인다.</li>
+  <li><b>적재.</b> ConceptFolder(<code>createdSource=AI, analysisJobId</code>) → DetailFolder(<code>category, needsReview</code>) → <code>CategoryBulkWriter.insertAiAssignments</code> 가 JDBC batch 로 <code>photo_category_assignments</code>(source=AI, confidence=NULL, assigned_by_user_id=NULL) INSERT. 반환은 DB 재조회 없이 메모리 조립.</li>
+</ol>
+
+<pre><code>createFromAnalysisLocked(galleryId):
+  gallery  = SELECT … FROM galleries WHERE id=? FOR UPDATE
+  latest   = ai_concept_assignments WHERE job_id = max(job_id of gallery)   // 없으면 409 ANALYSIS_NOT_COMPLETE
+  if concept_folders(gallery_id, analysis_job_id=latest.jobId) 있음: return 그대로   // 멱등
+  members  = photo_analysis ⋈ photos (galleryId) → {photoId, embedGroupId, subjects, clusterId}
+  members -= photo_category_assignments.photo_id (gallery)                     // USER 배정 보호
+  if members 비었음: throw 409 NO_PHOTOS_TO_ORGANIZE                           // 자동 경로에선 DONE
+  plans = group members by (parent_name ?: "기타", concept_name ?: "기타")
+          detail.category    = subjects 최빈값, count*2 &gt; size 일 때만
+          detail.needsReview = OR(그룹 배정.needs_review)
+          정렬: "기타" 뒤로 → 사진 수 내림차순
+  base = count(concept_folders of gallery)
+  for (i, plan): INSERT concept_folders(sort_order=base+i, AI, latest.jobId)
+      for (j, d): INSERT detail_folders(j, AI, d.category, d.needsReview)
+                  batch INSERT photo_category_assignments(d.photoIds, source=AI)
+  return 메모리 조립 응답</code></pre>
+
+<h2 id="data">읽는 것 · 쓰는 것</h2>
+<div class="datastrip">
+  <div class="cell"><b>읽기 · ai_concept_assignments</b>job_id · embed_group_id · parent_name · concept_name · needs_review (confidence·assigned_by·clip_parent 는 무시)</div>
+  <div class="cell"><b>읽기 · photo_analysis ⋈ photos</b>photo_id · embed_group_id · subjects · cluster_id (display_order 순)</div>
+  <div class="cell"><b>읽기 · photo_category_assignments</b>gallery 의 배정된 photo_id 전부 → 제외 집합</div>
+  <div class="cell"><b>쓰기 · concept_folders</b>name(=parent_name) · sort_order · created_source=AI · analysis_job_id</div>
+  <div class="cell"><b>쓰기 · detail_folders</b>name(=concept_name) · sort_order · category(칩) · needs_review</div>
+  <div class="cell"><b>쓰기 · photo_category_assignments</b>PK photo_id(사진은 갤러리 전체에서 한 폴더) · detail_folder_id · assigned_source=AI · confidence=NULL</div>
+</div>
+
+<h2 id="entities">도메인 엔티티</h2>
+<div class="tablewrap"><table>
+<tr><th>엔티티</th><th>주요 필드</th><th>코드</th></tr>
+<tr><td><code>ConceptFolder</code>(상위)</td><td class="wrap">galleryId · name(100) · sortOrder · createdSource(AI|USER) · <code>analysisJobId: Long?</code>(사용자 생성은 null, FK → ai_analysis_jobs ON DELETE SET NULL) · deletedAt(<code>@SQLRestriction</code>)</td><td><code>category/domain/ConceptFolder.kt</code></td></tr>
+<tr><td><code>DetailFolder</code>(하위)</td><td class="wrap">conceptFolderId · name · sortOrder · createdSource · <code>category: DetailFolderCategory?</code>(칩) · <code>needsReview</code></td><td><code>category/domain/DetailFolder.kt</code></td></tr>
+<tr><td><code>DetailFolderCategory</code></td><td class="wrap">BRIDE 신부 · GROOM 신랑 · COUPLE 두 분 · GROUP 단체. <code>fromSubjects</code> 는 소문자 <code>bride/groom/couple/group</code> 만 매핑</td><td><code>category/domain/DetailFolderCategory.kt:4-18</code></td></tr>
+<tr><td><code>PhotoCategoryAssignment</code></td><td class="wrap"><strong>photoId 가 PK</strong> · detailFolderId · assignedSource · assignedByUserId · confidence(항상 NULL) · assignedAt. <code>moveTo</code> 가 USER 로 덮어쓴다</td><td><code>category/domain/PhotoCategoryAssignment.kt</code></td></tr>
+</table></div>
+
+<h2 id="rerun">재물질화와 멱등성</h2>
+<ul>
+  <li><strong>같은 잡 재실행</strong> — 완전 멱등. 이미 있는 세트를 읽어 돌려준다(테스트 <code>AiCategoryFolderServiceTest</code>: created == reread == materialized).</li>
+  <li><strong>새 잡으로 재실행</strong> — 기존 폴더를 재사용하지 않고 새 <code>analysis_job_id</code> 로 폴더 세트를 또 만든다. 이름 유니크 제약·병합 로직은 없다. 단, 사진은 "아직 어느 폴더에도 없는 것"만 담으므로 대부분 비고, 0장이면 아무것도 만들지 않는다.</li>
+  <li><strong>사용자 편집 보존</strong> — USER 가 옮긴 사진·만든 폴더는 건드리지 않는다. 사용자가 사진을 미분류로 빼면(배정 행 삭제) 그 사진은 다음 물질화 대상이 된다.</li>
+  <li><strong>동시 실행</strong> — 갤러리 락으로 직렬화, 두 번째는 이미 만들어진 세트를 보고 단락.</li>
+</ul>
+
+<h2 id="notify">알림</h2>
+<p><code>AnalysisOrchestrator</code> 가 잡을 DONE 으로 닫는 트랜잭션 안에서, 결과가 <code>MaterializeOutcomeDto.Created</code>일 때만 <code>AnalysisCompletionNotifier.notifyFoldersCreated</code> 를 부른다.
+수신자는 워크스페이스 구성원 + <code>gallery_members</code> 전원(distinct), 유형 <code>ANALYSIS_COMPLETED</code>, 제목 "AI 분석이 완료되었습니다", 본문 "AI 폴더가 만들어졌습니다. 폴더를 확인해 주세요." 수동 API·관리자 경로는 알림을 보내지 않는다.</p>
+
+<h2 id="api">조회 API</h2>
+<p><code>GET /galleries/{g}/concept-folders</code> → 갤러리의 모든 컨셉(AI 세트 + USER 폴더 섞어서) <code>sortOrder, id</code> 순. 응답은 <code>ConceptFolderResponse{ id, name, sortOrder, createdSource, analysisJobId, details[{ id, name, category, needsReview, photoIds[] }] }</code>. 사진 메타는 없고 id 배열만 내려간다.</p>
+
+<h2 id="files">코드 위치</h2>
+<div class="tablewrap"><table>
+<tr><th>역할</th><th>파일</th></tr>
+<tr><td>자동 호출·잡 닫기·알림</td><td><code>analysis/service/AnalysisOrchestrator.kt</code> · <code>analysis/support/AnalysisCompletionNotifier.kt</code></td></tr>
+<tr><td>내부 전달 DTO</td><td><code>analysis/dto/LatestAssignmentsDto.kt</code> · <code>analysis/dto/MaterializeOutcomeDto.kt</code> · <code>analysis/dto/OrchestratorActionDto.kt</code></td></tr>
+<tr><td>서비스·알고리즘</td><td><code>category/service/AiCategoryFolderService.kt</code> · <code>category/support/AiCategoryFolderPlanner.kt</code></td></tr>
+<tr><td>배정 읽기</td><td><code>analysis/support/AiConceptAssignmentLoader.kt</code> · <code>photo/repository/PhotoAnalysisRepository.kt:44-52</code>(프로젝션 <code>PhotoAnalysisGrouping</code>)</td></tr>
+<tr><td>벌크 INSERT</td><td><code>category/repository/CategoryBulkWriter.kt</code>(Propagation.MANDATORY, JDBC batch)</td></tr>
+<tr><td>컨트롤러</td><td><code>category/controller/CategoryController.kt</code></td></tr>
+<tr><td>스키마</td><td><code>V1__baseline.sql:1551-1611</code>(concept_folders · detail_folders · photo_category_assignments)</td></tr>
+</table></div>
+
+<div class="note warn"><div class="t">문서 주의</div>
+<code>docs/architecture/category-architecture.md</code> 는 <code>CategorizationService</code>·<code>categorization_jobs</code>·<code>createFromAnalysisAsAdmin</code> 을 전제하는 옛 문서다. V17 에서 그 테이블은 DROP 됐고 진입점은 <code>materializeFromAnalysis</code> 다. <code>FolderFitRule</code>(<code>recommendation/support</code>)은 추천 후보에서 이상치를 빼는 규칙이지 폴더 배정과 무관하다.</div>
+
+<div class="pager">
+  <a href="categorize.html">← 5. 서버 categorize 호출</a>
+  <a href="index.html">전체 아키텍처로 ↑</a>
+</div>
+</main>
+</body>
+</html>
