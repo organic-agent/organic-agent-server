@@ -4,7 +4,7 @@ import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.dto.PendingPhotoDto
 import com.soma.wes.photo.exception.PhotoException
 import com.soma.wes.photo.repository.PhotoPipelineRepository
-import com.soma.wes.photo.service.PhotoStorage
+import com.soma.wes.photo.service.port.PhotoStorage
 import java.time.Clock
 import java.time.ZonedDateTime
 import org.slf4j.LoggerFactory

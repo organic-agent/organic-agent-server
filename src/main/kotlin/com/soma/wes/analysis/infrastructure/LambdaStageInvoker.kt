@@ -1,10 +1,10 @@
 package com.soma.wes.analysis.infrastructure
 
 import com.soma.wes.analysis.config.AnalysisProperties
-import com.soma.wes.analysis.dto.StageCall
+import com.soma.wes.analysis.dto.StageCallDto
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
-import com.soma.wes.analysis.service.StageInvoker
+import com.soma.wes.analysis.service.port.StageInvoker
 import kotlin.reflect.KClass
 import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Profile
@@ -31,9 +31,9 @@ class LambdaStageInvoker(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    override fun isAvailable(call: KClass<out StageCall>): Boolean = properties.functionNameOf(call).isNotBlank()
+    override fun isAvailable(call: KClass<out StageCallDto>): Boolean = properties.functionNameOf(call).isNotBlank()
 
-    override fun invoke(call: StageCall) {
+    override fun invoke(call: StageCallDto) {
         val functionName = properties.functionNameOf(call::class)
         val payload = payloadOf(call)
 
@@ -63,16 +63,16 @@ class LambdaStageInvoker(
         private const val ACCEPTED = 202
 
         /** 페이로드를 문자열로 조립해도 안전한 이유: 전부 Long이라 사용자 문자열이 끼어들 자리가 없다. */
-        fun payloadOf(call: StageCall): String = when (call) {
-            is StageCall.Embed -> """{"galleryId":${call.galleryId},"photoIds":${call.photoIds.joinToString(",", "[", "]")}}"""
-            is StageCall.Score -> """{"galleryId":${call.galleryId},"photoIds":${call.photoIds.joinToString(",", "[", "]")}}"""
-            is StageCall.Categorize -> """{"galleryId":${call.galleryId},"jobId":${call.jobId}}"""
+        fun payloadOf(call: StageCallDto): String = when (call) {
+            is StageCallDto.Embed -> """{"galleryId":${call.galleryId},"photoIds":${call.photoIds.joinToString(",", "[", "]")}}"""
+            is StageCallDto.Score -> """{"galleryId":${call.galleryId},"photoIds":${call.photoIds.joinToString(",", "[", "]")}}"""
+            is StageCallDto.Categorize -> """{"galleryId":${call.galleryId},"jobId":${call.jobId}}"""
         }
 
-        private fun describe(call: StageCall): String = when (call) {
-            is StageCall.Embed -> "embed gallery=${call.galleryId} photos=${call.photoIds.size}"
-            is StageCall.Score -> "score gallery=${call.galleryId} photos=${call.photoIds.size}"
-            is StageCall.Categorize -> "categorize gallery=${call.galleryId} job=${call.jobId}"
+        private fun describe(call: StageCallDto): String = when (call) {
+            is StageCallDto.Embed -> "embed gallery=${call.galleryId} photos=${call.photoIds.size}"
+            is StageCallDto.Score -> "score gallery=${call.galleryId} photos=${call.photoIds.size}"
+            is StageCallDto.Categorize -> "categorize gallery=${call.galleryId} job=${call.jobId}"
         }
     }
 }

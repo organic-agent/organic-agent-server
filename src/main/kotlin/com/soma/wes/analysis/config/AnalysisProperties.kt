@@ -1,6 +1,6 @@
 package com.soma.wes.analysis.config
 
-import com.soma.wes.analysis.dto.StageCall
+import com.soma.wes.analysis.dto.StageCallDto
 import java.time.Duration
 import kotlin.reflect.KClass
 import org.springframework.boot.context.properties.ConfigurationProperties
@@ -26,6 +26,8 @@ data class AnalysisProperties(
     val localScriptDir: String = "",
     /** 임베더 EVENT 하나에 담는 사진 수. Lambda 15분 안에 넉넉히 끝나는 크기다. */
     val embedBatchSize: Int = 50,
+    /** score Lambda 폴백 EVENT 하나에 담는 사진 수. GPU 워커가 못 낼 때만 쓰인다. */
+    val scoreBatchSize: Int = 50,
     /** 동시에 떠 있는 임베더 배치 수 상한. 인프라의 embedder 예약 동시성이 이 값 이상이어야 한다. */
     val embedMaxInFlight: Int = 32,
     /** 배정한 뒤 이 시간이 지나도 벡터가 없으면 배정을 되돌려 다시 보낸다. 배치 하나의 실행 시간보다 길어야 한다. */
@@ -66,20 +68,20 @@ data class AnalysisProperties(
     val isLocalConfigured: Boolean
         get() = localScriptDir.isNotBlank()
 
-    fun functionNameOf(call: KClass<out StageCall>): String = when (call) {
-        StageCall.Embed::class -> embedderFunctionName
-        StageCall.Score::class -> scoreFunctionName
-        StageCall.Categorize::class -> categorizeFunctionName
+    fun functionNameOf(call: KClass<out StageCallDto>): String = when (call) {
+        StageCallDto.Embed::class -> embedderFunctionName
+        StageCallDto.Score::class -> scoreFunctionName
+        StageCallDto.Categorize::class -> categorizeFunctionName
         else -> error("모르는 단계 호출: $call")
     }
 
     companion object {
 
         /** 단계 호출 → 로컬 대역 스크립트 이름. 운영 Lambda 함수·AI repo 모듈과 같은 이름이라 셋을 나란히 읽을 수 있다. */
-        fun localFunctionOf(call: KClass<out StageCall>): String = when (call) {
-            StageCall.Embed::class -> "embedder"
-            StageCall.Score::class -> "score"
-            StageCall.Categorize::class -> "categorize"
+        fun localFunctionOf(call: KClass<out StageCallDto>): String = when (call) {
+            StageCallDto.Embed::class -> "embedder"
+            StageCallDto.Score::class -> "score"
+            StageCallDto.Categorize::class -> "categorize"
             else -> error("모르는 단계 호출: $call")
         }
     }

@@ -1,7 +1,7 @@
 package com.soma.wes.analysis.service
 
 import com.soma.wes.analysis.config.AnalysisProperties
-import com.soma.wes.analysis.dto.ScoreWorkerState
+import com.soma.wes.analysis.dto.ScoreWorkerStateDto
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.repository.PhotoPipelineRepository
@@ -26,7 +26,7 @@ import org.springframework.beans.factory.annotation.Autowired
  * 시간은 컨트롤러에 넣는 시계를 앞으로 돌려 재현한다(인메모리 판단이라 컬럼을 돌릴 것이 없다).
  */
 @IntegrationTest
-class GpuControllerTest @Autowired constructor(
+class ScoreWorkerSupervisorTest @Autowired constructor(
     private val photoPipelineRepository: PhotoPipelineRepository,
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
@@ -46,7 +46,7 @@ class GpuControllerTest @Autowired constructor(
         galleryId = galleryFixture.멤버와_열린_갤러리().galleryId
     }
 
-    private fun controller(enabled: Boolean = true) = GpuController(
+    private fun controller(enabled: Boolean = true) = ScoreWorkerSupervisor(
         pool,
         photoPipelineRepository,
         stageInvoker,
@@ -70,7 +70,7 @@ class GpuControllerTest @Autowired constructor(
         fun `점수 없는 사진이 있고 켜진 워커가 없으면 켠다 — 벡터가 오기 전이라도`() {
             // given
             photoFixture.업로드된_사진(galleryId, count = 1)
-            pool.worker("i-1", ScoreWorkerState.STOPPED)
+            pool.worker("i-1", ScoreWorkerStateDto.STOPPED)
             val controller = controller()
 
             // when
@@ -80,7 +80,7 @@ class GpuControllerTest @Autowired constructor(
             // then — 두 번째 걸음은 PENDING 을 보고 다시 켜지 않는다
             assertSoftly { softly ->
                 softly.assertThat(pool.starts).hasSize(1)
-                softly.assertThat(pool.workers.single().state).isEqualTo(ScoreWorkerState.PENDING)
+                softly.assertThat(pool.workers.single().state).isEqualTo(ScoreWorkerStateDto.PENDING)
                 softly.assertThat(stageInvoker.scoreCalls).isEmpty()
             }
         }
@@ -89,7 +89,7 @@ class GpuControllerTest @Autowired constructor(
         fun `일이 없으면 켜지 않는다`() {
             // given — 점수까지 있는 사진뿐
             photoFixture.임베딩된_사진(galleryId, count = 1).forEach { photoFixture.점수_적재(it) }
-            pool.worker("i-1", ScoreWorkerState.STOPPED)
+            pool.worker("i-1", ScoreWorkerStateDto.STOPPED)
 
             // when
             controller().control()
@@ -102,7 +102,7 @@ class GpuControllerTest @Autowired constructor(
         fun `일이 끝났는데 워커가 안 꺼지면 유예와 무진행 시간이 지난 뒤 끈다`() {
             // given — 워커가 방금 점수를 다 냈다
             val photos = photoFixture.임베딩된_사진(galleryId, count = 1)
-            pool.worker("i-1", ScoreWorkerState.RUNNING, launchedAt = ZonedDateTime.now(clock).minusMinutes(10))
+            pool.worker("i-1", ScoreWorkerStateDto.RUNNING, launchedAt = ZonedDateTime.now(clock).minusMinutes(10))
             val controller = controller()
             controller.control()
             photos.forEach { photoFixture.점수_적재(it) }
@@ -115,13 +115,13 @@ class GpuControllerTest @Autowired constructor(
 
             // then
             assertThat(pool.stops).containsExactly("i-1")
-            assertThat(pool.workers.single().state).isEqualTo(ScoreWorkerState.STOPPING)
+            assertThat(pool.workers.single().state).isEqualTo(ScoreWorkerStateDto.STOPPING)
         }
 
         @Test
         fun `켠 지 얼마 안 된 워커는 일이 없어도 끄지 않는다`() {
             // given — 부팅 중(모델 로드)인데 backlog 는 0
-            pool.worker("i-1", ScoreWorkerState.RUNNING, launchedAt = ZonedDateTime.now(clock).minusMinutes(1))
+            pool.worker("i-1", ScoreWorkerStateDto.RUNNING, launchedAt = ZonedDateTime.now(clock).minusMinutes(1))
             val controller = controller()
 
             // when
@@ -137,7 +137,7 @@ class GpuControllerTest @Autowired constructor(
         fun `풀 호출이 실패해도 걸음은 끝나고 다음 걸음에 다시 본다`() {
             // given
             photoFixture.업로드된_사진(galleryId, count = 1)
-            pool.worker("i-1", ScoreWorkerState.STOPPED)
+            pool.worker("i-1", ScoreWorkerStateDto.STOPPED)
             pool.failNext = true
             val controller = controller()
 
@@ -179,7 +179,7 @@ class GpuControllerTest @Autowired constructor(
         fun `GPU 가 켜져 있으면 워커가 오래 아무것도 내지 못할 때만 보낸다`() {
             // given — 워커를 켰지만 점수가 오지 않는다
             val photos = photoFixture.임베딩된_사진(galleryId, count = 2)
-            pool.worker("i-1", ScoreWorkerState.STOPPED)
+            pool.worker("i-1", ScoreWorkerStateDto.STOPPED)
             val controller = controller()
             controller.control()
             assertThat(pool.starts).hasSize(1)
@@ -201,7 +201,7 @@ class GpuControllerTest @Autowired constructor(
         fun `워커가 점수를 내고 있으면 보내지 않는다`() {
             // given
             val photos = photoFixture.임베딩된_사진(galleryId, count = 2)
-            pool.worker("i-1", ScoreWorkerState.RUNNING, launchedAt = ZonedDateTime.now(clock).minusMinutes(30))
+            pool.worker("i-1", ScoreWorkerStateDto.RUNNING, launchedAt = ZonedDateTime.now(clock).minusMinutes(30))
             val controller = controller()
             controller.control()
 

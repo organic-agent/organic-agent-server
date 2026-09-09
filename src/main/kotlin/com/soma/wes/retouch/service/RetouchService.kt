@@ -8,28 +8,25 @@ import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.repository.requireWithLockById
 import com.soma.wes.gallery.support.GalleryAccessPolicy
-import com.soma.wes.photo.config.StorageProperties
-import com.soma.wes.photo.service.PhotoStorage
 import com.soma.wes.notification.domain.UserNotificationScope
 import com.soma.wes.notification.domain.UserNotificationType
 import com.soma.wes.notification.service.UserNotificationPublisher
+import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.repository.PhotoRepository
-import com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest
-import com.soma.wes.retouch.dto.request.MatchRetouchResultsRequest
-import com.soma.wes.retouch.dto.response.MatchRetouchResultsResponse
-import com.soma.wes.retouch.service.RetouchRequestService
-import com.soma.wes.selection.repository.PhotoSelectionRepository
-import com.soma.wes.selection.repository.PhotoSelectionItemRepository
+import com.soma.wes.photo.service.port.PhotoStorage
 import com.soma.wes.retouch.domain.RetouchPhoto
 import com.soma.wes.retouch.domain.RetouchRound
 import com.soma.wes.retouch.domain.RetouchRoundStatus
 import com.soma.wes.retouch.dto.request.AddRetouchPhotosRequest
 import com.soma.wes.retouch.dto.request.CompleteResultsRequest
 import com.soma.wes.retouch.dto.request.IssueResultUploadUrlsRequest
+import com.soma.wes.retouch.dto.request.MatchRetouchResultsRequest
+import com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest
 import com.soma.wes.retouch.dto.request.UpdateRetouchPhotoRequest
 import com.soma.wes.retouch.dto.response.IssueAnnotationUploadUrlResponse
 import com.soma.wes.retouch.dto.response.IssueResultUploadUrlsResponse
 import com.soma.wes.retouch.dto.response.IssuedResultUploadResponse
+import com.soma.wes.retouch.dto.response.MatchRetouchResultsResponse
 import com.soma.wes.retouch.dto.response.RetouchOverviewResponse
 import com.soma.wes.retouch.dto.response.RetouchPhotoResponse
 import com.soma.wes.retouch.dto.response.RetouchRoundDetailResponse
@@ -39,17 +36,20 @@ import com.soma.wes.retouch.exception.RetouchErrorCode
 import com.soma.wes.retouch.exception.RetouchException
 import com.soma.wes.retouch.repository.RetouchPhotoRepository
 import com.soma.wes.retouch.repository.RetouchRoundRepository
+import com.soma.wes.retouch.service.RetouchRequestService
 import com.soma.wes.retouch.support.RetouchPhotoLoader
 import com.soma.wes.retouch.support.RetouchViewAssembler
+import com.soma.wes.selection.repository.PhotoSelectionItemRepository
+import com.soma.wes.selection.repository.PhotoSelectionRepository
 import com.soma.wes.trash.service.ProductChildTrashService
 import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
-import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
-import org.springframework.transaction.support.TransactionTemplate
 import java.time.Clock
 import java.time.ZonedDateTime
 import java.util.UUID
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 
 /**
  * 셀렉 확정 전에 부부가 보정을 요청하는 흐름. 보정사진을 모아 회차 단위로 일괄 제출한다.

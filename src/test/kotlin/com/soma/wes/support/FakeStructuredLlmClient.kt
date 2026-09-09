@@ -1,7 +1,7 @@
 package com.soma.wes.support
 
 import com.soma.wes.recommendation.dto.LlmJsonRequestDto
-import com.soma.wes.recommendation.service.StructuredLlmClient
+import com.soma.wes.recommendation.service.port.StructuredLlmClient
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
 

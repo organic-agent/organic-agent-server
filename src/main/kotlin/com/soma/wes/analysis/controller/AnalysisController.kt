@@ -4,7 +4,6 @@ import com.soma.wes.analysis.controller.docs.AnalysisControllerDocs
 import com.soma.wes.analysis.dto.response.AnalysisJobResponse
 import com.soma.wes.analysis.service.AnalysisService
 import com.soma.wes.auth.domain.LoginUser
-import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.GetMapping
@@ -26,8 +25,7 @@ class AnalysisController(
         @PathVariable galleryId: Long,
     ): ResponseEntity<AnalysisJobResponse> {
         val result = analysisService.request(galleryId, loginUser.id)
-        val status = HttpStatus.ACCEPTED
-        return ResponseEntity.status(status).body(result)
+        return ResponseEntity.accepted().body(result)
     }
 
     @GetMapping

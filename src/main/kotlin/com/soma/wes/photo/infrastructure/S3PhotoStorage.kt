@@ -1,10 +1,14 @@
 package com.soma.wes.photo.infrastructure
 
 import com.soma.wes.photo.config.StorageProperties
+import com.soma.wes.photo.dto.PresignedUploadDto
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
-import com.soma.wes.photo.service.PhotoStorage
-import com.soma.wes.photo.dto.PresignedUploadDto
+import com.soma.wes.photo.service.port.PhotoStorage
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
+import java.time.Duration
+import java.util.UUID
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import software.amazon.awssdk.core.exception.SdkException
@@ -17,10 +21,6 @@ import software.amazon.awssdk.services.s3.model.S3Exception
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest
-import java.time.Duration
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
-import java.util.UUID
 
 
 @Component

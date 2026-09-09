@@ -9,11 +9,11 @@ import com.soma.wes.admin.resource.repository.AdminIdempotencyStore
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
 import com.soma.wes.analysis.domain.AnalysisJob
 import com.soma.wes.analysis.domain.AnalysisStatus
-import com.soma.wes.analysis.dto.StageCall
+import com.soma.wes.analysis.dto.StageCallDto
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
 import com.soma.wes.analysis.repository.AnalysisJobRepository
-import com.soma.wes.analysis.service.StageInvoker
+import com.soma.wes.analysis.service.port.StageInvoker
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -60,7 +60,7 @@ class AdminReprocessService(
         if (gallery.deleted || gallery.version != request.expectedVersion) {
             throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
         }
-        if (!stageInvoker.isAvailable(StageCall.Embed::class)) {
+        if (!stageInvoker.isAvailable(StageCallDto.Embed::class)) {
             throw AnalysisException(AnalysisErrorCode.STAGE_NOT_CONFIGURED)
         }
 

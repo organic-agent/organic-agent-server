@@ -1,9 +1,10 @@
 package com.soma.wes.recommendation.service
 
+import com.soma.wes.recommendation.service.port.AiJobExecutor
+import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.LoggerFactory
 import org.springframework.core.task.TaskRejectedException
 import org.springframework.stereotype.Service
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 잡 id를 실행기에 넘긴다. 같은 잡이 두 경로(요청 직후·스윕)로 들어와도 한 번만 큐에 서게 하는 것이 여기 일이고,

@@ -4,7 +4,7 @@ import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.dto.response.PhotoResponse
 import com.soma.wes.photo.repository.PhotoRatingRepository
-import com.soma.wes.photo.service.PhotoStorage
+import com.soma.wes.photo.service.port.PhotoStorage
 import org.springframework.stereotype.Component
 
 /**

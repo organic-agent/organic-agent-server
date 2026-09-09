@@ -1,4 +1,4 @@
-package com.soma.wes.auth.service.oauth
+package com.soma.wes.auth.service.port
 
 import org.springframework.util.MultiValueMap
 

@@ -7,8 +7,8 @@ import com.soma.wes.admin.resource.dto.CreateAdminResourceRequest
 import com.soma.wes.admin.resource.service.AdminResourceService
 import com.soma.wes.admin.service.AdminAuthService
 import com.soma.wes.admin.support.AdminSessionCookie
-import com.soma.wes.analysis.service.ExactPhotoInvoker
-import com.soma.wes.photo.service.PhotoStorage
+import com.soma.wes.analysis.service.port.ExactPhotoInvoker
+import com.soma.wes.photo.service.port.PhotoStorage
 import com.soma.wes.security.filter.AdminMutationHeaderFilter
 import com.soma.wes.support.IntegrationTest
 import jakarta.servlet.http.Cookie

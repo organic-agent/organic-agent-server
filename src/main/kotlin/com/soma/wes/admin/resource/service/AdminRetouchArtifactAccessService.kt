@@ -10,11 +10,11 @@ import com.soma.wes.admin.resource.dto.AdminRetouchArtifactAccessResponse
 import com.soma.wes.admin.resource.dto.AdminRetouchArtifactType
 import com.soma.wes.admin.resource.repository.AdminRetouchArtifactRepository
 import com.soma.wes.photo.config.StorageProperties
-import com.soma.wes.photo.service.PhotoStorage
-import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
+import com.soma.wes.photo.service.port.PhotoStorage
 import java.time.Clock
 import java.time.ZonedDateTime
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 
 @Service
 class AdminRetouchArtifactAccessService(

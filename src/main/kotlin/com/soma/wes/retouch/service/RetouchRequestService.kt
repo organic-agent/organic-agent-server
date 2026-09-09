@@ -1,8 +1,7 @@
 package com.soma.wes.retouch.service
 
 import com.soma.wes.gallery.domain.Gallery
-import com.soma.wes.trash.service.ProductChildTrashService
-import com.soma.wes.photo.service.PhotoStorage
+import com.soma.wes.photo.service.port.PhotoStorage
 import com.soma.wes.retouch.domain.RetouchPhoto
 import com.soma.wes.retouch.domain.RetouchRound
 import com.soma.wes.retouch.domain.RetouchRoundStatus
@@ -11,10 +10,11 @@ import com.soma.wes.retouch.exception.RetouchErrorCode
 import com.soma.wes.retouch.exception.RetouchException
 import com.soma.wes.retouch.repository.RetouchPhotoRepository
 import com.soma.wes.retouch.repository.RetouchRoundRepository
-import org.springframework.stereotype.Service
-import jakarta.persistence.EntityManager
 import com.soma.wes.retouch.support.RetouchPhotoLoader
+import com.soma.wes.trash.service.ProductChildTrashService
+import jakarta.persistence.EntityManager
 import java.time.ZonedDateTime
+import org.springframework.stereotype.Service
 
 /** 호출자가 잡은 갤러리 잠금 안에서 선택 제출과 보정 요청을 한 트랜잭션으로 기록한다. */
 @Service

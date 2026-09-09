@@ -12,7 +12,7 @@ paths:
 
 - 인가 정책: `gallery/support/GalleryAccessPolicy`, `collab/support/CollabSessionAccess`
 - 응답 조립자: `photo/support/PhotoViewAssembler`, `retouch/support/RetouchViewAssembler`
-- 공용 로더/검증자: `retouch/support/RetouchPhotoLoader`, `recommendation/support/AiConceptAssignmentLoader`
+- 공용 로더/검증자: `retouch/support/RetouchPhotoLoader`, `analysis/support/AiConceptAssignmentLoader`
 - 토큰 생성기·설정 리더: `gallery/support/GalleryInviteTokenGenerator`, `auth/support/OAuthRegistrations`
 
 트랜잭션이 필요하면 support 클래스도 `@Service`를 붙인다 — **애노테이션은 Spring 사정이고,

@@ -3,8 +3,8 @@ package com.soma.wes.analysis.infrastructure
 import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
-import com.soma.wes.analysis.service.ExactPhotoInvoker
-import com.soma.wes.analysis.service.ExactPhotoProcessingRequest
+import com.soma.wes.analysis.dto.ExactPhotoCallDto
+import com.soma.wes.analysis.service.port.ExactPhotoInvoker
 import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Component
@@ -32,9 +32,9 @@ class LambdaExactPhotoInvoker(
     override val isAvailable: Boolean
         get() = properties.isEmbedderConfigured
 
-    override fun invoke(request: ExactPhotoProcessingRequest) {
+    override fun invoke(call: ExactPhotoCallDto) {
         val functionName = properties.embedderFunctionName
-        val payload = SdkBytes.fromByteArray(objectMapper.writeValueAsBytes(request))
+        val payload = SdkBytes.fromByteArray(objectMapper.writeValueAsBytes(call))
         val statusCode = try {
             lambdaClient.invoke(
                 InvokeRequest.builder()
@@ -47,19 +47,19 @@ class LambdaExactPhotoInvoker(
         } catch (e: SdkException) {
             // 계산 실패가 아니라 호출 실패다(권한·스로틀링·함수 없음). 둘을 같은 코드로
             // 돌려주면 "Lambda 로그를 볼 것"과 "IAM을 볼 것"을 구분할 수 없다.
-            log.error("사진 처리 Lambda 호출 실패: jobId={}, function={}", request.jobId, functionName, e)
+            log.error("사진 처리 Lambda 호출 실패: jobId={}, function={}", call.jobId, functionName, e)
             throw AnalysisException(AnalysisErrorCode.STAGE_INVOCATION_FAILED)
         }
         if (statusCode != ACCEPTED) {
-            log.error("사진 처리 Lambda가 비정상 응답을 반환함: jobId={}, function={}, status={}", request.jobId, functionName, statusCode)
+            log.error("사진 처리 Lambda가 비정상 응답을 반환함: jobId={}, function={}, status={}", call.jobId, functionName, statusCode)
             throw AnalysisException(AnalysisErrorCode.STAGE_INVOCATION_FAILED)
         }
         log.info(
             "사진 처리 Lambda 호출: jobId={}, attempt={}, type={}, photoId={}, function={}, status={}",
-            request.jobId,
-            request.attemptCount,
-            request.jobType,
-            request.photoId,
+            call.jobId,
+            call.attemptCount,
+            call.jobType,
+            call.photoId,
             functionName,
             statusCode,
         )

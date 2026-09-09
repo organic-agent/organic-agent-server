@@ -6,7 +6,7 @@ import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
-import com.soma.wes.photo.service.PreviewImageReader
+import com.soma.wes.photo.service.port.PreviewImageReader
 import com.soma.wes.recommendation.config.LlmProperties
 import com.soma.wes.recommendation.domain.AiJobStatus
 import com.soma.wes.recommendation.domain.AiRecommendation
@@ -17,22 +17,23 @@ import com.soma.wes.recommendation.dto.RecommendablePhotoDto
 import com.soma.wes.recommendation.dto.SiblingImageDto
 import com.soma.wes.recommendation.repository.AiRecommendationRepository
 import com.soma.wes.recommendation.repository.AiSelectionJobRepository
+import com.soma.wes.recommendation.service.port.StructuredLlmClient
+import com.soma.wes.recommendation.support.ExactRecommendationQuota
 import com.soma.wes.recommendation.support.FolderFitRule
 import com.soma.wes.recommendation.support.FolderQuota
-import com.soma.wes.recommendation.support.ExactRecommendationQuota
 import com.soma.wes.recommendation.support.MmrSelector
 import com.soma.wes.recommendation.support.ReasonMaterial
 import com.soma.wes.recommendation.support.RecommendationScoring
 import com.soma.wes.selection.repository.PhotoSelectionItemRepository
 import com.soma.wes.selection.repository.PhotoSelectionRepository
-import org.slf4j.LoggerFactory
-import org.springframework.stereotype.Service
-import org.springframework.transaction.support.TransactionTemplate
 import java.time.Clock
 import java.time.Duration
 import java.time.ZonedDateTime
 import kotlin.math.round
 import kotlin.math.sqrt
+import org.slf4j.LoggerFactory
+import org.springframework.stereotype.Service
+import org.springframework.transaction.support.TransactionTemplate
 
 /**
  * 폴더별 추천 한 라운드 — AI repo `recommend/draft.run`의 자리다.

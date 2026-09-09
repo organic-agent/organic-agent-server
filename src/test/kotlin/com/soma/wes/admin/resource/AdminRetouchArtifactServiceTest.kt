@@ -15,7 +15,7 @@ import com.soma.wes.admin.resource.service.AdminResourceService
 import com.soma.wes.admin.resource.service.AdminRetouchArtifactAccessService
 import com.soma.wes.admin.resource.service.AdminWorkflowService
 import com.soma.wes.photo.dto.PresignedUploadDto
-import com.soma.wes.photo.service.PhotoStorage
+import com.soma.wes.photo.service.port.PhotoStorage
 import com.soma.wes.support.IntegrationTest
 import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat

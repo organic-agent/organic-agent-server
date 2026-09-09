@@ -4,7 +4,7 @@ import com.soma.wes.admin.config.AdminAuthProperties
 import com.soma.wes.admin.domain.AdminAccount
 import com.soma.wes.admin.domain.AdminLoginUser
 import com.soma.wes.admin.domain.AdminSession
-import com.soma.wes.admin.dto.AdminLoginResult
+import com.soma.wes.admin.dto.AdminLoginResultDto
 import com.soma.wes.admin.dto.response.AdminSessionResponse
 import com.soma.wes.admin.exception.AdminAuthenticationException
 import com.soma.wes.admin.exception.AdminErrorCode
@@ -12,13 +12,13 @@ import com.soma.wes.admin.repository.AdminAccountRepository
 import com.soma.wes.admin.repository.AdminSessionRepository
 import com.soma.wes.admin.support.AdminSecretGenerator
 import com.soma.wes.admin.support.AdminSessionTokenHasher
+import java.time.Clock
+import java.time.ZonedDateTime
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
 import org.springframework.security.core.Authentication
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import java.time.Clock
-import java.time.ZonedDateTime
 
 @Service
 class AdminSessionService(
@@ -31,7 +31,7 @@ class AdminSessionService(
 ) {
 
     @Transactional
-    fun create(account: AdminAccount): AdminLoginResult {
+    fun create(account: AdminAccount): AdminLoginResultDto {
         val now = ZonedDateTime.now(clock)
         val rawToken = secretGenerator.generate()
         val session = adminSessionRepository.save(
@@ -43,7 +43,7 @@ class AdminSessionService(
             ),
         )
 
-        return AdminLoginResult(
+        return AdminLoginResultDto(
             rawSessionToken = rawToken,
             response = AdminSessionResponse.of(account, session.absoluteExpiresAt),
         )

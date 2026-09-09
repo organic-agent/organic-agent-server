@@ -3,6 +3,7 @@ package com.soma.wes.recommendation.service
 import com.soma.wes.recommendation.config.LlmProperties
 import com.soma.wes.recommendation.dto.LlmJsonRequestDto
 import com.soma.wes.recommendation.dto.ReasonInputDto
+import com.soma.wes.recommendation.service.port.StructuredLlmClient
 import com.soma.wes.recommendation.support.ReasonPrompt
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service

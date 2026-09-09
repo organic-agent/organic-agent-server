@@ -1,7 +1,7 @@
 package com.soma.wes.security
 
 import com.soma.wes.auth.domain.OAuthProvider
-import com.soma.wes.auth.dto.OAuthUserInfo
+import com.soma.wes.auth.dto.OAuthUserInfoDto
 import com.soma.wes.auth.service.AuthTokenProvider
 import com.soma.wes.auth.service.oauth.OAuthLoginProcessor
 import com.soma.wes.gallery.domain.Gallery
@@ -22,13 +22,13 @@ import com.soma.wes.workspace.domain.WorkspaceMember
 import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository
+import java.time.ZonedDateTime
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
-import java.time.ZonedDateTime
 
 @IntegrationTest
 class ProfileAndInviteContractTest @Autowired constructor(
@@ -48,7 +48,7 @@ class ProfileAndInviteContractTest @Autowired constructor(
     @Test
     fun `가입과 재로그인 사진이 저장되고 내 정보 API에 반영된다`() {
         val providerId = "profile-${TestSequence.next()}"
-        val first = OAuthUserInfo(OAuthProvider.GOOGLE, providerId, "내 별명", "user@example.com",
+        val first = OAuthUserInfoDto(OAuthProvider.GOOGLE, providerId, "내 별명", "user@example.com",
             "https://images.example.com/first.jpg")
         login.process(first)
         val user = userRepository.findByProviderAndProviderId(OAuthProvider.GOOGLE, providerId)!!

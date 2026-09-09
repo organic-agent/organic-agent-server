@@ -1,7 +1,7 @@
 package com.soma.wes.auth.service.oauth
 
-import com.soma.wes.auth.dto.OAuthLoginResult
-import com.soma.wes.auth.dto.OAuthUserInfo
+import com.soma.wes.auth.dto.OAuthLoginResultDto
+import com.soma.wes.auth.dto.OAuthUserInfoDto
 import com.soma.wes.auth.dto.response.LoginResponse
 import com.soma.wes.auth.service.AuthTokenProvider
 import com.soma.wes.user.domain.User
@@ -22,20 +22,20 @@ class OAuthLoginProcessor(
     private val log = LoggerFactory.getLogger(javaClass)
 
     @Transactional
-    fun process(userInfo: OAuthUserInfo): OAuthLoginResult {
+    fun process(userInfo: OAuthUserInfoDto): OAuthLoginResultDto {
         val user = findOrCreateUser(userInfo)
         workspaceService.ensurePersonalWorkspace(user)
 
         val accessToken = authTokenProvider.generateAccessToken(user)
         val refreshToken = authTokenProvider.generateRefreshToken(user)
 
-        return OAuthLoginResult(
+        return OAuthLoginResultDto(
             userId = user.requiredId,
             response = LoginResponse.of(accessToken, refreshToken),
         )
     }
 
-    private fun findOrCreateUser(userInfo: OAuthUserInfo): User {
+    private fun findOrCreateUser(userInfo: OAuthUserInfoDto): User {
         val user = userRepository.findByProviderAndProviderId(userInfo.provider, userInfo.providerId)
 
         if (user != null) {

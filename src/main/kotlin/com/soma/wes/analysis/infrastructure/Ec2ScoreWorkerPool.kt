@@ -2,10 +2,10 @@ package com.soma.wes.analysis.infrastructure
 
 import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.dto.ScoreWorkerDto
-import com.soma.wes.analysis.dto.ScoreWorkerState
+import com.soma.wes.analysis.dto.ScoreWorkerStateDto
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
-import com.soma.wes.analysis.service.ScoreWorkerPool
+import com.soma.wes.analysis.service.port.ScoreWorkerPool
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import org.slf4j.LoggerFactory
@@ -82,11 +82,11 @@ class Ec2ScoreWorkerPool(
         /** EC2 DescribeInstances 의 태그 필터 이름 — `tag:<키>`. 인프라가 워커에 `Name` 태그를 붙인다. */
         const val NAME_TAG_FILTER = "tag:Name"
 
-        fun stateOf(name: InstanceStateName?): ScoreWorkerState = when (name) {
-            InstanceStateName.PENDING -> ScoreWorkerState.PENDING
-            InstanceStateName.RUNNING -> ScoreWorkerState.RUNNING
-            InstanceStateName.STOPPING -> ScoreWorkerState.STOPPING
-            else -> ScoreWorkerState.STOPPED
+        fun stateOf(name: InstanceStateName?): ScoreWorkerStateDto = when (name) {
+            InstanceStateName.PENDING -> ScoreWorkerStateDto.PENDING
+            InstanceStateName.RUNNING -> ScoreWorkerStateDto.RUNNING
+            InstanceStateName.STOPPING -> ScoreWorkerStateDto.STOPPING
+            else -> ScoreWorkerStateDto.STOPPED
         }
     }
 }

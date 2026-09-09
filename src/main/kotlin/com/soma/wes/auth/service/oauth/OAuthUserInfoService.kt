@@ -1,9 +1,10 @@
 package com.soma.wes.auth.service.oauth
 
 import com.soma.wes.auth.domain.OAuthProvider
-import com.soma.wes.auth.dto.OAuthUserInfo
+import com.soma.wes.auth.dto.OAuthUserInfoDto
 import com.soma.wes.auth.exception.AuthErrorCode
 import com.soma.wes.auth.exception.OAuthException
+import com.soma.wes.auth.service.port.OAuthClient
 import com.soma.wes.auth.strategy.OAuthUserInfoExtractorFactory
 import com.soma.wes.auth.support.OAuthRegistration
 import com.soma.wes.auth.support.OAuthRegistrations
@@ -27,7 +28,7 @@ class OAuthUserInfoService(
         private val PERCENT_ESCAPE = Regex("%[0-9A-Fa-f]{2}")
     }
 
-    fun getUserInfo(provider: OAuthProvider, authCode: String, requestOrigin: String? = null): OAuthUserInfo {
+    fun getUserInfo(provider: OAuthProvider, authCode: String, requestOrigin: String? = null): OAuthUserInfoDto {
         if (authCode.isBlank()) {
             throw OAuthException(AuthErrorCode.AUTH_CODE_INVALID)
         }

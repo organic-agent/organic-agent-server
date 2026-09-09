@@ -3,7 +3,7 @@ package com.soma.wes.trash
 import com.soma.wes.photo.dto.PresignedUploadDto
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
-import com.soma.wes.photo.service.PhotoStorage
+import com.soma.wes.photo.service.port.PhotoStorage
 import java.time.Instant
 import java.util.UUID
 

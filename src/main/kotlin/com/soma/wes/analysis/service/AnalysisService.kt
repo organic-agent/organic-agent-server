@@ -3,11 +3,12 @@ package com.soma.wes.analysis.service
 import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.domain.AnalysisJob
 import com.soma.wes.analysis.domain.AnalysisStatus
-import com.soma.wes.analysis.dto.StageCall
+import com.soma.wes.analysis.dto.StageCallDto
 import com.soma.wes.analysis.dto.response.AnalysisJobResponse
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
 import com.soma.wes.analysis.repository.AnalysisJobRepository
+import com.soma.wes.analysis.service.port.StageInvoker
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.photo.repository.projection.GalleryAnalysisProgress
@@ -73,8 +74,8 @@ class AnalysisService(
     }
 
     private fun validateInvokerConfigured() {
-        val required = listOf(StageCall.Embed::class, StageCall.Categorize::class) +
-            if (properties.gpu.enabled) emptyList() else listOf(StageCall.Score::class)
+        val required = listOf(StageCallDto.Embed::class, StageCallDto.Categorize::class) +
+            if (properties.gpu.enabled) emptyList() else listOf(StageCallDto.Score::class)
         if (required.any { !stageInvoker.isAvailable(it) }) {
             throw AnalysisException(AnalysisErrorCode.STAGE_NOT_CONFIGURED)
         }

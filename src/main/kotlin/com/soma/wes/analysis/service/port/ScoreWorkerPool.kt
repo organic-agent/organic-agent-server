@@ -1,4 +1,4 @@
-package com.soma.wes.analysis.service
+package com.soma.wes.analysis.service.port
 
 import com.soma.wes.analysis.dto.ScoreWorkerDto
 

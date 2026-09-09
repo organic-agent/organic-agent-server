@@ -3,7 +3,7 @@ package com.soma.wes.photo.infrastructure
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
-import com.soma.wes.photo.service.PreviewImageReader
+import com.soma.wes.photo.service.port.PreviewImageReader
 import com.soma.wes.photo.support.JpegResizer
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component

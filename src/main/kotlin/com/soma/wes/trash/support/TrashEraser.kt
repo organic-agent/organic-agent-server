@@ -1,16 +1,16 @@
 package com.soma.wes.trash.support
 
-import com.soma.wes.photo.service.PhotoStorage
+import com.soma.wes.photo.service.port.PhotoStorage
 import com.soma.wes.trash.config.TrashProperties
 import com.soma.wes.trash.repository.TrashRepository
 import com.soma.wes.trash.repository.projection.TrashedPhotoTarget
-import org.slf4j.LoggerFactory
-import org.springframework.stereotype.Service
-import org.springframework.transaction.support.TransactionTemplate
 import java.time.Clock
 import java.time.Duration
 import java.time.ZonedDateTime
 import java.util.UUID
+import org.slf4j.LoggerFactory
+import org.springframework.stereotype.Service
+import org.springframework.transaction.support.TransactionTemplate
 
 /**
  * 물리 삭제의 실행부. 휴지통의 즉시 삭제([com.soma.wes.trash.service.TrashService])와

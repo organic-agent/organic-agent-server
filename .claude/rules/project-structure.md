@@ -26,11 +26,12 @@ paths:
 ├── domain/          # 엔티티·값객체 (→ rules/domain.md)
 ├── repository/      # Spring Data 인터페이스 (→ rules/repository.md)
 │   └── projection/  # 조회 전용 projection
-├── service/         # 컨트롤러가 부르는 유스케이스 + port 인터페이스 (→ rules/service.md)
+├── service/         # 컨트롤러가 부르는 유스케이스 (→ rules/service.md)
+│   └── port/        # infrastructure 어댑터가 구현하는 포트 인터페이스 (→ rules/infrastructure.md)
 ├── support/         # 유스케이스가 기대는 협력자 (→ rules/support.md)
 ├── controller/      # REST 컨트롤러 (→ rules/controller.md)
 │   └── docs/        # OpenAPI 애노테이션 인터페이스 ({Name}ControllerDocs)
-├── dto/             # 내부 전달용 ~Dto (→ rules/dto.md)
+├── dto/             # 내부 전달용 ~Dto — 서비스·support 안에 중첩하지 않는다 (→ rules/dto.md)
 │   ├── request/
 │   └── response/
 ├── exception/       # {Domain}Exception + {Domain}ErrorCode

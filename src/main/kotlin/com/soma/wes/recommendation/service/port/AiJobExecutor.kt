@@ -1,4 +1,4 @@
-package com.soma.wes.recommendation.service
+package com.soma.wes.recommendation.service.port
 
 /**
  * 추천 잡을 요청 스레드 밖에서 돌리는 실행기 포트. 라운드 하나가 폴더 수 × n_f 만큼의 LLM 호출이라

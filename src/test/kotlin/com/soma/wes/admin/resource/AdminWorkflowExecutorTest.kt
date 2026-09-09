@@ -1,7 +1,7 @@
 package com.soma.wes.admin.resource
 
-import com.soma.wes.admin.fixture.AdminAccountFixture
 import com.soma.wes.admin.audit.service.AdminAuditService
+import com.soma.wes.admin.fixture.AdminAccountFixture
 import com.soma.wes.admin.resource.config.AdminWorkflowExecutorProperties
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.dto.AdminResourceResponse
@@ -10,17 +10,18 @@ import com.soma.wes.admin.resource.repository.AdminWorkflowExecutionRepository
 import com.soma.wes.admin.resource.repository.AdminWorkflowRepository
 import com.soma.wes.admin.resource.service.AdminResourceService
 import com.soma.wes.admin.resource.service.AdminWorkflowExecutor
-import com.soma.wes.analysis.service.ExactPhotoInvoker
-import com.soma.wes.analysis.service.ExactPhotoProcessingRequest
+import com.soma.wes.analysis.dto.ExactPhotoCallDto
+import com.soma.wes.analysis.service.port.ExactPhotoInvoker
 import com.soma.wes.support.IntegrationTest
+import java.time.Duration
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.mockito.kotlin.doAnswer
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argThat
 import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.doAnswer
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
@@ -29,7 +30,6 @@ import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.transaction.support.TransactionTemplate
 import tools.jackson.databind.ObjectMapper
-import java.time.Duration
 
 @IntegrationTest
 class AdminWorkflowExecutorTest @Autowired constructor(
@@ -75,7 +75,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
             .containsExactly("REPROCESS_DISPATCHED:SUCCESS")
         assertThat(dispatchAudits(AdminResourceType.PHOTO, graph.photos[1].id))
             .containsExactly("REPROCESS_DISPATCHED:SUCCESS")
-        val requests = argumentCaptor<ExactPhotoProcessingRequest>()
+        val requests = argumentCaptor<ExactPhotoCallDto>()
         verify(exactPhotoInvoker, times(2)).invoke(requests.capture())
         assertThat(requests.allValues.map { it.jobType })
             .containsExactlyInAnyOrder("EMBEDDING", "DERIVATIVE")
@@ -91,7 +91,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
         val deletedTargetJob = processingJob("EMBEDDING", AdminResourceType.PHOTO, graph.photos[1].id)
         executor.runOnce()
         assertThat(processingState(deletedTargetJob)).isEqualTo(State("CANCELED", 0, "TARGET_DELETED"))
-        verify(exactPhotoInvoker, times(2)).invoke(any<ExactPhotoProcessingRequest>())
+        verify(exactPhotoInvoker, times(2)).invoke(any<ExactPhotoCallDto>())
     }
 
     @Test
@@ -125,7 +125,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
             "REPROCESS_DISPATCHED:SUCCESS",
             "REPROCESS_DISPATCH_FAILED:FAILURE",
         )
-        verify(exactPhotoInvoker, times(1)).invoke(any<ExactPhotoProcessingRequest>())
+        verify(exactPhotoInvoker, times(1)).invoke(any<ExactPhotoCallDto>())
     }
 
     @Test
@@ -137,7 +137,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
             graph.photos.single().id,
             mapOf("galleryId" to graph.gallery.id),
         )
-        whenever(exactPhotoInvoker.invoke(any<ExactPhotoProcessingRequest>()))
+        whenever(exactPhotoInvoker.invoke(any<ExactPhotoCallDto>()))
             .thenThrow(IllegalStateException("timeout-after-send"))
         val shortTimeoutExecutor = AdminWorkflowExecutor(
             repository = workflowExecutionRepository,
@@ -170,7 +170,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
             "REPROCESS_DISPATCH_UNKNOWN:FAILURE",
             "REPROCESS_DISPATCH_FAILED:FAILURE",
         )
-        verify(exactPhotoInvoker, times(1)).invoke(any<ExactPhotoProcessingRequest>())
+        verify(exactPhotoInvoker, times(1)).invoke(any<ExactPhotoCallDto>())
     }
 
     @Test
@@ -217,7 +217,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
             .containsExactly("REPROCESS_DISPATCH_FAILED:FAILURE")
         assertThat(workflowRepository.cancelProcessingJob(cancelJobId)).isEqualTo(1)
         assertThat(processingState(cancelJobId)).isEqualTo(State("CANCELED", 1, null))
-        verify(exactPhotoInvoker, times(0)).invoke(any<ExactPhotoProcessingRequest>())
+        verify(exactPhotoInvoker, times(0)).invoke(any<ExactPhotoCallDto>())
 
         jdbcClient.sql(
             "UPDATE admin_processing_jobs SET last_run_at=CURRENT_TIMESTAMP-INTERVAL '1 day' WHERE id=:id",
@@ -226,7 +226,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
 
         assertThat(processingState(retryJobId)).isEqualTo(State("DISPATCHED", 2, null))
         assertThat(processingState(cancelJobId)).isEqualTo(State("CANCELED", 1, null))
-        verify(exactPhotoInvoker).invoke(argThat<ExactPhotoProcessingRequest> {
+        verify(exactPhotoInvoker).invoke(argThat<ExactPhotoCallDto> {
             jobId == retryJobId && attemptCount == 2
         })
     }
@@ -247,7 +247,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
             second.photos.single().id,
             mapOf("galleryId" to second.gallery.id),
         )
-        whenever(exactPhotoInvoker.invoke(argThat<ExactPhotoProcessingRequest> { galleryId == first.gallery.id }))
+        whenever(exactPhotoInvoker.invoke(argThat<ExactPhotoCallDto> { galleryId == first.gallery.id }))
             .thenThrow(AssertionError("simulated process termination"))
 
         assertThatThrownBy { executor.runOnce() }.isInstanceOf(AssertionError::class.java)
@@ -263,8 +263,8 @@ class AdminWorkflowExecutorTest @Autowired constructor(
 
         assertThat(processingState(firstJobId)).isEqualTo(State("DISPATCHING", 1, null))
         assertThat(processingState(secondJobId)).isEqualTo(State("DISPATCHED", 1, null))
-        verify(exactPhotoInvoker, times(1)).invoke(argThat<ExactPhotoProcessingRequest> { galleryId == first.gallery.id })
-        verify(exactPhotoInvoker, times(1)).invoke(argThat<ExactPhotoProcessingRequest> { galleryId == second.gallery.id })
+        verify(exactPhotoInvoker, times(1)).invoke(argThat<ExactPhotoCallDto> { galleryId == first.gallery.id })
+        verify(exactPhotoInvoker, times(1)).invoke(argThat<ExactPhotoCallDto> { galleryId == second.gallery.id })
     }
 
     @Test
@@ -300,7 +300,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
         executor.runOnce()
 
         assertThat(processingState(jobId)).isEqualTo(State("DISPATCHED", 1, null))
-        verify(exactPhotoInvoker, times(1)).invoke(any<ExactPhotoProcessingRequest>())
+        verify(exactPhotoInvoker, times(1)).invoke(any<ExactPhotoCallDto>())
     }
 
     @Test
@@ -327,7 +327,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
 
         assertThat(processingState(jobId)).isEqualTo(State("CANCELED", 0, null))
         assertThat(dispatchAudits(AdminResourceType.PHOTO, graph.photos.single().id)).isEmpty()
-        verify(exactPhotoInvoker, times(0)).invoke(any<ExactPhotoProcessingRequest>())
+        verify(exactPhotoInvoker, times(0)).invoke(any<ExactPhotoCallDto>())
     }
 
     @Test
@@ -350,7 +350,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
 
         assertThat(processingState(jobId)).isEqualTo(State("CANCELED", 0, "TARGET_DELETED"))
         assertThat(dispatchAudits(AdminResourceType.PHOTO, photo.id)).isEmpty()
-        verify(exactPhotoInvoker, times(0)).invoke(any<ExactPhotoProcessingRequest>())
+        verify(exactPhotoInvoker, times(0)).invoke(any<ExactPhotoCallDto>())
     }
 
     @Test
@@ -402,7 +402,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
             "UPDATE admin_processing_jobs SET last_run_at=CURRENT_TIMESTAMP-INTERVAL '1 day' WHERE id=:id",
         ).param("id", jobId).update()
         executor.runOnce()
-        verify(exactPhotoInvoker, times(1)).invoke(any<ExactPhotoProcessingRequest>())
+        verify(exactPhotoInvoker, times(1)).invoke(any<ExactPhotoCallDto>())
     }
 
     @Test
@@ -424,14 +424,14 @@ class AdminWorkflowExecutorTest @Autowired constructor(
                 """.trimIndent(),
             ).param("id", jobId).update()
             null
-        }.whenever(exactPhotoInvoker).invoke(any<ExactPhotoProcessingRequest>())
+        }.whenever(exactPhotoInvoker).invoke(any<ExactPhotoCallDto>())
 
         executor.runOnce()
 
         assertThat(processingState(jobId)).isEqualTo(State("CANCELED", 1, null))
         assertThat(dispatchAudits(AdminResourceType.PHOTO, photo.id))
             .containsExactly("REPROCESS_DISPATCHED:SUCCESS")
-        verify(exactPhotoInvoker, times(1)).invoke(any<ExactPhotoProcessingRequest>())
+        verify(exactPhotoInvoker, times(1)).invoke(any<ExactPhotoCallDto>())
     }
 
     private fun graph(suffix: String, photoCount: Int): Graph {

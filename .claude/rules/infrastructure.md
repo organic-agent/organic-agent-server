@@ -11,8 +11,13 @@ paths:
 
 ## Port와 Adapter
 
-- 도메인은 자기 `service` 패키지에 **port 인터페이스**를 선언한다. 이름과 시그니처는 도메인
+- 도메인은 자기 `service/port` 패키지에 **port 인터페이스**를 선언한다. 이름과 시그니처는 도메인
   어휘로 쓰고 벤더 타입을 노출하지 않는다 (`PhotoStorage.presignUpload`, `StageInvoker.invoke`).
+  `infrastructure` 어댑터가 구현하는 인터페이스는 모두 여기다 — `service` 루트에 두지 않는다.
+  다른 도메인이 구현하는 도메인 간 훅(`category/service/CategoryReactionCleaner`)은 포트가 아니라
+  `service` 루트에 남는다.
+- 포트가 주고받는 값 타입은 `dto/` 루트의 `~Dto`다 (`StageCallDto`, `ScoreWorkerDto`). 포트 파일에
+  데이터 클래스를 같이 두지 않는다.
 - `{domain}/infrastructure`의 **어댑터**가 그것을 구현하며, 기술 이름을 앞에 붙인다
   (`S3PhotoStorage`, `LambdaStageInvoker`). 서비스는 port만 주입받는다.
 - SDK 클라이언트 빈과 프로퍼티는 그 도메인의 `config`에 둔다 (`embedding/config/AwsLambdaConfig`).

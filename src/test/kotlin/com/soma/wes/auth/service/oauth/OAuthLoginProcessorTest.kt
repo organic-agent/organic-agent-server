@@ -1,16 +1,16 @@
 package com.soma.wes.auth.service.oauth
 
 import com.soma.wes.auth.domain.OAuthProvider
-import com.soma.wes.auth.dto.OAuthUserInfo
+import com.soma.wes.auth.dto.OAuthUserInfoDto
 import com.soma.wes.support.TestcontainersConfiguration
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
+import java.util.concurrent.atomic.AtomicLong
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
-import java.util.concurrent.atomic.AtomicLong
 
 /**
  * 소셜 로그인이 사용자 정보를 실제로 DB에 반영하는지 확인한다.
@@ -29,7 +29,7 @@ class OAuthLoginProcessorTest @Autowired constructor(
 
     private val sequence = AtomicLong(System.nanoTime())
 
-    private fun userInfo(providerId: String, nickname: String, email: String?) = OAuthUserInfo(
+    private fun userInfo(providerId: String, nickname: String, email: String?) = OAuthUserInfoDto(
         provider = OAuthProvider.KAKAO,
         providerId = providerId,
         nickname = nickname,

@@ -6,9 +6,10 @@ import com.soma.wes.recommendation.dto.LlmJsonRequestDto
 import com.soma.wes.recommendation.dto.LlmPartDto
 import com.soma.wes.recommendation.exception.RecommendationErrorCode
 import com.soma.wes.recommendation.exception.RecommendationException
+import com.soma.wes.recommendation.service.port.StructuredLlmClient
+import java.time.Duration
 import org.springframework.stereotype.Service
 import tools.jackson.databind.ObjectMapper
-import java.time.Duration
 
 /** 자연어를 실행 가능한 폴더 ID와 장수로만 번역한다. 사진 선택 자체는 검증된 기존 실행기가 맡는다. */
 @Service

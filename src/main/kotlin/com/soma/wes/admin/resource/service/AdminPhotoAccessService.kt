@@ -11,11 +11,11 @@ import com.soma.wes.admin.resource.dto.AdminPhotoAccessRequest
 import com.soma.wes.admin.resource.dto.AdminPhotoAccessResponse
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
 import com.soma.wes.photo.config.StorageProperties
-import com.soma.wes.photo.service.PhotoStorage
-import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
+import com.soma.wes.photo.service.port.PhotoStorage
 import java.time.Clock
 import java.time.ZonedDateTime
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 
 @Service
 class AdminPhotoAccessService(

@@ -8,8 +8,8 @@ import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.repository.AdminWorkflowExecutionRepository
 import com.soma.wes.admin.resource.repository.AdminWorkflowExecutionRepository.ProcessingExecutionJob
 import com.soma.wes.admin.resource.repository.WorkflowExecutionException
-import com.soma.wes.analysis.service.ExactPhotoInvoker
-import com.soma.wes.analysis.service.ExactPhotoProcessingRequest
+import com.soma.wes.analysis.dto.ExactPhotoCallDto
+import com.soma.wes.analysis.service.port.ExactPhotoInvoker
 import com.soma.wes.global.exception.BusinessException
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
@@ -93,7 +93,7 @@ class AdminWorkflowExecutor(
 
         try {
             exactPhotoInvoker.invoke(
-                ExactPhotoProcessingRequest(
+                ExactPhotoCallDto(
                     jobId = startedJob.id,
                     attemptCount = startedJob.attemptCount,
                     jobType = startedJob.jobType,

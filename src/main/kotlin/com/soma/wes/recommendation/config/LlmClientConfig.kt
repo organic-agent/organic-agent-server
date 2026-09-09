@@ -3,7 +3,7 @@ package com.soma.wes.recommendation.config
 import com.soma.wes.recommendation.infrastructure.BedrockMessagesCodec
 import com.soma.wes.recommendation.infrastructure.BedrockStructuredLlmClient
 import com.soma.wes.recommendation.infrastructure.DisabledStructuredLlmClient
-import com.soma.wes.recommendation.service.StructuredLlmClient
+import com.soma.wes.recommendation.service.port.StructuredLlmClient
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
