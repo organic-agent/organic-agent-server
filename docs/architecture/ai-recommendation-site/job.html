@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>3. 잡 실행 골격 — AI 폴더 추천</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">전체 아키텍처</a><span class="sep">/</span>
+  <span class="here">3. 잡 실행 골격</span>
+  <span class="spacer"></span>
+  <a href="request.html">← 2. 요청·조회</a>
+  <a href="query.html">4. 질의 해석 →</a>
+</nav>
+
+<div class="eyebrow">wes · AiSelectionJobLauncher · AiSelectionJobRecovery · AiSelectionJobRunner</div>
+<h1>잡 실행 — wes 안의 스레드 풀이 집고, 조건부 UPDATE 가 이중 실행을 막는다</h1>
+<p class="lede">추천 잡은 Lambda 로 나가지 않는다. 요청 커밋 직후 <code>Launcher</code> 가 스레드 풀(2개)에 넣고, 30초 스윕과 기동 복구가 놓친 잡을 다시 줄 세운다.
+어느 경로로 들어오든 <code>claim</code>(PENDING → RUNNING 조건부 UPDATE)이 0행이면 물러나므로 같은 잡이 두 번 돌지 않는다. 실행 중 프로세스가 죽으면 <code>round</code> 유무로 어디까지 갔는지 안다.</p>
+<p class="meta"><code>recommendation/service/AiSelectionJobLauncher.kt</code> · <code>support/AiSelectionJobRecovery.kt</code> · <code>support/ThreadPoolAiJobExecutor.kt</code> · <code>service/AiSelectionJobRunner.kt:72-174</code></p>
+
+<h2 id="arch">구동 경로</h2>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1160, height: 560,
+  groups: [{ x: 560, y: 40, w: 300, h: 500, label: 'AiSelectionJobRunner.run(jobId)' }],
+  nodes: [
+    { id: 'REQ', lane: 'wes', x: 20, y: 60, w: 200, kicker: '요청 · 2.', title: 'request() afterCommit', lines: ['launcher.launch(jobId)'], href: 'request.html#request' },
+    { id: 'SW', lane: 'wes', x: 20, y: 200, w: 200, kicker: '@Scheduled PT30S', title: 'Recovery.sweepPending', lines: ['PENDING 전부 id 순 launch'] },
+    { id: 'BOOT', lane: 'wes', x: 20, y: 340, w: 200, kicker: 'ApplicationReadyEvent', title: 'Recovery.recoverOnStartup', lines: ['RUNNING → requeue() → PENDING', '이어서 sweepPending'] },
+    { id: 'LN', lane: 'wes', x: 300, y: 180, w: 210, kicker: 'AiSelectionJobLauncher', title: 'launch(jobId)', lines: ['inFlight Set 으로 중복 제출 차단', 'ThreadPool 2 · 큐 100', '큐 가득 → warn, PENDING 유지'] },
+    { id: 'CL', lane: 'wes', x: 575, y: 80, w: 270, kicker: '①', title: 'claim', lines: ['UPDATE … SET RUNNING, started_at', 'WHERE id=? AND status=PENDING', '0행이면 return'], href: '#claim' },
+    { id: 'RC', lane: 'warn', x: 575, y: 190, w: 270, kicker: '복구 분기', title: 'round != null ?', lines: ['loadSavedRound → fillReasons 만', 'finish(recovered=true)'], href: '#recover' },
+    { id: 'MAIN', lane: 'wes', x: 575, y: 300, w: 270, kicker: '② ~ ⑥', title: 'resolveQuery → load → plan → persistRound → fillReasons', lines: ['StageTiming 으로 단계별 초 기록'], href: 'plan.html' },
+    { id: 'FIN', lane: 'wes', x: 575, y: 420, w: 270, kicker: '⑦', title: 'finish / fail', lines: ['DONE + result(summary) · FAILED + error(예외명: 메시지)'], href: '#finish' },
+    { id: 'J', lane: 'db', shape: 'db', x: 940, y: 200, w: 200, h: 150, title: 'ai_selection_jobs', lines: ['status · started_at · round', 'finished_at · result · error'] },
+  ],
+  edges: [
+    { from: 'REQ', to: 'LN', fromAt: .5, toAt: .2, label: '즉시', color: 'wes' },
+    { from: 'SW', to: 'LN', fromAt: .5, toAt: .5, label: '30초마다', color: 'wes' },
+    { from: 'BOOT', to: 'LN', fromAt: .5, toAt: .8, label: '기동 1회', color: 'wes' },
+    { from: 'LN', to: 'CL', fromAt: .5, toAt: .5, label: 'execute { run(jobId) }', color: 'wes' },
+    { from: 'CL', to: 'RC', fromSide: 'b', toSide: 't', label: '1행', color: 'wes' },
+    { from: 'RC', to: 'MAIN', fromSide: 'b', toSide: 't', label: 'round 없음 → 본 경로', color: 'wes' },
+    { from: 'MAIN', to: 'FIN', fromSide: 'b', toSide: 't', label: '정상 / 예외', color: 'wes' },
+    { from: 'CL', to: 'J', fromAt: .5, toAt: .2, label: 'PENDING→RUNNING', color: 'wes' },
+    { from: 'FIN', to: 'J', fromAt: .5, toAt: .8, label: 'DONE / FAILED', color: 'wes' },
+    { from: 'BOOT', to: 'J', fromSide: 'b', toSide: 'b', via: [[120, 520], [1040, 520]], label: 'RUNNING → PENDING (실행 중 죽은 잡)', labelAt: 1, color: 'warn' },
+  ],
+});
+</script>
+
+<div class="states"><span class="st on">PENDING</span><span class="ar">→ claim →</span><span class="st on">RUNNING</span><span class="ar">→</span><span class="st">DONE</span><span class="ar">│</span><span class="st bad">FAILED</span><span class="ar">│ 기동 복구 → PENDING (round 있으면 이유만 다시)</span></div>
+
+<h2 id="claim">세 진입점, 한 관문</h2>
+<div class="role"><b>한다</b><span><strong>Launcher</strong> 는 잡 id 를 스레드 풀에 넣고, <strong>Recovery</strong> 는 30초마다 PENDING 을 다시 줄 세우며 기동 때 RUNNING 을 PENDING 으로 되돌린다. <strong>claim</strong> 은 "PENDING 인 행만 RUNNING 으로" 바꾸는 조건부 UPDATE 로 실제 실행권을 준다.</span><b>왜</b><span>실행이 서버 프로세스 안에서 도니 프로세스가 죽거나 큐가 넘치면 잡이 사라질 수 있다. 세 입구는 각각 "지금 바로", "놓친 것 줍기", "죽은 것 되살리기"를 맡고, 그 셋이 겹쳐도 claim 이 한 번만 통과시켜 이중 실행을 막는다. 데드락·분산 락 없이 UPDATE 한 줄로 끝나는 가장 단순한 배타 제어다.</span><b>없으면</b><span>PENDING 잡이 영원히 남거나, 즉시 실행과 스윕이 같은 잡을 두 번 돌려 같은 라운드에 추천이 두 벌 생긴다(UNIQUE (selection, round, photo) 위반). 기동 복구가 없으면 죽은 RUNNING 잡이 "계산 중"으로 굳는다.</span></div>
+<div class="tablewrap"><table>
+<tr><th>진입점</th><th>언제</th><th>무엇을</th></tr>
+<tr><td>즉시 실행</td><td><code>request()</code> 트랜잭션 커밋 직후(<code>afterCommit</code>)</td><td><code>launcher.launch(jobId)</code></td></tr>
+<tr><td>스윕</td><td><code>@Scheduled(fixedDelayString = "PT30S")</code> <code>sweepPending</code></td><td><code>findAllByStatusOrderByIdAsc(PENDING)</code> 전부 launch — 큐가 가득 찼거나 즉시 실행이 유실된 잡을 줍는다</td></tr>
+<tr><td>기동 복구</td><td><code>@EventListener(ApplicationReadyEvent)</code></td><td><code>requeueRunning()</code>: RUNNING 잡을 <code>job.requeue()</code>(PENDING, started_at=NULL) → 로그 <code>실행 중 죽은 AI 추천 잡 N건을 PENDING으로 되돌림</code> → <code>sweepPending</code></td></tr>
+</table></div>
+<ul>
+  <li><strong>Launcher.</strong> <code>inFlight = ConcurrentHashMap.newKeySet()</code> 로 같은 jobId 의 중복 제출을 막고, <code>ThreadPoolTaskExecutor</code>(core=max=2, 큐 100, 스레드 이름 <code>ai-job-</code>, 종료 시 30초 대기)에 <code>run(jobId)</code> 를 넣는다. <code>TaskRejectedException</code> 이면 <code>warn("AI 추천 잡 큐가 가득 참 — 스윕이 다시 집는다")</code> 하고 PENDING 으로 둔다.</li>
+  <li><strong>claim.</strong> <code>UPDATE AiSelectionJob SET status=RUNNING, startedAt=now, updatedAt=now WHERE id=? AND status=PENDING</code>. 0행이면 <code>info("AI 추천 잡을 집지 못함(이미 실행 중이거나 끝남)")</code> 후 return. 즉시 실행과 스윕이 겹쳐도 한쪽만 통과한다.</li>
+  <li><strong>Recovery 는 자기 호출이라</strong> <code>@Transactional</code> 대신 <code>TransactionTemplate</code> 을 직접 쓴다.</li>
+</ul>
+
+<h2 id="run">run(jobId) 골격</h2>
+<div class="role"><b>한다</b><span>잡 한 번의 <strong>전체 순서</strong>를 고정한다: 집기 → (복구면 이유만) → 질의 해석 → 재료 읽기 → 계획 → 1단계 저장 → 2단계 이유 → 닫기. 단계마다 짧은 트랜잭션을 열고, LLM 은 트랜잭션 밖에서 부르며, 예외는 잡을 FAILED 로 닫는다.</span><b>왜</b><span>무거운 단계(LLM 수십 초)와 DB 쓰기를 분리해야 커넥션을 오래 잡지 않고, 단계 사이에 죽어도 다음 실행이 어디서 이어갈지 판단할 수 있다. 예외를 잡을 FAILED 로 바꾸는 것도 여기다 — 화면이 "실패"를 알고 폴링을 멈추게.</span><b>없으면</b><span>한 트랜잭션에 전부 넣으면 LLM 3분 동안 커넥션을 물고 있고, 도중에 죽으면 추천 행이 롤백돼 화면에 떴던 칩이 사라진다. 예외를 삼키면 잡이 RUNNING 으로 굳는다.</span></div>
+<pre><code>if claim(jobId, now) == 0: return
+timing = StageTiming()
+saved = loadSavedRound(jobId)                     // job.round != null 이면 1단계는 이미 끝난 잡
+if saved != null: finishSavedRound(saved)          // fillReasons 만 다시 → finish(recovered=true) ; return
+resolveQuery(jobId, timing)                        // 4. prompt·targetCount 있을 때만 Bedrock (트랜잭션 밖)
+world = timing.measure("load")    { load(jobId) }  // 5.
+draft = timing.measure("plan")    { plan(world) }
+round = timing.measure("persist") { persistRound(world, draft) }      // 1단계 — 여기서 화면에 칩이 뜬다
+timing.measure("reasons") { fillReasons(world, draft, round, timing) } // 2단계 — 6.
+job.finish(summary(world, draft, round, reasonReady, timing), now)
+log.info("AI 추천 잡 완료: jobId={}, round={}, k={}")
+catch (e): log.error("AI 추천 잡 실패: jobId={}", e); job.fail("${e::class.simpleName}: ${e.message}", now)</code></pre>
+<p>각 단계는 자기 트랜잭션(<code>TransactionTemplate</code>)으로 짧게 열고 닫는다. LLM 호출(질의 해석·이유 문장)은 <strong>트랜잭션 밖</strong>에서 돈다 — DB 커넥션을 수십 초 붙들지 않기 위해서다.</p>
+
+<h2 id="recover">복구 — round 가 있으면 이유만</h2>
+<div class="role"><b>한다</b><span>다시 집은 잡의 <code>round</code> 를 보고 <strong>어디까지 갔는지</strong> 판단한다. round 가 있으면 추천은 이미 저장된 것이니 이유 문장만 이어서 채우고, 없으면 처음부터 한다.</span><b>왜</b><span>1단계(순위)는 확정되는 순간 화면에 보이고 사용자가 그걸 보고 담기 시작할 수 있다. 복구가 순위를 다시 뽑으면 방금 본 추천이 바뀐다. 그래서 <code>assignRound</code> 를 1단계와 같은 트랜잭션에 묶어 "round 있음 = 순위 확정"이라는 하나의 표시로 삼는다.</span><b>없으면</b><span>죽었다 살아난 잡이 추천을 다시 뽑아 칩이 뒤바뀌거나, 반대로 이유가 영영 비어 있는 채로 DONE 이 된다.</span></div>
+<p><code>persistRound</code> 가 <code>job.assignRound(round)</code> 를 같은 트랜잭션에서 찍으므로, 실행 중 죽은 잡은 <code>round</code> 로 두 경우가 갈린다.</p>
+<div class="tablewrap"><table>
+<tr><th><code>round</code></th><th>뜻</th><th>복구 동작</th></tr>
+<tr><td>NULL</td><td>1단계 전에 죽었다(추천 행 없음)</td><td>본 경로를 처음부터. <code>resolved_query</code> 는 이미 있으면 재해석하지 않는다</td></tr>
+<tr><td>있음</td><td>추천 행은 저장됐고 이유 문장 도중 죽었다</td><td><code>loadSavedRound</code> 가 그 라운드의 <code>ai_recommendations</code> 와 <code>score_breakdown</code>(facts · primary_reason · reason_fallback · alternatives)을 다시 읽어 <code>fillReasons</code> 만 → <code>finish(recovered=true)</code>. 추천을 다시 두지 않으므로 화면의 순위가 바뀌지 않는다</td></tr>
+</table></div>
+
+<h2 id="finish">finish · fail · result</h2>
+<div class="role"><b>한다</b><span>잡을 닫는다. 성공이면 DONE 과 함께 <strong>이번 라운드의 요약(<code>result</code>)</strong>을, 실패면 FAILED 와 예외 문자열을 남긴다.</span><b>왜</b><span>추천 결과 자체는 <code>ai_recommendations</code> 에 있지만 "왜 이 장수인가"(쿼터·제외·이상치·요청 부족분)와 "얼마나 걸렸나"는 행에 없다. 운영자가 로그를 뒤지지 않고 잡 한 행으로 판단할 수 있게 요약을 jsonb 로 남긴다. 화면에는 <code>k</code>·<code>shortfallCount</code> 만 나간다.</span><b>없으면</b><span>추천이 적게 나왔을 때 이상치 제외 때문인지 후보 부족인지 알 길이 없고, 실패 원인이 로그에만 남아 잡 행을 봐도 왜 실패했는지 모른다.</span></div>
+<div class="tablewrap"><table>
+<tr><th>result 키</th><th>뜻</th></tr>
+<tr><td><code>gallery · pipeline("v3") · round · done(false)</code></td><td>식별</td></tr>
+<tr><td><code>k · selected · target · remaining · requestedCount · shortfallCount</code></td><td>추천 장수, 담은 장수, 목표(갤러리 <code>maxSelectablePhotoCount</code> ?: 30), 남은 장수, 요청 장수와 부족분</td></tr>
+<tr><td><code>folders · unfiled · scopeFolderId · scopeDetailFolderIds · perFolder</code></td><td>세트 폴더 수, 미분류 장수, 범위, 폴더별 {quota, picked …}</td></tr>
+<tr><td><code>reasonDistribution · reasonReady · llm</code></td><td>주 사유 분포, 이유가 채워진 장수, LLM 켜짐 여부</td></tr>
+<tr><td><code>misfit · misfitPhotoIds · preferenceOn</code></td><td>FolderFitRule 로 뺀 장수·id, 선호·균형 항 적용 여부</td></tr>
+<tr><td><code>elapsedSeconds · timing{stagesSeconds{query,load,plan,persist,reasons}, reasonBatches[{size, llm, seconds}]}</code></td><td>StageTiming(소수 2자리)</td></tr>
+<tr><td><code>recovered(true)</code></td><td>복구 경로일 때만</td></tr>
+</table></div>
+<p>프론트에 노출되는 값은 <code>recommendedCount = result.k</code> 와 <code>shortfallCount</code> 둘뿐. 나머지는 운영 확인용이다. <code>fail</code> 은 <code>error</code> 를 4000자로 잘라 저장하고 <code>status=FAILED</code> — 화면은 "실패" 안내 후 폴링을 멈춘다.</p>
+
+<h2 id="files">코드 위치</h2>
+<div class="tablewrap"><table>
+<tr><th>역할</th><th>파일</th></tr>
+<tr><td>실행기</td><td><code>recommendation/service/AiSelectionJobRunner.kt</code> (run :72 · loadSavedRound :116 · finishSavedRound :154 · summary :502 · StageTiming :557)</td></tr>
+<tr><td>구동</td><td><code>service/AiSelectionJobLauncher.kt</code> · <code>support/AiSelectionJobRecovery.kt</code>(SWEEP_DELAY PT30S) · <code>support/ThreadPoolAiJobExecutor.kt</code>(THREADS 2 · QUEUE 100) · 포트 <code>service/port/AiJobExecutor.kt</code></td></tr>
+<tr><td>claim</td><td><code>repository/AiSelectionJobRepository.kt:20-37</code></td></tr>
+<tr><td>엔티티</td><td><code>domain/AiSelectionJob.kt</code>(assignRound · finish · fail · requeue · resolveQuery) · <code>AiJobStatus.kt</code></td></tr>
+<tr><td>테스트</td><td><code>AiSelectionJobRunnerTest</code>(잡 생애·복구·claim·기동 복구·FAILED) · 테스트 더블 <code>ManualAiJobExecutor</code></td></tr>
+</table></div>
+
+<div class="pager">
+  <a href="request.html">← 2. 요청·조회</a>
+  <a href="query.html">4. 자연어 질의 해석 →</a>
+</div>
+</main>
+</body>
+</html>

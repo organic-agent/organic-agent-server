@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>2. 산출물과 특징 — 선호 가중치 층</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">전체 아키텍처</a><span class="sep">/</span>
+  <span class="here">2. 산출물과 특징</span>
+  <span class="spacer"></span>
+  <a href="train.html">3. 학습 →</a>
+</nav>
+
+<div class="eyebrow">AI repo · preference/model.py · features.py · <span class="tag warn">목표</span></div>
+<h1>산출물 — 모델 파일이 아니라 숫자 1,548개짜리 행 하나</h1>
+<p class="lede">이 층이 만드는 것은 ML 모델 파일도, 점수 하나도 아니다. 로지스틱 회귀의 가중치 벡터 한 행이다. 은닉층·비선형이 없으니
+추론에 모델 런타임이 필요 없고, wes 는 사진 한 장의 특징 <code>x</code>(1,547개)와 내적 한 번으로 pref 점수를 얻는다. 그래서 행이
+<strong>RDS 테이블 한 줄</strong>에 들어가고, 무엇으로 배웠고 얼마나 나아졌는지까지 같은 행에 남는다.</p>
+<p class="meta"><code>preference/model.py</code>(PreferenceModel · lam · z · prior) · <code>preference/features.py</code>(build · SCALAR_NAMES · FEATURE_SPEC=pref-v1) · wes <code>V14__preference_models.sql</code></p>
+
+<h2 id="arch">사진 한 장이 점수가 되기까지</h2>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1150, height: 430,
+  nodes: [
+    { id: 'PA', lane: 'db', shape: 'db', x: 20, y: 70, w: 200, h: 150, title: 'photo_analysis · photos',
+      lines: ['technical · aesthetic pct', 'sharpness_pct · subjects', 'embed_group_id · cluster_id', 'embedding · clip_embedding'], href: 'entities.html#inputs' },
+    { id: 'XS', lane: 'lambda', x: 340, y: 60, w: 230, kicker: 'features.build', title: 'x_scalar (11)',
+      lines: ['백분위 ÷ 100 · 3', 'subjects 원핫 · 4', '그룹 · 타임라인 · 연사 · 4'], href: '#features' },
+    { id: 'XE', lane: 'lambda', x: 340, y: 210, w: 230, kicker: 'features.build', title: 'x_emb (1,536)',
+      lines: ['L2(DINOv3) ⊕ L2(CLIP)', '− 갤러리 평균'], href: '#mean' },
+    { id: 'W', lane: 'db', shape: 'db', x: 660, y: 300, w: 200, title: 'preference_models · active',
+      lines: ['w_scalar[11] · w_emb(1536)', 'bias · lambda'], href: '#row' },
+    { id: 'DOT', lane: 'wes', x: 660, y: 90, w: 200, kicker: '목표: wes · 내적 한 번', title: 'pref(p)',
+      lines: ['w_s·x_s + w_e·x_e + bias'], href: 'serving.html#fuse' },
+    { id: 'Z', lane: 'wes', x: 950, y: 90, w: 190, kicker: '목표: wes · RecommendationScoring', title: 'score(p)',
+      lines: ['z(prior) + λ · z(pref)', 'λ = n / (n + n₀)'], href: 'serving.html#fuse' },
+  ],
+  edges: [
+    { from: 'PA', to: 'XS', fromAt: .35, toAt: .5, label: '백분위 · 피사체 · 그룹', dashed: true },
+    { from: 'PA', to: 'XE', fromAt: .8, toAt: .5, label: '벡터 768 + 768', dashed: true },
+    { from: 'XS', to: 'DOT', fromAt: .5, toAt: .3, label: '11', color: 'lambda' },
+    { from: 'XE', to: 'DOT', fromAt: .5, toAt: .8, via: [[615, null]], label: '1,536', labelAt: 0, color: 'lambda' },
+    { from: 'W', to: 'DOT', fromSide: 't', toSide: 'b', label: '가중치 행', dashed: true },
+    { from: 'DOT', to: 'Z', label: '실수 하나', color: 'wes' },
+  ],
+});
+</script>
+
+<h2 id="row">가중치 벡터 한 행</h2>
+<div class="role"><b>한다</b><span>사진의 특징 1,547개에 곱할 가중치와 절편, 그리고 prior 와 섞을 비중 λ 를 <strong>한 행</strong>으로 묶는다. <code>PreferenceModel.to_row()</code> 가 그대로 <code>preference_models</code> 의 컬럼이 된다.</span><b>왜</b><span>선형 모델이라 가중치가 곧 모델이다. 파일·S3·런타임을 두면 "어느 파일이 지금 것인가"를 따로 관리해야 하는데, 행 하나에 버전 키·학습 재료·홀드아웃 성적·active 를 함께 두면 테이블 자체가 이력이 된다.</span><b>없으면</b><span>wes 가 모델 서빙 런타임을 들이거나 Lambda 를 사진마다 불러야 한다. 이 서비스의 원칙(사진당 호출 없음)에 어긋난다.</span><b>입출력</b><span><code>train()</code> → <code>PreferenceModel</code> → <code>to_row()</code> → INSERT. 역방향 <code>from_row()</code> 는 CLI·테스트용</span></div>
+<div class="tablewrap"><table>
+<tr><th>조각</th><th>길이</th><th>뜻</th></tr>
+<tr><td><code>w_scalar</code></td><td>11</td><td class="wrap">기술·미학·선명도 백분위, subjects 원핫 4, 컨셉 그룹 비율, 타임라인 위치, 연사 길이 2 에 곱하는 가중치</td></tr>
+<tr><td><code>w_emb</code></td><td>1,536</td><td class="wrap">DINOv3(768) ⊕ CLIP(768) 임베딩에 곱하는 가중치. pgvector <code>vector(1536)</code> — EMBEDDING_DIMENSION × 2</td></tr>
+<tr><td><code>bias</code></td><td>1</td><td>절편. 정규화하지 않는다</td></tr>
+<tr><td><code>lambda</code></td><td>1</td><td class="wrap">감쇠 λ(n) = n / (n + n₀). n = 학습 갤러리 수, n₀ = 5(<code>Knobs.n0</code>). 학습 시점에 계산해 행에 박는다</td></tr>
+</table></div>
+<div class="datastrip">
+  <div class="cell"><b>유효 조건</b>embedding_model · model_version · feature_spec — 셋 중 하나라도 갤러리의 photo_analysis 와 다르면 wes 가 읽지 않는다</div>
+  <div class="cell"><b>무엇으로 배웠나</b>n_galleries · n_positives · train_gallery_ids</div>
+  <div class="cell"><b>얼마나 나아졌나</b>holdout jsonb — 갤러리별 성적 · 부호 검정 p · 악화 비율 · 게이트 이유</div>
+  <div class="cell"><b>붙어 있나</b>active — 부분 유니크로 true 는 한 행 이하</div>
+</div>
+<div class="note"><div class="t">λ 의 감각</div>n=0 → 0 (prior 그대로) · n=1 → 0.167 · n=5 → 0.5 · n→∞ → 1. 갤러리가 적을수록 prior 에서 조금만 움직인다. <code>Knobs.n0</code> 는 환경변수 <code>PREF_N0</code> 로 바꿀 수 있고, 실제 마감 갤러리가 쌓이면 홀드아웃 표를 보고 확정한다(<a href="roadmap.html#open">6. 열린 결정</a>).</div>
+
+<h2 id="features">특징 x — 자리 순서가 계약이다 (pref-v1)</h2>
+<div class="role"><b>한다</b><span>사진 한 장을 숫자 1,547개로 만든다. <strong>전부 DB 에 이미 있는 값</strong>이고 새 모델 호출은 없다.</span><b>왜</b><span>학습기(Python)와 추론(wes, Kotlin)이 다른 코드라 자리 순서가 어긋나면 내적이 조용히 엉뚱한 값을 낸다. 그래서 순서를 <code>FEATURE_SPEC = "pref-v1"</code> 이름으로 못 박고 행에 함께 저장한다. 계약이 바뀌면 이름을 올린다.</span><b>없으면</b><span>가중치는 맞는데 특징 자리가 밀린 채로 점수가 나오는, 티 나지 않는 오류가 생긴다.</span><b>입출력</b><span><code>GalleryData</code>(갤러리 전체 행) → <code>Features{scalar (n,11), emb (n,1536), emb_mean (1536,)}</code></span></div>
+<div class="tablewrap"><table>
+<tr><th>자리</th><th>이름</th><th>값</th><th>출처</th></tr>
+<tr><td>1</td><td><code>technical_pct</code></td><td>÷ 100</td><td><code>photo_analysis.technical_pct</code></td></tr>
+<tr><td>2</td><td><code>aesthetic_pct</code></td><td>÷ 100</td><td><code>photo_analysis.aesthetic_pct</code></td></tr>
+<tr><td>3</td><td><code>sharpness_pct</code></td><td>÷ 100</td><td><code>photo_analysis.sub_scores.sharpness_pct</code></td></tr>
+<tr><td>4~7</td><td><code>subj_bride · subj_groom · subj_couple · subj_group</code></td><td class="wrap">원핫. 넷 밖(unknown 등)이면 전부 0</td><td><code>photo_analysis.subjects</code></td></tr>
+<tr><td>8</td><td><code>log_group_share</code></td><td class="wrap">log(컨셉 그룹 크기 / 갤러리 사진 수). 그룹 없으면 크기 1</td><td><code>embed_group_id</code></td></tr>
+<tr><td>9</td><td><code>timeline_pos</code></td><td class="wrap">display_order 순위 / (n−1). 0 = 처음, 1 = 끝</td><td><code>photos.display_order</code></td></tr>
+<tr><td>10</td><td><code>cluster_size_rel</code></td><td class="wrap">자기 연사 클러스터 크기 / 갤러리 최대 클러스터 크기. 단독은 1 로 센다</td><td><code>cluster_id</code></td></tr>
+<tr><td>11</td><td><code>is_burst</code></td><td>클러스터 크기 &gt; 1 이면 1</td><td><code>cluster_id</code></td></tr>
+<tr><td>12~779</td><td>DINOv3</td><td class="wrap">행 L2 정규화 후 <strong>갤러리 평균을 뺀 값</strong></td><td><code>photo_analysis.embedding</code></td></tr>
+<tr><td>780~1547</td><td>CLIP</td><td class="wrap">행 L2 정규화 후 갤러리 평균을 뺀 값</td><td><code>photo_analysis.clip_embedding</code></td></tr>
+</table></div>
+<p class="small">스칼라는 이미 갤러리 내 백분위(0~1)거나 비율이라 그대로 쓴다. 학습기는 <code>photo_ratings</code> 를 읽지 않는다.</p>
+
+<h3 id="mean">왜 갤러리 평균을 빼나</h3>
+<p>촬영 장소·작가 스타일은 갤러리마다 다르다. 임베딩의 절대 위치를 배우면 "이 스튜디오 사진이 좋다"를 배우게 되고 다른 갤러리에 옮겨지지 않는다.
+평균을 빼면 "<strong>그 갤러리 안에서 어느 쪽</strong>이 선택되는가"를 배운다. 추론하는 wes 도 같은 갤러리의 분석 완료 사진 전체로 평균을 다시 구해 빼야 한다 — 학습 때의 평균을 저장해 쓰는 게 아니다(<code>Features.emb_mean</code> 은 확인용).</p>
+
+<h2 id="files">코드 위치 · 테스트</h2>
+<div class="tablewrap"><table>
+<tr><th>역할</th><th>파일</th></tr>
+<tr><td>행 정의 · λ · z · prior</td><td>AI repo <code>preference/preference/model.py</code></td></tr>
+<tr><td>특징 조립 · 순서 계약</td><td><code>preference/preference/features.py</code> (<code>SCALAR_NAMES</code> · <code>build</code>), <code>preference/__init__.py</code>(<code>FEATURE_SPEC</code>)</td></tr>
+<tr><td>테이블</td><td>wes <code>src/main/resources/db/migration/V14__preference_models.sql</code></td></tr>
+<tr><td>테스트</td><td><code>preference/tests/</code> 11건(특징 크기·라벨·학습·평가·게이트) · wes <code>AdminEmbedderPrivilegeContractTest</code>(photoselect role 이 학습기의 SQL 을 실행할 수 있는가)</td></tr>
+</table></div>
+
+<div class="pager">
+  <a href="index.html">← 전체 아키텍처</a>
+  <a href="train.html">3. 학습 →</a>
+</div>
+</main>
+</body>
+</html>

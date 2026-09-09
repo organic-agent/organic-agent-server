@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>wes 분석 파이프라인 v2 — 아키텍처 지도</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+<style>
+  .legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:.8rem;color:var(--ink-2);margin:10px 0 0}
+  .legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+  .legend .b::before{background:var(--browser)} .legend .w::before{background:var(--accent)} .legend .l::before{background:var(--lambda)} .legend .g::before{background:var(--gpu)} .legend .d::before{background:var(--db)}
+  .map{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin:16px 0}
+  .map a{display:block;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px 14px;text-decoration:none;color:var(--ink)}
+  .map a:hover{border-color:var(--accent);box-shadow:0 4px 14px rgba(0,0,0,.08)}
+  .map .n{font-family:"IBM Plex Mono",monospace;font-size:.7rem;color:var(--accent);letter-spacing:.08em}
+  .map .t{font-weight:600;margin:2px 0 4px}
+  .map .d{font-size:.8rem;color:var(--ink-2)}
+  .map a.sub{margin-left:18px;border-left:3px solid var(--line-strong)}
+  .h2row{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-top:56px;padding-top:18px;border-top:1px solid var(--line)}
+  .h2row h2{margin-top:0;padding-top:0;border-top:0}
+  .btn{display:inline-block;padding:6px 12px;white-space:nowrap;border:1px solid var(--accent);border-radius:6px;background:var(--accent-soft);color:var(--accent-ink);text-decoration:none;font-size:.9rem;font-weight:500}
+  .btn:hover{background:var(--accent);color:#fff}
+</style>
+</head>
+<body>
+<main>
+<nav class="nav">
+  <span class="here">전체 아키텍처</span>
+  <span class="spacer"></span>
+  <a href="upload.html">2. 업로드</a>
+  <a href="embed.html">3. 임베딩</a>
+  <a href="score.html">4. 점수 분석</a>
+  <a href="categorize.html">5. 사진 분류</a>
+  <a href="folders.html">6. 폴더 생성</a>
+  <a href="entities.html">엔티티 사전</a>
+</nav>
+
+<div class="eyebrow">organic-agent · wes + web + ai + infra</div>
+<h1>사진 업로드부터 AI 폴더 완성까지</h1>
+<p class="lede">사진은 브라우저에서 S3로 직접 업로드됩니다. wes는 <strong>5초마다 DB의 진행 상태를 확인</strong>하며 임베딩·점수 계산·분류를 조율하고, 분석이 끝나면 사진을 폴더로 정리합니다.</p>
+<p class="meta">파이프라인 v2 · 코드 기준 2026-09-09 · wes main@1503a9a · AI b473c61</p>
+<div class="legend"><span class="b">브라우저</span><span class="w">wes (Spring)</span><span class="l">Lambda</span><span class="g">GPU EC2</span><span class="d">S3 · Postgres</span></div>
+
+
+<div class="reading-guide">
+  <a href="upload.html" style="--stage:#398B46;--tint:#F5FBF3"><small>01 · 업로드</small><strong>사진을 안전하게 저장</strong><span>브라우저 → 업로드 API → S3</span></a>
+  <a href="embed.html" style="--stage:#9A6800;--tint:#FFFBEE"><small>02 · 분석</small><strong>특징과 품질을 계산</strong><span>wes → embedder · score → DB</span></a>
+  <a href="categorize.html" style="--stage:#C13E70;--tint:#FFF5F8"><small>03 · 정리</small><strong>그룹에 이름을 붙여 폴더로</strong><span>wes → categorize · Bedrock → 폴더</span></a>
+</div>
+<div class="h2row"><h2 id="big">서비스 아키텍처</h2><a class="btn" href="entities.html">엔티티 필드 사전 ↗</a></div>
+<p class="small">영역의 번호 순서로 읽으세요. 실선은 호출·저장, 점선은 조회·상태 확인입니다. 실행기 사이의 다음 단계는 wes가 DB를 확인해 결정합니다.</p>
+<div id="d-big"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-big', {
+  width: 1320, height: 1020, large: true, title: '업로드, 사진 분석, 폴더 생성의 세 단계와 공용 저장소',
+  groups: [
+    { x: 20, y: 60, w: 950, h: 230, label: '1. 사진 업로드', color: '#398B46', tint: '#EFF8EE' },
+    { x: 20, y: 340, w: 950, h: 280, label: '2. 특징 추출 · 점수 분석', color: '#A97700', tint: '#FFF5D7' },
+    { x: 20, y: 670, w: 950, h: 290, label: '3. 사진 분류 · 폴더 생성', color: '#C13E70', tint: '#FDECF3' },
+  ],
+  nodes: [
+    { id: 'browser', x: 45, y: 125, w: 240, lane: 'browser', kicker: 'WEB · 사용자', title: '사진 업로드', lines: ['크기 조정 · 체크섬 계산', 'S3 전송 후 완료 알림'], href: 'upload.html' },
+    { id: 'upload', x: 375, y: 125, w: 240, lane: 'wes', kicker: 'WES · 업로드 API', title: '업로드 URL 발급', lines: ['업로드 주소와 서명 전달', '완료 알림 → UPLOADED'], href: 'upload.html#issue' },
+    { id: 'sweeper', x: 705, y: 125, w: 240, lane: 'wes', kicker: 'WES · 누락 보정', title: '업로드 상태 확인', lines: ['S3에 파일이 있는지 확인', '누락된 완료 상태 보정'], href: 'upload.html#sweeper' },
+    { id: 's3', x: 1040, y: 125, w: 250, lane: 's3', kicker: 'STORAGE · S3', title: '사진 파일 저장소', lines: ['업로드 사진 · 미리보기', '브라우저와 AI가 직접 접근'] },
+    { id: 'control', x: 45, y: 405, w: 240, lane: 'wes', kicker: 'WES · 5초마다 상태 확인', title: '분석 실행 관리', lines: ['임베딩 대상 50장씩 배정', 'GPU 시작 · 정지 · 대체 처리'], href: 'embed.html' },
+    { id: 'embedder', x: 375, y: 405, w: 240, lane: 'lambda', kicker: 'LAMBDA · embedder', title: '이미지 특징 추출', lines: ['미리보기 · DINOv3 벡터', '촬영 정보(EXIF) 저장'], href: 'embedder.html' },
+    { id: 'score', x: 705, y: 405, w: 240, lane: 'gpu', kicker: 'GPU · score / Lambda 대체', title: '품질 · 피사체 분석', lines: ['워커가 DB에서 32장씩 선택', '점수 · CLIP 벡터 저장'], href: 'score-worker.html' },
+    { id: 'pg', x: 1040, y: 405, w: 250, lane: 'db', kicker: 'DATABASE · PostgreSQL', title: '분석 진행과 결과', lines: ['photos · 업로드 상태', 'photo_analysis · 분석 결과', 'ai_analysis_jobs · 작업 상태', '그룹 이름 · 폴더 · 사진 배정'] },
+    { id: 'job', x: 45, y: 735, w: 240, lane: 'wes', kicker: 'WES · 분석 잡', title: '분류 실행 관리', lines: ['대상 사진의 점수 완료 확인', '분류 호출 · 결과 확인'], href: 'categorize.html' },
+    { id: 'categorize', x: 375, y: 735, w: 240, lane: 'lambda', kicker: 'LAMBDA · categorize', title: '사진 그룹과 이름 결정', lines: ['백분위 · 연사 · 그룹 계산', '대표 사진으로 이름 요청'], href: 'categorize-lambda.html' },
+    { id: 'folders', x: 705, y: 735, w: 240, lane: 'wes', kicker: 'WES · 폴더 생성', title: '사진 정리 완료', lines: ['상위·하위 폴더와 사진 배정', '잡 완료(DONE) · 알림'], href: 'folders.html' },
+    { id: 'bedrock', x: 1040, y: 735, w: 250, lane: 'lambda', kicker: 'BEDROCK · Sonnet 4.6', title: '그룹 이름 제안', lines: ['대표 사진 1~2장 / 그룹', '상위 분류 · 컨셉 이름 반환'], href: 'categorize-lambda.html#naming' },
+  ],
+  edges: [
+    { from: 'browser', to: 'upload', label: '발급 요청 / 완료', color: 'browser' },
+    { from: 'browser', to: 's3', fromSide: 't', toSide: 't', via: [[165, 25], [1165, 25]], label: '사진 직접 업로드 · S3 PUT', labelAt: 1, color: 'browser' },
+    { from: 'sweeper', to: 's3', label: '파일 확인', dashed: true, color: 'wes' },
+    { from: 'control', to: 'embedder', label: '50장씩 호출', color: 'wes' },
+    { from: 'control', to: 'score', fromSide: 'b', toSide: 'b', via: [[165, 580], [825, 580]], label: 'GPU 시작·정지 / 필요 시 score Lambda 호출', labelAt: 1, color: 'wes' },
+    { from: 'score', to: 'pg', label: '점수 저장', color: 'gpu' },
+    { from: 'embedder', to: 'pg', fromSide: 't', toSide: 't', via: [[495, 315], [1165, 315]], label: '벡터 · 미리보기 경로 · EXIF 저장', labelAt: 1, color: 'lambda' },
+    { from: 'pg', to: 'control', fromSide: 'b', toSide: 'b', fromAt: .75, toAt: .15, via: [[1227.5, 645], [81, 645]], label: 'wes가 DB를 조회해 다음 단계와 완료 여부 판단 · 5초 주기', labelAt: 1, dashed: true },
+    { from: 'job', to: 'categorize', label: '분류 호출', color: 'wes' },
+    { from: 'categorize', to: 'bedrock', fromSide: 'b', toSide: 'b', via: [[495, 1000], [1165, 1000]], label: '대표 사진 전달 · 이름 반환', labelAt: 1, bidir: true, color: 'lambda' },
+    { from: 'categorize', to: 'pg', fromSide: 't', toSide: 'l', toAt: .92, via: [[495, 710], [1000, 710], [1000, 560]], label: '그룹 · 이름 저장', labelAt: 1, color: 'lambda' },
+    { from: 'job', to: 'folders', fromSide: 'b', toSide: 'b', via: [[165, 925], [825, 925]], label: '분류 결과 확인 후 폴더 생성', labelAt: 1, color: 'wes' },
+    { from: 'folders', to: 'pg', fromSide: 't', toSide: 'b', toAt: .35, via: [[825, 695], [1127.5, 695]], label: '폴더 · 배정 저장', labelAt: 1, color: 'wes' },
+  ],
+});
+</script>
+<p class="small">미리보기는 S3에, 분석 결과는 DB에 저장됩니다. 브라우저는 wes API로 진행 상황을 조회하고, 완료되면 폴더를 다시 불러옵니다.</p>
+<details id="technical-diagram" class="technical-diagram"><summary>컴포넌트별 상세 연결도 <span>클래스명 · 호출 인자 · 재시도 경로</span></summary><div id="d-technical"></div></details>
+<script>
+document.getElementById('technical-diagram').addEventListener('toggle', function () {
+  if (!this.open || this.dataset.rendered) return;
+  this.dataset.rendered = 'true';
+renderDiagram('#d-technical', {
+  width: 1160, height: 1010,
+  groups: [
+    { x: 240, y: 75, w: 280, h: 895, label: 'wes (Spring) · 스윕 5초' },
+    { x: 630, y: 370, w: 240, h: 640, label: '실행기 · Lambda / GPU' },
+    { x: 955, y: 75, w: 200, h: 535, label: '저장소' },
+  ],
+  nodes: [
+    { id: 'B1', lane: 'browser', x: 20, y: 130, w: 170, kicker: '브라우저 · 2. 업로드', title: '업로드 실행기',
+      lines: ['워커 리사이즈 2048 · CRC32C', '100장 발급 → S3 PUT ×6', '50장 complete → /ai-analysis'], href: 'upload.html' },
+    { id: 'B2', lane: 'browser', x: 20, y: 790, w: 170, kicker: '브라우저 · 폴링 3s / 10s', title: '진행 폴링',
+      lines: ['GET /ai-analysis', 'GET /photos/summary', 'DONE → 폴더 재조회'], href: 'upload.html#summary' },
+
+    { id: 'W1', lane: 'wes', x: 265, y: 130, w: 230, kicker: 'photo', title: '업로드 API',
+      lines: ['upload-urls → PENDING + 서명', 'complete → UPLOADED'], href: 'upload.html#issue' },
+    { id: 'W2', lane: 'wes', x: 265, y: 270, w: 230, kicker: 'photo · @Scheduled 5s', title: 'PendingUploadSweeper',
+      lines: ['1분 뒤 HeadObject → UPLOADED', '10분 재검사 · 24h 휴지통'], href: 'upload.html#sweeper' },
+    { id: 'W3', lane: 'wes', x: 265, y: 400, w: 230, kicker: 'analysis 스윕 ① · 3.', title: 'EmbedDispatcher',
+      lines: ['UPLOADED ∧ 벡터 없음 ∧ error 없음', '50장 SKIP LOCKED · in-flight ≤ 32'], href: 'embed.html' },
+    { id: 'W4', lane: 'wes', x: 265, y: 540, w: 230, kicker: 'analysis 스윕 ② · 4.', title: 'ScoreWorkerSupervisor',
+      lines: ['backlog → StartInstances', '10분 무진행 → Lambda 폴백', 'backlog 0 · 2분 → 안전망 정지'], href: 'score.html' },
+    { id: 'W5', lane: 'wes', x: 265, y: 700, w: 230, kicker: 'analysis 스윕 ③ · 잡 · 5.', title: 'AnalysisOrchestrator',
+      lines: ['livePending 0 ∧ scored == expected', '→ CATEGORIZING (CAS)', '배정 행 ∧ categorized → 물질화'], href: 'categorize.html' },
+    { id: 'W6', lane: 'wes', x: 265, y: 860, w: 230, kicker: 'category · 6.', title: 'AiCategoryFolderService',
+      lines: ['materializeFromAnalysis', '→ 잡 DONE + 알림'], href: 'folders.html' },
+
+    { id: 'L1', lane: 'lambda', x: 645, y: 400, w: 210, kicker: '3.1 Lambda', title: 'embedder',
+      lines: ['원본 GET → previews/ 1024 PUT', 'DINOv3 768d · EXIF 9필드', '8장마다 commit'], href: 'embedder.html' },
+    { id: 'G1', lane: 'gpu', x: 645, y: 560, w: 210, kicker: '4.1 GPU EC2 · g6.xlarge', title: 'score 워커',
+      lines: ['32장 SKIP LOCKED 자율 집기', 'CLIP · LAION · ARNIQA · 피사체', '유휴 30s → 자기 정지'], href: 'score-worker.html' },
+    { id: 'L2', lane: 'lambda', x: 645, y: 690, w: 210, kicker: '4.1 Lambda 폴백', title: 'score Lambda',
+      lines: ['같은 점수 · 같은 error'], href: 'score-worker.html#lambda' },
+    { id: 'L3', lane: 'lambda', x: 645, y: 800, w: 210, kicker: '5.1 Lambda', title: 'categorize',
+      lines: ['백분위 · 연사 · 임베딩 그룹', 'naming → 배정 행'], href: 'categorize-lambda.html' },
+    { id: 'BR', lane: 'lambda', x: 665, y: 925, w: 170, kicker: 'Bedrock · 국외', title: 'Sonnet 4.6',
+      lines: ['대표 ≤2장/그룹 ⇄ 이름'], href: 'categorize-lambda.html#naming' },
+
+    { id: 'S3', lane: 's3', shape: 'db', x: 970, y: 110, w: 170, title: 'S3',
+      lines: ['galleries/{g}/{uuid}.jpg', 'previews/…/{uuid}.jpg · 1024'] },
+    { id: 'PG', lane: 'db', shape: 'db', x: 970, y: 330, w: 170, h: 250, title: 'Postgres',
+      lines: ['photos · 업로드 · 배정 시각', 'photo_analysis · 진행 · error', 'ai_analysis_jobs · wes 소유', 'ai_concept_assignments', 'concept/detail_folders · 배정'] },
+  ],
+  edges: [
+    { from: 'B1', to: 'W1', fromAt: .35, label: '발급\ncomplete' },
+    { from: 'B1', to: 'S3', fromSide: 't', toSide: 't', via: [[105, 58], [1055, 58]], label: 'S3 PUT — 서버를 지나지 않음 · 서명 헤더 3개(Content-Type · Length · crc32c)', labelAt: 1, color: 'browser' },
+    { from: 'B1', to: 'W5', fromAt: .8, toAt: .3, via: [[222, 217], [222, 733]], label: 'POST\n/ai-analysis', labelAt: 1, labelDx: -8, color: 'browser' },
+    { from: 'B2', to: 'W5', toAt: .75, via: [[232, 845], [232, 782]], label: 'GET', labelAt: 1, dashed: true, color: 'browser' },
+
+    { from: 'W1', to: 'PG', toSide: 't', toAt: .3, via: [[560, 175], [560, 290], [1021, 290]], label: 'photos PENDING → UPLOADED', labelAt: 2, color: 'wes' },
+    { from: 'W2', to: 'S3', toSide: 'b', toAt: .75, label: 'HeadObject', labelAt: 0, labelDx: -170, dashed: true, color: 'wes' },
+    { from: 'PG', to: 'W3', fromSide: 'l', fromAt: .06, toSide: 't', toAt: .8, via: [[449, 345]], label: '카운트 · backlog 관측 (5초)', labelAt: 0, dashed: true },
+
+    { from: 'W3', to: 'L1', label: 'EVENT\n{galleryId, photoIds[50]}', color: 'wes' },
+    { from: 'L1', to: 'S3', fromAt: .3, toSide: 'l', toAt: .6, via: [[900, 433], [900, 169]], label: '원본 GET\npreviews PUT', labelAt: 2, labelDx: -10, color: 'lambda' },
+    { from: 'L1', to: 'PG', fromAt: .7, toAt: .15, via: [[930, 476]], label: 'embedding\npreview_key', labelAt: 0, labelDy: -4, color: 'lambda' },
+
+    { from: 'W4', to: 'G1', fromAt: .3, toAt: .3, label: 'Start / Stop\nInstances', color: 'wes' },
+    { from: 'W4', to: 'L2', fromAt: .8, label: '폴백\n{galleryId, photoIds}', labelAt: 1, color: 'wes' },
+    { from: 'G1', to: 'PG', toAt: .4, via: [[920, 614]], label: 'clip_embedding\nsubjects · error', labelAt: 1, color: 'gpu' },
+    { from: 'L2', to: 'PG', toAt: .55, via: [[940, 725]], dashed: true, color: 'lambda' },
+
+    { from: 'W5', to: 'L3', fromAt: .4, toAt: .4, label: 'EVENT · 1회\n{galleryId, jobId}', color: 'wes' },
+    { from: 'L3', to: 'PG', fromSide: 't', fromAt: .7, toSide: 'b', toAt: .35, via: [[792, 780], [1030, 780]], label: '그룹 컬럼 · ai_concept_assignments · jobs.error', labelAt: 1, color: 'lambda' },
+    { from: 'L3', to: 'BR', fromSide: 'b', toSide: 't', bidir: true, color: 'lambda' },
+    { from: 'W5', to: 'W6', fromSide: 'b', toSide: 't', label: '배정 행 ∧ categorized == expected', color: 'wes' },
+    { from: 'W6', to: 'PG', toSide: 'b', toAt: .7, via: [[1089, 905]], label: 'concept / detail_folders · 배정 INSERT → DONE', labelAt: 0, color: 'wes' },
+  ],
+});
+});
+</script>
+
+
+<h2 id="functions">기능 한눈에 — 무엇을 해주고 왜 있는가</h2>
+<p class="small">상세 페이지의 각 단계 제목 아래에 "한다 · 왜 · 없으면 · 입출력" 카드가 있다. 여기는 그 요약이다.</p>
+<div class="fn">
+  <a href="upload.html#resize"><div class="k">2 · web</div><div class="t">masterResize.worker</div><div class="d">브라우저에서 2048 로 줄이고 EXIF 를 되살리고 CRC 를 잰다. 원본을 <em>서버도 S3 도 지나지 않게</em> 하고, 임베더가 읽을 촬영 정보를 지키기 위해 있다.</div></a>
+  <a href="upload.html#issue"><div class="k">2 · PhotoService</div><div class="t">issueUploadUrls()</div><div class="d">photos 행(PENDING)과 presigned PUT 을 만든다. 발급이 곧 행 생성이라 <em>세션 API 가 필요 없고</em> 통보가 안 와도 서버가 상태를 맞출 수 있다.</div></a>
+  <a href="upload.html#presign"><div class="k">2 · S3PhotoStorage</div><div class="t">presignUpload()</div><div class="d">크기·타입·CRC 값을 정확값으로 서명한다. URL 을 가진 누구도 <em>다른 바이트를 올릴 수 없게</em> 하기 위해 있다.</div></a>
+  <a href="upload.html#complete"><div class="k">2 · PhotoService</div><div class="t">completeUpload()</div><div class="d">UPLOADED 로만 바꾼다(멱등, HeadObject 없음). 스윕이 <em>즉시 첫 배치를 띄우게</em> 하기 위해 있다.</div></a>
+  <a href="upload.html#sweeper"><div class="k">2 · photo</div><div class="t">PendingUploadSweeper</div><div class="d">통보 없는 PENDING 을 S3 로 확인해 올리거나 24h 뒤 휴지통. <em>프론트가 어떤 상태로 죽어도</em> 파이프라인이 끝까지 가게 한다.</div></a>
+  <a href="upload.html#summary"><div class="k">2 · PhotoPipelineRepository</div><div class="t">progressOf()</div><div class="d">LEFT JOIN 한 쿼리로 카운트 8개. 상태 enum 대신 <em>컬럼 NULL 여부</em>가 진행이라 화면과 잡이 같은 숫자를 본다.</div></a>
+  <a href="embed.html#when"><div class="k">3 · analysis</div><div class="t">EmbedDispatcher</div><div class="d">5초마다 UPLOADED 를 50장씩 SKIP LOCKED 로 집어 임베더를 부른다. 잡과 무관하게 <em>사진이 오는 족족</em> 임베딩이 시작되게 하기 위해 있다.</div></a>
+  <a href="embed.html#payload"><div class="k">3 · analysis</div><div class="t">StageInvoker</div><div class="d">Lambda / 로컬 스크립트를 포트 뒤에. 던지고 잊는 EVENT 호출이라 <em>로컬도 같은 흐름</em>을 돈다.</div></a>
+  <a href="embedder.html#arch"><div class="k">3.1 · AI</div><div class="t">embedder.job.run</div><div class="d">미리보기 PUT → 그 바이트로 DINOv3 → EXIF, 8장 commit. <em>벡터 있는데 미리보기 없는 상태</em>가 구조적으로 없게 한다.</div></a>
+  <a href="score.html#control"><div class="k">4 · analysis</div><div class="t">ScoreWorkerSupervisor.control()</div><div class="d">backlog 를 보고 GPU 를 켜고 끄고 Lambda 로 폴백한다. 워커가 스스로 집으니 wes 는 <em>켜기·끄기·안 되면 Lambda</em> 만 결정한다.</div></a>
+  <a href="score-worker.html#arch"><div class="k">4.1 · AI</div><div class="t">score gpu_worker.loop</div><div class="d">32장 SKIP LOCKED 자율 집기, 두 레인 프리페치, 유휴 30초 자기 정지. wes 에 <em>큐 관리가 필요 없고</em> 워커 2대가 겹쳐도 중복 0.</div></a>
+  <a href="score-worker.html#compute"><div class="k">4.1 · AI</div><div class="t">Scorer.score</div><div class="d">한 번 디코드로 CLIP·미학·기술·피사체·부모·고전 지표를 다 뽑는다. 뒤 단계가 필요로 하는 것이 다 달라 <em>한 번에 뽑는 것이 가장 싸다</em>.</div></a>
+  <a href="categorize.html#request"><div class="k">5 · AnalysisService</div><div class="t">request()</div><div class="d">갤러리당 하나뿐인 잡 행(ANALYZING)을 만든다. 그룹·이름·폴더는 <em>갤러리 단위로 한 번</em>이어야 하기 때문에 있다.</div></a>
+  <a href="categorize.html#analyzing"><div class="k">5 · AnalysisOrchestrator</div><div class="t">stepAnalyzing()</div><div class="d">카운트를 관측해 CAS 로 CATEGORIZING 전이 + categorize 1회. 늦게 온 사진을 흡수하고 <em>두 스윕이 겹쳐도 EVENT 는 한 번</em>.</div></a>
+  <a href="categorize.html#categorizing"><div class="k">5 · AnalysisOrchestrator</div><div class="t">stepCategorizing()</div><div class="d">배정 행·백분위·error·타임아웃을 관측한다. Lambda 가 잡 상태를 쓰지 않으므로 <em>끝났다/죽었다를 wes 가 판단</em>해야 한다.</div></a>
+  <a href="categorize-lambda.html#group"><div class="k">5.1 · AI</div><div class="t">pipeline.group</div><div class="d">백분위·연사·임베딩 그룹을 갤러리 전체로 매번 재계산. 상대값이라 <em>사진이 늘면 전부 바뀌기</em> 때문에 있다.</div></a>
+  <a href="categorize-lambda.html#naming"><div class="k">5.1 · AI</div><div class="t">naming.run</div><div class="d">그룹 대표만 Sonnet 에 보내 이름을 받고 소그룹은 상속. 호출 수를 <em>⌈이미지/15⌉+1 로 묶어</em> 비용을 갤러리 크기와 떼어 놓는다.</div></a>
+  <a href="folders.html#algo"><div class="k">6 · AiCategoryFolderService</div><div class="t">materializeFromAnalysis()</div><div class="d">배정 행을 실제 폴더·배정으로 만든다(멱등). "이미 배정된 사진 제외"가 <em>사용자가 옮긴 사진을 보호</em>하는 유일한 규칙.</div></a>
+</div>
+
+<h2 id="boundaries">서버 실행 경계와 호출 계약</h2>
+<p>서버의 외부 실행은 <code>analysis/service/port</code>의 두 포트를 통과합니다.
+<code>StageInvoker</code>는 Lambda 호출을, <code>ScoreWorkerPool</code>은 GPU 워커의 시작·정지와 상태 조회를 담당합니다.
+호출 데이터는 <code>analysis/dto/StageCallDto</code>의 네 가지 타입으로 구분합니다.</p>
+<div class="tablewrap"><table>
+<tr><th>호출 타입</th><th>호출 주체</th><th>실행 대상</th><th>전달 데이터</th></tr>
+<tr><td><code>Embed</code></td><td><code>EmbedDispatcher</code></td><td>embedder Lambda</td><td><code>{galleryId, photoIds}</code> · 기본 50장</td></tr>
+<tr><td><code>Score</code></td><td><code>ScoreWorkerSupervisor</code></td><td>score Lambda 폴백</td><td><code>{galleryId, photoIds}</code> · 기본 50장, 별도 배치 설정</td></tr>
+<tr><td><code>Categorize</code></td><td><code>AnalysisOrchestrator</code></td><td>categorize Lambda</td><td><code>{galleryId, jobId}</code></td></tr>
+<tr><td><a href="embed.html#exact-photo"><code>ExactPhoto</code></a></td><td><code>AdminWorkflowExecutor</code></td><td>embedder Lambda</td><td class="wrap">관리자 사진 교체용 사진 1장 · 리비전 · 관리자 잡 정보</td></tr>
+</table></div>
+<p class="small">운영은 <code>LambdaStageInvoker</code>가 DTO를 JSON으로 직렬화해 EVENT로 호출합니다.
+로컬은 <code>LocalProcessStageInvoker</code>가 스크립트를 실행하며, 관리자 사진 교체(<code>ExactPhoto</code>)는 지원하지 않습니다.</p>
+
+<h2 id="stages">단계별 실행 조건</h2>
+<div class="tablewrap"><table>
+<tr><th>단계</th><th>넘어가는 조건 (wes 가 DB 에서 관측)</th><th>누가 하나</th><th>페이로드 / 잠금</th><th>실패 표시</th></tr>
+<tr><td>업로드</td><td><code>photos.status = UPLOADED</code> (complete 또는 HeadObject)</td><td>브라우저 + <code>PendingUploadSweeper</code></td><td>presigned PUT 서명 3요소</td><td>24h 없으면 휴지통</td></tr>
+<tr><td>임베딩</td><td>UPLOADED ∧ <code>embedding IS NULL</code> ∧ <code>error IS NULL</code> ∧ 미배정</td><td><code>EmbedDispatcher</code> → embedder Lambda</td><td><code>{galleryId, photoIds[50]}</code> · <code>FOR UPDATE OF photos SKIP LOCKED</code> · in-flight ≤ 32배치</td><td>3회 → <code>error = EMBED_ATTEMPTS_EXCEEDED</code></td></tr>
+<tr><td>점수</td><td><code>embedding IS NOT NULL</code> ∧ <code>clip_embedding IS NULL</code> ∧ <code>error IS NULL</code></td><td>GPU 워커 자율 집기 (wes 는 켜고 끄기) / 폴백 <code>ScoreWorkerSupervisor</code> → score Lambda</td><td>워커 32장 <code>FOR UPDATE OF photo_analysis SKIP LOCKED</code> / 폴백 <code>{galleryId, photoIds[50]}</code></td><td><code>error = PREVIEW_MISSING | SCORE_FAILED</code></td></tr>
+<tr><td>그룹·이름</td><td>잡 ANALYZING ∧ <code>livePending == 0</code> ∧ <code>scored == expected</code></td><td><code>AnalysisOrchestrator</code> → categorize Lambda</td><td><code>{galleryId, jobId}</code> · CAS(version)</td><td><code>ai_analysis_jobs.error</code> → FAILED, 20분×3회</td></tr>
+<tr><td>폴더</td><td>잡 CATEGORIZING ∧ 배정 행 있음 ∧ <code>categorized == expected</code></td><td><code>AiCategoryFolderService.materializeFromAnalysis</code></td><td>갤러리 행 PESSIMISTIC_WRITE</td><td><code>BusinessException</code> → FAILED</td></tr>
+</table></div>
+
+<h2 id="counts">진행률을 계산하는 기준</h2>
+<div class="datastrip">
+  <div class="cell"><b>expected</b>UPLOADED ∧ error IS NULL</div>
+  <div class="cell"><b>embedded</b>expected ∧ embedding IS NOT NULL</div>
+  <div class="cell"><b>scored</b>embedded ∧ clip_embedding IS NOT NULL</div>
+  <div class="cell"><b>categorized</b>scored ∧ technical_pct IS NOT NULL</div>
+  <div class="cell"><b>failed</b>UPLOADED ∧ error IS NOT NULL</div>
+  <div class="cell"><b>livePending</b>PENDING ∧ created_at &gt; now − 2m (잡 흡수 창)</div>
+</div>
+
+<h2 id="principles">파이프라인의 기본 원칙</h2>
+<ul>
+  <li><strong>이미지 바이트는 서버를 지나지 않는다.</strong> 브라우저 ↔ S3 직접. 서버가 AI 호출용 미리보기 몇 장을 읽는 것은 무방하다.</li>
+  <li><strong>체인·샤딩·자기 재호출은 없다.</strong> wes 스윕이 세 실행 단위를 따로 부르고, 다음 조건(벡터 있음·점수 다 참·배정 행 있음)을 DB 에서 관측한다. 전부 <code>InvocationType.EVENT</code>, 응답을 기다리지 않는다.</li>
+  <li><strong>일반 분석은 배치로 실행한다.</strong> 임베더는 기본 50장, GPU 워커는 32장, categorize는 갤러리 단위로 실행한다. 관리자 사진 교체는 <a href="embed.html#exact-photo">ExactPhoto</a>로 특정 리비전의 사진 1장만 요청한다.</li>
+  <li><strong>실패는 한 컬럼.</strong> 사진 단위 <code>photo_analysis.error</code>, 잡 단위 <code>ai_analysis_jobs.error</code>. 읽는 쪽 전부가 <code>error IS NULL</code> 을 조건에 넣는다.</li>
+  <li><strong>재분석 = 데이터 리셋.</strong> <code>photo_analysis</code> 행 삭제 + <code>dispatched_at/embed_attempts</code> 초기화. 폴더·추천은 <code>photo_id</code> 로 사진을 가리키므로 안전.</li>
+</ul>
+
+<h2 id="pages">단계별 상세 문서</h2>
+<div class="map">
+  <a href="upload.html"><div class="n">2</div><div class="t">업로드 상세</div><div class="d">브라우저 워커 리사이즈·EXIF·CRC, 발급·서명·complete, PENDING 보정, 진행 요약</div></a>
+  <a href="embed.html"><div class="n">3</div><div class="t">서버 임베딩 배정</div><div class="d">EmbedDispatcher 규칙, SKIP LOCKED SQL, in-flight, 재배정, StageInvoker</div></a>
+  <a class="sub" href="embedder.html"><div class="n">3.1</div><div class="t">embedder Lambda</div><div class="d">프리페치, 축소 디코드, previews PUT → DINOv3, EXIF 9필드, UPSERT SQL</div></a>
+  <a href="score.html"><div class="n">4</div><div class="t">서버 스코어 제어</div><div class="d">ScoreWorkerSupervisor 켜기·끄기·폴백 규칙, Ec2ScoreWorkerPool, 상수</div></a>
+  <a class="sub" href="score-worker.html"><div class="n">4.1</div><div class="t">score 워커</div><div class="d">CLIP·LAION·ARNIQA·피사체·부모 프롬프트, 집기 SQL, 자기 정지, Lambda 폴백</div></a>
+  <a href="categorize.html"><div class="n">5</div><div class="t">서버 categorize 호출</div><div class="d">잡 생성 게이트, stepAnalyzing/Categorizing, CAS, 타임아웃, 10컬럼</div></a>
+  <a class="sub" href="categorize-lambda.html"><div class="n">5.1</div><div class="t">categorize Lambda</div><div class="d">백분위·연사·계층 클러스터 적응 규칙, naming 6단계, 시스템 프롬프트 원문</div></a>
+  <a href="entities.html"><div class="n">사전</div><div class="t">엔티티 필드 사전</div><div class="d">일곱 테이블의 모든 컬럼 — 뜻 · 쓰는 주체 · 채워지는 시점, 한 장의 시간순 표</div></a>
+  <a href="folders.html"><div class="n">6</div><div class="t">카테고리 폴더 생성</div><div class="d">세 진입점, 알고리즘, 용어 뒤집힘, 칩 다수결, USER 배정 보호, 멱등성</div></a>
+</div>
+
+<h2 id="refs">정본 문서</h2>
+<ul>
+  <li>wes 설계: <code>docs/plans/pipeline-v2-wes.md</code> (계획서. 코드와 다른 점은 각 페이지에 표시) · 규칙 <code>.claude/rules/migration.md</code></li>
+  <li>AI: <code>organic-agent-ai/docs/architecture/embedder-score-categorize.md</code> · 각 모듈 <code>README.md</code> · <code>score/deploy/gpu-worker/README.md</code></li>
+  <li>web: <code>organic-agent-test-web/docs/pipeline-v2-web-plan.md</code></li>
+  <li>인프라: <code>organic-agent-infra/modules/{analysis, score-gpu}</code></li>
+  <li>이전 그림: <code>../pipeline-v2-overview.html</code> · <code>../ai-domains-architecture.html</code></li>
+</ul>
+</main>
+</body>
+</html>

@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>7. 운영 · 배포 — wes 인프라</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">전체 인프라</a><span class="sep">/</span>
+  <span class="here">7. 운영 · 배포</span>
+  <span class="spacer"></span>
+  <a href="admin.html">← 6. 관리자 경로</a>
+</nav>
+
+<div class="eyebrow">modules/monitoring · modules/frontend-test · modules/github-actions · backend.tf</div>
+<h1>모니터링, 테스트 프론트, 그리고 SSH 없는 배포</h1>
+<p class="lede">앱과 관리자 API는 로그를 <strong>wes-monitoring의 Loki</strong>로 밀어 넣고 Grafana로 봅니다. 프론트 테스트 서버는 <code>test.easyselect.kr</code>에 따로 있습니다. 모든 배포는 GitHub Actions가 <strong>OIDC로 임시 자격증명</strong>을 받아 ECR push·Lambda 코드 갱신·SSM Run Command로 수행하며, 장기 액세스 키와 SSH는 없습니다. 인프라 자체는 PR에서 plan, main 머지에서 apply입니다.</p>
+<p class="meta">인프라 main@42b33c6 · 2026-09-09 · <code>modules/monitoring/main.tf</code> · <code>modules/frontend-test/{main,deployment}.tf</code> · <code>modules/github-actions/{main,frontend-test}.tf</code> · <code>docs/{runbook,deploy-order}.md</code></p>
+<nav class="section-links" aria-label="이 페이지 목차"><a href="#arch">아키텍처</a><a href="#monitoring">모니터링</a><a href="#frontend">테스트 프론트</a><a href="#oidc">OIDC 롤 일곱</a><a href="#cicd">인프라 CI/CD · state</a><a href="#order">배포 순서</a><a href="#ssm">SSM prefix 다섯</a><a href="#alarms">알람 · 비용</a><a href="#files">코드 위치</a></nav>
+
+<h2 id="arch">아키텍처</h2>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1240, height: 660, title: '네 저장소의 GitHub Actions가 OIDC 롤을 거쳐 ECR, Lambda, SSM Run Command, S3, Terraform state에 닿는 배포 경로와 모니터링',
+  groups: [
+    { x: 300, y: 40, w: 250, h: 590, label: 'IAM · OIDC 롤 ×7 (장기 키 없음)', color: '#B45309', tint: '#FBEFE2' },
+    { x: 640, y: 40, w: 580, h: 590, label: 'AWS ap-northeast-2', color: '#5B6B8C', tint: '#EEF1F6' },
+  ],
+  nodes: [
+    { id: 'GH', lane: 'warn', x: 20, y: 200, w: 240, kicker: 'GitHub Actions · 4 저장소', title: 'CD + IaC', lines: ['server · backoffice · ai · test-web', 'infra (PR plan / main apply)'], href: '#oidc' },
+    { id: 'R1', lane: 'warn', x: 320, y: 80, w: 210, kicker: 'server main', title: ['wes-deploy', 'wes-admin-api-deploy'], lines: ['SendCommand · Name=wes-app / admin'], href: '#oidc' },
+    { id: 'R2', lane: 'warn', x: 320, y: 205, w: 210, kicker: 'backoffice main', title: 'wes-admin-deploy', lines: ['SendCommand · Name=wes-admin'], href: '#oidc' },
+    { id: 'R3', lane: 'warn', x: 320, y: 305, w: 210, kicker: 'ai main', title: 'wes-worker-deploy', lines: ['ECR push ×3 · UpdateFunctionCode ×3'], href: '#oidc' },
+    { id: 'R4', lane: 'warn', x: 320, y: 405, w: 210, kicker: 'test-web main', title: 'wes-frontend-test-deploy', lines: ['S3 releases/ PUT · 고정 문서만'], href: '#oidc' },
+    { id: 'R5', lane: 'warn', x: 320, y: 505, w: 210, kicker: 'infra PR / production env', title: 'wes-tf-plan · wes-tf-apply', lines: ['ReadOnly+KMS / PowerUser'], href: '#cicd' },
+    { id: 'SSM', lane: 'lambda', x: 660, y: 80, w: 250, kicker: 'SSM Run Command', title: 'AWS-RunShellScript', lines: ['docker compose pull && up', 'flock (wes-admin)'], href: '#oidc' },
+    { id: 'ECR', lane: 'lambda', x: 660, y: 290, w: 250, kicker: 'ECR ×3 · Lambda ×3', title: '이미지 · 함수 코드', lines: ['wes-embedder · score · categorize'], href: 'ai.html#ecr' },
+    { id: 'DOC', lane: 'lambda', x: 660, y: 368, w: 250, kicker: 'SSM 문서 wes-frontend-test-deploy', title: '릴리스 zip → 컨테이너', lines: ['ArtifactKey · Sha256 · Revision 정규식', '인스턴스 ID 고정 · 실패 시 롤백'], href: '#frontend' },
+    { id: 'ST', lane: 's3', shape: 'db', x: 680, y: 515, w: 170, title: 'wes-tf-state-*', lines: ['app/ · dns/ · 네이티브 락'] },
+    { id: 'APP', lane: 'wes', x: 980, y: 60, w: 220, kicker: 'EC2', title: 'wes-app · wes-admin', lines: ['GHCR arm64 이미지 pull'] },
+    { id: 'MON', lane: 'wes', x: 980, y: 170, w: 220, kicker: 'EC2 t4g.micro + EIP', title: 'wes-monitoring', lines: ['Loki 3.5.3 :3100 · 168h', 'Grafana 12.1.1 · Caddy TLS', 'monitoring.easyselect.kr'], href: '#monitoring' },
+    { id: 'FE', lane: 'wes', x: 980, y: 320, w: 220, kicker: 'EC2 t4g.small + EIP', title: 'wes-frontend-test', lines: ['Caddy → Next :3000', 'test.easyselect.kr'], href: '#frontend' },
+    { id: 'S3A', lane: 's3', shape: 'db', x: 1000, y: 450, w: 180, title: 'test 아티팩트 S3', lines: ['releases/<sha>.tar.gz · 30일'] },
+  ],
+  edges: [
+    { from: 'GH', to: 'R1', fromAt: .2, label: 'OIDC', labelAt: 0, dashed: true, color: 'warn' },
+    { from: 'GH', to: 'R2', fromAt: .4, dashed: true, color: 'warn' },
+    { from: 'GH', to: 'R3', fromAt: .6, dashed: true, color: 'warn' },
+    { from: 'GH', to: 'R4', fromAt: .8, dashed: true, color: 'warn' },
+    { from: 'GH', to: 'R5', fromSide: 'b', toSide: 'l', via: [[140, 545]], dashed: true, color: 'warn' },
+    { from: 'R1', to: 'SSM', color: 'warn' },
+    { from: 'R2', to: 'SSM', toAt: .8, via: [[600, null], [600, 130]], color: 'warn' },
+    { from: 'R3', to: 'ECR', color: 'warn' },
+    { from: 'R4', to: 'DOC', color: 'warn' },
+    { from: 'R4', to: 'S3A', fromAt: .9, toSide: 'b', toAt: .5, via: [[880, null], [880, 615], [1090, 615]], label: 'zip PUT', labelAt: 2, color: 'warn' },
+    { from: 'R5', to: 'ST', fromAt: .7, toAt: .5, label: 'plan 읽기 / apply 쓰기', labelDx: 18, color: 'warn' },
+    { from: 'SSM', to: 'APP', label: '태그 Name 한정', color: 'wes' },
+    { from: 'DOC', to: 'FE', label: 'SendCommand', color: 'wes' },
+    { from: 'FE', to: 'S3A', fromSide: 'b', toSide: 't', label: 'GET', color: 'wes' },
+    { from: 'APP', to: 'MON', fromSide: 'b', toSide: 't', label: 'logback → :3100 (사설 IP)', color: 'wes' },
+  ],
+});
+</script>
+
+<h2 id="monitoring">모니터링 <code>wes-monitoring</code></h2>
+<div class="datastrip">
+  <div class="cell"><b>인스턴스</b>Ubuntu 24.04 arm64 · t4g.micro · public 2a · EIP · gp3 20 GB · 스왑 2 GB</div>
+  <div class="cell"><b>Loki 3.5.3</b>:3100 · 단일 바이너리 · 파일시스템 TSDB v13 · <code>auth_enabled=false</code> · 보존 168h(7일) · 압축 10분</div>
+  <div class="cell"><b>Grafana 12.1.1</b>Loki 데이터소스 <code>uid=loki</code> 프로비저닝 · admin 비밀번호 SSM · 가입·익명 off</div>
+  <div class="cell"><b>Caddy 2.10.0</b>:80/:443 → grafana:3000 · Let's Encrypt HTTP-01 (그래서 EIP·:80 공개)</div>
+  <div class="cell"><b>도메인</b><code>monitoring.easyselect.kr</code> A → EIP · <strong>ALB 미경유</strong></div>
+  <div class="cell"><b>롤</b>SSM 코어 + <code>/wes/monitoring/*</code>만 읽기 · <code>/wes/prod/*</code> 불가</div>
+</div>
+<p>로그를 보내는 쪽은 wes-app과 wes-admin-api의 logback appender입니다. SSM <code>app.logging.loki-url</code>이 <code>http://&lt;사설 IP&gt;:3100/loki/api/v1/push</code>인 이유는 <code>:3100 ← wes-ec2 · wes-admin SG</code> 규칙이 VPC 사설 경로에서만 매칭되기 때문입니다. Grafana 비밀번호는 <code>/wes/monitoring/grafana.admin-password</code> 수동 SecureString이며 없으면 user_data가 멈춥니다.</p>
+
+<h2 id="frontend">테스트 프론트 <code>wes-frontend-test</code></h2>
+<ul>
+  <li><strong>인스턴스.</strong> Ubuntu 24.04 arm64 · t4g.small · EIP · <code>test.easyselect.kr</code>. SG는 :80/:443 인바운드, 이그레스도 80/443만. 롤은 아티팩트 버킷 <code>releases/*</code> GET 허용 + <code>ssm:GetParameter*</code> <code>/wes/*</code> <strong>명시적 Deny</strong>.</li>
+  <li><strong>Caddy.</strong> 다이제스트 고정 <code>caddy:2.10.2-alpine</code>, host 네트워크, HSTS·noindex, <code>/infrastructure-health</code> 200, <code>reverse_proxy 127.0.0.1:3000</code>(Next standalone).</li>
+  <li><strong>배포.</strong> test-web CD가 <code>releases/&lt;sha&gt;.tar.gz</code>를 S3에 올리고 고정 SSM 문서 <code>wes-frontend-test-deploy</code>만 부릅니다(<code>AWS-RunShellScript</code> 불가, 인스턴스 ID 고정). 문서는 세 인자를 정규식으로 검증하고 <code>deploy-command.sh</code>를 실행 — 이미지 빌드, 비루트 UID 1001·읽기 전용 rootfs·CapDrop ALL·메모리 768 MiB·pids 256 검증, <code>/health</code>·<code>/version.json</code> 확인, 실패 시 롤백.</li>
+  <li><strong>알람.</strong> <code>wes-frontend-test-status-check</code>(StatusCheckFailed &gt; 0, 2분). 액션 없음.</li>
+</ul>
+
+<h2 id="oidc">OIDC 롤 일곱</h2>
+<p>공급자 <code>token.actions.githubusercontent.com</code> 하나. 모든 롤이 <code>aud=sts.amazonaws.com</code>, 정확한 <code>sub</code>, <code>repository_owner_id=299031009</code>, 정확한 <code>repository_id</code>를 요구합니다(이름이 바뀌어도 ID로 고정). 롤 이름에는 랜덤 접미사가 붙어 재생성 시 저장소 시크릿을 갱신해야 합니다.</p>
+<div class="tablewrap"><table>
+<tr><th>롤</th><th>신뢰 (sub)</th><th>허용</th></tr>
+<tr><td><code>wes-deploy-*</code></td><td>server <code>refs/heads/main</code></td><td><code>ec2:DescribeInstances</code> · <code>ssm:SendCommand</code> <code>AWS-RunShellScript</code> + 태그 <code>Name=wes-app</code> 인스턴스 · <code>GetCommandInvocation</code></td></tr>
+<tr><td><code>wes-admin-api-deploy-*</code></td><td>server <code>refs/heads/main</code></td><td>같은 구성, 태그 <code>Name=wes-admin</code></td></tr>
+<tr><td><code>wes-admin-deploy-*</code></td><td>backoffice <code>refs/heads/main</code></td><td>같은 구성, 태그 <code>Name=wes-admin</code></td></tr>
+<tr><td><code>wes-worker-deploy-*</code></td><td>ai <code>refs/heads/main</code></td><td>ECR 로그인 + push(세 저장소 ARN) · <code>lambda:UpdateFunctionCode</code>·<code>GetFunction*</code>(세 함수 ARN). 와일드카드 금지 검증</td></tr>
+<tr><td><code>wes-frontend-test-deploy-*</code></td><td>test-web <code>refs/heads/main</code></td><td><code>s3:PutObject</code> <code>releases/*</code> · <code>ssm:SendCommand</code> 고정 문서 + 인스턴스 ID 하나 · <code>GetCommandInvocation</code></td></tr>
+<tr><td><code>wes-tf-plan-*</code></td><td>infra <code>pull_request</code></td><td><code>ReadOnlyAccess</code> + <code>kms:Decrypt</code>(ViaService ssm). 락을 못 쓰므로 <code>-lock=false</code></td></tr>
+<tr><td><code>wes-tf-apply-*</code></td><td>infra environment <code>production</code> · <code>refs/heads/main</code></td><td><code>PowerUserAccess</code> + IAM은 <code>role/wes-*</code>·<code>instance-profile/wes-*</code>만 · <code>PassRole</code> ec2·lambda 한정 · 서비스 연결 역할은 ImageBuilder·CloudWatchEvents 둘만 · OIDC 공급자 관리</td></tr>
+</table></div>
+
+<h2 id="cicd">인프라 CI/CD · state</h2>
+<div class="tablewrap"><table>
+<tr><th>이벤트</th><th>워크플로</th><th>롤</th><th>하는 일</th></tr>
+<tr><td>PR → main</td><td><code>terraform-plan.yml</code></td><td>tf_plan</td><td><code>fmt -check</code> · <code>validate</code> · 바뀐 스택(app/dns)의 <code>plan</code>. 요약을 PR 댓글로, 전체는 아티팩트로. 문서만 바뀐 PR은 건너뜀</td></tr>
+<tr><td>push main</td><td><code>terraform-apply.yml</code></td><td>tf_apply</td><td><code>apply -auto-approve</code>. dns·app 둘 다 바뀌면 dns 먼저. 승인 = PR 머지(환경 <code>production</code>, 필수 리뷰어 미설정)</td></tr>
+<tr><td><code>workflow_dispatch</code></td><td><code>terraform-apply.yml</code></td><td>tf_apply</td><td>선택한 스택 강제 apply (드리프트 복구)</td></tr>
+<tr><td><code>destroy</code></td><td colspan="3"><strong>어떤 워크플로에도 없음.</strong> 항상 로컬·수동</td></tr>
+</table></div>
+<p><strong>State.</strong> 사전 생성(bootstrap, 코드 밖) S3 <code>wes-tf-state-&lt;account&gt;</code>, 암호화·버저닝, S3 네이티브 락(<code>use_lockfile=true</code>, DynamoDB 없음). 키는 <code>app/terraform.tfstate</code>와 <code>dns/terraform.tfstate</code>. 요구 버전 Terraform ≥ 1.11(ephemeral·write-only), aws provider <code>~&gt; 5.60</code>. <code>modules/github-actions</code> 변경은 닭과 달걀 문제라 로컬 apply.</p>
+
+<h2 id="order">배포 순서 (재구축 시)</h2>
+<ol class="steps">
+  <li><b>dns 스택</b> apply (한 번). 존·NS 위임.</li>
+  <li><b>수동 SSM</b> 등록 — DB 비밀번호 셋 · JWT · OAuth · <code>cors.allowed-origins</code>(apply 입력) · Grafana 비밀번호 · Tailscale auth key.</li>
+  <li><b>ECR만</b> 먼저 apply(<code>-target=module.analysis.aws_ecr_repository.this</code>) → Lambda 이미지 셋 push(<code>linux/amd64</code>, embedder는 HF 토큰 필요). <code>wes-score:gpu</code>는 AI repo CD가 만듦.</li>
+  <li><b>앱 스택 전체</b> apply. 이후 Image Builder를 한 번 돌려 AMI를 <code>gpu_ami_id</code>에 핀하고 재apply.</li>
+  <li><b>롤 ARN</b>을 각 저장소 시크릿·변수에 등록.</li>
+  <li><b>서버 main 머지</b> → CD → Flyway가 스키마 생성.</li>
+  <li><b>DB 사용자</b> 생성·상한 설정 · Lambda <code>DB_PASSWORD</code> 주입(read-merge-write).</li>
+  <li><b>확인.</b> 1~2는 한 번, 3~5는 재구축마다, 6·8은 매 배포, 7은 새 DB일 때만.</li>
+</ol>
+<p class="small">destroy를 견디는 것: Route 53 존, <code>/wes/prod/*</code>·<code>/wes/monitoring/*</code> 수동 파라미터, GHCR 이미지, 롤 ARN 시크릿(단, 롤 이름 접미사가 바뀌므로 갱신 필요).</p>
+
+<h2 id="ssm">SSM prefix 다섯</h2>
+<div class="tablewrap"><table>
+<tr><th>prefix</th><th>읽는 주체</th><th>Terraform이 쓰는 값</th><th>수동 값</th></tr>
+<tr><td><code>/wes/prod/*</code></td><td>wes-app(통째로) · GPU 워커(정확히 3개)</td><td>datasource url·username · bucket · 함수 이름 ×3 · <code>gpu.enabled</code> · loki-url</td><td>DB 비밀번호 ×3 · JWT · OAuth ×3 · cors · springdoc</td></tr>
+<tr><td><code>/wes/admin-api/prod/*</code></td><td>wes-admin-api</td><td>url·username · bucket · embedder 이름 · loki-url · grafana/loki base-url · port · flyway off · ddl-auto</td><td>DB 비밀번호</td></tr>
+<tr><td><code>/wes/admin/*</code></td><td>wes-admin 부팅</td><td>—</td><td>Tailscale auth key</td></tr>
+<tr><td><code>/wes/monitoring/*</code></td><td>wes-monitoring</td><td>—</td><td>Grafana admin 비밀번호</td></tr>
+<tr><td><code>/wes/local/*</code></td><td>로컬 wes(local 프로필)</td><td>dev 버킷 이름</td><td>로컬 시크릿</td></tr>
+</table></div>
+<p class="small">Terraform이 만드는 SecureString은 0개입니다. 시크릿은 전부 사람이 넣고, 코드는 String만 씁니다.</p>
+
+<h2 id="alarms">알람 · 비용</h2>
+<div class="tablewrap"><table>
+<tr><th>알람</th><th>조건</th><th>액션</th></tr>
+<tr><td><code>wes-score-gpu-idle-stop-{2a,2c}</code></td><td>CPU &lt; 5% 평균 · 5분 × 6</td><td>EC2 stop (최후 안전망)</td></tr>
+<tr><td><code>wes-{embedder,score,categorize}-async-event-age</code></td><td>AsyncEventAge ≥ 10분 · 2/2</td><td>없음</td></tr>
+<tr><td><code>wes-{embedder,score,categorize}-async-events-dropped</code></td><td>Dropped &gt; 0</td><td>없음</td></tr>
+<tr><td><code>wes-frontend-test-status-check</code></td><td>StatusCheckFailed &gt; 0 · 2분</td><td>없음</td></tr>
+</table></div>
+<p>월 비용은 약 $55~60 + 존 $0.50. 그중 bedrock-runtime 인터페이스 엔드포인트가 약 $11(한 AZ), 정지된 GPU 워커 두 대의 디스크가 약 $5. g6.xlarge는 켜져 있는 동안 대당 약 $0.99/h. wes-app에는 알람이 없습니다.</p>
+
+<h2 id="files">코드 위치</h2>
+<div class="tablewrap"><table>
+<tr><th>역할</th><th>파일 (organic-agent-infra)</th></tr>
+<tr><td>모니터링 EC2 · EIP · Loki/Grafana/Caddy 부팅 · SSM loki-url</td><td><code>modules/monitoring/main.tf</code> · <code>user_data.sh.tftpl</code></td></tr>
+<tr><td>테스트 프론트 EC2 · 버킷 · SSM 문서 · 알람</td><td><code>modules/frontend-test/{main,deployment}.tf</code> · <code>deploy-command.sh</code> · 수동 배포 <code>scripts/deploy-frontend-test.sh</code></td></tr>
+<tr><td>OIDC 공급자 · 롤 일곱</td><td><code>modules/github-actions/{main,frontend-test}.tf</code> · 배선 <code>main.tf:213-240</code></td></tr>
+<tr><td>state · provider</td><td><code>backend.tf</code> · <code>dns/backend.tf</code> · <code>providers.tf</code> · <code>versions.tf</code></td></tr>
+<tr><td>절차</td><td><code>docs/deploy-order.md</code> · <code>docs/runbook.md</code> · <code>docs/frontend-test.md</code></td></tr>
+<tr><td>서버 쪽</td><td>wes <code>docs/architecture/prod-deployment.md</code> · <code>deploy-architecture.md</code> · <code>parameter-store-mapping.md</code></td></tr>
+</table></div>
+
+<div class="pager">
+  <a href="admin.html">← 6. 관리자 경로</a>
+  <a href="index.html">1. 전체 인프라 ↑</a>
+</div>
+</main>
+</body>
+</html>

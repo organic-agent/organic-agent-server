@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>엔티티 필드 사전 — 선호 가중치 층</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+<style>
+  .toc{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 24px}
+  .toc a{font-family:"IBM Plex Mono",monospace;font-size:.78rem;padding:4px 10px;border:1px solid var(--line);border-radius:20px;text-decoration:none;color:var(--ink-2);background:var(--surface)}
+  .toc a:hover{border-color:var(--accent);color:var(--accent-ink)}
+  td:first-child code{white-space:nowrap}
+</style>
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">전체 아키텍처</a><span class="sep">/</span>
+  <span class="here">엔티티 필드 사전</span>
+  <span class="spacer"></span>
+  <a href="roadmap.html">← 6. 로드맵·제약</a>
+</nav>
+
+<div class="eyebrow">preference_models · 입력 테이블 · holdout · golden · 환경 · <span class="tag warn">목표</span></div>
+<h1>엔티티 필드 사전 — 이 층이 쓰고 읽는 모든 것</h1>
+<p class="lede">테이블은 하나(<code>preference_models</code>)를 쓰고 넷을 읽는다. 다이어그램 없음. 각 필드의 뜻, 누가 채우고, 언제 채워지는지를 적는다.
+읽는 테이블의 컬럼 뜻은 <a href="../pipeline-v2-site/entities.html">파이프라인 사전</a>이 정본이고 여기는 이 층이 쓰는 컬럼만 고른다.</p>
+<p class="meta">wes <code>V14__preference_models.sql</code> · AI repo <code>store.py</code>(_GALLERY_SQL · _SELECTED_SQL · list_closed_galleries · write_model) · <code>model.py</code>(to_row) · <code>evaluate.py</code>(gate 반환) · <code>config.py</code></p>
+<div class="toc">
+  <a href="#preference_models">preference_models</a>
+  <a href="#holdout">holdout jsonb</a>
+  <a href="#inputs">읽는 입력</a>
+  <a href="#galleryData">GalleryData (메모리)</a>
+  <a href="#golden">golden xlsx</a>
+  <a href="#env">환경변수 · Knobs</a>
+  <a href="#io">Lambda 페이로드 · CLI · 결과</a>
+</div>
+
+<h2 id="preference_models"><code>preference_models</code> — 가중치 행 (V14, #162)</h2>
+<p>실행마다 한 행 INSERT, 지우지 않는다. 그래서 테이블 자체가 "갤러리 수를 늘려가며 홀드아웃 지표를 누적 기록"하는 표다. 쓰는 주체는 preference Lambda(<code>photoselect</code> role, SELECT·INSERT·UPDATE GRANT), wes 는 읽기만(목표).</p>
+<div class="tablewrap"><table>
+<tr><th>컬럼</th><th>타입</th><th>뜻</th><th>채우는 곳</th></tr>
+<tr><td><code>id</code></td><td>bigint identity</td><td>행 번호. 실행 순서</td><td>DB</td></tr>
+<tr><td><code>embedding_model</code></td><td>varchar(60)</td><td class="wrap">학습 갤러리들의 <code>photo_analysis.embedding_model</code>(DINOv3 버전). 갤러리 안에서 섞이면 다수, 갤러리 간에 섞이면 학습 중단</td><td><code>train()</code> — 첫 갤러리 값</td></tr>
+<tr><td><code>model_version</code></td><td>varchar(40)</td><td class="wrap"><code>photo_analysis.model_version</code>(score 모델 버전). 위와 함께 <strong>유효 조건</strong> — wes 는 갤러리의 두 값과 같은 active 행만 읽는다</td><td><code>train()</code></td></tr>
+<tr><td><code>feature_spec</code></td><td>varchar(40)</td><td class="wrap">x 의 자리 순서 계약 이름. 지금 <code>pref-v1</code>. 학습기와 wes 가 같은 값을 써야 한다</td><td><code>FEATURE_SPEC</code> 상수</td></tr>
+<tr><td><code>w_scalar</code></td><td>double precision[]</td><td class="wrap">길이 11. 순서는 <a href="artifact.html#features">2. 특징 표</a></td><td><code>fit()</code></td></tr>
+<tr><td><code>w_emb</code></td><td>vector(1536)</td><td class="wrap">DINOv3(768) ⊕ CLIP(768) 순서. float32 로 저장. EMBEDDING_DIMENSION × 2 — 차원이 바뀌면 마이그레이션과 함께 바뀐다(<code>.claude/rules/migration.md</code>)</td><td><code>fit()</code></td></tr>
+<tr><td><code>bias</code></td><td>double precision</td><td>절편</td><td><code>fit()</code></td></tr>
+<tr><td><code>lambda</code></td><td>double precision</td><td class="wrap">λ(n) = n/(n+n₀). wes 가 <code>z(prior) + lambda·z(pref)</code> 에 그대로 쓴다</td><td><code>model.lam()</code></td></tr>
+<tr><td><code>n_galleries</code></td><td>integer</td><td>학습에 쓴 갤러리 수 (= λ 의 n)</td><td><code>train()</code></td></tr>
+<tr><td><code>n_positives</code></td><td>integer</td><td>양성 표본 수(선택 사진 중 재료 안에 있던 것, 전 갤러리 합)</td><td><code>train()</code></td></tr>
+<tr><td><code>train_gallery_ids</code></td><td>bigint[]</td><td>학습 갤러리 id, 마감 순</td><td><code>train()</code></td></tr>
+<tr><td><code>holdout</code></td><td>jsonb</td><td>게이트 verdict 전체 — 아래 절</td><td><code>gate()</code></td></tr>
+<tr><td><code>active</code></td><td>boolean</td><td class="wrap">게이트 통과. 부분 유니크 인덱스(<code>WHERE active</code>)로 true 는 한 행 이하. 켤 때 같은 트랜잭션에서 이전 active 를 false 로. 떨어진 실행은 이전 active 를 건드리지 않는다</td><td><code>write_model()</code></td></tr>
+<tr><td><code>created_at</code></td><td>timestamptz</td><td>실행 시각</td><td>DB</td></tr>
+</table></div>
+
+<h2 id="holdout"><code>holdout</code> jsonb — gate() 가 돌려주는 것</h2>
+<div class="tablewrap"><table>
+<tr><th>키</th><th>뜻</th><th>언제 있나</th></tr>
+<tr><td><code>metric</code></td><td>게이트 지표 이름. <code>recall_cluster</code></td><td>항상</td></tr>
+<tr><td><code>n_galleries</code></td><td>홀드아웃에 쓴 갤러리 수</td><td>항상</td></tr>
+<tr><td><code>passed</code></td><td>세 조건 AND</td><td>항상</td></tr>
+<tr><td><code>reasons[]</code></td><td class="wrap">떨어진 이유 문자열. "홀드아웃 측정 불가 — 라벨 갤러리 2개 미만" · "부호 검정 p=… ≥ 0.05" · "악화 비율 … &gt; 0.3" · "안정성 판단 불가 — 갤러리 5개 미만" · "최근 갤러리 추가에서 평균 차이가 줄었다"</td><td>항상 (통과면 빈 배열)</td></tr>
+<tr><td><code>rows[]</code></td><td class="wrap">갤러리별 <code>GalleryEval</code>: <code>{gallery_id, n_photos, n_positives, k, shoot_type, metrics{prior|pref|fused: {recall_strict, recall_cluster, auc}}}</code>. λ 를 바꿔 재계산할 재료</td><td>n ≥ 2</td></tr>
+<tr><td><code>mean_diff · p_value · worse_ratio</code></td><td>fused − prior 의 평균 · 부호 검정 p · 악화 갤러리 비율</td><td>n ≥ 2</td></tr>
+<tr><td><code>prior_mean · fused_mean</code></td><td>두 점수식의 recall_cluster 평균</td><td>n ≥ 2</td></tr>
+<tr><td><code>curve[]</code></td><td class="wrap">안정성 곡선 — 접두 크기 m = n−3..n 별 <code>{n, mean_diff}</code></td><td>n ≥ 5</td></tr>
+</table></div>
+
+<h2 id="inputs">읽는 입력 — 네 테이블, 읽기 전용</h2>
+<div class="tablewrap"><table>
+<tr><th>테이블 · 컬럼</th><th>이 층에서의 뜻</th><th>누가 채우나</th></tr>
+<tr><td><code>galleries.status · updated_at</code></td><td class="wrap"><code>status='CLOSED'</code> 가 학습 대상 조건. <code>updated_at</code> 순이 "마감 순"</td><td>wes gallery 도메인</td></tr>
+<tr><td><code>galleries.shoot_type</code></td><td class="wrap">홀드아웃 행에 기록만. 학습 특징이 아니다</td><td>wes</td></tr>
+<tr><td><code>photos.id · original_file_name · display_order · deleted_at</code></td><td class="wrap">파일명은 golden 매칭용. <code>display_order</code> 순위가 <code>timeline_pos</code>. 삭제된 사진 제외</td><td>wes photo 도메인</td></tr>
+<tr><td><code>photo_analysis.technical_pct · aesthetic_pct</code></td><td class="wrap">x 1·2 (÷100), prior 재료</td><td>categorize Lambda</td></tr>
+<tr><td><code>photo_analysis.sub_scores.sharpness_pct</code></td><td class="wrap">x 3. 없으면 50</td><td>categorize Lambda</td></tr>
+<tr><td><code>photo_analysis.subjects</code></td><td class="wrap">x 4~7 원핫(bride·groom·couple·group). null 은 unknown → 전부 0</td><td>score</td></tr>
+<tr><td><code>photo_analysis.cluster_id · cluster_rank</code></td><td class="wrap">연사 클러스터. 라벨 단위(양성 1/count · 음성 대표 rank 0 · 형제 제외)와 dedup 순위, x 10·11. null → 단독(−1)</td><td>score(연사) · categorize</td></tr>
+<tr><td><code>photo_analysis.embed_group_id</code></td><td class="wrap">컨셉 그룹 → x 8 <code>log_group_share</code>. null → 크기 1</td><td>categorize</td></tr>
+<tr><td><code>photo_analysis.embedding · clip_embedding</code></td><td class="wrap">x 12~1547. 둘 다 NOT NULL 인 행만 읽는다(<code>_GALLERY_SQL</code>)</td><td>embedder · score</td></tr>
+<tr><td><code>photo_analysis.embedding_model · model_version</code></td><td class="wrap">행의 유효 조건 키. <code>model_version IS NOT NULL</code> 이 "분석 끝남"</td><td>embedder · score</td></tr>
+<tr><td><code>photo_selections.gallery_id · deleted_at</code> ⋈ <code>photo_selection_items.photo_id</code></td><td class="wrap"><strong>양성 라벨</strong>. 삭제되지 않은 선택의 항목 전부. <code>source</code> 컬럼이 생기면 <code>MANUAL</code> 만(AI 초안 되먹임 방지) — 지금 wes 스키마에 그 컬럼은 없다</td><td>wes selection 도메인 (부부 제출)</td></tr>
+</table></div>
+<p class="small">읽지 않는 것: <code>photo_ratings</code>(별점) · <code>ai_recommendations</code>(추천 결과 — 학습에 되먹임하지 않는다) · 폴더 테이블 · 이미지 바이트(S3 접근 없음).</p>
+
+<h2 id="galleryData"><code>GalleryData</code> — 학습기 메모리 안의 갤러리 한 개</h2>
+<div class="tablewrap"><table>
+<tr><th>필드</th><th>모양</th><th>출처</th></tr>
+<tr><td><code>gallery_id · photo_ids · file_names</code></td><td>str · list[str] · list[str]</td><td>id 는 읽을 때 str, 쓸 때 int</td></tr>
+<tr><td><code>technical_pct · aesthetic_pct · sharpness_pct</code></td><td>float (n,)</td><td>백분위 0~100 그대로 (÷100 은 build 에서)</td></tr>
+<tr><td><code>subjects</code></td><td>list[str]</td><td>null → "unknown"</td></tr>
+<tr><td><code>cluster_id · cluster_rank · embed_group_id · display_order</code></td><td>int (n,)</td><td>null → −1 / 0 / −1</td></tr>
+<tr><td><code>embedding · clip_embedding</code></td><td>float32 (n,768) × 2</td><td>pgvector</td></tr>
+<tr><td><code>embedding_model · model_version · shoot_type</code></td><td>str</td><td>갤러리 다수 버전</td></tr>
+<tr><td><code>LabeledGallery{data, selected_ids}</code> → <code>positive_idx</code></td><td>int 배열</td><td>선택 photo_id 중 재료 안에 있는 행의 인덱스</td></tr>
+</table></div>
+<p class="small"><code>LocalStore</code> 는 같은 것을 <code>out/preference/&lt;gallery&gt;/</code> 에 npz 로 캐시한다(<code>export</code> 명령). 골든을 선택으로 넣을 때는 <code>selected.json</code> 이 함께 놓인다.</p>
+
+<h2 id="golden">golden — <code>preference/golden/파일명_정리.xlsx</code></h2>
+<div class="tablewrap"><table>
+<tr><th>열</th><th>값</th><th>쓰임</th></tr>
+<tr><td>구분</td><td>"A컷" · "B컷"</td><td class="wrap">A = 전체 보정, B = 배경 보정. 학습에서는 둘 다 양성 — 보정 종류는 후처리 요청이지 선호가 아니다</td></tr>
+<tr><td>번호</td><td>정수</td><td>무시</td></tr>
+<tr><td>파일명</td><td><code>xxx.jpg</code></td><td class="wrap">갤러리 8 의 <code>photos.original_file_name</code> 과 맞춰 photo_id 로. 못 맞춘 파일은 <code>n_selected_given − n_positives_matched</code> 로 드러난다</td></tr>
+</table></div>
+<p class="small">30행(A 20 · B 10). 원본 사진은 <code>organic-agent/dataset/dataset2</code>(7,189장 = 갤러리 8). 로더는 openpyxl 없이 zipfile + 정규식.</p>
+
+<h2 id="env">환경변수 · Knobs</h2>
+<div class="tablewrap"><table>
+<tr><th>이름</th><th>기본</th><th>뜻</th></tr>
+<tr><td><code>DB_HOST · DB_PORT · DB_NAME · DB_USER · DB_PASSWORD · DB_SSLMODE · DB_SSLROOTCERT</code></td><td>— · 5432 · — · — · — · require · —</td><td class="wrap">RDS 접속. 셋(host·name·user)이 다 있어야 <code>db_enabled</code>. 로컬은 <code>db-tunnel.sh</code> 뒤 <code>DB_HOST=localhost DB_PORT=15432</code>. Lambda 는 <code>photoselect</code> role</td></tr>
+<tr><td><code>PREFERENCE_OUT</code></td><td><code>preference/out</code></td><td>로컬 모드 출력 루트</td></tr>
+<tr><td><code>PREF_L2_SCALAR · PREF_L2_EMB · PREF_N0</code></td><td>1e-2 · 0.1 · 5.0</td><td class="wrap">환경변수로 바꿀 수 있는 손잡이 셋. 나머지(<code>k_multiplier</code> 3 · <code>gate_p</code> 0.05 · <code>gate_worse_ratio</code> 0.30 · <code>gate_stability_window</code> 3 · <code>gate_stability_tol</code> 0.05 · <code>max_iter</code> 500)는 코드 상수</td></tr>
+</table></div>
+<p class="small">wes 쪽 설정 키(<code>app.preference.*</code>, Parameter Store <code>/wes/{local,prod}/…</code>)는 아직 없다 — <a href="roadmap.html#todo">6.</a></p>
+
+<h2 id="io">Lambda 페이로드 · CLI · 결과</h2>
+<div class="tablewrap"><table>
+<tr><th>입구</th><th>입력</th><th>출력</th></tr>
+<tr><td>Lambda <code>handler.handler</code></td><td class="wrap"><code>{"galleryId": N}</code> — 로그용. 학습은 CLOSED 전부</td><td class="wrap"><code>{status: ok|skipped, model_id, stored: db|local, n_galleries, n_positives, lambda, active, gate{passed, reasons, n_galleries, mean_diff?, p_value?, worse_ratio?}, elapsed_s, trigger_gallery_id}</code>. 잡 상태 테이블은 없다 — 결과는 행으로만 관측</td></tr>
+<tr><td>CLI <code>export</code></td><td><code>--gallery-id G [--golden xlsx]</code></td><td>DB → <code>out/preference/G/</code> npz 캐시 (+ selected.json)</td></tr>
+<tr><td>CLI <code>sanity</code></td><td><code>--gallery-id G [--local]</code></td><td class="wrap"><code>{n_photos, n_selected_given, n_positives_matched, n_negatives, n_excluded_siblings, k, lambda_n1, fit_seconds, metrics_lambda_1, metrics_lambda_n, passed, w_scalar{이름: 값}, embedding_model, model_version}</code></td></tr>
+<tr><td>CLI <code>train</code></td><td><code>[--gallery-ids 8,9] [--local]</code></td><td>run_train 과 같음. 테이블 없으면 <code>out/preference/models/NNNN.json</code></td></tr>
+</table></div>
+
+<div class="pager">
+  <a href="roadmap.html">← 6. 로드맵과 제약</a>
+  <a href="index.html">전체 아키텍처 →</a>
+</div>
+</main>
+</body>
+</html>

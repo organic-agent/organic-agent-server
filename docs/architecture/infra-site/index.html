@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>wes 인프라 — 아키텍처 지도</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+<style>
+  .legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:.8rem;color:var(--ink-2);margin:10px 0 0}
+  .legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+  .legend .b::before{background:var(--browser)} .legend .w::before{background:var(--accent)} .legend .l::before{background:var(--lambda)} .legend .g::before{background:var(--gpu)} .legend .d::before{background:var(--db)} .legend .x::before{background:var(--warn)}
+  .map{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin:16px 0}
+  .map a{display:block;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px 14px;text-decoration:none;color:var(--ink)}
+  .map a:hover{border-color:var(--accent);box-shadow:0 4px 14px rgba(0,0,0,.08)}
+  .map .n{font-family:"IBM Plex Mono",monospace;font-size:.7rem;color:var(--accent);letter-spacing:.08em}
+  .map .t{font-weight:600;margin:2px 0 4px}
+  .map .d{font-size:.8rem;color:var(--ink-2)}
+  .h2row{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-top:56px;padding-top:18px;border-top:1px solid var(--line)}
+  .h2row h2{margin-top:0;padding-top:0;border-top:0}
+  .btn{display:inline-block;padding:6px 12px;white-space:nowrap;border:1px solid var(--accent);border-radius:6px;background:var(--accent-soft);color:var(--accent-ink);text-decoration:none;font-size:.9rem;font-weight:500}
+  .btn:hover{background:var(--accent);color:#fff}
+  .reading-guide{grid-template-columns:repeat(5,1fr)}
+  @media(max-width:1100px){.reading-guide{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:700px){.reading-guide{grid-template-columns:1fr}}
+  .figure{margin:18px 0 8px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+  .figure a{display:block}
+  .figure img{display:block;width:100%;height:auto}
+  .figure figcaption{padding:10px 16px;border-top:1px solid var(--line);font-size:.8rem;color:var(--ink-3);background:var(--surface-2)}
+  .paths{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin:16px 0}
+  .paths div{border:1px solid var(--line);border-left:4px solid var(--c);border-radius:6px;padding:10px 14px;font-size:.88rem;background:var(--surface)}
+  .paths b{display:block;margin-bottom:2px}
+</style>
+</head>
+<body>
+<main>
+<nav class="nav">
+  <span class="here">전체 인프라</span>
+  <span class="spacer"></span>
+  <a href="network.html">2. 네트워크</a>
+  <a href="request.html">3. 공개 요청</a>
+  <a href="data.html">4. 데이터 저장소</a>
+  <a href="ai.html">5. AI 실행기</a>
+  <a href="admin.html">6. 관리자 경로</a>
+  <a href="ops.html">7. 운영 · 배포</a>
+</nav>
+
+<div class="eyebrow">organic-agent-infra · Terraform · AWS ap-northeast-2</div>
+<h1>wes 인프라 — 무엇이 어디에, 왜 그렇게 놓였나</h1>
+<p class="lede">계정 하나, VPC 하나, EC2 다섯 종류(앱 · 관리자 · 모니터링 · 테스트 프론트 · GPU 워커 두 대), RDS 하나, Lambda 셋, S3 버킷 셋. 공개 API는 <strong>ALB → wes-app</strong>으로, 관리자 화면은 <strong>Tailscale → wes-admin</strong>으로, 사진 바이트는 <strong>브라우저 ↔ S3 직접</strong>으로 갑니다. Lambda와 RDS는 인터넷 경로가 없는 DB 서브넷에 있고, 배포는 GitHub Actions가 OIDC로 받은 임시 자격증명으로만 합니다. 이 사이트는 Terraform 코드(<code>variables.tf</code> 기본값 + 모듈)를 기준으로 각 구성 요소가 <em>어떻게 셋팅되었고 무슨 역할</em>인지 정리합니다.</p>
+<p class="meta">인프라 기준 organic-agent-infra main@42b33c6 · 2026-09-09 · 그림 원본 <code>docs/wes-infrastructure-architecture.drawio</code> · 파이프라인 동작은 <a href="../pipeline-v2-site/index.html">pipeline-v2-site</a></p>
+<div class="legend"><span class="b">사용자 · tailnet · 외부</span><span class="w">EC2 (wes 소유 서버)</span><span class="l">Lambda · 관리형 서비스</span><span class="g">GPU 워커</span><span class="d">S3 · RDS · 엔드포인트</span><span class="x">배포 · CI</span></div>
+
+<div class="reading-guide">
+  <a href="request.html" style="--stage:#1F5FB4;--tint:#EEF4FC"><small>공개 서비스 요청</small><strong>api → ALB → wes-app</strong><span>Route 53 · ACM · :8080 · RDS</span></a>
+  <a href="admin.html" style="--stage:#0E7C72;--tint:#E8F5F3"><small>관리자 요청</small><strong>tailnet → wes-admin</strong><span>Tailscale · Caddy · BackOffice · :8081</span></a>
+  <a href="ai.html" style="--stage:#B5651D;--tint:#FBF1E7"><small>사진 · AI 분석</small><strong>S3 직접 → Lambda · GPU</strong><span>embedder · score · categorize · Bedrock</span></a>
+  <a href="ops.html#monitoring" style="--stage:#5B5FB0;--tint:#EEEFF9"><small>로그 · 모니터링</small><strong>logback → Loki → Grafana</strong><span>wes-monitoring · EIP 직결</span></a>
+  <a href="ops.html#oidc" style="--stage:#A6216B;--tint:#FBEAF3"><small>배포 · 설정</small><strong>OIDC → SSM · ECR</strong><span>롤 7 · Run Command · Terraform state</span></a>
+</div>
+
+<h2 id="drawio">구성도 원본 (draw.io)</h2>
+<p class="small">인프라 저장소의 그림입니다. 클릭하면 원본 크기로 열립니다. 아래 클릭형 지도는 이 그림을 페이지 링크가 있는 박스로 다시 그린 것입니다.</p>
+<figure class="figure">
+  <a href="wes-infrastructure-architecture.png" target="_blank" rel="noopener"><img src="wes-infrastructure-architecture.png" alt="WES 인프라 draw.io 구성도 — Route 53, ACM, Parameter Store, ECR, Bedrock, VPC의 public·DB 서브넷, ALB, wes-app, GPU 워커, Lambda 셋, RDS, S3, 관리자 경로, GitHub Actions 배포, Terraform state" loading="lazy"></a>
+  <figcaption>organic-agent-infra/docs/wes-infrastructure-architecture.drawio · 2026-09-09 main 기준 · 범례: 공개 요청(파랑) · 관리자 요청(청록) · 사진 업로드→AI(주황) · 로그(보라) · DNS/TLS(보라 점선) · 설정 bootstrap(분홍 점선) · 배포(분홍) · Terraform state(회색 점선)</figcaption>
+</figure>
+
+<div class="h2row"><h2 id="big">서비스 아키텍처 · 클릭형</h2><a class="btn" href="network.html#matrix">인바운드 매트릭스 ↗</a></div>
+<p class="small">실선은 호출·쓰기, 점선은 읽기·관측·설정입니다. 박스를 누르면 해당 페이지로 갑니다. GPU → RDS, ADM → Loki 같은 일부 연결은 그림을 읽기 쉽게 생략했고 각 페이지의 도면에 있습니다.</p>
+<div id="d-big"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-big', {
+  width: 1310, height: 960, large: true, title: 'wes 인프라 전체 — 외부, 리전 서비스, VPC public 서브넷, DB 서브넷',
+  groups: [
+    { x: 20, y: 40, w: 280, h: 650, label: '인터넷 · GitHub', color: '#7C5CB8', tint: '#F4F0FA' },
+    { x: 340, y: 40, w: 820, h: 220, label: '리전 서비스 · VPC 밖', color: '#5B6B8C', tint: '#EEF1F6' },
+    { x: 340, y: 300, w: 760, h: 375, label: 'VPC 10.0.0.0/16 · Public subnet ×2 (2a · 2c) · IGW', color: '#398B46', tint: '#EFF8EE' },
+    { x: 340, y: 710, w: 760, h: 195, label: 'DB subnet ×2 · 인터넷 라우트 없음 · NAT 없음', color: '#2A7F9E', tint: '#E9F3F6' },
+  ],
+  nodes: [
+    { id: 'GH', lane: 'warn', x: 30, y: 100, w: 250, kicker: 'GitHub Actions · 저장소 4', title: 'CD + Terraform', lines: ['OIDC 롤 ×7 · 장기 키 없음', 'PR plan · main apply'], href: 'ops.html#oidc' },
+    { id: 'U', lane: 'browser', shape: 'actor', x: 60, y: 260, w: 120, title: '사용자 · 브라우저' },
+    { id: 'T', lane: 'browser', shape: 'actor', x: 150, y: 572, w: 120, title: 'tailnet 등록 기기' },
+
+    { id: 'RUN', lane: 'lambda', x: 360, y: 100, w: 180, kicker: 'SSM Run Command', title: '배포 명령', lines: ['wes-app · wes-admin · test', 'SSH 없음'], href: 'ops.html#oidc' },
+    { id: 'R53', lane: 'lambda', x: 560, y: 100, w: 180, kicker: 'Route 53 · ACM', title: 'DNS · 인증서', lines: ['api → ALB', 'admin → Tailscale IP'], href: 'network.html#dns' },
+    { id: 'SSM', lane: 'lambda', x: 760, y: 100, w: 180, kicker: 'Parameter Store', title: '설정 · 시크릿', lines: ['/wes/prod/* 부팅 시', '시크릿은 수동 등록'], href: 'ops.html#ssm' },
+    { id: 'ECR', lane: 'lambda', x: 960, y: 100, w: 180, kicker: 'ECR ×3', title: '컨테이너 이미지', lines: ['embedder · score · categorize', 'score gpu 태그'], href: 'ai.html#ecr' },
+
+    { id: 'ALB', lane: 'wes', x: 360, y: 355, w: 210, kicker: 'ALB · 두 AZ', title: '공개 진입점', lines: [':80 → :443 · TLS', '/internal/admin* → 404'], href: 'request.html#alb' },
+    { id: 'APP', lane: 'wes', x: 610, y: 355, w: 210, kicker: 'EC2 t4g.micro', title: 'wes-app', lines: ['wes-api :8080 · Flyway', '분석 오케스트레이터'], href: 'request.html#app' },
+    { id: 'FE', lane: 'wes', x: 860, y: 355, w: 210, kicker: 'EC2 t4g.small + EIP', title: 'wes-frontend-test', lines: ['Caddy → Next :3000', 'test.easyselect.kr'], href: 'ops.html#frontend' },
+    { id: 'ADM', lane: 'wes', x: 360, y: 515, w: 210, kicker: 'EC2 t4g.small · 인바운드 0', title: 'wes-admin', lines: ['Tailscale :443 → Caddy', 'BackOffice → admin-api'], href: 'admin.html' },
+    { id: 'MON', lane: 'wes', x: 610, y: 515, w: 210, kicker: 'EC2 t4g.micro + EIP', title: 'wes-monitoring', lines: ['Loki :3100 · Grafana', 'monitoring.easyselect.kr'], href: 'ops.html#monitoring' },
+    { id: 'GPU', lane: 'gpu', x: 860, y: 515, w: 210, kicker: 'EC2 g6.xlarge ×2 · 기본 정지', title: 'score GPU 워커', lines: ['AZ마다 1대 · 유휴 30초 정지', 'ECR wes-score:gpu · RDS 직접'], href: 'ai.html#gpu' },
+
+    { id: 'RDS', lane: 'db', shape: 'db', x: 370, y: 750, w: 200, h: 140, title: 'RDS PostgreSQL 16.14', lines: ['db.t4g.micro · Single-AZ', '계정 4 · 커넥션 79'] },
+    { id: 'LAM', lane: 'lambda', x: 610, y: 750, w: 210, kicker: 'Lambda ×3 · 컨테이너', title: 'embedder · score · categorize', lines: ['3008 · 8192 · 3008 MB', '동시 32 · 32 · 2'], href: 'ai.html#lambda' },
+    { id: 'EP', lane: 'db', x: 860, y: 750, w: 210, kicker: 'VPC 엔드포인트', title: 'S3 게이트웨이 · bedrock', lines: ['S3는 무료 · Bedrock은 2a 한 곳', '인터넷 라우트 없음'], href: 'network.html#endpoints' },
+
+    { id: 'S3', lane: 's3', shape: 'db', x: 1130, y: 340, w: 160, h: 120, title: 'S3 wes-photos-*', lines: ['galleries/ 원본', 'previews/ 미리보기'] },
+    { id: 'BR', lane: 'lambda', x: 1130, y: 750, w: 160, kicker: 'Bedrock', title: 'Sonnet 4.6', lines: ['그룹 이름 짓기', 'wes 추천 LLM'], href: 'ai.html#bedrock' },
+  ],
+  edges: [
+    { from: 'GH', to: 'RUN', label: 'OIDC → SendCommand', color: 'warn' },
+    { from: 'GH', to: 'ECR', fromSide: 't', toSide: 't', via: [[155, 20], [1050, 20]], label: 'ECR push · Lambda UpdateFunctionCode', labelAt: 1, color: 'warn' },
+    { from: 'RUN', to: 'APP', fromSide: 'b', fromAt: .8, toSide: 't', toAt: .2, via: [[504, 290], [652, 290]], label: 'compose pull · up', labelAt: 1, color: 'warn' },
+    { from: 'R53', to: 'ALB', fromSide: 'b', fromAt: .2, toSide: 't', toAt: .75, via: [[596, 280], [517, 280]], label: 'A 별칭', labelAt: 0, dashed: true },
+    { from: 'SSM', to: 'APP', fromSide: 'b', fromAt: .3, toSide: 't', toAt: .95, label: '부팅 시 조회', dashed: true },
+    { from: 'ECR', to: 'GPU', fromSide: 'b', fromAt: .8, toSide: 'r', toAt: .5, via: [[1104, 280], [1085, 280], [1085, 581]], dashed: true, color: 'gpu' },
+
+    { from: 'U', to: 'ALB', fromSide: 'r', toSide: 'l', toAt: .3, label: '① HTTPS :443\napi.easyselect.kr', color: 'browser' },
+    { from: 'U', to: 'S3', fromSide: 'b', fromAt: .2, toSide: 'r', toAt: .5, via: [[84, 930], [1300, 930], [1300, 400]], label: '⑤ 사진 직접 PUT / GET · 서명 URL · 서버를 지나지 않음', labelAt: 1, color: 'browser' },
+    { from: 'T', to: 'ADM', fromSide: 'r', toSide: 'l', toAt: .7, label: '② tailnet :443', color: 'browser' },
+
+    { from: 'ALB', to: 'APP', label: ':8080', color: 'wes' },
+    { from: 'APP', to: 'MON', fromSide: 'b', fromAt: .3, toSide: 't', toAt: .3, color: 'wes' },
+    { from: 'APP', to: 'GPU', fromSide: 'b', fromAt: .8, toSide: 't', toAt: .5, via: [[778, 501], [965, 501]], label: 'Start / Stop', labelAt: 1, color: 'wes' },
+    { from: 'APP', to: 'RDS', fromSide: 'l', fromAt: .6, toSide: 't', toAt: .3, via: [[590, 434], [590, 695], [430, 695]], label: ':5432', labelAt: 2, color: 'wes' },
+    { from: 'APP', to: 'LAM', fromSide: 'l', fromAt: .85, toSide: 't', toAt: .5, via: [[600, 467], [600, 687], [715, 687]], label: 'EVENT invoke ×3', labelAt: 2, color: 'wes' },
+    { from: 'ADM', to: 'RDS', fromSide: 'b', fromAt: .7, toSide: 't', toAt: .7, label: 'admin-api', color: 'wes' },
+
+    { from: 'LAM', to: 'EP', color: 'lambda' },
+    { from: 'LAM', to: 'RDS', fromSide: 'l', toSide: 'r', label: ':5432', color: 'lambda' },
+    { from: 'EP', to: 'S3', fromSide: 'r', fromAt: .3, toSide: 'l', toAt: .5, via: [[1115, 790], [1115, 400]], label: 'GET · previews PUT', labelAt: 1, color: 'lambda' },
+    { from: 'EP', to: 'BR', fromSide: 'r', fromAt: .7, toSide: 'l', toAt: .7, label: 'InvokeModel', color: 'lambda' },
+  ],
+});
+</script>
+<p class="small">RDS 인바운드는 wes-app · Lambda · GPU 워커 · wes-admin 네 SG뿐입니다. wes-app만 Lambda를 부르고 GPU를 켜고 끕니다. Lambda끼리는 부르지 않습니다.</p>
+
+<h2 id="paths">경로 여섯 줄 요약</h2>
+<div class="paths">
+  <div style="--c:#1F5FB4"><b>공개 API</b><code>api.easyselect.kr</code> → ALB(:80→:443, ACM) → wes-app :8080(ALB SG만) → RDS :5432. ALB 규칙이 <code>/internal/admin*</code>을 404로 고정. <a href="request.html">3.</a></div>
+  <div style="--c:#0E7C72"><b>관리자</b>tailnet 기기 → <code>admin.easyselect.kr</code>(Tailscale IP) → Serve :443 → Caddy :8443(DNS-01) → BackOffice BFF → admin-api :8081. SG 인바운드 0, Docker 네트워크 둘. <a href="admin.html">6.</a></div>
+  <div style="--c:#B5651D"><b>사진 · AI</b>서명 URL로 브라우저 ↔ S3 직접. wes-app이 50장 배치를 EVENT로 Lambda에 보내고 GPU 워커를 켜고 끔. 단계 전환은 wes가 DB를 보고 결정. <a href="ai.html">5.</a></div>
+  <div style="--c:#5B5FB0"><b>로그</b>wes-app · admin-api → logback → wes-monitoring 사설 IP :3100(Loki) → <code>monitoring.easyselect.kr</code>(EIP 직결, ALB 아님) → Grafana. 보존 7일. <a href="ops.html#monitoring">7.</a></div>
+  <div style="--c:#A6216B"><b>배포</b>저장소 4개의 GitHub Actions → OIDC 롤 7 → SSM Run Command(태그 <code>Name</code> 한정) · ECR push + <code>UpdateFunctionCode</code> · 릴리스 zip S3. SSH·장기 키 없음. <a href="ops.html#oidc">7.</a></div>
+  <div style="--c:#4B5563"><b>설정 · state</b>앱은 SSM <code>/wes/prod/*</code>를 통째로 읽고 시크릿은 전부 수동 SecureString. Terraform state는 사전 생성 S3(<code>app/</code> · <code>dns/</code>) + 네이티브 락. <a href="ops.html#cicd">7.</a></div>
+</div>
+
+<h2 id="inventory">인벤토리</h2>
+<div class="tablewrap"><table>
+<tr><th>이름</th><th>타입</th><th>위치</th><th>인바운드</th><th>역할</th><th>페이지</th></tr>
+<tr><td>ALB <code>wes</code></td><td>Application LB · ACM</td><td>public 2a · 2c</td><td>:80 :443 ← 인터넷</td><td>TLS 종료 · 301 · 404 규칙 · 헬스 <code>/actuator/health</code></td><td><a href="request.html#alb">3</a></td></tr>
+<tr><td><code>wes-app</code></td><td>t4g.micro (arm64) · gp3 20G</td><td>public 2a</td><td>:8080 ← ALB SG</td><td>wes-api · Flyway owner · 분석 오케스트레이터 · Bedrock 추천 · GPU Start/Stop</td><td><a href="request.html#app">3</a></td></tr>
+<tr><td><code>wes-admin</code></td><td>t4g.small · gp3 20G</td><td>public 2a</td><td>SG 0 · tailnet :443만</td><td>Tailscale · Caddy · BackOffice · wes-admin-api</td><td><a href="admin.html">6</a></td></tr>
+<tr><td><code>wes-monitoring</code></td><td>t4g.micro + EIP</td><td>public 2a</td><td>:80 :443 공개 · :3100 ← app·admin SG</td><td>Loki 3.5.3 · Grafana 12.1.1 · Caddy</td><td><a href="ops.html#monitoring">7</a></td></tr>
+<tr><td><code>wes-frontend-test</code></td><td>t4g.small + EIP</td><td>public 2a</td><td>:80 :443 공개</td><td>정적 테스트 프론트 · 릴리스 zip 배포</td><td><a href="ops.html#frontend">7</a></td></tr>
+<tr><td><code>wes-score-gpu</code> ×2</td><td>g6.xlarge · 기본 정지 · 고정 AMI</td><td>public 2a · 2c</td><td>SG 0 · SSM만</td><td>score GPU 워커 · 유휴 30초 자기 정지</td><td><a href="ai.html#gpu">5</a></td></tr>
+<tr><td><code>wes-db</code></td><td>RDS db.t4g.micro · PG 16.14 · 20G · Single-AZ · 백업 0</td><td>DB subnet</td><td>:5432 ← ec2·embedder·gpu·admin SG</td><td>계정 wes_admin(40) · embedder(32) · photoselect(24) · wes_admin_api</td><td><a href="data.html#rds">4</a></td></tr>
+<tr><td><code>wes-embedder / score / categorize</code></td><td>Lambda 컨테이너 x86_64 · 900s</td><td>DB subnet ×2</td><td>없음</td><td>3008 / 8192 / 3008 MB · 동시 32 / 32 / 2 · 재시도 0</td><td><a href="ai.html#lambda">5</a></td></tr>
+<tr><td><code>wes-photos-*</code> · <code>wes-dev-photos-*</code> · 테스트 아티팩트</td><td>S3</td><td>리전</td><td>서명 URL · 롤</td><td>원본 + previews/ · 로컬 개발 · 릴리스 zip</td><td><a href="data.html#s3">4</a></td></tr>
+<tr><td>VPC 엔드포인트</td><td>S3 Gateway · bedrock-runtime Interface</td><td>DB 라우트 · 2a</td><td>:443 ← VPC CIDR</td><td>Lambda의 유일한 바깥길</td><td><a href="network.html#endpoints">2</a></td></tr>
+<tr><td>Image Builder</td><td>수동 파이프라인</td><td>public 2a</td><td>—</td><td>AL2023 + NVIDIA 580 + Docker → GPU AMI</td><td><a href="ai.html#ami">5</a></td></tr>
+<tr><td>OIDC 롤 ×7</td><td>IAM</td><td>—</td><td>—</td><td>server ×2 · backoffice · ai · test-web · tf_plan · tf_apply</td><td><a href="ops.html#oidc">7</a></td></tr>
+</table></div>
+
+<h2 id="principles">설계 원칙</h2>
+<ul>
+  <li><strong>이미지 바이트는 서버를 지나지 않는다.</strong> 브라우저 ↔ S3 직접. 서버·Lambda는 서명 URL과 previews/ 몇 장만 다룬다.</li>
+  <li><strong>단계 전환은 wes-app이 소유한다.</strong> Lambda 간 호출·자기 재호출·체인은 없고(#57), wes가 DB를 보고 다음 단계를 EVENT로 부른다. 그래서 lambda 엔드포인트도 사라졌다.</li>
+  <li><strong>인터넷 경로 없는 DB 서브넷.</strong> NAT 없음. Lambda·RDS의 바깥은 S3 게이트웨이와 bedrock-runtime 엔드포인트뿐.</li>
+  <li><strong>관리자 경로는 공개 경로와 겹치지 않는다.</strong> 별도 EC2, SG 인바운드 0, Tailscale 태그 grant, ALB 404 규칙, 앱과 분리된 SSM prefix.</li>
+  <li><strong>SSH·장기 키 없음.</strong> 모든 배포·접속은 OIDC 롤과 SSM(Run Command·세션)으로. SendCommand는 태그 <code>Name</code> 또는 인스턴스 ID로 한정.</li>
+  <li><strong>시크릿은 Terraform 밖.</strong> state에 평문 없음(ephemeral·write-only). DB 비밀번호·JWT·OAuth·Tailscale 키는 수동 SecureString.</li>
+  <li><strong>GPU는 필요할 때만 켠다.</strong> 두 대 모두 기본 정지, 켜는 주체는 wes, 끄는 주체는 워커 자신 → wes 안전망 → CloudWatch 알람.</li>
+  <li><strong>폐기 가능한 테스트 환경.</strong> Single-AZ · 백업 0 · 삭제 보호 없음 · 사진 버킷 <code>force_destroy</code>. 실제 고객 데이터를 받는 순간 뒤집어야 할 값들이다.</li>
+</ul>
+
+<h2 id="pages">페이지 지도</h2>
+<div class="map">
+  <a href="network.html"><div class="n">2</div><div class="t">네트워크 · 보안 그룹</div><div class="d">VPC · 서브넷 넷 · 라우트 · 엔드포인트 · SG 여섯과 규칙 전수 · 인바운드 매트릭스 · DNS 스택 분리</div></a>
+  <a href="request.html"><div class="n">3</div><div class="t">공개 요청 경로</div><div class="d">Route 53 · ACM · ALB 리스너·규칙·타깃 · wes-app EC2 · user_data · 인스턴스 롤 정책 · 부팅 시 SSM 값</div></a>
+  <a href="data.html"><div class="n">4</div><div class="t">데이터 저장소</div><div class="d">RDS 설정 · 계정 넷과 커넥션 상한 · 비밀번호 처리 · S3 버킷 셋 · CORS · 키 구조와 prefix별 권한</div></a>
+  <a href="ai.html"><div class="n">5</div><div class="t">AI 실행기</div><div class="d">Lambda 셋 스펙 · IAM · 비동기 설정·알람 · ECR · GPU 워커 풀(롤·systemd·정지 4겹) · Image Builder · Bedrock</div></a>
+  <a href="admin.html"><div class="n">6</div><div class="t">관리자 경로</div><div class="d">Tailscale grant·Serve · wes-admin 호스트 · Caddy DNS-01 · Docker 네트워크 둘 · BackOffice · admin-api · SSM prefix</div></a>
+  <a href="ops.html"><div class="n">7</div><div class="t">운영 · 배포</div><div class="d">모니터링 · 테스트 프론트 · OIDC 롤 일곱 · 인프라 CI/CD · state · 배포 순서 · SSM prefix 다섯 · 알람 · 비용</div></a>
+</div>
+
+<h2 id="refs">정본 문서</h2>
+<ul>
+  <li>인프라 코드: <code>organic-agent-infra/</code> — 루트 <code>main.tf · variables.tf · admin.tf · frontend-test.tf</code>, 모듈 12개 <code>modules/{network, security, ingress, compute, database, storage, analysis, score-gpu, admin-access, monitoring, frontend-test, github-actions}</code>, DNS 스택 <code>dns/</code></li>
+  <li>인프라 문서: <code>README.md</code> · <code>docs/architecture.md</code>(Mermaid 요약) · <code>docs/runbook.md</code> · <code>docs/deploy-order.md</code> · <code>docs/admin-internal-access.md</code> · <code>docs/pipeline-v2-infra-plan.md</code> · <code>docs/frontend-test.md</code></li>
+  <li>wes 쪽: <code>docs/architecture/prod-deployment.md</code> · <code>deploy-architecture.md</code> · <code>parameter-store-mapping.md</code> · 파이프라인 동작 <a href="../pipeline-v2-site/index.html">pipeline-v2-site</a> · AI 세 도메인 <code>ai-domains-architecture.html</code></li>
+  <li>AI 쪽: <code>organic-agent-ai/</code> 최상위 디렉토리 하나 = Lambda 하나 · <code>score/deploy/gpu-worker/README.md</code></li>
+</ul>
+</main>
+</body>
+</html>

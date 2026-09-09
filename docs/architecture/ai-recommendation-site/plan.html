@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>5. 후보 · 점수 · 쿼터 · MMR — AI 폴더 추천</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">전체 아키텍처</a><span class="sep">/</span>
+  <span class="here">5. 후보 · 점수 · 쿼터 · MMR</span>
+  <span class="spacer"></span>
+  <a href="query.html">← 4. 질의 해석</a>
+  <a href="reasons.html">6. 이유 문장 →</a>
+</nav>
+
+<div class="eyebrow">wes · AiSelectionJobRunner.load / plan / persistRound · support/*</div>
+<h1>계획 — 분석 결과와 폴더 세트로 폴더마다 몇 장을, 어떤 순서로</h1>
+<p class="lede">world 를 읽고(분석 요약·임베딩·폴더 세트·담은/거절 사진), 후보에서 담은 사진·거절·폴더 이상치를 빼고, 연사 클러스터당 최고점 한 장만 남긴 뒤,
+<code>z(0.5·technical_pct + 0.5·aesthetic_pct)</code> 점수로 폴더별 쿼터만큼 MMR(λ=0.7)로 고른다. 결과를 <code>ai_recommendations</code> 에 라운드 단위로 적으면 1단계가 끝난다.</p>
+<p class="meta"><code>AiSelectionJobRunner.kt</code> load :198 · plan :276 · persistRound :418 · <code>support/RecommendationScoring.kt</code> · <code>FolderFitRule.kt</code> · <code>FolderQuota.kt</code> · <code>ExactRecommendationQuota.kt</code> · <code>MmrSelector.kt</code></p>
+
+<h2 id="arch">흐름</h2>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1180, height: 640,
+  groups: [{ x: 300, y: 40, w: 560, h: 580, label: 'plan(world) — 폴더마다 (큰 폴더부터)' }],
+  nodes: [
+    { id: 'PG', lane: 'db', shape: 'db', x: 20, y: 60, w: 240, h: 190, title: 'Postgres (읽기)',
+      lines: ['photo_analysis 요약 · 임베딩', 'photos (display_order · preview_key)', 'photo_selection_items (담은 사진)', 'ai_recommendations.rejected_at', 'galleries.maxSelectablePhotoCount'] },
+    { id: 'FS', lane: 'wes', x: 20, y: 300, w: 240, kicker: 'category 경계', title: 'AiCategoryFolderSetReader',
+      lines: ['setFolders(galleryId, folderSetJobId)', 'detailFolder(범위 폴더)'], href: '#folderset' },
+    { id: 'W', lane: 'wes', x: 20, y: 440, w: 240, kicker: 'load()', title: 'world',
+      lines: ['analysis[] · emb[] · folders · quotaFolders', 'selected · rejected · previousRound', 'target · requestedCount · scopeFolderIds'], href: '#load' },
+    { id: 'EX', lane: 'wes', x: 320, y: 80, w: 250, kicker: '① 제외', title: 'exclude = 담은 ∪ 거절',
+      lines: ['이전 라운드 노출은 제외하지 않음'] },
+    { id: 'FIT', lane: 'wes', x: 320, y: 190, w: 250, kicker: '② 이상치', title: 'FolderFitRule.misfits',
+      lines: ['≥6장 폴더만 · m−sim ≥ 0.10 ∧ > 3σ(MAD)', '20% 넘게 잡히면 아무것도 안 뺌'], href: '#fit' },
+    { id: 'SC', lane: 'wes', x: 320, y: 310, w: 250, kicker: '③ 점수', title: 'RecommendationScoring',
+      lines: ['prior = 0.5·tech_pct + 0.5·aes_pct', 'score = z(prior) [+0.5·z(deficit) +0.5·z(lift)]'], href: '#score' },
+    { id: 'Q', lane: 'wes', x: 320, y: 430, w: 250, kicker: '④ 쿼터', title: 'FolderQuota / ExactQuota',
+      lines: ['n_f = max(1, round(target·|f|/Σ)) ≤ ⌈|f|/2⌉', 'requestedCount 있으면 후보 비례'], href: '#quota' },
+    { id: 'MMR', lane: 'wes', x: 600, y: 190, w: 240, kicker: '⑤ 선택', title: 'MmrSelector.selectInFolder',
+      lines: ['연사 클러스터당 최고점 1장', 'mmr = 0.7·score − 0.3·maxCos', 'folderRank = 점수 내림차순'], href: '#mmr' },
+    { id: 'MAT', lane: 'wes', x: 600, y: 430, w: 240, kicker: '⑥ 문장 재료', title: 'ReasonMaterial',
+      lines: ['primary_reason · facts · why_not', 'score_breakdown 조립'], href: 'reasons.html#material' },
+    { id: 'PR', lane: 'wes', x: 900, y: 190, w: 260, kicker: 'persistRound · 1단계', title: 'ai_recommendations 쓰기',
+      lines: ['round = draft ? 1 : prev+1', '범위 사진 기존 추천 DELETE (거절 제외)', 'INSERT round·rank·folder_id·breakdown', 'job.assignRound(round)'], href: '#persist' },
+    { id: 'R', lane: 'db', shape: 'db', x: 920, y: 430, w: 220, title: 'ai_recommendations', lines: ['reason = NULL → 6. 으로'] },
+  ],
+  edges: [
+    { from: 'PG', to: 'W', fromSide: 'b', toSide: 't', toAt: .3, label: '분석 요약 · 담은/거절', dashed: true },
+    { from: 'FS', to: 'W', fromSide: 'b', toSide: 't', toAt: .7, label: '폴더 세트', dashed: true },
+    { from: 'W', to: 'EX', fromAt: .2, toAt: .5, via: [[285, null]], label: 'world', labelAt: 1, color: 'wes' },
+    { from: 'EX', to: 'FIT', fromSide: 'b', toSide: 't', color: 'wes' },
+    { from: 'FIT', to: 'SC', fromSide: 'b', toSide: 't', color: 'wes' },
+    { from: 'SC', to: 'Q', fromSide: 'b', toSide: 't', label: 'remaining = requestedCount ?: target − 담은 수', color: 'wes' },
+    { from: 'Q', to: 'MMR', fromAt: .5, toAt: .8, label: 'quota[f]', color: 'wes' },
+    { from: 'SC', to: 'MMR', fromAt: .3, toAt: .3, label: 'score[]', color: 'wes' },
+    { from: 'MMR', to: 'MAT', fromSide: 'b', toSide: 't', label: 'picks', color: 'wes' },
+    { from: 'MMR', to: 'PR', fromAt: .5, toAt: .3, label: 'picks', color: 'wes' },
+    { from: 'MAT', to: 'PR', fromAt: .5, toAt: .8, label: 'breakdown', color: 'wes' },
+    { from: 'PR', to: 'R', fromSide: 'b', toSide: 't', label: 'DELETE + INSERT', color: 'wes' },
+  ],
+});
+</script>
+
+<h2 id="load">load — world 에 무엇이 들어가나</h2>
+<div class="role"><b>한다</b><span>이번 잡이 볼 <strong>세계(world)</strong>를 한 번에 메모리로 올린다: 분석 요약, 범위 사진의 임베딩, 폴더 세트, 담은 사진, 거절, 이전 라운드, 목표 장수. 이후 단계는 DB 를 다시 읽지 않는다.</span><b>왜</b><span>계획은 폴더끼리 비교하고 사진끼리 코사인을 재는 계산이라 행 단위 조회로는 왕복이 수천 번이 된다. 필요한 것만 골라(벡터는 범위 사진만, <code>photo_ratings</code>·폴더 엔티티는 안 읽음) 한 번에 읽고, 그 스냅샷으로 결정론적으로 계산한다.</span><b>없으면</b><span>계산 도중 사용자가 사진을 옮기거나 담으면 단계마다 다른 세계를 보게 되고, 벡터 전부를 읽으면 수천 장 갤러리에서 메모리와 시간이 튄다.</span><b>입출력</b><span><code>jobId</code> → <code>world{analysis[], emb[], folders, quotaFolders, selected, rejected, previousRound, target, requestedCount, scopeFolderIds}</code></span></div>
+<div class="tablewrap"><table>
+<tr><th>재료</th><th>어디서</th><th>조건 · 비고</th></tr>
+<tr><td>분석 요약</td><td><code>PhotoAnalysisRepository.findAllAnalyzedSummaryByGalleryId</code></td><td class="wrap"><code>photoId · technicalPct · aestheticPct · subjects · clusterId · clusterRank · subScores</code>, 조건 <code>model_version IS NOT NULL ∧ technical_pct/aesthetic_pct IS NOT NULL ∧ embedding IS NOT NULL</code>. 벡터는 안 읽는다. 하나도 없으면 <code>IllegalStateException("분석 결과가 없다")</code></td></tr>
+<tr><td>사진 행</td><td><code>photoRepository.findAllByGalleryIdOrderByDisplayOrderAsc</code></td><td class="wrap"><code>Photo.DISPLAY_ORDER</code> 재정렬, <code>previewKey</code> 수집. 분석 요약이 없는 사진은 제외</td></tr>
+<tr><td>임베딩</td><td><code>findAllEmbeddingByPhotoIdIn(범위 사진)</code></td><td class="wrap">범위 안 사진만 L2 정규화해 담는다. 범위 밖은 빈 배열(<code>NO_EMBEDDING</code>)</td></tr>
+<tr><td>폴더 세트</td><td><code>folderSetReader.setFolders(galleryId, job.folderSetJobId)</code> / <code>detailFolder</code></td><td class="wrap">쿼터 재료(<code>quotaFolders</code>)는 항상 세트 전체. 대상 범위(<code>scopeFolderIds = resolvedQuery?.detailFolderIds ?: detailFolderId</code>)는 null 이면 세트 폴더 + 미분류, 아니면 그 폴더들만. 세트가 비면 예외</td></tr>
+<tr><td>담은 사진</td><td><code>photo_selection_items WHERE selection_id</code></td><td>제외 집합 + 선호 통계(<code>selected[]</code>)</td></tr>
+<tr><td>거절</td><td><code>ai_recommendations WHERE rejected_at IS NOT NULL</code></td><td>제외 집합. 현재 이 컬럼을 쓰는 API 는 없다</td></tr>
+<tr><td>이전 라운드</td><td><code>findFirstBySelectionIdOrderByRoundDesc.round ?: 0</code></td><td>refine 의 다음 라운드 번호</td></tr>
+<tr><td>목표</td><td><code>gallery.maxSelectablePhotoCount ?: 30</code></td><td><code>remaining = requestedCount ?: (target − 담은 수)</code></td></tr>
+<tr><td>읽지 않는 것</td><td colspan="2"><code>photo_ratings</code>(별점) · 폴더 엔티티의 category·needsReview · <code>photo_analysis.embedding</code>(범위 밖)</td></tr>
+</table></div>
+
+<h3 id="folderset">폴더 세트 읽기 경계 — AiCategoryFolderSetReader</h3>
+<div class="role"><b>한다</b><span>category 도메인의 폴더·배정 테이블을 추천이 필요한 모양(세트 키, 폴더 이름, 사진 id 목록, 현재 배정)으로만 읽어 준다.</span><b>왜</b><span>추천이 폴더 엔티티를 직접 만지면 두 도메인이 서로의 스키마 변경에 끌려간다. 좁은 읽기 경계를 두면 폴더 쪽이 칩·리뷰 플래그·정렬을 바꿔도 추천은 영향받지 않고, 추천이 폴더를 실수로 쓰는 일도 막힌다.</span><b>없으면</b><span>추천 코드 곳곳에 폴더 JPQL 이 흩어지고, 폴더 구조가 바뀔 때마다 추천 테스트가 깨진다.</span></div>
+<p>추천은 category 도메인의 엔티티를 직접 만지지 않고 이 리더가 노출하는 <code>FolderSetDetailDto{detailFolderId, conceptName, detailName, photoIds, displayName="컨셉 › 세부"}</code> 네 필드만 본다.
+<code>setFolders</code> 는 컨셉(sortOrder,id) × 세부폴더 × <code>photo_category_assignments</code> 의 <strong>현재</strong> 배정을 돌려주고 빈 세부폴더도 포함한다. <code>detailFolder</code> 는 세트 밖(사용자 생성) 폴더도 읽는다.</p>
+
+<h2 id="plan">plan — 폴더마다</h2>
+<div class="role"><b>한다</b><span>world 를 받아 <strong>폴더마다 몇 장을, 어떤 사진을, 어떤 순위로</strong> 추천할지 결정한다. 제외 → 이상치 → 점수 → 쿼터 → MMR 선택 → 문장 재료 순서로, 결과는 아직 메모리(draft)에만 있다.</span><b>왜</b><span>"좋은 사진 30장"이 아니라 "각 폴더에서 그 폴더답게 좋은 사진 몇 장"이 이 서비스의 추천이다. 폴더가 단위여야 부부가 폴더를 넘기며 고르는 화면과 맞고, 큰 폴더가 추천을 독식하지 않는다. 결정을 전부 메모리에서 끝내야 1단계 저장이 한 트랜잭션으로 짧아진다.</span><b>없으면</b><span>점수 상위 30장이 한두 폴더에 몰리고, 연사 5장이 나란히 추천되며, 사용자가 이미 담은 사진이 다시 추천된다.</span><b>입출력</b><span><code>world</code> → <code>draft{folder → picks[{photoId, folderRank, breakdown, material}]}</code></span></div>
+<ol class="steps">
+  <li><b>미분류 가상 폴더.</b> 쿼터 세트 어느 폴더에도 없는 사진을 <code>"미분류"</code>(id null) 폴더로 묶는다. 갤러리 전체 라운드에서만 대상이 된다.</li>
+  <li><b>제외.</b> <code>exclude = 담은 사진 ∪ 거절 사진</code>. 이전 라운드에 노출된 사진은 제외하지 않는다(다시 뽑힐 수 있다).</li>
+  <li><b>폴더 이상치(FolderFitRule).</b> 배정은 건드리지 않고 후보에서만 뺀다. 미분류는 판정하지 않는다. 로그 <code>폴더 {}›{} 에서 동떨어진 사진 {}장 제외</code>.</li>
+  <li><b>점수.</b> 갤러리 안 백분위 기준이라 폴더 범위 요청에서도 같은 값. 균형·선호 항은 게이트가 걸린다.</li>
+  <li><b>쿼터.</b> 요청 장수가 없으면 목표 비례(<code>FolderQuota</code>), 있으면 후보 클러스터 수 비례(<code>ExactRecommendationQuota</code>).</li>
+  <li><b>선택.</b> 큰 폴더부터 <code>MmrSelector.selectInFolder</code>. 연사 클러스터당 최고점 1장 → MMR 로 <code>quota</code> 장.</li>
+  <li><b>재료.</b> 뽑힌 컷마다 <code>ReasonMaterial</code> 이 주 사유·사실·형제 탈락 이유·템플릿 문장을 만들어 <code>score_breakdown</code> 에 넣는다(<a href="reasons.html#material">6.</a>).</li>
+</ol>
+
+<h3 id="fit">FolderFitRule — 상수의 뜻</h3>
+<div class="role"><b>한다</b><span>폴더 안에서 <strong>임베딩이 동떨어진 사진</strong>을 찾아 추천 후보에서만 뺀다(배정은 그대로).</span><b>왜</b><span>AI 폴더 배정은 그룹 단위라 한두 장이 잘못 섞일 수 있다. 그런 사진이 점수가 높으면 "해변" 폴더 대표로 실내 컷이 뽑힌다. 중앙값·MAD 기반의 강건 통계를 써서 폴더가 균일하든 아니든 같은 기준으로 잡고, 20% 넘게 잡히면 폴더 자체가 잡동사니라 보고 손대지 않는다.</span><b>없으면</b><span>폴더 이름과 맞지 않는 사진이 그 폴더의 1위로 추천돼 이유 문장까지 "해변 폴더 41장 중 1위"라고 말한다.</span><b>입출력</b><span><code>emb[], folder members</code> → 제외할 photoId 집합 (결과는 <code>result.misfitPhotoIds</code>)</span></div>
+<pre><code>sim_i = cos(emb_i, leave-one-out centroid of folder)
+m = median(sim), σ = 1.4826 · MAD(sim)
+misfit_i ⇔ (m − sim_i ≥ MIN_GAP 0.10) ∧ (m − sim_i > ROBUST_Z 3.0 · σ)</code></pre>
+<div class="tablewrap"><table>
+<tr><th>상수</th><th>값</th><th>이유(코드 주석)</th></tr>
+<tr><td><code>MIN_FOLDER_SIZE</code></td><td>6</td><td>이 크기 미만 폴더는 판정하지 않는다 — 표본이 적으면 중심이 곧 한두 장이다</td></tr>
+<tr><td><code>ROBUST_Z</code></td><td>3.0</td><td>강건 z(MAD 기준) 하한. 3 ≈ 정규분포의 3σ</td></tr>
+<tr><td><code>MIN_GAP</code></td><td>0.10</td><td>아주 균일한 폴더(σ≈0)에서 작은 흔들림이 이상치로 잡히지 않게 하는 절대 하한</td></tr>
+<tr><td><code>MAX_MISFIT_RATIO</code></td><td>0.2</td><td>초과하면 "폴더 자체가 여러 장면의 묶음"이라 보고 아무것도 빼지 않는다</td></tr>
+<tr><td><code>MAD_TO_SIGMA</code></td><td>1.4826</td><td>MAD → σ 환산</td></tr>
+</table></div>
+
+<h3 id="score">RecommendationScoring — 산식 원문</h3>
+<div class="role"><b>한다</b><span>사진마다 <strong>하나의 점수</strong>를 만든다. 기본은 기술·미학 백분위의 평균을 z 정규화한 값이고, 담은 사진이 충분하면 "부족한 유형"과 "선호하는 유형"에 가산점을 붙인다.</span><b>왜</b><span>두 모델 점수는 단위가 달라 그대로 더할 수 없다 — 갤러리 안 백분위로 맞추면 폴더 범위 요청에서도 같은 자로 잰다. 균형·선호 항은 refine 을 위한 것이다: 부부가 신부 단독을 많이 담았으면 두 분 컷을, 단체를 안 담았으면 단체를 채워 준다. 담은 사진이 5장 미만이면 통계가 노이즈라 끈다.</span><b>없으면</b><span>점수가 높은 유형만 반복 추천되고, 담기·빼기가 다음 라운드에 아무 영향을 주지 않는다.</span><b>입출력</b><span><code>technical_pct[], aesthetic_pct[], subjects[], selected[]</code> → <code>score[], prior_z, balance_z, affinity_z</code></span></div>
+<pre><code>prior(p) = w_t·technical_pct + w_a·aesthetic_pct          (갤러리 내 백분위, w_t = w_a = 0.5)
+score(p) = z(prior) [+ w_bal·z(deficit(type p)) + w_pref·z(affinity(type p))]   (w_bal = w_pref = 0.5)
+
+type      = photo_analysis.subjects (bride/groom/couple/group/unknown)
+deficit   = max(0, poolShare(type) − selectedShare(type))      담은 사진에서 부족한 유형
+affinity  = P(sel | type) − P(sel)                              담은 사진이 선호하는 유형 (lift)
+대괄호 게이트: SUBJECTS_TRUSTED ∧ 담은 사진 ≥ PREF_MIN_SELECTED(5) ∧ unknown 아닌 유형 존재. 아니면 z(prior) 만.
+z(): 표준편차가 0 이면 0 벡터.</code></pre>
+<div class="note"><div class="t">품질로 지우지 않는다</div>
+sharpness · highlight_clip · shadow_clip 은 점수에 들어가지 않는다. 이유 문장의 재료(선명함·노출 안정)와 형제 탈락 이유에만 쓰인다. 코드 주석: "품질로 사진을 제거하는 단계는 없다 — 점수 하한은 근거 문장에서 품질 표현을 빼는 게이트일 뿐이다."</div>
+
+<h3 id="quota">쿼터</h3>
+<div class="role"><b>한다</b><span>폴더마다 <strong>몇 장을 추천할지</strong>(n_f) 배분한다. 요청 장수가 없으면 목표(<code>maxSelectablePhotoCount</code>−담은 수)를 폴더 크기에 비례해 나누고, 있으면 그 장수를 후보 수에 비례해 나눈다.</span><b>왜</b><span>추천 총량은 앨범 목표에 맞아야 하고, 폴더 크기가 10배 차이 나도 작은 폴더가 0장이 되면 안 된다(폴더 화면에 AI 마크가 하나도 없는 게 더 이상하다). 반대로 한 폴더의 절반 넘게 추천하면 추천이 아니다. 그래서 하한 1·상한 ⌈|f|/2⌉ 을 둔다. 폴더 하나만 다시 받아도 세트 전체로 배분해 장수가 널뛰지 않게 한다.</span><b>없으면</b><span>큰 폴더가 목표를 다 먹거나, 작은 폴더가 비거나, 요청한 12장이 반올림 때문에 14장이 된다.</span><b>입출력</b><span><code>sizes{folder → |f|}, target</code> 또는 <code>capacities{folder → 클러스터 수}, requested</code> → <code>quota{folder → n_f}</code></span></div>
+<pre><code>// requestedCount 없음 — FolderQuota (AI repo rerank.folder_quota 의 자리)
+n_f = max(1, round(target · |f| / Σ|f'|)),  단 n_f ≤ max(1, ceil(|f| · CAP_RATIO 0.5))
+target ≤ 0(담은 사진이 목표에 닿은 뒤 refine)이어도 폴더마다 1장 — 폴더 화면에서 AI 마크가 사라지는 것이 더 이상하다
+
+// requestedCount 있음 — ExactRecommendationQuota
+capacity_f = 폴더 후보의 distinct 연사 클러스터 수
+n_f = floor(min(requested, Σcap) · capacity_f / Σcap), 나머지는 잔여 큰 순으로 +1 (용량 초과 없음)</code></pre>
+
+<h3 id="mmr">MmrSelector</h3>
+<div class="role"><b>한다</b><span>폴더 안 후보에서 <strong>연사 클러스터당 최고점 한 장</strong>만 남기고, 점수와 "이미 고른 것과의 유사도"를 저울질(MMR)해 n_f 장을 고른다. 순위는 점수순.</span><b>왜</b><span>웨딩 사진은 같은 순간 연사가 5~8장씩이라 점수만 보면 같은 컷이 줄지어 뽑힌다. 연사는 대표 한 장으로 접고, 남은 후보끼리도 임베딩이 겹치면 감점해 배경·구도가 다른 컷이 섞이게 한다. λ=0.7 은 "점수 7 : 다양성 3".</span><b>없으면</b><span>추천 10장이 같은 포즈 10장이 된다. 순위를 MMR 순서로 매기면 다양성 때문에 뽑힌 컷이 1위가 되므로 순위는 점수순으로 따로 둔다.</span><b>입출력</b><span><code>score[], emb[], members, clusterIds, quota</code> → <code>picks[{index, folderRank, quota}]</code></span></div>
+<pre><code>candidates = 폴더 사진 − exclude − misfit → 연사 클러스터당 score 최고 1장
+repeat quota:
+    pick = argmax_c  LAMBDA 0.7 · score[c] − 0.3 · maxSim[c]        (maxSim = 이미 고른 것들과의 최대 코사인)
+    maxSim 갱신
+folderRank = 후보(연사 dedup 후)의 점수 내림차순 순위 (MMR 순서가 아니다)</code></pre>
+
+<h2 id="persist">persistRound — 1단계 저장</h2>
+<div class="role"><b>한다</b><span>메모리의 draft 를 <strong>새 라운드 번호</strong>로 <code>ai_recommendations</code> 에 적고, 같은 트랜잭션에서 잡에 round 를 박는다. 범위 사진의 옛 추천은 지우되 거절 행은 남긴다.</span><b>왜</b><span>여기가 "화면에 순위가 뜨는 순간"이다. 이유 문장(LLM, 수십 초~분)을 기다리지 않고 순위부터 보여 주려면 저장을 두 단계로 나눠야 한다. 라운드를 덧쓰지 않고 새로 적는 이유는 refine 이 "담기·빼기 이후의 판단"이라 이전 판단과 구분돼야 하고, 거절 행은 다음 라운드의 제외 근거라 지우면 안 되기 때문이다.</span><b>없으면</b><span>사용자가 이유가 채워질 때까지 빈 화면을 보거나, 폴더 하나만 다시 받았는데 다른 폴더의 추천이 사라지거나, 거절한 사진이 다시 추천된다.</span><b>입출력</b><span><code>world, draft</code> → 라운드 번호 (행: <code>round, rank, folder_id, score_breakdown, presented_at, reason=NULL</code>)</span></div>
+<pre><code>round = if (mode == DRAFT) 1 else previousRound + 1
+DELETE ai_recommendations WHERE selection_id=? AND photo_id IN (범위 사진) AND rejected_at IS NULL   -- 거절 행은 남긴다
+INSERT ai_recommendations(selection_id, photo_id, round, rank=folderRank, presented_at=now,
+                          folder_id=추천 당시 폴더(미분류 null), score_breakdown, reason=NULL) …
+job.assignRound(round)                       -- 같은 트랜잭션. 여기서부터 화면에 ✦ 칩이 뜬다</code></pre>
+<p>범위 사진 = <code>scopeFolderIds == null</code> 이면 분석된 사진 전부, 아니면 범위 폴더의 현재 사진. refine 은 이전 라운드를 고치지 않고 새 라운드를 통째로 적고, 조회는 사진별 최신 라운드 한 행을 본다.</p>
+<div class="tablewrap"><table>
+<tr><th><code>score_breakdown</code> 키</th><th>값</th></tr>
+<tr><td><code>pipeline</code> · <code>score</code> · <code>prior_z</code> · <code>balance_z</code> · <code>affinity_z</code></td><td>"v3", 점수(4자리)와 세 z 항(3자리)</td></tr>
+<tr><td><code>technical_pct</code> · <code>aesthetic_pct</code> · <code>cluster_id</code> · (<code>subjects</code>)</td><td>재료. subjects 는 선호 항이 켜졌을 때만</td></tr>
+<tr><td><code>folder</code> · <code>folder_size</code> · <code>folder_rank</code> · <code>folder_quota</code></td><td>"부모›이름", 폴더 장수, 폴더 안 순위, 그 폴더의 n_f</td></tr>
+<tr><td><code>alternatives[{photo_id, why_not}]</code></td><td>같은 연사의 탈락 컷과 이유(덜 선명함 · 화질이 떨어짐 · 인상이 약함 · 거의 같은 컷)</td></tr>
+<tr><td><code>primary_reason</code> · <code>facts</code> · <code>reason_fallback</code></td><td>이유 문장 재료 — 복구 경로가 이것만으로 2단계를 다시 돈다</td></tr>
+</table></div>
+
+<h2 id="files">코드 위치 · 테스트</h2>
+<div class="tablewrap"><table>
+<tr><th>역할</th><th>파일</th></tr>
+<tr><td>load · plan · persist</td><td><code>recommendation/service/AiSelectionJobRunner.kt</code> (load :198 · loadEmbeddings :257 · plan :276 · persistRound :418 · 상수 :628-638)</td></tr>
+<tr><td>규칙</td><td><code>support/FolderFitRule.kt</code> · <code>RecommendationScoring.kt</code> · <code>FolderQuota.kt</code> · <code>ExactRecommendationQuota.kt</code> · <code>MmrSelector.kt</code> · <code>ReasonMaterial.kt</code></td></tr>
+<tr><td>읽기 경계</td><td><code>category/support/AiCategoryFolderSetReader.kt</code> · <code>category/dto/FolderSetDetailDto.kt</code> · <code>photo/repository/PhotoAnalysisRepository.kt</code>(:27 요약 · :55 임베딩) · <code>projection/PhotoAnalysisSummary.kt</code></td></tr>
+<tr><td>테스트</td><td><code>FolderFitRuleUnitTest</code> · <code>FolderQuotaUnitTest</code> · <code>MmrSelectorUnitTest</code> · <code>ExactRecommendationQuotaTest</code> · <code>AiSelectionJobRunnerTest</code>(draft 6건 · 이상치 · refine 2건 · 폴더 범위 2건)</td></tr>
+</table></div>
+
+<div class="pager">
+  <a href="query.html">← 4. 자연어 질의 해석</a>
+  <a href="reasons.html">6. 이유 문장 →</a>
+</div>
+</main>
+</body>
+</html>

@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>개선 이력 · 비용 — 아키텍처 지도</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+<style>
+  .map{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin:16px 0}
+  .map a{display:block;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px 14px;text-decoration:none;color:var(--ink)}
+  .map a:hover{border-color:var(--accent);box-shadow:0 4px 14px rgba(0,0,0,.08)}
+  .map .n{font-family:"IBM Plex Mono",monospace;font-size:.7rem;color:var(--accent);letter-spacing:.08em}
+  .map .t{font-weight:600;margin:2px 0 4px}
+  .map .d{font-size:.8rem;color:var(--ink-2)}
+  .era td:first-child{white-space:nowrap;font-weight:600}
+  .big{font-size:1.4rem;font-weight:600;font-family:"IBM Plex Mono",monospace}
+</style>
+</head>
+<body>
+<main>
+<nav class="nav">
+  <span class="here">개선 이력 · 비용</span>
+  <span class="spacer"></span>
+  <a href="sharding.html">2. 람다 샤딩</a>
+  <a href="resize-gpu.html">3. 리사이즈 · GPU</a>
+  <a href="categorize.html">4. categorize 리팩터</a>
+  <a href="cost.html">5. 비용</a>
+</nav>
+
+<div class="eyebrow">organic-agent · wes docs/architecture · 개선 이력(AI 파이프라인) + 서비스 비용</div>
+<h1>업로드 → AI 파이프라인은 어떻게 100분 넘게 끝을 못 보던 것이 7.5분이 됐고, 그게 얼마인가</h1>
+<p class="lede">7,189장 갤러리 하나를 올리고 AI 폴더가 만들어지기까지 <strong>100분이 넘도록 끝을 보지 못하던 것</strong>(업로드 63.5분 + 분석 40분 이상 미완주)이 <strong>약 7.5분</strong>이 됐습니다. 세 시대를 거쳤습니다 — 단계당 Lambda 하나가 15분 데드라인에 걸려 자기를 다시 부르던 <strong>v1</strong>, 조정자 Lambda가 샤드 N개를 동시에 띄우던 <strong>샤딩</strong>(중간 단계, 지금은 삭제), 그리고 wes 스윕이 50장 배치를 배정하고 점수는 EC2 GPU 워커가 직접 집어 가는 <strong>v2</strong>(현재). 이 사이트는 각 단계가 무엇을 고쳤고 실측이 어땠는지, 그리고 지금 구조로 운영하면 갤러리 하나·추천 한 번·한 달에 얼마가 드는지를 정리합니다.</p>
+<p class="meta">2026-09-10 · 근거는 AI repo <code>docs/improvements/*-2026-09-0{6,7,8}.md</code> · <code>docs/experiments/upload-timing-2026-09-06.md</code> · wes <code>docs/improvements/score-lambda-vs-gpu-2026-09-08.md</code> · 인프라 repo <code>NEXT.md</code>·<code>docs/runbook.md</code>. 수치는 근거 문서에서 그대로 옮겼고 재지 않은 것은 "미측정"으로 표시했다. 현재 구조 자체는 <a href="../pipeline-v2-site/index.html">pipeline-v2-site</a>가 정본이다.</p>
+<nav class="section-links" aria-label="이 페이지 목차"><a href="#eras">세 시대</a><a href="#big">시대별 흐름도</a><a href="#table">한 표로 보는 이력</a><a href="#cost">비용 한눈에</a><a href="#pages">페이지 지도</a><a href="#caveats">읽을 때 주의</a><a href="#refs">정본 문서</a></nav>
+
+<h2 id="eras">세 시대 — 무엇이 바뀌었나</h2>
+<div class="tablewrap"><table class="era">
+<tr><th>시대</th><th>시기</th><th>구조</th><th>7,189장 갤러리 (업로드 + 분석)</th></tr>
+<tr><td>v1</td><td>~2026-09-05</td><td>단계당 Lambda 1개, 직렬. 15분 데드라인에 걸려 자기 재호출. Lambda가 다음 Lambda를 부르는 체인</td><td><span class="big">100분+</span><br><span class="small">확정값 없음 — 업로드 63.5 + 분석 40분+ 미완주(score가 15분마다 재호출을 반복)</span></td></tr>
+<tr><td>샤딩</td><td>09-05 ~ 09-06</td><td>조정자 Lambda 1 + 샤드 N(150장씩, 최대 32) 동시 실행. 브라우저 2048 리사이즈 도입. <span class="tag warn">삭제됨</span></td><td><span class="big">18.3분</span><br><span class="small">업로드 4.6 + 분석 13.7. 리사이즈 전 샤딩만으로는 77.5분(업로드 63.5 + 분석 14.0)</span></td></tr>
+<tr><td>v2 (현재)</td><td>09-07 ~</td><td>샤딩·체인·자기 재호출 삭제. wes 5초 스윕이 50장 배치를 embedder에 배정, score는 EC2 GPU 워커가 pull, categorize Lambda 1회</td><td><span class="big">약 7.5분</span><br><span class="small">업로드와 겹쳐 돌아 업로드 시작 기준 +7.5분에 폴더 DONE</span></td></tr>
+</table></div>
+<div class="note"><b>먼저 잡아야 할 사실 하나.</b> "람다 샤딩"은 중간 단계였고 지금 코드에는 없다(AI repo #99·#101 삭제, <code>CLAUDE.md:55</code> "체인·샤딩·자기 재호출은 없다"). 이 사이트에서는 <a href="sharding.html">이력</a>으로만 쓰고, 현재 구조는 wes <code>EmbedDispatcher</code> + GPU 워커 pull + categorize 1회다.<br><b>그리고 숫자 하나.</b> 자주 인용되는 <strong>77.5분은 v1이 아니라 「원본 업로드 63.5 + 32 샤드 분석 14.0」</strong>이다(<code>upload-timing</code> §7.3 표의 왼쪽 열). v1 직렬은 분석이 40분을 넘겨도 끝나지 않아 확정값이 없다. 그래서 기여는 갈라 적는다 — 샤딩: 분석 40분+ 미완주 → 14분 한 라운드, 2048 리사이즈: 업로드 63.5 → 4.6분.</div>
+
+<h2 id="big">시대별 흐름도 — 같은 세 단계를 누가 어떻게 돌리는가</h2>
+<p class="small">실선 = 호출·쓰기, 점선 = 읽기·관측. v1·샤딩은 Lambda가 Lambda를 부르는 화살표가 있고, v2에는 그 화살표가 없다 — 단계 사이는 전부 DB 행을 wes가 관측해서 잇는다.</p>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1240, height: 900, large: true, title: 'v1, 샤딩, v2 세 시대의 업로드·임베딩·점수·categorize 실행 구조 비교',
+  groups: [
+    { x: 10, y: 20, w: 1220, h: 200, label: 'v1 · ~09-05 · Lambda 직렬 + 자기 재호출 · 100분+ 미완주', color: '#8A6D3B', tint: '#F7F1E7' },
+    { x: 10, y: 245, w: 1220, h: 315, label: '샤딩 · 09-05~06 · 조정자 + 샤드 ×N (삭제됨) · 18.3분', color: '#5B6B8C', tint: '#EEF1F6' },
+    { x: 10, y: 585, w: 1220, h: 300, label: 'v2 · 09-07~ (현재) · wes 스윕 배정 + GPU 워커 pull · 약 7.5분', color: '#2F7D4F', tint: '#EAF5EE' },
+  ],
+  nodes: [
+    { id: 'W1', lane: 'wes', x: 30, y: 70, w: 210, kicker: 'wes', title: 'EVENT 1회', lines: ['갤러리 통째로 한 호출'] },
+    { id: 'E1', lane: 'lambda', x: 290, y: 70, w: 220, kicker: 'wes-embedder 3GB', title: '직렬 · 822장 8.1분', lines: ['15분 앞 자기 재호출'], href: 'sharding.html#problem' },
+    { id: 'S1', lane: 'lambda', x: 600, y: 70, w: 220, kicker: 'wes-score 8GB', title: '장당 1.5s', lines: ['822장 512장 미완주', '7,183장 40분+'], href: 'sharding.html#problem' },
+    { id: 'C1', lane: 'lambda', x: 900, y: 70, w: 190, kicker: 'wes-categorize', title: '체인 끝', lines: ['822장 0.5분'] },
+    { id: 'R1', lane: 'warn', x: 1110, y: 70, w: 120, title: '100분+', lines: ['업로드 63.5분', '분석 미완주'] },
+
+    { id: 'B2', lane: 'browser', x: 30, y: 300, w: 210, kicker: '브라우저', title: '2048 리사이즈 도입', lines: ['4.98MB → 0.29MB', '업로드 63.5 → 4.6분'], href: 'resize-gpu.html#resize' },
+    { id: 'W2', lane: 'wes', x: 30, y: 447, w: 210, kicker: 'wes', title: 'EVENT 2회', lines: ['embedder · score 조정자'] },
+    { id: 'E2', lane: 'lambda', x: 290, y: 300, w: 200, kicker: '조정자 0.7s', title: 'wes-embedder', lines: ['N = ⌈n/150⌉ ≤ 32'], href: 'sharding.html#fix' },
+    { id: 'ES', lane: 'lambda', x: 560, y: 300, w: 200, kicker: '샤드 ×N 동시', title: 'embedder 샤드', lines: ['position % total'], href: 'sharding.html#fix' },
+    { id: 'S2', lane: 'lambda', x: 290, y: 435, w: 200, kicker: '조정자 0.7s', title: 'wes-score', lines: ['샤드 32 = RDS 61/79'], href: 'sharding.html#fix' },
+    { id: 'SS', lane: 'lambda', x: 560, y: 435, w: 200, kicker: '샤드 ×N 동시', title: 'score 샤드', lines: ['done N/N 마지막 샤드 →'], href: 'sharding.html#fix' },
+    { id: 'C2', lane: 'lambda', x: 870, y: 380, w: 190, kicker: 'wes-categorize', title: '65초', lines: ['7,183장 · Bedrock 3회'] },
+    { id: 'R2', lane: 'warn', x: 1110, y: 380, w: 120, title: '18.3분', lines: ['Lambda $1.80', '(7,189장)'] },
+
+    { id: 'B3', lane: 'browser', x: 30, y: 642, w: 210, kicker: '브라우저', title: '2048 리사이즈', lines: ['4.6분 · 2.1GB'], href: 'resize-gpu.html#resize' },
+    { id: 'W3', lane: 'wes', x: 30, y: 763, w: 210, kicker: 'EmbedDispatcher · Supervisor · 잡', title: 'wes 5초 스윕', lines: ['Lambda 간 호출 없음'], href: '../pipeline-v2-site/index.html' },
+    { id: 'E3', lane: 'lambda', x: 290, y: 642, w: 210, kicker: 'wes-embedder 3GB', title: '50장 배치 EVENT', lines: ['동시 ≤ 32 · 144회', '업로드와 겹쳐 진행'], href: '../pipeline-v2-site/embed.html' },
+    { id: 'G3', lane: 'gpu', x: 590, y: 642, w: 220, kicker: 'EC2 g6.xlarge · 평소 stopped', title: 'GPU 워커 (pull)', lines: ['SKIP LOCKED 32 · 0.04s/장', '유휴 30s 자기 정지'], href: 'resize-gpu.html#gpu' },
+    { id: 'C3', lane: 'lambda', x: 900, y: 652, w: 190, kicker: 'wes-categorize', title: '1회 · 70초', lines: ['한 번 읽기 (#108)'], href: 'categorize.html' },
+    { id: 'R3', lane: 'warn', x: 1110, y: 642, w: 120, title: '약 7.5분', lines: ['GPU $0.13', '합계 ≈ $0.45'], href: 'cost.html#pipeline' },
+  ],
+  edges: [
+    { from: 'W1', to: 'E1', label: 'EVENT', color: 'wes' },
+    { from: 'E1', to: 'S1', label: 'Lambda 체인', color: 'lambda' },
+    { from: 'S1', to: 'C1', label: '체인', color: 'lambda' },
+    { from: 'C1', to: 'R1', dashed: true },
+
+    { from: 'W2', to: 'E2', toAt: .5, via: [[265, null], [265, 353]], color: 'wes' },
+    { from: 'W2', to: 'S2', label: 'EVENT', color: 'wes' },
+    { from: 'E2', to: 'ES', label: 'EVENT ×N', color: 'lambda' },
+    { from: 'S2', to: 'SS', label: 'EVENT ×N', color: 'lambda' },
+    { from: 'SS', to: 'C2', label: 'EVENT 1회', color: 'lambda' },
+    { from: 'C2', to: 'R2', dashed: true },
+    { from: 'B2', to: 'ES', fromSide: 't', toSide: 't', via: [[135, 288], [660, 288]], label: 'S3 0.29MB 마스터', labelAt: 1, dashed: true, color: 'browser' },
+
+    { from: 'W3', to: 'E3', fromAt: .5, toSide: 'b', toAt: .5, via: [[395, null]], label: 'EVENT 50장', labelAt: 0, color: 'wes' },
+    { from: 'W3', to: 'G3', fromAt: .78, toSide: 'b', toAt: .5, via: [[700, null]], label: 'ec2:StartInstances', labelAt: 0, labelDx: 150, color: 'wes' },
+    { from: 'W3', to: 'C3', fromAt: .95, toSide: 'b', toAt: .5, via: [[995, null]], label: 'EVENT 1회', labelAt: 1, color: 'wes' },
+    { from: 'E3', to: 'G3', label: 'DB 행 관측', dashed: true, color: 'db' },
+    { from: 'G3', to: 'C3', label: 'DB 행 관측', dashed: true, color: 'db' },
+    { from: 'C3', to: 'R3', dashed: true },
+    { from: 'B3', to: 'E3', fromSide: 't', toSide: 't', via: [[135, 628], [395, 628]], label: 'S3 PUT', labelAt: 1, dashed: true, color: 'browser' },
+  ],
+});
+</script>
+
+<h2 id="table">한 표로 보는 개선 이력 (7,189장 갤러리 기준)</h2>
+<div class="tablewrap"><table>
+<tr><th>단계</th><th>v1 (09-05 이전)</th><th>샤딩 + 2048 (09-06)</th><th>v2 GPU (09-08~)</th><th>남은 것</th></tr>
+<tr><td>업로드</td><td>63.5분 / 35.8GB</td><td><strong>4.6분 / 2.1GB</strong></td><td>4.6분 (변화 없음)</td><td>—</td></tr>
+<tr><td>embedder</td><td>8.1분/822장, 7천 장은 재호출</td><td>2분 44초 (32 샤드)</td><td>wes 50장 배치, 업로드와 겹쳐 진행</td><td>—</td></tr>
+<tr><td>score</td><td>15분 데드라인 미완주 (7천 장 40분+)</td><td>9분 47초, $1.60</td><td><strong>4~5분 + 기동 1~2분, $0.13</strong></td><td>Lambda 폴백 3시간 문제, 자기 정지 수정 확인(09-09 확인됨)</td></tr>
+<tr><td>categorize</td><td>0.5분/822장</td><td>65~68초</td><td>70초 (09-09 #108 뒤 1회, 변화 없음)</td><td><strong>#108 재측정 09-10</strong> · 커넥션 풀 10→16 · 그룹 단계 로그</td></tr>
+<tr><td>합계 (버튼→DONE)</td><td><strong>100분+ 미완주</strong><br><span class="small">77.5분은 업로드 63.5 + 32 샤드 분석 14.0 조합</span></td><td><strong>18.3분</strong></td><td><strong>약 7.5분</strong> (업로드 시작 기준)</td><td>—</td></tr>
+<tr><td>Lambda/GPU 비용</td><td>—</td><td>$1.80 + Bedrock</td><td><strong>≈ $0.13 GPU + $0.18 embedder + Bedrock $0.08</strong></td><td>—</td></tr>
+</table></div>
+<p class="small">근거: AI repo <code>lambda-pipeline-speedup-2026-09-06.md</code> L8–19, <code>upload-timing-2026-09-06.md</code> §7.3, wes <code>score-lambda-vs-gpu-2026-09-08.md</code> Run D, 09-09 갤러리 13 체인 실측(<a href="categorize.html#chain">4페이지</a>).</p>
+
+<h2 id="cost">비용 한눈에</h2>
+<div class="datastrip">
+  <div class="cell"><b>파이프라인 1회 · 7,200장</b>≈ <strong>$0.45</strong> (embedder $0.18 · GPU $0.12 · Bedrock $0.08 · S3 요청 $0.07) + 저장 $0.09/월</div>
+  <div class="cell"><b>AI 폴더 추천 1회</b>≈ $0.014 + <strong>장당 $0.011</strong> → 13장 $0.16 · 30장 $0.34 · 100장 $1.1</div>
+  <div class="cell"><b>S3 한 달</b>갤러리당 저장 3.5GB ≈ $0.09/월(누적) · 열람 전송 갤러리당 $0.2~0.7 (월 100GB까지 무료)</div>
+  <div class="cell"><b>인프라 고정비</b>≈ <strong>$145/월</strong> (EC2 4대 $46 · IPv4 $22 · RDS $22 · ALB $17 · EBS $13 · 엔드포인트 $11 · GPU 풀 $3)</div>
+  <div class="cell"><b>월 합계 (갤러리 10 / 30 / 100)</b>≈ $168 / $222 / $431 — 변동비의 대부분은 <strong>추천 이유 문장(LLM)</strong></div>
+</div>
+<p>단가·계산·가정은 <a class="btn" href="cost.html">5. 비용 ↗</a>에 전부 적었다. 확정 실측이 아닌 항목(추천 질의 해석 토큰, 열람 전송량, CloudWatch)은 그 페이지에 "추정"으로 표시했다.</p>
+
+<h2 id="pages">페이지 지도</h2>
+<div class="map">
+  <a href="sharding.html"><div class="n">2 · 이력 (삭제됨)</div><div class="t">80분 문제 → 람다 샤딩</div><div class="d">v1 실측(822장 22.7분 미완주, 7,183장 40분+) · 조정자 + 샤드 N 구조와 손잡이 · 결과 18.3분 · GB-초 비용이 같았던 이유 · 샤딩이 부딪힌 세 벽 · 이것을 대체한 v2 배정 코드</div></a>
+  <a href="resize-gpu.html"><div class="n">3 · 이력 (현재 구조)</div><div class="t">2048 리사이즈 업로드 + score GPU 전환</div><div class="d">리사이즈 → 업로드·embedder, GPU → score만. 브라우저 워커 파이프라인 · g6.xlarge pull 워커 · 정지 4겹 · 장당 속도 35~40배·비용 12~16배 · fp16 동치성 · 알려진 회귀 둘</div></a>
+  <a href="categorize.html"><div class="n">4 · 이력 (재측정 대기)</div><div class="t">categorize 리팩터 #108</div><div class="d">갤러리 한 번 읽기·대표 사진 배치 SELECT + 병렬 다운로드. 09-09 1차 실측(70초, 총 시간 개선 없음)과 시간 분해 · 같은 실행의 v2 전체 체인 8분 21초 · 비용 $0.38 · 재측정 전 할 일</div></a>
+  <a href="cost.html"><div class="n">5 · 비용</div><div class="t">갤러리 하나 · 추천 한 번 · 한 달</div><div class="d">단가표 → ① 업로드→AI 파이프라인 7,200장 ② AI 폴더 추천 ③ S3 한 달 · 인프라 고정비 ④ 월 시나리오 10/30/100 갤러리 · 비용 사고 상한(GPU 켜진 채 방치 $713/대)</div></a>
+</div>
+
+<h2 id="caveats">읽을 때 주의</h2>
+<ol class="steps">
+  <li><b>샤딩은 현재 코드에 없다.</b> 개선 이력으로 읽되, 현재 구조는 wes <code>EmbedDispatcher</code> + GPU 워커 pull + categorize Lambda 1회다(<a href="../pipeline-v2-site/index.html">pipeline-v2-site</a>).</li>
+  <li><b>2048 리사이즈와 GPU 점수는 영향 범위가 다르다.</b> 리사이즈는 업로드·embedder를, GPU는 score만 빠르게 했다. score는 embedder가 만든 1024px 미리보기만 읽으므로 마스터 크기와 무관하다.</li>
+  <li><b>77.5분은 v1 값이 아니다.</b> 「원본 업로드 63.5 + 32 샤드 분석 14.0」의 조합이다. v1 직렬 합계는 100분+ 미완주로 쓰고, 4.2×(77.5 → 18.3)의 거의 전부는 2048 리사이즈 몫이다.</li>
+  <li><b>비용 수치는 장수 기준이 둘이다.</b> 822장 기준(<code>score-speedup</code> §5)과 7,189장 기준(<code>upload-timing</code>, <code>score-lambda-vs-gpu</code>). 표마다 장수를 적었다.</li>
+  <li><b>인프라 쪽 GPU 개선 문서(infra PR #64)는 아직 열려 있다.</b> 브랜치 <code>docs/63-lambda-to-gpu-improvement</code>, 커밋 <code>fa4795b</code>. 여기서는 그 브랜치를 읽어 인용했다.</li>
+  <li><b>categorize #108은 "메커니즘 + 1차 실측(개선 없음) + 09-10 재측정 예정"이다.</b> 1차 실측은 회선 변동(업로드 평균 46Mbps, 평소 61)이 겹쳐 체인 합계 8분 21초는 대표값이 아니다. categorize 자체 수치(70초)는 유효하다.</li>
+  <li><b>09-09 체인 실측에서 확정된 것 하나:</b> GPU 워커 자기 정지(AI #107) 작동 확인 — score 끝 30초 뒤 워커가 스스로 stop 요청을 냈다.</li>
+</ol>
+
+<h2 id="refs">정본 문서 · 코드</h2>
+<div class="tablewrap"><table>
+<tr><th>주제</th><th>경로 (<code>organic-agent/</code> 기준)</th></tr>
+<tr><td>샤딩 본 문서 · 실행별 측정·비용 · 7,189장 CloudWatch 실측</td><td><code>organic-agent-ai/docs/improvements/lambda-pipeline-speedup-2026-09-06.md</code> · <code>score-speedup-2026-09-06.md</code> · <code>docs/experiments/upload-timing-2026-09-06.md</code></td></tr>
+<tr><td>GPU 전환 운영 실측(본 문서) · 결정 요약 · 코드 전후 · 벤치마크</td><td>wes <code>docs/improvements/score-lambda-vs-gpu-2026-09-08.md</code> · AI <code>docs/improvements/gpu-transition-summary-2026-09-07.md</code> · <code>lambda-to-gpu-worker-2026-09-08.md</code> · <code>docs/experiments/gpu-benchmark-2026-09-07.md</code></td></tr>
+<tr><td>2048 리사이즈 계획 · 프론트 구현</td><td><code>organic-agent-ai/docs/plans/upload-master-2048-2026-09-06.md</code> · web repo <code>src/lib/upload/{masterSpec,masterResize,masterResize.worker,jpegExif,crc32c}.ts</code></td></tr>
+<tr><td>categorize #108</td><td><code>organic-agent-ai/categorize/categorize/{store,pipeline,naming,gallery}.py</code> · <code>categorize/README.md</code> L55–59 · 이슈 #106 · PR #108(<code>b1ce8e8</code>)</td></tr>
+<tr><td>인프라 비용 추정 · 런북 비용 절 · GPU 풀 고정비</td><td><code>organic-agent-infra/NEXT.md</code> §4.7 · <code>docs/runbook.md</code> "비용" · <code>git show fa4795b:docs/improvements/score-lambda-to-gpu-worker-pool-2026-09-08.md</code> §4.2–4.3</td></tr>
+<tr><td>현재 구조(v2) 클릭형 문서 · 인프라 클릭형 문서 · 추천 클릭형 문서</td><td><a href="../pipeline-v2-site/index.html">pipeline-v2-site</a> · <a href="../infra-site/index.html">infra-site</a> · <a href="../ai-recommendation-site/index.html">ai-recommendation-site</a></td></tr>
+</table></div>
+
+<div class="pager">
+  <span></span>
+  <a href="sharding.html">2. 80분 문제 → 람다 샤딩 →</a>
+</div>
+</main>
+</body>
+</html>

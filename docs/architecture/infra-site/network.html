@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>2. 네트워크 · 보안 그룹 — wes 인프라</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">전체 인프라</a><span class="sep">/</span>
+  <span class="here">2. 네트워크 · 보안 그룹</span>
+  <span class="spacer"></span>
+  <a href="index.html">← 1. 전체</a>
+  <a href="request.html">3. 공개 요청 경로 →</a>
+</nav>
+
+<div class="eyebrow">modules/network · modules/security · dns/</div>
+<h1>VPC 하나, 서브넷 넷, NAT 없음</h1>
+<p class="lede">서울 리전 한 계정에 VPC <code>10.0.0.0/16</code> 하나를 두고 AZ 2a·2c에 public 서브넷과 DB 서브넷을 한 쌍씩 만듭니다. <strong>DB 서브넷에는 인터넷 라우트가 없고</strong> S3 게이트웨이 엔드포인트와 bedrock-runtime 인터페이스 엔드포인트만 붙습니다. 보안 그룹은 여섯 개이며 규칙은 전부 SG 참조로 묶여 있어 사설 경로 안에서만 통합니다.</p>
+<p class="meta">인프라 main@42b33c6 · 2026-09-09 · <code>modules/network/main.tf</code> · <code>modules/security/main.tf</code> · 교차 규칙은 루트 <code>admin.tf</code></p>
+<nav class="section-links" aria-label="이 페이지 목차"><a href="#arch">구성도</a><a href="#subnets">서브넷 · 라우트</a><a href="#endpoints">VPC 엔드포인트</a><a href="#sg">보안 그룹 여섯</a><a href="#matrix">인바운드 매트릭스</a><a href="#dns">DNS 스택 분리</a><a href="#files">코드 위치</a></nav>
+
+<h2 id="arch">구성도</h2>
+<p class="small">화살표는 허용된 인바운드 방향입니다. 점선은 라우트·엔드포인트 경로.</p>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1240, height: 700, title: 'VPC 안 public 서브넷과 DB 서브넷, 그리고 보안 그룹 사이의 허용 방향',
+  groups: [
+    { x: 230, y: 40, w: 990, h: 640, label: 'VPC 10.0.0.0/16 · ap-northeast-2 · 2 AZ', color: '#7C5CB8', tint: '#F4F0FA' },
+    { x: 250, y: 90, w: 560, h: 260, label: 'Public subnet ×2 · 10.0.0.0/24 (2a) · 10.0.1.0/24 (2c) · 0.0.0.0/0 → IGW', color: '#398B46', tint: '#EFF8EE' },
+    { x: 250, y: 390, w: 950, h: 260, label: 'DB subnet ×2 · 10.0.10.0/24 (2a) · 10.0.11.0/24 (2c) · 인터넷 라우트 없음 · NAT 없음', color: '#2A7F9E', tint: '#E9F3F6' },
+  ],
+  nodes: [
+    { id: 'NET', lane: 'browser', shape: 'actor', x: 40, y: 120, w: 120, title: '인터넷' },
+    { id: 'IGW', lane: 'browser', x: 30, y: 250, w: 170, kicker: 'wes-igw', title: 'Internet Gateway', lines: ['public 라우트 테이블만'] },
+    { id: 'ALB', lane: 'wes', x: 270, y: 130, w: 160, kicker: 'SG wes-alb', title: 'ALB', lines: [':80 :443 ← 0.0.0.0/0'], href: 'request.html#alb' },
+    { id: 'APP', lane: 'wes', x: 450, y: 130, w: 160, kicker: 'SG wes-ec2', title: 'wes-app', lines: [':8080 ← ALB SG만', ':22 규칙 없음'], href: 'request.html#app' },
+    { id: 'ADM', lane: 'wes', x: 270, y: 245, w: 160, kicker: 'SG wes-admin', title: 'wes-admin', lines: ['인바운드 0 · tailnet만'], href: 'admin.html' },
+    { id: 'MON', lane: 'wes', x: 450, y: 245, w: 160, kicker: 'SG wes-monitoring', title: 'wes-monitoring', lines: [':80 :443 공개', ':3100 ← app·admin SG'], href: 'ops.html#monitoring' },
+    { id: 'GPU', lane: 'gpu', x: 630, y: 130, w: 160, kicker: 'SG wes-score-gpu', title: 'GPU 워커 ×2', lines: ['인바운드 0 · SSM만'], href: 'ai.html#gpu' },
+    { id: 'FE', lane: 'wes', x: 630, y: 245, w: 160, kicker: 'SG 전용', title: 'wes-frontend-test', lines: [':80 :443 공개 · EIP'], href: 'ops.html#frontend' },
+    { id: 'RDS', lane: 'db', shape: 'db', x: 290, y: 440, w: 200, h: 130, title: 'RDS wes-db', lines: ['SG wes-rds · :5432', '← ec2 · embedder · gpu · admin'] },
+    { id: 'LAM', lane: 'lambda', x: 560, y: 440, w: 220, kicker: 'SG wes-embedder (공유)', title: 'Lambda ×3 ENI', lines: ['인바운드 0 · 이그레스 전체'], href: 'ai.html#lambda' },
+    { id: 'S3EP', lane: 'db', x: 830, y: 440, w: 170, kicker: 'Gateway', title: 'S3 엔드포인트', lines: ['DB 라우트 테이블만', '무료'], href: '#endpoints' },
+    { id: 'BREP', lane: 'db', x: 1020, y: 440, w: 170, kicker: 'Interface · 2a', title: 'bedrock-runtime', lines: ['SG wes-vpce :443 ← VPC CIDR', 'private DNS'], href: '#endpoints' },
+  ],
+  edges: [
+    { from: 'NET', to: 'ALB', fromSide: 'r', toSide: 'l', label: ':443', color: 'browser' },
+    { from: 'NET', to: 'IGW', fromSide: 'b', toSide: 't', color: 'browser', bidir: true },
+    { from: 'IGW', to: 'GPU', fromSide: 'b', fromAt: .5, toSide: 'r', toAt: .5, via: [[115, 665], [1205, 665], [1205, 165]], label: 'public 서브넷 EC2·GPU 아웃바운드 — ECR pull · S3 · Bedrock · GHCR', labelAt: 1, dashed: true, color: 'gpu' },
+    { from: 'ALB', to: 'APP', label: ':8080', color: 'wes' },
+    { from: 'APP', to: 'RDS', fromSide: 'b', fromAt: .2, toSide: 't', toAt: .5, via: [[482, 360], [390, 360]], label: ':5432', labelAt: 1, color: 'wes' },
+    { from: 'ADM', to: 'RDS', fromSide: 'b', toSide: 't', toAt: .3, label: ':5432 (admin SG)', labelDx: -60, color: 'wes' },
+    { from: 'APP', to: 'MON', fromSide: 'b', fromAt: .5, toSide: 't', toAt: .5, label: ':3100', color: 'wes' },
+    { from: 'GPU', to: 'RDS', fromSide: 'b', fromAt: .8, toSide: 't', toAt: .9, via: [[758, 375], [470, 375]], label: ':5432 (GPU SG)', labelAt: 1, labelDx: 60, color: 'gpu' },
+    { from: 'LAM', to: 'RDS', fromSide: 'l', toSide: 'r', toAt: .5, label: ':5432', color: 'lambda' },
+    { from: 'LAM', to: 'S3EP', label: 'S3', color: 'lambda' },
+    { from: 'LAM', to: 'BREP', fromSide: 'b', toSide: 'b', via: [[670, 615], [1105, 615]], label: 'categorize → Bedrock', labelAt: 1, color: 'lambda' },
+  ],
+});
+</script>
+
+<h2 id="subnets">서브넷 · 라우트</h2>
+<div class="tablewrap"><table>
+<tr><th>이름</th><th>CIDR</th><th>AZ</th><th>공인 IP</th><th>라우트</th><th>무엇이 있나</th></tr>
+<tr><td><code>wes-public-ap-northeast-2a</code></td><td>10.0.0.0/24</td><td>2a</td><td>launch 시 자동</td><td><code>0.0.0.0/0 → wes-igw</code></td><td>ALB · wes-app · wes-admin · wes-monitoring · wes-frontend-test · GPU 워커 1 · Image Builder 빌드</td></tr>
+<tr><td><code>wes-public-ap-northeast-2c</code></td><td>10.0.1.0/24</td><td>2c</td><td>launch 시 자동</td><td>같은 public 라우트 테이블</td><td>ALB(두 AZ 필수) · GPU 워커 2</td></tr>
+<tr><td><code>wes-db-ap-northeast-2a</code></td><td>10.0.10.0/24</td><td>2a</td><td>없음</td><td><code>wes-db-rt</code> · 기본 라우트 없음 · S3 게이트웨이 prefix list</td><td>RDS(단일 AZ 배치) · Lambda ENI · bedrock-runtime ENI</td></tr>
+<tr><td><code>wes-db-ap-northeast-2c</code></td><td>10.0.11.0/24</td><td>2c</td><td>없음</td><td>같은 DB 라우트 테이블</td><td>Lambda ENI · RDS 서브넷 그룹(2 AZ 필수)</td></tr>
+</table></div>
+<div class="note"><div class="t">왜 NAT가 없나</div>
+DB 서브넷의 워크로드(Lambda·RDS)가 필요로 하는 바깥은 S3와 Bedrock뿐이라 엔드포인트 둘로 끝납니다. NAT 게이트웨이의 시간당 과금을 피하고, Lambda가 인터넷으로 나갈 수 없다는 사실 자체가 경계가 됩니다. AZ는 2a·2c만 씁니다(2b·2d는 쓰는 인스턴스 타입을 지원하지 않음).</div>
+
+<h2 id="endpoints">VPC 엔드포인트</h2>
+<div class="tablewrap"><table>
+<tr><th>엔드포인트</th><th>타입</th><th>붙는 곳</th><th>쓰는 주체</th><th>비용</th></tr>
+<tr><td><code>wes-s3</code> (<code>com.amazonaws.ap-northeast-2.s3</code>)</td><td>Gateway</td><td>DB 라우트 테이블만 (public에는 일부러 안 붙임)</td><td>embedder 원본 GET·previews PUT, score·categorize previews GET</td><td>무료</td></tr>
+<tr><td><code>wes-bedrock-runtime</code></td><td>Interface (ENI)</td><td>DB 서브넷 2a 한 곳 (<code>interface_endpoint_subnet_indexes=[0]</code>), private DNS on</td><td>categorize <code>InvokeModel</code></td><td>약 $11/월</td></tr>
+<tr><td><em>lambda</em></td><td colspan="4">#57에서 제거. Lambda 간 호출·자기 재호출을 없애면서 필요가 사라짐</td></tr>
+</table></div>
+<p class="small">인터페이스 엔드포인트의 SG <code>wes-vpce-*</code>는 <code>:443 ← 10.0.0.0/16</code>(VPC CIDR)입니다. SG 참조 대신 CIDR을 쓴 이유는 security → network 모듈 순환을 피하기 위해서입니다. <code>db_subnet_ids</code> 출력이 두 엔드포인트에 <code>depends_on</code>을 걸어, 이를 쓰는 analysis·database 모듈이 엔드포인트 준비를 기다립니다.</p>
+
+<h2 id="sg">보안 그룹 여섯</h2>
+<p>모든 SG는 <code>name_prefix</code> + <code>create_before_destroy</code>이고 규칙은 인라인이 아니라 별도 <code>aws_vpc_security_group_*_rule</code> 리소스입니다. SSH 규칙은 <code>ssh_allowed_cidr</code>가 null(기본)이면 아예 만들지 않습니다.</p>
+<div class="tablewrap"><table>
+<tr><th>SG</th><th>인바운드</th><th>아웃바운드</th><th>붙는 곳</th></tr>
+<tr><td><code>wes-alb</code></td><td>tcp 80, 443 ← 0.0.0.0/0</td><td>tcp 8080 → <code>wes-ec2</code> SG만</td><td>ALB</td></tr>
+<tr><td><code>wes-ec2</code></td><td>tcp 8080 ← <code>wes-alb</code> SG · (tcp 22 ← ssh_allowed_cidr, 기본 없음)</td><td>전체</td><td>wes-app</td></tr>
+<tr><td><code>wes-rds</code></td><td>tcp 5432 ← <code>wes-ec2</code> · <code>wes-embedder</code> · <code>wes-score-gpu</code> · <code>wes-admin</code> SG</td><td>규칙 없음</td><td>RDS</td></tr>
+<tr><td><code>wes-embedder</code></td><td>없음</td><td>전체</td><td>Lambda 셋 공유</td></tr>
+<tr><td><code>wes-score-gpu</code></td><td>없음 (SSM 세션만)</td><td>전체</td><td>GPU 워커 ×2</td></tr>
+<tr><td><code>wes-monitoring</code></td><td>tcp 80, 443 ← 0.0.0.0/0 · tcp 3100 ← <code>wes-ec2</code> · <code>wes-admin</code> SG · (22 조건부)</td><td>전체</td><td>wes-monitoring</td></tr>
+<tr><td><code>wes-admin</code> (admin-access 모듈)</td><td>없음 · 접근은 Tailscale 오버레이</td><td>전체</td><td>wes-admin</td></tr>
+<tr><td>frontend-test 전용</td><td>tcp 80, 443 ← 0.0.0.0/0</td><td>tcp 80, 443만</td><td>wes-frontend-test</td></tr>
+<tr><td><code>wes-vpce</code> (network 모듈)</td><td>tcp 443 ← 10.0.0.0/16</td><td>—</td><td>bedrock-runtime ENI</td></tr>
+</table></div>
+<p class="small"><code>wes-admin → wes-rds :5432</code>와 <code>wes-admin → wes-monitoring :3100</code> 두 규칙은 모듈 순환을 피하려고 루트 <code>admin.tf</code>에 있습니다. SG 참조 규칙은 VPC 안 사설 경로에서만 매칭되므로 앱은 Loki에 <strong>사설 IP</strong>로 보냅니다.</p>
+
+<h2 id="matrix">인바운드 매트릭스</h2>
+<div class="datastrip">
+  <div class="cell"><b>인터넷 → </b>ALB :80/:443 · monitoring :80/:443 · frontend-test :80/:443</div>
+  <div class="cell"><b>tailnet → </b>wes-admin :443 (Tailscale Serve, SG 밖)</div>
+  <div class="cell"><b>ALB → </b>wes-app :8080</div>
+  <div class="cell"><b>app · admin → </b>monitoring :3100 (Loki push)</div>
+  <div class="cell"><b>app · Lambda · GPU · admin → </b>RDS :5432</div>
+  <div class="cell"><b>아무도 → </b>GPU 워커 · Lambda · admin-api :8081 (SG 인바운드 0)</div>
+</div>
+
+<h2 id="dns">DNS 스택 분리</h2>
+<p>Route 53 호스티드 존 <code>easyselect.kr</code>은 별도 <code>dns/</code> 스택(state 키 <code>dns/terraform.tfstate</code>)이 소유하며 리소스는 존 하나뿐입니다. 앱 스택을 destroy해도 존과 NS 위임이 남게 하려는 것입니다(존을 재생성하면 NS가 바뀌어 등록기관 재위임이 필요). 앱 스택은 존을 이름으로 조회만 하고, 레코드는 각 모듈이 만듭니다.</p>
+<div class="tablewrap"><table>
+<tr><th>레코드</th><th>타입</th><th>대상</th><th>만드는 모듈</th></tr>
+<tr><td><code>api.easyselect.kr</code></td><td>A alias</td><td>ALB</td><td>ingress</td></tr>
+<tr><td>ACM 검증 레코드</td><td>CNAME · TTL 60</td><td>ACM DNS 검증</td><td>ingress</td></tr>
+<tr><td><code>admin.easyselect.kr</code></td><td>A · TTL 60</td><td>Tailscale IP <code>100.88.250.104</code> (CGNAT 대역, 변수 null이면 미생성)</td><td>admin-access</td></tr>
+<tr><td><code>monitoring.easyselect.kr</code></td><td>A · TTL 60</td><td>wes-monitoring EIP</td><td>monitoring</td></tr>
+<tr><td><code>test.easyselect.kr</code></td><td>A · TTL 60</td><td>wes-frontend-test EIP</td><td>frontend-test</td></tr>
+<tr><td><code>_acme-challenge.admin.easyselect.kr</code></td><td>TXT (일시)</td><td>Caddy DNS-01</td><td>런타임 · wes-admin 롤 권한</td></tr>
+</table></div>
+
+<h2 id="files">코드 위치</h2>
+<div class="tablewrap"><table>
+<tr><th>역할</th><th>파일 (organic-agent-infra)</th></tr>
+<tr><td>VPC · 서브넷 · 라우트 · 엔드포인트</td><td><code>modules/network/main.tf</code> · 출력 <code>modules/network/outputs.tf</code>(depends_on)</td></tr>
+<tr><td>보안 그룹 · 규칙</td><td><code>modules/security/main.tf</code> · 교차 규칙 <code>admin.tf</code> · frontend-test SG <code>modules/frontend-test/main.tf</code></td></tr>
+<tr><td>DNS 스택</td><td><code>dns/main.tf</code> · <code>dns/backend.tf</code></td></tr>
+<tr><td>변수</td><td><code>variables.tf</code> — <code>vpc_cidr · azs · public_subnet_cidrs · db_subnet_cidrs · interface_endpoint_subnet_indexes · ssh_allowed_cidr</code></td></tr>
+</table></div>
+
+<div class="pager">
+  <a href="index.html">← 1. 전체 인프라</a>
+  <a href="request.html">3. 공개 요청 경로 →</a>
+</div>
+</main>
+</body>
+</html>

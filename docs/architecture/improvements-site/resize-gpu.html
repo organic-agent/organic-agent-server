@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>3. 2048 리사이즈 + score GPU 전환 — 개선 이력</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">개선 이력 · 비용</a><span class="sep">/</span>
+  <span class="here">3. 2048 리사이즈 + score GPU 전환</span>
+  <span class="spacer"></span>
+  <a href="sharding.html">← 2. 람다 샤딩</a>
+  <a href="categorize.html">4. categorize →</a>
+</nav>
+
+<div class="eyebrow">web repo <code>src/lib/upload/</code> · organic-agent-ai <code>score/</code> · organic-agent-infra <code>modules/score-gpu/</code> · wes <code>analysis</code> · 2026-09-06 ~ 09-08 · <span class="tag">현재 구조</span></div>
+<h1>업로드는 브라우저가 줄이고, 점수는 GPU가 집어 간다</h1>
+<p class="lede">두 개선은 서로 다른 단계를 건드립니다. <strong>긴 변 2048 리사이즈</strong>는 업로드(63.5분 → 4.6분)와 embedder를 가볍게 했고, <strong>score GPU 워커</strong>는 score만(장당 1.5초 → 0.04초, 7,189장 $1.6 → $0.13) 바꿨습니다. score는 embedder가 만든 1024px 미리보기만 읽으므로 2048 마스터의 영향을 받지 않습니다(<code>upload-master-2048</code> §3.4 "변경 없음. preview만 읽는다"). 이 페이지는 둘을 한 곳에 두되 영향 범위를 분리해 적습니다.</p>
+<p class="meta">근거 wes <code>docs/improvements/score-lambda-vs-gpu-2026-09-08.md</code>(운영 실측 본 문서) · AI <code>docs/improvements/gpu-transition-summary-2026-09-07.md</code> · <code>lambda-to-gpu-worker-2026-09-08.md</code> · <code>docs/experiments/gpu-benchmark-2026-09-07.md</code> · <code>docs/experiments/upload-timing-2026-09-06.md</code> §7 · <code>docs/plans/upload-master-2048-2026-09-06.md</code> · infra PR #64 브랜치 <code>fa4795b</code></p>
+<nav class="section-links" aria-label="이 페이지 목차"><a href="#scope">영향 범위</a><a href="#resize">① 브라우저 2048 리사이즈</a><a href="#gpu">② score GPU 워커</a><a href="#arch">구조</a><a href="#result">결과 (운영 실측)</a><a href="#bench">벤치마크 · 월 비용</a><a href="#regress">알려진 회귀</a><a href="#files">읽을 경로</a></nav>
+
+<h2 id="scope">영향 범위 — 무엇이 무엇을 빠르게 했나 (7,189장)</h2>
+<div class="tablewrap"><table>
+<tr><th>단계</th><th>2048 리사이즈</th><th>GPU 워커</th><th>근거</th></tr>
+<tr><td>업로드</td><td><strong>63.5분 → 4분 37초</strong>, 35.8GB → 2.11GB (장당 4.98MB → 0.29MB)</td><td>—</td><td><code>upload-timing</code> §7 L118–119</td></tr>
+<tr><td>embedder (32 샤드 당시)</td><td>2분 44초 → 2분 34초 (마스터가 가벼워 GET·디코드 가벼움)</td><td>—</td><td>〃</td></tr>
+<tr><td>score</td><td>9분 47초 → 9분 46초 (<strong>변화 없음</strong>, preview만 읽음)</td><td><strong>≈6~10분 → 4~5분 + 기동 1.2~2.2분</strong>, $1.6~1.8 → $0.13</td><td><code>score-lambda-vs-gpu</code> L22–35</td></tr>
+<tr><td>categorize</td><td>—</td><td>—</td><td></td></tr>
+</table></div>
+
+<h2 id="resize">① 브라우저 리사이즈 — 긴 변 2048, JPEG q0.85</h2>
+<div class="datastrip">
+  <div class="cell"><b>어디서</b>브라우저 Web Worker. 서버는 지나지 않는다(원칙: 클라이언트 업로드는 서버를 안 거친다)</div>
+  <div class="cell"><b>무엇을</b>긴 변 2048 · JPEG 0.85 · EXIF(촬영 시각·카메라·방향) 보존 · CRC32C 계산 → presigned PUT(<code>x-amz-checksum-crc32c</code> 서명, wes #174)</div>
+  <div class="cell"><b>결과</b>장당 4.98MB → 0.29MB. 7,189장 35.8GB → 2.11GB. 75Mbps 회선에서 63.5분 → 4분 37초</div>
+  <div class="cell"><b>영향 없는 곳</b>score(1024px 미리보기만 읽음) · categorize(DB만 읽음, 대표 사진은 미리보기)</div>
+</div>
+<p>프론트 구현은 web repo <code>src/lib/upload/masterSpec.ts</code> · <code>masterResize.ts</code> · <code>masterResize.worker.ts</code> · <code>jpegExif.ts</code> · <code>crc32c.ts</code>. 계획 문서 <code>organic-agent-ai/docs/plans/upload-master-2048-2026-09-06.md</code>는 옛 파일명 <code>src/lib/master-resize.ts</code>를 인용하고 있으니 주의. 업로드 단계의 현재 구조는 <a href="../pipeline-v2-site/upload.html">pipeline-v2-site 2</a>.</p>
+<div class="note warn"><b>폐기된 대안.</b> ARNIQA 입력 해상도를 낮춰 score를 줄이는 시도는 896/768/640px에서 Spearman 0.638/0.536/0.479로 떨어져 버렸다(<code>score-speedup</code> §4.4 L137–146). 점수를 빠르게 하려면 픽셀을 줄일 게 아니라 연산 장치를 바꿔야 했다 — 그것이 ②다.</div>
+
+<h2 id="gpu">② score GPU 워커 — push가 아니라 pull</h2>
+<div class="tablewrap"><table>
+<tr><th></th><th>전 (Lambda 32 샤드)</th><th>후 (GPU 워커)</th></tr>
+<tr><td>실행 장치</td><td>CPU Lambda <code>wes-score</code> 8192MB, 이미지 1.66GB, 최대 32 샤드</td><td><strong>EC2 g6.xlarge (NVIDIA L4 24GB), 온디맨드, 2대 풀(2a·2c), 평소 stopped</strong>. 이미지 <code>wes-score:gpu</code> 4.2GB(<code>score/Dockerfile.gpu</code>)</td></tr>
+<tr><td>모델</td><td colspan="2">CLIP ViT-L/14(open_clip, 768-d <code>clip_embedding</code> + LAION 미학 MLP + 제로샷 피사체) + ARNIQA ResNet-50(1024+512px, 기술 점수) + Laplacian 선명도. <code>score/README.md</code> L14–25. MODEL_VERSION 불변</td></tr>
+<tr><td>연산</td><td>fp32, 배치 1</td><td>fp16 autocast, CLIP 배치 32, ARNIQA 배치 8, 디코드 스레드 4, S3 다운로드 스레드 16</td></tr>
+<tr><td>배정</td><td>조정자가 샤드에 push</td><td><strong>워커가 pull</strong>: <code>embedding IS NOT NULL AND clip_embedding IS NULL AND error IS NULL</code> 행을 <code>FOR UPDATE OF photo_analysis SKIP LOCKED</code>로 32개 집고, 미리보기 다운로드 → 점수 → UPSERT+commit이 곧 잠금 해제. DB 커넥션 2개 = 2레인, 추론 중 다음 배치 프리페치(AI #80)</td></tr>
+<tr><td>켜기</td><td>—</td><td>wes <code>ScoreWorkerSupervisor</code> 5초 스윕: <code>backlog &gt; 0 ∧ 도는 워커 0</code> → <code>ec2:StartInstances</code>(태그 <code>Name=wes-score-gpu</code>). 스위치 <code>gpu.enabled</code>(SSM <code>/wes/prod/app.analysis.gpu.enabled</code>)</td></tr>
+<tr><td>끄기 4겹</td><td>—</td><td>워커 자기 정지 유휴 30s → wes 안전망 <code>idle-stop-after PT2M</code> → CloudWatch 알람(CPU 30분 &lt;5%) EC2 stop → <code>wes-score-failsafe</code></td></tr>
+<tr><td>폴백</td><td>—</td><td><code>start-grace PT5M</code> 안에 안 뜨거나 <code>fallback-after PT10M</code> 무진행이면 score Lambda에 <code>{galleryId, photoIds}</code> 50장씩, <code>fallback-interval PT10M</code></td></tr>
+<tr><td>콜드 스타트 (두 값은 AMI가 다르다)</td><td>Lambda 콜드 ≈ 모델 로드 16s</td><td><b>벤치마크(DLAMI)</b>: <code>dkms.service</code>(56s)·<code>update-motd</code>(30s)를 마스킹한 뒤 부팅 16–19s. <b>운영 AMI</b>(인프라 Image Builder, AL2023 + NVIDIA + docker — DLAMI가 아니라 위 두 서비스가 없다): 부팅 + <code>:gpu</code> pull + 모델 로드 포함 <strong>첫 점수까지 70–110s</strong></td></tr>
+</table></div>
+
+<h2 id="arch">구조 — 현재 score 단계</h2>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1140, height: 600, title: '브라우저 2048 리사이즈 업로드, embedder 미리보기, GPU 워커의 pull 점수, wes 감독과 Lambda 폴백',
+  groups: [
+    { x: 10, y: 20, w: 520, h: 250, label: '① 2048 리사이즈가 건드리는 곳 (업로드 · embedder)', color: '#7C5CBF', tint: '#F1EDF9' },
+    { x: 10, y: 290, w: 1120, h: 300, label: '② GPU 워커가 건드리는 곳 (score만)', color: '#B45309', tint: '#FBEFE2' },
+  ],
+  nodes: [
+    { id: 'BR', lane: 'browser', x: 30, y: 60, w: 210, kicker: 'masterResize.worker', title: '긴 변 2048 · q0.85', lines: ['EXIF 보존 · CRC32C', '4.98MB → 0.29MB'], href: '#resize' },
+    { id: 'S3', lane: 's3', shape: 'db', x: 300, y: 50, w: 200, title: 'S3 galleries/{g}/…', lines: ['마스터 0.29MB', 'previews/ 1024px ≈0.2MB'] },
+    { id: 'EMB', lane: 'lambda', x: 300, y: 180, w: 200, kicker: 'wes-embedder 50장', title: 'previews PUT → DINOv3', lines: ['마스터가 가벼워 GET·디코드 ↓'] },
+    { id: 'PG', lane: 'db', shape: 'db', x: 880, y: 60, w: 220, title: 'photo_analysis', lines: ['embedding IS NOT NULL', 'clip_embedding IS NULL', 'error IS NULL → backlog'] },
+    { id: 'SUP', lane: 'wes', x: 30, y: 340, w: 230, kicker: 'ScoreWorkerSupervisor · 5초', title: '켜기 · 끄기 · 폴백', lines: ['backlog>0 ∧ 워커 0 → Start', 'idle-stop 2분 · fallback 10분'], href: '../pipeline-v2-site/score.html' },
+    { id: 'GPU', lane: 'gpu', x: 420, y: 330, w: 250, kicker: 'EC2 g6.xlarge · L4 24GB', title: 'score 워커 (pull)', lines: ['claim 32 · FOR UPDATE SKIP LOCKED', 'fp16 · CLIP b32 · ARNIQA b8', '2레인 프리페치 · 유휴 30s 자기 정지'], href: '../pipeline-v2-site/score-worker.html' },
+    { id: 'FB', lane: 'lambda', x: 420, y: 480, w: 250, kicker: 'wes-score Lambda 폴백', title: 'EVENT 50장씩', lines: ['{galleryId, photoIds}', 'photoselect CONNECTION LIMIT 24'] },
+    { id: 'STOP', lane: 'warn', x: 880, y: 400, w: 220, kicker: '정지 4겹', title: '켜진 채 잊히지 않게', lines: ['워커 30s → wes 2분', '→ 알람 30분 → failsafe'] },
+  ],
+  edges: [
+    { from: 'BR', to: 'S3', label: 'presigned PUT', color: 'browser' },
+    { from: 'EMB', to: 'S3', fromSide: 't', toSide: 'b', label: 'GET 마스터 · PUT 미리보기', labelDx: 70, dashed: true, color: 'lambda' },
+    { from: 'EMB', to: 'PG', toAt: .8, via: [[700, null], [700, 150]], label: 'UPSERT embedding', labelAt: 0, color: 'lambda' },
+    { from: 'SUP', to: 'GPU', label: 'ec2:StartInstances', color: 'wes' },
+    { from: 'SUP', to: 'FB', fromAt: .8, toAt: .5, via: [[330, null], [330, 530]], label: '10분 미기동 → EVENT', labelAt: 1, color: 'wes' },
+    { from: 'SUP', to: 'PG', fromSide: 't', toSide: 'l', toAt: .2, via: [[145, 272], [820, 272], [820, 95]], label: 'backlog · 진행 관측', labelAt: 1, dashed: true, color: 'db' },
+    { from: 'GPU', to: 'PG', fromSide: 't', fromAt: .7, toSide: 'b', toAt: .5, via: [[595, 240], [990, 240]], label: 'SKIP LOCKED 32 → UPSERT+commit', labelAt: 1, bidir: true, color: 'gpu' },
+    { from: 'GPU', to: 'S3', fromSide: 't', fromAt: .92, toSide: 'r', toAt: .5, via: [[650, 100]], label: 'previews GET ×16', labelAt: 1, dashed: true, color: 'gpu' },
+    { from: 'FB', to: 'PG', fromAt: .5, toSide: 'b', toAt: .8, via: [[760, null], [760, 200], [1060, 200]], label: 'UPSERT (같은 값 덮음)', labelAt: 2, labelDy: -6, color: 'lambda' },
+    { from: 'GPU', to: 'STOP', fromAt: .8, toAt: .5, label: 'stop-instance (자기)', color: 'warn' },
+  ],
+});
+</script>
+
+<h2 id="result">결과 — 운영 실측 (갤러리 9 · 10, 7,189장)</h2>
+<div class="tablewrap"><table>
+<tr><th>항목</th><th>Lambda 32 샤드</th><th>GPU 워커</th><th>근거</th></tr>
+<tr><td>장당 처리</td><td>1.44~1.50s (느린 호스트 2.39s)</td><td><strong>≈0.04s</strong> (분당 ≈1,500장, Run C 23.2장/초)</td><td><code>score-lambda-vs-gpu</code> L22–35, L150–157</td></tr>
+<tr><td>7,189장 score 벽시계</td><td>약 6~10분</td><td><strong>4~5분</strong> + 기동 1.2~2.2분</td><td>〃</td></tr>
+<tr><td>7,189장 score 비용</td><td>≈$1.6~1.8</td><td><strong>≈$0.13</strong> (495s 가동 $0.136)</td><td>〃 §4.3 L226–234</td></tr>
+<tr><td>장당 비용</td><td>$0.00022~0.00029</td><td><strong>$0.000018</strong> (1,000장 ≈ $0.018)</td><td>〃</td></tr>
+<tr><td>RDS 커넥션 피크</td><td>61/79</td><td><strong>29</strong> (워커는 2개)</td><td><code>gpu-benchmark-2026-09-07</code></td></tr>
+<tr><td>모델별 (L4 fp16)</td><td>CLIP 620ms · ARNIQA 790ms</td><td>CLIP 7.4ms · ARNIQA 13.4ms (<strong>×69</strong>)</td><td><code>gpu-benchmark</code> L76–88</td></tr>
+<tr><td>fp16 동치성</td><td>—</td><td>technical ρ 1.0000 · aesthetic ρ 0.9999 · CLIP cos min 0.9998</td><td>〃</td></tr>
+<tr><td>업로드와 겹쳐 돌린 전체 체인 (Run D)</td><td>—</td><td>업로드 시작 기준 <strong>+6분에 score 끝, +7.5분에 폴더 DONE</strong></td><td><code>score-lambda-vs-gpu</code> L159–175</td></tr>
+</table></div>
+<div class="note"><b>문서 원문 한 줄:</b> "장당 비용 12~16배, 장당 속도 35~40배". 그리고 점수는 더 이상 병목이 아니다 — Run D에서 점수가 임계 경로였던 구간은 임베딩 완료 뒤 49초뿐이고, 임계 경로는 업로드(회선) → embedder(Lambda)로 옮겨 갔다.</div>
+
+<h2 id="bench">벤치마크 단계 비교 · 월 비용</h2>
+<div class="tablewrap"><table>
+<tr><th>런타임</th><th>갤러리 8 (7,189장)</th><th>월 100갤러리</th><th>비고</th></tr>
+<tr><td>Lambda 32 샤드</td><td>9.7분 · $1.53</td><td>$58</td><td>0건이면 $0. 상한은 15분 × 동시성</td></tr>
+<tr><td>SageMaker g6.xlarge</td><td>5.6분 · $0.11</td><td>$6</td><td>비교군</td></tr>
+<tr><td><strong>EC2 g6 stop/start</strong></td><td><strong>3.9분 · $0.063</strong></td><td><strong>$3</strong> + 고정 $5.5</td><td>채택</td></tr>
+<tr><td>유휴로 켜 두면</td><td>—</td><td>$712/월 (1대)</td><td>정지 4겹의 이유</td></tr>
+</table></div>
+<p>고정비 ≈ $8~10/월(gp3 30GB × 2, AMI 스냅샷, ECR, 알람 2개). 손익분기 <strong>월 6갤러리</strong>, 30갤러리면 75%, 100갤러리면 87% 절감. 100장짜리 작은 갤러리는 둘이 같고($0.03), 그 아래에서는 GPU가 기동 1~2분만큼 시간에서 손해다. v2로 <code>lambda</code> 인터페이스 엔드포인트가 사라져 인프라 고정비는 오히려 <strong>−$23/월</strong>(엔드포인트 $43 → $11, GPU 풀 +$9). 근거 <code>gpu-benchmark</code> L33–41, <code>lambda-to-gpu-worker</code> §4 L76–86, infra PR #64 §4.2–4.3. 전체 월 비용은 <a href="cost.html#monthly">5페이지</a>.</p>
+
+<h2 id="regress">알려진 회귀 — 문서에 함께 넣을 것</h2>
+<div class="cards">
+  <div class="card"><b>Lambda 폴백 경로 3시간</b><br>50장 배치 144회가 <code>photoselect CONNECTION LIMIT 8</code>에 걸려 10분당 400장, 7,189장이면 약 3시간. LIMIT <strong>24</strong>로 올림(infra #60). 남은 것: 폴백 분할 발송. <code>score-lambda-vs-gpu</code> §5.4</div>
+  <div class="card"><b>워커 자기 정지가 안 울림 → 수정 확인</b><br>운영 두 번 모두 30s 자기 정지가 안 울리고 wes 2분 안전망이 껐다. 원인 <code>NoRegionError</code>(컨테이너에 리전 없음), IMDS에서 리전 읽도록 수정(AI #107, main <code>109d9f6</code>). <strong>09-09 갤러리 13 실행에서 score 끝 ≈30s 뒤 워커 자기 정지 작동 확인</strong>(<a href="categorize.html#chain">4페이지</a>)</div>
+</div>
+
+<h2 id="files">읽을 경로</h2>
+<div class="tablewrap"><table>
+<tr><th>역할</th><th>경로 (<code>organic-agent/</code> 기준)</th></tr>
+<tr><td>운영 실측 본 문서 (381줄)</td><td>wes <code>docs/improvements/score-lambda-vs-gpu-2026-09-08.md</code></td></tr>
+<tr><td>결정 요약 · 코드 전후·비용표 · 벤치마크 원자료</td><td><code>organic-agent-ai/docs/improvements/gpu-transition-summary-2026-09-07.md</code> · <code>lambda-to-gpu-worker-2026-09-08.md</code> · <code>docs/experiments/gpu-benchmark-2026-09-07.md</code>(+ <code>gpu-benchmark-plan-…</code>, <code>gpu-benchmark-2026-09-07-raw/</code>)</td></tr>
+<tr><td>워커 인수인계</td><td><code>organic-agent-ai/score/README.md</code> L95–119 "GPU 워커" · <code>score/deploy/gpu-worker/README.md</code></td></tr>
+<tr><td>인프라 개선 문서 (<strong>PR #64 OPEN</strong>, main에 없음)</td><td><code>git show fa4795b:docs/improvements/score-lambda-to-gpu-worker-pool-2026-09-08.md</code></td></tr>
+<tr><td>wes 코드</td><td><code>analysis/service/ScoreWorkerSupervisor.kt</code> L16–28, L58–72 · <code>Ec2ScoreWorkerPool.kt</code> · <code>LocalProcessScoreWorkerPool.kt</code> · <code>AnalysisProperties.kt</code> · PR #169(#168 GPU 제어), #178(리팩터)</td></tr>
+<tr><td>AI 코드 (score 워커 루프)</td><td><code>organic-agent-ai/score/</code> — <code>claim_batch</code> SKIP LOCKED(#76) · 2레인 프리페치(#80) · idle-stop·실패 상한(#82) · systemd(#88) · <code>Dockerfile.gpu</code>. 커밋(main squash SHA) <code>317c939</code>(#69 GPU 러너·fp16·ARNIQA 배치) · <code>417a4cd</code>(#70 전처리를 디코드 스레드로, GPU 51%→98%, 399s→241s) · <code>e8b0c92</code>(#76) · <code>fb89993</code>(#80) · <code>bcf0415</code>(#82) · <code>c8cbe1b</code>(#99 v1 삭제 +336/−1,739) · <code>109d9f6</code>(#107)</td></tr>
+<tr><td>인프라 코드</td><td><code>organic-agent-infra/modules/score-gpu/</code> — <code>workers.tf</code> L109–120(AZ별 <code>aws_instance</code> · <code>aws_ec2_instance_state</code> stopped) · L22–105(워커 롤) · <code>main.tf</code>(Image Builder AMI: AL2023 + NVIDIA 580 + docker + nvidia-container-toolkit) · <code>variables.tf</code> L89–93(<code>g6.xlarge</code>) · L62–66(idle 30s). PR #40·#42·#44·#46/#48/#50/#52/#54·<strong>#56(워커 풀)</strong>·#58·<strong>#60(<code>gpu_score_enabled = true</code>)</strong>, 전부 2026-09-08 머지</td></tr>
+<tr><td>프론트 리사이즈</td><td>web repo <code>src/lib/upload/{masterSpec,masterResize,masterResize.worker,jpegExif,crc32c}.ts</code> · 계획 <code>organic-agent-ai/docs/plans/upload-master-2048-2026-09-06.md</code></td></tr>
+</table></div>
+
+<div class="pager">
+  <a href="sharding.html">← 2. 80분 문제 → 람다 샤딩</a>
+  <a href="categorize.html">4. categorize 리팩터 #108 →</a>
+</div>
+</main>
+</body>
+</html>

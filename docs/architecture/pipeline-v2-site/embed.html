@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>3. 서버 임베딩 배정 — 파이프라인 v2</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">전체 아키텍처</a><span class="sep">/</span>
+  <span class="here">3. 서버 임베딩 배정</span>
+  <span class="spacer"></span>
+  <a href="upload.html">← 2. 업로드</a>
+  <a href="score.html">4. 점수 분석 →</a>
+</nav>
+
+<div class="eyebrow">wes · analysis 도메인 → embedder Lambda</div>
+<h1>임베딩할 사진 배정</h1>
+<p class="lede">wes는 5초마다 업로드가 끝난 사진 중 <strong>벡터가 아직 없는 사진을 50장씩</strong> 선택해 embedder Lambda에 전달합니다. DB 잠금으로 중복 배정을 막으며, 분석 잡 생성 여부와 관계없이 동작합니다.</p>
+<p class="meta">코드 기준 main@1503a9a · 2026-09-09</p>
+<nav class="section-links" aria-label="이 페이지 목차"><a href="#arch">아키텍처</a><a href="#when">언제 · 무엇을 배정하나</a><a href="#payload">호출 계약</a><a href="#exact-photo">관리자 사진 교체</a><a href="#consts">상수</a><a href="#job">잡과의 관계</a><a href="#files">코드 위치</a></nav>
+
+<h2 id="arch">아키텍처</h2>
+<p class="small">실선은 호출·저장, 점선은 조회·상태 확인입니다. 박스를 누르면 해당 단계의 설명으로 이동합니다.</p>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1080, height: 540,
+  groups: [{ x: 270, y: 40, w: 300, h: 480, color: '#A97700', tint: '#FFF5D7', label: 'wes · analysis 도메인' }],
+  nodes: [
+    { id: 'SW', lane: 'wes', x: 20, y: 60, w: 200, kicker: '@Scheduled', technicalTitle: 'AnalysisJobSweeper', title: '분석 주기 실행', lines: ['서버 시작 시 · 이후 5초마다'] },
+    { id: 'OR', lane: 'wes', x: 20, y: 180, w: 200, kicker: 'sweep()', technicalTitle: 'AnalysisOrchestrator', title: '분석 흐름 조율',
+      lines: ['① 임베딩 대상 배정', '② GPU 실행 관리', '③ 진행 중인 잡 상태 확인'] },
+    { id: 'ED', lane: 'wes', x: 285, y: 60, w: 270, kicker: 'sweep ① · 잡 무관', technicalTitle: 'EmbedDispatcher.dispatch()', title: '임베딩 대상 배정',
+      lines: ['10분간 미완료 → 배정 해제', '3회 시도 초과 → 실패 기록', '최대 32배치까지 동시 실행', '갤러리 라운드로빈 · 50장씩'], href: '#when' },
+    { id: 'RP', lane: 'wes', x: 285, y: 250, w: 270, kicker: 'JdbcClient', technicalTitle: 'PhotoPipelineRepository', title: '분석 대상 조회 · 배정',
+      lines: ['잠기지 않은 사진을 선택해 배정', '실패 · 장기 미완료 배정 해제', '재시도 상한 초과 기록'] },
+    { id: 'SI', lane: 'wes', x: 285, y: 410, w: 270, kicker: '포트', technicalTitle: 'StageInvoker.invoke(Embed)', title: '임베딩 Lambda 호출',
+      lines: ['prod: LambdaStageInvoker · EVENT', 'local: scripts/lambda/embedder.sh'], href: '#payload' },
+    { id: 'PG', lane: 'db', shape: 'db', x: 660, y: 60, w: 250, h: 160, title: 'Postgres',
+      lines: ['photos: dispatched_at · embed_attempts', 'photo_analysis: embedding · error'] },
+    { id: 'L1', lane: 'lambda', x: 660, y: 380, w: 210, kicker: '3.1 Lambda · 클릭', title: 'embedder',
+      lines: ['원본 읽기 → 1024px 미리보기 저장', '768차원 벡터 · EXIF · 8장씩 저장'], href: 'embedder.html' },
+    { id: 'S3', lane: 's3', shape: 'db', x: 920, y: 380, w: 150, title: 'S3', lines: ['원본 · previews/'] },
+  ],
+  edges: [
+    { from: 'SW', to: 'OR', fromSide: 'b', toSide: 't', label: 'sweep()', color: 'wes' },
+    { from: 'OR', to: 'ED', fromAt: .3, toAt: .5, label: '①', color: 'wes' },
+    { from: 'PG', to: 'ED', fromSide: 't', fromAt: .5, toSide: 't', toAt: .5, via: [[785, 25], [420, 25]], label: '배정 대상 관측 — UPLOADED ∧ embedding IS NULL ∧ error IS NULL ∧ dispatched_at IS NULL', labelAt: 1, dashed: true },
+    { from: 'ED', to: 'RP', fromSide: 'b', toSide: 't', label: 'claim(galleryId, 50)', color: 'wes' },
+    { from: 'RP', to: 'PG', toAt: .5, label: 'UPDATE photos SET dispatched_at = now\nembed_attempts + 1 … RETURNING id', color: 'wes' },
+    { from: 'RP', to: 'SI', fromSide: 'b', toSide: 't', label: 'photoIds (≤50)', color: 'wes' },
+    { from: 'SI', to: 'L1', label: 'EVENT\n{galleryId, photoIds}', color: 'wes' },
+    { from: 'L1', to: 'PG', fromSide: 't', toSide: 'b', label: 'photo_analysis UPSERT embedding\nphotos preview_key · EXIF (CAS)', color: 'lambda' },
+    { from: 'L1', to: 'S3', label: 'GET · PUT', color: 'lambda' },
+  ],
+});
+</script>
+
+<h2 id="when">언제 · 무엇을 배정하나</h2>
+<div class="role"><b>한다</b><span>5초마다 UPLOADED 인데 벡터가 없는 사진을 갤러리별로 50장씩 <strong>SKIP LOCKED 로 집어</strong> embedder Lambda 를 EVENT 로 부른다. 잡과 무관하게 돈다. 10분 넘게 벡터가 안 오면 되돌리고, 3회 넘으면 <code>error</code> 로 표시한다.</span><b>왜</b><span>임베딩은 사진이 올라오는 족족 시작돼야 업로드가 끝났을 때 이미 절반이 돼 있다. Lambda 는 사진 50장 단위(사진당 호출 없음)로 불러야 콜드스타트·비용이 맞고, 전역 32배치 상한은 Lambda 예약 동시성과 RDS 커넥션을 지키기 위해서다. 갤러리 라운드로빈은 큰 갤러리 하나가 슬롯을 독점하지 않게 한다.</span><b>없으면</b><span>"분석 시작" 버튼을 눌러야 임베딩이 시작돼 업로드 시간 + 분석 시간이 합쳐지고, 배정이 없으면 두 스윕이 같은 사진을 두 번 보내거나 죽은 Lambda 의 사진이 영영 남는다.</span><b>입출력</b><span><code>photos(UPLOADED ∧ embedding NULL)</code> → <code>StageCall.Embed(galleryId, photoIds[≤50])</code></span></div>
+<p><strong>트리거는 잡이 아니라 데이터다.</strong> <code>POST /ai-analysis</code> 를 눌렀는지와 무관하게, 스윕은 매 5초 아래 조건의 사진을 찾는다.</p>
+<pre><code>status = 'UPLOADED' AND deleted_at IS NULL
+AND dispatched_at IS NULL AND embed_attempts &lt; 3
+AND a.embedding IS NULL AND a.error IS NULL        -- a = LEFT JOIN photo_analysis</code></pre>
+<ol class="steps">
+  <li><b>가용성 확인.</b> <code>stageInvoker.isAvailable(Embed)</code> 가 false(함수 이름 미설정 / 로컬 스크립트 없음)면 아무것도 안 한다.</li>
+  <li><b>stale 배정 되돌림.</b> <code>dispatched_at &lt; now − 10분</code> 인데 아직 <code>embedding</code> 도 <code>error</code> 도 없는 사진은 <code>dispatched_at = NULL</code> 로 되돌린다(시도 수는 유지). Lambda 가 죽었거나 남은 장(<code>remaining</code>)을 못 처리한 경우다.</li>
+  <li><b>상한 초과 표시.</b> <code>dispatched_at IS NULL ∧ embed_attempts ≥ 3 ∧ 벡터·error 없음</code> 인 사진에 <code>photo_analysis</code> 행을 UPSERT 해 <code>error = 'EMBED_ATTEMPTS_EXCEEDED'</code>. 이후 배정·집기·기대 장수에서 빠지고 <code>/photos/summary.failed</code> 로 드러난다.</li>
+  <li><b>빈 슬롯 계산.</b> <code>slots = 32 − countInFlightEmbedBatches()</code>. in-flight 는 <strong>배치 수</strong>다 — 한 배치의 50장이 같은 <code>statement_timestamp()</code> 를 공유하므로 <code>count(DISTINCT dispatched_at)</code> 로 센다. 최대 32배치 = 1,600장이 동시에 Lambda 에 나가 있다.</li>
+  <li><b>갤러리 라운드로빈.</b> backlog 있는 갤러리를 <code>min(photo_id)</code> 순으로 돌며 갤러리마다 한 배치(50장)씩 집는다. 슬롯이 남으면 다시 한 바퀴, 한 바퀴에 0건이면 끝. 큰 갤러리 하나가 슬롯을 독점하지 않는다.</li>
+  <li><b>집기.</b> <code>claimForEmbedding</code> — 조건에 맞는 50장을 <code>FOR UPDATE OF p SKIP LOCKED</code> 로 잠그고 <code>dispatched_at = statement_timestamp(), embed_attempts += 1</code> 로 갱신하며 <code>RETURNING id</code>. 스윕 둘이 겹쳐도 같은 사진을 두 번 집지 않는다.</li>
+  <li><b>호출.</b> <code>StageCallDto.Embed(galleryId, photoIds)</code> → EVENT. 호출 자체가 실패(<code>AnalysisException</code>)하면 <code>releaseClaim</code> 이 <code>dispatched_at = NULL, embed_attempts −1</code> 로 되돌리고 이번 걸음을 중단한다. 성공 로그 <code>embed dispatch gallery=G photos=N</code>.</li>
+</ol>
+
+<h2 id="payload">호출 계약</h2>
+<div class="role"><b>한다</b><span>실행기(Lambda / 로컬 스크립트)를 <code>StageInvoker</code> 포트 뒤에 숨긴다. prod 는 <code>InvocationType.EVENT</code> 로 세 함수를 부르고, local 은 같은 인자로 <code>scripts/lambda/*.sh</code> 를 띄운다.</span><b>왜</b><span>wes 는 응답을 기다리지 않고 DB 를 관측하는 구조라 호출은 "던지고 잊기"면 충분하다. 포트로 분리하면 로컬 개발이 Lambda 없이 같은 흐름을 돌리고, 테스트는 호출 기록만 확인한다. 페이로드 모양이 세 함수 모두 단순한 것(<code>{galleryId, photoIds}</code> / <code>{galleryId, jobId}</code>)도 체인·샤딩을 없앤 결과다.</span><b>없으면</b><span>로컬에서 파이프라인을 돌릴 수 없고, 동기 호출이면 wes 스레드가 Lambda 15분을 기다린다.</span><b>입출력</b><span><code>StageCall</code> → EVENT 202 (실패 <code>STAGE_INVOCATION_FAILED</code>)</span></div>
+<div class="tablewrap"><table>
+<tr><th>환경</th><th>어댑터</th><th>무엇을 부르나</th></tr>
+<tr><td>prod (<code>!local</code>)</td><td><code>LambdaStageInvoker</code></td><td class="wrap"><code>InvocationType.EVENT</code>, 함수 이름 <code>app.analysis.embedder-function-name</code>(SSM). 페이로드 <code>{"galleryId":G,"photoIds":[…]}</code>. 202 아니면 <code>STAGE_INVOCATION_FAILED</code>(502 PHOTO_502_1)</td></tr>
+<tr><td>local</td><td><code>LocalProcessStageInvoker</code></td><td class="wrap"><code>scripts/lambda/embedder.sh --gallery-id G --photo-ids 1,2,3</code> 을 <code>ProcessBuilder</code> 로 띄우고 기다리지 않음. 로그 <code>${java.io.tmpdir}/wes-lambda-embedder-G.log</code></td></tr>
+</table></div>
+<p>일반 분석의 Score 폴백도 같은 모양 <code>{galleryId, photoIds}</code>, Categorize 만 <code>{galleryId, jobId}</code>. 세 함수 모두 wes가 응답을 기다리지 않고(EVENT) DB를 관측한다. 운영 어댑터는 <code>ObjectMapper.writeValueAsBytes(call)</code>로 DTO를 직렬화하며, 프로퍼티 이름이 그대로 JSON 키가 된다. 일반 Embed 요청에는 <code>jobId</code>를 넣지 않는다. 임베더 응답 <code>{processed, failed, metadataFailed, stopped, remaining}</code> 은 CloudWatch 에만 남고, 남은 장은 2단계의 stale 되돌림이 재배정한다.</p>
+
+
+<h2 id="exact-photo">관리자 사진 교체도 같은 실행 포트를 사용</h2>
+<p>관리자가 사진을 교체하면 <code>AdminWorkflowExecutor</code>가
+<strong>교체된 리비전의 사진 1장</strong>을 <code>StageCallDto.ExactPhoto</code>로 요청합니다.
+일반 배치와 같은 <code>StageInvoker</code>·<code>LambdaStageInvoker</code>를 사용하지만,
+embedder는 <code>jobId</code>가 있는 요청을 관리자 사진 교체 이벤트로 해석합니다.</p>
+<div id="d-exact-photo"></div>
+<script>
+renderDiagram('#d-exact-photo', {
+  width: 1080, height: 240, title: '관리자 사진 교체가 공용 StageInvoker를 통해 embedder로 전달되는 경로',
+  groups: [{ x: 15, y: 25, w: 710, h: 190, color: '#398B46', tint: '#EFF8EE', label: 'wes · 관리자 요청과 공용 실행 포트' }],
+  nodes: [
+    { id: 'ADMIN', x: 35, y: 80, w: 240, lane: 'wes', kicker: 'AdminWorkflowExecutor', title: '사진 교체 처리 요청',
+      lines: ['StageCallDto.ExactPhoto', '사진 ID · 저장 경로 · 리비전'] },
+    { id: 'PORT', x: 455, y: 80, w: 245, lane: 'wes', kicker: 'analysis/service/port', title: 'StageInvoker',
+      lines: ['운영: LambdaStageInvoker', 'DTO → JSON · 비동기 EVENT'] },
+    { id: 'LAMBDA', x: 865, y: 80, w: 195, lane: 'lambda', kicker: '같은 embedder 함수', title: '관리자 사진 처리',
+      lines: ['jobId로 요청 종류 구분', '특정 리비전의 사진 1장'], href: 'embedder.html#admin' },
+  ],
+  edges: [
+    { from: 'ADMIN', to: 'PORT', label: 'ExactPhoto', color: 'wes' },
+    { from: 'PORT', to: 'LAMBDA', label: 'JSON · EVENT', color: 'wes' },
+  ],
+});
+</script>
+<div class="tablewrap"><table>
+<tr><th>필드</th><th>타입</th><th>의미</th></tr>
+<tr><td><code>jobId</code></td><td>Long</td><td>관리자 처리 잡 ID. 일반 분석의 <code>ai_analysis_jobs</code> ID와 구분</td></tr>
+<tr><td><code>attemptCount</code></td><td>Int</td><td>실행 시작 CAS로 확정된 시도 번호</td></tr>
+<tr><td><code>jobType</code></td><td>String</td><td><code>DERIVATIVE</code> 또는 <code>EMBEDDING</code></td></tr>
+<tr><td><code>photoId</code> · <code>galleryId</code></td><td>Long</td><td>처리할 사진과 갤러리</td></tr>
+<tr><td><code>storageKey</code></td><td>String</td><td>교체된 원본의 S3 키</td></tr>
+<tr><td><code>revisionId</code></td><td>Long</td><td>처리할 사진 리비전</td></tr>
+</table></div>
+<div class="note"><div class="t">운영과 로컬의 차이</div>
+운영은 <code>embedder-function-name</code>을 일반 Embed와 공유합니다. 문자열 필드도 ObjectMapper가 JSON으로 안전하게 직렬화합니다.
+로컬의 <code>isAvailable(ExactPhoto::class)</code>는 false이므로 관리자 잡은 전송 전에
+<code>PHOTO_PROCESSING_NOT_CONFIGURED</code>로 실패 처리됩니다. 직접 <code>invoke(ExactPhoto)</code>하면
+<code>STAGE_INVOCATION_FAILED</code>가 발생하며 스크립트는 실행되지 않습니다.</div>
+<p class="small">외부 호출 중 예외가 나면 수락 여부를 확정할 수 없으므로 관리자 경로는 결과 불명 상태로 기록합니다.
+일반 분석 잡의 자동 재전송과는 복구 정책이 다릅니다.
+갤러리 전체 재분석은 계속 <code>resetAnalysis</code> 후 스윕 재배정을 사용합니다.</p>
+
+<h2 id="consts">상수 — AnalysisProperties (app.analysis.*)</h2>
+<div class="tablewrap"><table>
+<tr><th>키</th><th>값</th><th>뜻</th></tr>
+<tr><td><code>sweep-interval</code></td><td>PT5S</td><td>스윕 주기. <code>@Scheduled</code> SpEL 이 직접 읽음(프로퍼티 클래스에 필드 없음)</td></tr>
+<tr><td><code>embed-batch-size</code></td><td>50</td><td>임베더 배치 크기. score Lambda는 별도 <code>score-batch-size</code> 설정 사용</td></tr>
+<tr><td><code>embed-max-in-flight</code></td><td>32</td><td>동시 배치 수 상한(전역). 인프라 embedder 예약 동시성 ≥ 이 값</td></tr>
+<tr><td><code>embed-redispatch-after</code></td><td>PT10M</td><td>stale 배정 되돌림 기준</td></tr>
+<tr><td><code>embed-max-attempts</code></td><td>3</td><td>도달 시 <code>EMBED_ATTEMPTS_EXCEEDED</code></td></tr>
+<tr><td><code>embedder-function-name</code></td><td>SSM</td><td>Lambda 함수 이름. 관리자 사진 교체(<code>StageCallDto.ExactPhoto</code>)도 같은 함수</td></tr>
+</table></div>
+
+<h2 id="job">잡과의 관계</h2>
+<div class="role"><b>한다</b><span>잡 걸음은 배정에 관여하지 않고 <strong>카운트만 관측</strong>한다. <code>livePending == 0 ∧ scored == expected</code> 가 되면 CATEGORIZING 으로 넘어간다.</span><b>왜</b><span>임베딩·점수는 데이터가 트리거이고 잡은 "갤러리 한 번의 폴더 만들기"만 책임진다. 이렇게 갈라야 잡이 없어도 사진은 끝까지 분석되고, 잡은 업로드 도중 뒤늦게 온 사진(2분 창)을 흡수한다.</span><b>없으면</b><span>잡이 배정까지 맡으면 잡이 죽을 때 파이프라인이 서고, 업로드 중간에 만든 잡은 늦게 온 사진을 놓친다.</span></div>
+<p>스윕의 잡 걸음(<code>stepAnalyzing</code>)은 배정을 하지 않고 <strong>관측만</strong> 한다. <code>livePending == 0 ∧ scored == expected</code> 가 되면 CATEGORIZING 으로 넘어간다(<a href="categorize.html">5. 사진 분류</a>).
+<code>livePending</code> 은 최근 2분(<code>upload-quiet-after</code>) 안에 발급된 PENDING 이라, 업로드 도중에 잡을 만들어도 뒤늦게 올라오는 사진을 흡수한다.
+살아 있는 잡이 없어도 임베딩·점수는 끝까지 진행되고, 폴더만 다음 방문의 버튼 한 번으로 만들어진다.</p>
+<div class="note"><div class="t">재분석</div>
+관리자 재처리(<code>AdminReprocessService</code>)는 Lambda 를 직접 부르지 않는다. <code>resetAnalysis(galleryId)</code> 로 <code>photo_analysis</code> 행을 지우고 <code>dispatched_at=NULL, embed_attempts=0</code> 으로 되돌린 뒤 활성 잡이 없으면 잡을 만든다. 다음 스윕이 처음부터 다시 배정한다.</div>
+
+<h2 id="files">코드 위치</h2>
+<div class="tablewrap"><table>
+<tr><th>역할</th><th>파일</th></tr>
+<tr><td>스케줄러</td><td><code>analysis/support/AnalysisJobSweeper.kt</code></td></tr>
+<tr><td>스윕 순서</td><td><code>analysis/service/AnalysisOrchestrator.kt</code> (dispatch → gpu → 잡)</td></tr>
+<tr><td>배정</td><td><code>analysis/service/EmbedDispatcher.kt</code></td></tr>
+<tr><td>SQL</td><td><code>photo/repository/PhotoPipelineRepository.kt</code> — <code>claimForEmbedding</code> :171 · <code>releaseClaim</code> :200 · <code>releaseStaleDispatches</code> :217 · <code>markEmbedAttemptsExceeded</code> :233 · <code>countInFlightEmbedBatches</code> :252</td></tr>
+<tr><td>포트·DTO</td><td><code>analysis/service/port/StageInvoker.kt</code> · <code>analysis/dto/StageCallDto.kt</code></td></tr>
+<tr><td>관리자 호출</td><td><code>admin/resource/service/AdminWorkflowExecutor.kt</code> · <code>analysis/dto/StageCallDto.kt</code>(ExactPhoto)</td></tr>
+<tr><td>어댑터</td><td><code>analysis/infrastructure/LambdaStageInvoker.kt</code> · <code>LocalProcessStageInvoker.kt</code></td></tr>
+<tr><td>설정</td><td><code>analysis/config/AnalysisProperties.kt</code> · <code>resources/config/application-variable.yml</code></td></tr>
+<tr><td>Lambda 쪽</td><td>AI repo <code>embedder/</code> → <a href="embedder.html">3.1 embedder 상세</a></td></tr>
+</table></div>
+
+<div class="pager">
+  <a href="upload.html">← 2. 업로드 상세</a>
+  <a href="embedder.html">3.1 embedder Lambda 상세 →</a>
+</div>
+</main>
+</body>
+</html>

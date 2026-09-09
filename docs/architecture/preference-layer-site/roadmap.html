@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>6. 로드맵과 제약 — 선호 가중치 층</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+<style>
+  .todo td:first-child{white-space:nowrap}
+</style>
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">전체 아키텍처</a><span class="sep">/</span>
+  <span class="here">6. 로드맵과 제약</span>
+  <span class="spacer"></span>
+  <a href="serving.html">← 5. 서비스 연결</a>
+  <a href="entities.html">엔티티 사전 →</a>
+</nav>
+
+<div class="eyebrow">AI repo · infra repo · wes · <span class="tag warn">앞으로의 개선점 · 목표</span></div>
+<h1>로드맵 — 코드는 있고, 배포·연결·데이터가 남았다</h1>
+<p class="lede">1단계(학습기)는 끝났다. 2단계는 Lambda 를 배포하고 wes 를 양쪽(호출 · 추천)에서 잇는 일이다. 3단계는 코드로 당길 수 없다 — 실제 마감 갤러리가 쌓여
+홀드아웃 표가 채워지고, n₀·L2 를 확정하고, 게이트가 처음 열리는 것. 그 전까지는 학습만 하고 추천은 그대로다.</p>
+<p class="meta">2026-09-09 기준. AI repo 44bcfda(#66) · wes V14(#162) · infra: preference 없음</p>
+
+<h2 id="stages">단계</h2>
+<div class="states">
+  <span class="st on">1단계 · 학습기</span><span class="ar">→</span>
+  <span class="st">2단계 · 배포 (infra · AI repo)</span><span class="ar">→</span>
+  <span class="st">2단계 · wes 호출 · 추천 연결</span><span class="ar">→</span>
+  <span class="st">3단계 · 데이터 누적 → 손잡이 확정 → 게이트 첫 통과</span><span class="ar">→</span>
+  <span class="st bad">active → 추천에 반영</span>
+</div>
+
+<h2 id="arch">단계별 의존 — 무엇이 무엇을 기다리나</h2>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1200, height: 420,
+  groups: [
+    { x: 20, y: 40, w: 260, h: 350, label: '1단계 · 있음' },
+    { x: 330, y: 40, w: 560, h: 350, label: '2단계 · 없음' },
+    { x: 940, y: 40, w: 240, h: 350, label: '3단계 · 데이터' },
+  ],
+  nodes: [
+    { id: 'A1', lane: 'lambda', x: 40, y: 80, w: 220, kicker: 'AI repo #66', title: '학습기 · 평가 · sanity',
+      lines: ['테스트 11 · 갤러리 8 실측'], href: 'train.html' },
+    { id: 'A2', lane: 'wes', x: 40, y: 200, w: 220, kicker: 'wes #162', title: 'V14 preference_models',
+      lines: ['photoselect GRANT · 권한 계약 테스트'], href: 'entities.html#preference_models' },
+    { id: 'B1', lane: 'warn', x: 350, y: 80, w: 250, kicker: 'infra · AI repo', title: 'Lambda 배포',
+      lines: ['ECR wes-preference · 함수 · VPC/RDS', 'deploy-lambda.yml 에 모듈 추가', 'SSM DB 자격 · 환경변수'] },
+    { id: 'B2', lane: 'warn', x: 350, y: 230, w: 250, kicker: 'wes', title: 'CLOSED 전이 → EVENT',
+      lines: ['포트 + Lambda/로컬 어댑터', 'scripts/lambda/preference.sh', '또는 EventBridge 스케줄'], href: 'serving.html#trigger' },
+    { id: 'B3', lane: 'warn', x: 640, y: 230, w: 230, kicker: 'wes', title: '추천 잡 pref 항',
+      lines: ['Repository · load 확장', 'x 조립 계약 테스트', 'combine 에 λ·z(pref)'], href: 'serving.html#wes' },
+    { id: 'C1', lane: 'gpu', x: 960, y: 80, w: 200, kicker: '운영', title: '마감 갤러리 누적',
+      lines: ['행마다 홀드아웃 줄 쌓임', '2개 → 측정 · 5개 → 판정'] },
+    { id: 'C2', lane: 'gpu', x: 960, y: 220, w: 200, kicker: '결정', title: 'n₀ · L2 확정 → 게이트',
+      lines: ['홀드아웃 표 보고 손잡이 고정', '첫 passed → active'], href: '#open' },
+  ],
+  edges: [
+    { from: 'A1', to: 'B1', fromAt: .5, toAt: .5, label: 'Dockerfile 있음', color: 'lambda' },
+    { from: 'A2', to: 'B3', fromSide: 'b', fromAt: .5, toSide: 'b', toAt: .5, via: [[null, 372], [755, 372]], label: '읽을 테이블 (V14)', labelAt: 1, dashed: true },
+    { from: 'B1', to: 'B2', fromSide: 'b', toSide: 't', label: '부를 함수', color: 'warn' },
+    { from: 'B1', to: 'C1', fromAt: .5, toAt: .5, via: [[920, null]], label: '마감마다 행 INSERT', labelAt: 0, color: 'warn' },
+    { from: 'B3', to: 'C2', fromAt: .5, toAt: .5, label: '읽을 준비', color: 'warn', dashed: true },
+    { from: 'C1', to: 'C2', fromSide: 'b', toSide: 't', label: 'holdout 표', color: 'gpu' },
+  ],
+});
+</script>
+
+<h2 id="todo">남은 일 목록</h2>
+<div class="tablewrap"><table class="todo">
+<tr><th>단계</th><th>어디</th><th>무엇</th><th>메모</th></tr>
+<tr><td>2 · 배포</td><td>infra</td><td class="wrap">ECR 저장소 <code>wes-preference</code>, Lambda 함수(VPC 안 · RDS 보안그룹 · <code>photoselect</code> 자격증명 SSM), 실행 역할</td><td class="wrap">score·categorize Lambda 와 같은 모양. 메모리는 작아도 된다(numpy·scipy, 갤러리 8 학습 0.06초 — 시간은 DB 읽기)</td></tr>
+<tr><td>2 · 배포</td><td>AI repo</td><td class="wrap"><code>deploy-lambda.yml</code> 의 paths 필터와 <code>workflow_dispatch</code> 선택지에 <code>preference</code> 추가</td><td class="wrap"><code>preference/Dockerfile</code>·<code>deploy.sh</code> 는 이미 있다</td></tr>
+<tr><td>2 · 호출</td><td>wes</td><td class="wrap">CLOSED 전이 뒤 EVENT 호출 — 포트 인터페이스(<code>service/port/</code>) + Lambda 어댑터 + 로컬 프로세스 어댑터, 설정 <code>app.preference.*</code>(함수 이름 · 켜기)</td><td class="wrap"><code>StageInvoker</code> 를 본뜬다. 또는 EventBridge 로 대체(<a href="serving.html#trigger">5.</a>). 마감 트랜잭션 밖(afterCommit)에서</td></tr>
+<tr><td>2 · 호출</td><td>wes scripts</td><td class="wrap"><code>scripts/lambda/preference.sh --gallery-id G</code> 로컬 대역. <code>lib/ai-env.sh</code> 접속 정보 공유</td><td class="wrap">운영 Lambda 하나 = 스크립트 하나 규칙</td></tr>
+<tr><td>2 · 추천</td><td>wes</td><td class="wrap"><code>PreferenceModel</code> 엔티티 + <code>findActive(embeddingModel, modelVersion, featureSpec)</code></td><td class="wrap">읽기 전용. Flyway 는 이미 V14</td></tr>
+<tr><td>2 · 추천</td><td>wes</td><td class="wrap">러너 <code>load</code> 가 <code>clip_embedding</code> 과 갤러리 전체 벡터를 읽도록 확장. 스칼라 11 조립. <code>combine</code> 에 항 추가. <code>score_breakdown.pref_z</code></td><td class="wrap">지금은 범위 폴더의 DINOv3 만 읽는다. 메모리: 7,000장 × 1,536 × 4B ≈ 43MB — 잡 하나에서는 감당 가능하나 러너 스레드 2개 동시면 곱절</td></tr>
+<tr><td>2 · 추천</td><td>wes ↔ AI</td><td class="wrap">특징 계약 테스트 — 같은 갤러리 픽스처에서 Python <code>features.build</code> 와 Kotlin 조립이 같은 x 를 내는가</td><td class="wrap">자리가 밀리면 조용히 틀리는 오류라 꼭 필요</td></tr>
+<tr><td>3 · 데이터</td><td>운영</td><td class="wrap">실제 마감 갤러리(선택 있음)가 쌓인다. 행마다 <code>holdout</code> 에 갤러리별 성적이 누적</td><td class="wrap">RDS <code>photo_selection_items</code> 0건에서 시작. 2개부터 홀드아웃, 5개부터 게이트 판정</td></tr>
+<tr><td>3 · 결정</td><td>사람</td><td class="wrap">홀드아웃 표를 보고 n₀(감쇠 속도)·L2 두 강도를 확정. 게이트 첫 통과 → active → 추천에 반영</td><td class="wrap">그 전까지 추천은 지금과 비트 단위로 같다</td></tr>
+</table></div>
+
+<h2 id="limits">알려진 제약</h2>
+<ul>
+  <li><strong>홀드아웃은 지금 못 잰다.</strong> 라벨 갤러리 하나(골든). 갤러리 안에서 나누면 낙관 편향이라 하지 않는다.</li>
+  <li><strong>연사 형제는 라벨 없음.</strong> 양성과 거의 같은 벡터에 음성을 주면 경계가 없는 곳에 경계를 그린다. 그래서 strict recall 은 구조적으로 낮다.</li>
+  <li><strong>부부 평균만 배운다.</strong> 부부별 편차는 기존 in-session 항(deficit · lift)이 맡는다. 개선 폭은 완만할 것 → 게이트는 절대값이 아니라 쌍 차이의 부호로.</li>
+  <li><strong>임베딩·score 버전 결합.</strong> embedder(DINOv3)나 score(CLIP·백분위) 모델이 바뀌면 행이 무효 — 키에 두 버전을 넣어 wes 가 안 읽게 한다. 그 뒤 마감 갤러리들의 버전이 섞이면 학습기가 중단하므로, 모델 교체 뒤에는 옛 갤러리 재분석 또는 학습 대상 필터가 필요하다.</li>
+  <li><strong>score 의 연사 클러스터가 크다</strong>(중앙값 35, 최대 79). 추천이 그 장면에서 1장만 보여준다는 뜻 — 이 층과 별도로 볼 문제.</li>
+</ul>
+
+<h2 id="open">열린 결정</h2>
+<div class="tablewrap"><table>
+<tr><th>질문</th><th>지금 값 · 기본 설계</th><th>결정 재료</th></tr>
+<tr><td>n₀ (감쇠 속도)</td><td>5 — n=5 에서 λ=0.5</td><td class="wrap">홀드아웃 표에서 λ 를 바꿔가며 fused − prior 를 다시 계산해 본다(행의 <code>rows</code> 에 prior·pref 성적이 따로 있어 재계산 가능)</td></tr>
+<tr><td>L2 두 강도</td><td>스칼라 1e-2 · 임베딩 0.1</td><td class="wrap">갤러리 5개 이상에서 LOGO 격자 탐색. 환경변수로 바꾸고 Lambda 재실행하면 행이 새로 쌓인다</td></tr>
+<tr><td>트리거</td><td>CLOSED 전이 훅</td><td class="wrap">wes 변경 없이 EventBridge 하루 1회로 시작해도 같은 결과. 마감 즉시가 필요해질 때 훅으로</td></tr>
+<tr><td>학습 대상 갤러리</td><td>CLOSED · 선택 ≥1 · 분석 완료 전부</td><td class="wrap">테스트·부하용 갤러리(<code>load/clone-gallery-photos.sh</code> 복제본)가 섞이지 않게 필터가 필요할 수 있다. 관리자 워크스페이스 제외 등</td></tr>
+<tr><td>기존 in-session "pref" 항과의 이름·비중</td><td><code>W_PREF=0.5</code>(유형 lift) 와 별개</td><td class="wrap">이름을 <code>affinity</code>/<code>learnedPref</code> 로 가르고, 두 항이 같이 켜졌을 때의 합을 홀드아웃에서 본다</td></tr>
+<tr><td>게이트 실패 뒤 active 처리</td><td>이전 active 유지</td><td class="wrap">새 갤러리가 들어와 게이트에 떨어져도 옛 active 행이 계속 추천에 쓰인다. "실패 n 회 연속이면 내린다" 같은 규칙을 둘지, 사람이 수동으로 내릴지 정한다</td></tr>
+<tr><td>AI 초안이 라벨로 되먹임되는 문제</td><td><code>photo_selection_items.source</code> 가 생기면 MANUAL 만</td><td class="wrap">학습기는 이미 컬럼이 있을 때만 필터한다(<code>read_selected</code>). 추천을 부부가 그대로 수락한 선택을 양성으로 배우면 자기 추천을 강화하는 고리가 된다 — wes 쪽 컬럼 추가가 선행</td></tr>
+<tr><td>재오픈 → 재마감</td><td>두 번 학습, 같은 결과</td><td class="wrap">무해. 다만 행이 하나 더 쌓이므로 <code>train_gallery_ids</code> 가 같은 직전 행이 있으면 건너뛰는 최적화 가능</td></tr>
+</table></div>
+
+<h2 id="done">끝났다고 볼 조건</h2>
+<ol class="steps">
+  <li><b>2단계.</b> 운영에서 갤러리를 마감하면 <code>preference_models</code> 에 행이 하나 늘고(<code>active=false</code>, <code>holdout.reasons</code> 에 "측정 불가"), 추천 잡 결과가 마감 전과 바이트 단위로 같다.</li>
+  <li><b>3단계.</b> 라벨 갤러리 5개 이상에서 게이트가 통과해 <code>active=true</code> 행이 생기고, 그 뒤 추천 잡의 <code>score_breakdown</code> 에 <code>pref_z</code> 가 찍힌다.</li>
+  <li><b>검증.</b> active 이후 마감된 갤러리에서 fused 의 recall_cluster 가 prior 보다 높다는 줄이 계속 쌓인다. 게이트에 떨어진 실행은 <code>active=false</code> 행만 추가하고 <strong>이전 active 행은 그대로 둔다</strong>(<code>write_model</code> 은 켤 때만 이전 것을 내린다) — 성적이 나빠졌을 때 자동으로 내릴지는 아래 열린 결정.</li>
+</ol>
+
+<div class="pager">
+  <a href="serving.html">← 5. 서비스 연결 (목표)</a>
+  <a href="entities.html">엔티티 필드 사전 →</a>
+</div>
+</main>
+</body>
+</html>

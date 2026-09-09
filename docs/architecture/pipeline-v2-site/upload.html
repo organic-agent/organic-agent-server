@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>2. 업로드 상세 — 파이프라인 v2</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">전체 아키텍처</a><span class="sep">/</span>
+  <span class="here">2. 업로드 상세</span>
+  <span class="spacer"></span>
+  <a href="embed.html">3. 임베딩 →</a>
+</nav>
+
+<div class="eyebrow">브라우저 · wes photo 도메인 · S3</div>
+<h1>사진 업로드</h1>
+<p class="lede">브라우저가 사진의 긴 변을 2,048px로 줄이고 체크섬을 계산합니다. wes에서 업로드 URL을 발급받아 <strong>S3에 직접 전송</strong>한 뒤 완료를 알립니다. 완료 알림이 누락되면 서버가 S3를 확인해 업로드 상태를 보정합니다.</p>
+<p class="meta">코드 기준 wes main@1503a9a · web repo <code>organic-agent-test-web</code> · 2026-09-09</p>
+<nav class="section-links" aria-label="이 페이지 목차"><a href="#arch">아키텍처</a><a href="#resize">① 브라우저 워커</a><a href="#issue">② 발급</a><a href="#presign">③ 서명</a><a href="#put">④ PUT</a><a href="#complete">⑤ 완료 통보</a></nav>
+
+<h2 id="arch">아키텍처</h2>
+<p class="small">실선은 호출·저장, 점선은 조회·상태 확인입니다. 박스를 누르면 해당 단계의 설명으로 이동합니다.</p>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1160, height: 620,
+  groups: [{ x: 345, y: 40, w: 320, h: 500, color: '#398B46', tint: '#EFF8EE', label: 'wes · photo 도메인' }],
+  nodes: [
+    { id: 'BW', lane: 'browser', x: 20, y: 60, w: 200, kicker: 'Web Worker ×≤6', technicalTitle: 'masterResize.worker', title: '사진 크기 조정',
+      lines: ['JPEG 회전 방향 반영', '긴 변 2048px · 촬영 정보 보존', 'CRC32C (base64)'], href: '#resize' },
+    { id: 'BU', lane: 'browser', x: 20, y: 230, w: 200, kicker: 'GalleryWorkspace.upload()', title: '업로드 실행기',
+      lines: ['100장 배치 발급 · 선행 리사이즈', 'PUT ×6 · 5xx 4회 · 4xx reissue 1회', '50장 complete → /ai-analysis'], href: '#put' },
+    { id: 'BP', lane: 'browser', x: 20, y: 420, w: 200, kicker: '폴링 3s / 10s', title: '진행 표시',
+      lines: ['GET /photos/summary', '업로드 · 분석 · 분류 진행률'], href: '#summary' },
+    { id: 'W1', lane: 'wes', x: 360, y: 60, w: 290, kicker: 'PhotoService.issueUploadUrls', technicalTitle: 'POST /photos/upload-urls', title: '업로드 URL 발급',
+      lines: ['검증: 플랜 · ≤500 · 타입 · ≤20MB · crc 형식', 'photos INSERT (PENDING, display_order)', 'photo_analysis 는 만들지 않음'], href: '#issue' },
+    { id: 'W2', lane: 'wes', x: 360, y: 200, w: 290, kicker: 'S3PhotoStorage.presignUpload', technicalTitle: 'presigned PUT 서명', title: '업로드 요청 서명',
+      lines: ['contentType · contentLength · checksumCRC32C(값)', '유효 시간 30분'], href: '#presign' },
+    { id: 'W3', lane: 'wes', x: 360, y: 320, w: 290, kicker: 'PhotoService.completeUpload', technicalTitle: 'POST /photos/complete', title: '업로드 완료 처리',
+      lines: ['markUploaded() · HeadObject 안 함 · 멱등'], href: '#complete' },
+    { id: 'W4', lane: 'wes', x: 360, y: 420, w: 290, kicker: '@Scheduled PT5S · 독립', technicalTitle: 'PendingUploadSweeper', title: '누락된 업로드 확인',
+      lines: ['1분 뒤 HeadObject → UPLOADED', '10분 재검사 · 24h 없으면 휴지통'], href: '#sweeper' },
+    { id: 'S3', lane: 's3', shape: 'db', x: 790, y: 60, w: 190, title: 'S3', lines: ['galleries/{g}/{uuid}.jpg'] },
+    { id: 'PG', lane: 'db', shape: 'db', x: 790, y: 300, w: 190, h: 140, title: 'Postgres', lines: ['PENDING → UPLOADED', 'upload_url_expires_at'] },
+    { id: 'NX', lane: 'wes', x: 1030, y: 320, w: 125, kicker: '다음', title: '3. 임베딩 배정', lines: ['업로드된 사진 선택'], href: 'embed.html' },
+  ],
+  edges: [
+    { from: 'BW', to: 'BU', fromSide: 'b', toSide: 't', label: '{ blob, resized, crc32c }' },
+    { from: 'BU', to: 'W1', fromAt: .15, label: 'POST upload-urls\n{fileName, contentType,\ncontentLength, crc32c}[]', color: 'browser' },
+    { from: 'W2', to: 'BU', fromSide: 'l', toSide: 'r', toAt: .75, label: '응답 {photoId,\nstorageKey, uploadUrl}[]', labelAt: 1, color: 'wes' },
+    { from: 'W1', to: 'W2', fromSide: 'b', toSide: 't', label: '파일마다', color: 'wes' },
+    { from: 'W1', to: 'PG', toSide: 't', toAt: .3, via: [[720, null]], label: 'INSERT PENDING', labelAt: 1, color: 'wes' },
+    { from: 'BU', to: 'S3', fromAt: .45, via: [[260, null], [null, 25], [740, 25]], label: 'S3 PUT (XHR) · 헤더 3개 · 5xx 백오프 · 4xx reissue 1회', labelAt: 2, color: 'browser' },
+    { from: 'BU', to: 'W3', fromAt: .9, toAt: .5, label: 'POST complete\n{photoIds ≤500}', color: 'browser' },
+    { from: 'W3', to: 'PG', toAt: .35, label: 'UPLOADED', color: 'wes' },
+    { from: 'W4', to: 'S3', fromAt: .3, toSide: 'b', toAt: .5, label: 'HeadObject', labelAt: 0, labelDx: -60, dashed: true, color: 'wes' },
+    { from: 'W4', to: 'PG', fromAt: .7, toAt: .8, label: 'UPLOADED / touch\n/ 휴지통', labelAt: 0, labelDy: 14, color: 'wes' },
+    { from: 'BP', to: 'PG', toSide: 'b', toAt: .5, via: [[260, null], [null, 590], [885, 590]], label: 'GET /photos/summary — 카운트 8개 (photos LEFT JOIN photo_analysis)', labelAt: 2, dashed: true, color: 'browser' },
+    { from: 'PG', to: 'NX', label: '관측', dashed: true },
+  ],
+});
+</script>
+
+<h2 id="resize">① 브라우저 워커 — 리사이즈 · EXIF · CRC32C</h2>
+<div class="role"><b>한다</b><span>원본 JPEG 를 브라우저 워커에서 긴 변 2048 로 줄이고, 회전을 픽셀에 굽고, 원본 EXIF(APP1)를 되살리며, 올릴 바이트의 CRC32C 를 계산한다.</span><b>왜</b><span>24MP 원본(8~12MB)은 화면·미리보기·AI 분석 어디에도 필요 없고 수천 장 업로드의 시간·전송량을 20배 키운다. EXIF 는 임베더가 S3 파일에서 읽어 촬영 정보를 채우므로 캔버스 재인코딩으로 지워지면 안 되고, CRC 는 서명에 들어가 S3 가 바이트를 검증하게 한다.</span><b>없으면</b><span>업로드가 수십 배 느려지고 S3 비용이 늘며, 촬영 시각·카메라 정보가 사라져 연사 판정(카메라·시각 파티션)이 깨진다. 회전 태그를 그대로 두면 임베더의 exif_transpose 가 이미 선 사진을 한 번 더 돌린다.</span><b>입출력</b><span><code>File</code> → <code>{blob, resized, crc32c}</code></span></div>
+<div class="tablewrap"><table>
+<tr><th>상수 (<code>src/lib/upload/masterSpec.ts</code>)</th><th>값</th><th>이유(원문 주석 요약)</th></tr>
+<tr><td><code>MASTER_LONG_EDGE</code></td><td>2048</td><td>화면·미리보기·AI 분석에 충분, 24MP 원본의 1/20</td></tr>
+<tr><td><code>MASTER_JPEG_QUALITY</code></td><td>0.85</td><td></td></tr>
+<tr><td><code>MASTER_RESIZE_WORKERS_MAX</code></td><td>6</td><td>워커 풀 = min(6, 코어−1), 탭 수명 동안 싱글턴</td></tr>
+<tr><td><code>UPLOAD_ISSUE_BATCH</code></td><td>100</td><td>서버 상한 500 이지만 100 이면 blob 30MB 안팎에서 첫 PUT 이 나간다</td></tr>
+<tr><td><code>UPLOAD_PUT_CONCURRENCY</code></td><td>6</td><td>같은 호스트 브라우저 연결 상한, 75Mbps 회선을 이미 넘김</td></tr>
+<tr><td><code>UPLOAD_COMPLETE_BATCH</code></td><td>50</td><td>서버 스윕 5초라 50장이면 첫 임베더 배치가 곧 뜬다</td></tr>
+<tr><td><code>UPLOAD_PUT_RETRY_MS</code></td><td>[500, 1000, 2000, 4000]</td><td>5xx·네트워크 재시도 간격, 같은 키 재PUT 은 멱등</td></tr>
+</table></div>
+
+<h3>한 장 처리 순서 (<code>masterResize.worker.ts</code>)</h3>
+<pre><code>onmessage({id, file}):
+  if file.type != "image/jpeg": out = {blob: file, resized: false}          # PNG/HEIC 은 원본 그대로
+  else:
+    hdr = readJpegHeader(앞 256KB)  (truncated 면 전체 재파싱)                  # width/height/APP1(Exif)
+    if max(hdr.w, hdr.h) &lt;= 2048: out = {blob: file, resized: false}          # 이미 작으면 손대지 않음
+    else:
+      bmp = createImageBitmap(file, imageOrientation: "from-image")           # 회전을 픽셀에 굽는다
+      canvas = OffscreenCanvas(round(w·s), round(h·s)); imageSmoothingQuality = "high"
+      enc = canvas.convertToBlob({type: "image/jpeg", quality: 0.85}); bmp.close()
+      out = hdr.exif ? {blob: spliceExif(enc, withUprightOrientation(hdr.exif)), resized: true}
+                     : {blob: enc, resized: true}
+  crc = base64(bigEndian32(crc32c(out.blob)))                                 # x-amz-checksum-crc32c 값
+  postMessage({id, ok: true, blob, resized, crc32c})</code></pre>
+
+<div class="cards">
+  <div class="card"><h4>EXIF 를 왜 되살리나 (<code>jpegExif.ts</code>)</h4>
+  <p>캔버스로 다시 인코딩한 JPEG 에는 EXIF 가 없다. 촬영 시각·카메라·조리개는 <strong>embedder Lambda 가 S3 파일에서 읽어 <code>photos</code> 컬럼을 채우므로</strong>, 원본의 APP1(Exif) 세그먼트를 통째로 잘라 새 파일에 붙인다(첫 번째 <code>Exif\0\0</code> APP1 만, XMP 제외). 서버 API 는 바뀌지 않는다.</p></div>
+  <div class="card"><h4>Orientation=1 로 치환하는 이유</h4>
+  <p>회전을 픽셀에 굽고 나면 원본의 Orientation(6·8 등)은 거짓이 된다. 그대로 두면 embedder 의 <code>exif_transpose</code> 가 이미 선 사진을 한 번 더 돌린다. IFD0 의 태그 0x0112 값 칸만 1 로 바꾼다.</p></div>
+  <div class="card"><h4>CRC32C (<code>crc32c.ts</code>)</h4>
+  <p>Castagnoli 다항식 <code>0x82f63b78</code> 테이블 방식 순수 JS. 결과 4바이트를 빅엔디안으로 base64 인코딩 → 헤더 <code>x-amz-checksum-crc32c</code>. 테스트 벡터 <code>"123456789" → "4waSgw=="</code>.</p></div>
+</div>
+
+<h2 id="issue">② 발급 — POST /galleries/{g}/photos/upload-urls</h2>
+<div class="role"><b>한다</b><span>파일 메타(이름·타입·정확한 크기·CRC)를 받아 <strong>photos 행(PENDING)</strong>을 만들고 파일마다 presigned PUT URL 을 돌려준다. 세션 API 는 없다 — 발급이 곧 행 생성이다.</span><b>왜</b><span>이미지 바이트가 서버를 지나지 않게 하려면 브라우저가 S3 에 직접 올려야 하고, 그러려면 서버가 "이 키에, 이 크기·타입·체크섬으로만" 쓸 수 있는 서명을 미리 줘야 한다. 행을 먼저 만들어 두면 통보가 안 와도 서버가 S3 를 확인해 상태를 맞출 수 있다.</span><b>없으면</b><span>서버가 원본을 중계해 메모리·대역폭을 먹거나, 아무 바이트나 아무 키에 올릴 수 있는 URL 이 나간다. 행이 없으면 "올렸는데 잊힌" 사진이 생긴다.</span><b>입출력</b><span><code>files[{fileName, contentType, contentLength, crc32c}]</code>(≤500) → <code>uploads[{photoId, storageKey, uploadUrl}]</code> + TTL</span></div>
+<p><strong>발급이 곧 사진 행 생성이다.</strong> 세션 API 는 없다. 발급을 리사이즈 <em>뒤</em>에 하는 이유는 서명에 Content-Length 정확값이 들어가서다(presigned PUT 은 범위 서명이 불가능하다).</p>
+<div class="tablewrap"><table>
+<tr><th>단계</th><th>내용</th><th>코드</th></tr>
+<tr><td>요청</td><td class="wrap"><code>files[]: {fileName ≤255, contentType, contentLength &gt;0, crc32c ^[A-Za-z0-9+/]{6}==$}</code></td><td><code>photo/dto/request/IssueUploadUrlsRequest.kt</code></td></tr>
+<tr><td>인가</td><td class="wrap"><code>requireUploader</code> — 워크스페이스 매니저 또는 개인 갤러리 참여자, 갤러리 쓰기 가능</td><td><code>PhotoService.kt:75</code></td></tr>
+<tr><td>검증 순서</td><td class="wrap">① 플랜 장수(갤러리 행 락) → <code>GALLERY_409_3</code> ② 배치 ≤ 500 → <code>PHOTO_400_1</code> ③ contentType ∈ jpeg/png/webp/heic/heif → <code>PHOTO_400_2</code> ④ contentLength ≤ 20MB → <code>PHOTO_400_7</code> ⑤ crc32c 형식 → <code>PHOTO_400_8</code></td><td><code>PhotoService.kt:77-131</code></td></tr>
+<tr><td>행 생성</td><td class="wrap"><code>Photo(galleryId, storageKey, originalFileName, contentType, displayOrder)</code> status 기본 PENDING. <code>storageKey = "galleries/{g}/" + UUID + .ext</code>(전역 유니크). <code>display_order = max+1</code> 부터 인덱스 순. <strong>photo_analysis 행은 만들지 않는다</strong> — 임베더가 첫 배치에서 UPSERT 로 만들고 진행 카운트는 LEFT JOIN 으로 "없음 = 아직"으로 읽는다</td><td><code>PhotoService.kt:96-108</code> · <code>S3PhotoStorage.buildKey</code> · <code>PhotoAnalysis.kt:25-28</code></td></tr>
+<tr><td>응답</td><td class="wrap"><code>{uploads: [{photoId, storageKey, uploadUrl}], uploadUrlTtlSeconds: 1800}</code>. 순서 = 요청 순서, 프론트는 인덱스로 짝짓는다. <code>upload_url_expires_at</code> 은 행에 기록(휴지통 즉시 삭제 보호용)</td><td><code>IssueUploadUrlsResponse.kt</code></td></tr>
+<tr><td>재발급</td><td class="wrap"><code>POST /upload-urls/reissue {photos: [{photoId, contentLength, crc32c}]}</code> — PENDING 사진에 새 URL, 행은 새로 생기지 않음. 하나라도 UPLOADED 면 전체 <code>PHOTO_409_1</code></td><td><code>PhotoService.reissueUploadUrls</code></td></tr>
+</table></div>
+
+<h2 id="presign">③ 서명 — S3PhotoStorage.presignUpload</h2>
+<div class="role"><b>한다</b><span>S3 SDK 로 PUT 요청 하나를 <strong>정확한 Content-Type · Content-Length · CRC32C 값</strong>까지 포함해 30분짜리 서명 URL 로 만든다.</span><b>왜</b><span>presigned PUT 은 헤더를 정확값으로만 서명할 수 있다(범위 서명은 presigned POST 에만 있다). 크기와 체크섬을 서명에 넣어야 URL 을 가진 누군가가 다른 파일을 올리거나 20MB 상한을 넘기지 못한다. cd00eff 가 고친 것처럼 알고리즘만 지정하면 SDK 내부 헤더가 서명돼 모든 PUT 이 403 이 된다.</span><b>없으면</b><span>크기·내용 검증 없는 URL 이 나가거나, 서명 방식이 어긋나 업로드 전체가 실패한다.</span><b>입출력</b><span><code>(key, contentType, contentLength, crc32c)</code> → <code>PresignedUploadDto{url, expiresAt}</code></span></div>
+<pre><code>PutObjectRequest.builder()
+    .bucket(bucket).key(key)
+    .contentType(contentType)
+    .contentLength(contentLength)      // 정확값
+    .checksumCRC32C(crc32c)            // 클라이언트가 계산한 "값"을 서명 — 알고리즘만 지정하면 안 됨
+PutObjectPresignRequest.signatureDuration(uploadUrlTtl = 30m)</code></pre>
+<div class="note warn"><div class="t">cd00eff 가 고친 것</div>
+<code>checksumAlgorithm(CRC32_C)</code> 로 알고리즘만 지정하면 바디 없는 presign 에서 SDK 가 <code>x-amz-sdk-checksum-algorithm</code> 만 서명하고 정작 체크섬 헤더는 서명하지 않아 모든 PUT 이 403 이었다. 그래서 값을 <code>checksumCRC32C(...)</code> 로 넣는다(<code>S3PhotoStorageTest</code> 가 <code>checksumAlgorithm() == null</code> 을 고정). 보정본 업로드·관리자 교체는 contentLength·crc32c 를 비워 서명한다.</div>
+<p>SigV4 는 서명되지 않은 <code>x-amz-*</code> 헤더가 있으면 AccessDenied 다. 그래서 프론트는 세 헤더 외에 아무것도 붙이지 않고, <strong>발급에 넣은 blob 객체를 그대로</strong> 보낸다(크기·CRC 가 서명값이므로). 값이 다르면 403 <code>SignatureDoesNotMatch</code>, CRC 가 틀리면 400 <code>BadDigest</code>.</p>
+
+<h2 id="put">④ PUT — 배치 파이프라인 (GalleryWorkspace.upload)</h2>
+<div class="role"><b>한다</b><span>브라우저가 100장씩 리사이즈 → 발급 → PUT ×6 병렬 → 50장마다 complete 를 반복한다. 5xx 는 같은 URL 로 백오프 재시도, 4xx 는 같은 바이트로 재발급 1회.</span><b>왜</b><span>발급이 리사이즈 <em>뒤</em>여야 서명에 넣을 정확한 크기가 있고, 묶음 k 를 올리는 동안 k+1 을 줄여야 워커와 네트워크가 동시에 일한다. 100장은 첫 PUT 이 빨리 나가는 크기(30MB), 6 은 브라우저 연결 상한이다. 4xx 는 서명 불일치·만료라 재발급이 답이고 5xx 는 S3 쪽이라 재시도가 답이다.</span><b>없으면</b><span>500장을 한 번에 발급하면 150MB 를 들고 8초를 기다린 뒤에야 첫 PUT 이 나가고, 만료된 URL 로 무한 재시도하거나 네트워크 오류로 한 장을 영영 잃는다.</span><b>입출력</b><span><code>File[]</code> → 성공 photoId 들 complete, 실패 목록, 끝에 <code>POST /ai-analysis</code></span></div>
+<pre><code>batches = chunk(files, 100); next = prepareBatch(batches[0])
+for i:
+    issued = await next                     # 100장 병렬 리사이즈 → issueUploadUrls 1회 → 인덱스 짝짓기
+    next   = prepareBatch(batches[i+1])     # 묶음 k 를 올리는 동안 k+1 을 줄인다 (선행 깊이 1)
+    6 workers over issued:
+        PUT(url, prepared.blob, {Content-Type, x-amz-checksum-crc32c})   # Content-Length 는 XHR 이 blob 크기로
+          5xx / 네트워크 → sleep [500,1000,2000,4000][attempt] 뒤 같은 URL 재시도 (총 5회)
+          4xx (1회만)    → reissueUploadUrls([{photoId, contentLength, crc32c}]) → 새 URL 즉시 재시도
+          그 외          → failedFiles
+        성공: completedIds += photoId;  50장 차면 completePhotoUploads(ids)   # 실패분은 다음 배치에 합침
+await completePhotoUploads(final)          # 실패하면 pendingServerCheck += n (서버 HeadObject 보정에 맡김)
+if done &gt; 0: startAnalysis()               # POST /ai-analysis (본문 없음)
+    RECOMMENDATION_409_1 → GET /ai-analysis; CATEGORIZING 이면 analysisQueued = true</code></pre>
+<p>발급 실패는 묶음 100장 전체가 실패 처리된다(크기 초과·플랜 한도). 워커 크래시는 그 워커가 들고 있던 한 장만 실패시키고 풀은 계속 쓴다. 리사이즈 실패(<code>prepareMaster</code> 거부)도 그 파일만 실패.</p>
+
+<h2 id="complete">⑤ 완료 통보 — POST /photos/complete</h2>
+<div class="role"><b>한다</b><span>브라우저가 "올렸다"고 알린 사진들을 <strong>UPLOADED</strong> 로 바꾼다. 조건 없는 대입이라 재통보는 멱등이고 S3 를 확인하지 않는다.</span><b>왜</b><span>임베딩 배정은 UPLOADED 를 본다. 통보를 받는 즉시 상태를 바꿔야 5초 스윕이 바로 첫 배치를 띄운다. HeadObject 를 여기서 하면 통보마다 S3 왕복이 생기고, 통보 자체가 안 올 수도 있으므로 검증은 스윕에 맡긴다.</span><b>없으면</b><span>업로드 뒤 임베딩이 1분(보정 스윕 첫 검사)씩 늦어지고, 재통보에 409 가 나면 프론트의 재시도가 깨진다.</span><b>입출력</b><span><code>{photoIds ≤500}</code> → UPLOADED, <code>{count}</code></span></div>
+<p><code>{photoIds}</code>(≤500) → <code>requireUploader</code> → 전부 이 갤러리 사진인지(<code>PHOTO_404_1</code>, 전부-아니면-거부) → <code>markUploaded()</code>. 조건 없는 대입이라 재통보는 멱등이고 응답 <code>count</code> 는 요청 장수다. <strong>S3 HeadObject 를 하지 않는다</strong> — 통보가 곧 "올렸다"는 선언이고, 검증은 스윕에 맡긴다.</p>
+<p>큐가 비면 프론트는 <code>POST /ai-analysis</code> 를 부른다(<a href="categorize.html">5. 사진 분류</a>). 이미 도는 잡이 있으면(409_1) 그 잡이 새 사진을 흡수하고, 이미 CATEGORIZING 이면 끝난 뒤 한 번 더 요청하도록 예약한다.</p>
+
+<h2 id="sweeper">⑥ 보정 — PendingUploadSweeper</h2>
+<div class="role"><b>한다</b><span>통보가 오지 않은 PENDING 사진을 발급 1분 뒤부터 S3 HeadObject 로 직접 확인해 UPLOADED 로 올리고, 10분마다 다시 보며, 24시간 없으면 휴지통으로 보낸다.</span><b>왜</b><span>프론트가 죽거나 탭이 닫히면 complete 는 오지 않는다. 사진은 S3 에 있는데 행이 PENDING 이면 임베딩도 폴더도 안 된다. 서버가 S3 를 진실로 삼아 상태를 맞추면 프론트가 어떤 상태로 죽어도 파이프라인이 끝까지 간다. 24시간 뒤 휴지통은 못 올린 행을 정리하되 URL(30분 TTL)이 살아 있을 때 지우지 않기 위해서다.</span><b>없으면</b><span>탭을 닫은 사용자의 사진이 영원히 "업로드 중"으로 남고, 카운트(<code>livePending</code>·<code>expected</code>)가 맞지 않아 잡이 분류로 못 넘어간다.</span><b>입출력</b><span><code>photos(PENDING)</code> → UPLOADED / touch / deleted_at</span></div>
+<p>통보가 끊겨도(탭 종료·네트워크) 서버가 S3 를 직접 본다. <code>AnalysisOrchestrator.sweep()</code> 에 속하지 않은 <strong>독립 스케줄러</strong>다(<code>app.storage.pending-sweep-interval</code>, 기본 PT5S).</p>
+<div class="tablewrap"><table>
+<tr><th>규칙</th><th>값 (app.storage.*)</th><th>동작</th></tr>
+<tr><td>첫 검사</td><td><code>pending-first-check-after</code> 1m</td><td>발급 1분 뒤 HeadObject. "본 적 없음" 판정은 <code>updated_at &lt; created_at + 1m</code></td></tr>
+<tr><td>재검사</td><td><code>pending-recheck-every</code> 10m</td><td>없으면 <code>updated_at</code> 만 touch, 10분 뒤 다시</td></tr>
+<tr><td>포기</td><td><code>pending-give-up-after</code> 24h</td><td>24h 지나도 없으면 휴지통(<code>deleted_at</code>). 직전에도 HeadObject 를 한 번 더 지난다</td></tr>
+<tr><td>배치</td><td>300</td><td><code>ORDER BY created_at LIMIT 300</code>, S3 조회는 트랜잭션 밖, 조회 예외 행은 이번 걸음 제외</td></tr>
+</table></div>
+<pre><code>present  → UPDATE photos SET status='UPLOADED', version+1, updated_at=now WHERE id IN … AND status='PENDING'
+absent ∧ created_at + 24h &lt; now → UPDATE photos SET deleted_at=now …
+absent (그 외)                    → UPDATE photos SET updated_at=now
+로그: pending sweep checked=… uploaded=… trashed=… waiting=…   (uploaded 또는 trashed &gt; 0 일 때만)</code></pre>
+
+<h2 id="summary">진행 요약 — GET /photos/summary</h2>
+<div class="role"><b>한다</b><span><code>photos LEFT JOIN photo_analysis</code> 한 쿼리로 진행 카운트 여덟 개를 센다. 잡 응답 <code>progress</code> 와 같은 프로젝션이다.</span><b>왜</b><span>사진 한 장의 진행은 <code>photo_analysis</code> 행이 말하므로 "몇 장이 어느 단계까지 왔나"는 상태 컬럼이 아니라 컬럼 NULL 여부를 세는 것이 진실이다. 프론트가 세 칸(살펴보기·좋은 순간·컨셉 나누기)을 그리고 잡이 전이 조건을 판단하는 데 같은 숫자를 써야 화면과 서버가 어긋나지 않는다.</span><b>없으면</b><span>단계별 상태 enum 을 따로 두면 Lambda 마다 상태를 써야 하고 실패·재시도마다 어긋난다. 카운트가 둘이면 화면의 100% 와 잡의 완료가 다른 순간에 온다.</span><b>입출력</b><span><code>galleryId, liveSince</code> → <code>{total, pending, livePending, failed, expected, embedded, scored, categorized}</code></span></div>
+<p><code>PhotoPipelineRepository.progressOf</code> 한 쿼리(<code>photos LEFT JOIN photo_analysis</code>)가 여덟 값을 센다. <code>/photos/summary</code> 와 잡 응답 <code>progress</code> 가 같은 프로젝션을 쓴다.</p>
+<div class="tablewrap"><table>
+<tr><th>값</th><th>FILTER</th><th>노출</th></tr>
+<tr><td>total</td><td>전부(<code>deleted_at IS NULL</code>)</td><td>summary</td></tr>
+<tr><td>pending</td><td><code>status='PENDING'</code></td><td>summary</td></tr>
+<tr><td>livePending</td><td>PENDING ∧ <code>created_at &gt; :liveSince</code> (summary 는 1분, 잡은 2분)</td><td>내부</td></tr>
+<tr><td>failed</td><td>UPLOADED ∧ <code>a.error IS NOT NULL</code></td><td>둘 다</td></tr>
+<tr><td>expected</td><td>UPLOADED ∧ <code>a.error IS NULL</code></td><td>잡 progress (summary 는 <code>uploaded = expected + failed</code>)</td></tr>
+<tr><td>embedded</td><td>expected ∧ <code>a.embedding IS NOT NULL</code></td><td>둘 다</td></tr>
+<tr><td>scored</td><td>embedded ∧ <code>a.clip_embedding IS NOT NULL</code></td><td>둘 다</td></tr>
+<tr><td>categorized</td><td>scored ∧ <code>a.technical_pct IS NOT NULL</code></td><td>둘 다</td></tr>
+</table></div>
+<p>프론트(<code>pipeline.ts</code>)는 이 카운트로 "사진 살펴보기 / 좋은 순간 찾기 / 컨셉별로 나누기" 세 칸을 그린다. 폴링은 카운트가 움직이는 동안 3초, 마지막 변화 뒤 1분이 지나면 10초. 5분 무변화면 "멈춘 것 같다"고만 알린다(실패 판정 아님 — 서버가 10분·20분에 재시도한다).</p>
+
+<h2 id="files">코드 위치</h2>
+<div class="tablewrap"><table>
+<tr><th>역할</th><th>web repo</th><th>wes</th></tr>
+<tr><td>상수</td><td><code>src/lib/upload/masterSpec.ts</code></td><td><code>photo/config/StorageProperties.kt</code> · <code>application-variable.yml:71-91</code></td></tr>
+<tr><td>리사이즈·EXIF·CRC</td><td><code>masterResize.ts</code> · <code>masterResize.worker.ts</code> · <code>jpegExif.ts</code> · <code>crc32c.ts</code></td><td>—</td></tr>
+<tr><td>API 클라이언트 / 서버</td><td><code>src/lib/api/photos.ts</code>(putToS3 :252)</td><td><code>photo/controller/PhotoController.kt</code> · <code>photo/service/PhotoService.kt</code></td></tr>
+<tr><td>업로드 실행기</td><td><code>components/workspace/GalleryWorkspace.tsx:663-878</code>(upload) · :267-296(startAnalysis) · :336-422(폴링)</td><td>—</td></tr>
+<tr><td>서명</td><td>—</td><td><code>photo/infrastructure/S3PhotoStorage.kt:48-75</code></td></tr>
+<tr><td>보정</td><td>—</td><td><code>photo/support/PendingUploadSweeper.kt</code> · <code>photo/repository/PhotoPipelineRepository.kt:70-139</code></td></tr>
+<tr><td>진행 계산</td><td><code>src/lib/workspace/pipeline.ts</code></td><td><code>photo/repository/projection/GalleryAnalysisProgress.kt</code></td></tr>
+<tr><td>계약 테스트</td><td><code>tests/workspace.spec.ts</code> · <code>tests/crc32c.test.ts</code> · <code>tests/jpeg-exif.test.ts</code></td><td><code>S3PhotoStorageTest</code> · <code>PhotoServiceTest</code> · <code>PendingUploadSweeperTest</code></td></tr>
+</table></div>
+
+<div class="note"><div class="t">알려진 결함·미구현</div>
+갤러리 모달 경로 <code>useUploadQueue.ts</code> 는 배치 없이 전부 한 번에 발급해 500장 초과 시 <code>PHOTO_400_1</code> 로 전부 실패하고, 재시도·reissue·<code>/ai-analysis</code> 호출이 없다.
+web 계획서의 시간 기준 플러시(1.5s/3s)·TTL 임박 선제 reissue·IndexedDB 재개는 미구현. wes 계획서의 사진별 <code>analysis{embedded, scored, error}</code> 응답 필드도 미구현(요약만 있음).</div>
+
+<div class="pager">
+  <a href="index.html">← 전체 아키텍처</a>
+  <a href="embed.html">3. 서버 임베딩 배정 →</a>
+</div>
+</main>
+</body>
+</html>

@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>3. 공개 요청 경로 — wes 인프라</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">전체 인프라</a><span class="sep">/</span>
+  <span class="here">3. 공개 요청 경로</span>
+  <span class="spacer"></span>
+  <a href="network.html">← 2. 네트워크</a>
+  <a href="data.html">4. 데이터 저장소 →</a>
+</nav>
+
+<div class="eyebrow">modules/ingress · modules/compute · SSM Parameter Store</div>
+<h1>api.easyselect.kr → ALB → wes-app :8080</h1>
+<p class="lede">사용자 브라우저의 요청은 Route 53 별칭 → ALB(ACM 인증서, :80은 :443으로 301) → <strong>단일 EC2 wes-app의 :8080</strong>으로 갑니다. wes-app은 부팅 시 SSM <code>/wes/prod/*</code>를 통째로 읽어 DB·S3·Lambda 이름·시크릿을 얻고, 사진 바이트는 서명 URL로 브라우저와 S3가 직접 주고받습니다.</p>
+<p class="meta">인프라 main@42b33c6 · 2026-09-09 · <code>modules/ingress/main.tf</code> · <code>modules/compute/main.tf</code> · <code>user_data.sh.tftpl</code></p>
+<nav class="section-links" aria-label="이 페이지 목차"><a href="#arch">아키텍처</a><a href="#alb">Route 53 · ACM · ALB</a><a href="#app">wes-app EC2</a><a href="#boot">부팅과 설정</a><a href="#role">인스턴스 롤</a><a href="#deploy">배포가 닿는 방법</a><a href="#files">코드 위치</a></nav>
+
+<h2 id="arch">아키텍처</h2>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1240, height: 560, title: '사용자 요청이 Route 53, ALB를 지나 wes-app과 RDS에 닿는 경로, 그리고 S3 직접 업로드',
+  groups: [
+    { x: 420, y: 40, w: 520, h: 250, label: 'Public subnet 2a · wes-app', color: '#398B46', tint: '#EFF8EE' },
+    { x: 420, y: 330, w: 260, h: 200, label: 'DB subnet', color: '#2A7F9E', tint: '#E9F3F6' },
+  ],
+  nodes: [
+    { id: 'U', lane: 'browser', shape: 'actor', x: 20, y: 120, w: 120, title: '사용자 · 브라우저' },
+    { id: 'R53', lane: 'lambda', x: 180, y: 40, w: 200, kicker: 'Route 53 · dns 스택 존', title: 'api.easyselect.kr', lines: ['A alias → ALB'], href: '#alb' },
+    { id: 'ACM', lane: 'lambda', x: 180, y: 230, w: 200, kicker: 'ACM', title: 'TLS 인증서', lines: ['DNS 검증 · 자동 갱신'], href: '#alb' },
+    { id: 'ALB', lane: 'wes', x: 440, y: 90, w: 190, kicker: 'ALB wes · 두 AZ', title: 'Application Load Balancer', lines: [':80 → :443 (301)', 'TLS13-1-2-2021-06', '/internal/admin* → 404'], href: '#alb' },
+    { id: 'APP', lane: 'wes', x: 730, y: 90, w: 190, kicker: 'EC2 t4g.micro · arm64', title: 'wes-app', lines: ['docker compose /opt/wes-prod', 'wes-api :8080 · Flyway owner', '헬스 /actuator/health'], href: '#app' },
+    { id: 'RDS', lane: 'db', shape: 'db', x: 470, y: 380, w: 180, title: 'RDS wes-db', lines: [':5432 · wes_admin(40)'] },
+    { id: 'SSM', lane: 'lambda', x: 720, y: 380, w: 200, kicker: 'Parameter Store · 리전 서비스', title: '/wes/prod/*', lines: ['url · username · bucket', '함수 이름 ×3 · gpu.enabled', '시크릿은 수동 SecureString'], href: '#boot' },
+    { id: 'S3', lane: 's3', shape: 'db', x: 990, y: 90, w: 200, title: 'S3 wes-photos-*', lines: ['서명 PUT / GET', 'CORS: 공개 + admin 오리진'] },
+    { id: 'MON', lane: 'wes', x: 980, y: 300, w: 210, kicker: 'wes-monitoring', title: 'Loki :3100', lines: ['logback → 사설 IP'], href: 'ops.html#monitoring' },
+  ],
+  edges: [
+    { from: 'U', to: 'R53', fromSide: 't', toSide: 'l', via: [[80, 70]], label: '① DNS', labelAt: 1, dashed: true, color: 'browser' },
+    { from: 'U', to: 'ALB', fromSide: 'r', toSide: 'l', toAt: .5, label: '② HTTPS :443', color: 'browser' },
+    { from: 'ACM', to: 'ALB', fromSide: 'r', toSide: 'l', toAt: .85, label: '인증서', dashed: true },
+    { from: 'ALB', to: 'APP', label: '③ :8080\nALB SG만', color: 'wes' },
+    { from: 'APP', to: 'RDS', fromSide: 'b', fromAt: .3, toSide: 't', toAt: .5, via: [[787, 315], [560, 315]], label: '④ :5432 · Hikari', labelAt: 1, color: 'wes' },
+    { from: 'APP', to: 'SSM', fromSide: 'b', fromAt: .7, toSide: 't', toAt: .7, label: '부팅 시 조회', dashed: true, color: 'wes' },
+    { from: 'APP', to: 'S3', fromAt: .3, toSide: 'l', toAt: .3, label: '서명 URL 발급\nHeadObject', color: 'wes' },
+    { from: 'U', to: 'S3', fromSide: 't', toSide: 't', via: [[80, 20], [1090, 20]], label: '⑤ 사진 직접 PUT / GET · 서버를 지나지 않음', labelAt: 1, color: 'browser' },
+    { from: 'APP', to: 'MON', fromAt: .8, toSide: 'l', toAt: .4, via: [[960, 160], [960, 337]], label: '로그 push', labelAt: 1, labelDx: -30, dashed: true, color: 'wes' },
+  ],
+});
+</script>
+
+<h2 id="alb">Route 53 · ACM · ALB</h2>
+<ol class="steps">
+  <li><b>Route 53.</b> <code>api.easyselect.kr</code> A 별칭 → ALB(<code>evaluate_target_health=false</code>). 존은 <code>dns/</code> 스택 소유, 앱 스택은 이름으로 조회만.</li>
+  <li><b>ACM.</b> <code>api.easyselect.kr</code> 인증서, DNS 검증(검증 CNAME은 TTL 60·<code>allow_overwrite</code>). HTTPS 리스너가 <code>aws_acm_certificate_validation</code>을 참조해 검증 완료를 기다립니다.</li>
+  <li><b>ALB <code>wes</code>.</b> internet-facing, public 서브넷 두 곳(두 AZ 필수), SG <code>wes-alb</code>. 리스너 :80은 :443으로 HTTP_301, :443은 <code>ELBSecurityPolicy-TLS13-1-2-2021-06</code>.</li>
+  <li><b>리스너 규칙 priority 1.</b> <code>/internal/admin</code>, <code>/internal/admin/*</code> → 고정 응답 404 <code>{"message":"Not Found"}</code>. 관리자 API는 공개 경로로 절대 나가지 않습니다. HTTP는 전량 리다이렉트라 우회 경로가 없습니다.</li>
+  <li><b>타깃 그룹 <code>wes-app</code>.</b> HTTP :8080, <code>target_type=instance</code>, 헬스체크 <code>/actuator/health</code> matcher <code>200-399</code>(느슨함, 나머지는 AWS 기본값). 타깃은 <strong>EC2 한 대를 고정 등록</strong>한 것이고 ASG는 없습니다.</li>
+</ol>
+
+<h2 id="app">wes-app EC2</h2>
+<div class="datastrip">
+  <div class="cell"><b>AMI · 타입</b>Ubuntu 24.04 arm64 most_recent · t4g.micro (1 GiB)</div>
+  <div class="cell"><b>배치</b>public 2a 한 곳 · 공인 IP 자동(EIP 없음, stop/start 시 바뀜)</div>
+  <div class="cell"><b>디스크</b>gp3 20 GiB · 스왑 2 GB 파일</div>
+  <div class="cell"><b>IMDS</b>IMDSv2 필수 · hop limit 2 (컨테이너가 롤 자격증명을 읽음)</div>
+  <div class="cell"><b>키</b><code>wes-key</code> 등록 · 그러나 :22 SG 규칙 없음 → SSM 세션만</div>
+  <div class="cell"><b>태그</b><code>Name=wes-app</code> — Run Command 대상 조건</div>
+</div>
+<p>인스턴스 하나가 wes-api(공개 API), Flyway 마이그레이션 소유, 분석 오케스트레이터(5초 스윕·Lambda EVENT·GPU Start/Stop), Bedrock 추천 호출까지 맡습니다. 알람은 없습니다(저장소의 알람은 GPU 유휴, Lambda 비동기, 테스트 프론트 상태 확인뿐).</p>
+
+<h2 id="boot">부팅과 설정</h2>
+<p><code>user_data</code>는 스무 줄이고 <strong>앱을 설치하지 않습니다.</strong> Docker·compose v2 설치, <code>ubuntu</code>를 docker 그룹에, 2 GB 스왑, snap <code>aws-cli</code>가 전부입니다. 앱 컨테이너는 서버 repo의 CD가 SSM Run Command로 <code>/opt/wes-prod</code>에서 <code>docker compose pull &amp;&amp; up</code>을 실행해 올립니다(GHCR arm64 이미지). 앱은 Spring Cloud AWS로 <code>/wes/prod/</code>를 통째로 읽으므로 환경변수 주입이 없습니다.</p>
+<div class="tablewrap"><table>
+<tr><th>키 (<code>/wes/prod/</code>)</th><th>만드는 쪽</th><th>값</th></tr>
+<tr><td><code>spring.datasource.url</code> · <code>username</code></td><td>Terraform database 모듈</td><td><code>jdbc:postgresql://…:5432/wes_db?sslmode=require</code> · <code>wes_admin</code></td></tr>
+<tr><td><code>spring.datasource.password</code></td><td><strong>수동 SecureString</strong> · apply 전에 있어야 함</td><td>RDS 마스터 비밀번호. database 모듈이 ephemeral로 읽어 write-only로 전달 → state에 평문 없음</td></tr>
+<tr><td><code>app.storage.bucket</code></td><td>storage 모듈</td><td><code>wes-photos-&lt;account&gt;</code></td></tr>
+<tr><td><code>app.analysis.{embedder,score,categorize}-function-name</code> · <code>app.analysis.gpu.enabled</code></td><td>analysis 모듈</td><td>함수 이름 셋 · <code>true</code></td></tr>
+<tr><td><code>app.logging.loki-url</code></td><td>monitoring 모듈</td><td><code>http://&lt;monitoring 사설 IP&gt;:3100/loki/api/v1/push</code></td></tr>
+<tr><td><code>jwt.secret</code> · OAuth <code>kakao|google|naver</code> client-id/secret/redirect</td><td>수동 SecureString</td><td>앱만 읽음</td></tr>
+<tr><td><code>cors.allowed-origins</code></td><td>수동 String · <strong>apply의 입력이기도 함</strong></td><td>콤마 목록. S3 CORS = 이 목록 + <code>https://admin.easyselect.kr</code></td></tr>
+<tr><td><code>springdoc.server-url</code></td><td>수동 String</td><td><code>https://api.easyselect.kr</code></td></tr>
+<tr><td><code>embedder.db.password</code> · <code>photoselect.db.password</code></td><td>수동 SecureString</td><td>Lambda·GPU 워커용. 앱은 읽지 않음</td></tr>
+</table></div>
+<p class="small">전체 매핑은 <code>parameter-store-mapping.md</code>(개인 노트, 저장소 밖). 앱 롤은 <code>/wes/prod</code>와 <code>/wes/prod/*</code>만 읽을 수 있고 <code>/wes/admin-api/prod/*</code>·<code>/wes/monitoring/*</code>·<code>/wes/admin/*</code>는 못 읽습니다.</p>
+
+<h2 id="role">인스턴스 롤 <code>wes-ec2-*</code></h2>
+<div class="tablewrap"><table>
+<tr><th>정책</th><th>허용</th><th>붙이는 모듈</th></tr>
+<tr><td><code>AmazonSSMManagedInstanceCore</code></td><td>Session Manager · Run Command 수신</td><td>compute</td></tr>
+<tr><td><code>read-app-parameters</code></td><td><code>ssm:GetParameter(s|ByPath)</code> on <code>/wes/prod</code>, <code>/wes/prod/*</code></td><td>compute</td></tr>
+<tr><td><code>invoke-llm</code></td><td><code>bedrock:InvokeModel</code> global 추론 프로필 + foundation-model (추천·비교샷 LLM)</td><td>compute</td></tr>
+<tr><td><code>control-score-gpu</code></td><td><code>ec2:DescribeInstances</code> · <code>Start/StopInstances</code> (조건 <code>ResourceTag/Name=wes-score-gpu</code>)</td><td>compute</td></tr>
+<tr><td><code>photo-bucket</code></td><td><code>s3:Get/Put/DeleteObject</code> 버킷 전체 · <code>ListBucket</code></td><td>storage</td></tr>
+<tr><td><code>invoke-analysis-functions</code></td><td><code>lambda:InvokeFunction</code> 세 함수 ARN</td><td>analysis</td></tr>
+</table></div>
+<p class="small">KMS·Secrets Manager 정책은 없습니다. SecureString은 기본 <code>aws/ssm</code> 키로 복호화됩니다. GPU 워커 태그 문자열 <code>wes-score-gpu</code>는 모듈 순환을 피하려고 compute 롤 조건과 score-gpu 인스턴스 태그에 <strong>각각 문자열로</strong> 적혀 있어, 어긋나면 앱이 워커를 켜지 못합니다.</p>
+
+<h2 id="deploy">배포가 닿는 방법</h2>
+<p>SSH 없이, 장기 액세스 키 없이. 서버 repo <code>main</code>에 머지되면 GitHub Actions가 OIDC로 <code>wes-deploy-*</code> 롤을 맡고 <code>ssm:SendCommand</code>(<code>AWS-RunShellScript</code>, 대상은 태그 <code>Name=wes-app</code>인 인스턴스만)로 compose를 갱신합니다. 자세한 롤 구성은 <a href="ops.html#oidc">7. 운영 · 배포</a>.</p>
+
+<h2 id="files">코드 위치</h2>
+<div class="tablewrap"><table>
+<tr><th>역할</th><th>파일 (organic-agent-infra)</th></tr>
+<tr><td>ACM · ALB · 리스너 규칙 · 타깃 · Route 53</td><td><code>modules/ingress/main.tf</code></td></tr>
+<tr><td>EC2 · 키 · 롤 · 정책 셋</td><td><code>modules/compute/main.tf</code> · <code>modules/compute/user_data.sh.tftpl</code></td></tr>
+<tr><td>롤에 붙는 다른 정책</td><td><code>modules/storage/main.tf</code>(photo-bucket) · <code>modules/analysis/main.tf</code>(invoke-analysis-functions)</td></tr>
+<tr><td>변수</td><td><code>variables.tf</code> — <code>instance_type · app_port · health_check_path · subdomain · ssh_public_key · bedrock_model_id</code></td></tr>
+<tr><td>서버 쪽</td><td>wes <code>src/main/resources/application.yml</code> → <code>config/application-{cloud,db,variable}.yml</code></td></tr>
+</table></div>
+
+<div class="pager">
+  <a href="network.html">← 2. 네트워크 · 보안 그룹</a>
+  <a href="data.html">4. 데이터 저장소 →</a>
+</div>
+</main>
+</body>
+</html>

@@ -1,0 +1,278 @@
+/* pipeline-v2-site 공용 스타일. 팔레트는 docs/architecture/pipeline-v2-overview.html 과 같다.
+   레인 색: wes=초록(accent) · Lambda=블루그레이 · GPU=앰버 · 브라우저=보라 · DB=회색 */
+:root{
+  --bg:#FFFFFF; --surface:#FFFFFF; --surface-2:#F5F7FA; --line:#D9DED6; --line-strong:#B9C2B7;
+  --ink:#1B2430; --ink-2:#4B5563; --ink-3:#637084;
+  --accent:#398B46; --accent-ink:#286734; --accent-soft:#EFF8EE;
+  --gpu:#B7791F; --gpu-soft:#F6E9CF;
+  --lambda:#5B6B8C; --lambda-soft:#E1E6F0;
+  --browser:#7C5CB8; --browser-soft:#ECE5F7;
+  --db:#5F6B75; --db-soft:#E8ECEF;
+  --warn:#B45309; --warn-soft:#FBE9D7;
+  --code-bg:#EEF1EC; --edge:#7E8A94;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#11161B; --surface:#171E25; --surface-2:#1E262E; --line:#2A343D; --line-strong:#3B4853;
+    --ink:#E7EAEC; --ink-2:#B4BCC4; --ink-3:#8593A0;
+    --accent:#5FB39A; --accent-ink:#8CCDB8; --accent-soft:#1E3A32;
+    --gpu:#E0B15A; --gpu-soft:#3B3018;
+    --lambda:#98A9CF; --lambda-soft:#26303F;
+    --browser:#B39BE0; --browser-soft:#2E2540;
+    --db:#9AA6B0; --db-soft:#232B32;
+    --warn:#F0A35E; --warn-soft:#3F2A16;
+    --code-bg:#1E262E; --edge:#8593A0;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#11161B; --surface:#171E25; --surface-2:#1E262E; --line:#2A343D; --line-strong:#3B4853;
+  --ink:#E7EAEC; --ink-2:#B4BCC4; --ink-3:#8593A0;
+  --accent:#5FB39A; --accent-ink:#8CCDB8; --accent-soft:#1E3A32;
+  --gpu:#E0B15A; --gpu-soft:#3B3018;
+  --lambda:#98A9CF; --lambda-soft:#26303F;
+  --browser:#B39BE0; --browser-soft:#2E2540;
+  --db:#9AA6B0; --db-soft:#232B32;
+  --warn:#F0A35E; --warn-soft:#3F2A16;
+  --code-bg:#1E262E; --edge:#8593A0;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans KR",-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;font-size:16px;line-height:1.85;-webkit-font-smoothing:antialiased}
+main{max-width:1440px;margin:0 auto;padding:32px 40px 96px}
+h1,h2,h3,h4{font-family:"IBM Plex Sans KR",-apple-system,"Apple SD Gothic Neo",sans-serif;text-wrap:balance;margin:0}
+h1{font-size:2.4rem;line-height:1.35;font-weight:700}
+h2{font-size:1.4rem;font-weight:700;margin-top:48px;padding-top:18px;border-top:1px solid var(--line)}
+h3{font-size:1.08rem;font-weight:700;margin-top:28px}
+h4{font-size:.98rem;font-weight:700;margin-top:18px}
+p{margin:12px 0;max-width:72ch}
+ul,ol{max-width:76ch;padding-left:1.3em}
+li{margin:4px 0}
+.lede{font-size:1.05rem;color:var(--ink-2);max-width:70ch}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin-bottom:10px}
+.meta{font-family:"IBM Plex Mono",monospace;font-size:.78rem;color:var(--ink-3);margin-top:14px}
+code,.mono{font-family:"IBM Plex Mono",monospace;font-size:.86em}
+code{background:var(--code-bg);padding:1px 5px;border-radius:3px}
+code{overflow-wrap:anywhere}
+pre{background:var(--code-bg);padding:14px 16px;border-radius:6px;overflow-x:auto;font-size:.8rem;line-height:1.55;margin:14px 0}
+pre code{background:none;padding:0}
+a{color:var(--accent-ink)}
+strong{font-weight:600}
+
+/* 상단 내비 */
+.nav{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-family:"IBM Plex Mono",monospace;font-size:.85rem;color:var(--ink-3);margin-bottom:40px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.nav a{color:var(--ink-2);text-decoration:none}
+.nav a:hover{color:var(--accent-ink);text-decoration:underline}
+.nav .sep{color:var(--line-strong)}
+.nav .here{color:var(--accent);font-weight:500}
+.nav .spacer{flex:1}
+
+/* 태그 */
+.tag{display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:.68rem;letter-spacing:.06em;padding:1px 7px;border-radius:3px;vertical-align:middle;white-space:nowrap;line-height:1.6}
+.tag.wes{background:var(--accent-soft);color:var(--accent-ink)}
+.tag.lambda{background:var(--lambda-soft);color:var(--lambda)}
+.tag.gpu{background:var(--gpu-soft);color:var(--gpu)}
+.tag.browser{background:var(--browser-soft);color:var(--browser)}
+.tag.db{background:var(--db-soft);color:var(--db)}
+.tag.warn{background:var(--warn-soft);color:var(--warn)}
+.tag.s3{background:var(--db-soft);color:var(--db)}
+
+/* 표 */
+table{border-collapse:collapse;width:100%;font-size:.88rem;margin:14px 0}
+.tablewrap{overflow-x:auto;margin:14px 0}
+.tablewrap table{margin:0}
+th,td{text-align:left;vertical-align:top;padding:13px 16px;border-bottom:1px solid var(--line)}
+th{font-weight:600;color:var(--ink-2);background:var(--surface-2);font-size:.85rem;letter-spacing:.02em;white-space:nowrap}
+td:first-child{white-space:nowrap}
+td:first-child.wrap{white-space:normal}
+td code{white-space:nowrap}
+td.wrap code{white-space:normal}
+
+/* 콜아웃 */
+.note{border-left:3px solid var(--accent);background:var(--surface);padding:10px 16px;margin:16px 0;border-radius:0 6px 6px 0;max-width:76ch}
+.note.warn{border-color:var(--warn);background:var(--warn-soft)}
+.note .t{font-family:"IBM Plex Mono",monospace;font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:4px}
+
+/* ─────────── 흐름 다이어그램 (HTML 박스) ───────────
+   .flow          가로 흐름. 자식 .node 사이에 자동으로 → 화살표.
+   .flow.vertical 세로 흐름(↓).
+   .node          박스. <a class="node ..."> 로 만들면 클릭 가능(호버 강조).
+   .node.wes / .lambda / .gpu / .browser / .db / .s3   레인 색.
+   .node .k       작은 레인 라벨(위)   .node .t  제목   .node .d  설명 줄(여러 개 가능)
+   .node.big      overview 용 큰 박스
+*/
+.flow{display:flex;align-items:stretch;flex-wrap:nowrap;overflow-x:auto;padding:4px 2px 8px;margin:18px 0}
+.flow > .node{flex:1 1 0;min-width:140px}
+.flow > .node + .node{margin-left:34px;position:relative}
+.flow > .node + .node::before{content:"";position:absolute;left:-30px;top:50%;width:22px;height:2px;background:var(--line-strong)}
+.flow > .node + .node::after{content:"";position:absolute;left:-10px;top:50%;margin-top:-5px;border:5px solid transparent;border-left:7px solid var(--line-strong)}
+.flow.vertical{flex-direction:column;align-items:stretch;gap:0}
+.flow.vertical > .node{flex:none;min-width:0}
+.flow.vertical > .node + .node{margin-left:0;margin-top:30px}
+.flow.vertical > .node + .node::before{left:50%;top:-26px;width:2px;height:20px;margin-left:-1px}
+.flow.vertical > .node + .node::after{left:50%;top:-8px;margin-top:0;margin-left:-5px;border:5px solid transparent;border-top:7px solid var(--line-strong)}
+
+.node{display:block;overflow-wrap:anywhere;min-width:0;background:var(--surface);border:1px solid var(--line);border-top:3px solid var(--line-strong);border-radius:6px;padding:10px 12px 10px;color:var(--ink);text-decoration:none;font-size:.86rem;line-height:1.5}
+.node .k{font-family:"IBM Plex Mono",monospace;font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:2px}
+.node .t{font-weight:600;font-size:.95rem;color:var(--ink)}
+.node .d{color:var(--ink-2);font-size:.8rem;margin-top:3px}
+.node .d code{font-size:.78rem}
+.node.wes{border-top-color:var(--accent)} .node.wes .k{color:var(--accent)}
+.node.lambda{border-top-color:var(--lambda)} .node.lambda .k{color:var(--lambda)}
+.node.gpu{border-top-color:var(--gpu)} .node.gpu .k{color:var(--gpu)}
+.node.browser{border-top-color:var(--browser)} .node.browser .k{color:var(--browser)}
+.node.db,.node.s3{border-top-color:var(--db);background:var(--db-soft)} .node.db .k,.node.s3 .k{color:var(--db)}
+.node.warn{border-top-color:var(--warn)} .node.warn .k{color:var(--warn)}
+a.node{cursor:pointer;transition:transform .12s ease,box-shadow .12s ease,border-color .12s ease}
+a.node:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.10);border-color:var(--line-strong)}
+a.node .t::after{content:" ↗";font-size:.75em;color:var(--ink-3)}
+.node.big{padding:14px 16px 12px}
+.node.big .t{font-size:1.05rem}
+.node.dim{opacity:.7}
+
+/* 레인(행) 다이어그램: 왼쪽 라벨 + 오른쪽 flow */
+.lanes{display:grid;grid-template-columns:110px 1fr;gap:8px 14px;margin:18px 0;align-items:center}
+.lanes .lane{font-family:"IBM Plex Mono",monospace;font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);padding:6px 8px;border-right:2px solid var(--line);text-align:right}
+.lanes .lane.wes{color:var(--accent);border-color:var(--accent)}
+.lanes .lane.lambda{color:var(--lambda);border-color:var(--lambda)}
+.lanes .lane.gpu{color:var(--gpu);border-color:var(--gpu)}
+.lanes .lane.browser{color:var(--browser);border-color:var(--browser)}
+.lanes .lane.db{color:var(--db);border-color:var(--db)}
+.lanes .flow{margin:0}
+@media (max-width:640px){.lanes{grid-template-columns:1fr}.lanes .lane{text-align:left;border-right:0;border-left:2px solid var(--line);padding-left:8px}}
+
+/* 데이터 띠 (테이블/컬럼 흐름 요약) */
+.datastrip{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 18px}
+.datastrip .cell{flex:1 1 180px;background:var(--db-soft);border:1px dashed var(--line-strong);border-radius:5px;padding:8px 10px;font-size:.8rem;color:var(--ink-2)}
+.datastrip .cell b{display:block;font-family:"IBM Plex Mono",monospace;font-size:.72rem;letter-spacing:.06em;color:var(--db);font-weight:500;margin-bottom:2px}
+
+/* 카드 그리드 */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:16px 0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px 14px;font-size:.88rem}
+.card h4{margin-top:0}
+.card ul{padding-left:1.1em;margin:6px 0}
+
+/* 단계 리스트 (번호 큰) */
+.steps{counter-reset:s;list-style:none;padding:0;max-width:80ch}
+.steps>li{counter-increment:s;position:relative;padding-left:44px;margin:12px 0}
+.steps>li::before{content:counter(s);position:absolute;left:0;top:2px;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-ink);font-family:"IBM Plex Mono",monospace;font-size:.8rem;font-weight:600;display:flex;align-items:center;justify-content:center}
+.steps>li b{font-weight:600}
+
+/* 상태 기계 */
+.states{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0;font-family:"IBM Plex Mono",monospace;font-size:.8rem}
+.states .st{padding:4px 10px;border:1px solid var(--line-strong);border-radius:20px;background:var(--surface)}
+.states .st.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-ink)}
+.states .st.bad{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+.states .ar{color:var(--ink-3)}
+
+/* 하단 이전/다음 */
+.pager{display:flex;justify-content:space-between;gap:12px;margin-top:64px;padding-top:18px;border-top:1px solid var(--line);font-size:.88rem}
+.pager a{text-decoration:none}
+.pager a:hover{text-decoration:underline}
+.small{font-size:.8rem;color:var(--ink-3)}
+kbd{font-family:"IBM Plex Mono",monospace;font-size:.78em;border:1px solid var(--line-strong);border-bottom-width:2px;border-radius:4px;padding:0 5px;background:var(--surface)}
+
+/* ─────────── 흐름도 (diagram.js 가 그리는 SVG) ─────────── */
+.diagram{margin:20px 0 32px;border:1px solid var(--line);border-radius:16px;background:var(--surface);overflow:hidden}
+.diagram svg{display:block;max-width:none;height:auto;font-family:"IBM Plex Sans KR",-apple-system,"Apple SD Gothic Neo",sans-serif}
+.diagram .box{fill:var(--surface);stroke:var(--line-strong);stroke-width:1}
+.diagram .dnode.link .box{cursor:pointer}
+.diagram .dnode.link:hover .box{stroke:var(--accent);stroke-width:1.6;filter:drop-shadow(0 3px 6px rgba(0,0,0,.14))}
+.diagram .row{fill:var(--surface-2);stroke:var(--line);stroke-width:.6}
+.diagram .dkicker{font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;fill:var(--ink-3)}
+.diagram .dtitle{font-size:13px;font-weight:600;fill:var(--ink)}
+.diagram .drow{font-size:10.5px;fill:var(--ink-2)}
+.diagram .actor{fill:var(--browser-soft);stroke:var(--browser);stroke-width:1.2}
+.diagram .group{fill:var(--accent-soft);fill-opacity:.35;stroke:var(--accent);stroke-width:1.5}
+.diagram .dgrouplabel{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;fill:var(--ink-3)}
+.diagram .edge{fill:none;stroke-width:1.5;stroke-linejoin:round}
+.diagram .dedge.dashed .edge{stroke-dasharray:5 4}
+.diagram .labelbg{fill:var(--bg);stroke:var(--line);stroke-width:.5}
+.diagram .dlabeltext{font-size:10.5px;fill:var(--ink-2)}
+.diagram .dnote{font-size:11px;fill:var(--ink-3);font-style:italic}
+.diagram a{text-decoration:none}
+
+/* 읽기 중심의 문서·도면 */
+.technical-diagram{border:1px solid var(--line);border-radius:10px;padding:14px 18px;margin:20px 0 32px}
+.technical-diagram summary{cursor:pointer;font-weight:600}
+.technical-diagram summary span{font-size:13px;color:var(--ink-2);font-weight:400;margin-left:12px}
+html{color-scheme:light}
+h1{letter-spacing:-.055em}
+h2,h3{letter-spacing:-.025em;scroll-margin-top:24px}
+p,li,td{word-break:keep-all;overflow-wrap:break-word}
+.lede{max-width:88ch;font-size:1.08rem;line-height:1.9;margin-top:18px}
+.meta{font-family:inherit;font-size:.8rem;max-width:110ch}
+.nav{font-family:inherit}
+.nav a,.nav .here{padding:5px 9px;border-radius:6px}
+.nav .here{background:var(--accent-soft)}
+a:focus-visible,button:focus-visible,summary:focus-visible,.diagram-viewport:focus-visible{outline:3px solid var(--browser);outline-offset:4px}
+.tablewrap{border:1px solid var(--line);border-radius:10px}
+.tablewrap td{min-width:110px}
+.tablewrap tr:last-child td{border-bottom:0}
+.tablewrap tr:nth-child(odd) td{background:var(--surface)}
+.note{max-width:96ch;padding:16px 20px;border-radius:0 10px 10px 0}
+.note .t{font-family:inherit;font-size:.8rem;font-weight:600;letter-spacing:0}
+.steps>li{margin:20px 0}
+.steps[start="7"]{counter-reset:s 6}
+.diagram-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 18px;border-bottom:1px solid var(--line);background:var(--surface-2);font-size:13px;line-height:1.5}
+.diagram-toolbar .hint{flex:1;min-width:170px;color:var(--ink-2)}
+.diagram-toolbar button{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line-strong);border-radius:6px;padding:6px 11px;cursor:pointer}
+.diagram-toolbar button:hover{border-color:var(--accent);background:var(--accent-soft)}
+.diagram-toolbar output{min-width:45px;text-align:center;color:var(--ink-2)}
+.diagram-viewport{overflow:auto;padding:20px;max-height:1000px}
+.diagram svg{margin:auto}
+.diagram .dtitle{font-weight:600}
+.diagram .row{fill:var(--surface);stroke:var(--line)}
+.diagram .box{stroke-width:1.2}
+.diagram .dgrouplabel{font-family:inherit;letter-spacing:0;font-weight:600;fill:var(--accent)}
+.diagram .dkicker{font-family:inherit;letter-spacing:0;text-transform:none}
+.diagram.overview .diagram-viewport{max-height:none}
+.diagram .labelbg{fill:var(--surface);stroke:none}
+.diagram .dnote{font-style:normal}
+.diagram .dnode a:focus .box{stroke:var(--browser);stroke-width:2.5}
+.diagram.overview .dtitle{font-size:17px}
+.diagram.overview .dkicker{font-size:11px}
+.diagram.overview .drow{font-size:13px}
+.diagram.overview .dgrouplabel{font-size:20px;font-weight:600}
+.diagram.overview .dlabeltext{font-size:12px}
+.diagram.overview .group{fill-opacity:.45;stroke-width:2;rx:18}
+.diagram.overview .dnote{font-size:12px}
+.section-links{display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 0}
+.section-links a{font-size:.85rem;padding:6px 12px;border:1px solid var(--line);border-radius:20px;text-decoration:none;color:var(--ink-2)}
+.section-links a:hover{color:var(--accent);border-color:var(--accent)}
+.reading-guide{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:24px 0}
+.reading-guide a{border:1px solid var(--line);border-top:3px solid var(--stage);border-radius:10px;padding:16px 20px;color:var(--ink);text-decoration:none;background:var(--tint)}
+.reading-guide small{display:block;color:var(--stage);font-weight:600;font-size:12px}
+.reading-guide strong{display:block;font-size:18px;margin:4px 0}
+.reading-guide span{font-size:14px;color:var(--ink-2)}
+@media(max-width:700px){
+  main{padding:20px 18px 64px}
+  h1{font-size:1.8rem}
+  .nav{gap:4px;margin-bottom:28px}
+  .nav .spacer{display:none}
+  .reading-guide{grid-template-columns:1fr;gap:10px}
+  .reading-guide a{padding:12px 16px}
+  .diagram-viewport{padding:12px;max-height:75vh}
+  .diagram-toolbar{padding:10px}
+  .diagram-toolbar .hint{flex-basis:100%}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
+@media print{
+  main{max-width:none;padding:0}
+  .nav,.diagram-toolbar,.section-links,.pager{display:none}
+  .diagram-viewport{overflow:visible;max-height:none;padding:0}
+  .diagram svg{width:100%!important;min-width:0!important}
+  .diagram,.reading-guide{break-inside:avoid}
+}
+
+/* 기능 역할 카드 — 한다 / 왜 / 없으면 */
+.role{display:grid;grid-template-columns:64px minmax(0,1fr);gap:5px 12px;background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;padding:10px 14px;margin:8px 0 16px;font-size:.88rem;max-width:80ch}
+.role b{font-family:"IBM Plex Mono",monospace;font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);padding-top:3px;font-weight:500}
+.role span{color:var(--ink-2)}
+.role span strong{color:var(--ink)}
+.fn{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin:14px 0}
+.fn a,.fn div{display:block;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px 14px;text-decoration:none;color:var(--ink);font-size:.86rem}
+.fn a:hover{border-color:var(--accent)}
+.fn .k{font-family:"IBM Plex Mono",monospace;font-size:.7rem;color:var(--ink-3);letter-spacing:.06em}
+.fn .t{font-weight:600;margin:2px 0 4px;font-family:"IBM Plex Mono",monospace;font-size:.9rem}
+.fn .d{color:var(--ink-2)}
+.fn .d em{font-style:normal;color:var(--accent-ink)}

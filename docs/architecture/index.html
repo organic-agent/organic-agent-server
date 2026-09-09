@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>wes 아키텍처 문서 허브</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="pipeline-v2-site/site.css">
+<style>
+  /* ── 허브 전용 레이아웃: 왼쪽 사이드바 + 오른쪽 뷰어(iframe) ── */
+  html,body{height:100%}
+  body{overflow:hidden}
+  .hub{display:grid;grid-template-columns:300px minmax(0,1fr);height:100vh}
+  .side{display:flex;flex-direction:column;border-right:1px solid var(--line);background:var(--surface-2);min-height:0}
+  .side-head{padding:18px 18px 12px;border-bottom:1px solid var(--line)}
+  .side-head .eyebrow{margin-bottom:4px}
+  .side-head h1{font-size:1.15rem;line-height:1.3;letter-spacing:-.02em}
+  .side-head h1 a{color:var(--ink);text-decoration:none}
+  .side-head .meta{margin-top:6px;font-size:.72rem}
+  .side-body{overflow-y:auto;flex:1;padding:8px 10px 24px}
+  .grp{margin:14px 0 4px;padding:0 8px;font-family:"IBM Plex Mono",monospace;font-size:.66rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+  details.site{margin:2px 0;border-radius:8px}
+  details.site[open]{background:var(--surface);border:1px solid var(--line)}
+  details.site summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;font-weight:600;font-size:.9rem;color:var(--ink)}
+  details.site summary::-webkit-details-marker{display:none}
+  details.site summary:hover{background:var(--accent-soft)}
+  details.site summary .dot{width:10px;height:10px;border-radius:3px;background:var(--c);flex:none}
+  details.site summary .chev{margin-left:auto;color:var(--ink-3);font-size:.75rem;transition:transform .15s}
+  details.site[open] summary .chev{transform:rotate(90deg)}
+  details.site summary .goal{font-family:"IBM Plex Mono",monospace;font-size:.62rem;letter-spacing:.06em;padding:0 6px;border-radius:3px;background:var(--warn-soft);color:var(--warn);font-weight:500}
+  .pages{list-style:none;margin:0;padding:2px 6px 8px 14px}
+  .pages li{margin:0}
+  .pages a{display:flex;gap:8px;align-items:baseline;padding:4px 8px 4px 10px;border-left:2px solid var(--line);color:var(--ink-2);text-decoration:none;font-size:.84rem;line-height:1.5;border-radius:0 6px 6px 0}
+  .pages a .n{font-family:"IBM Plex Mono",monospace;font-size:.68rem;color:var(--ink-3);min-width:2.2em;flex:none}
+  .pages a:hover{background:var(--accent-soft);color:var(--accent-ink);border-left-color:var(--accent)}
+  .pages a.on{background:var(--accent-soft);color:var(--accent-ink);border-left-color:var(--accent);font-weight:600}
+  .pages a.on .n{color:var(--accent-ink)}
+  .side-foot{padding:10px 18px;border-top:1px solid var(--line);font-size:.72rem;color:var(--ink-3)}
+  .side-foot kbd{margin:0 2px}
+
+  .pane{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--bg)}
+  .bar{display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:1px solid var(--line);background:var(--surface);font-size:.84rem;min-height:44px}
+  .bar .crumb{display:flex;align-items:center;gap:6px;color:var(--ink-2);min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  .bar .crumb b{color:var(--ink);font-weight:600}
+  .bar .crumb .sep{color:var(--line-strong)}
+  .bar .sp{flex:1}
+  .bar button,.bar a.btn{font:inherit;font-size:.8rem;color:var(--ink);background:var(--surface);border:1px solid var(--line-strong);border-radius:6px;padding:4px 10px;cursor:pointer;text-decoration:none;white-space:nowrap}
+  .bar button:hover,.bar a.btn:hover{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink)}
+  .bar button:disabled{opacity:.4;cursor:default}
+  .bar button:disabled:hover{border-color:var(--line-strong);background:var(--surface);color:var(--ink)}
+  .viewer{flex:1;min-height:0;position:relative}
+  .viewer iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff}
+
+  /* ── 홈(개요) 화면: iframe 대신 이 페이지 안에서 그린다 ── */
+  .home{position:absolute;inset:0;overflow-y:auto;padding:36px 44px 96px}
+  .home[hidden]{display:none}
+  .home .lede{margin-top:12px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px;margin:18px 0 8px}
+  .site-card{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-top:3px solid var(--c);border-radius:10px;padding:14px 16px 12px;color:var(--ink);text-decoration:none;min-height:0}
+  .site-card:hover{border-color:var(--c);box-shadow:0 6px 18px rgba(0,0,0,.08)}
+  .site-card .k{font-family:"IBM Plex Mono",monospace;font-size:.68rem;letter-spacing:.08em;color:var(--c);display:flex;gap:8px;align-items:center}
+  .site-card .k .goal{font-size:.62rem;padding:0 6px;border-radius:3px;background:var(--warn-soft);color:var(--warn);letter-spacing:.06em}
+  .site-card .t{font-weight:700;font-size:1.05rem;margin:3px 0 4px;letter-spacing:-.02em}
+  .site-card .d{font-size:.84rem;color:var(--ink-2);line-height:1.6;flex:1}
+  .site-card .chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:10px}
+  .site-card .chips span{font-size:.7rem;padding:1px 7px;border:1px solid var(--line);border-radius:12px;color:var(--ink-3);background:var(--surface-2)}
+  .site-card .foot{margin-top:10px;font-family:"IBM Plex Mono",monospace;font-size:.68rem;color:var(--ink-3);display:flex;justify-content:space-between;gap:8px}
+  .site-card .foot .open{color:var(--accent-ink)}
+  .rg{grid-template-columns:repeat(3,1fr)}
+  @media (max-width:1100px){.rg{grid-template-columns:repeat(2,1fr)}}
+  .rg a{cursor:pointer}
+  .rg a strong{font-size:16px}
+  .rg a span{font-size:13px}
+  .home h2{margin-top:40px}
+  .home .small{max-width:90ch}
+
+  @media (max-width:860px){
+    body{overflow:auto}
+    .hub{grid-template-columns:1fr;height:auto}
+    .side{border-right:0;border-bottom:1px solid var(--line);max-height:50vh}
+    .viewer{height:80vh}
+    .home{position:static;padding:20px 18px 64px}
+  }
+  @media print{.side,.bar{display:none}.hub{display:block}.home{position:static}}
+</style>
+</head>
+<body>
+<div class="hub">
+
+<!-- ───────────── 사이드바 ───────────── -->
+<aside class="side">
+  <div class="side-head">
+    <div class="eyebrow">organic-agent · wes · docs/architecture</div>
+    <h1><a href="#" data-home>wes 아키텍처 문서 허브</a></h1>
+    <div class="meta" id="side-meta">클릭형 사이트 6개 · 2026-09-10</div>
+  </div>
+  <div class="side-body" id="sidebar"></div>
+  <div class="side-foot">사이드바에서 페이지를 고르면 오른쪽에 열립니다. 문서 안 링크는 그대로 따라갑니다. <kbd>⌥</kbd>+클릭 · "새 탭" 버튼은 단독 창으로 엽니다.</div>
+</aside>
+
+<!-- ───────────── 뷰어 ───────────── -->
+<section class="pane">
+  <div class="bar">
+    <div class="crumb" id="crumb"><b>홈</b><span class="sep">·</span><span>전체 지도</span></div>
+    <span class="sp"></span>
+    <button id="btn-prev" title="같은 사이트의 이전 페이지" disabled>← 이전</button>
+    <button id="btn-next" title="같은 사이트의 다음 페이지" disabled>다음 →</button>
+    <button id="btn-home" data-home>홈</button>
+    <a class="btn" id="btn-tab" href="#" target="_blank" rel="noopener" hidden>새 탭 ↗</a>
+  </div>
+  <div class="viewer">
+    <div class="home" id="home">
+      <div class="eyebrow">organic-agent · wes + web + ai + infra</div>
+      <h1>wes 아키텍처 — 한 곳에서 보는 지도</h1>
+      <p class="lede">웨딩 사진 셀렉 서비스 <strong>wes</strong>의 구조를 여섯 개의 클릭형 사이트로 나눠 정리했습니다. 왼쪽 사이드바나 아래 카드에서 고르면
+        이 화면 안에서 열리고, 문서 안의 박스·링크를 눌러 다음 페이지로 넘어갈 수 있습니다. 사람이 쓰는 기능(셀렉 계층)에서 시작해, 사진이 AI 폴더가 되는 파이프라인,
+        폴더 안 추천, 그 밑의 인프라, 그리고 그 구조가 어떻게 됐고 얼마가 드는지 순서로 읽으면 전체가 이어집니다.</p>
+      <p class="meta">사이트마다 "코드 기준" 커밋이 다르니 각 index 상단의 meta 줄을 확인하세요. 편집법은 각 폴더 <code>README.md</code>. 새 사이트·페이지는 이 파일 상단 <code>SITES</code> 목록에 등록합니다.</p>
+
+      <h2 id="reading">읽는 순서</h2>
+      <p class="small">번호 순서로 읽으면 사용자 → 서버 → AI → 인프라 → 이력 순으로 내려갑니다. 각 사이트의 index가 그 영역의 "전체 지도"이고, 박스를 클릭하면 상세로 들어갑니다.</p>
+      <div class="reading-guide rg" id="reading-guide"></div>
+
+      <h2 id="sites">사이트 지도</h2>
+      <div class="grid" id="site-grid"></div>
+
+    </div>
+    <iframe id="frame" name="viewer" title="문서 뷰어" hidden></iframe>
+  </div>
+</section>
+</div>
+
+<script>
+/* ───────────── 사이트·페이지 목록 (손으로 관리) ─────────────
+   새 사이트/페이지를 추가하면 여기와 각 사이트의 README 페이지 표를 함께 고친다.
+   color: 카드·사이드바 색. goal: true 면 "목표(현재 구조 아님)" 표시. */
+const SITES = [
+  { id: 'select-layer-site', order: '01', group: '기능 · 사람이 쓰는 것', color: '#7C5CB8',
+    title: '셀렉 계층', sub: '작가가 갤러리를 열고, 부부가 고르고, 작가가 보정해 넘기기까지',
+    desc: '스튜디오·별점·비교샷·협업·보정·선택 여섯 기능. 인가 전표(GalleryAccessPolicy)와 한 갤러리의 여정.',
+    chips: ['studio','gallery','photo','collab','retouch','selection'], basis: 'wes main@45981bf · 2026-09-09',
+    pages: [
+      ['index.html','—','전체 아키텍처'], ['studio.html','0','스튜디오'], ['rating.html','1','별점'], ['compare.html','2','비교샷'],
+      ['collab.html','3','협업'], ['retouch.html','4','보정'], ['selection.html','5','선택'], ['entities.html','사전','엔티티 사전'] ] },
+  { id: 'pipeline-v2-site', order: '02', group: '기능 · 사람이 쓰는 것', color: '#398B46',
+    title: '분석 파이프라인 v2', sub: '사진 업로드부터 AI 폴더 완성까지',
+    desc: '브라우저 → S3 직접 업로드, wes 5초 스윕이 embedder(Lambda) · score(GPU 워커) · categorize(Lambda)를 조율하고 폴더를 물질화한다.',
+    chips: ['analysis','category','Lambda','GPU EC2','S3'], basis: 'wes main@1503a9a · AI b473c61 · 2026-09-09',
+    pages: [
+      ['index.html','1','전체 아키텍처'], ['upload.html','2','업로드'], ['embed.html','3','임베딩 배정'], ['embedder.html','3.1','embedder Lambda'],
+      ['score.html','4','점수 제어'], ['score-worker.html','4.1','score 워커'], ['categorize.html','5','사진 분류'], ['categorize-lambda.html','5.1','categorize Lambda'],
+      ['folders.html','6','폴더 생성'], ['entities.html','사전','엔티티 사전'] ] },
+  { id: 'ai-recommendation-site', order: '03', group: '기능 · 사람이 쓰는 것', color: '#C13E70',
+    title: 'AI 폴더 추천', sub: '폴더마다 "이 컷"을 고르고 이유를 말한다',
+    desc: '요청 → 잡 실행 → 자연어 질의 해석 → 후보·점수·쿼터·MMR → Bedrock 이유 문장. 비교샷은 셀렉 계층에.',
+    chips: ['recommendation','Bedrock','ai_selection_jobs'], basis: 'wes main@45981bf · 2026-09-09',
+    pages: [
+      ['index.html','1','전체 아키텍처'], ['request.html','2','요청·조회'], ['job.html','3','잡 실행'], ['query.html','4','질의 해석'],
+      ['plan.html','5','후보·점수·쿼터'], ['reasons.html','6','이유 문장'], ['entities.html','사전','엔티티 사전'] ] },
+  { id: 'preference-layer-site', order: '04', group: '앞으로 · 목표', color: '#B45309', goal: true,
+    title: '선호 가중치 층', sub: '부부가 고른 사진으로 "k-웨딩 선호"를 계속 배운다',
+    desc: '현재 구조가 아니라 계획 지도. 있는 것은 빈 preference_models 테이블(V14)과 AI repo 학습기 1단계뿐. 없는 코드는 주황·점선.',
+    chips: ['preference/','preference_models','목표'], basis: 'AI 44bcfda · wes main@1503a9a · 2026-09-09',
+    pages: [
+      ['index.html','1','전체 아키텍처'], ['artifact.html','2','산출물·특징'], ['train.html','3','학습'], ['evaluate.html','4','평가·게이트'],
+      ['serving.html','5','서비스 연결'], ['roadmap.html','6','로드맵·제약'], ['entities.html','사전','엔티티 사전'] ] },
+  { id: 'infra-site', order: '05', group: '인프라 · 운영', color: '#5B6B8C',
+    title: '인프라', sub: '무엇이 어디에, 왜 그렇게 놓였나',
+    desc: 'VPC 하나, EC2 다섯 종류, RDS·Lambda 셋·S3 셋. Terraform 기본값과 모듈 기준. draw.io 구성도 포함.',
+    chips: ['Terraform','VPC','ALB','RDS','Lambda','Tailscale'], basis: 'infra main@42b33c6 · 2026-09-09',
+    pages: [
+      ['index.html','1','전체 지도'], ['network.html','2','네트워크'], ['request.html','3','공개 요청'], ['data.html','4','데이터 저장소'],
+      ['ai.html','5','AI 실행기'], ['admin.html','6','관리자 경로'], ['ops.html','7','운영 · 배포'] ] },
+  { id: 'improvements-site', order: '06', group: '이력 · 비용', color: '#B7791F',
+    title: '개선 이력 · 비용', sub: '77분이 7.5분이 되기까지, 그리고 그게 얼마인가',
+    desc: 'v1 → 람다 샤딩(삭제) → v2 GPU 세 시대. 2048 리사이즈·GPU 전환·categorize 실측. 파이프라인 7,200장 ≈ $0.45, 고정비 $145/월.',
+    chips: ['개선 이력','실측','비용'], basis: '2026-09-10',
+    pages: [
+      ['index.html','1','세 시대 · 비용 한눈에'], ['sharding.html','2','람다 샤딩'], ['resize-gpu.html','3','리사이즈 · GPU'],
+      ['categorize.html','4','categorize 리팩터'], ['cost.html','5','비용'] ] },
+];
+
+
+
+/* ───────────── 렌더링 ───────────── */
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const flat = []; // [{site, file, n, label, path}] 순서대로 — 이전/다음 계산용
+SITES.forEach(s => s.pages.forEach(([file, n, label]) => flat.push({ site: s, file, n, label, path: s.id + '/' + file })));
+$('#side-meta').textContent = `클릭형 사이트 ${SITES.length}개 · 페이지 ${flat.length}장 · 2026-09-10`;
+
+function pageLink(p, cls = '') {
+  return `<a class="${cls}" href="#${p.path}" data-path="${p.path}"><span class="n">${esc(p.n)}</span><span>${esc(p.label)}</span></a>`;
+}
+
+/* 사이드바 */
+(function renderSidebar() {
+  let html = '', lastGroup = null;
+  SITES.forEach(s => {
+    if (s.group !== lastGroup) { html += `<div class="grp">${esc(s.group)}</div>`; lastGroup = s.group; }
+    const pages = flat.filter(p => p.site === s).map(p => `<li>${pageLink(p)}</li>`).join('');
+    html += `<details class="site" data-site="${s.id}" style="--c:${s.color}">
+      <summary><span class="dot"></span><span>${esc(s.order)} ${esc(s.title)}</span>${s.goal ? '<span class="goal">목표</span>' : ''}<span class="chev">▶</span></summary>
+      <ul class="pages">${pages}</ul></details>`;
+  });
+  $('#sidebar').innerHTML = html;
+})();
+
+/* 홈: 읽는 순서 띠 */
+$('#reading-guide').innerHTML = SITES.map(s =>
+  `<a href="#${s.id}/index.html" data-path="${s.id}/index.html" style="--stage:${s.color};--tint:color-mix(in srgb,${s.color} 7%,white)">
+     <small>${esc(s.order)} · ${esc(s.title)}${s.goal ? ' · 목표' : ''}</small><strong>${esc(s.sub)}</strong><span>${esc(s.chips.slice(0,3).join(' · '))}</span></a>`).join('');
+
+/* 홈: 사이트 카드 */
+$('#site-grid').innerHTML = SITES.map(s => {
+  const chips = s.chips.map(c => `<span>${esc(c)}</span>`).join('');
+  const n = s.pages.length;
+  return `<a class="site-card" href="#${s.id}/index.html" data-path="${s.id}/index.html" style="--c:${s.color}">
+    <div class="k">${esc(s.order)} · ${esc(s.id)}${s.goal ? '<span class="goal">목표 · 현재 구조 아님</span>' : ''}</div>
+    <div class="t">${esc(s.title)}</div>
+    <div class="d">${esc(s.desc)}</div>
+    <div class="chips">${chips}</div>
+    <div class="foot"><span>${esc(s.basis)}</span><span class="open">${n}장 열기 ↗</span></div></a>`;
+}).join('');
+
+
+/* ───────────── 내비게이션 (해시 = 현재 열린 상대 경로) ───────────── */
+const frame = $('#frame'), home = $('#home'), crumb = $('#crumb'), btnTab = $('#btn-tab');
+const btnPrev = $('#btn-prev'), btnNext = $('#btn-next');
+
+function findPage(path) { return flat.find(p => p.path === path.split('#')[0]); }
+
+function show(path, force) {
+  if (!path) { // 홈
+    frame.hidden = true; home.hidden = false; btnTab.hidden = true;
+    frame.removeAttribute('src');
+    crumb.innerHTML = '<b>홈</b><span class="sep">·</span><span>전체 지도</span>';
+    btnPrev.disabled = btnNext.disabled = true;
+    document.querySelectorAll('[data-path].on').forEach(a => a.classList.remove('on'));
+    document.title = 'wes 아키텍처 문서 허브';
+    return;
+  }
+  const page = findPage(path);
+  home.hidden = true; frame.hidden = false;
+  if (force || frame.getAttribute('src') !== path) frame.src = path; // 같은 항목을 다시 누르면 처음 위치로 되돌린다
+  btnTab.hidden = false; btnTab.href = path;
+
+  document.querySelectorAll('[data-path].on').forEach(a => a.classList.remove('on'));
+  const base = path.split('#')[0];
+  document.querySelectorAll(`#sidebar [data-path="${CSS.escape(base)}"]`).forEach(a => {
+    a.classList.add('on');
+    const d = a.closest('details'); if (d) d.open = true;
+    a.scrollIntoView({ block: 'nearest' });
+  });
+
+  if (page) {
+    const i = flat.indexOf(page), prev = flat[i - 1], next = flat[i + 1];
+    const sameSite = p => p && p.site === page.site;
+    btnPrev.disabled = !sameSite(prev); btnNext.disabled = !sameSite(next);
+    btnPrev.dataset.path = sameSite(prev) ? prev.path : ''; btnNext.dataset.path = sameSite(next) ? next.path : '';
+    crumb.innerHTML = `<a href="#" data-home style="text-decoration:none;color:var(--ink-3)">홈</a><span class="sep">›</span>` +
+      `<a href="#${page.site.id}/index.html" data-path="${page.site.id}/index.html" style="text-decoration:none;color:var(--ink-2)">${esc(page.site.order)} ${esc(page.site.title)}</a>` +
+      `<span class="sep">›</span><b>${esc(page.n)} ${esc(page.label)}</b>`;
+    document.title = `${page.site.title} · ${page.label} — wes 아키텍처`;
+  } else {
+    btnPrev.disabled = btnNext.disabled = true;
+    crumb.innerHTML = `<a href="#" data-home style="text-decoration:none;color:var(--ink-3)">홈</a><span class="sep">›</span><b>${esc(base)}</b>`;
+    document.title = `${base} — wes 아키텍처`;
+  }
+}
+
+function go(path) {
+  const target = path ? '#' + path : '';
+  if (location.hash === target) return show(path, true); // 해시가 같으면 hashchange 가 안 나므로 직접 그린다
+  location.hash = target; if (!path) show('');
+}
+
+document.addEventListener('click', e => {
+  const a = e.target.closest('[data-path], [data-home]');
+  if (!a || e.button) return;
+  if (e.altKey && a.dataset.path) { e.preventDefault(); window.open(a.dataset.path, '_blank', 'noopener'); return; } // ⌥+클릭: 문서를 단독 창으로
+  if (e.metaKey || e.ctrlKey || e.shiftKey) return; // ⌘/Ctrl+클릭: 허브를 그 페이지로 새 탭에 (브라우저 기본)
+  e.preventDefault();
+  if (a.hasAttribute('data-home')) return go('');
+  const p = a.dataset.path; if (p) go(p);
+});
+btnPrev.addEventListener('click', () => btnPrev.dataset.path && go(btnPrev.dataset.path));
+btnNext.addEventListener('click', () => btnNext.dataset.path && go(btnNext.dataset.path));
+document.addEventListener('keydown', e => {
+  if (e.target.matches('input,textarea')) return;
+  if (e.key === '[' && !btnPrev.disabled) btnPrev.click();
+  if (e.key === ']' && !btnNext.disabled) btnNext.click();
+  if (e.key === 'h' && !e.metaKey && !e.ctrlKey) go('');
+});
+window.addEventListener('hashchange', () => show(decodeURIComponent(location.hash.slice(1))));
+show(decodeURIComponent(location.hash.slice(1)));
+
+</script>
+</body>
+</html>

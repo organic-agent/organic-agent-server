@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>2. 80분 문제 → 람다 샤딩 — 개선 이력</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">개선 이력 · 비용</a><span class="sep">/</span>
+  <span class="here">2. 80분 문제 → 람다 샤딩</span>
+  <span class="spacer"></span>
+  <a href="resize-gpu.html">3. 리사이즈 · GPU →</a>
+</nav>
+
+<div class="eyebrow">organic-agent-ai · embedder / score · 2026-09-05 ~ 09-06 · <span class="tag warn">삭제됨 — 현재 코드에 없음 (AI #99 · #101)</span></div>
+<h1>Lambda 하나가 15분에 걸리자, Lambda가 Lambda를 32개 띄우게 했다</h1>
+<p class="lede">v1은 단계당 Lambda 하나가 갤러리를 통째로 처리했고, 7,189장은 업로드 63.5분 뒤 분석이 40분을 넘겨도 끝나지 않았습니다(합계 100분+, 확정값 없음). score Lambda(8GB ≈ 5 vCPU)가 장당 1.5초라 822장도 512장에서 15분 데드라인에 닿았고, 7,183장은 자기 재호출을 반복하며 40분을 넘겼습니다. 샤딩은 그 Lambda를 <strong>조정자 하나 + 샤드 N개</strong>로 바꿔 벽시계를 1/2.3~1/4로 줄였습니다. 대신 GB-초 비용은 그대로였고, vCPU 상한·RDS 커넥션·호스트 편차라는 세 벽에 부딪혀 이틀 뒤 GPU 워커(v2)로 대체됐습니다.</p>
+<p class="meta">근거 <code>organic-agent-ai/docs/improvements/lambda-pipeline-speedup-2026-09-06.md</code>(본 문서) · <code>score-speedup-2026-09-06.md</code> §4.5–4.10, §5 · <code>docs/experiments/upload-timing-2026-09-06.md</code> §5, §7.3 · <code>organic-agent-infra/docs/runbook.md</code> L329–342, L380–395 · PR ai #55 · #57 · #60/#61 · #64/#65, infra #29 · #31 · #33</p>
+<nav class="section-links" aria-label="이 페이지 목차"><a href="#problem">문제 (v1 실측)</a><a href="#fix">개선 — 조정자 + 샤드 N</a><a href="#arch">구조</a><a href="#result">결과</a><a href="#cost">비용</a><a href="#walls">세 벽</a><a href="#now">이것을 대체한 v2 코드</a><a href="#files">읽을 경로</a></nav>
+
+<h2 id="problem">문제 — v1 실측</h2>
+<div class="tablewrap"><table>
+<tr><th>항목</th><th>값</th><th>근거</th></tr>
+<tr><td>822장 embedder</td><td>8.1분 (3008MB)</td><td><code>lambda-pipeline-speedup</code> L54–61</td></tr>
+<tr><td>822장 score</td><td>13.9분에 512/822장, <strong>미완주</strong>. 장당 1.52s (CLIP 0.68 + ARNIQA 0.80)</td><td>같은 문서 · <code>score-speedup</code> §4.3 L119–125</td></tr>
+<tr><td>822장 전체 체인</td><td><strong>22.7분, 미완주</strong></td><td>L8–19</td></tr>
+<tr><td>7,183장 (잡 11)</td><td>score가 15분 넘겨 재호출 반복, <strong>40분 이상</strong></td><td>L8–19</td></tr>
+<tr><td>7,189장 업로드</td><td><strong>63.5분</strong>, 35.8GB, 75Mbps 회선</td><td><code>upload-timing</code> L12</td></tr>
+<tr><td>합계 (v1 직렬)</td><td><strong>100분 이상, 미완주</strong> (63.5 + 40+)</td><td>위 두 행의 합. <code>upload-timing</code> §7.3의 77.5분은 분석에 32 샤드 값(14.0)을 넣은 것</td></tr>
+</table></div>
+<p>원인은 단순했다. score Lambda 8GB(≈5 vCPU)에서 장당 1.5초이니 512장에 데드라인이 온다. 한 호출의 시간은 다운로드 40s + 모델 로드 16s + 사진 512장 779s. 15분 앞에서 스스로 멈추고 같은 페이로드로 자기를 다시 부르는 구조라, 7천 장은 재호출이 여러 번 이어지며 40분을 넘겼다.</p>
+
+<h2 id="fix">개선 — 조정자 하나 + 샤드 N개</h2>
+<ol class="steps">
+  <li><b>디스패처는 SQS·Step Functions가 아니라 Lambda 자신.</b> wes가 보낸 EVENT를 받은 함수가 조정자가 되어 0.7초 만에 샤드 N개를 EVENT로 띄운다. <code>N = clamp(ceil(n / SHARD_PHOTOS), 1, MAX_SHARDS)</code>.</li>
+  <li><b>샤드는 <code>position % total</code>로 사진을 나눠 갖는다.</b> 같은 갤러리의 같은 샤드가 두 번 돌지 않도록 advisory lock 키 <code>(gallery × 64 + shard)</code>.</li>
+  <li><b>손잡이 둘.</b> <code>SHARD_PHOTOS</code> 250 → <strong>150</strong>(#60/#61), <code>MAX_SHARDS</code> 8 → <strong>32</strong>(#64/#65). 환경변수.</li>
+  <li><b>Lambda 설정.</b> embedder 3GB / 예약 동시성 32, score 8GB / 임시 저장소 10GB / 32, categorize 3GB / 2. 타임아웃 900s.</li>
+  <li><b>동시성 32의 근거는 RDS.</b> db.t4g.micro <code>max_connections 79</code>, 평상시 24 + 샤드 32 = 56. <code>ALTER ROLE embedder CONNECTION LIMIT 32</code>.</li>
+  <li><b>15분 데드라인은 여전히 있었다.</b> 같은 샤드로 자기 재호출(<code>STOP_MARGIN_SECONDS</code>). 샤딩은 데드라인을 없앤 게 아니라 데드라인 안에 끝나게 잘게 쪼갠 것이다.</li>
+  <li><b>마지막 샤드가 다음 단계를 부른다.</b> score 샤드가 끝날 때 <code>result.scoreShards.done</code>을 올리고, N/N에 닿은 샤드가 <code>wes-categorize</code>를 EVENT로 부른다.</li>
+</ol>
+
+<h2 id="arch">구조</h2>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1180, height: 560, title: '샤딩 시대의 조정자 Lambda와 샤드 N개, advisory lock, 마지막 샤드의 categorize 호출',
+  groups: [
+    { x: 250, y: 20, w: 640, h: 520, label: 'Lambda가 Lambda를 부른다 (lambda 인터페이스 엔드포인트 필요, 월 $21)', color: '#5B6B8C', tint: '#EEF1F6' },
+  ],
+  nodes: [
+    { id: 'W', lane: 'wes', x: 20, y: 230, w: 190, kicker: 'wes', title: 'EVENT 2회', lines: ['embedder → 완료 뒤 score'] },
+    { id: 'CE', lane: 'lambda', x: 280, y: 60, w: 220, kicker: 'wes-embedder (조정자)', title: '0.7s', lines: ['N = ⌈n/150⌉, ≤ 32'] },
+    { id: 'E1', lane: 'lambda', x: 580, y: 40, w: 180, kicker: '샤드 0', title: 'embedder', lines: ['id % N = 0'] },
+    { id: 'E2', lane: 'lambda', x: 580, y: 125, w: 180, kicker: '샤드 1', title: 'embedder', lines: ['id % N = 1'] },
+    { id: 'E3', lane: 'lambda', x: 580, y: 210, w: 180, kicker: '샤드 N−1 (≤ 31)', title: 'embedder', lines: ['15분 앞 자기 재호출'] },
+    { id: 'CS', lane: 'lambda', x: 280, y: 360, w: 220, kicker: 'wes-score (조정자)', title: '0.7s', lines: ['8GB · 임시 10GB · 동시 32'] },
+    { id: 'S1', lane: 'lambda', x: 580, y: 320, w: 180, kicker: '샤드 0 … N−1', title: 'score ×N', lines: ['장당 1.5s · 모델 로드 16s'] },
+    { id: 'S2', lane: 'lambda', x: 580, y: 420, w: 180, kicker: 'done N/N 에 닿은 샤드', title: '마지막 score 샤드', lines: ['result.scoreShards.done'] },
+    { id: 'CAT', lane: 'lambda', x: 930, y: 420, w: 200, kicker: 'wes-categorize 3GB / 2', title: '65초 (7,183장)', lines: ['Bedrock 3회'] },
+    { id: 'PG', lane: 'db', shape: 'db', x: 940, y: 60, w: 190, title: 'RDS db.t4g.micro', lines: ['max_connections 79', 'advisory lock gallery×64+shard', '피크 60~61 / 79'] },
+  ],
+  edges: [
+    { from: 'W', to: 'CE', fromAt: .3, toAt: .5, via: [[240, null], [240, 100]], label: 'EVENT', labelAt: 2, color: 'wes' },
+    { from: 'W', to: 'CS', fromAt: .7, toAt: .5, via: [[240, null], [240, 400]], label: 'EVENT', labelAt: 2, color: 'wes' },
+    { from: 'CE', to: 'E1', fromAt: .3, toAt: .5, via: [[540, null], [540, 78]], color: 'lambda' },
+    { from: 'CE', to: 'E2', label: 'EVENT ×N', color: 'lambda' },
+    { from: 'CE', to: 'E3', fromAt: .7, toAt: .5, via: [[540, null], [540, 248]], color: 'lambda' },
+    { from: 'CS', to: 'S1', fromAt: .3, toAt: .5, via: [[540, null], [540, 358]], label: 'EVENT ×N', labelAt: 2, color: 'lambda' },
+    { from: 'CS', to: 'S2', fromAt: .7, toAt: .5, via: [[540, null], [540, 458]], color: 'lambda' },
+    { from: 'S2', to: 'CAT', label: 'EVENT 1회', color: 'lambda' },
+    { from: 'E1', to: 'PG', fromAt: .5, toAt: .3, via: [[860, null], [860, 100]], label: 'UPSERT · 커넥션 1', labelAt: 0, dashed: true, color: 'db' },
+    { from: 'S1', to: 'PG', fromAt: .5, toSide: 'b', toAt: .5, via: [[860, null], [860, 300], [1035, 300]], label: 'UPSERT · 커넥션 1', labelAt: 0, dashed: true, color: 'db' },
+  ],
+});
+</script>
+
+<h2 id="result">결과 — 실측</h2>
+<div class="tablewrap"><table>
+<tr><th>항목</th><th>전</th><th>후</th><th>근거</th></tr>
+<tr><td>822장 embedder</td><td>8.1분</td><td><strong>2.3분</strong> (6 샤드)</td><td><code>lambda-pipeline-speedup</code> L8–19</td></tr>
+<tr><td>822장 score</td><td>13.9분 미완주</td><td><strong>4.3분</strong>, 822/822</td><td>〃</td></tr>
+<tr><td>822장 전체 체인</td><td>22.7분 미완주</td><td><strong>7.4분</strong> 완주. 32 샤드면 <strong>3분 15초</strong></td><td>〃 · <code>score-speedup</code> §4.10 L306–321</td></tr>
+<tr><td>7,183장 (잡 11)</td><td>40분+</td><td><strong>14분 02초</strong> 한 라운드 (embedder 2:44 · score 9:47 · categorize 65s)</td><td><code>upload-timing</code> §5 L63–80</td></tr>
+<tr><td>7,189장 분석 체인 (업로드 제외)</td><td>40분+ 미완주</td><td><strong>14분 02초</strong></td><td>〃 — <strong>샤딩의 기여는 이 행이다</strong></td></tr>
+<tr><td>7,189장 합계 (업로드 포함)</td><td>77.5분 (업로드 63.5 + 32 샤드 분석 14.0)</td><td><strong>18분 20초</strong></td><td><code>upload-timing</code> §7.3 — 4.2×의 거의 전부는 <a href="resize-gpu.html#resize">2048 리사이즈</a>(업로드 63.5 → 4.6) 몫이지 샤딩이 아니다</td></tr>
+<tr><td>Throttles / 동시 실행 / RDS 커넥션</td><td>—</td><td>0 / 32 / 60 of 79</td><td><code>score-speedup</code> §4.10</td></tr>
+</table></div>
+<p class="small">7,189장 18.3분 중 업로드 4.6분은 같은 날 함께 들어간 <a href="resize-gpu.html#resize">브라우저 2048 리사이즈</a> 덕이다. 샤딩만의 몫은 "분석 40분+ 미완주 → 14분 한 라운드"이고, v1 직렬의 합계는 끝을 못 봐 확정값이 없다(100분+).</p>
+
+<h2 id="cost">비용 — 벽시계는 줄었지만 GB-초는 같다</h2>
+<div class="tablewrap"><table>
+<tr><th>기준</th><th>값</th><th>근거</th></tr>
+<tr><td>Lambda 단가 (ap-northeast-2)</td><td>GB-초당 $0.0000166667</td><td>—</td></tr>
+<tr><td>822장 갤러리 score</td><td>샤딩 전후 <strong>비용 같음</strong> (10,400 → 11,167 GB-초, ≈ $0.19). 벽시계만 1/2.3. 메모리를 줄이면 시간이 두 배라 GB-초 동일</td><td><code>score-speedup</code> §4.7 L214–217, §5 L322–355</td></tr>
+<tr><td>32 샤드 vs 6 샤드</td><td>GB-초 <strong>+59~103%</strong> — 샤드마다 모델 로드·다운로드를 다시 하므로</td><td>§4.10</td></tr>
+<tr><td>7,189장 (잡 11)</td><td>embedder 12,012 GB-초($0.20) · score 95,836($1.60) · categorize 192 → <strong>Lambda $1.80</strong> + Bedrock 3회 ≈ $0.07</td><td><code>upload-timing</code> L80</td></tr>
+<tr><td>822장 갤러리 총액</td><td>약 <strong>$0.27</strong></td><td><code>score-speedup</code> §5 L340–345</td></tr>
+</table></div>
+<div class="note"><b>비용이 장당 선형이었다.</b> 갤러리당 $1.7~1.8, 월 100갤러리면 $170~180. Lambda는 0건이면 $0이지만 사용량이 늘수록 GPU와의 차이가 벌어진다 — 이것이 <a href="cost.html#pipeline">v2 비용표</a>에서 GPU $0.13과 나란히 놓이는 숫자다.</div>
+
+<h2 id="walls">샤딩이 부딪힌 세 벽 — 다음 단계의 동기</h2>
+<div class="cards">
+  <div class="card"><b>vCPU 연산 상한</b><br>Lambda 10GB가 ≈6 vCPU. CLIP 0.68s + ARNIQA 0.80s는 CPU에서 더 줄지 않는다. ARNIQA 입력 해상도를 낮추면 Spearman 0.638/0.536/0.479(896/768/640px)로 무너져 폐기(<code>score-speedup</code> §4.4).</div>
+  <div class="card"><b>RDS 커넥션</b><br>샤드 32 = 커넥션 61/79. 샤드를 더 늘리면 앱 커넥션을 먹는다. 동시성 상한이 곧 처리량 상한.</div>
+  <div class="card"><b>호스트 편차 1.7×</b><br>느린 Lambda 호스트(장당 2.39s)를 만난 샤드가 꼬리를 +3.5분 끈다. 32개를 동시에 띄우면 그중 하나는 꼭 느리다.</div>
+</div>
+<p class="small">근거 <code>lambda-to-gpu-worker-2026-09-08.md</code> §1 L14–21. 이 셋이 <a href="resize-gpu.html#gpu">score GPU 워커</a>의 출발점이다.</p>
+
+<h2 id="now">이것을 대체한 것 — v2 배정 로직 (현재 코드)</h2>
+<p>샤딩·체인·자기 재호출은 AI repo #99(<code>c8cbe1b</code>, v1 삭제 +336/−1,739)·#101(<code>fad50c1</code>)로 지워졌다. 조정자 Lambda가 하던 "나누기"는 wes로 옮겨 왔고, 남은 Lambda는 <code>{galleryId, photoIds}</code> 하나만 받는 순수 함수다.</p>
+<div class="tablewrap"><table>
+<tr><th>샤딩 시대</th><th>v2 (현재)</th><th>코드</th></tr>
+<tr><td>조정자 Lambda가 <code>ceil(n/150)</code> 샤드를 EVENT</td><td>wes 5초 스윕이 UPLOADED 사진을 <code>SKIP LOCKED</code>로 50장씩 집어 EVENT</td><td><code>analysis/service/EmbedDispatcher.kt</code> L13–19, L32–67</td></tr>
+<tr><td><code>SHARD_PHOTOS 150 · MAX_SHARDS 32</code> (Lambda env)</td><td><code>embed-batch-size 50 · embed-max-in-flight 32 · embed-redispatch-after PT10M · embed-max-attempts 3</code></td><td><code>config/application-variable.yml</code> L105–115</td></tr>
+<tr><td>score 샤드 ×N</td><td>GPU 워커가 <code>photo_analysis</code>를 직접 pull. 워커가 없으면 <code>score-batch-size 50</code> Lambda 폴백</td><td><code>ScoreWorkerSupervisor.kt</code> · <a href="resize-gpu.html#gpu">3페이지</a></td></tr>
+<tr><td>마지막 샤드가 categorize 호출</td><td>잡(<code>ai_analysis_jobs</code>)이 점수 완료를 관측해 categorize 1회. <code>categorize-timeout PT20M</code></td><td><code>AnalysisOrchestrator.kt</code> · <a href="../pipeline-v2-site/categorize.html">pipeline-v2-site 5</a></td></tr>
+<tr><td>15분 앞 자기 재호출</td><td>없음. 50장 배치는 3분 안에 끝난다. 벡터 없이 10분 지나면 wes가 되돌려 다시 보냄</td><td>〃</td></tr>
+<tr><td>Lambda→Lambda 호출 → <code>lambda</code> 인터페이스 엔드포인트 $21/월</td><td>호출 없음 → 엔드포인트 삭제(infra #57·#58), <code>lambda:InvokeFunction</code> 권한 삭제</td><td>infra <code>NEXT.md</code> §4.7</td></tr>
+</table></div>
+
+<h2 id="files">읽을 경로</h2>
+<div class="tablewrap"><table>
+<tr><th>역할</th><th>경로 (<code>organic-agent/</code> 기준)</th></tr>
+<tr><td>이 항목의 본 문서</td><td><code>organic-agent-ai/docs/improvements/lambda-pipeline-speedup-2026-09-06.md</code></td></tr>
+<tr><td>실행별 측정표(§4.6–4.10) · 비용(§5) · 샤딩을 고른 결정표(§4.5)</td><td><code>organic-agent-ai/docs/improvements/score-speedup-2026-09-06.md</code></td></tr>
+<tr><td>7,189장 CloudWatch 실측 (잡 11 · 12)</td><td><code>organic-agent-ai/docs/experiments/upload-timing-2026-09-06.md</code></td></tr>
+<tr><td>Lambda 메모리·동시성 · <code>ALTER ROLE embedder CONNECTION LIMIT 32</code></td><td><code>organic-agent-infra/docs/runbook.md</code> L329–342, L380–395</td></tr>
+<tr><td>Terraform (메모리 L68·87·100, 예약 동시성 L71·89·102, timeout L323, 동시성 근거 주석)</td><td><code>organic-agent-infra/modules/analysis/main.tf</code> · <code>variables.tf</code> L111·151</td></tr>
+<tr><td>PR</td><td>ai #55(score 샤딩 <code>92e35f6</code>) · #57(embedder 샤딩 <code>59d5bc4</code>) · #60/#61(SHARD_PHOTOS 150) · #64/#65(MAX_SHARDS 32) · 삭제 #99(<code>c8cbe1b</code>) · #101(<code>fad50c1</code>) / infra #29(score 동시성 2→8) · #31(embedder 4→8) · #33(8→32)</td></tr>
+<tr><td>삭제 기록</td><td><code>organic-agent-ai/CLAUDE.md:55</code> · <code>embedder/README.md:57-58</code> · <code>score/README.md:39</code></td></tr>
+</table></div>
+
+<div class="pager">
+  <a href="index.html">← 1. 개선 이력 · 비용</a>
+  <a href="resize-gpu.html">3. 2048 리사이즈 + score GPU 전환 →</a>
+</div>
+</main>
+</body>
+</html>

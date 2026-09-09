@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>5.1 categorize Lambda 상세 — 파이프라인 v2</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<nav class="nav">
+  <a href="index.html">전체 아키텍처</a><span class="sep">/</span>
+  <a href="categorize.html">5. 서버 categorize 호출</a><span class="sep">/</span>
+  <span class="here">5.1 categorize Lambda</span>
+</nav>
+
+<div class="eyebrow">AI repo · categorize 모듈 · Lambda (torch 없음, numpy·scipy·Bedrock)</div>
+<h1>비슷한 사진 묶기와 이름 붙이기</h1>
+<p class="lede">저장된 벡터와 점수를 바탕으로 갤러리 전체의 백분위·연사·사진 그룹을 계산합니다. <strong>그룹별 대표 사진 1~2장</strong>을 Bedrock에 보내 상위 분류와 컨셉 이름을 정하고, 그룹별 배정 결과를 DB에 저장합니다.</p>
+<p class="meta">AI repo b473c61 · <code>categorize/categorize/*</code> · Lambda 3008MB · 실측 822장 32s(Bedrock 2회) · 7,183장 65s(그룹 76, Bedrock 3회, 788MB)</p>
+<nav class="section-links" aria-label="이 페이지 목차"><a href="#arch">흐름</a><a href="#group">그룹 계산</a><a href="#naming">이름 붙이기</a><a href="#data">쓰는 것</a><a href="#knobs">상수 (categorize/categorize/config.py Knobs · LlmKnobs)</a><a href="#files">코드 위치 (AI repo)</a></nav>
+
+<h2 id="arch">흐름 — job.run</h2>
+<p class="small">실선은 호출·저장, 점선은 조회·상태 확인입니다. 박스를 누르면 해당 단계의 설명으로 이동합니다.</p>
+<div id="d-arch"></div>
+<script src="diagram.js"></script>
+<script>
+renderDiagram('#d-arch', {
+  width: 1160, height: 560,
+  groups: [{ x: 10, y: 40, w: 1080, h: 200, color: '#C13E70', tint: '#FDECF3', label: 'categorize Lambda · job.run — 갤러리 전체 재계산' }],
+  nodes: [
+    { id: 'H', lane: 'lambda', x: 20, y: 80, w: 170, technicalTitle: 'handler → job.run', title: '분류 요청 수신', lines: ['{galleryId, jobId}', 'jobId 없으면 배정 저장 안 함'] },
+    { id: 'LD', lane: 'lambda', x: 220, y: 80, w: 170, technicalTitle: 'gallery.load_db', title: '갤러리 사진 조회', lines: ['preview_key IS NOT NULL', 'display_order 순'] },
+    { id: 'GR', lane: 'lambda', x: 420, y: 80, w: 190, technicalTitle: 'pipeline.group', title: '비슷한 사진 그룹화', lines: ['백분위 (NaN → 50)', '연사 cos ≥ 0.96 · 창 8', '임베딩 그룹 거리 0.2 적응', '연사 대표 · rank_reason'], href: '#group' },
+    { id: 'WG', lane: 'lambda', x: 640, y: 80, w: 170, technicalTitle: 'store.write_groups', title: '그룹 결과 저장', lines: ['UPDATE + commit'] },
+    { id: 'NM', lane: 'lambda', x: 840, y: 80, w: 230, technicalTitle: 'naming.run', title: '그룹 이름 결정', lines: ['그룹 선택 85% / ≤120', '대표 ≤2장 · 청크 15장', '통합 · 최근접 상속 · review'], href: '#naming' },
+    { id: 'WA', lane: 'lambda', x: 840, y: 440, w: 230, technicalTitle: 'store.write_assignments', title: '이름 배정 저장', lines: ['ON CONFLICT (job_id, embed_group_id)'] },
+    { id: 'BR', lane: 'lambda', x: 840, y: 300, w: 230, kicker: '국외', title: 'Bedrock Sonnet 4.6', lines: ['≤ ⌈이미지/15⌉ + 1 회'] },
+    { id: 'FAIL', lane: 'warn', x: 20, y: 300, w: 200, technicalTitle: 'jobs.fail', title: '분류 실패 기록', lines: ['rollback → error 만 UPDATE'] },
+    { id: 'PG', lane: 'db', shape: 'db', x: 330, y: 430, w: 340, title: 'Postgres', lines: ['photo_analysis · ai_concept_assignments · ai_analysis_jobs.error'] },
+  ],
+  edges: [
+    { from: 'H', to: 'LD', color: 'lambda' }, { from: 'LD', to: 'GR', color: 'lambda' }, { from: 'GR', to: 'WG', color: 'lambda' }, { from: 'WG', to: 'NM', label: 'Grouped(rows, X)\n재조회 없음', color: 'lambda' },
+    { from: 'NM', to: 'WA', fromSide: 'r', fromAt: .8, toSide: 'r', toAt: .5, via: [[1085, null], [null, 470]], label: 'parent · concept\nconfidence · needs_review', labelAt: 1, color: 'lambda' },
+    { from: 'NM', to: 'BR', fromSide: 'b', fromAt: .5, toSide: 't', toAt: .5, label: '대표 사진 ⇄ 이름', bidir: true, color: 'lambda' },
+    { from: 'LD', to: 'PG', fromSide: 'b', toSide: 't', toAt: .15, label: 'photos', dashed: true },
+    { from: 'GR', to: 'PG', fromSide: 'b', fromAt: .5, toSide: 't', toAt: .4, label: 'read_gallery 한 쿼리\nE · C · 원점수', dashed: true },
+    { from: 'WG', to: 'PG', fromSide: 'b', toSide: 't', toAt: .8, label: 'technical_pct · cluster · embed_group', color: 'lambda' },
+    { from: 'WA', to: 'PG', fromSide: 'l', toSide: 'r', toAt: .5, label: 'ai_concept_assignments UPSERT', labelAt: 1, color: 'lambda' },
+    { from: 'FAIL', to: 'PG', fromSide: 'b', toSide: 'l', toAt: .5, label: 'ai_analysis_jobs.error', color: 'warn' },
+    { from: 'H', to: 'FAIL', fromSide: 'b', fromAt: .2, toSide: 't', toAt: .2, label: 'BaseException', color: 'warn' },
+  ],
+});
+</script>
+
+<h2 id="group">그룹 계산 — pipeline.group</h2>
+<div class="role"><b>한다</b><span>DB 의 E(DINOv3)·C(CLIP)·원점수를 읽어 갤러리 전체를 <strong>매번 다시</strong> 계산한다: 백분위, 연사 클러스터, 임베딩 그룹, 연사 대표.</span><b>왜</b><span>백분위와 그룹은 "갤러리 안에서의 상대값"이라 사진이 늘면 전부 바뀐다. 갤러리 하나가 수 초면 끝나므로 증분보다 전체 재계산이 단순하고 정확하다. 원점수 대신 백분위를 쓰는 이유는 모델을 바꿔도 비교가 가능하고 추천 산식이 단위에 흔들리지 않기 위해서다.</span><b>없으면</b><span>새 사진이 오면 옛 백분위와 새 백분위가 섞여 순위가 거짓이 되고, 연사·그룹이 사진 추가 전 기준으로 굳는다.</span><b>입출력</b><span><code>photo_analysis(E, C, scores)</code> → <code>technical_pct · aesthetic_pct · cluster_id · cluster_rank · embed_group_id · sub_scores(+sharpness_pct, rank_reason)</code></span></div>
+<ol class="steps">
+  <li><b>결합.</b> <code>store.read_gallery</code> <strong>한 쿼리</strong>로 분석 행·E(DINOv3)·C(CLIP)를 받는다. 행은 <code>model_version == "photoselect-v3-a-0.1"</code> 인 것만 쓰고, 셋 중 하나라도 없는 사진은 경고 후 제외, 전부 없으면 RuntimeError. <code>embedding_model</code> 이 갤러리 안에 섞여 있으면 거부. 그룹화가 만든 행과 concat 공간은 <code>Grouped</code> 로 naming 에 넘어가 naming 은 DB 를 다시 읽지 않는다(예전엔 셋을 두 번 읽고 X 를 두 번 만들었다 — 7천 장이면 벡터 44MB 두 번).</li>
+  <li><b>백분위.</b> <code>technical_score → technical_pct</code>, <code>aesthetic_score → aesthetic_pct</code>, <code>sharpness → sub_scores.sharpness_pct</code>. 갤러리 내 순위 <code>100·rank/(n−1)</code>, NaN 은 50(없는 신호가 순위를 흔들면 안 된다).</li>
+  <li><b>연사(cluster.py).</b> 카메라(make+model)별 파티션 → 파티션 안 모든 사진에 <code>taken_at</code> 이 있을 때만 시간순 정렬 → 창 8 안 이웃과 DINOv3 코사인 <code>≥ 0.96</code> 이면 union-find 병합 → 등장 순 <code>cluster_id</code>. 파티션 경계는 넘지 않는다.</li>
+  <li><b>concat 공간.</b> <code>normalize([normalize(E) ⊕ normalize(C)])</code> — 코사인 = 두 공간 코사인의 평균.</li>
+  <li><b>임베딩 그룹(concept.py).</b> 평균연결 계층 클러스터(<code>linkage(average, cosine)</code>)를 거리 <code>0.2</code> 에서 자른다. <strong>적응 규칙</strong>: 과병합(그룹 &lt; min(4, n) 또는 최대 그룹 &gt; n×0.5)이면 0.05 씩 하강(하한 0.05); 하강이 불필요했고 과분할(그룹 &gt; max(4, n×0.35))이면 0.05 씩 상승(상한 0.35), 상승이 과병합을 만들면 한 걸음 되돌림 → <code>embed_group_id</code>(등장 순).</li>
+  <li><b>연사 대표.</b> 클러스터별 <code>(−technical_pct, −sharpness, −aesthetic_pct, photo_id)</code> 정렬 → <code>cluster_rank</code> 0,1,2… rank 0 에 <code>rank_reason</code>: single / technical(차 &gt; 5) / sharpness(&gt; 1.25×) / aesthetic(차 &gt; 5) / tie.</li>
+</ol>
+<div class="note"><div class="t">근거 (config.py 주석)</div>
+"2026-08-29 갤러리 1 실측(DINOv2, 822장): 평균연결 거리 0.2 에서 70그룹 — 케이크 세트 50·해변 41·소파 39·정원 37·덩굴 아치 36장으로 촬영 세트와 일치. 0.3 부터 다른 세트가 섞인다." "concat 0.2 에서 58그룹, DINOv3 단독과 ARI 0.95." 연사 0.96·그룹 0.2 는 CLIP/DINOv2 시절 값이라 DINOv3 기준 재측정 대상.</div>
+
+<h2 id="naming">이름 붙이기 — naming.run</h2>
+<div class="role"><b>한다</b><span>그룹마다 대표 사진 1~2장을 골라 Sonnet 에 보내 <code>{parent, concept, confidence}</code> 를 받고, 표기를 통일하고, 못 보낸 소그룹은 최근접 그룹 이름을 물려받으며, 의심스러운 그룹에 <code>needs_review</code> 를 단다.</span><b>왜</b><span>폴더 이름은 사람이 읽을 것이라 모델의 열린 답이 필요하지만 사진 전부를 보내면 비용이 갤러리 크기에 비례한다. 그룹 대표만 보내고 커버리지 85%·상한 120 으로 자르면 호출이 ⌈이미지/15⌉+1 로 묶인다. 부모는 고정 목록(enum)으로 강제해 상위 폴더가 흔들리지 않게 하고, CLIP 부모 다수결과 대조해 사람이 볼 곳만 표시한다.</span><b>없으면</b><span>7천 장 갤러리가 수백 번의 VLM 호출이 되거나, 부모 이름이 갤러리마다 달라 상위 폴더가 난립하고, 오배정을 사람이 찾을 방법이 없다.</span><b>입출력</b><span><code>embed_group_id[]</code> → <code>ai_concept_assignments(job_id, embed_group_id, parent_name, concept_name, …)</code></span></div>
+<ol class="steps" start="7">
+  <li><b>그룹 선택.</b> 크기 내림차순으로 사진 커버리지 <code>85%</code> 에 이를 때까지, 최대 <code>120</code> 그룹. 나머지는 ⑪ 로.</li>
+  <li><b>대표 사진.</b> concat 공간 중심(평균 정규화)에 최근접 1장. <code>spread = mean(1 − sim) &gt; 0.12</code> 면 최원점 1장을 더한다(대표 2장이 서로 다른 세트로 보이면 confidence 를 낮추라고 프롬프트에 적혀 있다). 미리보기는 <code>store.preview_paths</code> 가 대표 전부의 <code>preview_key</code> 를 SELECT 한 번(<code>id = ANY</code>)으로 받아 스레드 16개로 S3 에서 병렬 다운로드하고, 긴 변 768 JPEG q80 축소도 스레드 8개로 겹친다(예전엔 사진마다 SELECT + GET 직렬, 대표 240장에 10~25초). 이미지 블록으로 보낸다. 이미지를 못 얻은 그룹은 ⑪ 로.</li>
+  <li><b>Sonnet 청크.</b> 그룹을 깨지 않으면서 <strong>이미지 15장</strong>씩 청크 → 청크마다 1회 <code>complete_json(SYSTEM, [텍스트, [그룹 gid] N장, 이미지…], schema)</code>. 스키마: <code>groups[{group_id, parent(enum PARENTS), proposed_parent|null, concept, confidence}]</code> 전부 required. 응답에 빠진 그룹은 ⑪ 로.</li>
+  <li><b>이름 통합.</b> 청크가 2개 이상이면 텍스트만으로 1회 더(MERGE 프롬프트) — 같은 세트인데 표기만 다른 concept 을 통일. parent 가 같은 항목의 concept 만 교체. 실패해도 청크 결과 유지.</li>
+  <li><b>최근접 상속.</b> VLM 에 안 간 그룹은 이름 붙은 그룹 중심과 코사인 → 거리 <code>≤ 0.25</code> 면 그 parent/concept 상속(<code>confidence = 1 − dist</code>, <code>assigned_by = nearest</code>), 멀면 <code>기타/기타 + needs_review</code>.</li>
+  <li><b>needs_review.</b> VLM 그룹: <code>confidence &lt; 0.8</code> 또는 (parent ≠ 기타 ∧ 사진들의 <code>clip_parent</code> 다수결 ≠ parent). 상속 그룹: parent ≠ 기타 ∧ clip_parent 다수결 ≠ parent. <code>proposed_parent</code> 는 parent 가 기타일 때만 저장.</li>
+</ol>
+
+<h3>시스템 프롬프트 원문 (naming.py SYSTEM)</h3>
+<pre><code>당신은 웨딩 사진 스튜디오의 갤러리 정리를 돕는다. 비슷한 배경·구도로 찍힌 사진
+묶음(그룹)마다 대표 사진이 1~2장 온다. 대표가 2장인데 서로 다른 세트로 보이면 그 그룹의
+confidence를 낮춰라. 그룹마다 폴더 이름 두 층을 정한다.
+
+- parent(큰 분류): 주어진 목록에서만 고른다. 어느 것에도 맞지 않으면 "기타"를 고르고
+  proposed_parent에 더 맞는 큰 분류 이름을 제안한다 (맞는 것이 있으면 proposed_parent는 null).
+- concept(컨셉): 촬영 세트를 부를 짧은 한국어 이름 (2~12자). 배경·소품·상황으로 짓는다
+  (예: "소파", "케이크 테이블", "해변", "정원 산책"). 흑백/컬러 같은 스타일이나
+  인물 구성(신부 단독 등)은 컨셉 이름에 넣지 않는다. 같은 세트로 보이는 그룹들에는 같은
+  concept 이름을 붙인다.
+- confidence: 이 배정에 대한 확신 0~1.
+
+모든 그룹에 대해 답한다. 이미지에 보이지 않는 것을 지어내지 않는다.</code></pre>
+<pre><code># 사용자 메시지 구조
+"큰 분류 목록: 실내 스튜디오, 하우스·인테리어, 한옥·전통, 야외 정원·건물, 야외 자연, 도심·거리, 기타
+ 그룹 N개의 대표 사진이다."
+"[그룹 12] 41장 — 대표 2장"  + image + image
+"[그룹 3] 37장"              + image
+…
+
+# MERGE 프롬프트
+웨딩 갤러리 폴더 이름 목록을 정리한다. 같은 촬영 세트·컨셉을 가리키는데 표기만
+다른 concept 이름들(예: "소파 세트"와 "쇼파")을 하나의 표준 이름으로 통일한다. parent는 바꾸지
+않는다. 다른 세트를 억지로 합치지 않는다. 모든 그룹을 다시 돌려준다.</code></pre>
+
+<h3>Bedrock 호출 모양 (llm.py)</h3>
+<ul>
+  <li>legacy <code>AnthropicBedrock(aws_region="ap-northeast-2")</code> — 서울에 Mantle 엔드포인트가 없어 InvokeModel 경로. 모델 <code>global.anthropic.claude-sonnet-4-6</code>(크로스 리전 프로필, <strong>국외 전송</strong>). 서울 온디맨드에 Sonnet 이 없다.</li>
+  <li><code>output_config = {format: {type: "json_schema", schema}}</code> 로 JSON 강제. number 에 min/max 를 못 써서 범위는 프롬프트에 맡기고 읽는 쪽에서 클램프. <code>max_tokens 4096</code>. <code>stop_reason</code> 이 refusal / max_tokens 면 RuntimeError.</li>
+  <li>비용 상한: 이미지 호출 ≤ ⌈대표 이미지 수/15⌉ + 통합 1. 갤러리가 커져도 커버리지 85%·상한 120 그룹이 정한 범위를 넘지 않는다.</li>
+</ul>
+
+<h2 id="data">쓰는 것</h2>
+<pre><code>-- write_groups: UPDATE 만 (행은 score 가 만들어 두었다). subjects·clip_embedding·embedding 보존
+UPDATE photo_analysis SET technical_pct, aesthetic_pct, sub_scores::jsonb, cluster_id, cluster_rank, embed_group_id,
+    analyzed_at = now(), updated_at = now(), version = version + 1 WHERE photo_id = %s
+
+-- write_assignments: job_id 없으면 저장 안 함(경고만)
+INSERT INTO ai_concept_assignments (job_id, gallery_id, embed_group_id, parent_name, proposed_parent,
+    concept_name, confidence, clip_parent, assigned_by, needs_review, created_at, updated_at)
+ON CONFLICT (job_id, embed_group_id) DO UPDATE SET parent_name, proposed_parent, concept_name, confidence,
+    clip_parent, assigned_by, needs_review, updated_at = now(), version = version + 1
+
+-- 실패
+UPDATE ai_analysis_jobs SET error = %s, updated_at = now() WHERE id = %s</code></pre>
+<div class="datastrip">
+  <div class="cell"><b>wes 가 읽는 것</b>parent_name(→ ConceptFolder) · concept_name(→ DetailFolder) · embed_group_id · needs_review. confidence·assigned_by·proposed_parent·clip_parent 는 wes 가 읽지 않는다. 컬럼별로 wes 의 누가 읽어 폴더의 어느 필드가 되는지는 <a href="folders.html#lineage">6. 값의 행선지</a></div>
+  <div class="cell"><b>폴더는 누가 만드나</b>이 Lambda 가 아니다. wes 스윕(<code>stepCategorizing</code>)이 배정 행 존재 ∧ <code>technical_pct</code> 전부 채워짐을 보고 <code>AiCategoryFolderService.materializeFromAnalysis</code> 를 부른다 → <a href="folders.html#lineage">흐름도</a></div>
+  <div class="cell"><b>용어 뒤집힘</b>AI 의 "concept" = wes 의 DetailFolder(하위). AI 의 "parent" = wes 의 ConceptFolder(상위)</div>
+  <div class="cell"><b>결과 payload(로그)</b>photos · groups · vlmGroups · nearestGroups · needsReview · parents · coverage · extraReps · llmCalls · elapsedSeconds — <code>log.info("완료: %s", result)</code></div>
+</div>
+
+<h2 id="knobs">상수 (categorize/categorize/config.py Knobs · LlmKnobs)</h2>
+<div class="tablewrap"><table>
+<tr><th>키</th><th>값</th><th>쓰이는 곳</th></tr>
+<tr><td><code>burst_threshold</code> / <code>burst_window</code></td><td>0.96 / 8</td><td>연사</td></tr>
+<tr><td><code>group_distance</code> / <code>group_min_groups</code> / <code>group_max_share</code> / <code>group_frag_share</code></td><td>0.2 / 4 / 0.5 / 0.35</td><td>임베딩 그룹 + 적응 규칙 (상승 상한 raise_cap 0.15 는 함수 기본값)</td></tr>
+<tr><td><code>naming_coverage</code> / <code>naming_max_groups</code></td><td>0.85 / 120</td><td>VLM 대상 그룹 선택</td></tr>
+<tr><td><code>naming_spread_extra</code></td><td>0.12</td><td>대표 2장 조건</td></tr>
+<tr><td><code>naming_chunk</code> / <code>naming_max_tokens</code> / <code>naming_image_long_edge</code></td><td>15 / 4096 / 768</td><td>Bedrock 호출</td></tr>
+<tr><td><code>nearest_tau</code></td><td>0.25</td><td>최근접 상속 거리 상한</td></tr>
+<tr><td><code>review_confidence</code></td><td>0.8</td><td>needs_review</td></tr>
+<tr><td><code>LlmKnobs.aws_region</code> / <code>model_id</code></td><td>ap-northeast-2 / global.anthropic.claude-sonnet-4-6</td><td>env <code>BEDROCK_REGION</code> / <code>BEDROCK_MODEL_ID</code></td></tr>
+<tr><td><code>MODEL_VERSION</code> / <code>PARENTS</code></td><td>photoselect-v3-a-0.1 / 7종</td><td>score config 와 같은 값(테스트 대조)</td></tr>
+</table></div>
+
+<h2 id="files">코드 위치 (AI repo)</h2>
+<div class="tablewrap"><table>
+<tr><th>역할</th><th>파일</th></tr>
+<tr><td>입구·실패</td><td><code>categorize/categorize/handler.py</code> · <code>job.py</code> · <code>jobs.py</code>(fail)</td></tr>
+<tr><td>로딩</td><td><code>gallery.py</code>(load_db :67) · <code>store.py</code>(read_gallery · preview_paths)</td></tr>
+<tr><td>그룹</td><td><code>pipeline.py</code>(group :111 · 백분위 :62 · _rep_key :81 · concat_space :73) · <code>cluster.py</code> · <code>concept.py</code></td></tr>
+<tr><td>이름</td><td><code>naming.py</code>(SYSTEM :50 · MERGE :64 · _schema :69 · run :166) · <code>llm.py</code></td></tr>
+<tr><td>쓰기</td><td><code>store.py</code>(write_groups :253 · write_assignments :275)</td></tr>
+<tr><td>상수</td><td><code>config.py</code>(MODEL_VERSION :21 · PARENTS :25 · Knobs :29 · LlmKnobs :64)</td></tr>
+<tr><td>배포</td><td><code>categorize/Dockerfile</code>(python:3.12, RDS CA 번들) · <code>deploy.sh</code>(<code>wes-categorize</code>) · Terraform 은 인프라 repo</td></tr>
+<tr><td>로컬 대역</td><td>wes <code>scripts/lambda/categorize.sh --gallery-id G --job-id J</code></td></tr>
+</table></div>
+<div class="note warn"><div class="t">문서 ↔ 코드 어긋남</div>
+<code>handler.py</code>·<code>pipeline.py</code>·<code>naming.py</code> 머리말의 "score 가 체인으로 부른다"는 v1 잔재. AI 아키텍처 문서의 "jobId 없는 galleryId 단독은 ValueError"는 코드와 다르다(허용, 배정만 저장 안 함). <code>score/deploy/gpu-worker/README.md</code> 의 "categorize jobs.py 가 status·result 를 쓴다"도 옛 기술.</div>
+
+<div class="pager">
+  <a href="categorize.html">← 5. 서버 categorize 호출</a>
+  <a href="folders.html">6. 카테고리 폴더 물질화 →</a>
+</div>
+</main>
+</body>
+</html>
