@@ -5,9 +5,11 @@ import com.soma.wes.gallery.domain.GalleryMember
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.fixture.GalleryFixture
+import com.soma.wes.gallery.fixture.OpenGallery
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.photo.dto.request.CompleteUploadRequest
+import com.soma.wes.photo.dto.request.IssueUploadUrlsRequest
 import com.soma.wes.photo.dto.request.WritePhotoCommentRequest
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.service.PhotoCommentService
@@ -56,13 +58,14 @@ class ActivityRecorderTest @Autowired constructor(
     @DisplayName("성공한 업무 활동을 기록할 때")
     inner class Record {
         @Test
-        fun `업로드는 해당 갤러리와 작업공간 시각만 바꾸며 도메인 버전은 유지한다`() {
+        fun `업로드 완료는 해당 갤러리와 작업공간 시각만 바꾸며 도메인 버전은 유지한다`() {
             // given
             val a = galleryFixture.멤버와_열린_갤러리()
             val b = galleryFixture.멤버와_열린_갤러리()
             val workspaceId = galleries.findById(a.galleryId).orElseThrow().workspaceId
             val otherWorkspaceId = galleries.findById(b.galleryId).orElseThrow().workspaceId
-            val ids = photoFixture.대기중_사진(a.galleryId, 1)
+            val ids = issueUploadUrls(a)
+            clearActivity(a)
             val galleryVersion = version("galleries", a.galleryId)
             val studioVersion = version("studios", workspaceId)
 
@@ -162,7 +165,8 @@ class ActivityRecorderTest @Autowired constructor(
         fun `조회와 권한 없는 업로드 요청은 활동을 만들지 않는다`() {
             // given
             val fixture = galleryFixture.멤버와_열린_갤러리()
-            val ids = photoFixture.대기중_사진(fixture.galleryId, 1)
+            val ids = issueUploadUrls(fixture)
+            clearActivity(fixture)
             val other = userFixture.사용자()
 
             // when & then
@@ -179,7 +183,8 @@ class ActivityRecorderTest @Autowired constructor(
         fun `업로드 트랜잭션을 롤백하면 활동도 함께 없어진다`() {
             // given
             val fixture = galleryFixture.멤버와_열린_갤러리()
-            val ids = photoFixture.대기중_사진(fixture.galleryId, 1)
+            val ids = issueUploadUrls(fixture)
+            clearActivity(fixture)
 
             // when
             TransactionTemplate(transactions).executeWithoutResult { status ->
@@ -208,7 +213,8 @@ class ActivityRecorderTest @Autowired constructor(
         }
         jdbc.update("update studios set updated_at = now() - interval '1 day' where workspace_id = ?", wb)
         jdbc.update("update galleries set updated_at = now() - interval '1 day' where id = ?", b.galleryId)
-        val ids = photoFixture.대기중_사진(a.galleryId, 1)
+        val ids = issueUploadUrls(a)
+        clearActivity(a)
         assertThat(users.listWorkspaces(a.photographer.requiredId).filter { it.kind == UserWorkspaceKind.STUDIO }.first().workspaceId).isEqualTo(wb)
         assertThat(users.listWorkspaces(a.member.requiredId).first().galleryId).isEqualTo(b.galleryId)
 
@@ -218,6 +224,24 @@ class ActivityRecorderTest @Autowired constructor(
         // then
         assertThat(users.listWorkspaces(a.photographer.requiredId).filter { it.kind == UserWorkspaceKind.STUDIO }.first().workspaceId).isEqualTo(wa)
         assertThat(users.listWorkspaces(a.member.requiredId).first().galleryId).isEqualTo(a.galleryId)
+    }
+
+    /** 현재 업로드 계약의 필수 크기·CRC32C를 포함한 PENDING 사진을 준비한다. S3 PUT은 수행하지 않는다. */
+    private fun issueUploadUrls(fixture: OpenGallery): List<Long> = photoService.issueUploadUrls(
+        fixture.galleryId,
+        fixture.photographer.requiredId,
+        IssueUploadUrlsRequest(
+            listOf(IssueUploadUrlsRequest.FileRequest(
+                fileName = "activity.jpg", contentType = "image/jpeg", contentLength = 1024, crc32c = "wdRDgw==",
+            )),
+        ),
+    ).uploads.map { it.photoId }
+
+    /** URL 발급 활동과 분리해 완료 통보/인가 실패/롤백이 활동에 미치는 영향을 검증한다. */
+    private fun clearActivity(fixture: OpenGallery) {
+        val workspaceId = galleries.findById(fixture.galleryId).orElseThrow().workspaceId
+        jdbc.update("DELETE FROM gallery_activity WHERE gallery_id = ?", fixture.galleryId)
+        jdbc.update("DELETE FROM workspace_activity WHERE workspace_id = ?", workspaceId)
     }
 
     private fun version(table: String, id: Long): Long {

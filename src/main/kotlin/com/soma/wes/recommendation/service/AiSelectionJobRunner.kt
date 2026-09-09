@@ -76,11 +76,18 @@ class AiSelectionJobRunner(
         }
         val timing = StageTiming()
         try {
+            val saved = transactionTemplate.execute { loadSavedRound(jobId) }
+            if (saved != null) {
+                finishSavedRound(saved, timing)
+                return
+            }
             resolveQuery(jobId, timing)
             val world = timing.measure("load") { transactionTemplate.execute { load(jobId) }!! }
             val draft = timing.measure("plan") { plan(world) }
             val roundNo = timing.measure("persist") { transactionTemplate.execute { persistRound(world, draft) }!! }
-            val reasonReady = timing.measure("reasons") { fillReasons(world, draft, roundNo, timing) }
+            val reasonReady = timing.measure("reasons") {
+                fillReasons(world.selectionId, world.previewKeys, draft.picks, roundNo, timing)
+            }
             transactionTemplate.execute {
                 val job = aiSelectionJobRepository.findById(jobId).orElseThrow()
                 job.finish(summary(world, draft, roundNo, reasonReady, timing), ZonedDateTime.now(clock))
@@ -96,6 +103,74 @@ class AiSelectionJobRunner(
     }
 
     // ── 읽기 ──
+
+    /** 라운드가 확정된 뒤의 복구는 당시 근거를 사용한다. 선택·분류 변경이 이미 제시한 추천을 바꾸면 안 된다. */
+    private fun loadSavedRound(jobId: Long): SavedRound? {
+        val job = aiSelectionJobRepository.findById(jobId).orElseThrow()
+        val round = job.round ?: return null
+        val selection = photoSelectionRepository.findById(job.selectionId).orElseThrow()
+        val recommendations = aiRecommendationRepository.findAllBySelectionIdAndRound(job.selectionId, round)
+            .filter { it.rejectedAt == null }
+        val picks = recommendations.map { recommendation ->
+            val breakdown = recommendation.scoreBreakdown
+            val facts = (breakdown["facts"] as? List<*>)?.filterIsInstance<String>().orEmpty()
+            val siblings = (breakdown["alternatives"] as? List<*>)?.mapNotNull { alternative ->
+                val value = alternative as? Map<*, *> ?: return@mapNotNull null
+                val id = (value["photo_id"] as? Number)?.toLong() ?: return@mapNotNull null
+                val whyNot = value["why_not"] as? String ?: return@mapNotNull null
+                id to whyNot
+            }.orEmpty()
+            PlannedPick(
+                photoId = recommendation.photoId,
+                folderId = recommendation.folderId,
+                rank = recommendation.rank,
+                breakdown = breakdown,
+                primary = breakdown["primary_reason"] as? String ?: "score",
+                facts = facts,
+                fallback = (breakdown["reason_fallback"] as? String)?.takeIf { it.isNotBlank() }
+                    ?: facts.joinToString(" ").ifBlank { LEGACY_RECOVERY_REASON },
+                siblingIds = siblings,
+            )
+        }
+        val photoIds = picks.flatMap { pick -> listOf(pick.photoId) + pick.siblingIds.map { it.first } }.toSet()
+        val previewKeys = photoRepository.findAllByGalleryIdAndIdIn(selection.galleryId, photoIds)
+            .associate { it.requiredId to it.previewKey }
+        val visiblePicks = picks.filter { it.photoId in previewKeys }
+        return SavedRound(
+            jobId = jobId,
+            selectionId = job.selectionId,
+            galleryId = selection.galleryId,
+            round = round,
+            requestedCount = job.resolvedQuery?.targetCount ?: job.targetCount,
+            scopeFolderIds = job.resolvedQuery?.detailFolderIds ?: job.detailFolderId?.let(::listOf),
+            picks = visiblePicks,
+            previewKeys = previewKeys,
+            reasonReady = recommendations.count { it.reason != null && it.photoId in previewKeys },
+            summary = job.result.orEmpty(),
+        )
+    }
+
+    private fun finishSavedRound(saved: SavedRound, timing: StageTiming) {
+        val filled = timing.measure("reasons") {
+            fillReasons(saved.selectionId, saved.previewKeys, saved.picks, saved.round, timing)
+        }
+        val summary = saved.summary + mapOf(
+            "gallery" to saved.galleryId, "pipeline" to "v3", "round" to saved.round,
+            "k" to saved.picks.size,
+            "scopeFolderId" to saved.scopeFolderIds?.singleOrNull(),
+            "scopeDetailFolderIds" to saved.scopeFolderIds,
+            "requestedCount" to saved.requestedCount,
+            "shortfallCount" to saved.requestedCount?.let { (it - saved.picks.size).coerceAtLeast(0) },
+            "perFolder" to saved.picks.groupingBy { it.breakdown["folder"] as? String ?: UNFILED }.eachCount(),
+            "reasonDistribution" to saved.picks.groupingBy { it.primary }.eachCount(),
+            "llm" to llm.isEnabled, "reasonReady" to saved.reasonReady + filled,
+            "elapsedSeconds" to timing.elapsedSeconds(), "timing" to timing.toMap(), "recovered" to true,
+        )
+        transactionTemplate.execute {
+            aiSelectionJobRepository.findById(saved.jobId).orElseThrow().finish(summary, ZonedDateTime.now(clock))
+        }
+        log.info("AI 추천 잡 복구 완료: jobId={}, round={}, k={}", saved.jobId, saved.round, saved.picks.size)
+    }
 
     /** 외부 AI 호출 중에는 트랜잭션을 잡지 않는다. 저장한 해석 결과는 복구 시 다시 해석하지 않는다. */
     private fun resolveQuery(jobId: Long, timing: StageTiming) {
@@ -298,6 +373,7 @@ class AiSelectionJobRunner(
                 }
                 val (primary, facts) = ReasonMaterial.factsOf(material)
 
+                val fallback = ReasonMaterial.template(primary, material)
                 val breakdown = linkedMapOf<String, Any?>(
                     "pipeline" to "v3", "score" to round4(score[i]),
                     "prior_z" to round3(combined.priorZ[i]),
@@ -307,6 +383,7 @@ class AiSelectionJobRunner(
                     "folder" to "${folder.parentName}›${folder.name}", "folder_size" to folder.photoIds.size,
                     "folder_rank" to pick.folderRank, "folder_quota" to pick.quota,
                     "alternatives" to alternatives, "primary_reason" to primary, "facts" to facts,
+                    "reason_fallback" to fallback,
                 )
                 if (prefOn) breakdown["subjects"] = row.subjects
 
@@ -317,7 +394,7 @@ class AiSelectionJobRunner(
                     breakdown = breakdown,
                     primary = primary,
                     facts = facts,
-                    fallback = ReasonMaterial.template(primary, material),
+                    fallback = fallback,
                     siblingIds = alternatives.map { it["photo_id"] as Long to it["why_not"] as String },
                 )
             }
@@ -339,10 +416,6 @@ class AiSelectionJobRunner(
 
     private fun persistRound(world: World, draft: Draft): Int {
         val job = aiSelectionJobRepository.findById(world.job.id).orElseThrow()
-        job.round?.let { existing ->
-            // 실행 중 죽었다가 다시 집은 잡 — 추천은 이미 있으니 이유만 다시 채운다.
-            if (aiRecommendationRepository.findAllBySelectionIdAndRound(world.selectionId, existing).isNotEmpty()) return existing
-        }
         val roundNo = if (world.job.mode == AiSelectionMode.DRAFT) 1 else world.previousRound + 1
         val now = ZonedDateTime.now(clock)
         // 리셋 — 이 잡의 범위에 든 사진의 기존 추천을 지운다. 폴더 범위면 그 폴더의 지금 사진, 전체면 분석된
@@ -373,12 +446,18 @@ class AiSelectionJobRunner(
 
     // ── 2단계: 이유 문장 ──
 
-    private fun fillReasons(world: World, draft: Draft, roundNo: Int, timing: StageTiming): Int {
+    private fun fillReasons(
+        selectionId: Long,
+        previewKeys: Map<Long, String?>,
+        plannedPicks: List<PlannedPick>,
+        roundNo: Int,
+        timing: StageTiming,
+    ): Int {
         val pending = transactionTemplate.execute {
-            aiRecommendationRepository.findAllBySelectionIdAndRound(world.selectionId, roundNo)
+            aiRecommendationRepository.findAllBySelectionIdAndRound(selectionId, roundNo)
                 .filter { it.reason == null }.mapTo(mutableSetOf()) { it.photoId }
         }!!
-        val picks = draft.picks.filter { it.photoId in pending }
+        val picks = plannedPicks.filter { it.photoId in pending }
         if (picks.isEmpty()) return 0
 
         // 배치 단위로 미리보기를 읽고 UPDATE — 한 배치가 끝날 때마다 화면의 reasonReady가 뒤집힌다.
@@ -386,10 +465,10 @@ class AiSelectionJobRunner(
         picks.chunked(properties.reasonsBatch).forEach { chunk ->
             val batchStarted = System.nanoTime()
             val inputs = chunk.map { pick ->
-                val image = if (llm.isEnabled && properties.reasonsVision) readPreview(world, pick.photoId) else null
+                val image = if (llm.isEnabled && properties.reasonsVision) readPreview(previewKeys, pick.photoId) else null
                 val siblings = if (image != null) {
                     pick.siblingIds.take(properties.reasonsSiblingImages).mapNotNull { (id, whyNot) ->
-                        readPreview(world, id)?.let { SiblingImageDto(id, whyNot, it) }
+                        readPreview(previewKeys, id)?.let { SiblingImageDto(id, whyNot, it) }
                     }
                 } else {
                     emptyList()
@@ -398,7 +477,7 @@ class AiSelectionJobRunner(
             }
             val texts = reasonGenerator.generate(inputs)
             transactionTemplate.execute {
-                aiRecommendationRepository.findAllBySelectionIdAndRound(world.selectionId, roundNo)
+                aiRecommendationRepository.findAllBySelectionIdAndRound(selectionId, roundNo)
                     .filter { it.photoId in texts }
                     .forEach { it.fillReason(texts.getValue(it.photoId)) }
             }
@@ -408,8 +487,8 @@ class AiSelectionJobRunner(
         return picks.size
     }
 
-    private fun readPreview(world: World, photoId: Long): ByteArray? {
-        val key = world.previewKeys[photoId] ?: return null
+    private fun readPreview(previewKeys: Map<Long, String?>, photoId: Long): ByteArray? {
+        val key = previewKeys[photoId] ?: return null
         return try {
             previewImageReader.readJpeg(key, properties.imageLongEdge)
         } catch (e: Exception) {
@@ -449,6 +528,19 @@ class AiSelectionJobRunner(
     private fun round4(v: Double) = round(v * 10000) / 10000
 
     private class JobRef(val id: Long, val mode: AiSelectionMode, val round: Int?)
+
+    private data class SavedRound(
+        val jobId: Long,
+        val selectionId: Long,
+        val galleryId: Long,
+        val round: Int,
+        val requestedCount: Int?,
+        val scopeFolderIds: List<Long>?,
+        val picks: List<PlannedPick>,
+        val previewKeys: Map<Long, String?>,
+        val reasonReady: Int,
+        val summary: Map<String, Any?>,
+    )
 
     private data class QueryContext(
         val prompt: String?,
@@ -537,6 +629,9 @@ class AiSelectionJobRunner(
         private const val PREF_MIN_SELECTED = 5
         private const val UNFILED = "미분류"
         private const val UNKNOWN = "unknown"
+
+        /** 템플릿·사실 재료를 남기지 않은 이전 버전 추천도 새 분석 없이 이유를 마무리한다. */
+        private const val LEGACY_RECOVERY_REASON = "추천 당시의 사진 점수와 폴더 구성을 기준으로 고른 컷이에요"
 
         /** 범위 밖 행의 벡터 자리. 조회 조건이 벡터 있는 행만 고르므로 범위 안 사진에는 오지 않는다. */
         private val NO_EMBEDDING = FloatArray(0)

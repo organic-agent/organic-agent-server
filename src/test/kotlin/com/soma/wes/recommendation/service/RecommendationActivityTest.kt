@@ -2,7 +2,6 @@ package com.soma.wes.recommendation.service
 
 import com.soma.wes.activity.repository.ActivityRepository
 import com.soma.wes.category.service.AiCategoryFolderService
-import com.soma.wes.category.service.CategorizationService
 import com.soma.wes.category.service.FolderOrganizationService
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
@@ -28,7 +27,6 @@ class RecommendationActivityTest @Autowired constructor(
     private val recommendations: RecommendationFixture,
     private val aiFolders: AiCategoryFolderService,
     private val organization: FolderOrganizationService,
-    private val categorization: CategorizationService,
     private val service: AiRecommendationService,
     private val runner: AiSelectionJobRunner,
     private val llm: FakeStructuredLlmClient,
@@ -56,22 +54,38 @@ class RecommendationActivityTest @Autowired constructor(
     }
 
     @Test
-    fun `AI 폴더 실제 저장은 기록하지만 같은 결과 재조회는 기록하지 않는다`() {
+    fun `분석 결과의 자동 물질화는 기록하지만 같은 결과 재조회는 기록하지 않는다`() {
         val fixture = prepared()
-        aiFolders.createFromAnalysis(fixture.galleryId, fixture.photographer.requiredId)
+        aiFolders.materializeFromAnalysis(fixture.galleryId)
         assertRecorded(fixture)
         clearActivity(fixture)
+        aiFolders.materializeFromAnalysis(fixture.galleryId)
         aiFolders.createFromAnalysis(fixture.galleryId, fixture.photographer.requiredId)
         assertThat(activity.findGalleryActivity(listOf(fixture.galleryId))).isEmpty()
-        // 재분류 실행은 결과가 같더라도 새로 성공한 잡을 저장하는 별도 명시적 작업이다.
-        categorization.run(fixture.galleryId, fixture.photographer.requiredId)
+        assertThat(activity.findWorkspaceActivity(listOf(workspaceId(fixture)))).isEmpty()
+    }
+
+    @Test
+    fun `추가 사진의 새 분석 결과를 물질화하면 활동을 다시 기록한다`() {
+        val fixture = prepared()
+        aiFolders.materializeFromAnalysis(fixture.galleryId)
+        clearActivity(fixture)
+
+        val photoId = photos.임베딩된_사진(fixture.galleryId, 1).single()
+        recommendations.분석_결과(photoId, embedGroupId = 2, clusterId = 2)
+        val jobId = recommendations.분석_잡(fixture.galleryId)
+        recommendations.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 2, parentName = "야외 정원·건물", conceptName = "정원")
+
+        val folders = aiFolders.materializeFromAnalysis(fixture.galleryId)
+
         assertRecorded(fixture)
+        assertThat(folders.flatMap { it.details }.flatMap { it.photoIds }).containsExactly(photoId)
     }
 
     @Test
     fun `이미 만든 폴더를 확정하면 스튜디오 최근 활동에도 반영한다`() {
         val fixture = prepared()
-        aiFolders.createFromAnalysis(fixture.galleryId, fixture.photographer.requiredId)
+        aiFolders.materializeFromAnalysis(fixture.galleryId)
         clearActivity(fixture)
         organization.save(fixture.galleryId, fixture.member.requiredId)
         assertRecorded(fixture)
@@ -80,7 +94,7 @@ class RecommendationActivityTest @Autowired constructor(
     @Test
     fun `추천 접수는 기록하지만 조회와 비동기 적재는 접수 시각을 바꾸지 않는다`() {
         val fixture = prepared()
-        aiFolders.createFromAnalysis(fixture.galleryId, fixture.photographer.requiredId)
+        aiFolders.materializeFromAnalysis(fixture.galleryId)
         clearActivity(fixture)
         llm.reset()
         llm.isEnabled = false
@@ -98,7 +112,7 @@ class RecommendationActivityTest @Autowired constructor(
     fun `폴더 저장과 추천 접수가 롤백되면 활동도 남지 않는다`() {
         val fixture = prepared()
         TransactionTemplate(transactions).executeWithoutResult { tx ->
-            aiFolders.createFromAnalysis(fixture.galleryId, fixture.photographer.requiredId)
+            aiFolders.materializeFromAnalysis(fixture.galleryId)
             service.request(fixture.galleryId, fixture.member.requiredId, AiRecommendationRequest())
             assertRecorded(fixture)
             tx.setRollbackOnly()
