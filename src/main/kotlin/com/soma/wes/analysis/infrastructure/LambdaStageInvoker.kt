@@ -14,19 +14,22 @@ import software.amazon.awssdk.core.exception.SdkException
 import software.amazon.awssdk.services.lambda.LambdaClient
 import software.amazon.awssdk.services.lambda.model.InvocationType
 import software.amazon.awssdk.services.lambda.model.InvokeRequest
+import tools.jackson.databind.ObjectMapper
 
 /**
  * 운영 실행기 — 호출 종류마다 다른 Lambda 함수를 EVENT로 부른다. 로컬 프로필에서는 [LocalProcessStageInvoker]가 이 자리를 대신한다.
  *
- * 페이로드는 AI repo 계약 그대로다:
- * - embedder·score `{galleryId, photoIds}` — `jobId` 키는 임베더가 관리자 사진 교체 이벤트로 해석하므로 쓰지 않는다.
+ * 페이로드는 [StageCallDto]를 그대로 직렬화한 것이다 — 프로퍼티 이름이 곧 AI repo 계약의 키다:
+ * - embedder·score `{galleryId, photoIds}` — `jobId` 키는 임베더가 관리자 사진 교체 이벤트로 해석하므로 배정에는 없다.
  * - categorize `{galleryId, jobId}`.
+ * - exact photo(관리자 사진 교체) `{jobId, attemptCount, jobType, photoId, galleryId, storageKey, revisionId}` — embedder 함수로 간다.
  */
 @Component
 @Profile("!local")
 class LambdaStageInvoker(
     private val lambdaClient: LambdaClient,
     private val properties: AnalysisProperties,
+    private val objectMapper: ObjectMapper,
 ) : StageInvoker {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -35,7 +38,7 @@ class LambdaStageInvoker(
 
     override fun invoke(call: StageCallDto) {
         val functionName = properties.functionNameOf(call::class)
-        val payload = payloadOf(call)
+        val payload = objectMapper.writeValueAsBytes(call)
 
         val statusCode = try {
             lambdaClient.invoke(
@@ -43,7 +46,7 @@ class LambdaStageInvoker(
                     .functionName(functionName)
                     // EVENT는 큐에 넣고 즉시 돌아온다. RequestResponse로 부르면 15분짜리 작업을 스윕 스레드가 붙들고 기다린다.
                     .invocationType(InvocationType.EVENT)
-                    .payload(SdkBytes.fromUtf8String(payload))
+                    .payload(SdkBytes.fromByteArray(payload))
                     .build(),
             ).statusCode()
         } catch (e: SdkException) {
@@ -62,17 +65,11 @@ class LambdaStageInvoker(
         /** EVENT 호출이 큐에 들어갔을 때 Lambda가 돌려주는 상태 코드. */
         private const val ACCEPTED = 202
 
-        /** 페이로드를 문자열로 조립해도 안전한 이유: 전부 Long이라 사용자 문자열이 끼어들 자리가 없다. */
-        fun payloadOf(call: StageCallDto): String = when (call) {
-            is StageCallDto.Embed -> """{"galleryId":${call.galleryId},"photoIds":${call.photoIds.joinToString(",", "[", "]")}}"""
-            is StageCallDto.Score -> """{"galleryId":${call.galleryId},"photoIds":${call.photoIds.joinToString(",", "[", "]")}}"""
-            is StageCallDto.Categorize -> """{"galleryId":${call.galleryId},"jobId":${call.jobId}}"""
-        }
-
         private fun describe(call: StageCallDto): String = when (call) {
             is StageCallDto.Embed -> "embed gallery=${call.galleryId} photos=${call.photoIds.size}"
             is StageCallDto.Score -> "score gallery=${call.galleryId} photos=${call.photoIds.size}"
             is StageCallDto.Categorize -> "categorize gallery=${call.galleryId} job=${call.jobId}"
+            is StageCallDto.ExactPhoto -> "exact-photo gallery=${call.galleryId} photo=${call.photoId} job=${call.jobId} attempt=${call.attemptCount} type=${call.jobType}"
         }
     }
 }

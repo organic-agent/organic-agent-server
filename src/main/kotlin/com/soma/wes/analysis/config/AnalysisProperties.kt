@@ -69,7 +69,7 @@ data class AnalysisProperties(
         get() = localScriptDir.isNotBlank()
 
     fun functionNameOf(call: KClass<out StageCallDto>): String = when (call) {
-        StageCallDto.Embed::class -> embedderFunctionName
+        StageCallDto.Embed::class, StageCallDto.ExactPhoto::class -> embedderFunctionName
         StageCallDto.Score::class -> scoreFunctionName
         StageCallDto.Categorize::class -> categorizeFunctionName
         else -> error("모르는 단계 호출: $call")
@@ -79,7 +79,7 @@ data class AnalysisProperties(
 
         /** 단계 호출 → 로컬 대역 스크립트 이름. 운영 Lambda 함수·AI repo 모듈과 같은 이름이라 셋을 나란히 읽을 수 있다. */
         fun localFunctionOf(call: KClass<out StageCallDto>): String = when (call) {
-            StageCallDto.Embed::class -> "embedder"
+            StageCallDto.Embed::class, StageCallDto.ExactPhoto::class -> "embedder"
             StageCallDto.Score::class -> "score"
             StageCallDto.Categorize::class -> "categorize"
             else -> error("모르는 단계 호출: $call")

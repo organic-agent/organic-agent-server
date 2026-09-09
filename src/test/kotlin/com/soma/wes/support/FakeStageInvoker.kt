@@ -37,6 +37,9 @@ class FakeStageInvoker : StageInvoker {
     val categorizeCalls: List<StageCallDto.Categorize>
         get() = calls.toList().filterIsInstance<StageCallDto.Categorize>()
 
+    val exactPhotoCalls: List<StageCallDto.ExactPhoto>
+        get() = calls.toList().filterIsInstance<StageCallDto.ExactPhoto>()
+
     /** 임베더에 보낸 사진 id 전부(갤러리 무관). */
     val embeddedPhotoIds: List<Long>
         get() = embedCalls.flatMap { it.photoIds }
