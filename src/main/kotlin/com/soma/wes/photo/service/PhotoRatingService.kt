@@ -1,5 +1,6 @@
 package com.soma.wes.photo.service
 
+import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.domain.PhotoRating
 import com.soma.wes.photo.dto.request.RatePhotoRequest
@@ -19,6 +20,7 @@ class PhotoRatingService(
     private val galleryAccessPolicy: GalleryAccessPolicy,
     private val photoRepository: PhotoRepository,
     private val photoRatingRepository: PhotoRatingRepository,
+    private val activityRecorder: ActivityRecorder,
 ) {
 
     /** 별점을 매긴다. 같은 사진에 다시 부르면 덮어쓴다.*/
@@ -35,13 +37,10 @@ class PhotoRatingService(
             ?: throw PhotoException(PhotoErrorCode.PHOTO_NOT_FOUND)
 
         val rating = photoRatingRepository.findByPhotoId(photo.requiredId)
-            ?: return PhotoRatingResponse.from(
-                photoRatingRepository.save(
-                    PhotoRating.of(photo.requiredId, request.score, userId)
-                ),
-            )
+            ?.apply { rate(request.score, userId) }
+            ?: photoRatingRepository.save(PhotoRating.of(photo.requiredId, request.score, userId))
 
-        rating.rate(request.score, userId)
+        activityRecorder.recordGallery(galleryId)
         return PhotoRatingResponse.from(rating)
     }
 
@@ -56,5 +55,6 @@ class PhotoRatingService(
             ?: throw PhotoException(PhotoErrorCode.PHOTO_NOT_FOUND)
 
         photoRatingRepository.deleteByPhotoId(photo.requiredId)
+        activityRecorder.recordGallery(galleryId)
     }
 }

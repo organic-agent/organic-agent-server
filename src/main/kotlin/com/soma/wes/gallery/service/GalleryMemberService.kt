@@ -1,5 +1,6 @@
 package com.soma.wes.gallery.service
 
+import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.gallery.dto.response.GalleryMemberResponse
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
@@ -29,6 +30,7 @@ class GalleryMemberService(
     private val workspaceMemberRepository: WorkspaceMemberRepository,
     private val notificationPublisher: UserNotificationPublisher,
     private val workspaceRepository: WorkspaceRepository,
+    private val activityRecorder: ActivityRecorder,
 ) {
 
     /**
@@ -69,6 +71,7 @@ class GalleryMemberService(
                 .find { it.requiredId == memberId } ?: throw GalleryException(GalleryErrorCode.MEMBER_NOT_FOUND)
             if (target.role == WorkspaceRole.OWNER) throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
             workspaceMemberRepository.delete(target)
+            activityRecorder.recordGallery(galleryId)
             notificationPublisher.publish(
                 userIds = listOf(target.userId),
                 type = UserNotificationType.MEMBERSHIP_REMOVED,
@@ -82,6 +85,7 @@ class GalleryMemberService(
 
         val member = galleryMemberRepository.requireByIdAndGalleryId(memberId, galleryId)
         galleryMemberRepository.delete(member)
+        activityRecorder.recordGallery(galleryId)
         notificationPublisher.publish(
             userIds = listOf(member.userId),
             type = UserNotificationType.MEMBERSHIP_REMOVED,
@@ -102,6 +106,7 @@ class GalleryMemberService(
                 ?: throw GalleryException(GalleryErrorCode.MEMBER_NOT_FOUND)
             if (target.role == WorkspaceRole.OWNER) throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
             workspaceMemberRepository.delete(target)
+            activityRecorder.recordGallery(galleryId)
             notifyLeave(galleryId, gallery.workspaceId, gallery.title)
             return
         }
@@ -110,6 +115,7 @@ class GalleryMemberService(
                 com.soma.wes.gallery.exception.GalleryErrorCode.MEMBER_NOT_FOUND,
             )
         galleryMemberRepository.delete(member)
+        activityRecorder.recordGallery(galleryId)
         notifyLeave(galleryId, gallery.workspaceId, gallery.title)
     }
 

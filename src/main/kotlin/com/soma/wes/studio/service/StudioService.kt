@@ -1,5 +1,6 @@
 package com.soma.wes.studio.service
 
+import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.notification.domain.UserNotificationScope
 import com.soma.wes.notification.domain.UserNotificationType
@@ -35,6 +36,7 @@ class StudioService(
     private val notificationPublisher: UserNotificationPublisher,
     private val galleryRepository: GalleryRepository,
     private val galleryMemberRepository: GalleryMemberRepository,
+    private val activityRecorder: ActivityRecorder,
 ) {
 
     @Transactional
@@ -160,6 +162,7 @@ class StudioService(
         }
 
         workspaceMemberRepository.delete(membership)
+        activityRecorder.recordWorkspace(workspaceId)
         val owners = workspaceMemberRepository.findAllByWorkspaceId(workspaceId)
             .filter { it.role == WorkspaceRole.OWNER }
             .map { it.userId }
@@ -204,6 +207,7 @@ class StudioService(
             throw StudioException(StudioErrorCode.LAST_OWNER_PROTECTED)
         }
         target.role = request.role
+        activityRecorder.recordWorkspace(workspaceId)
         return StudioMemberResponse.from(target, userRepository.requireById(target.userId))
     }
 
@@ -220,6 +224,7 @@ class StudioService(
             ?: throw StudioException(StudioErrorCode.STUDIO_ACCESS_DENIED)
         if (member.role == WorkspaceRole.OWNER) throw StudioException(StudioErrorCode.LAST_OWNER_PROTECTED)
         workspaceMemberRepository.delete(member)
+        activityRecorder.recordWorkspace(workspaceId)
         notificationPublisher.publish(
             userIds = listOf(member.userId),
             type = UserNotificationType.MEMBERSHIP_REMOVED,

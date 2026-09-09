@@ -14,6 +14,8 @@ class UserNotificationServiceTest @Autowired constructor(
     private val notificationService: UserNotificationService,
     private val userFixture: UserFixture,
     private val jdbc: org.springframework.jdbc.core.JdbcTemplate,
+    private val galleryFixture: com.soma.wes.gallery.fixture.GalleryFixture,
+    private val galleryRepository: com.soma.wes.gallery.repository.GalleryRepository,
 ) {
     @Test
     fun `설정은 기본값을 주고 PUT 값으로 저장한다`() {
@@ -92,4 +94,78 @@ class UserNotificationServiceTest @Autowired constructor(
         assertThat(result.updatedCount).isEqualTo(1)
         assertThat(result.unreadCount).isEqualTo(1L)
     }
+    @Test
+    fun `스튜디오에는 직접 알림과 그 갤러리 알림만 모이고 다른 사용자와 범위는 분리된다`() {
+        // given
+        val a = galleryFixture.멤버와_열린_갤러리()
+        val b = galleryFixture.멤버와_열린_갤러리()
+        val workspaceId = galleryRepository.findById(a.galleryId).orElseThrow().workspaceId
+        val userId = a.photographer.requiredId
+        for ((scope, id, title) in listOf(
+            Triple(UserNotificationScope.STUDIO, workspaceId, "스튜디오"),
+            Triple(UserNotificationScope.GALLERY, a.galleryId, "제출"),
+            Triple(UserNotificationScope.GALLERY, b.galleryId, "다른 스튜디오"),
+        )) notificationService.publish(listOf(userId), UserNotificationType.SELECTION_SUBMITTED, scope, id, title, title)
+        notificationService.publish(listOf(b.photographer.requiredId), UserNotificationType.SELECTION_SUBMITTED,
+            UserNotificationScope.GALLERY, a.galleryId, "다른 사용자", "다른 사용자")
+        notificationService.publish(listOf(userId), UserNotificationType.WORKSPACE_DELETED,
+            UserNotificationScope.GLOBAL, null, "전역", "전역")
+
+        // when & then
+        assertThat(notificationService.list(userId, UserNotificationScope.STUDIO, workspaceId).map { it.title })
+            .containsExactly("제출", "스튜디오")
+        assertThat(notificationService.list(userId, UserNotificationScope.GALLERY, a.galleryId).map { it.title })
+            .containsExactly("제출")
+        assertThat(notificationService.list(userId, UserNotificationScope.GLOBAL, null).map { it.title })
+            .containsExactly("전역")
+        val result = notificationService.read(userId, com.soma.wes.notification.dto.ReadUserNotificationsRequest(
+            all = true, scope = UserNotificationScope.STUDIO, scopeId = workspaceId,
+        ))
+        assertThat(result.updatedCount).isEqualTo(2)
+        assertThat(result.unreadCount).isEqualTo(2L)
+        assertThat(notificationService.list(b.photographer.requiredId, null, null).single().readAt).isNull()
+    }
+
+    @Test
+    fun `삭제된 갤러리의 알림도 발생 당시 스튜디오에서 조회하고 읽는다`() {
+        // given
+        val fixture = galleryFixture.멤버와_열린_갤러리()
+        val workspaceId = galleryRepository.findById(fixture.galleryId).orElseThrow().workspaceId
+        jdbc.update("update galleries set deleted_at = now() where id = ?", fixture.galleryId)
+        notificationService.publish(listOf(fixture.photographer.requiredId), UserNotificationType.GALLERY_REOPENED,
+            UserNotificationScope.GALLERY, fixture.galleryId, "이력", "이력")
+        jdbc.update("delete from galleries where id = ?", fixture.galleryId)
+
+        // when
+        val found = notificationService.list(fixture.photographer.requiredId, UserNotificationScope.STUDIO, workspaceId)
+        val result = notificationService.read(fixture.photographer.requiredId,
+            com.soma.wes.notification.dto.ReadUserNotificationsRequest(found.map { it.id }, scope = UserNotificationScope.STUDIO, scopeId = workspaceId))
+
+        // then
+        assertThat(found.single().title).isEqualTo("이력")
+        assertThat(found.single().scopeId).isEqualTo(fixture.galleryId)
+        assertThat(result.updatedCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `스튜디오 범위로 읽을 때 다른 스튜디오 알림이 섞이면 전체를 거절한다`() {
+        // given
+        val a = galleryFixture.멤버와_열린_갤러리()
+        val b = galleryFixture.멤버와_열린_갤러리()
+        val workspaceId = galleryRepository.findById(a.galleryId).orElseThrow().workspaceId
+        for (id in listOf(a.galleryId, b.galleryId)) notificationService.publish(
+            listOf(a.photographer.requiredId), UserNotificationType.SELECTION_SUBMITTED,
+            UserNotificationScope.GALLERY, id, "제출", "제출")
+        val ids = notificationService.list(a.photographer.requiredId, null, null).map { it.id }
+
+        // when & then
+        org.assertj.core.api.Assertions.assertThatThrownBy {
+            notificationService.read(a.photographer.requiredId, com.soma.wes.notification.dto.ReadUserNotificationsRequest(
+                ids, scope = UserNotificationScope.STUDIO, scopeId = workspaceId,
+            ))
+        }.isInstanceOf(com.soma.wes.notification.exception.NotificationException::class.java)
+            .extracting("errorCode").isEqualTo(com.soma.wes.notification.exception.NotificationErrorCode.NOTIFICATION_NOT_FOUND)
+        assertThat(notificationService.list(a.photographer.requiredId, null, null)).allMatch { it.readAt == null }
+    }
+
 }

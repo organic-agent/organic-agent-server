@@ -1,5 +1,6 @@
 package com.soma.wes.photo.service
 
+import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.global.page.PageRequests
 import com.soma.wes.global.page.PageResponse
@@ -27,6 +28,7 @@ class PhotoCommentService(
     private val commentRepository: PhotoCommentRepository,
     private val userRepository: UserRepository,
     private val clock: Clock,
+    private val activityRecorder: ActivityRecorder,
 ) {
     @Transactional(readOnly = true)
     fun list(galleryId: Long, photoId: Long, userId: Long, page: Int, size: Int): PageResponse<PhotoCommentResponse> {
@@ -53,6 +55,7 @@ class PhotoCommentService(
 
         val author = userRepository.requireById(userId)
         val comment = commentRepository.save(PhotoComment.of(photoId, author.requiredId, request.content))
+        activityRecorder.recordGallery(galleryId)
         return PhotoCommentResponse.of(comment, author.nickname, userId)
     }
 
@@ -64,6 +67,7 @@ class PhotoCommentService(
         val comment = commentRepository.findByIdAndPhotoId(commentId, photoId)
             ?: throw PhotoException(PhotoErrorCode.COMMENT_NOT_FOUND)
         comment.deleteBy(userId, ZonedDateTime.now(clock))
+        activityRecorder.recordGallery(galleryId)
     }
 
     private fun requireUploaded(photo: Photo?) {

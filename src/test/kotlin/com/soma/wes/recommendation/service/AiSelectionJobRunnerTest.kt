@@ -16,7 +16,10 @@ import com.soma.wes.recommendation.fixture.RecommendationFixture
 import com.soma.wes.recommendation.repository.AiRecommendationRepository
 import com.soma.wes.recommendation.repository.AiSelectionJobRepository
 import com.soma.wes.recommendation.support.AiSelectionJobRecovery
+import com.soma.wes.selection.dto.request.DeselectPhotosRequest
+import com.soma.wes.selection.dto.request.SelectPhotosRequest
 import com.soma.wes.selection.fixture.SelectionFixture
+import com.soma.wes.selection.service.PhotoSelectionService
 import com.soma.wes.support.FakeStructuredLlmClient
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.support.ManualAiJobExecutor
@@ -42,6 +45,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
     private val photoFixture: PhotoFixture,
     private val recommendationFixture: RecommendationFixture,
     private val selectionFixture: SelectionFixture,
+    private val photoSelectionService: PhotoSelectionService,
     private val llm: FakeStructuredLlmClient,
     private val executor: ManualAiJobExecutor,
     private val jdbcTemplate: JdbcTemplate,
@@ -102,6 +106,71 @@ class AiSelectionJobRunnerTest @Autowired constructor(
 
     private fun reasonsJson(photoIds: Collection<Long>, text: (Long) -> String = { "사진 $it 이유" }): String =
         photoIds.joinToString(",", prefix = """{"reasons":[""", postfix = "]}") { """{"photo_id":"$it","reason":"${text(it)}"}""" }
+
+    @Nested
+    inner class NaturalLanguageAndCount {
+        @Test
+        fun `폴더에서 지정한 장수를 뽑고 이미 선택한 사진은 뺀다`() {
+            val w = world()
+            llm.isEnabled = false
+            val selectionId = selectionFixture.셀렉(fixture.galleryId)
+            selectionFixture.담긴_사진(selectionId, listOf(w.garden.first()))
+            val response = aiRecommendationService.request(fixture.galleryId, fixture.member.id!!,
+                AiRecommendationRequest(detailFolderId = w.gardenFolderId, targetCount = 2))
+            runner.run(response.jobId)
+            val job = aiSelectionJobRepository.findById(response.jobId).orElseThrow()
+            val photos = aiRecommendationRepository.findAllBySelectionIdAndRound(selectionId, 1)
+            assertThat(job.status).isEqualTo(AiJobStatus.DONE)
+            assertThat(photos.map { it.photoId }).containsExactly(w.garden.last())
+            val exposed = aiRecommendationService.list(fixture.galleryId, fixture.member.id!!, null).job!!
+            assertThat(exposed.recommendedCount).isEqualTo(1)
+            assertThat(exposed.shortfallCount).isEqualTo(1)
+        }
+
+        @Test
+        fun `전체 갤러리의 명시한 장수는 폴더별 반올림으로 초과하지 않는다`() {
+            world()
+            llm.isEnabled = false
+            val response = aiRecommendationService.request(fixture.galleryId, fixture.member.id!!,
+                AiRecommendationRequest(targetCount = 2))
+            runner.run(response.jobId)
+            assertThat(aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1)).hasSize(2)
+            assertThat(aiSelectionJobRepository.findById(response.jobId).orElseThrow().status).isEqualTo(AiJobStatus.DONE)
+        }
+
+        @Test
+        fun `문장의 범위와 장수를 저장하고 복구 시 다시 해석하지 않는다`() {
+            val w = world()
+            llm.respondWith("""{"status":"RESOLVED","scope":"FOLDERS","detailFolderIds":["${w.gardenFolderId}"],"targetCount":2}""")
+            val response = aiRecommendationService.request(fixture.galleryId, fixture.member.id!!,
+                AiRecommendationRequest(prompt = "정원 사진에서 2장 골라줘"))
+            runner.run(response.jobId)
+            val first = aiSelectionJobRepository.findById(response.jobId).orElseThrow()
+            assertThat(first.status).isEqualTo(AiJobStatus.DONE)
+            assertThat(first.resolvedQuery?.detailFolderIds).containsExactly(w.gardenFolderId)
+            assertThat(first.resolvedQuery?.targetCount).isEqualTo(2)
+            assertThat(aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1).map { it.photoId })
+                .containsExactlyInAnyOrderElementsOf(w.garden)
+            val calls = llm.calls
+            jdbcTemplate.update("UPDATE ai_selection_jobs SET status = 'PENDING' WHERE id = ?", response.jobId)
+            llm.isEnabled = false
+            runner.run(response.jobId)
+            assertThat(aiSelectionJobRepository.findById(response.jobId).orElseThrow().status).isEqualTo(AiJobStatus.DONE)
+            assertThat(llm.calls).isEqualTo(calls)
+            assertThat(aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1)).hasSize(2)
+        }
+
+        @Test
+        fun `AI가 다른 갤러리 폴더를 반환하면 추천을 만들지 않고 실패한다`() {
+            world()
+            llm.respondWith("""{"status":"RESOLVED","scope":"FOLDERS","detailFolderIds":["99999999"],"targetCount":2}""")
+            val response = aiRecommendationService.request(fixture.galleryId, fixture.member.id!!,
+                AiRecommendationRequest(prompt = "정원에서 2장 골라줘"))
+            runner.run(response.jobId)
+            assertThat(aiSelectionJobRepository.findById(response.jobId).orElseThrow().status).isEqualTo(AiJobStatus.FAILED)
+            assertThat(aiRecommendationRepository.findAllBySelectionId(response.selectionId)).isEmpty()
+        }
+    }
 
     @Nested
     @DisplayName("첫 라운드(draft)를 돌릴 때")
@@ -424,6 +493,136 @@ class AiSelectionJobRunnerTest @Autowired constructor(
     @Nested
     @DisplayName("잡 생애를 다룰 때")
     inner class Lifecycle {
+
+        @Test
+        fun `추천 적재 뒤 사진을 담아도 복구는 저장한 장수와 누락된 이유를 유지한다`() {
+            // given — 1단계 적재와 일부 이유만 커밋된 시점의 상태를 재현한다.
+            val w = world()
+            llm.isEnabled = false
+            val response = aiRecommendationService.request(fixture.galleryId, fixture.member.id!!,
+                AiRecommendationRequest(detailFolderId = w.gardenFolderId, targetCount = 2))
+            executor.runAll()
+            val before = aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1)
+            val reasons = before.associate { it.photoId to it.reason }
+            jdbcTemplate.update("UPDATE ai_recommendations SET reason = NULL WHERE photo_id = ?", w.garden.last())
+            jdbcTemplate.update("UPDATE ai_selection_jobs SET status = 'RUNNING', finished_at = NULL, result = NULL WHERE id = ?",
+                response.jobId)
+            photoSelectionService.select(fixture.galleryId, fixture.member.id!!, SelectPhotosRequest(photoIds = w.garden))
+
+            // when
+            recovery.recoverOnStartup()
+            executor.runAll()
+
+            // then — 새 후보는 없지만 이미 제시한 2장의 이유를 마저 채운다.
+            val after = aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1)
+            val view = aiRecommendationService.list(fixture.galleryId, fixture.member.id!!, null)
+            assertSoftly { softly ->
+                softly.assertThat(after.map { it.requiredId }).containsExactlyInAnyOrderElementsOf(before.map { it.requiredId })
+                softly.assertThat(after.associate { it.photoId to it.reason }).isEqualTo(reasons)
+                softly.assertThat(view.job!!.status).isEqualTo(AiJobStatus.DONE)
+                softly.assertThat(view.job!!.recommendedCount).isEqualTo(2)
+                softly.assertThat(view.job!!.shortfallCount).isZero()
+                softly.assertThat(view.photos).hasSize(2).allMatch { it.selected && it.reasonReady }
+            }
+        }
+
+        @Test
+        fun `0장 라운드가 확정된 뒤 후보가 늘어도 복구에서 새로 추천하지 않는다`() {
+            // given
+            val w = world()
+            llm.isEnabled = false
+            photoSelectionService.select(fixture.galleryId, fixture.member.id!!, SelectPhotosRequest(photoIds = w.garden))
+            val response = aiRecommendationService.request(fixture.galleryId, fixture.member.id!!,
+                AiRecommendationRequest(detailFolderId = w.gardenFolderId, targetCount = 2))
+            executor.runAll()
+            assertThat(aiSelectionJobRepository.findById(response.jobId).orElseThrow().round).isEqualTo(1)
+            jdbcTemplate.update("UPDATE ai_selection_jobs SET status = 'RUNNING', finished_at = NULL, result = NULL WHERE id = ?",
+                response.jobId)
+            photoSelectionService.deselect(fixture.galleryId, fixture.member.id!!, DeselectPhotosRequest(photoIds = w.garden))
+
+            // when
+            recovery.recoverOnStartup()
+            executor.runAll()
+
+            // then
+            val view = aiRecommendationService.list(fixture.galleryId, fixture.member.id!!, null)
+            assertSoftly { softly ->
+                softly.assertThat(view.job!!.status).isEqualTo(AiJobStatus.DONE)
+                softly.assertThat(view.job!!.round).isEqualTo(1)
+                softly.assertThat(view.job!!.recommendedCount).isZero()
+                softly.assertThat(view.job!!.shortfallCount).isEqualTo(2)
+                softly.assertThat(view.photos).isEmpty()
+            }
+        }
+
+        @Test
+        fun `이전 버전 추천은 분석과 폴더가 사라져도 저장된 사실로 이유를 복구하고 요약을 보존한다`() {
+            // given — 템플릿을 저장하지 않던 버전의 행과 이미 저장된 운영 요약.
+            val w = world()
+            llm.isEnabled = false
+            val response = aiRecommendationService.request(fixture.galleryId, fixture.member.id!!,
+                AiRecommendationRequest(detailFolderId = w.gardenFolderId, targetCount = 2))
+            executor.runAll()
+            val before = aiSelectionJobRepository.findById(response.jobId).orElseThrow().result!!
+            val facts = aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1)
+                .associate { it.photoId to (it.scoreBreakdown["facts"] as List<*>).joinToString(" ") }
+            jdbcTemplate.update("UPDATE ai_recommendations SET reason = NULL, score_breakdown = score_breakdown - 'reason_fallback' WHERE selection_id = ?",
+                response.selectionId)
+            jdbcTemplate.update("UPDATE ai_selection_jobs SET status = 'RUNNING', finished_at = NULL WHERE id = ?", response.jobId)
+            jdbcTemplate.update("DELETE FROM detail_folders WHERE id = ?", w.gardenFolderId)
+            jdbcTemplate.update("DELETE FROM photo_analysis WHERE photo_id IN (SELECT id FROM photos WHERE gallery_id = ?)", fixture.galleryId)
+
+            // when
+            recovery.recoverOnStartup()
+            executor.runAll()
+
+            // then
+            val after = aiSelectionJobRepository.findById(response.jobId).orElseThrow()
+            val recommendations = aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1)
+            assertSoftly { softly ->
+                softly.assertThat(after.status).isEqualTo(AiJobStatus.DONE)
+                softly.assertThat(recommendations.associate { it.photoId to it.reason }).isEqualTo(facts)
+                softly.assertThat(after.result!!["selected"]).isEqualTo(before["selected"])
+                softly.assertThat(after.result!!["target"]).isEqualTo(before["target"])
+                softly.assertThat(after.result!!["misfitPhotoIds"]).isEqualTo(before["misfitPhotoIds"])
+                softly.assertThat((after.result!!["k"] as Number).toInt()).isEqualTo(2)
+                softly.assertThat((after.result!!["reasonReady"] as Number).toInt()).isEqualTo(2)
+            }
+        }
+
+        @Test
+        fun `복구는 거절하거나 휴지통에 넣은 추천을 장수와 이유 생성에서 제외한다`() {
+            // given
+            world()
+            llm.isEnabled = false
+            val response = aiRecommendationService.request(fixture.galleryId, fixture.member.id!!,
+                AiRecommendationRequest(targetCount = 3))
+            executor.runAll()
+            val original = aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1)
+                .sortedBy { it.photoId }
+            assertThat(original).hasSize(3)
+            jdbcTemplate.update("UPDATE ai_recommendations SET reason = NULL WHERE selection_id = ?", response.selectionId)
+            jdbcTemplate.update("UPDATE ai_recommendations SET rejected_at = now() WHERE id = ?", original[0].requiredId)
+            jdbcTemplate.update("UPDATE photos SET deleted_at = now() WHERE id = ?", original[1].photoId)
+            jdbcTemplate.update("UPDATE ai_selection_jobs SET status = 'RUNNING', finished_at = NULL WHERE id = ?", response.jobId)
+
+            // when
+            recovery.recoverOnStartup()
+            executor.runAll()
+
+            // then
+            val view = aiRecommendationService.list(fixture.galleryId, fixture.member.id!!, null)
+            val after = aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1).associateBy { it.requiredId }
+            assertSoftly { softly ->
+                softly.assertThat(view.job!!.status).isEqualTo(AiJobStatus.DONE)
+                softly.assertThat(view.job!!.recommendedCount).isEqualTo(1)
+                softly.assertThat(view.job!!.shortfallCount).isEqualTo(2)
+                softly.assertThat(view.photos.map { it.photo.photoId }).containsExactly(original[2].photoId)
+                softly.assertThat(after.getValue(original[0].requiredId).reason).isNull()
+                softly.assertThat(after.getValue(original[1].requiredId).reason).isNull()
+                softly.assertThat(after.getValue(original[2].requiredId).reason).isNotBlank()
+            }
+        }
 
         @Test
         fun `요청은 커밋 뒤 실행기에 넘기고 실행기가 돌면 DONE이 된다`() {

@@ -19,6 +19,22 @@ interface UserNotificationRepository : JpaRepository<UserNotification, Long> {
     """)
     fun findRecent(userId: Long, since: ZonedDateTime, scope: UserNotificationScope?, scopeId: Long?): List<UserNotification>
 
+    @Query("""
+        select n from UserNotification n where n.userId = :userId and n.createdAt >= :since and (
+            (n.scope = com.soma.wes.notification.domain.UserNotificationScope.STUDIO and (:workspaceId is null or n.scopeId = :workspaceId))
+            or (n.scope = com.soma.wes.notification.domain.UserNotificationScope.GALLERY and n.studioWorkspaceId is not null
+                and (:workspaceId is null or n.studioWorkspaceId = :workspaceId))
+        ) order by n.createdAt desc, n.id desc
+    """)
+    fun findRecentForStudio(userId: Long, since: ZonedDateTime, workspaceId: Long?): List<UserNotification>
+
+    /** 삭제된 부모의 콘텐츠를 반환하지 않고 알림 이력의 소속만 보존하는 조회다. */
+    @Query(value = """
+        select g.workspace_id from galleries g join workspaces w on w.id = g.workspace_id
+        where g.id = :galleryId and w.type = 'STUDIO'
+    """, nativeQuery = true)
+    fun findStudioWorkspaceIdForHistory(galleryId: Long): Long?
+
     fun findAllByUserIdOrderByCreatedAtDescIdDesc(userId: Long): List<UserNotification>
     fun findAllByUserIdAndScopeOrderByCreatedAtDescIdDesc(
         userId: Long,

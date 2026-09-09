@@ -35,6 +35,10 @@ class UserNotification(
     @Column(name = "scope_id", updatable = false)
     val scopeId: Long? = null,
 
+    /** 알림 발생 시 스튜디오 소속. 갤러리 삭제 후에도 과거 알림을 모아 보여 준다. */
+    @Column(name = "studio_workspace_id", updatable = false)
+    val studioWorkspaceId: Long? = null,
+
     @Column(nullable = false, updatable = false, length = 100)
     val title: String,
 

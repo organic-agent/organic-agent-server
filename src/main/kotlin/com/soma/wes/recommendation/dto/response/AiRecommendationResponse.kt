@@ -23,6 +23,9 @@ data class AiRecommendationResponse(
     val selected: Boolean,
 
     val photo: PhotoResponse,
+
+    @field:Schema(description = "이 사진을 추천한 라운드. 현재 잡의 답변만 표시하려면 job.round와 비교한다.")
+    val round: Int? = null,
 ) {
 
     companion object {
@@ -39,6 +42,7 @@ data class AiRecommendationResponse(
             reasonReady = recommendation.reason != null,
             selected = selected,
             photo = photo,
+            round = recommendation.round,
         )
     }
 }

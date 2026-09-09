@@ -50,6 +50,10 @@ class GalleryInvite(
     @Column(name = "revoked_at")
     var revokedAt: ZonedDateTime? = null,
 
+    /** 실제 발급자. 이전 링크나 탈퇴한 발급자는 null일 수 있다. */
+    @Column(name = "issued_by_user_id", updatable = false)
+    val issuedByUserId: Long? = null,
+
 ) : BaseEntity() {
 
     @Id

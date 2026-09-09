@@ -1,5 +1,6 @@
 package com.soma.wes.collab.service
 
+import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.category.exception.CategoryErrorCode
 import com.soma.wes.category.exception.CategoryException
 import com.soma.wes.category.repository.ConceptFolderRepository
@@ -39,6 +40,7 @@ class CollabSessionService(
     private val memberships: CollabSessionPhotoRepository,
     private val likes: CollabPhotoLikeRepository,
     private val photoMembership: CollabPhotoMembership,
+    private val activityRecorder: ActivityRecorder,
 ) {
     @Transactional
     fun open(galleryId: Long, userId: Long, request: OpenCollabSessionRequest): CollabSessionResponse {
@@ -60,6 +62,7 @@ class CollabSessionService(
             session.rename(name)
             session.updateCover(request.coverTitle, request.coverAuthor)
             request.includeAllAlbums?.let { session.includeAllAlbums = it }
+            activityRecorder.recordGallery(galleryId)
             return toResponse(session)
         }
         val session = CollabSession.of(galleryId, concept?.requiredId, name, tokenGenerator.generate()).apply {
@@ -69,6 +72,7 @@ class CollabSessionService(
         }
         sessionRepository.saveAndFlush(session)
         saveMemberships(session, photoIds)
+        activityRecorder.recordGallery(galleryId)
         return toResponse(session)
     }
 
@@ -84,6 +88,7 @@ class CollabSessionService(
         if (added.isNotEmpty()) {
             saveMemberships(session, added)
             session.photosChanged(ZonedDateTime.now(clock))
+            activityRecorder.recordGallery(galleryId)
         }
         return toResponse(session)
     }
@@ -101,6 +106,7 @@ class CollabSessionService(
             commentRepository.deleteAllByCollabSessionIdAndPhotoIdIn(sessionId, removed)
             memberships.deleteMemberships(sessionId, removed)
             session.photosChanged(ZonedDateTime.now(clock))
+            activityRecorder.recordGallery(galleryId)
         }
         return toResponse(session)
     }
@@ -121,6 +127,7 @@ class CollabSessionService(
         if (session.conceptFolderId != null) {
             saveMemberships(session, ids)
             session.convertToManual(ZonedDateTime.now(clock))
+            activityRecorder.recordGallery(galleryId)
             sessionRepository.flush()
         }
         return toResponse(session)
@@ -165,6 +172,7 @@ class CollabSessionService(
         request.name?.let(session::rename)
         session.updateCover(request.coverTitle, request.coverAuthor)
         request.includeAllAlbums?.let { session.includeAllAlbums = it }
+        activityRecorder.recordGallery(galleryId)
         return toResponse(session)
     }
 
@@ -173,6 +181,7 @@ class CollabSessionService(
         galleryAccessPolicy.requireCollabManager(galleryId, userId, writable = true)
         val session = lockSession(galleryId, sessionId)
         session.republish(tokenGenerator.generate(), ZonedDateTime.now(clock).plusDays(LINK_TTL_DAYS))
+        activityRecorder.recordGallery(galleryId)
         return toResponse(session)
     }
 
@@ -180,6 +189,7 @@ class CollabSessionService(
     fun revoke(galleryId: Long, sessionId: Long, userId: Long) {
         galleryAccessPolicy.requireCollabManager(galleryId, userId, writable = false)
         lockSession(galleryId, sessionId).revoke(ZonedDateTime.now(clock))
+        activityRecorder.recordGallery(galleryId)
     }
 
     @Transactional
@@ -191,6 +201,7 @@ class CollabSessionService(
         if (comment.collabSessionId != sessionId || !productChildTrashService.deleteUserComment(sessionId, commentId)) {
             throw CollabException(CollabErrorCode.COMMENT_NOT_FOUND)
         }
+        activityRecorder.recordGallery(galleryId)
     }
 
     private fun toResponse(session: CollabSession): CollabSessionResponse = CollabSessionResponse.of(

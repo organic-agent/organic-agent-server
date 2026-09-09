@@ -1,5 +1,6 @@
 package com.soma.wes.category.service
 
+import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.category.domain.CategorySource
 import com.soma.wes.category.domain.ConceptFolder
 import com.soma.wes.category.domain.DetailFolder
@@ -30,6 +31,7 @@ class CategoryService(
     private val photoRepository: PhotoRepository,
     private val reactionCleaner: CategoryReactionCleaner,
     private val clock: Clock,
+    private val activityRecorder: ActivityRecorder,
 ) {
     @Transactional
     fun createConcept(galleryId: Long, userId: Long, request: CreateConceptFolderRequest): ConceptFolderResponse {
@@ -38,6 +40,7 @@ class CategoryService(
         val concept = conceptRepository.save(
             ConceptFolder(galleryId, request.name.trim(), sortOrder, CategorySource.USER),
         )
+        activityRecorder.recordGallery(galleryId)
         return ConceptFolderResponse.of(concept, emptyList())
     }
 
@@ -54,6 +57,7 @@ class CategoryService(
         val detail = detailRepository.save(
             DetailFolder(galleryId, concept.requiredId, request.name.trim(), sortOrder, CategorySource.USER),
         )
+        activityRecorder.recordGallery(galleryId)
         return detailResponse(detail, emptyList())
     }
 
@@ -113,6 +117,7 @@ class CategoryService(
                 existing.moveTo(target.requiredId, userId, now)
             }
         }
+        activityRecorder.recordGallery(galleryId)
     }
 
     @Transactional
@@ -125,6 +130,7 @@ class CategoryService(
         reactionCleaner.deleteForConceptExit(conceptId, photoIds)
         assignmentRepository.deleteAllByDetailFolderId(detailId)
         detailRepository.delete(detail)
+        activityRecorder.recordGallery(galleryId)
     }
 
     @Transactional
@@ -136,6 +142,7 @@ class CategoryService(
         assignmentRepository.deleteAllByDetailFolderIdIn(details.map { it.requiredId })
         detailRepository.deleteAll(details)
         conceptRepository.delete(concept)
+        activityRecorder.recordGallery(galleryId)
     }
 
     private fun requireConcept(galleryId: Long, conceptId: Long): ConceptFolder =

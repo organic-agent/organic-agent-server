@@ -17,5 +17,6 @@ class GoogleUserInfoExtractor : OAuthUserInfoExtractor {
         providerId = attributes.requireString("sub"),
         nickname = attributes["name"] as? String ?: "구글 사용자",
         email = attributes["email"] as? String,
+        profileImageUrl = attributes["picture"].asProfileImageUrl(),
     )
 }

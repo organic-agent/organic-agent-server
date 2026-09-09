@@ -1,5 +1,6 @@
 package com.soma.wes.category.service
 
+import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.category.domain.CategorySource
 import com.soma.wes.category.domain.ConceptFolder
 import com.soma.wes.category.domain.DetailFolder
@@ -44,6 +45,7 @@ class AiCategoryFolderService(
     private val aiConceptAssignmentLoader: AiConceptAssignmentLoader,
     private val planner: AiCategoryFolderPlanner,
     private val clock: Clock,
+    private val activityRecorder: ActivityRecorder,
 ) {
 
     @Transactional
@@ -117,6 +119,7 @@ class AiCategoryFolderService(
             ConceptFolderResponse.of(concept, details)
         }
 
+        activityRecorder.recordGallery(galleryId)
         return responses
     }
 

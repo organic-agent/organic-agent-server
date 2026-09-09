@@ -1,5 +1,6 @@
 package com.soma.wes.category.service
 
+import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.category.dto.response.ConceptFolderResponse
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.repository.requireWithLockById
@@ -17,6 +18,7 @@ class FolderOrganizationService(
     private val categoryService: CategoryService,
     private val aiCategoryFolderService: AiCategoryFolderService,
     private val clock: Clock,
+    private val activityRecorder: ActivityRecorder,
 ) {
     @Transactional
     fun save(galleryId: Long, userId: Long): List<ConceptFolderResponse> {
@@ -26,6 +28,8 @@ class FolderOrganizationService(
         val existing = categoryService.list(galleryId, userId)
         val result = if (existing.isNotEmpty()) existing else aiCategoryFolderService.materializeFromAnalysis(galleryId)
         gallery.markSelectionInProgress()
+        // 새 AI 폴더를 만든 경우에는 같은 트랜잭션의 물질화 경로에서 이미 기록했다.
+        if (existing.isNotEmpty()) activityRecorder.recordGallery(galleryId)
         return result
     }
 }

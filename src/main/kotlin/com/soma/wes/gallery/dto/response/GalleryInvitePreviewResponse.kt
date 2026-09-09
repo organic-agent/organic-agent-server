@@ -15,4 +15,6 @@ data class GalleryInvitePreviewResponse(
     val usedCount: Int,
     val remainingUses: Int?,
     val expiresAt: ZonedDateTime,
+    /** 수락 전 표시할 발급자 이름. 탈퇴했거나 확인 불가하면 null이다. */
+    val inviterNickname: String? = null,
 )
