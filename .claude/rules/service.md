@@ -6,7 +6,9 @@ paths:
 # Service 컨벤션
 
 `{domain}/service`는 컨트롤러가 부르는 유스케이스의 자리다. 유스케이스를 돕는 협력자는
-`support`로 (support.md), 외부 시스템은 port/adapter로 (infrastructure.md) 분리한다.
+`support`로 (support.md), 외부 시스템은 port/adapter로 (infrastructure.md) 분리한다. 포트
+인터페이스는 `service/port`에 둔다 — `service` 루트에는 구현 클래스만 남아 "인프라가 구현하는
+경계"가 패키지로 드러난다.
 
 ## 시그니처
 
@@ -54,6 +56,11 @@ paths:
 
 ## 코드 배치
 
+- **서비스 안에 데이터 클래스를 중첩하지 않는다.** 트랜잭션 밖으로 넘기는 값, 결과 묶음, 다른 도메인이
+  받아 가는 값은 전부 `dto/` 루트의 `~Dto`다 (dto.md). `AnalysisOrchestrator`가 걸음 뒤 할 일을
+  `OrchestratorActionDto`로 돌려주는 것이 기준 형태다. private sealed interface라도 예외가 아니다.
+- **`Controller`라는 이름은 REST 컨트롤러에만 쓴다.** 무언가를 제어하는 서비스는 `Supervisor`·`Dispatcher`
+  등 역할 이름을 쓴다 (`ScoreWorkerSupervisor`, `EmbedDispatcher`).
 - private 헬퍼는 **부르는 메서드 바로 아래**에 둔다. 여러 곳이 부르면 가장 아래 호출자 밑에.
   파일 하단으로 쓸어 모으지 마라.
 - public 메서드의 KDoc에는 정책과 그 이유를 적는다 — 시그니처가 이미 말하는 것을 반복하지 않는다.

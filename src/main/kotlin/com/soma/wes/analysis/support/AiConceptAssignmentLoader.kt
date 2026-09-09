@@ -1,6 +1,6 @@
 package com.soma.wes.analysis.support
 
-import com.soma.wes.analysis.domain.AiConceptAssignment
+import com.soma.wes.analysis.dto.LatestAssignmentsDto
 import com.soma.wes.analysis.repository.AiConceptAssignmentRepository
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
@@ -19,17 +19,12 @@ class AiConceptAssignmentLoader(
      * 것이 곧 그 잡의 이름 붙이기가 완료됐다는 뜻이다.
      */
     @Transactional(readOnly = true)
-    fun loadLatest(galleryId: Long): LatestAssignments? {
+    fun loadLatest(galleryId: Long): LatestAssignmentsDto? {
         val latest = aiConceptAssignmentRepository.findFirstByGalleryIdOrderByJobIdDesc(galleryId)
             ?: return null
-        return LatestAssignments(
+        return LatestAssignmentsDto(
             jobId = latest.jobId,
             assignments = aiConceptAssignmentRepository.findAllByJobId(latest.jobId),
         )
     }
-
-    data class LatestAssignments(
-        val jobId: Long,
-        val assignments: List<AiConceptAssignment>,
-    )
 }

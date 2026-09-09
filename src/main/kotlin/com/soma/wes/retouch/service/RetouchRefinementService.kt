@@ -3,14 +3,14 @@ package com.soma.wes.retouch.service
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.recommendation.dto.LlmJsonRequestDto
 import com.soma.wes.recommendation.dto.LlmPartDto
-import com.soma.wes.recommendation.service.StructuredLlmClient
+import com.soma.wes.recommendation.service.port.StructuredLlmClient
 import com.soma.wes.retouch.domain.RetouchPhoto
 import com.soma.wes.retouch.dto.request.RefineRetouchRequest
 import com.soma.wes.retouch.dto.response.RefineRetouchResponse
 import com.soma.wes.retouch.exception.RetouchErrorCode
 import com.soma.wes.retouch.exception.RetouchException
-import org.springframework.stereotype.Service
 import java.time.Duration
+import org.springframework.stereotype.Service
 
 /** 제안은 저장하지 않는다. 클라이언트가 원문/정제안 중 선택한 결과만 요청 저장 API로 보낸다. */
 @Service

@@ -2,8 +2,10 @@ package com.soma.wes.analysis.service
 
 import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.dto.ScoreWorkerDto
-import com.soma.wes.analysis.dto.StageCall
+import com.soma.wes.analysis.dto.StageCallDto
 import com.soma.wes.analysis.exception.AnalysisException
+import com.soma.wes.analysis.service.port.ScoreWorkerPool
+import com.soma.wes.analysis.service.port.StageInvoker
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import java.time.Clock
 import java.time.ZonedDateTime
@@ -19,13 +21,13 @@ import org.springframework.stereotype.Service
  * - 끄기: 워커의 유휴 30초 자기 정지(AI repo)가 1차다. 여기는 backlog 0 ∧ 켜진 지 [AnalysisProperties.Gpu.startGrace] 지남 ∧
  *   [AnalysisProperties.Gpu.idleStopAfter] 동안 점수 진행 없음일 때만 끄는 안전망이다.
  * - 폴백: backlog가 있는데 [AnalysisProperties.Gpu.fallbackAfter] 동안 워커가 뜨지 않거나 점수가 늘지 않으면, 벡터는 있는데 점수가
- *   없는 사진을 갤러리마다 50장씩 score Lambda에 보낸다(갤러리당 [AnalysisProperties.Gpu.fallbackInterval] 1회). GPU가 꺼져 있으면
+ *   없는 사진을 갤러리마다 [AnalysisProperties.scoreBatchSize]장씩 score Lambda에 보낸다(갤러리당 [AnalysisProperties.Gpu.fallbackInterval] 1회). GPU가 꺼져 있으면
  *   기다리지 않고 폴백만 돈다. score는 UPSERT라 워커와 겹쳐도 같은 값을 덮을 뿐이다.
  *
  * 진행·전송 시각은 인메모리다(컬럼 없음). 인스턴스가 여럿이면 각자 판단해 겹칠 수 있는데, 켜기·끄기·score 전부 멱등이라 무방하다.
  */
 @Service
-class GpuController(
+class ScoreWorkerSupervisor(
     private val scoreWorkerPool: ScoreWorkerPool,
     private val photoPipelineRepository: PhotoPipelineRepository,
     private val stageInvoker: StageInvoker,
@@ -132,24 +134,25 @@ class GpuController(
         return since.plus(properties.gpu.fallbackAfter).isBefore(now)
     }
 
-    /** 갤러리마다 미점수 사진 전부를 50장씩. 호출 실패는 남은 갤러리도 같이 실패할 것이라 걸음을 멈춘다. */
+    /** 갤러리마다 미점수 사진 전부를 [AnalysisProperties.scoreBatchSize]장씩. 호출 실패는 남은 갤러리도 같이 실패할 것이라 걸음을 멈춘다. */
     private fun fallback(now: ZonedDateTime) {
-        if (!stageInvoker.isAvailable(StageCall.Score::class)) return
+        if (!stageInvoker.isAvailable(StageCallDto.Score::class)) return
         for (galleryId in photoPipelineRepository.findGalleryIdsWithUnscoredPhotos()) {
             val last = fallbackSentAt[galleryId]
             if (last != null && last.plus(properties.gpu.fallbackInterval).isAfter(now)) continue
             val photoIds = photoPipelineRepository.findUnscoredPhotoIds(galleryId)
             if (photoIds.isEmpty()) continue
-            for (batch in photoIds.chunked(properties.embedBatchSize)) {
+            val batches = photoIds.chunked(properties.scoreBatchSize)
+            for (batch in batches) {
                 try {
-                    stageInvoker.invoke(StageCall.Score(galleryId = galleryId, photoIds = batch))
+                    stageInvoker.invoke(StageCallDto.Score(galleryId = galleryId, photoIds = batch))
                 } catch (e: AnalysisException) {
                     log.warn("score fallback failed gallery={} code={} — 다음 스윕에서 다시 보낸다", galleryId, e.errorCode.code)
                     return
                 }
             }
             fallbackSentAt[galleryId] = now
-            log.info("score fallback gallery={} photos={} batches={}", galleryId, photoIds.size, (photoIds.size + properties.embedBatchSize - 1) / properties.embedBatchSize)
+            log.info("score fallback gallery={} photos={} batches={}", galleryId, photoIds.size, batches.size)
         }
     }
 }

@@ -1,11 +1,11 @@
 package com.soma.wes.photo.service
 
 import com.soma.wes.activity.service.ActivityRecorder
-import com.soma.wes.gallery.support.GalleryAccessPolicy
+import com.soma.wes.gallery.exception.GalleryErrorCode
+import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.repository.requireWithLockById
-import com.soma.wes.gallery.exception.GalleryException
-import com.soma.wes.gallery.exception.GalleryErrorCode
+import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.global.page.PageRequests
 import com.soma.wes.global.page.PageResponse
 import com.soma.wes.photo.config.StorageProperties
@@ -26,14 +26,15 @@ import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.photo.repository.PhotoRepository
+import com.soma.wes.photo.service.port.PhotoStorage
 import com.soma.wes.photo.support.PhotoViewAssembler
+import java.time.Clock
+import java.time.ZonedDateTime
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import java.time.Clock
-import java.time.ZonedDateTime
 
 /**
  * 원본 사진의 업로드와 조회.

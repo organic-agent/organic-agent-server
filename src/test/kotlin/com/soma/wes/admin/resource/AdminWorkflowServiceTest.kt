@@ -9,22 +9,24 @@ import com.soma.wes.admin.resource.dto.AdminWorkflowAction
 import com.soma.wes.admin.resource.dto.AdminWorkflowRequest
 import com.soma.wes.admin.resource.dto.CreateAdminResourceRequest
 import com.soma.wes.admin.resource.dto.UpdateAdminResourceRequest
-import com.soma.wes.admin.resource.service.AdminResourceContextService
-import com.soma.wes.admin.resource.service.AdminResourceService
+import com.soma.wes.admin.resource.repository.AdminChildTrashRepository
 import com.soma.wes.admin.resource.service.AdminObservabilityLinkService
 import com.soma.wes.admin.resource.service.AdminOperationsOverviewService
+import com.soma.wes.admin.resource.service.AdminResourceContextService
+import com.soma.wes.admin.resource.service.AdminResourceService
 import com.soma.wes.admin.resource.service.AdminWorkflowService
-import com.soma.wes.admin.resource.repository.AdminChildTrashRepository
-import com.soma.wes.analysis.service.ExactPhotoInvoker
-import com.soma.wes.photo.dto.PresignedUploadDto
-import com.soma.wes.photo.service.PhotoStorage
-import com.soma.wes.support.IntegrationTest
+import com.soma.wes.analysis.service.port.ExactPhotoInvoker
 import com.soma.wes.global.filter.HttpLoggingFilter
+import com.soma.wes.photo.dto.PresignedUploadDto
+import com.soma.wes.photo.service.port.PhotoStorage
+import com.soma.wes.support.IntegrationTest
+import java.time.Instant
+import java.time.ZonedDateTime
+import java.time.temporal.ChronoUnit
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.slf4j.MDC
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.eq
@@ -32,15 +34,13 @@ import org.mockito.kotlin.never
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import org.slf4j.MDC
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.dao.DataAccessException
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate
-import java.time.Instant
-import java.time.ZonedDateTime
-import java.time.temporal.ChronoUnit
 
 @IntegrationTest
 class AdminWorkflowServiceTest @Autowired constructor(

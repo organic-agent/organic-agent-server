@@ -6,15 +6,15 @@ import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.repository.AdminCascadeTrashRepository
 import com.soma.wes.admin.resource.repository.AdminCascadeTrashRepository.BatchRow
-import com.soma.wes.photo.service.PhotoStorage
+import com.soma.wes.photo.service.port.PhotoStorage
+import java.time.Clock
+import java.time.Duration
+import java.time.ZonedDateTime
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
-import java.time.Clock
-import java.time.Duration
-import java.time.ZonedDateTime
 
 @Service
 class AdminCascadeTrashPurgeService(

@@ -1,4 +1,4 @@
-package com.soma.wes.photo.service
+package com.soma.wes.photo.service.port
 
 /**
  * 스토리지의 미리보기를 LLM에 보낼 크기의 JPEG로 읽는다.

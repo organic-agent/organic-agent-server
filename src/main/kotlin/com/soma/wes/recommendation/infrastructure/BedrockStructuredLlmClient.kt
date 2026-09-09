@@ -4,7 +4,7 @@ import com.soma.wes.recommendation.config.LlmProperties
 import com.soma.wes.recommendation.dto.LlmJsonRequestDto
 import com.soma.wes.recommendation.exception.RecommendationErrorCode
 import com.soma.wes.recommendation.exception.RecommendationException
-import com.soma.wes.recommendation.service.StructuredLlmClient
+import com.soma.wes.recommendation.service.port.StructuredLlmClient
 import org.slf4j.LoggerFactory
 import software.amazon.awssdk.core.SdkBytes
 import software.amazon.awssdk.core.exception.SdkException

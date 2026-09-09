@@ -1,7 +1,7 @@
 package com.soma.wes.analysis.infrastructure
 
 import com.soma.wes.analysis.config.AnalysisProperties
-import com.soma.wes.analysis.service.ExactPhotoProcessingRequest
+import com.soma.wes.analysis.dto.ExactPhotoCallDto
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
@@ -34,7 +34,7 @@ class LambdaExactPhotoInvokerTest {
     @Test
     fun `exact photo 이벤트를 Lambda EVENT 호출 계약 그대로 직렬화한다`() {
         whenever(lambdaClient.invoke(any<InvokeRequest>())).thenReturn(InvokeResponse.builder().statusCode(202).build())
-        val request = ExactPhotoProcessingRequest(
+        val request = ExactPhotoCallDto(
             jobId = 11,
             attemptCount = 2,
             jobType = "EMBEDDING",

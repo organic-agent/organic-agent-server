@@ -1,4 +1,4 @@
-package com.soma.wes.photo.service
+package com.soma.wes.photo.service.port
 
 import com.soma.wes.photo.dto.PresignedUploadDto
 

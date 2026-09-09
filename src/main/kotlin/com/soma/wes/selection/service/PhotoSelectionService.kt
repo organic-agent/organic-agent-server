@@ -3,6 +3,7 @@ package com.soma.wes.selection.service
 import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryStage
+import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.repository.requireWithLockById
 import com.soma.wes.gallery.support.GalleryAccessPolicy
@@ -13,17 +14,16 @@ import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.repository.PhotoRepository
-import com.soma.wes.photo.service.PhotoStorage
+import com.soma.wes.photo.service.port.PhotoStorage
 import com.soma.wes.photo.support.PhotoViewAssembler
-import com.soma.wes.retouch.support.RetouchResultLoader
-import com.soma.wes.retouch.service.RetouchRequestService
-import com.soma.wes.retouch.repository.RetouchRoundRepository
-import com.soma.wes.retouch.repository.RetouchPhotoRepository
 import com.soma.wes.retouch.domain.RetouchRoundStatus
-import com.soma.wes.retouch.exception.RetouchException
-import com.soma.wes.retouch.exception.RetouchErrorCode
 import com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest
-import com.soma.wes.gallery.repository.GalleryMemberRepository
+import com.soma.wes.retouch.exception.RetouchErrorCode
+import com.soma.wes.retouch.exception.RetouchException
+import com.soma.wes.retouch.repository.RetouchPhotoRepository
+import com.soma.wes.retouch.repository.RetouchRoundRepository
+import com.soma.wes.retouch.service.RetouchRequestService
+import com.soma.wes.retouch.support.RetouchResultLoader
 import com.soma.wes.selection.domain.PhotoSelection
 import com.soma.wes.selection.domain.PhotoSelectionItem
 import com.soma.wes.selection.dto.request.DeselectPhotosRequest
@@ -36,10 +36,10 @@ import com.soma.wes.selection.repository.PhotoSelectionItemRepository
 import com.soma.wes.selection.repository.PhotoSelectionRepository
 import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
-import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.ZonedDateTime
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 
 /**
  * 예비 부부가 최종적으로 고른 사진을 담는 선택 앨범.

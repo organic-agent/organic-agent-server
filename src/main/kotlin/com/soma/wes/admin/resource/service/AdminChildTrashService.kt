@@ -11,17 +11,17 @@ import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.dto.AdminChildTrashResponse
 import com.soma.wes.admin.resource.repository.AdminChildTrashRepository
 import com.soma.wes.admin.resource.repository.AdminChildTrashRepository.ChildTrashRow
-import com.soma.wes.photo.service.PhotoStorage
+import com.soma.wes.photo.service.port.PhotoStorage
 import com.soma.wes.trash.config.TrashProperties
+import java.time.Clock
+import java.time.Duration
+import java.time.ZonedDateTime
 import org.slf4j.LoggerFactory
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
-import java.time.Clock
-import java.time.Duration
-import java.time.ZonedDateTime
 
 @Service
 class AdminChildTrashService(

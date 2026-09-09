@@ -1,10 +1,10 @@
 package com.soma.wes.analysis.infrastructure
 
 import com.soma.wes.analysis.config.AnalysisProperties
-import com.soma.wes.analysis.dto.StageCall
+import com.soma.wes.analysis.dto.StageCallDto
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
-import com.soma.wes.analysis.service.StageInvoker
+import com.soma.wes.analysis.service.port.StageInvoker
 import java.io.File
 import java.io.IOException
 import kotlin.reflect.KClass
@@ -25,18 +25,18 @@ class LocalProcessStageInvoker(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    override fun isAvailable(call: KClass<out StageCall>): Boolean = properties.isLocalConfigured && scriptOf(call).canExecute()
+    override fun isAvailable(call: KClass<out StageCallDto>): Boolean = properties.isLocalConfigured && scriptOf(call).canExecute()
 
-    override fun invoke(call: StageCall) {
+    override fun invoke(call: StageCallDto) {
         val script = scriptOf(call::class)
         val command = buildList {
             add(script.absolutePath)
             add("--gallery-id")
             add(call.galleryId.toString())
             when (call) {
-                is StageCall.Embed -> { add("--photo-ids"); add(call.photoIds.joinToString(",")) }
-                is StageCall.Score -> { add("--photo-ids"); add(call.photoIds.joinToString(",")) }
-                is StageCall.Categorize -> { add("--job-id"); add(call.jobId.toString()) }
+                is StageCallDto.Embed -> { add("--photo-ids"); add(call.photoIds.joinToString(",")) }
+                is StageCallDto.Score -> { add("--photo-ids"); add(call.photoIds.joinToString(",")) }
+                is StageCallDto.Categorize -> { add("--job-id"); add(call.jobId.toString()) }
             }
         }
         val logFile = File(System.getProperty("java.io.tmpdir"), "wes-lambda-${script.nameWithoutExtension}-${call.galleryId}.log")
@@ -52,5 +52,5 @@ class LocalProcessStageInvoker(
         log.info("로컬 Lambda 대역 시작: script={}, galleryId={}, pid={}, log={}", script.name, call.galleryId, process.pid(), logFile)
     }
 
-    private fun scriptOf(call: KClass<out StageCall>): File = File(properties.localScriptDir, "${AnalysisProperties.localFunctionOf(call)}.sh")
+    private fun scriptOf(call: KClass<out StageCallDto>): File = File(properties.localScriptDir, "${AnalysisProperties.localFunctionOf(call)}.sh")
 }

@@ -1,18 +1,18 @@
 package com.soma.wes.auth.strategy
 
-import com.soma.wes.auth.dto.OAuthUserInfo
+import com.soma.wes.auth.domain.OAuthProvider
+import com.soma.wes.auth.dto.OAuthUserInfoDto
 import com.soma.wes.auth.exception.AuthErrorCode
 import com.soma.wes.auth.exception.OAuthException
-import com.soma.wes.auth.domain.OAuthProvider
 
 /**
- * provider마다 사용자 정보 응답의 구조가 달라, 각자의 JSON을 공통 [OAuthUserInfo]로 옮긴다.
+ * provider마다 사용자 정보 응답의 구조가 달라, 각자의 JSON을 공통 [OAuthUserInfoDto]로 옮긴다.
  */
 interface OAuthUserInfoExtractor {
 
     val provider: OAuthProvider
 
-    fun extract(attributes: Map<String, Any>): OAuthUserInfo
+    fun extract(attributes: Map<String, Any>): OAuthUserInfoDto
 }
 
 /**

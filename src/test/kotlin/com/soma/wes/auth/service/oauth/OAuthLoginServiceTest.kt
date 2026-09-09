@@ -1,7 +1,7 @@
 package com.soma.wes.auth.service.oauth
 
 import com.soma.wes.auth.domain.OAuthProvider
-import com.soma.wes.auth.dto.OAuthUserInfo
+import com.soma.wes.auth.dto.OAuthUserInfoDto
 import com.soma.wes.auth.dto.request.AuthCodeRequest
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryInvite
@@ -19,6 +19,8 @@ import com.soma.wes.workspace.domain.WorkspaceMember
 import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository
+import java.time.ZonedDateTime
+import java.util.concurrent.atomic.AtomicLong
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.DisplayName
@@ -33,8 +35,6 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.web.util.UriComponentsBuilder
-import java.time.ZonedDateTime
-import java.util.concurrent.atomic.AtomicLong
 
 /**
  * 로그인 진입점이 트랜잭션 경계를 제대로 넘는지 확인한다.
@@ -84,7 +84,7 @@ class OAuthLoginServiceTest @Autowired constructor(
             )
 
             whenever(oAuthUserInfoService.getUserInfo(eq(OAuthProvider.KAKAO), any(), anyOrNull())).thenReturn(
-                OAuthUserInfo(
+                OAuthUserInfoDto(
                     provider = OAuthProvider.KAKAO,
                     providerId = providerId,
                     nickname = "새 닉네임",
@@ -106,7 +106,7 @@ class OAuthLoginServiceTest @Autowired constructor(
             // given
             val providerId = "oauth-login-new-${sequence.incrementAndGet()}"
             whenever(oAuthUserInfoService.getUserInfo(eq(OAuthProvider.KAKAO), any(), anyOrNull())).thenReturn(
-                OAuthUserInfo(
+                OAuthUserInfoDto(
                     provider = OAuthProvider.KAKAO,
                     providerId = providerId,
                     nickname = "새 사용자",
@@ -229,7 +229,7 @@ class OAuthLoginServiceTest @Autowired constructor(
     private fun stubNewUser(prefix: String): String {
         val providerId = "$prefix-${sequence.incrementAndGet()}"
         whenever(oAuthUserInfoService.getUserInfo(eq(OAuthProvider.KAKAO), any(), anyOrNull())).thenReturn(
-            OAuthUserInfo(
+            OAuthUserInfoDto(
                 provider = OAuthProvider.KAKAO,
                 providerId = providerId,
                 nickname = "예비 부부",

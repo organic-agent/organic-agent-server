@@ -8,7 +8,7 @@ import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.support.MockGalleryCopyPlan
 import com.soma.wes.gallery.support.MockGallerySeeder
 import com.soma.wes.photo.domain.Photo
-import com.soma.wes.photo.service.PhotoStorage
+import com.soma.wes.photo.service.port.PhotoStorage
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 

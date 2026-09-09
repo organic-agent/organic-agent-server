@@ -5,19 +5,19 @@ import com.soma.wes.admin.audit.service.AdminAuditService
 import com.soma.wes.admin.audit.support.AdminAuditSanitizer
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
-import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.domain.AdminChildTrashType
 import com.soma.wes.admin.resource.domain.AdminInboxEventType
+import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.dto.AdminResourceResponse
+import com.soma.wes.admin.resource.dto.AdminRetouchArtifactType
 import com.soma.wes.admin.resource.dto.AdminWorkflowAction
 import com.soma.wes.admin.resource.dto.AdminWorkflowRequest
 import com.soma.wes.admin.resource.dto.AdminWorkflowResponse
-import com.soma.wes.admin.resource.dto.AdminRetouchArtifactType
-import com.soma.wes.admin.resource.repository.AdminRetouchArtifactRepository
+import com.soma.wes.admin.resource.repository.AdminNotificationInboxRepository
 import com.soma.wes.admin.resource.repository.AdminResourceContextRepository
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
+import com.soma.wes.admin.resource.repository.AdminRetouchArtifactRepository
 import com.soma.wes.admin.resource.repository.AdminWorkflowRepository
-import com.soma.wes.admin.resource.repository.AdminNotificationInboxRepository
 import com.soma.wes.category.service.AiCategoryFolderService
 import com.soma.wes.collab.support.CollabLinkResolver
 import com.soma.wes.gallery.domain.GalleryInviteKind
@@ -25,17 +25,17 @@ import com.soma.wes.gallery.service.GalleryInviteService
 import com.soma.wes.gallery.support.GalleryInviteUrlResolver
 import com.soma.wes.global.SecureTokenGenerator
 import com.soma.wes.global.filter.HttpLoggingFilter
-import com.soma.wes.photo.service.PhotoStorage
-import org.slf4j.MDC
-import org.springframework.stereotype.Service
-import org.springframework.transaction.support.TransactionTemplate
-import tools.jackson.databind.ObjectMapper
+import com.soma.wes.photo.service.port.PhotoStorage
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.Clock
 import java.time.OffsetDateTime
 import java.time.ZonedDateTime
 import java.util.TreeMap
+import org.slf4j.MDC
+import org.springframework.stereotype.Service
+import org.springframework.transaction.support.TransactionTemplate
+import tools.jackson.databind.ObjectMapper
 
 /**
  * 최고 관리자 워크플로의 트랜잭션 경계다.

@@ -2,8 +2,8 @@ package com.soma.wes.analysis.infrastructure
 
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
-import com.soma.wes.analysis.service.ExactPhotoInvoker
-import com.soma.wes.analysis.service.ExactPhotoProcessingRequest
+import com.soma.wes.analysis.dto.ExactPhotoCallDto
+import com.soma.wes.analysis.service.port.ExactPhotoInvoker
 import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Component
@@ -20,8 +20,8 @@ class LocalProcessExactPhotoInvoker : ExactPhotoInvoker {
 
     override val isAvailable: Boolean = false
 
-    override fun invoke(request: ExactPhotoProcessingRequest) {
-        log.error("로컬 프로필은 사진 단위 재처리를 지원하지 않는다: jobId={}, photoId={}", request.jobId, request.photoId)
+    override fun invoke(call: ExactPhotoCallDto) {
+        log.error("로컬 프로필은 사진 단위 재처리를 지원하지 않는다: jobId={}, photoId={}", call.jobId, call.photoId)
         throw AnalysisException(AnalysisErrorCode.STAGE_INVOCATION_FAILED)
     }
 }

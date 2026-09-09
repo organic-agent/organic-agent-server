@@ -3,7 +3,7 @@ package com.soma.wes.retouch.support
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.dto.response.PhotoResponse
 import com.soma.wes.photo.repository.PhotoRepository
-import com.soma.wes.photo.service.PhotoStorage
+import com.soma.wes.photo.service.port.PhotoStorage
 import com.soma.wes.photo.support.PhotoViewAssembler
 import com.soma.wes.retouch.domain.RetouchPhoto
 import com.soma.wes.retouch.dto.response.RetouchPhotoDetailResponse

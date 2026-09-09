@@ -106,6 +106,8 @@ app:
     embed-max-in-flight: 32
     embed-redispatch-after: PT10M
     embed-max-attempts: 3
+    # score Lambda 폴백 EVENT 하나에 담는 사진 수(GPU 워커가 못 낼 때만).
+    score-batch-size: 50
     # 이 시간 안에 발급된 PENDING 사진은 "아직 올라오는 중"으로 보고 점수 완료 판정을 미룬다.
     upload-quiet-after: PT2M
     # categorize EVENT 뒤 이 시간 안에 배정 행이 없으면 다시 보낸다(7천 장 약 70초보다 넉넉히). 상한을 넘기면 잡 FAILED.

@@ -2,10 +2,10 @@ package com.soma.wes.analysis.infrastructure
 
 import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.dto.ScoreWorkerDto
-import com.soma.wes.analysis.dto.ScoreWorkerState
+import com.soma.wes.analysis.dto.ScoreWorkerStateDto
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
-import com.soma.wes.analysis.service.ScoreWorkerPool
+import com.soma.wes.analysis.service.port.ScoreWorkerPool
 import java.io.File
 import java.io.IOException
 import java.time.Clock
@@ -44,7 +44,7 @@ class LocalProcessScoreWorkerPool(
         return listOf(
             ScoreWorkerDto(
                 instanceId = INSTANCE_ID,
-                state = if (alive) ScoreWorkerState.RUNNING else ScoreWorkerState.STOPPED,
+                state = if (alive) ScoreWorkerStateDto.RUNNING else ScoreWorkerStateDto.STOPPED,
                 launchedAt = launchedAt,
             ),
         )

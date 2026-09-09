@@ -1,9 +1,9 @@
 package com.soma.wes.support
 
-import com.soma.wes.analysis.dto.StageCall
+import com.soma.wes.analysis.dto.StageCallDto
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
-import com.soma.wes.analysis.service.StageInvoker
+import com.soma.wes.analysis.service.port.StageInvoker
 import java.util.Collections
 import kotlin.reflect.KClass
 
@@ -14,13 +14,13 @@ import kotlin.reflect.KClass
 class FakeStageInvoker : StageInvoker {
 
     /** 동시성 테스트(스윕 둘)가 같은 목록에 기록하므로 동기화한다. */
-    val calls: MutableList<StageCall> = Collections.synchronizedList(mutableListOf())
+    val calls: MutableList<StageCallDto> = Collections.synchronizedList(mutableListOf())
     var available: Boolean = true
     var failNext: Boolean = false
 
-    override fun isAvailable(call: KClass<out StageCall>): Boolean = available
+    override fun isAvailable(call: KClass<out StageCallDto>): Boolean = available
 
-    override fun invoke(call: StageCall) {
+    override fun invoke(call: StageCallDto) {
         if (failNext) {
             failNext = false
             throw AnalysisException(AnalysisErrorCode.STAGE_INVOCATION_FAILED)
@@ -28,14 +28,14 @@ class FakeStageInvoker : StageInvoker {
         calls += call
     }
 
-    val embedCalls: List<StageCall.Embed>
-        get() = calls.toList().filterIsInstance<StageCall.Embed>()
+    val embedCalls: List<StageCallDto.Embed>
+        get() = calls.toList().filterIsInstance<StageCallDto.Embed>()
 
-    val scoreCalls: List<StageCall.Score>
-        get() = calls.toList().filterIsInstance<StageCall.Score>()
+    val scoreCalls: List<StageCallDto.Score>
+        get() = calls.toList().filterIsInstance<StageCallDto.Score>()
 
-    val categorizeCalls: List<StageCall.Categorize>
-        get() = calls.toList().filterIsInstance<StageCall.Categorize>()
+    val categorizeCalls: List<StageCallDto.Categorize>
+        get() = calls.toList().filterIsInstance<StageCallDto.Categorize>()
 
     /** 임베더에 보낸 사진 id 전부(갤러리 무관). */
     val embeddedPhotoIds: List<Long>

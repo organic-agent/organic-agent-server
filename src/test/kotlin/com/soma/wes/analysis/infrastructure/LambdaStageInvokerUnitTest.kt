@@ -1,7 +1,7 @@
 package com.soma.wes.analysis.infrastructure
 
 import com.soma.wes.analysis.config.AnalysisProperties
-import com.soma.wes.analysis.dto.StageCall
+import com.soma.wes.analysis.dto.StageCallDto
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -33,8 +33,8 @@ class LambdaStageInvokerUnitTest {
     fun `호출 종류마다 함수와 페이로드 계약이 다르다`() {
         whenever(lambdaClient.invoke(any<InvokeRequest>())).thenReturn(InvokeResponse.builder().statusCode(202).build())
 
-        invoker.invoke(StageCall.Embed(galleryId = 3, photoIds = listOf(10, 11, 12)))
-        invoker.invoke(StageCall.Score(galleryId = 3, photoIds = listOf(10)))
+        invoker.invoke(StageCallDto.Embed(galleryId = 3, photoIds = listOf(10, 11, 12)))
+        invoker.invoke(StageCallDto.Score(galleryId = 3, photoIds = listOf(10)))
 
         val requests = argumentCaptor<InvokeRequest>()
         verify(lambdaClient, times(2)).invoke(requests.capture())
@@ -58,7 +58,7 @@ class LambdaStageInvokerUnitTest {
 
     @Test
     fun `categorize 페이로드는 갤러리와 잡 id다`() {
-        val payload = objectMapper.readTree(LambdaStageInvoker.payloadOf(StageCall.Categorize(galleryId = 8, jobId = 13)))
+        val payload = objectMapper.readTree(LambdaStageInvoker.payloadOf(StageCallDto.Categorize(galleryId = 8, jobId = 13)))
         assertSoftly { softly ->
             softly.assertThat(payload["galleryId"].asLong()).isEqualTo(8)
             softly.assertThat(payload["jobId"].asLong()).isEqualTo(13)
@@ -69,22 +69,22 @@ class LambdaStageInvokerUnitTest {
     @Test
     fun `함수 이름이 비어 있는 호출은 사용할 수 없다`() {
         assertSoftly { softly ->
-            softly.assertThat(invoker.isAvailable(StageCall.Embed::class)).isTrue()
-            softly.assertThat(invoker.isAvailable(StageCall.Score::class)).isTrue()
-            softly.assertThat(invoker.isAvailable(StageCall.Categorize::class)).isFalse()
+            softly.assertThat(invoker.isAvailable(StageCallDto.Embed::class)).isTrue()
+            softly.assertThat(invoker.isAvailable(StageCallDto.Score::class)).isTrue()
+            softly.assertThat(invoker.isAvailable(StageCallDto.Categorize::class)).isFalse()
         }
     }
 
     @Test
     fun `SDK 예외와 202가 아닌 응답은 호출 실패 코드다`() {
         whenever(lambdaClient.invoke(any<InvokeRequest>())).thenThrow(SdkClientException.create("no credentials"))
-        assertThatThrownBy { invoker.invoke(StageCall.Score(galleryId = 1, photoIds = listOf(1))) }
+        assertThatThrownBy { invoker.invoke(StageCallDto.Score(galleryId = 1, photoIds = listOf(1))) }
             .isInstanceOf(AnalysisException::class.java)
             .extracting("errorCode")
             .isEqualTo(AnalysisErrorCode.STAGE_INVOCATION_FAILED)
 
         whenever(lambdaClient.invoke(any<InvokeRequest>())).thenReturn(InvokeResponse.builder().statusCode(500).build())
-        assertThatThrownBy { invoker.invoke(StageCall.Score(galleryId = 1, photoIds = listOf(1))) }
+        assertThatThrownBy { invoker.invoke(StageCallDto.Score(galleryId = 1, photoIds = listOf(1))) }
             .isInstanceOf(AnalysisException::class.java)
             .extracting("errorCode")
             .isEqualTo(AnalysisErrorCode.STAGE_INVOCATION_FAILED)

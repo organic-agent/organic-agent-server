@@ -1,7 +1,7 @@
 package com.soma.wes.auth.strategy
 
-import com.soma.wes.auth.dto.OAuthUserInfo
 import com.soma.wes.auth.domain.OAuthProvider
+import com.soma.wes.auth.dto.OAuthUserInfoDto
 import org.springframework.stereotype.Component
 
 /**
@@ -13,11 +13,11 @@ class KakaoUserInfoExtractor : OAuthUserInfoExtractor {
 
     override val provider = OAuthProvider.KAKAO
 
-    override fun extract(attributes: Map<String, Any>): OAuthUserInfo {
+    override fun extract(attributes: Map<String, Any>): OAuthUserInfoDto {
         val account = attributes["kakao_account"] as? Map<*, *>
         val profile = account?.get("profile") as? Map<*, *>
 
-        return OAuthUserInfo(
+        return OAuthUserInfoDto(
             provider = provider,
             // 카카오의 id는 숫자로 내려온다.
             providerId = attributes.requireString("id"),

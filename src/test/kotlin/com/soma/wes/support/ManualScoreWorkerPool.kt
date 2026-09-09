@@ -1,10 +1,10 @@
 package com.soma.wes.support
 
 import com.soma.wes.analysis.dto.ScoreWorkerDto
-import com.soma.wes.analysis.dto.ScoreWorkerState
+import com.soma.wes.analysis.dto.ScoreWorkerStateDto
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
-import com.soma.wes.analysis.service.ScoreWorkerPool
+import com.soma.wes.analysis.service.port.ScoreWorkerPool
 import java.time.ZonedDateTime
 
 /**
@@ -30,18 +30,18 @@ class ManualScoreWorkerPool : ScoreWorkerPool {
     override fun start() {
         failIfRequested()
         starts += now()
-        val index = workers.indexOfFirst { it.state == ScoreWorkerState.STOPPED }
-        if (index >= 0) workers[index] = workers[index].copy(state = ScoreWorkerState.PENDING, launchedAt = now())
+        val index = workers.indexOfFirst { it.state == ScoreWorkerStateDto.STOPPED }
+        if (index >= 0) workers[index] = workers[index].copy(state = ScoreWorkerStateDto.PENDING, launchedAt = now())
     }
 
     override fun stop(instanceId: String) {
         failIfRequested()
         stops += instanceId
         val index = workers.indexOfFirst { it.instanceId == instanceId }
-        if (index >= 0) workers[index] = workers[index].copy(state = ScoreWorkerState.STOPPING)
+        if (index >= 0) workers[index] = workers[index].copy(state = ScoreWorkerStateDto.STOPPING)
     }
 
-    fun worker(instanceId: String = "i-1", state: ScoreWorkerState = ScoreWorkerState.STOPPED, launchedAt: ZonedDateTime? = null) {
+    fun worker(instanceId: String = "i-1", state: ScoreWorkerStateDto = ScoreWorkerStateDto.STOPPED, launchedAt: ZonedDateTime? = null) {
         workers.removeAll { it.instanceId == instanceId }
         workers += ScoreWorkerDto(instanceId = instanceId, state = state, launchedAt = launchedAt)
     }

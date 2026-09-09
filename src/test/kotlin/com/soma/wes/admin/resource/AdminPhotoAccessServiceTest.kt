@@ -7,7 +7,7 @@ import com.soma.wes.admin.resource.dto.AdminPhotoAccessRequest
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
 import com.soma.wes.admin.resource.service.AdminPhotoAccessService
 import com.soma.wes.photo.config.StorageProperties
-import com.soma.wes.photo.service.PhotoStorage
+import com.soma.wes.photo.service.port.PhotoStorage
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant

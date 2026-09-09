@@ -7,19 +7,21 @@ import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.support.MockGallerySeeder
 import com.soma.wes.photo.domain.Photo
+import com.soma.wes.photo.domain.PhotoAnalysis
 import com.soma.wes.photo.domain.PhotoMetadata
 import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.dto.PresignedUploadDto
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
-import com.soma.wes.photo.domain.PhotoAnalysis
 import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
-import com.soma.wes.photo.service.PhotoStorage
+import com.soma.wes.photo.service.port.PhotoStorage
 import com.soma.wes.studio.fixture.StudioFixture
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.DatabaseClearExtension
 import com.soma.wes.support.TestcontainersConfiguration
+import java.time.Instant
+import java.util.UUID
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.assertj.core.api.SoftAssertions.assertSoftly
@@ -35,8 +37,6 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
 import org.springframework.jdbc.core.JdbcTemplate
-import java.time.Instant
-import java.util.UUID
 
 /**
  * 템플릿 갤러리 복제 흐름을 서비스 경계에서 확인한다.

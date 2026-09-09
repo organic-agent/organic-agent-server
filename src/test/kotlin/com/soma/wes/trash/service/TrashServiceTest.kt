@@ -48,7 +48,7 @@ import java.time.Instant
  * 확인한다. 휴지통으로 *보내는* 것은 소유 도메인의 일이라 [PhotoService]·[GalleryService]를
  * 함께 주입해 시나리오를 만든다.
  *
- * [com.soma.wes.photo.service.PhotoStorage]는 기록형 가짜로 바꾼다. presign은 로컬 서명
+ * [com.soma.wes.photo.service.port.PhotoStorage]는 기록형 가짜로 바꾼다. presign은 로컬 서명
  * 연산이지만 deleteAll은 진짜 S3 API 호출이라 테스트에서 실행할 수 없고, 무엇보다
  * "무슨 키를 지웠는지"가 검증 대상이다.
  */

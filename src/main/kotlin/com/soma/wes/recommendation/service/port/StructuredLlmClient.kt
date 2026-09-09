@@ -1,4 +1,4 @@
-package com.soma.wes.recommendation.service
+package com.soma.wes.recommendation.service.port
 
 import com.soma.wes.recommendation.dto.LlmJsonRequestDto
 import tools.jackson.databind.JsonNode

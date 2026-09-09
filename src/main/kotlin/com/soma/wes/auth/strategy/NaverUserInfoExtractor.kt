@@ -1,7 +1,7 @@
 package com.soma.wes.auth.strategy
 
-import com.soma.wes.auth.dto.OAuthUserInfo
 import com.soma.wes.auth.domain.OAuthProvider
+import com.soma.wes.auth.dto.OAuthUserInfoDto
 import org.springframework.stereotype.Component
 
 /**
@@ -13,10 +13,10 @@ class NaverUserInfoExtractor : OAuthUserInfoExtractor {
 
     override val provider = OAuthProvider.NAVER
 
-    override fun extract(attributes: Map<String, Any>): OAuthUserInfo {
+    override fun extract(attributes: Map<String, Any>): OAuthUserInfoDto {
         val response = attributes.requireMap("response")
 
-        return OAuthUserInfo(
+        return OAuthUserInfoDto(
             provider = provider,
             providerId = response.requireString("id"),
             nickname = response["nickname"] as? String ?: "네이버 사용자",

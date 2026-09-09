@@ -1,8 +1,9 @@
 package com.soma.wes.analysis.service
 
 import com.soma.wes.analysis.config.AnalysisProperties
-import com.soma.wes.analysis.dto.StageCall
+import com.soma.wes.analysis.dto.StageCallDto
 import com.soma.wes.analysis.exception.AnalysisException
+import com.soma.wes.analysis.service.port.StageInvoker
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import java.time.Clock
 import java.time.ZonedDateTime
@@ -29,7 +30,7 @@ class EmbedDispatcher(
 
     /** 보낸 배치 수를 돌려준다. 실행기가 없으면(로컬·테스트) 아무것도 하지 않는다. */
     fun dispatch(): Int {
-        if (!stageInvoker.isAvailable(StageCall.Embed::class)) return 0
+        if (!stageInvoker.isAvailable(StageCallDto.Embed::class)) return 0
         val now = ZonedDateTime.now(clock)
 
         val released = photoPipelineRepository.releaseStaleDispatches(before = now.minus(properties.embedRedispatchAfter))
@@ -55,7 +56,7 @@ class EmbedDispatcher(
                     maxAttempts = properties.embedMaxAttempts,
                 )
                 if (photoIds.isEmpty()) continue
-                if (!invoke(StageCall.Embed(galleryId = galleryId, photoIds = photoIds))) return sent
+                if (!invoke(StageCallDto.Embed(galleryId = galleryId, photoIds = photoIds))) return sent
                 slots--
                 sent++
                 sentThisRound++
@@ -66,7 +67,7 @@ class EmbedDispatcher(
     }
 
     /** 호출 실패는 배정을 되돌리고 걸음을 멈춘다 — 권한·스로틀링이면 남은 갤러리도 같이 실패할 것이라 다음 스윕에 맡긴다. */
-    private fun invoke(call: StageCall.Embed): Boolean = try {
+    private fun invoke(call: StageCallDto.Embed): Boolean = try {
         stageInvoker.invoke(call)
         log.info("embed dispatch gallery={} photos={}", call.galleryId, call.photoIds.size)
         true

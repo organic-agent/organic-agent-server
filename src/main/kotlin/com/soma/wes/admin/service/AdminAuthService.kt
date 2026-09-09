@@ -1,28 +1,28 @@
 package com.soma.wes.admin.service
 
-import com.soma.wes.admin.config.AdminAuthProperties
 import com.soma.wes.admin.audit.domain.AdminAuditAction
 import com.soma.wes.admin.audit.domain.AdminAuditOutcome
 import com.soma.wes.admin.audit.domain.AdminAuditTargetType
 import com.soma.wes.admin.audit.service.AdminAuditService
+import com.soma.wes.admin.config.AdminAuthProperties
 import com.soma.wes.admin.domain.AdminAccount
 import com.soma.wes.admin.domain.AdminAuthEvent
 import com.soma.wes.admin.domain.AdminEventType
-import com.soma.wes.admin.dto.AdminLoginResult
+import com.soma.wes.admin.domain.AdminLoginUser
+import com.soma.wes.admin.dto.AdminLoginResultDto
 import com.soma.wes.admin.dto.request.AdminLoginRequest
 import com.soma.wes.admin.dto.request.ChangeAdminPasswordRequest
 import com.soma.wes.admin.exception.AdminAuthenticationException
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
-import com.soma.wes.admin.domain.AdminLoginUser
 import com.soma.wes.admin.impersonation.service.AdminImpersonationService
 import com.soma.wes.admin.repository.AdminAccountRepository
 import com.soma.wes.admin.repository.AdminAuthEventRepository
 import com.soma.wes.admin.support.AdminPasswordHasher
-import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.ZonedDateTime
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 
 @Service
 class AdminAuthService(
@@ -40,7 +40,7 @@ class AdminAuthService(
     fun login(
         request: AdminLoginRequest,
         sourceAddress: String?,
-    ): AdminLoginResult {
+    ): AdminLoginResultDto {
         val username = normalizeLoginUsername(request.username, request.password, sourceAddress)
         val account = adminAccountRepository.findWithLockByUsername(username)
 
@@ -146,7 +146,7 @@ class AdminAuthService(
         adminId: Long,
         request: ChangeAdminPasswordRequest,
         sourceAddress: String?,
-    ): AdminLoginResult {
+    ): AdminLoginResultDto {
         val account = adminAccountRepository.findWithLockById(adminId)
             ?: throw AdminException(AdminErrorCode.ACCOUNT_NOT_FOUND)
         if (!passwordHasher.matches(request.currentPassword, account.passwordHash)) {

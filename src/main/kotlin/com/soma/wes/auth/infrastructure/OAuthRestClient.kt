@@ -2,7 +2,7 @@ package com.soma.wes.auth.infrastructure
 
 import com.soma.wes.auth.exception.AuthErrorCode
 import com.soma.wes.auth.exception.OAuthException
-import com.soma.wes.auth.service.oauth.OAuthClient
+import com.soma.wes.auth.service.port.OAuthClient
 import org.slf4j.LoggerFactory
 import org.springframework.core.ParameterizedTypeReference
 import org.springframework.http.HttpHeaders

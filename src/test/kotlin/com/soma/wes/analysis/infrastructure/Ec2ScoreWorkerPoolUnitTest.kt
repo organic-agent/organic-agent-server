@@ -1,7 +1,7 @@
 package com.soma.wes.analysis.infrastructure
 
 import com.soma.wes.analysis.config.AnalysisProperties
-import com.soma.wes.analysis.dto.ScoreWorkerState
+import com.soma.wes.analysis.dto.ScoreWorkerStateDto
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
 import java.time.Instant
@@ -65,9 +65,9 @@ class Ec2ScoreWorkerPoolUnitTest {
             softly.assertThat(request.firstValue.filters().single().name()).isEqualTo("tag:Name")
             softly.assertThat(request.firstValue.filters().single().values()).containsExactly("wes-score-gpu")
             softly.assertThat(snapshot.map { it.instanceId to it.state }).containsExactly(
-                "i-run" to ScoreWorkerState.RUNNING,
-                "i-stop" to ScoreWorkerState.STOPPED,
-                "i-gone" to ScoreWorkerState.STOPPED,
+                "i-run" to ScoreWorkerStateDto.RUNNING,
+                "i-stop" to ScoreWorkerStateDto.STOPPED,
+                "i-gone" to ScoreWorkerStateDto.STOPPED,
             )
             softly.assertThat(snapshot.first().launchedAt?.toInstant()).isEqualTo(launched)
             softly.assertThat(snapshot.first().isUp).isTrue()

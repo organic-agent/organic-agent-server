@@ -1,6 +1,6 @@
 package com.soma.wes.recommendation.support
 
-import com.soma.wes.recommendation.service.AiJobExecutor
+import com.soma.wes.recommendation.service.port.AiJobExecutor
 import org.springframework.beans.factory.DisposableBean
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
 import org.springframework.stereotype.Component

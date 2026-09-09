@@ -5,8 +5,7 @@ import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
-import com.soma.wes.photo.service.PhotoStorage
-import com.soma.wes.workspace.repository.WorkspaceMemberRepository
+import com.soma.wes.photo.service.port.PhotoStorage
 import com.soma.wes.trash.config.TrashProperties
 import com.soma.wes.trash.dto.request.EraseTrashedPhotosRequest
 import com.soma.wes.trash.dto.request.RestorePhotosRequest
@@ -18,9 +17,10 @@ import com.soma.wes.trash.exception.TrashException
 import com.soma.wes.trash.repository.TrashRepository
 import com.soma.wes.trash.repository.projection.TrashedPhotoTarget
 import com.soma.wes.trash.support.TrashEraser
+import com.soma.wes.workspace.repository.WorkspaceMemberRepository
+import java.time.Clock
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import java.time.Clock
 
 /**
  * 휴지통 화면과 그 세 동작 — 목록, 복원, 즉시 물리 삭제.
