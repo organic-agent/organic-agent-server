@@ -7,7 +7,7 @@ import com.soma.wes.admin.resource.dto.CreateAdminResourceRequest
 import com.soma.wes.admin.resource.service.AdminResourceService
 import com.soma.wes.admin.service.AdminAuthService
 import com.soma.wes.admin.support.AdminSessionCookie
-import com.soma.wes.analysis.service.port.ExactPhotoInvoker
+import com.soma.wes.analysis.service.port.StageInvoker
 import com.soma.wes.photo.service.port.PhotoStorage
 import com.soma.wes.security.filter.AdminMutationHeaderFilter
 import com.soma.wes.support.IntegrationTest
@@ -31,7 +31,7 @@ class AdminWorkflowControllerTest @Autowired constructor(
     private lateinit var photoStorage: PhotoStorage
 
     @MockitoBean
-    private lateinit var exactPhotoInvoker: ExactPhotoInvoker
+    private lateinit var stageInvoker: StageInvoker
 
     @Test
     fun `워크플로 mutation은 관리자 세션과 mutation header 및 명시적 확인을 모두 요구한다`() {

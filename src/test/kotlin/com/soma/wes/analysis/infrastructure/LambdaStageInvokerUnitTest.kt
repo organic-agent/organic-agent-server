@@ -27,6 +27,7 @@ class LambdaStageInvokerUnitTest {
     private val invoker = LambdaStageInvoker(
         lambdaClient,
         AnalysisProperties(embedderFunctionName = "wes-embedder", scoreFunctionName = "wes-score", categorizeFunctionName = ""),
+        objectMapper,
     )
 
     @Test
@@ -58,10 +59,52 @@ class LambdaStageInvokerUnitTest {
 
     @Test
     fun `categorize 페이로드는 갤러리와 잡 id다`() {
-        val payload = objectMapper.readTree(LambdaStageInvoker.payloadOf(StageCallDto.Categorize(galleryId = 8, jobId = 13)))
+        whenever(lambdaClient.invoke(any<InvokeRequest>())).thenReturn(InvokeResponse.builder().statusCode(202).build())
+        val configured = LambdaStageInvoker(lambdaClient, AnalysisProperties(categorizeFunctionName = "wes-categorize"), objectMapper)
+
+        configured.invoke(StageCallDto.Categorize(galleryId = 8, jobId = 13))
+
+        val request = argumentCaptor<InvokeRequest>()
+        verify(lambdaClient).invoke(request.capture())
+        val payload = objectMapper.readTree(request.firstValue.payload().asUtf8String())
         assertSoftly { softly ->
+            softly.assertThat(request.firstValue.functionName()).isEqualTo("wes-categorize")
             softly.assertThat(payload["galleryId"].asLong()).isEqualTo(8)
             softly.assertThat(payload["jobId"].asLong()).isEqualTo(13)
+            softly.assertThat(payload.has("photoIds")).isFalse()
+        }
+    }
+
+    @Test
+    fun `exact photo 는 임베더 함수로 관리자 사진 교체 계약 그대로 간다`() {
+        whenever(lambdaClient.invoke(any<InvokeRequest>())).thenReturn(InvokeResponse.builder().statusCode(202).build())
+
+        invoker.invoke(
+            StageCallDto.ExactPhoto(
+                jobId = 11,
+                attemptCount = 2,
+                jobType = "EMBEDDING",
+                photoId = 31,
+                galleryId = 41,
+                storageKey = "galleries/41/revision-51.jpg",
+                revisionId = 51,
+            ),
+        )
+
+        val request = argumentCaptor<InvokeRequest>()
+        verify(lambdaClient).invoke(request.capture())
+        val payload = objectMapper.readTree(request.firstValue.payload().asUtf8String())
+        assertSoftly { softly ->
+            softly.assertThat(request.firstValue.functionName()).isEqualTo("wes-embedder")
+            softly.assertThat(request.firstValue.invocationType()).isEqualTo(InvocationType.EVENT)
+            // 임베더는 jobId 키로 이 이벤트를 배정과 구분한다.
+            softly.assertThat(payload["jobId"].asLong()).isEqualTo(11)
+            softly.assertThat(payload["attemptCount"].asInt()).isEqualTo(2)
+            softly.assertThat(payload["jobType"].asText()).isEqualTo("EMBEDDING")
+            softly.assertThat(payload["photoId"].asLong()).isEqualTo(31)
+            softly.assertThat(payload["galleryId"].asLong()).isEqualTo(41)
+            softly.assertThat(payload["storageKey"].asText()).isEqualTo("galleries/41/revision-51.jpg")
+            softly.assertThat(payload["revisionId"].asLong()).isEqualTo(51)
             softly.assertThat(payload.has("photoIds")).isFalse()
         }
     }
@@ -72,6 +115,9 @@ class LambdaStageInvokerUnitTest {
             softly.assertThat(invoker.isAvailable(StageCallDto.Embed::class)).isTrue()
             softly.assertThat(invoker.isAvailable(StageCallDto.Score::class)).isTrue()
             softly.assertThat(invoker.isAvailable(StageCallDto.Categorize::class)).isFalse()
+            // exact photo 는 임베더 함수를 같이 쓴다.
+            softly.assertThat(invoker.isAvailable(StageCallDto.ExactPhoto::class)).isTrue()
+            softly.assertThat(LambdaStageInvoker(lambdaClient, AnalysisProperties(), objectMapper).isAvailable(StageCallDto.ExactPhoto::class)).isFalse()
         }
     }
 

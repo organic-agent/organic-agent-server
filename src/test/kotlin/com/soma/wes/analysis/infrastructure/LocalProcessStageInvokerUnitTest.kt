@@ -49,6 +49,20 @@ class LocalProcessStageInvokerUnitTest {
     }
 
     @Test
+    fun `exact photo 는 embedder 스크립트가 있어도 지원하지 않는다`() {
+        fakeScript("embedder.sh")
+        val invoker = LocalProcessStageInvoker(AnalysisProperties(localScriptDir = dir.path))
+        val call = StageCallDto.ExactPhoto(jobId = 1, attemptCount = 1, jobType = "EMBEDDING", photoId = 2, galleryId = 3, storageKey = "k", revisionId = 4)
+
+        assertThat(invoker.isAvailable(StageCallDto.Embed::class)).isTrue()
+        assertThat(invoker.isAvailable(StageCallDto.ExactPhoto::class)).isFalse()
+        assertThatThrownBy { invoker.invoke(call) }
+            .isInstanceOf(AnalysisException::class.java)
+            .extracting("errorCode")
+            .isEqualTo(AnalysisErrorCode.STAGE_INVOCATION_FAILED)
+    }
+
+    @Test
     fun `프로세스를 못 띄우면 호출 실패 코드다`() {
         val invoker = LocalProcessStageInvoker(AnalysisProperties(localScriptDir = dir.path))
         assertThatThrownBy { invoker.invoke(StageCallDto.Categorize(galleryId = 1, jobId = 1)) }

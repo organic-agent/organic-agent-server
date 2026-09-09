@@ -2,7 +2,8 @@ package com.soma.wes.analysis.dto
 
 /**
  * 외부 실행기(Lambda 또는 로컬 서브프로세스)에 보내는 호출 하나. 트랜잭션 안에서 정한 "무엇을 부를지"를
- * 트랜잭션 밖의 호출로 넘기는 전달용 값이기도 하다. 페이로드 키는 AI repo 계약 그대로다(계획서 §7).
+ * 트랜잭션 밖의 호출로 넘기는 전달용 값이기도 하다. 페이로드 키는 AI repo 계약 그대로다(계획서 §7) — 각 하위 타입의
+ * 프로퍼티 이름이 곧 JSON 키라 이름을 바꾸면 계약이 깨진다.
  */
 sealed interface StageCallDto {
 
@@ -24,5 +25,19 @@ sealed interface StageCallDto {
     data class Categorize(
         override val galleryId: Long,
         val jobId: Long,
+    ) : StageCallDto
+
+    /**
+     * embedder — 관리자 사진 교체 뒤 정확히 한 리비전의 한 사진. [Embed]와 같은 함수를 부르지만 `jobId` 키가 있어 임베더가
+     * 관리자 사진 교체 이벤트로 해석한다. 로컬 대역 스크립트는 이 호출을 지원하지 않는다.
+     */
+    data class ExactPhoto(
+        val jobId: Long,
+        val attemptCount: Int,
+        val jobType: String,
+        val photoId: Long,
+        override val galleryId: Long,
+        val storageKey: String,
+        val revisionId: Long,
     ) : StageCallDto
 }
