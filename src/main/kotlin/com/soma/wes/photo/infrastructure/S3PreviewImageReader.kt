@@ -20,16 +20,20 @@ class S3PreviewImageReader(
     private val log = LoggerFactory.getLogger(javaClass)
 
     override fun readJpeg(previewKey: String, longEdge: Int): ByteArray {
-        val bytes = try {
-            s3Client.getObjectAsBytes { it.bucket(properties.bucket).key(previewKey) }.asByteArray()
-        } catch (e: SdkException) {
-            log.error("S3 미리보기 읽기 실패: bucket={}, key={}", properties.bucket, previewKey, e)
-            throw PhotoException(PhotoErrorCode.STORAGE_READ_FAILED)
-        }
+        val bytes = read(previewKey)
         return try {
             resizer.resize(bytes, longEdge)
         } catch (e: Exception) {
             log.error("미리보기 리사이즈 실패: key={}", previewKey, e)
+            throw PhotoException(PhotoErrorCode.STORAGE_READ_FAILED)
+        }
+    }
+
+    override fun read(previewKey: String): ByteArray {
+        return try {
+            s3Client.getObjectAsBytes { it.bucket(properties.bucket).key(previewKey) }.asByteArray()
+        } catch (e: SdkException) {
+            log.error("S3 미리보기 읽기 실패: bucket={}, key={}", properties.bucket, previewKey, e)
             throw PhotoException(PhotoErrorCode.STORAGE_READ_FAILED)
         }
     }

@@ -60,6 +60,18 @@ class PhotoFixture(
         )
     }
 
+    /**
+     * 미리보기까지 만들어진 사진. 임베더가 `previews/`를 올리고 키를 적은 상태라 AI 호출 재료가 있다.
+     *
+     * 미리보기 키를 쓰는 테스트(보정 요청 정제, 비교샷)는 이 사진을 쓴다 — [업로드된_사진]은 아직 키가 없다.
+     */
+    fun 미리보기_있는_사진(galleryId: Long): Photo {
+        val photoId = 업로드된_사진(galleryId, 1).first()
+        val photo = photoRepository.findById(photoId).orElseThrow()
+        photo.previewKey = "previews/${photo.storageKey}"
+        return photoRepository.saveAndFlush(photo)
+    }
+
     /** 임베더·score 가 사진 단위 결정적 실패를 남긴 것을 흉내 낸다. 이 사진은 기대 장수에서 빠진다. */
     fun 분석_실패(photoId: Long, error: String = "DECODE_FAILED") {
         jdbcTemplate.update(
