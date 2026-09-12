@@ -5,10 +5,12 @@ import com.soma.wes.recommendation.dto.LlmJsonRequestDto
 import com.soma.wes.recommendation.dto.LlmPartDto
 import com.soma.wes.recommendation.service.port.StructuredLlmClient
 import com.soma.wes.retouch.domain.RetouchPhoto
+import com.soma.wes.retouch.domain.RetouchRefineStatus
 import com.soma.wes.retouch.dto.request.RefineRetouchRequest
 import com.soma.wes.retouch.dto.response.RefineRetouchResponse
 import com.soma.wes.retouch.exception.RetouchErrorCode
 import com.soma.wes.retouch.exception.RetouchException
+import com.soma.wes.retouch.support.RetouchRequestTextGate
 import java.time.Duration
 import org.springframework.stereotype.Service
 
@@ -16,6 +18,7 @@ import org.springframework.stereotype.Service
 @Service
 class RetouchRefinementService(
     private val accessPolicy: GalleryAccessPolicy,
+    private val textGate: RetouchRequestTextGate,
     private val llmClient: StructuredLlmClient,
 ) {
     fun refine(galleryId: Long, userId: Long, request: RefineRetouchRequest): RefineRetouchResponse {
@@ -23,9 +26,14 @@ class RetouchRefinementService(
         if (request.text.isBlank() || request.text.length > RetouchPhoto.MAX_REQUEST_TEXT_LENGTH) {
             throw RetouchException(RetouchErrorCode.INVALID_POINT)
         }
-        if (!llmClient.isEnabled) {
-            return RefineRetouchResponse(originalText = request.text, refinedText = null, available = false)
+
+        if (!textGate.isWorthRefining(request.text)) {
+            return notARequest(request.text)
         }
+        if (!llmClient.isEnabled) {
+            return unavailable(request.text)
+        }
+
         val response = llmClient.completeJson(
             LlmJsonRequestDto(
                 system = "사진 보정 요청 원문을 작가가 이해하기 쉬운 간결하고 정중한 한국어로 정리한다. " +
@@ -46,8 +54,29 @@ class RetouchRefinementService(
         if (refined.isEmpty() || refined.length > RetouchPhoto.MAX_REQUEST_TEXT_LENGTH) {
             throw RetouchException(RetouchErrorCode.REFINEMENT_FAILED)
         }
-        return RefineRetouchResponse(originalText = request.text, refinedText = refined, available = true)
+        return RefineRetouchResponse(
+            originalText = request.text,
+            refinedText = refined,
+            available = true,
+            status = RetouchRefineStatus.READY,
+        )
     }
+
+    /** 모델을 부르지 않고 원문을 그대로 둔다 — 정리할 문장이 없다는 판정은 글자 유무만으로 충분하다. */
+    private fun notARequest(text: String) = RefineRetouchResponse(
+        originalText = text,
+        refinedText = null,
+        available = true,
+        status = RetouchRefineStatus.NOT_A_REQUEST,
+    )
+
+    /** 정제가 돌지 않았으므로 판정도 없다. 부부는 원문 그대로 진행한다. */
+    private fun unavailable(text: String) = RefineRetouchResponse(
+        originalText = text,
+        refinedText = null,
+        available = false,
+        status = null,
+    )
 
     companion object {
         /** 사진별 짧은 지시문이므로 비교샷과 같은 대화형 출력 예산을 쓴다. */
