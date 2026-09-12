@@ -283,6 +283,10 @@ interface RetouchControllerDocs {
 
     @Operation(summary = "보정 결과 업로드 완료", description = "개인 갤러리는 별도 보내기 없이 바로 조회할 수 있다. 스튜디오에서는 /rounds/1/send 전까지 결과가 숨겨진다.")
     fun completePersonalResults(loginUser: LoginUser, galleryId: Long, request: CompleteResultsRequest): ResponseEntity<RetouchRoundDetailResponse>
-    @Operation(summary = "보정 요청 AI 정제안", description = "원문은 변경하지 않고 제안만 반환한다. LLM 비활성 환경은 available=false, refinedText=null을 반환한다.")
+    @Operation(
+        summary = "보정 요청 AI 정제안",
+        description = "원문은 변경하지 않고 제안만 반환한다. LLM 비활성 환경은 available=false, status=null을 반환한다. " +
+            "한글·영문이 하나도 없는 입력은 모델을 부르지 않고 status=NOT_A_REQUEST로 돌려준다.",
+    )
     fun refine(loginUser: LoginUser, galleryId: Long, request: RefineRetouchRequest): ResponseEntity<RefineRetouchResponse>
 }
