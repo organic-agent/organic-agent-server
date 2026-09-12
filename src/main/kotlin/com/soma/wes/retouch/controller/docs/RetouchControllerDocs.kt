@@ -285,8 +285,11 @@ interface RetouchControllerDocs {
     fun completePersonalResults(loginUser: LoginUser, galleryId: Long, request: CompleteResultsRequest): ResponseEntity<RetouchRoundDetailResponse>
     @Operation(
         summary = "보정 요청 AI 정제안",
-        description = "원문은 변경하지 않고 제안만 반환한다. LLM 비활성 환경은 available=false, status=null을 반환한다. " +
-            "한글·영문이 하나도 없는 입력은 모델을 부르지 않고 status=NOT_A_REQUEST로 돌려준다.",
+        description = "원문은 변경하지 않고 제안만 반환한다. photoId·x·y를 주면 미리보기에 탭 지점을 표시해 함께 보내 대상을 특정하고, " +
+            "탭한 곳과 원문이 어긋나면 status=NEEDS_CLARIFICATION으로 되묻는다. 좌표 없이 photoId만 주면 사진 전체 메모로 다룬다. " +
+            "photoId가 없으면 텍스트만 보고 말투만 정리한다. " +
+            "한글·영문이 하나도 없는 입력은 모델을 부르지 않고 status=NOT_A_REQUEST로 돌려주며, " +
+            "LLM 비활성이거나 미리보기를 읽지 못하면 available=false, status=null이다(정제하지 않고 원문을 그대로 둔다).",
     )
     fun refine(loginUser: LoginUser, galleryId: Long, request: RefineRetouchRequest): ResponseEntity<RefineRetouchResponse>
 }

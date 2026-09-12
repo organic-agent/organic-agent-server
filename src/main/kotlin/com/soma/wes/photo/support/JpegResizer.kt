@@ -17,12 +17,16 @@ import kotlin.math.roundToInt
 @Component
 class JpegResizer {
 
-    fun resize(source: ByteArray, longEdge: Int): ByteArray {
-        val image = ImageIO.read(source.inputStream()) ?: throw IllegalArgumentException("디코딩할 수 없는 이미지")
-        val scale = longEdge.toDouble() / max(image.width, image.height)
-        val target = if (scale < 1.0) scaled(image, scale) else asRgb(image)
-        return encode(target)
+    fun resize(source: ByteArray, longEdge: Int): ByteArray = toJpeg(decode(source), longEdge)
+
+    /** 이미 디코딩한 이미지를 JPEG로. [longEdge]를 주면 그 크기로 줄인 뒤 인코딩한다. */
+    fun toJpeg(image: BufferedImage, longEdge: Int? = null): ByteArray {
+        val scale = longEdge?.let { it.toDouble() / max(image.width, image.height) } ?: 1.0
+        return encode(if (scale < 1.0) scaled(image, scale) else asRgb(image))
     }
+
+    fun decode(source: ByteArray): BufferedImage =
+        ImageIO.read(source.inputStream()) ?: throw IllegalArgumentException("디코딩할 수 없는 이미지")
 
     private fun scaled(image: BufferedImage, scale: Double): BufferedImage {
         val width = max(1, (image.width * scale).roundToInt())
