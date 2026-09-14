@@ -99,7 +99,7 @@ class PhotoAnalysis(
 
     /**
      * 분석 배치의 세부 점수(`sharpness`·`sharpness_pct`·`highlight_clip`·`shadow_clip`·`technical_score`·
-     * `aesthetic_score` …). 비교샷 판정과 추천 이유의 재료다. 행을 만들 때는 빈 객체다(DB 기본값과 같다).
+     * `aesthetic_score` …). 추천 이유 문장의 재료다. 행을 만들 때는 빈 객체다(DB 기본값과 같다).
      */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "sub_scores", nullable = false, columnDefinition = "jsonb")
@@ -109,9 +109,9 @@ class PhotoAnalysis(
     fun subScore(key: String): Double? = (subScores[key] as? Number)?.toDouble()
 
     /**
-     * 분석 완료 — 비교샷·추천이 재료로 써도 되는 행인가. 배치가 SCORE(`model_version`)와 CATEGORIZE(백분위·그룹)
+     * 분석 완료 — 폴더·추천이 재료로 써도 되는 행인가. 배치가 SCORE(`model_version`)와 CATEGORIZE(백분위·그룹)
      * 두 잡으로 갈라져 있어 `model_version`만으로는 부족하다. 그 사이 창의 행은 백분위가 비어 있고, 그런 행을
-     * 완료로 보면 판정·추천이 기본값으로 조용히 틀린다. 소비자가 실제로 쓰는 백분위가 채워졌는지를 본다.
+     * 완료로 보면 추천이 기본값으로 조용히 틀린다. 소비자가 실제로 쓰는 백분위가 채워졌는지를 본다.
      */
     val isAnalyzed: Boolean
         get() = modelVersion != null && technicalPct != null && aestheticPct != null

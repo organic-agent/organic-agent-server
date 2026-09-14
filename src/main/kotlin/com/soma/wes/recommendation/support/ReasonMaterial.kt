@@ -14,19 +14,25 @@ object ReasonMaterial {
     /** 근거: 백분위를 말해도 되는 상한(상위 15%). */
     const val QUALITY_TOP_PCT = 15.0
 
+    /** 선명도 비가 이보다 커야 "더 또렷"이라고 말한다. */
+    const val SHARPNESS_RATIO = 1.25
+
+    /** 백분위 차가 이보다 작으면 근거로 쓰지 않는다. */
+    const val PCT_GAP = 5.0
+
     /** 절대 품질 하한 게이트 — 원점수가 하한 미만이면 품질 표현만 근거에서 뺀다. 사진을 거르지는 않는다. */
     const val QUALITY_FLOOR_TECHNICAL = 0.35
     const val QUALITY_FLOOR_AESTHETIC = 4.5
 
     val SUBJECT_KO = mapOf("bride" to "신부 단독", "groom" to "신랑 단독", "couple" to "두 분", "group" to "단체", "unknown" to "")
 
-    /** 형제(연사) 컷이 밀린 이유 한 마디. 비교샷과 같은 선명도 비·백분위 차 기준이다. */
+    /** 형제(연사) 컷이 밀린 이유 한 마디. [SHARPNESS_RATIO]·[PCT_GAP]이 기준이다. */
     fun whyNot(pick: RecommendablePhotoDto, other: RecommendablePhotoDto): String {
         val ps = pick.subScore("sharpness") ?: 0.0
         val os = other.subScore("sharpness") ?: 0.0
-        if (ps > PairFactCollector.SHARPNESS_RATIO * os && ps > 0) return "덜 선명함"
-        if (pick.technicalPct - other.technicalPct > PairFactCollector.PCT_GAP) return "화질이 떨어짐"
-        if (pick.aestheticPct - other.aestheticPct > PairFactCollector.PCT_GAP) return "인상이 약함"
+        if (ps > SHARPNESS_RATIO * os && ps > 0) return "덜 선명함"
+        if (pick.technicalPct - other.technicalPct > PCT_GAP) return "화질이 떨어짐"
+        if (pick.aestheticPct - other.aestheticPct > PCT_GAP) return "인상이 약함"
         return "거의 같은 컷"
     }
 

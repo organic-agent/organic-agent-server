@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.core.io.ClassPathResource
 
-/** 마이그레이션의 GRANT 계약(V15 embedder, V16 photoselect, V14 preference)이 Lambda의 실제 SQL을 실행할 수 있는지 검증한다. */
+/** 마이그레이션의 GRANT 계약(V15 embedder, V22 photoselect, V14 preference)이 Lambda의 실제 SQL을 실행할 수 있는지 검증한다. */
 @IntegrationTest
 class AdminEmbedderPrivilegeContractTest @Autowired constructor(
     private val dataSource: DataSource,
@@ -110,8 +110,8 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
     /** V15 가 V1 의 embedder 블록을 통째로 대체한다 — V1 블록은 지금 스키마에 없는 컬럼을 가리켜 실행할 수 없다. */
     private fun embedderGrantBlock(): String = grantBlock("V15__pipeline_v2_photo_layer.sql", "EMBEDDER_GRANT_CONTRACT")
 
-    /** V16 이 V1 의 photoselect 블록을 통째로 대체한다 — 잡 테이블의 UPDATE 를 error 컬럼으로 좁혔다. */
-    private fun photoselectGrantBlock(): String = grantBlock("V16__pipeline_v2_job_layer.sql", "PHOTOSELECT_GRANT_CONTRACT")
+    /** V22 가 V16 블록을 통째로 대체한다 — 비교샷과 함께 지운 ai_pair_verdicts 가 빠졌다(V16 블록은 없는 테이블을 가리킨다). */
+    private fun photoselectGrantBlock(): String = grantBlock("V22__drop_ai_pair_verdicts.sql", "PHOTOSELECT_GRANT_CONTRACT")
 
     private fun preferenceGrantBlock(): String = grantBlock("V14__preference_models.sql", "PREFERENCE_GRANT_CONTRACT")
 

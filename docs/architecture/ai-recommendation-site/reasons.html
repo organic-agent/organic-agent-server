@@ -136,7 +136,7 @@ SCHEMA: { reasons: [{ photo_id: string, reason: string }] }  additionalPropertie
 - folder "야외 자연 › 해변 모래사장" 41장 중 1위 → "해변 모래사장 폴더 41장 중 점수가 가장 높은 컷이에요"</code></pre>
 
 <h2 id="bedrock">Bedrock 어댑터 · 설정</h2>
-<div class="role"><b>한다</b><span><strong>StructuredLlmClient</strong> 포트 뒤에서 Bedrock InvokeModel 을 부르고 JSON 스키마 응답을 돌려준다. 켜짐/꺼짐은 설정 하나로 빈이 바뀐다(<code>Bedrock…</code> / <code>Disabled…</code>).</span><b>왜</b><span>질의 해석·이유 문장·비교샷이 같은 호출 모양(system + parts + schema)을 쓰므로 어댑터 하나로 모은다. 스로틀링 재시도·타임아웃·refusal 처리 같은 벤더 사정을 도메인 코드에서 떼어 내고, 테스트는 <code>FakeStructuredLlmClient</code> 로 LLM 없이 돈다. 꺼짐 빈이 따로 있는 이유는 로컬·테스트·비용 통제에서 호출을 확실히 막기 위해서다.</span><b>없으면</b><span>도메인 서비스마다 Bedrock SDK 를 직접 다루고, 스위치를 꺼도 어딘가에서 호출이 새어 나간다.</span><b>입출력</b><span><code>LlmJsonRequestDto{system, parts[text|image], schema, maxTokens, timeout, maxRetries}</code> → <code>JsonNode</code> 또는 <code>LLM_CALL_FAILED</code></span></div>
+<div class="role"><b>한다</b><span><strong>StructuredLlmClient</strong> 포트 뒤에서 Bedrock InvokeModel 을 부르고 JSON 스키마 응답을 돌려준다. 켜짐/꺼짐은 설정 하나로 빈이 바뀐다(<code>Bedrock…</code> / <code>Disabled…</code>).</span><b>왜</b><span>질의 해석과 이유 문장이 같은 호출 모양(system + parts + schema)을 쓰므로 어댑터 하나로 모은다. 스로틀링 재시도·타임아웃·refusal 처리 같은 벤더 사정을 도메인 코드에서 떼어 내고, 테스트는 <code>FakeStructuredLlmClient</code> 로 LLM 없이 돈다. 꺼짐 빈이 따로 있는 이유는 로컬·테스트·비용 통제에서 호출을 확실히 막기 위해서다.</span><b>없으면</b><span>도메인 서비스마다 Bedrock SDK 를 직접 다루고, 스위치를 꺼도 어딘가에서 호출이 새어 나간다.</span><b>입출력</b><span><code>LlmJsonRequestDto{system, parts[text|image], schema, maxTokens, timeout, maxRetries}</code> → <code>JsonNode</code> 또는 <code>LLM_CALL_FAILED</code></span></div>
 <div class="tablewrap"><table>
 <tr><th>구성</th><th>내용</th></tr>
 <tr><td>스위치</td><td class="wrap"><code>app.llm.enabled</code>(SSM, local·prod 모두 2026-09-05 부터 true). <code>LlmClientConfig</code>: true → <code>BedrockStructuredLlmClient</code>, 아니면 <code>DisabledStructuredLlmClient</code>(부르면 즉시 <code>LLM_CALL_FAILED</code>). <code>RecommendationProperties</code>·<code>app.recommendation.*</code> 는 없다 — 설정은 <code>app.llm.*</code> 하나</td></tr>
@@ -152,7 +152,6 @@ SCHEMA: { reasons: [{ photo_id: string, reason: string }] }  additionalPropertie
 <tr><td><code>image-long-edge</code></td><td>768</td><td>미리보기 리사이즈</td></tr>
 <tr><td><code>reasons-batch</code> · <code>reasons-max-tokens</code> · <code>reasons-timeout</code></td><td>10 · 8192 · 3분</td><td>이유 문장</td></tr>
 <tr><td><code>reasons-vision</code> · <code>reasons-sibling-images</code></td><td>true · 2</td><td>이미지 전송 여부 · 형제 컷 수</td></tr>
-<tr><td><code>compare-max-tokens</code> · <code>compare-timeout</code></td><td>1024 · 8s</td><td>비교샷(범위 밖)</td></tr>
 <tr><td>(질의 해석)</td><td>2048 tok · 20s</td><td>코드 상수(<a href="query.html">4.</a>)</td></tr>
 </table></div>
 

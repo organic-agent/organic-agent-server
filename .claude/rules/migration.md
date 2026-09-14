@@ -60,8 +60,9 @@ paths:
   `PhotoAnalysis.isAnalyzed`(백분위까지 채워짐) 하나로만 판단한다. DB 제약도 잡 단위다(V3):
   `ck_photo_analysis_scored`(model_version ⇒ subjects·analyzed_at), `ck_photo_analysis_categorized`
   (백분위·연사·그룹은 전부 있거나 전부 없음). 배치가 쓰는 컬럼 묶음을 바꾸면 이 두 제약도 같이 본다.
-- `ai_selection_jobs`·`ai_recommendations`·`ai_pair_verdicts`는 2026-09-04부터 이 서버가 쓴다
-  (추천 실행기 `AiSelectionJobRunner`, 비교샷 `PairVerdictJudge`). AI repo는 더 이상 이 테이블을 쓰지 않는다.
+- `ai_selection_jobs`·`ai_recommendations`는 2026-09-04부터 이 서버가 쓴다(추천 실행기 `AiSelectionJobRunner`).
+  AI repo는 더 이상 이 테이블을 쓰지 않는다. 비교샷 테이블 `ai_pair_verdicts`는 기능과 함께 V22에서 지웠다 —
+  photoselect GRANT 계약도 V22 블록이 V16 블록을 통째로 대체한다.
 - `preference_models`(V14)는 AI repo Lambda `preference`(`preference/store.py`, DB 유저 `photoselect`)가
   INSERT/UPDATE 한다 — 갤러리 마감마다 가중치 행을 새로 넣고, 게이트를 통과하면 이전 `active`를 내리고 새 행을
   `active=true`로 둔다(부분 유니크 인덱스로 활성 행은 하나). 이 서버는 읽기만 한다. 컬럼 순서 계약은

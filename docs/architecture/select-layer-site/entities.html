@@ -32,18 +32,18 @@
   <a href="index.html">전체 아키텍처</a><span class="sep">/</span>
   <span class="here">엔티티 필드 사전</span>
   <span class="spacer"></span>
-  <a href="studio.html">0</a><a href="rating.html">1</a><a href="compare.html">2</a><a href="collab.html">3</a><a href="retouch.html">4</a><a href="selection.html">5</a>
+  <a href="studio.html">0</a><a href="rating.html">1</a><a href="collab.html">2</a><a href="retouch.html">3</a><a href="selection.html">4</a>
 </nav>
 
 <div class="eyebrow">wes · JPA 엔티티 · 컬럼 소유권</div>
 <h1>엔티티 필드 사전 — 셀렉 계층 테이블의 모든 컬럼</h1>
 <p class="lede">기능별로 묶어 각 컬럼의 <em>뜻 · 쓰는 주체 · 채워지거나 바뀌는 시점</em>을 적는다. <code>BaseEntity</code> 의 <code>version · created_at · updated_at</code> 은 모든 테이블에 있고 JPA 가 관리하므로 특기할 때만 적는다.
 분석 결과 테이블(<code>photos · photo_analysis</code> 등)은 <a href="../pipeline-v2-site/entities.html">분석 파이프라인 사전</a>, 추천은 <a href="../ai-recommendation-site/entities.html">AI 추천 사전</a>.</p>
-<p class="meta">코드 기준 wes main@45981bf · 2026-09-09 · <code>V1__baseline.sql</code> + V5 · V6 · V8 · V9 · V10 · V11 · V13 · V18 · V20</p>
+<p class="meta">코드 기준 wes main · 2026-09-14 · <code>V1__baseline.sql</code> + V5 · V6 · V8 · V9 · V10 · V11 · V13 · V18 · V20 · V22</p>
 <p class="small">쓰는 주체 — <span class="who a">작가</span> 스튜디오·개인 워크스페이스 멤버 · <span class="who c">부부</span> gallery_members·개인 참가자 · <span class="who g">하객</span> 게스트 토큰 · <span class="who w">wes</span> 서버 자동(스케줄러·CASCADE·파생) · <span class="who j">JPA</span> 감사</p>
 
 <div class="toc">
-  <a href="#studio">스튜디오 · 워크스페이스</a><a href="#gallery">갤러리 · 초대 · 멤버</a><a href="#rating">별점 · 댓글</a><a href="#compare">비교샷</a><a href="#collab">협업</a><a href="#retouch">보정</a><a href="#selection">선택</a>
+  <a href="#studio">스튜디오 · 워크스페이스</a><a href="#gallery">갤러리 · 초대 · 멤버</a><a href="#rating">별점 · 댓글</a><a href="#collab">협업</a><a href="#retouch">보정</a><a href="#selection">선택</a>
 </div>
 
 <!-- ─── studio / workspace ─── -->
@@ -105,7 +105,7 @@
 <tr><td class="col"><code>status</code></td><td><code>DRAFT | OPEN | CLOSED</code></td><td>부부의 열람·선택 가능 여부. <code>isVisibleToMember = != DRAFT</code></td><td><span class="who a">작가</span> <span class="who w">wes</span></td><td><code>open()</code>(DRAFT 만) · <code>close()</code> · <code>reopen()</code> · 보정 확정 · 플랜 만료 자동 close</td></tr>
 <tr><td class="col"><code>stage</code></td><td><code>UPLOAD → SELECTION_IN_PROGRESS → SELECTION_COMPLETED → RETOUCH → DELIVERY → ARCHIVED</code></td><td>작가 화면 스테퍼. <strong>DB CHECK 는 ALBUM 허용·DELIVERY 불허(불일치)</strong></td><td><span class="who w">wes</span></td><td>폴더 확정 · open · 제출/취소 · 보정 회차 제출/보내기/확정 · close</td></tr>
 <tr><td class="col"><code>workflow_status</code></td><td><code>DRAFT | IN_PROGRESS | COMPLETED | ARCHIVED</code></td><td>자유 태그(검증 없음)</td><td><span class="who a">작가</span></td><td><code>changeWorkflowStatus</code> · close · 확정</td></tr>
-<tr><td class="col"><code>selection_deadline</code></td><td>timestamptz</td><td>선택 마감. <code>requireSelectable</code> 이 검사(별점·담기·비교샷·댓글 쓰기·협업 반응)</td><td><span class="who a">작가</span></td><td>생성 · reopen. D-3 알림 <code>DEADLINE_REMINDER</code></td></tr>
+<tr><td class="col"><code>selection_deadline</code></td><td>timestamptz</td><td>선택 마감. <code>requireSelectable</code> 이 검사(별점·담기·댓글 쓰기·협업 반응)</td><td><span class="who a">작가</span></td><td>생성 · reopen. D-3 알림 <code>DEADLINE_REMINDER</code></td></tr>
 <tr><td class="col"><code>max_selectable_photo_count</code></td><td>int ≥1</td><td>계약 장수. 제출 시 <strong>정확 일치</strong>. NULL 은 무제한(제출 불가 조건 아님 — export/submit 의 <code>requireExactTarget</code> 은 null 이면 통과)</td><td><span class="who a">작가</span></td><td>생성 · <code>PATCH /max-selectable-photo-count</code>(부부 상향 요청 → 작가 승인)</td></tr>
 <tr><td class="col"><code>max_retouch_round_count</code></td><td>int ≥1</td><td>계약 보정 횟수. NULL 무제한. 회차 생성·제출·N차 요청에서 검사</td><td><span class="who a">작가</span></td><td>생성</td></tr>
 <tr><td class="col"><code>photo_organization_required</code> · <code>folders_saved_at</code></td><td>bool · timestamptz</td><td>폴더 정리 필수 플래그(생성 시 항상 true) · 폴더 확정 시각(1회성). 담기는 <code>folders_saved_at</code> 이 있어야(409_4)</td><td><span class="who w">wes</span> <span class="who c">부부</span></td><td>생성 · <code>FolderOrganizationService.save</code></td></tr>
@@ -144,21 +144,6 @@
 <tr><th class="n">컬럼</th><th class="t">타입</th><th class="m">뜻</th><th class="w">쓰는 주체</th><th class="h">시점</th></tr>
 <tr><td class="col"><code>photo_id</code> · <code>author_id</code> · <code>content</code></td><td>불변 · ≤500자</td><td>사진 · 작성자 · 본문(trim, 빈 값 불가). 수정 없음</td><td><span class="who c">부부</span></td><td><code>POST …/photos/{p}/comments</code>(<code>requireParticipantWriter</code>, 셀렉 제출 무관)</td></tr>
 <tr><td class="col"><code>deleted_at</code></td><td>timestamptz</td><td>소프트 삭제. 작성자만</td><td><span class="who c">부부</span></td><td><code>DELETE …/comments/{c}</code></td></tr>
-</table></div>
-</section>
-
-<!-- ─── compare ─── -->
-<section class="ent" id="compare">
-<h2>비교샷</h2>
-<h3>ai_pair_verdicts — <code>AiPairVerdict</code></h3>
-<p class="sub">recommendation/domain/AiPairVerdict.kt · UNIQUE (selection_id, LEAST(photo_a, photo_b), GREATEST(photo_a, photo_b)) · FK selection CASCADE · photo CASCADE · CHECK chosen ∈ {a, b}</p>
-<div class="tablewrap"><table>
-<tr><th class="n">컬럼</th><th class="t">타입</th><th class="m">뜻</th><th class="w">쓰는 주체</th><th class="h">시점</th></tr>
-<tr><td class="col"><code>selection_id</code></td><td>bigint</td><td>판정이 속한 셀렉(없으면 compare 가 만든다)</td><td><span class="who w">wes</span></td><td>첫 판정 INSERT</td></tr>
-<tr><td class="col"><code>photo_a</code> · <code>photo_b</code></td><td>bigint</td><td>요청 순서 그대로(정렬 안 함). 조회·유니크는 LEAST/GREATEST 식</td><td><span class="who w">wes</span></td><td>INSERT</td></tr>
-<tr><td class="col"><code>chosen_photo_id</code> · <code>confidence</code> · <code>reason</code> · <code>source</code></td><td>bigint · clear|slight · text · llm|template</td><td>고른 사진 · 확신 · 문장(LLM 400자 컷) · 출처</td><td><span class="who w">wes</span></td><td>INSERT · 재판정 시 <code>replaceWith</code> 덮어쓰기</td></tr>
-<tr><td class="col"><code>facts</code></td><td>jsonb</td><td>판정 재료(<code>sharper · technical_pct · aesthetic_pct · exposure · same_burst · folders · subjects · already_selected</code>). 응답에 안 나감</td><td><span class="who w">wes</span></td><td>INSERT · 덮어쓰기</td></tr>
-<tr><td class="col"><code>model_version</code></td><td>varchar(50)</td><td><code>modelId + "+" + PROMPT_VERSION</code>. 캐시 유효성의 유일한 키 — 재분석·폴더 변경으로는 무효화되지 않는다</td><td><span class="who w">wes</span></td><td>INSERT · 덮어쓰기</td></tr>
 </table></div>
 </section>
 
@@ -221,7 +206,7 @@
 <p class="sub">selection/domain/PhotoSelection.kt · uk_photo_selections_gallery_id (갤러리당 1행) · FK gallery CASCADE · @SQLRestriction deleted_at</p>
 <div class="tablewrap"><table>
 <tr><th class="n">컬럼</th><th class="t">타입</th><th class="m">뜻</th><th class="w">쓰는 주체</th><th class="h">시점</th></tr>
-<tr><td class="col"><code>gallery_id</code></td><td>bigint 유니크</td><td>갤러리. 추천·비교샷·보정 회차가 이 행에 매달린다</td><td><span class="who w">wes</span></td><td>갤러리 생성 시 함께 INSERT · (V5 이전) 첫 담기·추천 요청·비교샷에서 <code>loadOrCreate</code></td></tr>
+<tr><td class="col"><code>gallery_id</code></td><td>bigint 유니크</td><td>갤러리. 추천·보정 회차가 이 행에 매달린다</td><td><span class="who w">wes</span></td><td>갤러리 생성 시 함께 INSERT · (V5 이전) 첫 담기·추천 요청에서 <code>loadOrCreate</code></td></tr>
 <tr><td class="col"><code>status</code></td><td><code>SELECTING | SUBMITTED</code></td><td>제출 여부. <code>requireEditable</code> 이 담기·빼기·추천·카테고리 이동(초대 고객)을 잠근다</td><td><span class="who c">부부</span> <span class="who a">작가</span></td><td><code>POST /submit</code> · <code>POST /withdraw</code>(작가)</td></tr>
 <tr><td class="col"><code>submitted_at</code> · <code>submitted_by_user_id</code></td><td>timestamptz · FK SET NULL</td><td>제출 시각·사람. 취소 시 NULL</td><td><span class="who c">부부</span></td><td>submit · withdraw</td></tr>
 <tr><td class="col"><code>deleted_at</code></td><td>timestamptz</td><td>소프트 삭제(관리자 리소스 <code>SELECTION</code>)</td><td>관리자</td><td></td></tr>
@@ -248,7 +233,7 @@
 </ul>
 
 <div class="pager">
-  <a href="selection.html">← 5. 선택 사진</a>
+  <a href="selection.html">← 4. 선택 사진</a>
   <a href="index.html">전체 아키텍처로 ↑</a>
 </div>
 </main>

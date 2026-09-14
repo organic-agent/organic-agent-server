@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>5. 선택 사진 — 셀렉 계층</title>
+<title>4. 선택 사진 — 셀렉 계층</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="site.css">
 </head>
@@ -11,16 +11,16 @@
 <main>
 <nav class="nav">
   <a href="index.html">전체 아키텍처</a><span class="sep">/</span>
-  <span class="here">5. 선택 사진</span>
+  <span class="here">4. 선택 사진</span>
   <span class="spacer"></span>
-  <a href="retouch.html">← 4. 보정</a>
+  <a href="retouch.html">← 3. 보정</a>
   <a href="entities.html">엔티티 사전 →</a>
 </nav>
 
 <div class="eyebrow">wes · selection 도메인 · web 부부 갤러리 화면</div>
 <h1>선택 사진 — 부부가 담고, 정확한 장수로 제출하면 작가에게 넘어간다</h1>
 <p class="lede">갤러리마다 셀렉 앨범(<code>photo_selections</code>) 한 행이 있고, 부부가 담은 사진이 <code>photo_selection_items</code> 에 쌓인다. 담기·빼기는 제출 전에만, 제출은 계약 장수와 <strong>정확히</strong> 일치할 때만.
-제출하면 작가에게 알림이 가고 1회차 보정 요청이 같은 트랜잭션에서 열리며, 되돌리기는 작가만 할 수 있다. AI 추천·비교샷·협업·보정은 전부 이 앨범을 중심으로 돈다.</p>
+제출하면 작가에게 알림이 가고 1회차 보정 요청이 같은 트랜잭션에서 열리며, 되돌리기는 작가만 할 수 있다. AI 추천·협업·보정은 전부 이 앨범을 중심으로 돈다.</p>
 <p class="meta">코드 기준 wes main@45981bf · 2026-09-09 · <code>selection/controller/PhotoSelectionController.kt</code> · <code>service/PhotoSelectionService.kt</code> · <code>PhotoSelectionExportService.kt</code> · <code>domain/PhotoSelection.kt</code> · <code>PhotoSelectionItem.kt</code></p>
 
 <h2 id="arch">흐름</h2>
@@ -153,9 +153,8 @@ withdraw (requireManager):
 <h2 id="touch">다른 기능과의 접점</h2>
 <ul>
   <li><strong>AI 추천</strong> — <code>ai_recommendations.selection_id → photo_selections</code> CASCADE. 추천 요청이 앨범을 없으면 만들고 <code>requireEditable</code>. 응답 <code>selected</code> 는 항목 포함 여부. <code>accepted_at</code> 훅은 미구현.</li>
-  <li><strong>비교샷</strong> — 같은 <code>/photo-selection/…</code> 경로군(<code>/compare</code>). <a href="compare.html">2.</a></li>
-  <li><strong>협업</strong> — 앨범과 직접 연결되지 않는다. <code>CollabSelectionMode</code> 는 세션의 사진 구성 방식(MANUAL / CONCEPT_FOLDER)일 뿐이고 하객에게는 별점이 숨겨진다. <a href="collab.html">3.</a></li>
-  <li><strong>보정</strong> — <code>retouch_photo_id</code>(SET NULL)로 보정본을 담고, 제출이 1회차 요청을 만들며, 회차 제출은 앨범 제출을 전제한다. <a href="retouch.html">4.</a></li>
+  <li><strong>협업</strong> — 앨범과 직접 연결되지 않는다. <code>CollabSelectionMode</code> 는 세션의 사진 구성 방식(MANUAL / CONCEPT_FOLDER)일 뿐이고 하객에게는 별점이 숨겨진다. <a href="collab.html">2.</a></li>
+  <li><strong>보정</strong> — <code>retouch_photo_id</code>(SET NULL)로 보정본을 담고, 제출이 1회차 요청을 만들며, 회차 제출은 앨범 제출을 전제한다. <a href="retouch.html">3.</a></li>
   <li><strong>관리자</strong> — 리소스 <code>SELECTION</code>(읽기 전용 status), 워크플로 <code>REPLACE_SELECTION_ITEMS · SUBMIT_SELECTION_REVISION · WITHDRAW_SELECTION · CREATE_AI_SELECTION_DRAFT</code>.</li>
 </ul>
 
@@ -171,7 +170,7 @@ withdraw (requireManager):
 </table></div>
 
 <div class="pager">
-  <a href="retouch.html">← 4. 보정</a>
+  <a href="retouch.html">← 3. 보정</a>
   <a href="entities.html">엔티티 필드 사전 →</a>
 </div>
 </main>

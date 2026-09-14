@@ -6,7 +6,7 @@ import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
 
 /**
- * 기록형 LLM. 테스트가 정한 JSON을 돌려주거나 정한 예외를 던진다 — AI repo 테스트의 `FakeCompareLlm`과 같은 역할.
+ * 기록형 LLM. 테스트가 정한 JSON을 돌려주거나 정한 예외를 던진다.
  * DB 밖 상태라 [DatabaseCleaner]가 모르므로 테스트가 `@BeforeEach`에서 [reset]한다.
  */
 class FakeStructuredLlmClient : StructuredLlmClient {

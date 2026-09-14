@@ -159,7 +159,7 @@ Terraform 변수 <code>gpu_score_enabled</code>(기본 true, 2026-09-08부터)�
 </ul>
 
 <h2 id="bedrock">Bedrock</h2>
-<p>categorize가 그룹 이름을 지을 때 <code>global.anthropic.claude-sonnet-4-6</code> 추론 프로필을 <code>InvokeModel</code>로 부릅니다. DB 서브넷에는 인터넷 경로가 없으므로 <code>bedrock-runtime</code> 인터페이스 엔드포인트를 2a 한 곳에만 두었고(<code>interface_endpoint_subnet_indexes=[0]</code>, 약 $11/월), 한때 있던 <code>lambda</code> 인터페이스 엔드포인트는 Lambda 간 호출을 없애며 함께 제거했습니다(#57). wes-app의 추천·비교샷 LLM 호출은 public subnet에서 IGW로 나가며 앱 롤에 별도 <code>InvokeModel</code> 권한이 있습니다.</p>
+<p>categorize가 그룹 이름을 지을 때 <code>global.anthropic.claude-sonnet-4-6</code> 추론 프로필을 <code>InvokeModel</code>로 부릅니다. DB 서브넷에는 인터넷 경로가 없으므로 <code>bedrock-runtime</code> 인터페이스 엔드포인트를 2a 한 곳에만 두었고(<code>interface_endpoint_subnet_indexes=[0]</code>, 약 $11/월), 한때 있던 <code>lambda</code> 인터페이스 엔드포인트는 Lambda 간 호출을 없애며 함께 제거했습니다(#57). wes-app의 추천 LLM 호출은 public subnet에서 IGW로 나가며 앱 롤에 별도 <code>InvokeModel</code> 권한이 있습니다.</p>
 
 <h2 id="files">코드 위치</h2>
 <div class="tablewrap"><table>

@@ -148,11 +148,11 @@
 const SITES = [
   { id: 'select-layer-site', order: '01', group: '기능 · 사람이 쓰는 것', color: '#7C5CB8',
     title: '셀렉 계층', sub: '작가가 갤러리를 열고, 부부가 고르고, 작가가 보정해 넘기기까지',
-    desc: '스튜디오·별점·비교샷·협업·보정·선택 여섯 기능. 인가 전표(GalleryAccessPolicy)와 한 갤러리의 여정.',
-    chips: ['studio','gallery','photo','collab','retouch','selection'], basis: 'wes main@45981bf · 2026-09-09',
+    desc: '스튜디오·별점·협업·보정·선택 다섯 기능. 인가 전표(GalleryAccessPolicy)와 한 갤러리의 여정.',
+    chips: ['studio','gallery','photo','collab','retouch','selection'], basis: 'wes main · 2026-09-14',
     pages: [
-      ['index.html','—','전체 아키텍처'], ['studio.html','0','스튜디오'], ['rating.html','1','별점'], ['compare.html','2','비교샷'],
-      ['collab.html','3','협업'], ['retouch.html','4','보정'], ['selection.html','5','선택'], ['entities.html','사전','엔티티 사전'] ] },
+      ['index.html','—','전체 아키텍처'], ['studio.html','0','스튜디오'], ['rating.html','1','별점'],
+      ['collab.html','2','협업'], ['retouch.html','3','보정'], ['selection.html','4','선택'], ['entities.html','사전','엔티티 사전'] ] },
   { id: 'pipeline-v2-site', order: '02', group: '기능 · 사람이 쓰는 것', color: '#398B46',
     title: '분석 파이프라인 v2', sub: '사진 업로드부터 AI 폴더 완성까지',
     desc: '브라우저 → S3 직접 업로드, wes 5초 스윕이 embedder(Lambda) · score(GPU 워커) · categorize(Lambda)를 조율하고 폴더를 물질화한다.',
@@ -163,7 +163,7 @@ const SITES = [
       ['folders.html','6','폴더 생성'], ['entities.html','사전','엔티티 사전'] ] },
   { id: 'ai-recommendation-site', order: '03', group: '기능 · 사람이 쓰는 것', color: '#C13E70',
     title: 'AI 폴더 추천', sub: '폴더마다 "이 컷"을 고르고 이유를 말한다',
-    desc: '요청 → 잡 실행 → 자연어 질의 해석 → 후보·점수·쿼터·MMR → Bedrock 이유 문장. 비교샷은 셀렉 계층에.',
+    desc: '요청 → 잡 실행 → 자연어 질의 해석 → 후보·점수·쿼터·MMR → Bedrock 이유 문장.',
     chips: ['recommendation','Bedrock','ai_selection_jobs'], basis: 'wes main@45981bf · 2026-09-09',
     pages: [
       ['index.html','1','전체 아키텍처'], ['request.html','2','요청·조회'], ['job.html','3','잡 실행'], ['query.html','4','질의 해석'],
