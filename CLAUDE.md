@@ -48,7 +48,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   집어 내고 wes는 켜고 끄기만 한다(`ScoreWorkerSupervisor`·`ScoreWorkerPool`, `app.analysis.gpu.*`; 끄기는 워커의 유휴 30초 자기 정지가
   1차, wes는 2분 무진행 안전망). 워커가 없거나 멈추면 score Lambda 폴백을 `{galleryId, photoIds}`로 보낸다. Lambda는 잡 상태를
   쓰지 않는다(categorize 실패 시 `error` 한 컬럼 예외). 재분석 = `photo_analysis` 삭제(관리자 재처리). `category`(폴더 세트 실체화)와
-  `recommendation`(추천·비교샷 + LLM)은 완성된 `photo_analysis`·배정 행만 읽는다. 설계는 `docs/plans/pipeline-v2-wes.md`
+  `recommendation`(추천 + LLM)은 완성된 `photo_analysis`·배정 행만 읽는다. 설계는 `docs/plans/pipeline-v2-wes.md`
   (이전 설계 `docs/plans/analysis-domain.md`는 §12부터 대체됨), 컬럼 소유는 `.claude/rules/migration.md`.
 - 인프라는 sibling repo `../../organic-agent-infra` (Terraform: VPC/ALB/EC2/RDS, 사진 S3 버킷
   + 로컬 개발용 dev 버킷, 임베딩 Lambda). `EMBEDDING_DIMENSION`은 이 repo 두 곳과 인프라 repo까지 세 곳이 일치해야
