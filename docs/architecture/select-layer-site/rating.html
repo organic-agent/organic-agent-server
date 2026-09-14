@@ -14,7 +14,7 @@
   <span class="here">1. 사진 별점</span>
   <span class="spacer"></span>
   <a href="studio.html">← 0. 스튜디오</a>
-  <a href="compare.html">2. 비교샷 →</a>
+  <a href="collab.html">2. 협업 →</a>
 </nav>
 
 <div class="eyebrow">wes · photo 도메인 · PhotoRating · PhotoComment</div>
@@ -82,7 +82,7 @@ renderDiagram('#d-arch', {
 <tr><th>곳</th><th>어떻게</th></tr>
 <tr><td>관리자 AI 셀렉 초안 <code>AdminWorkflowRepository.selectDiverse</code></td><td class="wrap"><code>LEFT JOIN photo_ratings</code> 로 <code>COALESCE(AVG(score), 0)</code>(사진당 1행이라 사실상 그 값) → <code>quality = (rating/5)·0.8 + ln1p(pixels)/ln1p(maxPixels)·0.2</code>. 계획 문서의 "legacyQuality"가 이 식이다. 결과는 <code>photo_selection_revisions(source='AI_DRAFT')</code>. 앱 롤로 도는 wes 내부 코드라 아래 금지와 별개</td></tr>
 <tr><td>관리자 리소스 <code>PHOTO_RATING</code></td><td class="wrap">테이블 <code>photo_ratings</code>, id = photo_id, 라벨 <code>photo #N / S stars</code>, score 1~5</td></tr>
-<tr><td><strong>AI 워커 — 금지</strong></td><td class="wrap"><code>photoselect</code>·<code>embedder</code> DB 롤의 GRANT 목록에 <code>photo_ratings</code>·<code>photo_comments</code> 가 없다. <code>AdminEmbedderPrivilegeContractTest</code> 가 마이그레이션의 GRANT 블록을 파싱해 고정. 추천·비교샷도 별점을 읽지 않는다(백분위·임베딩만)</td></tr>
+<tr><td><strong>AI 워커 — 금지</strong></td><td class="wrap"><code>photoselect</code>·<code>embedder</code> DB 롤의 GRANT 목록에 <code>photo_ratings</code>·<code>photo_comments</code> 가 없다. <code>AdminEmbedderPrivilegeContractTest</code> 가 마이그레이션의 GRANT 블록을 파싱해 고정. 추천도 별점을 읽지 않는다(백분위·임베딩만)</td></tr>
 </table></div>
 
 <h2 id="comment">부부 댓글 — PhotoComment (같은 photo 패키지, 다른 API 군)</h2>
@@ -108,7 +108,7 @@ renderDiagram('#d-arch', {
 
 <div class="pager">
   <a href="studio.html">← 0. 스튜디오</a>
-  <a href="compare.html">2. 비교샷 셀렉 →</a>
+  <a href="collab.html">2. 협업 셀렉 →</a>
 </div>
 </main>
 </body>

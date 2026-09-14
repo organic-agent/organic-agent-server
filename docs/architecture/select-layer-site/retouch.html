@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>4. 보정 — 셀렉 계층</title>
+<title>3. 보정 — 셀렉 계층</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="site.css">
 </head>
@@ -11,10 +11,10 @@
 <main>
 <nav class="nav">
   <a href="index.html">전체 아키텍처</a><span class="sep">/</span>
-  <span class="here">4. 보정</span>
+  <span class="here">3. 보정</span>
   <span class="spacer"></span>
-  <a href="collab.html">← 3. 협업</a>
-  <a href="selection.html">5. 선택 사진 →</a>
+  <a href="collab.html">← 2. 협업</a>
+  <a href="selection.html">4. 선택 사진 →</a>
 </nav>
 
 <div class="eyebrow">wes · retouch 도메인 · S3 · web RetouchWorkspace</div>
@@ -133,7 +133,7 @@ confirm(부부):     최신 회차 COMPLETED → gallery.markRetouchConfirmed(no
 
 <h2 id="touch">접점 · 주의</h2>
 <ul>
-  <li><strong>selection</strong> — 제출이 1회차를 만들고, N차는 제출된 셀렉을 전제하며, <code>withdraw</code> 가 회차를 되돌린다. CSV export(개인 갤러리)가 요청문·포인트를 내보내며 1회차를 자동 제출한다. <a href="selection.html">5.</a></li>
+  <li><strong>selection</strong> — 제출이 1회차를 만들고, N차는 제출된 셀렉을 전제하며, <code>withdraw</code> 가 회차를 되돌린다. CSV export(개인 갤러리)가 요청문·포인트를 내보내며 1회차를 자동 제출한다. <a href="selection.html">4.</a></li>
   <li><strong>gallery</strong> — stage 전이 <code>markRetouchStarted → markDeliveryReady → markRetouchConfirmed</code>. DB CHECK <code>ck_galleries_stage</code> 가 <code>DELIVERY</code> 를 허용하지 않고 <code>ALBUM</code> 을 허용하는 불일치가 있다(<a href="studio.html#stage">0.</a>).</li>
   <li><strong>trash</strong> — 항목 빼기는 <code>ProductChildTrashService.removeUserRetouchItem</code>(soft delete, 부모 회차 version bump, <code>RETOUCH_ITEM</code>). S3 물리 정리 시 <code>annotation_key · result_key</code> 수집.</li>
   <li><strong>admin</strong> — 리소스 <code>RETOUCH_REQUEST</code>(=rounds), 아티팩트 교체 업로드 <code>admin_retouch_artifact_uploads</code>, 보정본 열람/다운로드 감사 로그.</li>
@@ -153,8 +153,8 @@ confirm(부부):     최신 회차 COMPLETED → gallery.markRetouchConfirmed(no
 </table></div>
 
 <div class="pager">
-  <a href="collab.html">← 3. 협업 셀렉</a>
-  <a href="selection.html">5. 선택 사진 →</a>
+  <a href="collab.html">← 2. 협업 셀렉</a>
+  <a href="selection.html">4. 선택 사진 →</a>
 </div>
 </main>
 </body>

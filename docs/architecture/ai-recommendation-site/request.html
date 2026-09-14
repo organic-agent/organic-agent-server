@@ -141,7 +141,7 @@ mount / folderId 변경 / nonce:  list = GET …/recommendations?folderId=
 <tr><td><code>RECOMMENDATION_422_1</code> QUERY_NOT_UNDERSTOOD · <code>503_1</code> QUERY_AI_UNAVAILABLE</td><td>—</td><td class="wrap">HTTP 로 나가지 않는다. 질의 해석은 워커 스레드에서 돌아 잡 FAILED 의 <code>error</code> 문자열로만 드러난다(<a href="query.html">4.</a>)</td><td></td></tr>
 <tr><td><code>RECOMMENDATION_502_1</code> LLM_CALL_FAILED</td><td>—</td><td>이유 문장 LLM 실패. 사용자에게 나가지 않고 템플릿으로 흡수</td><td></td></tr>
 </table></div>
-<p class="small">같은 접두사 <code>RECOMMENDATION_409_1/409_2/404_1</code> 은 AI 분류(<code>/ai-analysis</code>) 계약이고, <code>400_1/404_3/409_7</code> 은 비교샷이다 — 다른 기능.</p>
+<p class="small">같은 접두사 <code>RECOMMENDATION_409_1/409_2/404_1</code> 은 AI 분류(<code>/ai-analysis</code>) 계약이다 — 다른 기능. <code>400_1/404_3/409_7</code> 은 지운 비교샷의 번호라 비어 있다(#187, 재사용 안 함).</p>
 
 <h2 id="files">코드 위치</h2>
 <div class="tablewrap"><table>

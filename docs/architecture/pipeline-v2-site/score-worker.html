@@ -101,7 +101,7 @@ ON CONFLICT (photo_id) DO UPDATE SET error = EXCLUDED.error, updated_at = now(),
 -- error = 'PREVIEW_MISSING'(S3 404) | 'SCORE_FAILED'(디코드·추론 실패), 80자 컷</code></pre>
 <div class="datastrip">
   <div class="cell"><b>sub_scores JSON 키</b>technical_score · aesthetic_score · sharpness · highlight_clip · shadow_clip · mean_luma · subjects_margin · clip_parent (NaN/Inf → null)</div>
-  <div class="cell"><b>wes 가 읽는 키(암묵 계약)</b>sharpness · sharpness_pct · highlight_clip · shadow_clip · technical_score · aesthetic_score — 비교샷 판정·추천 이유 재료</div>
+  <div class="cell"><b>wes 가 읽는 키(암묵 계약)</b>sharpness · sharpness_pct · highlight_clip · shadow_clip · technical_score · aesthetic_score — 추천 이유 재료</div>
   <div class="cell"><b>공유 상수</b><code>MODEL_VERSION = "photoselect-v3-a-0.1"</code>, <code>PARENTS</code> 7종 — score·categorize <code>config.py</code> 에 같은 값, 테스트가 대조. wes <code>isAnalyzed</code> 가 model_version 을 본다</div>
 </div>
 

@@ -1,7 +1,7 @@
 # ai-recommendation-site — AI 폴더 추천 클릭형 아키텍처 문서
 
 정적 HTML 일곱 장 + 공용 CSS + 흐름도 렌더러(`diagram.js`). 서버·빌드 없이 `index.html` 을 브라우저로 열면 된다.
-형식은 `../pipeline-v2-site/` 와 같다. 비교샷(`ai_pair_verdicts`)은 범위 밖.
+형식은 `../pipeline-v2-site/` 와 같다.
 
 ```bash
 open docs/architecture/ai-recommendation-site/index.html

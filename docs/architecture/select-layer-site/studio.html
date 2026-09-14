@@ -20,7 +20,7 @@
 <h1>스튜디오 — 워크스페이스가 소유 단위이고, 스튜디오는 그 위의 프로필이다</h1>
 <p class="lede">갤러리·멤버십·인가의 축은 <strong>워크스페이스</strong>(<code>PERSONAL | STUDIO</code>)다. 스튜디오는 STUDIO 워크스페이스와 PK 를 공유하는 1:1 프로필 테이블(공개 주소·연락처·소개·정지)이고,
 <code>studio_members</code> 는 테이블이 아니라 <code>workspace_members</code> 의 별칭이다. 작가는 스튜디오를 만들어 직원을 링크로 초대하고, 갤러리를 만들어 사진을 올린 뒤 공개하고, 부부를 링크로 초대한다.
-모든 하위 기능(별점·비교샷·협업·보정·선택)의 인가는 <code>GalleryAccessPolicy</code> 한 클래스가 결정한다.</p>
+모든 하위 기능(별점·협업·보정·선택)의 인가는 <code>GalleryAccessPolicy</code> 한 클래스가 결정한다.</p>
 <p class="meta">코드 기준 wes main@45981bf · 2026-09-09 · <code>studio/</code> · <code>workspace/</code> · <code>gallery/</code> · <code>user/</code>. 기존 <code>wes-architecture-2026-08.md</code> 의 <code>galleries.studio_id</code>·<code>requirePhotographer</code> 는 옛 이름</p>
 
 <h2 id="arch">관계도 · 생애</h2>
@@ -52,7 +52,7 @@ renderDiagram('#d-arch', {
       lines: ['행의 존재 = 수락', '신랑/신부 구분 없음'] },
     { id: 'AP', lane: 'wes', x: 660, y: 300, w: 240, kicker: 'gallery/support', title: 'GalleryAccessPolicy',
       lines: ['requireManager · Uploader · Viewer', 'requireSelectionEditor (작가 거부)', 'requireParticipant* · Collab · Retouch*'], href: '#policy' },
-    { id: 'F', lane: 'wes', x: 660, y: 460, w: 500, kicker: '하위 기능', title: '별점 · 비교샷 · 협업 · 보정 · 선택',
+    { id: 'F', lane: 'wes', x: 660, y: 460, w: 500, kicker: '하위 기능', title: '별점 · 협업 · 보정 · 선택',
       lines: ['전부 GalleryAccessPolicy 를 지난다'], href: 'index.html#big' },
     { id: 'SEL', lane: 'db', shape: 'db', x: 940, y: 340, w: 220, title: 'photo_selections', lines: ['갤러리 생성 시 함께 INSERT'], href: 'selection.html' },
   ],
@@ -131,7 +131,7 @@ renderDiagram('#d-arch', {
 <tr><td><code>maxSelectablePhotoCount</code></td><td>계약 장수 — 부부가 최종 고를 장수</td><td>작가(<code>PATCH /max-selectable-photo-count</code>) 또는 개인 개설자. 부부는 상향 요청(<code>SELECTION_INCREASE_REQUESTED</code> 알림)</td><td>제출 시 정확 일치(<code>requireExactTarget</code>)</td></tr>
 <tr><td><code>planMaxPhotoCount</code></td><td>플랜 업로드 상한</td><td>결제(<code>test_checkouts.max_photo_count</code>)</td><td>업로드 발급 시 <code>GALLERY_409_3</code></td></tr>
 <tr><td><code>maxRetouchRoundCount</code></td><td>계약 보정 횟수</td><td>생성 시</td><td>보정 회차 생성·제출·N차</td></tr>
-<tr><td><code>selectionDeadline</code></td><td>선택 마감</td><td>생성·<code>reopen</code></td><td><code>requireSelectable</code>(별점·담기·비교샷·댓글 쓰기·협업 반응)</td></tr>
+<tr><td><code>selectionDeadline</code></td><td>선택 마감</td><td>생성·<code>reopen</code></td><td><code>requireSelectable</code>(별점·담기·댓글 쓰기·협업 반응)</td></tr>
 </table></div>
 
 <h2 id="invite">부부 초대 — GalleryInvite</h2>
@@ -149,7 +149,7 @@ renderDiagram('#d-arch', {
 <tr><td><code>requireManager</code></td><td>✅</td><td>PERSONAL 소유자만</td><td>❌</td><td>—</td><td>공개·마감·초대 발급·제출 취소·휴지통</td></tr>
 <tr><td><code>requireUploader</code></td><td>✅</td><td>✅</td><td>❌</td><td><code>requireWritable</code></td><td>업로드 · AI 분석 · 폴더 물질화</td></tr>
 <tr><td><code>requireViewer</code></td><td>✅</td><td>✅</td><td>✅ (DRAFT 제외)</td><td><code>isVisibleToMember</code></td><td>사진 목록 · 셀렉 조회 · 추천 조회 · 보정 조회</td></tr>
-<tr><td><code>requireSelectionEditor</code></td><td><strong>❌ 명시 거부</strong></td><td>✅</td><td>✅</td><td><code>requireSelectable</code>(writable ∧ 마감 전 ∧ OPEN)</td><td><a href="rating.html">별점</a> · <a href="compare.html">비교샷</a> · 추천 요청 · <a href="selection.html">담기·빼기·제출</a> · 폴더 확정</td></tr>
+<tr><td><code>requireSelectionEditor</code></td><td><strong>❌ 명시 거부</strong></td><td>✅</td><td>✅</td><td><code>requireSelectable</code>(writable ∧ 마감 전 ∧ OPEN)</td><td><a href="rating.html">별점</a> · 추천 요청 · <a href="selection.html">담기·빼기·제출</a> · 폴더 확정</td></tr>
 <tr><td><code>requireCategoryEditor</code></td><td>✅</td><td>✅</td><td>✅</td><td>갤러리 락 + writable + 부부는 <code>requireSelectable</code> + 앨범 <code>requireEditable</code></td><td>카테고리 이동·수정</td></tr>
 <tr><td><code>requireParticipantViewer</code> / <code>Writer</code></td><td><strong>❌</strong></td><td>✅</td><td>✅</td><td>Writer 는 갤러리 락 + <code>requireSelectable</code></td><td>부부 댓글 · 협업 결과 조회 · CSV 내보내기</td></tr>
 <tr><td><code>requireCollabManager(writable)</code></td><td><strong>❌</strong></td><td>✅</td><td>✅</td><td>갤러리 락 (+ writable)</td><td><a href="collab.html">협업 세션</a> 개설·수정·폐기</td></tr>
@@ -181,7 +181,7 @@ renderDiagram('#d-arch', {
  6 POST /galleries/{g}/invites {kind=GALLERY_MEMBER, maxUses=2} → inviteUrl
  7 신랑·신부 각자: OAuth(inviteToken) → GET /invites/{token} 미리보기 → POST /invites/{token}/accept
       작가 본인 403 · 정원 2 → 409 · gallery_members INSERT · 작가에게 INVITE_ACCEPTED
- 8 부부: 사진 목록(requireViewer) → 별점 · 담기 · 비교샷 · 협업 · 보정 (requireSelectionEditor 등)</code></pre>
+ 8 부부: 사진 목록(requireViewer) → 별점 · 담기 · 협업 · 보정 (requireSelectionEditor 등)</code></pre>
 
 <h2 id="files">코드 위치 · 테스트</h2>
 <div class="tablewrap"><table>

@@ -99,7 +99,7 @@ renderDiagram('#d-arch', {
 <tr><th>정책</th><th>허용</th><th>붙이는 모듈</th></tr>
 <tr><td><code>AmazonSSMManagedInstanceCore</code></td><td>Session Manager · Run Command 수신</td><td>compute</td></tr>
 <tr><td><code>read-app-parameters</code></td><td><code>ssm:GetParameter(s|ByPath)</code> on <code>/wes/prod</code>, <code>/wes/prod/*</code></td><td>compute</td></tr>
-<tr><td><code>invoke-llm</code></td><td><code>bedrock:InvokeModel</code> global 추론 프로필 + foundation-model (추천·비교샷 LLM)</td><td>compute</td></tr>
+<tr><td><code>invoke-llm</code></td><td><code>bedrock:InvokeModel</code> global 추론 프로필 + foundation-model (추천 LLM)</td><td>compute</td></tr>
 <tr><td><code>control-score-gpu</code></td><td><code>ec2:DescribeInstances</code> · <code>Start/StopInstances</code> (조건 <code>ResourceTag/Name=wes-score-gpu</code>)</td><td>compute</td></tr>
 <tr><td><code>photo-bucket</code></td><td><code>s3:Get/Put/DeleteObject</code> 버킷 전체 · <code>ListBucket</code></td><td>storage</td></tr>
 <tr><td><code>invoke-analysis-functions</code></td><td><code>lambda:InvokeFunction</code> 세 함수 ARN</td><td>analysis</td></tr>
