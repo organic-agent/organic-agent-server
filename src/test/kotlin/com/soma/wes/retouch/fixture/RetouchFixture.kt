@@ -17,6 +17,13 @@ class RetouchFixture(
     private val retouchPhotoRepository: RetouchPhotoRepository,
 ) {
 
+    /** 아직 제출하지 않은 초안 회차. 지금은 셀렉 제출을 되돌렸을 때만 생기는 상태다. */
+    fun 초안_회차(galleryId: Long, roundNo: Int = 1, photoIds: List<Long> = emptyList()): RetouchRound {
+        val round = retouchRoundRepository.saveAndFlush(RetouchRound(galleryId = galleryId, roundNo = roundNo))
+        담기(round, photoIds)
+        return round
+    }
+
     /** 부부가 제출하고 작가 응답을 기다리는 회차. */
     fun 제출된_회차(galleryId: Long, roundNo: Int = 1, photoIds: List<Long> = emptyList()): RetouchRound {
         val round = retouchRoundRepository.save(RetouchRound(galleryId = galleryId, roundNo = roundNo))
@@ -55,14 +62,9 @@ class RetouchFixture(
         return retouchPhotoRepository.findAllByRoundId(round.requiredId)
     }
 
-    /** 항목들에 주석 key를 채운다. 삭제 경로가 주석 파일까지 걷는지 볼 때 쓴다. */
+    /** 항목들에 주석 key를 채운다(관리자 아티팩트 교체가 넣는 값). 삭제 경로가 주석 파일까지 걷는지 볼 때 쓴다. */
     fun 주석_추가(items: List<RetouchPhoto>): List<RetouchPhoto> {
-        items.forEach {
-            it.writeRequest(
-                requestText = null,
-                annotationKey = "galleries/${it.galleryId}/retouch/annotations/${it.photoId}.png",
-            )
-        }
+        items.forEach { it.annotationKey = "galleries/${it.galleryId}/retouch/annotations/${it.photoId}.png" }
         return retouchPhotoRepository.saveAllAndFlush(items)
     }
 

@@ -6,8 +6,8 @@ import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.retouch.exception.RetouchException
 import com.soma.wes.retouch.exception.RetouchErrorCode
-import com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest
 import com.soma.wes.retouch.dto.request.AddRetouchPhotosRequest
+import com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest
 import com.soma.wes.retouch.dto.request.UpdateRetouchPhotoRequest
 import com.soma.wes.retouch.dto.request.IssueResultUploadUrlsRequest
 import com.soma.wes.retouch.dto.request.CompleteResultsRequest
@@ -41,8 +41,10 @@ class PhotoSelectionExportServiceTest @Autowired constructor(
         val ids = photos.업로드된_사진(fixture.galleryId, count = 1)
         selectionService.select(fixture.galleryId, fixture.partnerId, SelectPhotosRequest(photoIds = ids))
         retouchService.addPhotos(fixture.galleryId, fixture.ownerId, AddRetouchPhotosRequest(photoIds = ids))
-        retouchService.updatePhoto(fixture.galleryId, ids.single(), fixture.partnerId,
-            UpdateRetouchPhotoRequest(requestText = "=SUM(1,2)\n자연스럽게"))
+        retouchService.updatePhoto(
+            fixture.galleryId, ids.single(), fixture.partnerId,
+            UpdateRetouchPhotoRequest(requestText = "=SUM(1,2)\n자연스럽게"),
+        )
 
         // when
         val exported = exportService.export(fixture.galleryId, fixture.partnerId)
@@ -103,7 +105,6 @@ class PhotoSelectionExportServiceTest @Autowired constructor(
 
         // when & then
         val forbiddenActions: List<() -> Any> = listOf(
-            { retouchService.submitRound(fixture.galleryId, fixture.ownerId) },
             { retouchService.submitRequests(fixture.galleryId, 1, fixture.partnerId, SubmitRetouchRequestsRequest()) },
             { retouchService.submitRequests(fixture.galleryId, 2, fixture.partnerId, SubmitRetouchRequestsRequest()) },
             { retouchService.completeRound(fixture.galleryId, 1, fixture.partnerId) },

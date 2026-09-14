@@ -10,7 +10,6 @@ import com.soma.wes.retouch.dto.request.AddRetouchPhotosRequest
 import com.soma.wes.retouch.dto.request.CompleteResultsRequest
 import com.soma.wes.retouch.dto.request.IssueResultUploadUrlsRequest
 import com.soma.wes.retouch.dto.request.UpdateRetouchPhotoRequest
-import com.soma.wes.retouch.dto.response.IssueAnnotationUploadUrlResponse
 import com.soma.wes.retouch.dto.response.IssueResultUploadUrlsResponse
 import com.soma.wes.retouch.dto.response.RetouchOverviewResponse
 import com.soma.wes.retouch.dto.response.RetouchPhotoResponse
@@ -48,34 +47,14 @@ interface RetouchControllerDocs {
     @Operation(
         summary = "보정사진 담기",
         description = """
-            마음에 드는 사진을 보정사진 풀에 담아둔다. 초대받은 부부만 담을 수 있다.
+            진행 중인 초안(DRAFTING) 회차에 원본 사진을 담는다. 회차가 없으면 이 호출이 만든다.
 
-            진행 중인 DRAFTING 회차가 없으면 첫 담기 때 자동으로 만들어진다. 단, 이전 회차가
-            REQUESTED(작가 응답 대기 중)라면 409다 — 회차는 갤러리당 하나씩만 진행된다.
-            계약 횟수를 이미 다 썼다면 새 회차가 열리지 않는다(400).
+            스튜디오 갤러리의 부부는 이 경로 대신 셀렉 제출이나 `/rounds/{n}/requests` 로 요청을 한 번에 보낸다.
+            이 경로가 필요한 곳은 작가가 없는 **개인 갤러리**다 — 요청서 CSV 를 내보내기 전에 항목을 만들어 둬야 한다.
 
-            이번 회차에 이미 담긴 사진이 하나라도 섞여 있으면 통째로 409로 거절된다 — selection과
-            같은 이유로, 겹쳤다는 것은 보고 있는 화면이 낡았다는 뜻이다. 이전 회차에 담았던
-            사진은 다시 담을 수 있다(재보정 흐름).
-
-            아직 업로드가 끝나지 않은(PENDING) 사진은 담을 수 없다. 보정을 맡길 사진은 실물이
-            있어야 한다.
+            이번 회차에 이미 담긴 사진이 섞이면 한 장도 담기지 않는다(409). 이전 회차의 사진은 다시 담을 수 있고,
+            이전 회차가 작가 응답을 기다리는 중이면 거절한다(409).
         """,
-    )
-    @ApiResponses(
-        ApiResponse(responseCode = "200", description = "담기 성공"),
-        ApiResponse(
-            responseCode = "400",
-            description = "계약 횟수 소진(RETOUCH_400_1), 다른 갤러리의 사진(RETOUCH_400_2), " +
-                "개수 상한 초과(RETOUCH_400_3), 빈 목록(RETOUCH_400_4), 업로드 전 사진(RETOUCH_400_5)",
-            content = [],
-        ),
-        ApiResponse(responseCode = "403", description = "클라이언트가 아니거나, 종료/미공개 갤러리", content = []),
-        ApiResponse(
-            responseCode = "409",
-            description = "이전 회차 진행 중(RETOUCH_409_1), 이미 담긴 사진이 섞임(RETOUCH_409_2)",
-            content = [],
-        ),
     )
     fun addPhotos(
         loginUser: LoginUser,
@@ -84,40 +63,13 @@ interface RetouchControllerDocs {
     ): ResponseEntity<RetouchOverviewResponse>
 
     @Operation(
-        summary = "보정사진 빼기",
-        description = "DRAFTING 회차에서 한 장을 빼낸다. 회차에 없는 사진이거나 이미 제출된 " +
-            "뒤라면 404다 — 한 장을 지정해 뺐는데 아무 일도 일어나지 않으면 화면만 지운 것이 된다.",
-    )
-    @ApiResponses(
-        ApiResponse(responseCode = "204", description = "빼기 성공"),
-        ApiResponse(responseCode = "403", description = "클라이언트가 아니거나, 종료/미공개 갤러리", content = []),
-        ApiResponse(responseCode = "404", description = "요청 목록에 없는 사진(RETOUCH_404_1)", content = []),
-    )
-    fun removePhoto(loginUser: LoginUser, galleryId: Long, photoId: Long): ResponseEntity<Unit>
-
-    @Operation(
-        summary = "사진별 보정 요청 작성",
+        summary = "보정 요청 작성",
         description = """
-            사진 한 장의 요청 텍스트와 주석 이미지 key를 저장한다. 보낸 값으로 통째로 덮어쓰므로
-            일부만 고칠 때도 두 필드를 모두 보내야 한다. null은 지운다는 뜻이다.
+            초안(DRAFTING) 회차에 담긴 사진 한 장의 요청문과 포인트를 덮어쓴다. 제출된 회차에는 404다 —
+            작가가 보고 있는 요청이 도중에 바뀌지 않게 한다.
 
-            제출 전(DRAFTING)에만 쓸 수 있다. 제출 뒤에는 진행 중인 DRAFTING 회차가 없어 404다 —
-            주석이 이미지 방식이라 제출 뒤 부분 수정이 없다.
-
-            annotationKey는 주석 업로드 URL 발급 API가 돌려준 값을 그대로 보낸다. 이 갤러리의
-            주석 경로가 아닌 key는 400으로 거절된다. 업로드를 마치지 않은 key를 저장하면 주석이
-            깨진 이미지로 보인다 — 업로드 완료 뒤에 저장하라.
+            요청문은 2000자, 포인트는 100개까지다. 포인트 좌표는 0~1 로 정규화한 값이라 표시 크기가 달라도 같은 곳을 가리킨다.
         """,
-    )
-    @ApiResponses(
-        ApiResponse(responseCode = "200", description = "저장 성공"),
-        ApiResponse(
-            responseCode = "400",
-            description = "요청 텍스트가 너무 김(RETOUCH_400_7), 이 갤러리의 주석 key가 아님(RETOUCH_400_8)",
-            content = [],
-        ),
-        ApiResponse(responseCode = "403", description = "클라이언트가 아니거나, 종료/미공개 갤러리", content = []),
-        ApiResponse(responseCode = "404", description = "요청 목록에 없는 사진(RETOUCH_404_1)", content = []),
     )
     fun updatePhoto(
         loginUser: LoginUser,
@@ -125,48 +77,6 @@ interface RetouchControllerDocs {
         photoId: Long,
         request: UpdateRetouchPhotoRequest,
     ): ResponseEntity<RetouchPhotoResponse>
-
-    @Operation(
-        summary = "주석 이미지 업로드 URL 발급",
-        description = """
-            프론트가 캔버스로 그린 주석 레이어 PNG를 올릴 서명 URL을 발급한다. 발급은 아무 행도
-            만들지 않는다 — 업로드를 마친 뒤 요청 작성 API에 annotationKey를 보내야 사진에 붙는다.
-
-            원본 업로드와 같은 방식이다: 이미지 바이트는 서버를 지나지 않고 브라우저가 S3에
-            직접 PUT 한다. Content-Type은 image/png로 보내야 서명이 맞는다.
-        """,
-    )
-    @ApiResponses(
-        ApiResponse(responseCode = "200", description = "발급 성공"),
-        ApiResponse(responseCode = "403", description = "클라이언트가 아니거나, 종료/미공개 갤러리", content = []),
-        ApiResponse(responseCode = "404", description = "존재하지 않는 갤러리", content = []),
-    )
-    fun issueAnnotationUploadUrl(loginUser: LoginUser, galleryId: Long): ResponseEntity<IssueAnnotationUploadUrlResponse>
-
-    @Operation(
-        summary = "보정 회차 제출",
-        description = """
-            모아둔 요청들을 한 회차로 작가에게 보낸다. 부부만 할 수 있고, 계약 횟수(보정 N회)
-            한 번을 쓴다.
-
-            제출 뒤에는 담기·빼기·요청 작성이 모두 막힌다 — 작가가 이 목록을 보고 보정에
-            들어가므로 그 뒤에 조용히 바뀌면 어느 쪽이 최종인지 알 수 없어진다. 다음 회차는
-            작가가 이번 회차를 끝내야 시작된다.
-
-            한 장도 담지 않았거나 진행 중인 DRAFTING 회차가 없으면 400이다. 계약 횟수를 넘기는
-            제출도 400이다 — 회차를 만든 뒤 계약 횟수가 줄었을 수 있어 제출이 최종 관문이다.
-        """,
-    )
-    @ApiResponses(
-        ApiResponse(responseCode = "200", description = "제출 성공"),
-        ApiResponse(
-            responseCode = "400",
-            description = "요청할 사진이 없음(RETOUCH_400_6), 계약 횟수 소진(RETOUCH_400_1)",
-            content = [],
-        ),
-        ApiResponse(responseCode = "403", description = "클라이언트가 아니거나, 종료/미공개 갤러리", content = []),
-    )
-    fun submitRound(loginUser: LoginUser, galleryId: Long): ResponseEntity<RetouchOverviewResponse>
 
     @Operation(
         summary = "보정 회차 상세 조회",
@@ -269,7 +179,7 @@ interface RetouchControllerDocs {
         galleryId: Long,
         roundNo: Int,
     ): ResponseEntity<RetouchOverviewResponse>
-    @Operation(summary = "선택 사진의 N차 보정 요청 제출", description = "스튜디오 갤러리 전용이다. requests에는 photoId, requestText, annotationKey, points를 담는다. 선택에 없는 사진은 거절한다.")
+    @Operation(summary = "선택 사진의 N차 보정 요청 제출", description = "스튜디오 갤러리 전용이다. requests에는 photoId, requestText, points를 담는다. 선택에 없는 사진은 거절한다.")
     fun submitRequests(loginUser: LoginUser, galleryId: Long, roundNo: Int, request: SubmitRetouchRequestsRequest): ResponseEntity<RetouchOverviewResponse>
 
     @Operation(summary = "보정 파일명 자동 매칭", description = "확장자를 제외한 파일명을 비교한다. 후보가 여러 개면 photoId=null이며 클라이언트가 후보를 선택해 upload-urls의 photoId로 보낸다.")
@@ -278,11 +188,6 @@ interface RetouchControllerDocs {
     @Operation(summary = "클라이언트 보정 확정", description = "스튜디오 갤러리 전용이다. 최신 회차를 작가가 보낸 후에만 확정할 수 있으며 갤러리는 읽기 전용 보관 상태가 된다.")
     fun confirm(loginUser: LoginUser, galleryId: Long): ResponseEntity<RetouchOverviewResponse>
 
-    @Operation(summary = "보정 결과 업로드 URL 발급", description = "개인 갤러리의 1회 요청서에 대한 편의 경로. 개설자와 파트너 모두 업로드한다.")
-    fun issuePersonalResultUploadUrls(loginUser: LoginUser, galleryId: Long, request: IssueResultUploadUrlsRequest): ResponseEntity<IssueResultUploadUrlsResponse>
-
-    @Operation(summary = "보정 결과 업로드 완료", description = "개인 갤러리는 별도 보내기 없이 바로 조회할 수 있다. 스튜디오에서는 /rounds/1/send 전까지 결과가 숨겨진다.")
-    fun completePersonalResults(loginUser: LoginUser, galleryId: Long, request: CompleteResultsRequest): ResponseEntity<RetouchRoundDetailResponse>
     @Operation(
         summary = "보정 요청 AI 정제안",
         description = "원문은 변경하지 않고 제안만 반환한다. photoId·x·y를 주면 미리보기에 탭 지점을 표시해 함께 보내 대상을 특정하고, " +

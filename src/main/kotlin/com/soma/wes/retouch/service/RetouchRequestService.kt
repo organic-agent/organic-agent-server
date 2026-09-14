@@ -1,7 +1,6 @@
 package com.soma.wes.retouch.service
 
 import com.soma.wes.gallery.domain.Gallery
-import com.soma.wes.photo.service.port.PhotoStorage
 import com.soma.wes.retouch.domain.RetouchPhoto
 import com.soma.wes.retouch.domain.RetouchRound
 import com.soma.wes.retouch.domain.RetouchRoundStatus
@@ -22,7 +21,6 @@ class RetouchRequestService(
     private val roundRepository: RetouchRoundRepository,
     private val photoRepository: RetouchPhotoRepository,
     private val photoLoader: RetouchPhotoLoader,
-    private val photoStorage: PhotoStorage,
     private val productChildTrashService: ProductChildTrashService,
     private val entityManager: EntityManager,
 ) {
@@ -50,12 +48,10 @@ class RetouchRequestService(
             throw RetouchException(RetouchErrorCode.INVALID_ROUND_STATUS)
         }
         val existing = if (latest?.isDrafting == true) photoRepository.findAllByRoundId(latest.requiredId) else emptyList()
+        // 저장 전에 전부 검증한다 — 한 건이라도 규칙을 어기면 아무것도 적지 않는다.
         requests.forEach { request ->
-            if (request.annotationKey != null &&
-                !request.annotationKey.startsWith("${photoStorage.galleryPrefix(gallery.requiredId)}retouch/annotations/")
-            ) throw RetouchException(RetouchErrorCode.INVALID_ANNOTATION_KEY)
             RetouchPhoto(roundId = 0, galleryId = gallery.requiredId, photoId = request.photoId)
-                .writeRequest(request.requestText, request.annotationKey, request.points)
+                .writeRequest(request.requestText, request.points)
         }
 
         val round = latest?.takeIf { it.isDrafting }
@@ -68,7 +64,7 @@ class RetouchRequestService(
         val items = photos.map { photo ->
             val item = existingByPhoto[photo.requiredId]
                 ?: RetouchPhoto(roundId = round.requiredId, galleryId = gallery.requiredId, photoId = photo.requiredId)
-            requestsByPhoto[photo.requiredId]?.let { item.writeRequest(it.requestText, it.annotationKey, it.points) }
+            requestsByPhoto[photo.requiredId]?.let { item.writeRequest(it.requestText, it.points) }
             item
         }
         photoRepository.saveAll(items)

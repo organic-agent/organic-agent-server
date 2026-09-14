@@ -18,7 +18,7 @@ data class RetouchPhotoResponse(
 
     val points: List<RetouchPoint>,
 
-    @field:Schema(description = "주석 이미지의 서명된 조회 URL. 주석을 그리지 않았으면 null이다")
+    @field:Schema(description = "주석 이미지의 서명된 조회 URL. 관리자가 넣은 것이 없으면 null이다")
     val annotationUrl: String?,
 
     @field:Schema(description = "작가의 보정 결과가 올라왔는지. 결과 URL은 회차 상세 API가 준다")

@@ -9,16 +9,21 @@ import com.soma.wes.gallery.fixture.OpenGallery
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.service.PhotoRatingService
 import com.soma.wes.photo.dto.request.RatePhotoRequest
+import com.soma.wes.retouch.domain.RetouchPoint
 import com.soma.wes.retouch.domain.RetouchRoundStatus
 import com.soma.wes.retouch.dto.request.AddRetouchPhotosRequest
 import com.soma.wes.retouch.dto.request.CompleteResultsRequest
-import com.soma.wes.retouch.dto.request.IssueResultUploadUrlsRequest
+import com.soma.wes.retouch.dto.request.RetouchRequestItem
 import com.soma.wes.retouch.dto.request.UpdateRetouchPhotoRequest
+import com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest
+import com.soma.wes.retouch.dto.request.IssueResultUploadUrlsRequest
 import com.soma.wes.retouch.exception.RetouchErrorCode
 import com.soma.wes.retouch.exception.RetouchException
 import com.soma.wes.retouch.fixture.RetouchFixture
 import com.soma.wes.retouch.repository.RetouchPhotoRepository
 import com.soma.wes.retouch.repository.RetouchRoundRepository
+import com.soma.wes.selection.dto.request.SelectPhotosRequest
+import com.soma.wes.selection.service.PhotoSelectionService
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.retouch.support.RetouchStorageTestConfig
 import com.soma.wes.retouch.support.RetouchTestStorage
@@ -43,6 +48,7 @@ import org.springframework.jdbc.core.simple.JdbcClient
 @Import(RetouchStorageTestConfig::class)
 class RetouchServiceTest @Autowired constructor(
     private val retouchService: RetouchService,
+    private val selectionService: PhotoSelectionService,
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
     private val retouchFixture: RetouchFixture,
@@ -113,7 +119,7 @@ class RetouchServiceTest @Autowired constructor(
         }
 
         @Test
-        fun `관리자가 소프트 삭제한 항목은 사용자 조회와 수정 경로에서 사라진다`() {
+        fun `관리자가 소프트 삭제한 항목은 사용자 조회에서 사라진다`() {
             // given
             val fixture = galleryFixture.멤버와_열린_갤러리()
             val photoId = photoFixture.업로드된_사진(fixture.galleryId, count = 1).single()
@@ -147,18 +153,6 @@ class RetouchServiceTest @Autowired constructor(
                 softly.assertThat(result.currentRound!!.photos).isEmpty()
                 softly.assertThat(retouchPhotoRepository.findByRoundIdAndPhotoId(round.requiredId, photoId)).isNull()
             }
-            assertThatThrownBy {
-                retouchService.updatePhoto(
-                    fixture.galleryId,
-                    photoId,
-                    fixture.member.id!!,
-                    UpdateRetouchPhotoRequest(requestText = "삭제 뒤 수정 시도"),
-                )
-            }
-                .isInstanceOf(RetouchException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(RetouchErrorCode.PHOTO_NOT_IN_ROUND)
-
             val rawRowStillRestorable = jdbcClient.sql(
                 """
                 SELECT deleted_at IS NOT NULL
@@ -176,8 +170,8 @@ class RetouchServiceTest @Autowired constructor(
     }
 
     @Nested
-    @DisplayName("보정사진을 담을 때")
-    inner class AddPhotos {
+    @DisplayName("초안 회차에 담고 요청을 적을 때")
+    inner class DraftRound {
 
         @Test
         fun `첫 담기에 DRAFTING 회차가 만들어진다`() {
@@ -191,87 +185,38 @@ class RetouchServiceTest @Autowired constructor(
             // then
             assertSoftly { softly ->
                 softly.assertThat(result.currentRound!!.roundNo).isEqualTo(1)
-                softly.assertThat(result.currentRound!!.status).isEqualTo(RetouchRoundStatus.DRAFTING)
                 softly.assertThat(result.currentRound!!.photos).hasSize(2)
+                softly.assertThat(result.rounds.single().status).isEqualTo(RetouchRoundStatus.DRAFTING)
             }
-            assertThat(retouchRoundRepository.count()).isEqualTo(1L)
         }
 
         @Test
         fun `이번 회차에 이미 담긴 사진이 섞이면 한 장도 담기지 않는다`() {
             // given
             val fixture = galleryFixture.멤버와_열린_갤러리()
-            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 3)
-            add(fixture, photoIds.take(2))
-
-            // when & then
-            assertThatThrownBy { add(fixture, photoIds.drop(1)) }
-                .isInstanceOf(RetouchException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(RetouchErrorCode.PHOTO_ALREADY_IN_ROUND)
-
-            // 부분 성공이 없다는 것은 응답만으로는 확인되지 않는다.
-            assertThat(retouchPhotoRepository.count()).isEqualTo(2L)
-        }
-
-        @Test
-        fun `업로드가 끝나지 않은 사진은 담을 수 없다`() {
-            // given
-            val fixture = galleryFixture.멤버와_열린_갤러리()
-            val photoIds = photoFixture.대기중_사진(fixture.galleryId, count = 1)
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 2)
+            add(fixture, photoIds.take(1))
 
             // when & then
             assertThatThrownBy { add(fixture, photoIds) }
                 .isInstanceOf(RetouchException::class.java)
                 .extracting("errorCode")
-                .isEqualTo(RetouchErrorCode.PHOTO_NOT_UPLOADED)
-        }
-
-        @Test
-        fun `다른 갤러리의 사진은 담을 수 없다`() {
-            // given
-            val fixture = galleryFixture.멤버와_열린_갤러리()
-            val other = galleryFixture.멤버와_열린_갤러리()
-            val otherPhotoIds = photoFixture.업로드된_사진(other.galleryId, count = 1)
-
-            // when & then
-            assertThatThrownBy { add(fixture, otherPhotoIds) }
-                .isInstanceOf(RetouchException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(RetouchErrorCode.PHOTO_NOT_IN_GALLERY)
+                .isEqualTo(RetouchErrorCode.PHOTO_ALREADY_IN_ROUND)
+            assertThat(retouchService.get(fixture.galleryId, fixture.member.requiredId).currentRound!!.photos).hasSize(1)
         }
 
         @Test
         fun `이전 회차가 응답 대기 중이면 담을 수 없다`() {
             // given
-            val fixture = galleryFixture.멤버와_열린_갤러리()
-            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 2)
-            retouchFixture.제출된_회차(fixture.galleryId, photoIds = photoIds.take(1))
+            val fixture = galleryFixture.멤버와_열린_갤러리(maxRetouchRoundCount = 3)
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
+            제출까지(fixture, photoIds)
 
             // when & then
-            assertThatThrownBy { add(fixture, photoIds.drop(1)) }
+            assertThatThrownBy { add(fixture, photoIds) }
                 .isInstanceOf(RetouchException::class.java)
                 .extracting("errorCode")
                 .isEqualTo(RetouchErrorCode.ROUND_IN_PROGRESS)
-        }
-
-        @Test
-        fun `이전 회차가 끝났으면 같은 사진도 다음 회차에 다시 담긴다`() {
-            // 1회차 결과가 미흡했던 컷을 2회차에 다시 넣는 재보정 흐름이다.
-            // given
-            val fixture = galleryFixture.멤버와_열린_갤러리()
-            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
-            retouchFixture.완료된_회차(fixture.galleryId, photoIds = photoIds)
-
-            // when
-            val result = add(fixture, photoIds)
-
-            // then
-            assertSoftly { softly ->
-                softly.assertThat(result.currentRound!!.roundNo).isEqualTo(2)
-                softly.assertThat(result.currentRound!!.photos).hasSize(1)
-                softly.assertThat(result.rounds).hasSize(2)
-            }
         }
 
         @Test
@@ -297,7 +242,7 @@ class RetouchServiceTest @Autowired constructor(
             // when & then
             assertThatThrownBy {
                 retouchService.addPhotos(
-                    fixture.galleryId, fixture.photographer.id!!, AddRetouchPhotosRequest(photoIds),
+                    fixture.galleryId, fixture.photographer.requiredId, AddRetouchPhotosRequest(photoIds),
                 )
             }
                 .isInstanceOf(GalleryException::class.java)
@@ -306,178 +251,29 @@ class RetouchServiceTest @Autowired constructor(
         }
 
         @Test
-        fun `선택 마감이 지나도 보정 요청은 작성할 수 있다`() {
-            // given
-            val fixture = galleryFixture.멤버와_열린_갤러리()
-            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
-            galleryFixture.마감_지남(fixture.galleryId)
-
-            // when
-            val result = add(fixture, photoIds)
-
-            // then
-            assertThat(result.currentRound!!.photos).hasSize(1)
-        }
-    }
-
-    @Nested
-    @DisplayName("보정사진을 뺄 때")
-    inner class RemovePhoto {
-
-        @Test
-        fun `회차에서 빠진다`() {
-            // given
-            val fixture = galleryFixture.멤버와_열린_갤러리()
-            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 2)
-            add(fixture, photoIds)
-            val round = retouchRoundRepository.findByGalleryIdAndStatus(
-                fixture.galleryId,
-                RetouchRoundStatus.DRAFTING,
-            )!!
-            val removedItemId = jdbcClient.sql(
-                "SELECT id FROM retouch_photos WHERE round_id = :roundId AND photo_id = :photoId",
-            )
-                .param("roundId", round.requiredId)
-                .param("photoId", photoIds[0])
-                .query { rs, _ -> rs.getLong("id") }
-                .single()
-            val parentVersionBefore = jdbcClient.sql("SELECT version FROM retouch_rounds WHERE id = :roundId")
-                .param("roundId", round.requiredId)
-                .query { rs, _ -> rs.getLong("version") }
-                .single()
-
-            // when
-            retouchService.removePhoto(fixture.galleryId, photoIds[0], fixture.member.id!!)
-
-            // then
-            assertThat(retouchPhotoRepository.count()).isEqualTo(1L)
-            val productTrash = jdbcClient.sql(
-                """
-                SELECT item.deleted_at IS NOT NULL AS deleted,
-                       item.version,
-                       trash.parent_id,
-                       trash.actor_admin_id IS NULL AS actor_admin_id_null,
-                       trash.actor_username,
-                       trash.reason,
-                       trash.status,
-                       trash.restore_until = trash.deleted_at + INTERVAL '7 days' AS has_seven_day_window
-                FROM retouch_photos item
-                JOIN admin_child_trash_records trash
-                  ON trash.resource_type = 'RETOUCH_ITEM' AND trash.resource_id = item.id
-                WHERE item.id = :itemId AND trash.status = 'ACTIVE'
-                """.trimIndent(),
-            )
-                .param("itemId", removedItemId)
-                .query { rs, _ ->
-                    listOf(
-                        rs.getBoolean("deleted"),
-                        rs.getLong("version"),
-                        rs.getLong("parent_id"),
-                        rs.getBoolean("actor_admin_id_null"),
-                        rs.getString("actor_username"),
-                        rs.getString("reason"),
-                        rs.getString("status"),
-                        rs.getBoolean("has_seven_day_window"),
-                    )
-                }
-                .single()
-            assertThat(productTrash).containsExactly(
-                true,
-                1L,
-                round.requiredId,
-                true,
-                "PRODUCT_USER",
-                "PRODUCT_USER_RETOUCH_REMOVE",
-                "ACTIVE",
-                true,
-            )
-            assertThat(
-                jdbcClient.sql("SELECT version FROM retouch_rounds WHERE id = :roundId")
-                    .param("roundId", round.requiredId)
-                    .query { rs, _ -> rs.getLong("version") }
-                    .single(),
-            ).isEqualTo(parentVersionBefore + 1)
-            assertThat(
-                jdbcClient.sql("SELECT COUNT(*) FROM retouch_photos WHERE round_id = :roundId")
-                    .param("roundId", round.requiredId)
-                    .query { rs, _ -> rs.getLong(1) }
-                    .single(),
-            ).isEqualTo(2L)
-
-            // 복원 창이 열려 있는 동안에도 사용자는 같은 원본을 다시 담을 수 있다.
-            add(fixture, listOf(photoIds[0]))
-            assertThat(retouchPhotoRepository.count()).isEqualTo(2L)
-            assertThat(
-                jdbcClient.sql("SELECT COUNT(*) FROM retouch_photos WHERE round_id = :roundId")
-                    .param("roundId", round.requiredId)
-                    .query { rs, _ -> rs.getLong(1) }
-                    .single(),
-            ).isEqualTo(3L)
-        }
-
-        @Test
-        fun `회차에 없는 사진이면 404다`() {
-            // given
-            val fixture = galleryFixture.멤버와_열린_갤러리()
-            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
-
-            // when & then
-            assertThatThrownBy {
-                retouchService.removePhoto(fixture.galleryId, photoIds[0], fixture.member.id!!)
-            }
-                .isInstanceOf(RetouchException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(RetouchErrorCode.PHOTO_NOT_IN_ROUND)
-        }
-    }
-
-    @Nested
-    @DisplayName("보정 요청을 작성할 때")
-    inner class UpdatePhoto {
-
-        @Test
-        fun `요청 텍스트와 주석 key가 저장된다`() {
+        fun `요청 텍스트와 포인트가 저장된다`() {
             // given
             val fixture = galleryFixture.멤버와_열린_갤러리()
             val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
             add(fixture, photoIds)
-            val issued = retouchService.issueAnnotationUploadUrl(fixture.galleryId, fixture.member.id!!)
 
             // when
             val result = retouchService.updatePhoto(
                 fixture.galleryId,
                 photoIds[0],
-                fixture.member.id!!,
-                UpdateRetouchPhotoRequest(requestText = "잡티 제거", annotationKey = issued.annotationKey),
+                fixture.member.requiredId,
+                UpdateRetouchPhotoRequest(
+                    requestText = "잡티 제거",
+                    points = listOf(RetouchPoint(x = 0.4, y = 0.5, text = "여기 지워주세요")),
+                ),
             )
 
             // then
             assertSoftly { softly ->
                 softly.assertThat(result.requestText).isEqualTo("잡티 제거")
-                softly.assertThat(result.annotationUrl).contains("X-Amz-Signature")
+                softly.assertThat(result.points.single().text).isEqualTo("여기 지워주세요")
                 softly.assertThat(result.hasResult).isFalse()
             }
-        }
-
-        @Test
-        fun `이 갤러리의 주석 key가 아니면 거절된다`() {
-            // given
-            val fixture = galleryFixture.멤버와_열린_갤러리()
-            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
-            add(fixture, photoIds)
-
-            // when & then
-            assertThatThrownBy {
-                retouchService.updatePhoto(
-                    fixture.galleryId,
-                    photoIds[0],
-                    fixture.member.id!!,
-                    UpdateRetouchPhotoRequest(annotationKey = "galleries/999/retouch/annotations/a.png"),
-                )
-            }
-                .isInstanceOf(RetouchException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(RetouchErrorCode.INVALID_ANNOTATION_KEY)
         }
 
         @Test
@@ -490,7 +286,7 @@ class RetouchServiceTest @Autowired constructor(
             // when & then
             assertThatThrownBy {
                 retouchService.updatePhoto(
-                    fixture.galleryId, photoIds[1], fixture.member.id!!, UpdateRetouchPhotoRequest(),
+                    fixture.galleryId, photoIds[1], fixture.member.requiredId, UpdateRetouchPhotoRequest(),
                 )
             }
                 .isInstanceOf(RetouchException::class.java)
@@ -503,13 +299,12 @@ class RetouchServiceTest @Autowired constructor(
             // given
             val fixture = galleryFixture.멤버와_열린_갤러리()
             val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
-            add(fixture, photoIds)
-            retouchService.submitRound(fixture.galleryId, fixture.member.id!!)
+            제출까지(fixture, photoIds)
 
             // when & then
             assertThatThrownBy {
                 retouchService.updatePhoto(
-                    fixture.galleryId, photoIds[0], fixture.member.id!!, UpdateRetouchPhotoRequest(),
+                    fixture.galleryId, photoIds[0], fixture.member.requiredId, UpdateRetouchPhotoRequest(),
                 )
             }
                 .isInstanceOf(RetouchException::class.java)
@@ -519,94 +314,136 @@ class RetouchServiceTest @Autowired constructor(
     }
 
     @Nested
-    @DisplayName("주석 업로드 URL을 발급할 때")
-    inner class IssueAnnotationUploadUrl {
+    @DisplayName("요청을 일괄 제출할 때")
+    inner class SubmitRequests {
 
         @Test
-        fun `이 갤러리의 주석 경로 key와 서명 URL이 온다`() {
-            // given
-            val fixture = galleryFixture.멤버와_열린_갤러리()
-
-            // when
-            val result = retouchService.issueAnnotationUploadUrl(fixture.galleryId, fixture.member.id!!)
-
-            // then
-            assertSoftly { softly ->
-                softly.assertThat(result.annotationKey)
-                    .startsWith("galleries/${fixture.galleryId}/retouch/annotations/")
-                    .endsWith(".png")
-                softly.assertThat(result.uploadUrl).contains("X-Amz-Signature")
-                softly.assertThat(result.uploadUrlTtlSeconds).isPositive()
-            }
-        }
-    }
-
-    @Nested
-    @DisplayName("회차를 제출할 때")
-    inner class SubmitRound {
-
-        @Test
-        fun `DRAFTING 회차가 REQUESTED가 되고 횟수를 쓴다`() {
+        fun `셀렉 제출이 1회차를 REQUESTED로 만들고 요청 문장을 담는다`() {
             // given
             val fixture = galleryFixture.멤버와_열린_갤러리(maxRetouchRoundCount = 2)
             val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 2)
-            add(fixture, photoIds)
 
             // when
-            val result = retouchService.submitRound(fixture.galleryId, fixture.member.id!!)
+            제출까지(fixture, photoIds, listOf(RetouchRequestItem(photoIds[0], requestText = "밝게 해주세요")))
 
             // then
+            val result = retouchService.get(fixture.galleryId, fixture.member.requiredId)
             assertSoftly { softly ->
-                softly.assertThat(result.currentRound!!.status).isEqualTo(RetouchRoundStatus.REQUESTED)
-                softly.assertThat(result.currentRound!!.requestedAt).isNotNull()
+                softly.assertThat(result.rounds.single().status).isEqualTo(RetouchRoundStatus.REQUESTED)
                 softly.assertThat(result.remainingRoundCount).isEqualTo(1)
-                softly.assertThat(galleryRepository.findById(fixture.galleryId).orElseThrow().stage)
-                    .isEqualTo(GalleryStage.RETOUCH)
+                softly.assertThat(result.currentRound!!.photos).hasSize(2)
+                softly.assertThat(
+                    result.currentRound!!.photos.first { it.photo.photoId == photoIds[0] }.requestText,
+                ).isEqualTo("밝게 해주세요")
             }
         }
 
         @Test
-        fun `아무것도 담지 않았으면 제출할 수 없다`() {
-            // given
-            val fixture = galleryFixture.멤버와_열린_갤러리()
-
-            // when & then
-            assertThatThrownBy { retouchService.submitRound(fixture.galleryId, fixture.member.id!!) }
-                .isInstanceOf(RetouchException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(RetouchErrorCode.EMPTY_ROUND)
-        }
-
-        @Test
-        fun `제출 직후 다시 제출하면 거절된다`() {
-            // given
-            val fixture = galleryFixture.멤버와_열린_갤러리()
-            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
-            add(fixture, photoIds)
-            retouchService.submitRound(fixture.galleryId, fixture.member.id!!)
-
-            // when & then
-            assertThatThrownBy { retouchService.submitRound(fixture.galleryId, fixture.member.id!!) }
-                .isInstanceOf(RetouchException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(RetouchErrorCode.EMPTY_ROUND)
-        }
-
-        @Test
-        fun `회차를 만든 뒤 계약 횟수가 줄었으면 제출이 막힌다`() {
-            // 담기 시점 검사를 통과했어도 제출이 최종 관문이다.
+        fun `선택 목록에 없는 사진의 요청은 거절된다`() {
             // given
             val fixture = galleryFixture.멤버와_열린_갤러리()
             val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 2)
-            retouchFixture.완료된_회차(fixture.galleryId, photoIds = photoIds.take(1))
-            add(fixture, photoIds.drop(1))
-            galleryFixture.보정_횟수_변경(fixture.galleryId, maxRetouchRoundCount = 1)
+            selectionService.select(
+                fixture.galleryId, fixture.member.requiredId, SelectPhotosRequest(photoIds = listOf(photoIds[0])),
+            )
 
             // when & then
-            assertThatThrownBy { retouchService.submitRound(fixture.galleryId, fixture.member.id!!) }
+            assertThatThrownBy {
+                selectionService.submit(
+                    fixture.galleryId,
+                    fixture.member.requiredId,
+                    SubmitRetouchRequestsRequest(listOf(RetouchRequestItem(photoIds[1], requestText = "이 컷도"))),
+                )
+            }
+                .isInstanceOf(RetouchException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(RetouchErrorCode.PHOTO_NOT_SELECTED)
+        }
+
+        @Test
+        fun `같은 사진이 두 번 들어오면 한 건도 적히지 않는다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val photoId = photoFixture.업로드된_사진(fixture.galleryId, count = 1).single()
+            selectionService.select(
+                fixture.galleryId, fixture.member.requiredId, SelectPhotosRequest(photoIds = listOf(photoId)),
+            )
+
+            // when & then
+            assertThatThrownBy {
+                selectionService.submit(
+                    fixture.galleryId,
+                    fixture.member.requiredId,
+                    SubmitRetouchRequestsRequest(
+                        listOf(
+                            RetouchRequestItem(photoId, requestText = "밝게"),
+                            RetouchRequestItem(photoId, requestText = "어둡게"),
+                        ),
+                    ),
+                )
+            }
+                .isInstanceOf(RetouchException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(RetouchErrorCode.PHOTO_ALREADY_IN_ROUND)
+            assertThat(retouchRoundRepository.findFirstByGalleryIdOrderByRoundNoDesc(fixture.galleryId)).isNull()
+        }
+
+        @Test
+        fun `이전 회차가 응답 대기 중이면 다음 회차를 제출할 수 없다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리(maxRetouchRoundCount = 3)
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
+            제출까지(fixture, photoIds)
+
+            // when & then
+            assertThatThrownBy {
+                retouchService.submitRequests(
+                    fixture.galleryId, 2, fixture.member.requiredId, SubmitRetouchRequestsRequest(),
+                )
+            }
+                .isInstanceOf(RetouchException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(RetouchErrorCode.INVALID_ROUND_STATUS)
+        }
+
+        @Test
+        fun `계약 횟수를 다 썼으면 다음 회차를 제출할 수 없다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리(maxRetouchRoundCount = 1)
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
+            retouchFixture.완료된_회차(fixture.galleryId, photoIds = photoIds)
+            selectionService.select(
+                fixture.galleryId, fixture.member.requiredId, SelectPhotosRequest(photoIds = photoIds),
+            )
+            selectionService.submit(fixture.galleryId, fixture.member.requiredId)
+
+            // when & then
+            assertThatThrownBy {
+                retouchService.submitRequests(
+                    fixture.galleryId, 2, fixture.member.requiredId, SubmitRetouchRequestsRequest(),
+                )
+            }
                 .isInstanceOf(RetouchException::class.java)
                 .extracting("errorCode")
                 .isEqualTo(RetouchErrorCode.MAX_RETOUCH_ROUND_COUNT_EXCEEDED)
+        }
+
+        @Test
+        fun `작가는 요청을 제출할 수 없다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
+            제출까지(fixture, photoIds)
+
+            // when & then
+            assertThatThrownBy {
+                retouchService.submitRequests(
+                    fixture.galleryId, 2, fixture.photographer.requiredId, SubmitRetouchRequestsRequest(),
+                )
+            }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
         }
     }
 
@@ -619,12 +456,7 @@ class RetouchServiceTest @Autowired constructor(
             // given
             val fixture = galleryFixture.멤버와_열린_갤러리()
             val photoIds = photoFixture.업로드된_사진(fixture.galleryId, count = 2)
-            add(fixture, photoIds)
-            retouchService.updatePhoto(
-                fixture.galleryId, photoIds[0], fixture.member.id!!,
-                UpdateRetouchPhotoRequest(requestText = "밝게 해주세요"),
-            )
-            retouchService.submitRound(fixture.galleryId, fixture.member.id!!)
+            제출까지(fixture, photoIds, listOf(RetouchRequestItem(photoIds[0], requestText = "밝게 해주세요")))
             결과_확정(fixture, roundNo = 1, photoIds = photoIds.take(1))
 
             // when
@@ -936,7 +768,7 @@ class RetouchServiceTest @Autowired constructor(
             add(fixture, ids)
             assertThat(retouchService.get(fixture.galleryId, fixture.photographer.requiredId).currentRound!!.photos).isEmpty()
             assertThat(retouchService.getRound(fixture.galleryId, 1, fixture.photographer.requiredId).photos).isEmpty()
-            retouchService.submitRound(fixture.galleryId, fixture.member.requiredId)
+            제출까지(fixture, ids)
 
             // when
             val summary = retouchService.get(fixture.galleryId, fixture.photographer.requiredId)
@@ -1017,7 +849,9 @@ class RetouchServiceTest @Autowired constructor(
             // then
             assertThat(sent.photos.single().resultUrl).contains("X-Amz-Signature")
             assertThat(galleryRepository.findById(fixture.galleryId).orElseThrow().stage).isEqualTo(GalleryStage.ARCHIVED)
-            assertThatThrownBy { add(fixture, ids) }
+            assertThatThrownBy {
+                retouchService.submitRequests(fixture.galleryId, 2, fixture.member.requiredId, SubmitRetouchRequestsRequest())
+            }
                 .isInstanceOf(GalleryException::class.java).extracting("errorCode")
                 .isEqualTo(GalleryErrorCode.GALLERY_ARCHIVED)
         }
@@ -1044,12 +878,16 @@ class RetouchServiceTest @Autowired constructor(
     }
 
     private fun add(fixture: OpenGallery, photoIds: List<Long>) =
-        retouchService.addPhotos(fixture.galleryId, fixture.member.id!!, AddRetouchPhotosRequest(photoIds))
+        retouchService.addPhotos(fixture.galleryId, fixture.member.requiredId, AddRetouchPhotosRequest(photoIds))
 
-    /** 담기부터 제출까지 — 작가 차례(REQUESTED)의 회차를 서비스 흐름으로 만든다. */
-    private fun 제출까지(fixture: OpenGallery, photoIds: List<Long>) {
-        add(fixture, photoIds)
-        retouchService.submitRound(fixture.galleryId, fixture.member.id!!)
+    /** 셀렉 담기부터 제출까지 — 작가 차례(REQUESTED)의 1회차를 실제 흐름으로 만든다. */
+    private fun 제출까지(
+        fixture: OpenGallery,
+        photoIds: List<Long>,
+        requests: List<RetouchRequestItem> = emptyList(),
+    ) {
+        selectionService.select(fixture.galleryId, fixture.member.requiredId, SelectPhotosRequest(photoIds = photoIds))
+        selectionService.submit(fixture.galleryId, fixture.member.requiredId, SubmitRetouchRequestsRequest(requests))
     }
 
     private fun 발급_요청(photoIds: List<Long>, contentType: String = "image/jpeg") =
