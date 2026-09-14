@@ -25,6 +25,7 @@ import com.soma.wes.workspace.domain.WorkspaceMember
 import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
@@ -138,23 +139,27 @@ class ActivityRecorderTest @Autowired constructor(
         }
 
         @Test
-        fun `보정사진 추가와 요청 수정과 제거를 각각 활동으로 기록한다`() {
+        fun `보정 요청 제출을 활동으로 기록한다`() {
             // given
-            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val fixture = galleryFixture.멤버와_열린_갤러리(maxRetouchRoundCount = 2)
             val photoId = photoFixture.업로드된_사진(fixture.galleryId, 1).single()
             val old = java.time.Instant.parse("2000-01-01T00:00:00Z")
 
             // when & then
-            retouch.addPhotos(fixture.galleryId, fixture.member.requiredId,
-                com.soma.wes.retouch.dto.request.AddRetouchPhotosRequest(listOf(photoId)))
-            assertThat(activity.findGalleryActivity(listOf(fixture.galleryId))).containsKey(fixture.galleryId)
-            jdbc.update("update gallery_activity set last_activity_at = timestamp with time zone '2000-01-01 00:00:00Z'")
-            retouch.updatePhoto(fixture.galleryId, photoId, fixture.member.requiredId,
-                com.soma.wes.retouch.dto.request.UpdateRetouchPhotoRequest(requestText = "밝게 해주세요"))
-            assertThat(activity.findGalleryActivity(listOf(fixture.galleryId)).getValue(fixture.galleryId).toInstant()).isAfter(old)
-            jdbc.update("update gallery_activity set last_activity_at = timestamp with time zone '2000-01-01 00:00:00Z'")
-            retouch.removePhoto(fixture.galleryId, photoId, fixture.member.requiredId)
-            assertThat(activity.findGalleryActivity(listOf(fixture.galleryId)).getValue(fixture.galleryId).toInstant()).isAfter(old)
+            selectionService.select(fixture.galleryId, fixture.member.requiredId,
+                com.soma.wes.selection.dto.request.SelectPhotosRequest(photoIds = listOf(photoId)))
+            selectionService.submit(fixture.galleryId, fixture.member.requiredId,
+                com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest(
+                    listOf(com.soma.wes.retouch.dto.request.RetouchRequestItem(photoId, requestText = "밝게 해주세요")),
+                ))
+            assertSoftly { softly ->
+                softly.assertThat(activity.findGalleryActivity(listOf(fixture.galleryId)))
+                    .containsKey(fixture.galleryId)
+                softly.assertThat(activity.findGalleryActivity(listOf(fixture.galleryId)).getValue(fixture.galleryId).toInstant())
+                    .isAfter(old)
+                softly.assertThat(retouch.getRound(fixture.galleryId, 1, fixture.member.requiredId).photos.single().requestText)
+                    .isEqualTo("밝게 해주세요")
+            }
         }
     }
 

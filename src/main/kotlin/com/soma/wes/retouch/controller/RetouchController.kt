@@ -9,7 +9,6 @@ import com.soma.wes.retouch.dto.request.AddRetouchPhotosRequest
 import com.soma.wes.retouch.dto.request.CompleteResultsRequest
 import com.soma.wes.retouch.dto.request.IssueResultUploadUrlsRequest
 import com.soma.wes.retouch.dto.request.UpdateRetouchPhotoRequest
-import com.soma.wes.retouch.dto.response.IssueAnnotationUploadUrlResponse
 import com.soma.wes.retouch.dto.response.IssueResultUploadUrlsResponse
 import com.soma.wes.retouch.dto.response.RetouchOverviewResponse
 import com.soma.wes.retouch.dto.response.RetouchPhotoResponse
@@ -22,7 +21,6 @@ import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
-import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -60,18 +58,6 @@ class RetouchController(
         return ResponseEntity.ok(result)
     }
 
-    @DeleteMapping("/photos/{photoId}")
-    override fun removePhoto(
-        @AuthenticationPrincipal loginUser: LoginUser,
-        @PathVariable galleryId: Long,
-        @PathVariable photoId: Long,
-    ): ResponseEntity<Unit> {
-        retouchService.removePhoto(galleryId, photoId, loginUser.id)
-        val status = HttpStatus.NO_CONTENT
-
-        return ResponseEntity.status(status).build()
-    }
-
     @PutMapping("/photos/{photoId}/request")
     override fun updatePhoto(
         @AuthenticationPrincipal loginUser: LoginUser,
@@ -80,26 +66,6 @@ class RetouchController(
         @Valid @RequestBody request: UpdateRetouchPhotoRequest,
     ): ResponseEntity<RetouchPhotoResponse> {
         val result = retouchService.updatePhoto(galleryId, photoId, loginUser.id, request)
-
-        return ResponseEntity.ok(result)
-    }
-
-    @PostMapping("/annotations/upload-url")
-    override fun issueAnnotationUploadUrl(
-        @AuthenticationPrincipal loginUser: LoginUser,
-        @PathVariable galleryId: Long,
-    ): ResponseEntity<IssueAnnotationUploadUrlResponse> {
-        val result = retouchService.issueAnnotationUploadUrl(galleryId, loginUser.id)
-
-        return ResponseEntity.ok(result)
-    }
-
-    @PostMapping("/rounds/submit")
-    override fun submitRound(
-        @AuthenticationPrincipal loginUser: LoginUser,
-        @PathVariable galleryId: Long,
-    ): ResponseEntity<RetouchOverviewResponse> {
-        val result = retouchService.submitRound(galleryId, loginUser.id)
 
         return ResponseEntity.ok(result)
     }
@@ -177,23 +143,6 @@ class RetouchController(
         return ResponseEntity.ok(retouchService.confirm(galleryId, loginUser.id))
     }
 
-    @PostMapping("/results/upload-urls")
-    override fun issuePersonalResultUploadUrls(
-        @AuthenticationPrincipal loginUser: LoginUser,
-        @PathVariable galleryId: Long,
-        @Valid @RequestBody request: IssueResultUploadUrlsRequest,
-    ): ResponseEntity<IssueResultUploadUrlsResponse> {
-        return ResponseEntity.ok(retouchService.issueResultUploadUrls(galleryId, 1, loginUser.id, request))
-    }
-
-    @PostMapping("/results/complete")
-    override fun completePersonalResults(
-        @AuthenticationPrincipal loginUser: LoginUser,
-        @PathVariable galleryId: Long,
-        @Valid @RequestBody request: CompleteResultsRequest,
-    ): ResponseEntity<RetouchRoundDetailResponse> {
-        return ResponseEntity.ok(retouchService.completeResults(galleryId, 1, loginUser.id, request))
-    }
     @PostMapping("/requests/refine")
     override fun refine(
         @AuthenticationPrincipal loginUser: LoginUser,

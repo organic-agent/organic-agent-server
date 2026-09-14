@@ -9,6 +9,10 @@ enum class RetouchErrorCode(
     override val message: String,
 ) : ErrorCode {
 
+    // 쓰지 않는 회차 편집 API(빼기·초안 제출·주석 업로드)와 함께 지운 코드:
+    // RETOUCH_400_6(EMPTY_ROUND) · RETOUCH_400_8(INVALID_ANNOTATION_KEY).
+    // 번호는 재사용하지 않는다 — 클라이언트가 옛 코드로 분기할 수 있다.
+
     /**
      * 계약한 보정 횟수를 다 써서 더 제출(또는 새 회차 시작)할 수 없는 경우.
      *
@@ -38,22 +42,9 @@ enum class RetouchErrorCode(
      */
     PHOTO_NOT_UPLOADED(HttpStatus.BAD_REQUEST, "RETOUCH_400_5", "아직 업로드가 끝나지 않은 사진은 담을 수 없습니다."),
 
-    /**
-     * 제출할 것이 없는 경우 — 진행 중인 DRAFTING 회차가 없거나, 있어도 담긴 사진이 없다.
-     * 제출 직후 다시 제출하는 중복 요청도 (회차가 이미 REQUESTED가 되어) 여기로 떨어진다.
-     */
-    EMPTY_ROUND(HttpStatus.BAD_REQUEST, "RETOUCH_400_6", "보정을 요청할 사진이 없어 제출할 수 없습니다."),
-
     /** 요청 텍스트가 [com.soma.wes.retouch.domain.RetouchPhoto.MAX_REQUEST_TEXT_LENGTH]를 넘긴 경우. */
     REQUEST_TEXT_TOO_LONG(HttpStatus.BAD_REQUEST, "RETOUCH_400_7", "요청 내용이 너무 깁니다."),
 
-    /**
-     * 이 갤러리의 주석 업로드 경로가 아닌 storage key를 저장하려는 경우.
-     *
-     * 서버는 발급한 key를 따로 기억하지 않으므로 접두 검사가 유일한 방어다 — 이것이 없으면
-     * 다른 갤러리의 사진 key를 주석으로 걸어 남의 원본을 자기 화면에 서명해 볼 수 있다.
-     */
-    INVALID_ANNOTATION_KEY(HttpStatus.BAD_REQUEST, "RETOUCH_400_8", "이 갤러리의 주석 이미지가 아닙니다."),
 
     /** 결과 업로드 URL 발급에 허용 목록 밖의 Content-Type을 보낸 경우. */
     UNSUPPORTED_CONTENT_TYPE(HttpStatus.BAD_REQUEST, "RETOUCH_400_9", "지원하지 않는 이미지 형식입니다."),
@@ -61,8 +52,8 @@ enum class RetouchErrorCode(
     /**
      * 이 회차의 결과 업로드 경로가 아닌 storage key를 확정하려는 경우.
      *
-     * [INVALID_ANNOTATION_KEY]와 같은 이유다 — 서버는 발급한 key를 기억하지 않으므로 접두
-     * 검사가 유일한 방어고, 회차 번호까지 접두에 들어 있어 다른 회차의 결과를 섞을 수도 없다.
+     * 서버는 발급한 key를 기억하지 않으므로 접두 검사가 유일한 방어고, 회차 번호까지 접두에
+     * 들어 있어 다른 회차의 결과를 섞을 수도 없다.
      */
     INVALID_RESULT_KEY(HttpStatus.BAD_REQUEST, "RETOUCH_400_10", "이 회차의 보정 결과가 아닙니다."),
 
@@ -106,8 +97,7 @@ enum class RetouchErrorCode(
      * 이전 회차의 결과를 기다리는 중에 새로 담으려는 경우.
      *
      * 회차는 갤러리당 하나씩만 진행된다. 결과가 오기 전에 다음 요청이 쌓이면 "몇 회 남았는지"가
-     * 흐려지고 회차별 전/후 비교의 전제도 깨진다. 화면은 이 코드를 보고 "작가의 응답을
-     * 기다리는 중"으로 안내할 수 있다.
+     * 흐려지고 회차별 전/후 비교의 전제도 깨진다.
      */
     ROUND_IN_PROGRESS(HttpStatus.CONFLICT, "RETOUCH_409_1", "이전 보정 회차가 아직 진행 중입니다."),
 

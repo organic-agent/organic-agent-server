@@ -47,13 +47,18 @@ class RetouchPhoto(
     @Column(name = "request_text")
     var requestText: String? = null
 
-    /** 프론트가 캔버스로 그린 주석 레이어 PNG의 storage key. */
-    @Column(name = "annotation_key", length = 500)
-    var annotationKey: String? = null
-
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "request_points", nullable = false, columnDefinition = "jsonb")
     var points: List<RetouchPoint> = emptyList()
+
+    /**
+     * 사진 위에 겹쳐 그린 주석 레이어 PNG의 storage key.
+     *
+     * 부부가 올리는 경로는 없다 — 관리자 아티팩트 교체(`AdminRetouchArtifactType.ANNOTATION`)만 이 값을 쓴다.
+     * 그래서 [writeRequest]는 이 값을 건드리지 않는다: 요청을 다시 제출해도 관리자가 넣은 주석이 지워지지 않는다.
+     */
+    @Column(name = "annotation_key", length = 500)
+    var annotationKey: String? = null
 
     /** 작가가 올린 보정 결과 파일의 storage key. null이면 아직 응답이 없는 항목이다. */
     @Column(name = "result_key", length = 500)
@@ -73,11 +78,8 @@ class RetouchPhoto(
     val hasResult: Boolean
         get() = resultKey != null
 
-    /**
-     * 요청 내용을 적는다. DRAFTING 동안에는 몇 번이고 덮어쓴다 — 주석은 이미지 방식이라
-     * 부분 수정이 없고, 다시 그려 올린 key로 통째로 바뀐다.
-     */
-    fun writeRequest(requestText: String?, annotationKey: String?, points: List<RetouchPoint> = emptyList()) {
+    /** 요청 내용을 적는다. 제출 전에는 몇 번이고 덮어쓴다 — 목록을 통째로 바꾼다. */
+    fun writeRequest(requestText: String?, points: List<RetouchPoint> = emptyList()) {
         if (requestText != null && requestText.length > MAX_REQUEST_TEXT_LENGTH) {
             throw RetouchException(RetouchErrorCode.REQUEST_TEXT_TOO_LONG)
         }
@@ -86,12 +88,11 @@ class RetouchPhoto(
         points.forEach { it.validate() }
         this.points = points.toList()
         this.requestText = requestText
-        this.annotationKey = annotationKey
     }
 
     /**
-     * 작가의 결과를 기록한다. 회차가 끝나기 전에는 다시 올린 key로 덮어쓴다 — 결과도 주석처럼
-     * 파일 통째 교체라 부분 수정이 없다. key의 소속 검사는 서비스가 한다.
+     * 작가의 결과를 기록한다. 회차가 끝나기 전에는 다시 올린 key로 덮어쓴다 — 파일 통째 교체라
+     * 부분 수정이 없다. key의 소속 검사는 서비스가 한다.
      */
     fun writeResult(resultKey: String, resultContentType: String) {
         this.resultKey = resultKey
@@ -106,7 +107,7 @@ class RetouchPhoto(
          */
         const val MAX_REQUEST_TEXT_LENGTH = 2000
 
-        /** 한 사진의 요청 패널에서 지원하는 최대 주석 지점 수. */
+        /** 한 사진의 요청 패널에서 지원하는 최대 지점 수. */
         const val MAX_POINTS = 100
     }
 }

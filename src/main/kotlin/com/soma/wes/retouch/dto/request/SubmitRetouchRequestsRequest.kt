@@ -11,6 +11,5 @@ data class SubmitRetouchRequestsRequest(
 data class RetouchRequestItem(
     val photoId: Long,
     val requestText: String? = null,
-    val annotationKey: String? = null,
     val points: List<RetouchPoint> = emptyList(),
 )

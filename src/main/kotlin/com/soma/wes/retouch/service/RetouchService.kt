@@ -20,15 +20,14 @@ import com.soma.wes.retouch.domain.RetouchRoundStatus
 import com.soma.wes.retouch.dto.request.AddRetouchPhotosRequest
 import com.soma.wes.retouch.dto.request.CompleteResultsRequest
 import com.soma.wes.retouch.dto.request.IssueResultUploadUrlsRequest
+import com.soma.wes.retouch.dto.request.UpdateRetouchPhotoRequest
 import com.soma.wes.retouch.dto.request.MatchRetouchResultsRequest
 import com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest
-import com.soma.wes.retouch.dto.request.UpdateRetouchPhotoRequest
-import com.soma.wes.retouch.dto.response.IssueAnnotationUploadUrlResponse
 import com.soma.wes.retouch.dto.response.IssueResultUploadUrlsResponse
 import com.soma.wes.retouch.dto.response.IssuedResultUploadResponse
 import com.soma.wes.retouch.dto.response.MatchRetouchResultsResponse
-import com.soma.wes.retouch.dto.response.RetouchOverviewResponse
 import com.soma.wes.retouch.dto.response.RetouchPhotoResponse
+import com.soma.wes.retouch.dto.response.RetouchOverviewResponse
 import com.soma.wes.retouch.dto.response.RetouchRoundDetailResponse
 import com.soma.wes.retouch.dto.response.RetouchRoundResponse
 import com.soma.wes.retouch.dto.response.RetouchRoundSummaryResponse
@@ -41,7 +40,6 @@ import com.soma.wes.retouch.support.RetouchPhotoLoader
 import com.soma.wes.retouch.support.RetouchViewAssembler
 import com.soma.wes.selection.repository.PhotoSelectionItemRepository
 import com.soma.wes.selection.repository.PhotoSelectionRepository
-import com.soma.wes.trash.service.ProductChildTrashService
 import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import java.time.Clock
@@ -62,7 +60,6 @@ class RetouchService(
     private val retouchPhotoRepository: RetouchPhotoRepository,
     private val retouchPhotoLoader: RetouchPhotoLoader,
     private val retouchViewAssembler: RetouchViewAssembler,
-    private val productChildTrashService: ProductChildTrashService,
     private val photoStorage: PhotoStorage,
     private val properties: StorageProperties,
     private val clock: Clock,
@@ -80,9 +77,6 @@ class RetouchService(
 
     companion object {
 
-        /** 주석은 프론트 캔버스가 내보내는 투명 배경 레이어라 형식이 PNG 하나로 고정된다. */
-        private const val ANNOTATION_CONTENT_TYPE = "image/png"
-
         /**
          * 결과로 받아줄 이미지 형식과 key에 붙일 확장자. 원본 업로드가 받는 형식과 같은
          * 집합인데, 원본은 파일명에서 확장자를 얻지만 결과는 파일명을 저장하지 않아
@@ -96,10 +90,6 @@ class RetouchService(
             "image/heif" to "heif",
         )
     }
-
-    /** 갤러리 키 공간([PhotoStorage.galleryPrefix]) 아래의 고정 자리. */
-    private fun annotationKeyPrefix(galleryId: Long): String =
-        "${photoStorage.galleryPrefix(galleryId)}retouch/annotations/"
 
     private fun resultKeyPrefix(galleryId: Long, roundNo: Int): String =
         "${photoStorage.galleryPrefix(galleryId)}retouch/results/$roundNo/"
@@ -117,6 +107,10 @@ class RetouchService(
 
     /**
      * 보정사진을 담는다. 진행 중인 DRAFTING 회차가 없으면 첫 담기 때 만들어진다.
+     *
+     * 스튜디오 갤러리의 부부는 셀렉 제출(`/rounds/{n}/requests`)로 요청을 한 번에 보내므로 이 경로를 쓰지 않는다.
+     * 남아 있는 이유는 개인 갤러리다 — 작가가 없어 회차를 제출하지 않고 요청서 CSV를 내보내는데,
+     * 그 CSV의 요청 칸을 채우려면 내보내기 전에 항목과 요청문이 있어야 한다.
      */
     @Transactional
     fun addPhotos(galleryId: Long, userId: Long, request: AddRetouchPhotosRequest): RetouchOverviewResponse {
@@ -152,8 +146,11 @@ class RetouchService(
             throw RetouchException(RetouchErrorCode.ROUND_IN_PROGRESS)
         }
         // 여기 오면 기존 회차는 전부 COMPLETED다 — 어차피 제출하지 못할 회차에 사진을 모으게
-        // 두지 않는다. 최종 관문은 제출의 같은 검사다.
-        validateWithinMaxRounds(gallery, submittedRoundCount = latest?.roundNo ?: 0)
+        // 두지 않는다. 최종 관문은 제출(RetouchRequestService.submit)의 같은 검사다.
+        val max = gallery.maxRetouchRoundCount
+        if (max != null && (latest?.roundNo ?: 0) >= max) {
+            throw RetouchException(RetouchErrorCode.MAX_RETOUCH_ROUND_COUNT_EXCEEDED)
+        }
 
         return retouchRoundRepository.save(
             RetouchRound(
@@ -163,31 +160,8 @@ class RetouchService(
         )
     }
 
-    private fun validateWithinMaxRounds(gallery: Gallery, submittedRoundCount: Int) {
-        val max = gallery.maxRetouchRoundCount
-        if (max != null && submittedRoundCount >= max) {
-            throw RetouchException(RetouchErrorCode.MAX_RETOUCH_ROUND_COUNT_EXCEEDED)
-        }
-    }
-
     /**
-     * DRAFTING 회차에서 한 장을 빼낸다. 없으면 404다.
-     */
-    @Transactional
-    fun removePhoto(galleryId: Long, photoId: Long, userId: Long) {
-        galleryAccessPolicy.requireRetouchRequester(galleryId, userId)
-
-        galleryRepository.requireWithLockById(galleryId)
-        val round = requireDraftingRound(galleryId, RetouchErrorCode.PHOTO_NOT_IN_ROUND)
-
-        if (!productChildTrashService.removeUserRetouchItem(round.requiredId, photoId)) {
-            throw RetouchException(RetouchErrorCode.PHOTO_NOT_IN_ROUND)
-        }
-        activityRecorder.recordGallery(galleryId)
-    }
-
-    /**
-     * 사진 한 장의 요청 텍스트와 주석 key를 저장한다. DRAFTING 동안에만, 덮어쓰기로 동작한다 —
+     * 사진 한 장의 요청 텍스트와 포인트를 저장한다. DRAFTING 동안에만, 덮어쓰기로 동작한다 —
      * 제출 뒤에는 DRAFTING 회차가 없어 404다.
      */
     @Transactional
@@ -201,79 +175,16 @@ class RetouchService(
 
         // 항목 하나의 갱신이지만 갤러리 행을 잠근다 — 제출과 겹치면 잠긴 회차에 요청이 적힌다.
         galleryRepository.requireWithLockById(galleryId)
-        val round = requireDraftingRound(galleryId, RetouchErrorCode.PHOTO_NOT_IN_ROUND)
+        val round = retouchRoundRepository.findByGalleryIdAndStatus(galleryId, RetouchRoundStatus.DRAFTING)
+            ?: throw RetouchException(RetouchErrorCode.PHOTO_NOT_IN_ROUND)
         val item = retouchPhotoRepository.findByRoundIdAndPhotoId(round.requiredId, photoId)
             ?: throw RetouchException(RetouchErrorCode.PHOTO_NOT_IN_ROUND)
 
-        validateAnnotationKey(galleryId, request.annotationKey)
-        item.writeRequest(request.requestText, request.annotationKey, request.points)
+        item.writeRequest(request.requestText, request.points)
         activityRecorder.recordGallery(galleryId)
 
         return retouchViewAssembler.toResponses(galleryId, listOf(item)).first()
     }
-
-    private fun validateAnnotationKey(galleryId: Long, annotationKey: String?) {
-        if (annotationKey != null && !annotationKey.startsWith(annotationKeyPrefix(galleryId))) {
-            throw RetouchException(RetouchErrorCode.INVALID_ANNOTATION_KEY)
-        }
-    }
-
-    /**
-     * 주석 이미지가 올라갈 자리의 서명 URL을 발급한다. 사진과의 연결은 발급이 아니라
-     * 요청 저장([updatePhoto])이 만든다 — 그래서 발급은 아무 행도 만들지 않는다.
-     */
-    @Transactional(readOnly = true)
-    fun issueAnnotationUploadUrl(galleryId: Long, userId: Long): IssueAnnotationUploadUrlResponse {
-        galleryAccessPolicy.requireRetouchRequester(galleryId, userId)
-
-        val key = "${annotationKeyPrefix(galleryId)}${UUID.randomUUID()}.png"
-        val presigned = photoStorage.presignUpload(key, ANNOTATION_CONTENT_TYPE)
-
-        return IssueAnnotationUploadUrlResponse(
-            annotationKey = key,
-            uploadUrl = presigned.url,
-            uploadUrlTtlSeconds = properties.uploadUrlTtl.seconds,
-        )
-    }
-
-    /**
-     * 회차를 제출한다. 이 시점의 요청들이 한 회차가 되고, 계약 횟수 한 번을 쓴다.
-     */
-    @Transactional
-    fun submitRound(galleryId: Long, userId: Long): RetouchOverviewResponse {
-        galleryAccessPolicy.requireRetouchRequester(galleryId, userId)
-        requireStudioRoundAction(galleryId)
-
-        val gallery = galleryRepository.requireWithLockById(galleryId)
-        val round = requireDraftingRound(galleryId, RetouchErrorCode.EMPTY_ROUND)
-        if (retouchPhotoRepository.countByRoundId(round.requiredId) == 0L) {
-            throw RetouchException(RetouchErrorCode.EMPTY_ROUND)
-        }
-
-        // 회차를 만든 뒤 계약 횟수가 줄었을 수 있어 제출이 최종 관문이다.
-        val submittedCount = retouchRoundRepository
-            .countByGalleryIdAndStatusNot(galleryId, RetouchRoundStatus.DRAFTING)
-        validateWithinMaxRounds(gallery, submittedRoundCount = submittedCount.toInt())
-
-        round.submit(ZonedDateTime.now(clock))
-        gallery.markRetouchStarted()
-        notificationPublisher.publish(
-            userIds = workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId)
-                .map { it.userId },
-            type = UserNotificationType.RETOUCH_REQUESTED,
-            scope = UserNotificationScope.GALLERY,
-            scopeId = galleryId,
-            title = "보정 요청이 도착했습니다",
-            message = "${gallery.title}의 보정 요청이 제출되었습니다.",
-        )
-        activityRecorder.recordGallery(galleryId)
-        return overviewOf(gallery, userId)
-    }
-
-    /** DRAFTING 회차가 없다는 것을 무엇으로 알릴지는 유스케이스마다 다르다 — 호출자가 정한다. */
-    private fun requireDraftingRound(galleryId: Long, errorCode: RetouchErrorCode): RetouchRound =
-        retouchRoundRepository.findByGalleryIdAndStatus(galleryId, RetouchRoundStatus.DRAFTING)
-            ?: throw RetouchException(errorCode)
 
     /**
      * 회차 상세를 연다. 항목마다 원본과 결과 URL을 나란히 줘 전/후 비교가 된다.
