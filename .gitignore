@@ -50,12 +50,5 @@ __pycache__/
 ### local ###
 postgres-data-local
 
-# 작업 계획(docs/plans)과 해결한 작업의 기록은 개인 노트라 올리지 않는다.
-# 운영자가 따라야 하는 공용 runbook과, 팀에 공유하는 클릭형 아키텍처 문서(docs/architecture)만 함께 버전 관리한다.
-# 개인용 아키텍처 노트는 docs/private/architecture 에 둔다(무시됨).
-/docs/*
-!/docs/data-model-v1.md
-!/docs/runbooks/
-!/docs/runbooks/**
-!/docs/architecture/
-!/docs/architecture/**
+# docs/ 는 개인 노트(계획·기록·실험)만 둔다. 팀에 공유하는 문서는 WES-DOCS 저장소(docs/server-architecture)에 있다.
+/docs/
