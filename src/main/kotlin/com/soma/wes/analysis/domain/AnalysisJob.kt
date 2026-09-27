@@ -23,11 +23,12 @@ import org.hibernate.annotations.DynamicUpdate
  * [DynamicUpdate]인 이유: Lambda가 [error]를 쓰는 동안 이 서버가 다른 컬럼을 갱신할 수 있다. 바뀐 컬럼만 UPDATE해야
  * 이 서버의 오래된 스냅샷(`error = null`)이 Lambda의 실패 기록을 덮지 않는다.
  *
- * 갤러리당 살아 있는 잡이 하나뿐이라는 규칙은 DB의 부분 유니크(`uk_ai_analysis_jobs_active`)가 최종적으로 지킨다.
+ * 갤러리당 살아 있는 잡이 하나뿐이라는 규칙은 DB의 부분 유니크(`uk_analysis_jobs_active`)가 최종적으로 지킨다.
  */
 @Entity
 @DynamicUpdate
-@Table(name = "ai_analysis_jobs")
+// [GLOSSARY-2 2026-09-27] 테이블 ai_analysis_jobs → analysis_jobs (V23, 용어집 D4)
+@Table(name = "analysis_jobs")
 class AnalysisJob(
     @Column(name = "gallery_id", nullable = false, updatable = false)
     val galleryId: Long,

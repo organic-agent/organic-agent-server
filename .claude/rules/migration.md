@@ -33,7 +33,7 @@ paths:
 
 ## AI가 쓰는 테이블
 
-- `photo_analysis`(임베딩·분석 컬럼)·`ai_concept_assignments`는 이 서버 밖(AI repo Lambda 셋
+- `photo_analysis`(임베딩·분석 컬럼)·`concept_assignments`는 이 서버 밖(AI repo Lambda 셋
   embedder·score·categorize)이 직접 INSERT/UPDATE 한다. 엔티티의 그 컬럼은 읽기 전용 `val`이고,
   컬럼을 바꾸면 AI repo(`score/store.py`·`categorize/store.py`·`embedder/db.py`)도 함께 바꾼다.
   전용 DB 유저(`embedder`, `photoselect`)의 GRANT도 새 테이블마다 필요하다.
@@ -44,7 +44,7 @@ paths:
 - `photos.dispatched_at`·`embed_attempts`는 이 서버가 임베더 배정에 쓴다(V15). 임베더는 일시 실패한 장의 `dispatched_at`만
   NULL로 되돌리고 `status`는 건드리지 않는다. 옛 품질 점수(`technical_quality_*`)와 관리자 `QUALITY_ANALYSIS` 잡은 V15에서 지웠다.
   embedder GRANT 계약은 V15 블록이 V1 블록을 통째로 대체한다(V1은 적용된 파일이라 고치지 않는다).
-- `ai_analysis_jobs`(V16, 파이프라인 v2)는 갤러리 한 번의 "폴더 만들기"만 맡는 한 층 상태 기계다 —
+- `analysis_jobs`(V16, 파이프라인 v2)는 갤러리 한 번의 "폴더 만들기"만 맡는 한 층 상태 기계다 —
   `status` ANALYZING → CATEGORIZING → DONE | FAILED, 컬럼은 `id`·`gallery_id`·`status`·`dispatched_at`(categorize EVENT 시각)·
   `attempts`(categorize 호출 수)·`finished_at`·`error`·`version`·`created_at`·`updated_at`뿐이다. 이 서버가 상태 전부를 쓰고,
   Lambda(categorize, DB 유저 `photoselect`)는 실패했을 때 `error` 한 컬럼만 쓴다(GRANT `UPDATE (error, updated_at)`).
@@ -52,13 +52,13 @@ paths:
   (`EmbedDispatcher`, `photos.dispatched_at`·`embed_attempts`). 재분석은 `photo_analysis` 행 삭제(`PhotoPipelineRepository.resetAnalysis`)다.
   `AnalysisJob`은 `@DynamicUpdate`다 — Lambda가 쓰는 `error`를 이 서버의 오래된 스냅샷이 덮지 않게 바뀐 컬럼만 UPDATE한다.
 - 폴더 물질화 기록 테이블(`categorization_jobs`·`categorization_job_photos`)은 V17에서 지웠다 — "처리한 사진"은
-  `photo_category_assignments`가 말하고, 물질화 진입점은 `AiCategoryFolderService.materializeFromAnalysis`(인가 없음, 멱등) 하나다.
+  `detail_folder_assignments`가 말하고, 물질화 진입점은 `AiFolderMaterializeService.materializeFromAnalysis`(인가 없음, 멱등) 하나다.
   관리자 리소스 `CATEGORIZATION_JOB`도 함께 지웠고 `AdminAuditTargetType`의 값만 옛 감사 로그 읽기용으로 남는다(V2의 ALBUM과 같은 방식).
-- `photo_analysis`는 세 주체가 나눠 쓴다 — 임베더가 `embedding·embedding_model`, SCORE 잡이
-  `subjects·sub_scores·clip_embedding·model_version`, CATEGORIZE 잡이 `technical_pct·aesthetic_pct·cluster_*·
-  embed_group_id`. 두 잡 사이에 `model_version`만 있고 백분위가 없는 창이 있으므로 "분석 완료"는
+- `photo_analysis`는 세 주체가 나눠 쓴다 — 임베더가 `embedding·embedding_model`, score 단계가
+  `subjects·sub_scores·clip_embedding·pipeline_version`, categorize 단계가 `technical_pct·aesthetic_pct·burst_*·
+  embed_group_id`. 두 단계 사이에 `pipeline_version`만 있고 백분위가 없는 창이 있으므로 "분석 완료"는
   `PhotoAnalysis.isAnalyzed`(백분위까지 채워짐) 하나로만 판단한다. DB 제약도 잡 단위다(V3):
-  `ck_photo_analysis_scored`(model_version ⇒ subjects·analyzed_at), `ck_photo_analysis_categorized`
+  `ck_photo_analysis_scored`(pipeline_version ⇒ subjects·analyzed_at), `ck_photo_analysis_categorized`
   (백분위·연사·그룹은 전부 있거나 전부 없음). 배치가 쓰는 컬럼 묶음을 바꾸면 이 두 제약도 같이 본다.
 - `ai_selection_jobs`·`ai_recommendations`는 2026-09-04부터 이 서버가 쓴다(추천 실행기 `AiSelectionJobRunner`).
   AI repo는 더 이상 이 테이블을 쓰지 않는다. 비교샷 테이블 `ai_pair_verdicts`는 기능과 함께 V22에서 지웠다 —
@@ -73,6 +73,16 @@ paths:
   운영(role 있음)은 배포 시 Flyway가 걸고
   로컬·테스트(role 없음)는 건너뛴다. `AdminEmbedderPrivilegeContractTest`가 그 블록을 꺼내 Lambda의 실제 SQL을
   role로 실행하므로 계약을 늘리면 거기에 SQL도 보탠다. identity 컬럼은 시퀀스 GRANT가 필요 없다.
+
+## 용어집 이름 (V23)
+
+- AI와 서버가 공유하는 테이블·컬럼 이름은 WES-DOCS `docs/glossary.md`가 정본이다. V23에서 옛 이름을 바꿨다 —
+  `ai_concept_assignments`→`concept_assignments`(`parent_name`·`concept_name`→`concept_name`·`detail_name`),
+  `ai_analysis_jobs`→`analysis_jobs`, `photo_category_assignments`→`detail_folder_assignments`, `photo_analysis.cluster_*`→`burst_*`,
+  `model_version`→`pipeline_version`(`photo_analysis`·`preference_models`), `detail_folders.category`→`cut_type`,
+  `ai_selection_jobs.folder_set_job_id`→`analysis_job_id`. 이 문서의 앞 절들이 V1~V22를 설명할 때도 테이블은 지금 이름으로 적는다.
+- 이름을 바꾸는 마이그레이션은 AI repo 배포와 같은 창에서 적용한다(분석 멈춤 → wes 배포 → AI 배포 → 재개). 제약·인덱스 이름은
+  카탈로그를 조회해 바꾼다(V23의 DO 블록) — 이미 지운 제약이 섞인 목록을 손으로 적지 않는다.
 
 ## 새 테이블의 부수 작업
 

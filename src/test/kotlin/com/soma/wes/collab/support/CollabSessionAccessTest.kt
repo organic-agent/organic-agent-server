@@ -1,7 +1,7 @@
 package com.soma.wes.collab.support
 
-import com.soma.wes.category.dto.request.CreateConceptFolderRequest
-import com.soma.wes.category.service.CategoryService
+import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
+import com.soma.wes.folder.service.FolderService
 import com.soma.wes.collab.dto.request.EnterCollabRequest
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
 import com.soma.wes.collab.dto.response.CollabSessionResponse
@@ -40,7 +40,7 @@ import java.time.ZonedDateTime
 @IntegrationTest
 class CollabSessionAccessTest @Autowired constructor(
     private val collabSessionAccess: CollabSessionAccess,
-    private val categoryService: CategoryService,
+    private val folderService: FolderService,
     private val collabSessionService: CollabSessionService,
     private val collabGuestService: CollabGuestService,
     private val galleryFixture: GalleryFixture,
@@ -57,7 +57,7 @@ class CollabSessionAccessTest @Autowired constructor(
     @BeforeEach
     fun setUpBaseData() {
         fixture = galleryFixture.멤버와_열린_갤러리()
-        conceptId = categoryService.createConcept(
+        conceptId = folderService.createConcept(
             fixture.galleryId,
             fixture.photographer.requiredId,
             CreateConceptFolderRequest("하객 공유"),
@@ -335,7 +335,7 @@ class CollabSessionAccessTest @Autowired constructor(
         val targetConceptId = if (target.galleryId == fixture.galleryId) {
             conceptId
         } else {
-            categoryService.createConcept(
+            folderService.createConcept(
                 target.galleryId,
                 target.photographer.requiredId,
                 CreateConceptFolderRequest("하객 공유"),

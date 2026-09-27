@@ -1,6 +1,6 @@
 package com.soma.wes.recommendation.service
 
-import com.soma.wes.category.dto.FolderSetDetailDto
+import com.soma.wes.folder.dto.FolderSetDetailDto
 import com.soma.wes.recommendation.domain.ResolvedRecommendationQuery
 import com.soma.wes.recommendation.exception.RecommendationErrorCode
 import com.soma.wes.recommendation.exception.RecommendationException

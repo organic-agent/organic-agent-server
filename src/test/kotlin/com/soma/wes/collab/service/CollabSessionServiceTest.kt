@@ -1,7 +1,7 @@
 package com.soma.wes.collab.service
 
-import com.soma.wes.category.dto.request.CreateConceptFolderRequest
-import com.soma.wes.category.service.CategoryService
+import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
+import com.soma.wes.folder.service.FolderService
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
 import com.soma.wes.collab.dto.request.RenameCollabSessionRequest
 import com.soma.wes.collab.exception.CollabErrorCode
@@ -30,7 +30,7 @@ import org.springframework.beans.factory.annotation.Autowired
 class CollabSessionServiceTest @Autowired constructor(
     private val service: CollabSessionService,
     private val queryService: CollabSessionQueryService,
-    private val categoryService: CategoryService,
+    private val folderService: FolderService,
     private val collabFixture: CollabFixture,
     private val galleryFixture: GalleryFixture,
     private val userFixture: UserFixture,
@@ -51,7 +51,7 @@ class CollabSessionServiceTest @Autowired constructor(
         fun `부부가 컨셉 링크를 열고 서로 같은 세션을 재사용한다`() {
             // given
             val partner = galleryFixture.멤버(shared.galleryId)
-            val concept = categoryService.createConcept(
+            val concept = folderService.createConcept(
                 shared.galleryId, shared.gallery.member.requiredId, CreateConceptFolderRequest(name = "새 컨셉"),
             )
 

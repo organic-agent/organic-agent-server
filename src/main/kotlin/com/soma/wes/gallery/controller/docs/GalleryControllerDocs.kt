@@ -286,7 +286,7 @@ interface GalleryControllerDocs {
     @Operation(
         summary = "촬영 종류 변경",
         description = "갤러리의 촬영 종류(리허설/본식/기타)를 바꾼다. 담당 작가만 할 수 있다. " +
-            "AI 폴더의 큰 분류 목록이 이 값으로 갈리므로, 바꾼 뒤 AI 분석(NAMING)을 다시 돌려야 새 목록이 반영된다. " +
+            "AI 폴더의 컨셉 목록이 이 값으로 갈리므로, 바꾼 뒤 AI 분석(categorize 단계의 naming)을 다시 돌려야 새 목록이 반영된다. " +
             "이미 만들어 둔 AI 폴더는 그대로 남는다.",
     )
     @ApiResponses(

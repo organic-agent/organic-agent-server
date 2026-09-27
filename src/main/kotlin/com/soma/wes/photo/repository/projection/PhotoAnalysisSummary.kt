@@ -10,7 +10,8 @@ interface PhotoAnalysisSummary {
     val technicalPct: Float
     val aestheticPct: Float
     val subjects: String?
-    val clusterId: Int?
-    val clusterRank: Int?
+    // [GLOSSARY-1 2026-09-27] clusterId → burstId (용어집: 연사)
+    val burstId: Int?
+    val burstRank: Int?
     val subScores: Map<String, Any?>
 }

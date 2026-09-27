@@ -1862,20 +1862,20 @@ private fun createGraph(actorAdminId: Long, suffix: String, withPhoto: Boolean =
             """
             INSERT INTO photo_analysis (
                 photo_id, embed_group_id, subjects, technical_pct, aesthetic_pct,
-                cluster_id, cluster_rank, model_version, analyzed_at, created_at, updated_at
+                burst_id, burst_rank, pipeline_version, analyzed_at, created_at, updated_at
             )
             VALUES (:photoId, 1, 'couple', 80.0, 70.0, 1, 0, 'test-v1',
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON CONFLICT (photo_id) DO UPDATE
             SET embed_group_id = 1, subjects = 'couple', technical_pct = 80.0,
-                aesthetic_pct = 70.0, cluster_id = 1, cluster_rank = 0,
-                model_version = 'test-v1', analyzed_at = CURRENT_TIMESTAMP,
+                aesthetic_pct = 70.0, burst_id = 1, burst_rank = 0,
+                pipeline_version = 'test-v1', analyzed_at = CURRENT_TIMESTAMP,
                 updated_at = CURRENT_TIMESTAMP
             """.trimIndent(),
         ).param("photoId", photoId).update()
         val jobId = jdbcClient.sql(
             """
-            INSERT INTO ai_analysis_jobs (
+            INSERT INTO analysis_jobs (
                 gallery_id, status, finished_at, created_at, updated_at
             )
             VALUES (:galleryId, 'DONE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
@@ -1884,8 +1884,8 @@ private fun createGraph(actorAdminId: Long, suffix: String, withPhoto: Boolean =
         ).param("galleryId", galleryId).query { rs, _ -> rs.getLong("id") }.single()
         jdbcClient.sql(
             """
-            INSERT INTO ai_concept_assignments (
-                job_id, gallery_id, embed_group_id, parent_name, concept_name,
+            INSERT INTO concept_assignments (
+                job_id, gallery_id, embed_group_id, concept_name, detail_name,
                 confidence, assigned_by, needs_review, created_at, updated_at
             )
             VALUES (:jobId, :galleryId, 1, '웨딩', '본식', 0.9, 'vlm', false,
@@ -1916,7 +1916,7 @@ private fun createConceptFolder(galleryId: Long, name: String): Long = jdbcClien
         ).param("sessionId", sessionId).query { rs, _ -> rs.getLong("id") }.single()
         jdbcClient.sql(
             """
-            INSERT INTO photo_category_assignments
+            INSERT INTO detail_folder_assignments
                 (gallery_id, photo_id, detail_folder_id, assigned_source, assigned_at, version, created_at, updated_at)
             SELECT gallery_id, id, :detailId, 'USER', CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             FROM photos WHERE id = :photoId

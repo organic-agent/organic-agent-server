@@ -15,15 +15,15 @@ import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 
-@Tag(name = "[AI Recommendation]", description = "폴더별 AI 추천(자식 폴더마다 점수 상위 n장) 잡·조회 API")
+@Tag(name = "[AI Recommendation]", description = "폴더별 AI 추천(세부 폴더마다 점수 상위 n장) 잡·조회 API")
 interface AiRecommendationControllerDocs {
 
     @Operation(
         summary = "AI 추천 요청",
         description = """
             셀렉의 추천 한 라운드를 큐에 넣는다. AI 워커가 최신(또는 본문이 집은) AI 폴더 세트의
-            자식 폴더마다 목표 장수에 비례한 n장(폴더당 최소 1장, 폴더의 절반 이하)을 점수순으로
-            고르고, 연사 클러스터에서는 대표 1장만 낸다. 목표 장수는 갤러리의 계약 장수
+            세부 폴더마다 목표 장수에 비례한 n장(폴더당 최소 1장, 폴더의 절반 이하)을 점수순으로
+            고르고, 연사에서는 연사 대표 1장만 낸다. 목표 장수는 갤러리의 계약 장수
             (maxSelectablePhotoCount)에서 온다. 이는 prompt와 targetCount를 생략한 기존 호출의 동작이다.
 
             targetCount(1~500)를 주면 이번 잡에서 새로 추천할 장수로 사용한다. 폴더 절반 상한과
@@ -84,7 +84,7 @@ interface AiRecommendationControllerDocs {
         summary = "AI 추천 조회",
         description = """
             사진마다 가장 최근 추천을 돌려준다. 범위 밖 폴더의 이전 추천도 유지되므로 현재 요청의 답변만
-            표시하려면 photos[].round == job.round인 항목을 사용한다. folderId를 주면 그 자식 폴더의 추천만 온다 — 폴더 그리드가
+            표시하려면 photos[].round == job.round인 항목을 사용한다. folderId를 주면 그 세부 폴더의 추천만 온다 — 폴더 그리드가
             AI 배지를 그리는 경로다. 세트에 안 들어간 사진(미분류)의 추천은 folderId가 null이다.
 
             이유 문장은 reasonReady=false면 아직 준비 전이다("이유 준비 중"을 그리고 폴링).

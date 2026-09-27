@@ -33,11 +33,13 @@ class AiSelectionJob(
     val mode: AiSelectionMode,
 
     /**
-     * 요청 시점에 기준으로 삼은 AI 카테고리 세트([com.soma.wes.analysis.domain.AnalysisJob]의 id = `concept_folders.analysis_job_id`).
+     * 요청 시점에 기준으로 삼은 AI 폴더 세트의 키([com.soma.wes.analysis.domain.AnalysisJob]의 id = `concept_folders.analysis_job_id`).
      * 프론트가 현재 보는 세트와 다르면 "추천을 다시 받으세요"를 띄우는 재현용 값이다.
      */
-    @Column(name = "folder_set_job_id", updatable = false)
-    val folderSetJobId: Long? = null,
+    // [GLOSSARY-1 2026-09-27] folderSetJobId → analysisJobId (용어집: 폴더 세트의 키는 analysis_job_id). 응답 필드는 4단계에서 바꾼다.
+    // [GLOSSARY-2 2026-09-27] 컬럼 folder_set_job_id → analysis_job_id (V23)
+    @Column(name = "analysis_job_id", updatable = false)
+    val analysisJobId: Long? = null,
 
     /**
      * 이 잡의 범위. null이면 갤러리 전체(모든 세부폴더 + 미분류)를 한 라운드로 계산한다. 값이 있으면 그

@@ -1,9 +1,9 @@
 package com.soma.wes.collab.service
 
 import com.soma.wes.activity.service.ActivityRecorder
-import com.soma.wes.category.exception.CategoryErrorCode
-import com.soma.wes.category.exception.CategoryException
-import com.soma.wes.category.repository.ConceptFolderRepository
+import com.soma.wes.folder.exception.FolderErrorCode
+import com.soma.wes.folder.exception.FolderException
+import com.soma.wes.folder.repository.ConceptFolderRepository
 import com.soma.wes.collab.domain.CollabSession
 import com.soma.wes.collab.domain.CollabSessionPhoto
 import com.soma.wes.collab.dto.request.CollabPhotoIdsRequest
@@ -51,7 +51,7 @@ class CollabSessionService(
         val photoIds = validatePhotoIds(galleryId, request.photoIds, allowEmpty = true)
         val concept = request.conceptFolderId?.let { conceptId ->
             conceptRepository.findByIdAndGalleryId(conceptId, galleryId)
-                ?: throw CategoryException(CategoryErrorCode.CONCEPT_NOT_FOUND)
+                ?: throw FolderException(FolderErrorCode.CONCEPT_NOT_FOUND)
         }
         val name = CollabSession.requireValidName(request.name)
         val now = ZonedDateTime.now(clock)

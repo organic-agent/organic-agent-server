@@ -59,7 +59,7 @@ data class AiSelectionJobResponse(
             selectionId = job.selectionId,
             mode = job.mode,
             status = job.status,
-            folderSetJobId = job.folderSetJobId,
+            folderSetJobId = job.analysisJobId,
             detailFolderId = job.detailFolderId,
             round = job.round,
             startedAt = job.startedAt,

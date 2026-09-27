@@ -17,6 +17,8 @@ support가 service를, infrastructure가 service·repository를 참조하면 안
 
 - `throw {Domain}Exception({Domain}ErrorCode.XXX)` 패턴만 쓴다.
   `require`·`check`·표준 예외를 던지고 나중에 번역하는 방식은 쓰지 않는다.
+  (이 금지는 요청·비즈니스 규칙의 실패에 대한 것이다. 저장 전 id 같은 개발자 불변식 위반은
+  `checkNotNull`·`error`로 500을 낸다 — `kotlin.md`의 "실패의 두 종류" 참조.)
 - 에러코드 형식: `ERROR_NAME(HttpStatus.XXX, "{DOMAIN}_{HTTP상태}_{N}", "한글 메시지")` —
   `ErrorCodeFormatTest`가 형식을 강제하므로 새 enum은 그 테스트 목록에 추가한다.
 - 자명하지 않은 에러코드에는 KDoc으로 "언제, 왜"를 남긴다 (`RecommendationErrorCode` 참조).
@@ -25,7 +27,7 @@ support가 service를, infrastructure가 service·repository를 참조하면 안
 
 - 외부 입력으로 만드는 엔티티·값객체는 companion의 정적 팩토리(`of`)로만 만들고 검증을 거기 둔다
   (domain.md 참조).
-- 검증이 필요 없는 단순 연결 행(`AiConceptAssignment`)과 DTO는 생성자를 직접 써도 된다.
+- 검증이 필요 없는 단순 연결 행(`ConceptAssignment`)과 DTO는 생성자를 직접 써도 된다.
   이때 **인자 2개 이상이면 named argument로 쓴다** — `StageCallDto.Embed(galleryId = ..., photoIds = ...)`.
 
 ## 상수
@@ -59,10 +61,10 @@ galleryAccessPolicy.requireManager(galleryId, userId)
 galleryRepository.requireWithLockById(galleryId)
 
 val concept = conceptRepository.findByIdAndGalleryId(conceptId, galleryId)
-    ?: throw CategoryException(CategoryErrorCode.CONCEPT_NOT_FOUND)
+    ?: throw FolderException(FolderErrorCode.CONCEPT_NOT_FOUND)
 
 val detail = detailRepository.save(
-    DetailFolder(concept.requiredId, request.name.trim(), sortOrder, CategorySource.USER),
+    DetailFolder(concept.requiredId, request.name.trim(), sortOrder, FolderSource.USER),
 )
 
 return detailResponse(detail, emptyList())
@@ -79,9 +81,9 @@ return detailResponse(detail, emptyList())
 
 ## 네이밍
 
-- 패키지는 도메인 단위로 나눈다 (`gallery`, `photo`, `category`, `collab`).
+- 패키지는 도메인 단위로 나눈다 (`gallery`, `photo`, `folder`, `collab`).
   전부 소문자 한 단어 — 도메인 이름이 두 단어가 되면 이름을 다시 생각하라.
-- 클래스는 PascalCase (`AiCategoryFolderService`, `GalleryAccessPolicy`).
+- 클래스는 PascalCase (`AiFolderMaterializeService`, `GalleryAccessPolicy`).
 - 메서드는 camelCase + 역할이 드러나는 동사 접두사:
   - 조회: `find...`(nullable 반환) / `get...`(유스케이스) / `load...`(검증을 겸한 조회)
   - 강제: `require...`(아니면 예외) / `validate...`(검증만) / `lock...`(잠그고 조회)
@@ -91,7 +93,7 @@ return detailResponse(detail, emptyList())
 
 - 코드가 이미 말하는 것을 반복하는 주석은 달지 마라 — 무엇을 하는지는 이름과 구조로 드러낸다.
 - **코드가 보여줄 수 없는 것은 KDoc으로 남긴다**: 정책의 이유, 버린 대안, 어기면 무엇이 깨지는지
-  (`RetouchPhoto.galleryId`의 역정규화 근거, `AiConceptAssignment`의 읽기 전용 근거).
+  (`RetouchPhoto.galleryId`의 역정규화 근거, `ConceptAssignment`의 읽기 전용 근거).
   이 저장소의 주석은 한국어로 쓴다.
 - 리뷰어에게 말하는 주석("이 변경이 맞는 이유", "다음 줄이 하는 일")은 금지 — 머지되는 순간
   소음이 된다.

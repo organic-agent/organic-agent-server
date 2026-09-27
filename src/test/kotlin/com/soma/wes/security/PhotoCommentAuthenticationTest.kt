@@ -1,10 +1,10 @@
 package com.soma.wes.security
 
 import com.soma.wes.auth.service.AuthTokenProvider
-import com.soma.wes.category.dto.request.CreateConceptFolderRequest
-import com.soma.wes.category.dto.request.CreateDetailFolderRequest
-import com.soma.wes.category.dto.request.MoveCategoryPhotosRequest
-import com.soma.wes.category.service.CategoryService
+import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
+import com.soma.wes.folder.dto.request.CreateDetailFolderRequest
+import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
+import com.soma.wes.folder.service.FolderService
 import com.soma.wes.collab.dto.request.EnterCollabRequest
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
 import com.soma.wes.collab.service.CollabGuestService
@@ -35,7 +35,7 @@ class PhotoCommentAuthenticationTest @Autowired constructor(
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
     private val userFixture: UserFixture,
-    private val categoryService: CategoryService,
+    private val folderService: FolderService,
     private val collabSessionService: CollabSessionService,
     private val collabGuestService: CollabGuestService,
     private val photoCommentService: PhotoCommentService,
@@ -50,14 +50,14 @@ class PhotoCommentAuthenticationTest @Autowired constructor(
         gallery = galleryFixture.멤버와_열린_갤러리()
         photoId = photoFixture.업로드된_사진(gallery.galleryId, 1).single()
         val managerId = gallery.photographer.requiredId
-        val concept = categoryService.createConcept(
+        val concept = folderService.createConcept(
             gallery.galleryId, managerId, CreateConceptFolderRequest("공유 컨셉"),
         )
-        val detail = categoryService.createDetail(
+        val detail = folderService.createDetail(
             gallery.galleryId, concept.id, managerId, CreateDetailFolderRequest("공유 사진"),
         )
-        categoryService.movePhotos(
-            gallery.galleryId, managerId, MoveCategoryPhotosRequest(listOf(photoId), detail.id),
+        folderService.movePhotos(
+            gallery.galleryId, managerId, MoveFolderPhotosRequest(listOf(photoId), detail.id),
         )
         val session = collabSessionService.open(
             gallery.galleryId, gallery.member.requiredId, OpenCollabSessionRequest(conceptFolderId = concept.id, name = "친구 의견"),

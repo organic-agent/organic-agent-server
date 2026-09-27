@@ -1,9 +1,9 @@
 package com.soma.wes.photo.service
 
-import com.soma.wes.category.dto.request.CreateConceptFolderRequest
-import com.soma.wes.category.dto.request.CreateDetailFolderRequest
-import com.soma.wes.category.dto.request.MoveCategoryPhotosRequest
-import com.soma.wes.category.service.CategoryService
+import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
+import com.soma.wes.folder.dto.request.CreateDetailFolderRequest
+import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
+import com.soma.wes.folder.service.FolderService
 import com.soma.wes.collab.dto.request.EnterCollabRequest
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
 import com.soma.wes.collab.dto.request.WriteCollabCommentRequest
@@ -13,7 +13,6 @@ import com.soma.wes.collab.service.CollabSessionService
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryInviteKind
 import com.soma.wes.gallery.domain.GalleryStatus
-import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.dto.request.IssueGalleryInviteRequest
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
@@ -75,7 +74,7 @@ class PhotoCommentServiceTest @Autowired constructor(
     private val photoService: PhotoService,
     private val photoSelectionService: PhotoSelectionService,
     private val trashService: TrashService,
-    private val categoryService: CategoryService,
+    private val folderService: FolderService,
     private val collabSessionService: CollabSessionService,
     private val collabGuestService: CollabGuestService,
     private val collabGuestQueryService: CollabGuestQueryService,
@@ -641,14 +640,14 @@ class PhotoCommentServiceTest @Autowired constructor(
         @Test
         fun `내부 댓글과 링크에 공개한 하객 댓글은 서로의 목록에 섞이지 않는다`() {
             // given
-            val concept = categoryService.createConcept(
+            val concept = folderService.createConcept(
                 fixture.galleryId, fixture.photographer.requiredId, CreateConceptFolderRequest("공유할 사진"),
             )
-            val detail = categoryService.createDetail(
+            val detail = folderService.createDetail(
                 fixture.galleryId, concept.id, fixture.photographer.requiredId, CreateDetailFolderRequest("후보"),
             )
-            categoryService.movePhotos(
-                fixture.galleryId, fixture.photographer.requiredId, MoveCategoryPhotosRequest(listOf(photoId), detail.id),
+            folderService.movePhotos(
+                fixture.galleryId, fixture.photographer.requiredId, MoveFolderPhotosRequest(listOf(photoId), detail.id),
             )
             val session = collabSessionService.open(
                 fixture.galleryId, fixture.member.requiredId, OpenCollabSessionRequest(concept.id, "하객 의견"),

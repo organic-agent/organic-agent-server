@@ -492,7 +492,7 @@ class AdminResourceServiceTest @Autowired constructor(
             ChangeAdminResourceStateRequest("평점 제거", rerated.version),
             "127.0.0.1",
         )
-        assertThat(jdbcClient.sql("SELECT COUNT(*) FROM photo_category_assignments WHERE photo_id = :id")
+        assertThat(jdbcClient.sql("SELECT COUNT(*) FROM detail_folder_assignments WHERE photo_id = :id")
             .param("id", photo.id).query { rs, _ -> rs.getLong(1) }.single()).isZero()
         assertThat(jdbcClient.sql("SELECT COUNT(*) FROM photo_ratings WHERE photo_id = :id")
             .param("id", photo.id).query { rs, _ -> rs.getLong(1) }.single()).isZero()

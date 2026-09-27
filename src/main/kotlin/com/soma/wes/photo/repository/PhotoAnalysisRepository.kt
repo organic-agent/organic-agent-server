@@ -27,10 +27,10 @@ interface PhotoAnalysisRepository : JpaRepository<PhotoAnalysis, Long> {
     @Query(
         """
         SELECT a.photoId AS photoId, a.technicalPct AS technicalPct, a.aestheticPct AS aestheticPct,
-               a.subjects AS subjects, a.clusterId AS clusterId, a.clusterRank AS clusterRank, a.subScores AS subScores
+               a.subjects AS subjects, a.burstId AS burstId, a.burstRank AS burstRank, a.subScores AS subScores
         FROM PhotoAnalysis a
         WHERE a.photoId IN (SELECT p.id FROM Photo p WHERE p.galleryId = :galleryId)
-          AND a.modelVersion IS NOT NULL AND a.technicalPct IS NOT NULL AND a.aestheticPct IS NOT NULL
+          AND a.pipelineVersion IS NOT NULL AND a.technicalPct IS NOT NULL AND a.aestheticPct IS NOT NULL
           AND a.embedding IS NOT NULL
         """,
     )
@@ -43,7 +43,7 @@ interface PhotoAnalysisRepository : JpaRepository<PhotoAnalysis, Long> {
      */
     @Query(
         """
-        SELECT a.photoId AS photoId, a.embedGroupId AS embedGroupId, a.subjects AS subjects, a.clusterId AS clusterId
+        SELECT a.photoId AS photoId, a.embedGroupId AS embedGroupId, a.subjects AS subjects, a.burstId AS burstId
         FROM PhotoAnalysis a JOIN Photo p ON p.id = a.photoId
         WHERE p.galleryId = :galleryId
         ORDER BY p.displayOrder ASC, p.id ASC

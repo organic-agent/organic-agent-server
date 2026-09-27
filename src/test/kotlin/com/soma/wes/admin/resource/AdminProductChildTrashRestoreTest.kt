@@ -155,7 +155,7 @@ class AdminProductChildTrashRestoreTest @Autowired constructor(
         ).param("conceptId", conceptId).query { rs, _ -> rs.getLong("id") }.single()
         jdbcClient.sql(
             """
-            INSERT INTO photo_category_assignments
+            INSERT INTO detail_folder_assignments
                 (gallery_id, photo_id, detail_folder_id, assigned_source, assigned_at, version, created_at, updated_at)
             SELECT gallery_id, id, :detailId, 'USER', CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             FROM photos WHERE id = :photoId

@@ -4,7 +4,7 @@ import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.billing.exception.BillingErrorCode
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.auth.exception.AuthErrorCode
-import com.soma.wes.category.exception.CategoryErrorCode
+import com.soma.wes.folder.exception.FolderErrorCode
 import com.soma.wes.collab.exception.CollabErrorCode
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.photo.exception.PhotoErrorCode
@@ -32,7 +32,7 @@ class ErrorCodeFormatTest {
     private val allErrorCodes: List<ErrorCode> =
         GlobalErrorCode.entries + AdminErrorCode.entries + AuthErrorCode.entries + AuthorizationErrorCode.entries + UserErrorCode.entries +
             StudioErrorCode.entries + GalleryErrorCode.entries + PhotoErrorCode.entries +
-            CategoryErrorCode.entries + SelectionErrorCode.entries +
+            FolderErrorCode.entries + SelectionErrorCode.entries +
             RetouchErrorCode.entries + CollabErrorCode.entries + TrashErrorCode.entries +
             RecommendationErrorCode.entries + AnalysisErrorCode.entries + NotificationErrorCode.entries + BillingErrorCode.entries
 

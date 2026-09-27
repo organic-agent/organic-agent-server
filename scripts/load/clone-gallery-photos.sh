@@ -64,14 +64,14 @@ case "$STRIP" in
       SELECT m.new_id, a.embedding, a.embedding_model, a.face_boxes, now(), now()
       FROM photo_analysis a JOIN mapping m ON m.old_id = a.photo_id WHERE a.embedding IS NOT NULL;" ;;
   categorize) ANALYSIS_SQL="INSERT INTO photo_analysis (photo_id, embedding, embedding_model, clip_embedding, subjects, sub_scores, face_boxes,
-        model_version, analyzed_at, created_at, updated_at)
+        pipeline_version, analyzed_at, created_at, updated_at)
       SELECT m.new_id, a.embedding, a.embedding_model, a.clip_embedding, a.subjects, a.sub_scores, a.face_boxes,
-             a.model_version, a.analyzed_at, now(), now()
+             a.pipeline_version, a.analyzed_at, now(), now()
       FROM photo_analysis a JOIN mapping m ON m.old_id = a.photo_id WHERE a.embedding IS NOT NULL;" ;;
   "") ANALYSIS_SQL="INSERT INTO photo_analysis (photo_id, embedding, embedding_model, clip_embedding, subjects, sub_scores, face_boxes,
-        model_version, analyzed_at, technical_pct, aesthetic_pct, cluster_id, cluster_rank, embed_group_id, error, created_at, updated_at)
+        pipeline_version, analyzed_at, technical_pct, aesthetic_pct, burst_id, burst_rank, embed_group_id, error, created_at, updated_at)
       SELECT m.new_id, a.embedding, a.embedding_model, a.clip_embedding, a.subjects, a.sub_scores, a.face_boxes,
-             a.model_version, a.analyzed_at, a.technical_pct, a.aesthetic_pct, a.cluster_id, a.cluster_rank, a.embed_group_id, a.error, now(), now()
+             a.pipeline_version, a.analyzed_at, a.technical_pct, a.aesthetic_pct, a.burst_id, a.burst_rank, a.embed_group_id, a.error, now(), now()
       FROM photo_analysis a JOIN mapping m ON m.old_id = a.photo_id;" ;;
 esac
 

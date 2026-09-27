@@ -21,7 +21,7 @@ sealed interface StageCallDto {
         val photoIds: List<Long>,
     ) : StageCallDto
 
-    /** categorize — 갤러리 전체의 백분위·연사·그룹 + Bedrock 이름·배정(`ai_concept_assignments(job_id)`). */
+    /** categorize — 갤러리 전체의 백분위·연사·그룹 + Bedrock 이름·배정(`concept_assignments(job_id)`). */
     data class Categorize(
         override val galleryId: Long,
         val jobId: Long,

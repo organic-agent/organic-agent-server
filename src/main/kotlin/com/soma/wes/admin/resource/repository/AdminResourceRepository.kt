@@ -487,7 +487,7 @@ class AdminResourceRepository(
         validateCategoryAssignment(desired)
         return jdbcClient.sql(
             """
-            UPDATE photo_category_assignments
+            UPDATE detail_folder_assignments
             SET detail_folder_id = :detailFolderId,
                 assigned_by_user_id = :assignedByUserId,
                 assigned_source = 'USER',
@@ -1083,7 +1083,7 @@ class AdminResourceRepository(
             ),
             ResourceDefinition(
                 type = AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
-                table = "photo_category_assignments",
+                table = "detail_folder_assignments",
                 idColumn = "photo_id",
                 labelExpression = "'photo #' || photo_id || ' category'",
                 searchExpression = "CONCAT_WS(' ', photo_id, detail_folder_id, assigned_by_user_id, assigned_source)",

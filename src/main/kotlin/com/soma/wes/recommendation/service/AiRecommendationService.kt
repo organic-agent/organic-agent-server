@@ -1,7 +1,7 @@
 package com.soma.wes.recommendation.service
 
 import com.soma.wes.activity.service.ActivityRecorder
-import com.soma.wes.category.support.AiCategoryFolderSetReader
+import com.soma.wes.folder.support.AiFolderSetReader
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.repository.PhotoRepository
@@ -32,7 +32,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * 폴더별 AI 추천을 요청하고 읽는다.
  *
  * 요청은 `ai_selection_jobs`에 PENDING 행을 넣고 커밋 뒤 실행기에 넘긴다 — 계산(폴더마다 목표 비례 n장,
- * 연사 클러스터당 1장, 이유 문장)은 [AiSelectionJobRunner]가 요청 스레드 밖에서 한다.
+ * 연사당 1장, 이유 문장)은 [AiSelectionJobRunner]가 요청 스레드 밖에서 한다.
  *
  * 추천은 사진에 붙는다. 읽을 때는 라운드가 아니라 **사진마다 가장 최근 추천**에 사진·담김 여부·현재 폴더를
  * 붙여 돌려준다 — 사진을 다른 폴더로 옮겨도 표시가 따라가고, 폴더 하나만 다시 추천해도 다른 폴더의 표시는
@@ -41,7 +41,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 @Service
 class AiRecommendationService(
     private val galleryAccessPolicy: GalleryAccessPolicy,
-    private val aiFolderSetReader: AiCategoryFolderSetReader,
+    private val aiFolderSetReader: AiFolderSetReader,
     private val photoSelectionRepository: PhotoSelectionRepository,
     private val photoSelectionItemRepository: PhotoSelectionItemRepository,
     private val aiSelectionJobRepository: AiSelectionJobRepository,
@@ -81,7 +81,7 @@ class AiRecommendationService(
             aiFolderSetReader.detailFolder(galleryId, detailFolderId)
                 ?: throw RecommendationException(RecommendationErrorCode.DETAIL_FOLDER_NOT_FOUND)
         }
-        val folderSetJobId = resolveFolderSetJobId(galleryId, request.analysisJobId, required = detailFolderId == null)
+        val analysisJobId = resolveAnalysisJobId(galleryId, request.analysisJobId, required = detailFolderId == null)
 
         val selection = photoSelectionRepository.findByGalleryId(galleryId)
             ?: photoSelectionRepository.save(PhotoSelection(galleryId = galleryId))
@@ -101,7 +101,7 @@ class AiRecommendationService(
                 AiSelectionJob(
                     selectionId = selectionId,
                     mode = mode,
-                    folderSetJobId = folderSetJobId,
+                    analysisJobId = analysisJobId,
                     detailFolderId = detailFolderId,
                     prompt = request.prompt?.trim(),
                     targetCount = request.targetCount,
@@ -113,8 +113,8 @@ class AiRecommendationService(
         activityRecorder.recordGallery(galleryId)
 
         log.info(
-            "AI 추천 요청: galleryId={}, selectionId={}, mode={}, folderSetJobId={}, detailFolderId={}, jobId={}",
-            galleryId, selectionId, mode, folderSetJobId, detailFolderId, job.requiredId,
+            "AI 추천 요청: galleryId={}, selectionId={}, mode={}, analysisJobId={}, detailFolderId={}, jobId={}",
+            galleryId, selectionId, mode, analysisJobId, detailFolderId, job.requiredId,
         )
         // 커밋 뒤에 넘긴다 — 실행기가 아직 안 보이는 행을 집으려다 실패하면 안 된다.
         val jobId = job.requiredId
@@ -131,15 +131,16 @@ class AiRecommendationService(
      * 콕 집은 세트는 살아 있어야 하고(404), 생략하면 최신 세트다. 전체 라운드([required])인데 세트 자체가
      * 없으면 409 — 폴더 생성이 먼저다. 폴더 범위 요청은 세트 없이도 돌므로 null을 허용한다.
      */
-    private fun resolveFolderSetJobId(galleryId: Long, analysisJobId: Long?, required: Boolean): Long? {
-        if (analysisJobId != null) {
-            if (!aiFolderSetReader.setExists(galleryId, analysisJobId)) {
+    // [GLOSSARY-1 2026-09-27] resolveFolderSetJobId → resolveAnalysisJobId (용어집: 폴더 세트의 키는 analysis_job_id)
+    private fun resolveAnalysisJobId(galleryId: Long, requestedAnalysisJobId: Long?, required: Boolean): Long? {
+        if (requestedAnalysisJobId != null) {
+            if (!aiFolderSetReader.setExists(galleryId, requestedAnalysisJobId)) {
                 throw RecommendationException(RecommendationErrorCode.FOLDER_SET_NOT_FOUND)
             }
-            return analysisJobId
+            return requestedAnalysisJobId
         }
 
-        val latest = aiFolderSetReader.latestSetJobId(galleryId)
+        val latest = aiFolderSetReader.latestAnalysisJobId(galleryId)
         if (latest == null && required) throw RecommendationException(RecommendationErrorCode.FOLDER_SET_NOT_READY)
         return latest
     }

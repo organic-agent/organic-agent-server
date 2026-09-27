@@ -14,7 +14,7 @@ class MmrSelectorUnitTest {
         val clusters = intArrayOf(1, 1, 2, 3)
 
         // when
-        val picks = MmrSelector.selectInFolder(score, emb, members = listOf(0, 1, 2, 3), clusterIds = clusters, n = 2)
+        val picks = MmrSelector.selectInFolder(score, emb, members = listOf(0, 1, 2, 3), burstIds = clusters, n = 2)
 
         // then — 1(연사 대표) 뒤에 0과 다른 방향인 2가 붙고, 순위는 점수순
         assertSoftly { softly ->

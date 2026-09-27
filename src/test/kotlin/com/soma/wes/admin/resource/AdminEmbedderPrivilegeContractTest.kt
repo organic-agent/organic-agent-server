@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.core.io.ClassPathResource
 
-/** 마이그레이션의 GRANT 계약(V15 embedder, V22 photoselect, V14 preference)이 Lambda의 실제 SQL을 실행할 수 있는지 검증한다. */
+/** 마이그레이션의 GRANT 계약(V15 embedder, V23 photoselect, V14 preference)이 Lambda의 실제 SQL을 실행할 수 있는지 검증한다. */
 @IntegrationTest
 class AdminEmbedderPrivilegeContractTest @Autowired constructor(
     private val dataSource: DataSource,
@@ -52,9 +52,9 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
                         SELECT
                             has_table_privilege('photoselect', 'public.galleries', 'SELECT'),
                             has_table_privilege('photoselect', 'public.photo_analysis', 'INSERT'),
-                            has_column_privilege('photoselect', 'public.ai_analysis_jobs', 'error', 'UPDATE'),
-                            has_column_privilege('photoselect', 'public.ai_analysis_jobs', 'status', 'UPDATE'),
-                            has_table_privilege('photoselect', 'public.ai_analysis_jobs', 'SELECT')
+                            has_column_privilege('photoselect', 'public.analysis_jobs', 'error', 'UPDATE'),
+                            has_column_privilege('photoselect', 'public.analysis_jobs', 'status', 'UPDATE'),
+                            has_table_privilege('photoselect', 'public.analysis_jobs', 'SELECT')
                         """.trimIndent(),
                     ).use { result ->
                         check(result.next())
@@ -110,8 +110,9 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
     /** V15 가 V1 의 embedder 블록을 통째로 대체한다 — V1 블록은 지금 스키마에 없는 컬럼을 가리켜 실행할 수 없다. */
     private fun embedderGrantBlock(): String = grantBlock("V15__pipeline_v2_photo_layer.sql", "EMBEDDER_GRANT_CONTRACT")
 
-    /** V22 가 V16 블록을 통째로 대체한다 — 비교샷과 함께 지운 ai_pair_verdicts 가 빠졌다(V16 블록은 없는 테이블을 가리킨다). */
-    private fun photoselectGrantBlock(): String = grantBlock("V22__drop_ai_pair_verdicts.sql", "PHOTOSELECT_GRANT_CONTRACT")
+    /** V23 이 V22 블록을 통째로 대체한다 — 용어집 이름(analysis_jobs·concept_assignments·detail_folder_assignments)으로 바뀌었다. */
+    // [GLOSSARY-2 2026-09-27] photoselect 계약 V22 → V23 (V22 블록은 옛 테이블 이름을 가리킨다)
+    private fun photoselectGrantBlock(): String = grantBlock("V23__glossary_names.sql", "PHOTOSELECT_GRANT_CONTRACT")
 
     private fun preferenceGrantBlock(): String = grantBlock("V14__preference_models.sql", "PREFERENCE_GRANT_CONTRACT")
 
@@ -132,16 +133,16 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
     private companion object {
         // AI repo categorize — 잡 테이블에 쓰는 유일한 문장. 상태·결과는 쓰지 않고 실패 이유만 남긴다(계획서 §7 C1).
         val statementsUsedByCategorize = listOf(
-            "EXPLAIN UPDATE ai_analysis_jobs SET error = 'bedrock timeout', updated_at = now() WHERE id = -1",
-            "EXPLAIN SELECT id, gallery_id, status FROM ai_analysis_jobs WHERE id = -1",
+            "EXPLAIN UPDATE analysis_jobs SET error = 'bedrock timeout', updated_at = now() WHERE id = -1",
+            "EXPLAIN SELECT id, gallery_id, status FROM analysis_jobs WHERE id = -1",
             """
-            EXPLAIN INSERT INTO ai_concept_assignments (
-                job_id, gallery_id, embed_group_id, parent_name, concept_name,
+            EXPLAIN INSERT INTO concept_assignments (
+                job_id, gallery_id, embed_group_id, concept_name, detail_name,
                 confidence, assigned_by, needs_review, created_at, updated_at
             )
             VALUES (-1, -1, 1, '웨딩', '본식', 0.9, 'vlm', false, now(), now())
             ON CONFLICT (job_id, embed_group_id) DO UPDATE
-            SET parent_name = EXCLUDED.parent_name, concept_name = EXCLUDED.concept_name, updated_at = now()
+            SET concept_name = EXCLUDED.concept_name, detail_name = EXCLUDED.detail_name, updated_at = now()
             """.trimIndent(),
         )
         // AI repo preference/store.py — DbStore.list_closed_galleries · read_gallery · write_model
@@ -152,19 +153,19 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
               AND EXISTS (SELECT 1 FROM photo_selections s JOIN photo_selection_items i ON i.selection_id = s.id
                           WHERE s.gallery_id = g.id AND s.deleted_at IS NULL)
               AND EXISTS (SELECT 1 FROM photos p JOIN photo_analysis a ON a.photo_id = p.id
-                          WHERE p.gallery_id = g.id AND p.deleted_at IS NULL AND a.model_version IS NOT NULL)
+                          WHERE p.gallery_id = g.id AND p.deleted_at IS NULL AND a.pipeline_version IS NOT NULL)
             ORDER BY g.updated_at, g.id
             """.trimIndent(),
             "EXPLAIN SELECT shoot_type FROM galleries WHERE id = -1",
             """
             EXPLAIN SELECT p.id, p.original_file_name, p.display_order,
                    a.technical_pct, a.aesthetic_pct, a.sub_scores, a.subjects,
-                   a.cluster_id, a.cluster_rank, a.embed_group_id,
-                   a.embedding, a.clip_embedding, a.embedding_model, a.model_version
+                   a.burst_id, a.burst_rank, a.embed_group_id,
+                   a.embedding, a.clip_embedding, a.embedding_model, a.pipeline_version
             FROM photos p
             JOIN photo_analysis a ON a.photo_id = p.id
             WHERE p.gallery_id = -1 AND p.deleted_at IS NULL
-              AND a.model_version IS NOT NULL AND a.embedding IS NOT NULL AND a.clip_embedding IS NOT NULL
+              AND a.pipeline_version IS NOT NULL AND a.embedding IS NOT NULL AND a.clip_embedding IS NOT NULL
             ORDER BY p.display_order, p.id
             """.trimIndent(),
             """
@@ -176,7 +177,7 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
             // write_model: 첫 학습은 active 행이 없으므로 INSERT만, 다음 학습은 이전 active를 내리고 INSERT
             """
             INSERT INTO preference_models
-                (embedding_model, model_version, feature_spec, w_scalar, w_emb, bias, lambda,
+                (embedding_model, pipeline_version, feature_spec, w_scalar, w_emb, bias, lambda,
                  n_galleries, n_positives, train_gallery_ids, holdout, active)
             VALUES ('dinov3', 'score-v3', 'pref-v1', ARRAY[0.1, 0.2], array_fill(0.0, ARRAY[1536])::vector, 0.0, 0.5,
                     1, 30, ARRAY[8]::bigint[], '{"rows": []}'::jsonb, true)
@@ -184,7 +185,7 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
             "UPDATE preference_models SET active = false WHERE active",
             """
             INSERT INTO preference_models
-                (embedding_model, model_version, feature_spec, w_scalar, w_emb, bias, lambda,
+                (embedding_model, pipeline_version, feature_spec, w_scalar, w_emb, bias, lambda,
                  n_galleries, n_positives, train_gallery_ids, holdout, active)
             VALUES ('dinov3', 'score-v3', 'pref-v1', ARRAY[0.1, 0.2], array_fill(0.0, ARRAY[1536])::vector, 0.0, 0.5,
                     2, 60, ARRAY[8, 9]::bigint[], '{"rows": []}'::jsonb, true)

@@ -43,11 +43,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   Lambda 폴백) → `categorize`(백분위·연사·그룹 + Bedrock 이름·배정, Lambda). 코드는 sibling repo `../../organic-agent-ai`의
   최상위 디렉토리 하나 = 함수 하나(AI #35). **사진 한 장의 진행은 `photo_analysis` 행 하나가 말한다**(파이프라인 v2):
   `analysis` 도메인의 5초 스윕이 업로드된 사진을 50장씩 임베더에 배정하고(`EmbedDispatcher`, `{galleryId, photoIds}`), 잡
-  (`ai_analysis_jobs`: ANALYZING → CATEGORIZING → DONE | FAILED)은 점수가 다 차기를 관측해 categorize를 한 번 부른 뒤
+  (`analysis_jobs`: ANALYZING → CATEGORIZING → DONE | FAILED)은 점수가 다 차기를 관측해 categorize를 한 번 부른 뒤
   AI 폴더를 자동 물질화하고 알림을 보낸다(`AnalysisOrchestrator`, `StageInvoker`). 점수는 GPU EC2 워커가 `photo_analysis`를 직접
   집어 내고 wes는 켜고 끄기만 한다(`ScoreWorkerSupervisor`·`ScoreWorkerPool`, `app.analysis.gpu.*`; 끄기는 워커의 유휴 30초 자기 정지가
   1차, wes는 2분 무진행 안전망). 워커가 없거나 멈추면 score Lambda 폴백을 `{galleryId, photoIds}`로 보낸다. Lambda는 잡 상태를
-  쓰지 않는다(categorize 실패 시 `error` 한 컬럼 예외). 재분석 = `photo_analysis` 삭제(관리자 재처리). `category`(폴더 세트 실체화)와
+  쓰지 않는다(categorize 실패 시 `error` 한 컬럼 예외). 재분석 = `photo_analysis` 삭제(관리자 재처리). `folder`(폴더 세트 물질화)와
   `recommendation`(추천 + LLM)은 완성된 `photo_analysis`·배정 행만 읽는다. 설계는 `docs/plans/pipeline-v2-wes.md`
   (이전 설계 `docs/plans/analysis-domain.md`는 §12부터 대체됨), 컬럼 소유는 `.claude/rules/migration.md`.
 - 인프라는 sibling repo `../../organic-agent-infra` (Terraform: VPC/ALB/EC2/RDS, 사진 S3 버킷
@@ -82,6 +82,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 프로젝트 구조 (패키지 배치) → `project-structure.md`
 - Flyway 마이그레이션 / 스키마 변경 → `migration.md`
 - 공통 컨벤션 (레이어 흐름, 예외, 객체 생성, 상수, 포맷팅, 네이밍, 주석) → `common.md`
+- Kotlin 관용구 (널 처리, 불변성, 컬렉션, scope function, 타입 설계) → `kotlin.md`
 - 계층별 컨벤션 → `controller.md`, `domain.md`, `dto.md`, `service.md`, `repository.md`,
   `infrastructure.md`, `support.md`
 - 테스트 작성 (통합 테스트 인프라, 픽스처, 단언) → `test.md`
@@ -89,3 +90,4 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `.claude/spec/` — 스킬·작업에서 필요할 때만 참조 (자동 로드 아님)
 
 - Git 작업 (커밋, 브랜치, PR) → `git-convention.md`
+- 이슈·PR 본문 쓰는 법 (한 줄 요약, 왜/무엇을/확인, 전→후 표, 자가 점검) → `issue-pr-writing.md`

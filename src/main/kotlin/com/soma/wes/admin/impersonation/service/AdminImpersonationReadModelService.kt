@@ -4,7 +4,7 @@ import com.soma.wes.admin.audit.support.AdminAuditSanitizer
 import com.soma.wes.admin.impersonation.dto.AdminImpersonationViewResponse
 import com.soma.wes.admin.impersonation.repository.AdminImpersonationViewRepository
 import com.soma.wes.admin.resource.domain.AdminResourceType
-import com.soma.wes.category.service.CategoryService
+import com.soma.wes.folder.service.FolderService
 import com.soma.wes.collab.dto.response.CollabSessionResponse
 import com.soma.wes.collab.service.CollabSessionQueryService
 import com.soma.wes.gallery.service.GalleryService
@@ -27,7 +27,7 @@ class AdminImpersonationReadModelService(
     private val photoService: PhotoService,
     private val selectionService: PhotoSelectionService,
     private val collabSessionQueryService: CollabSessionQueryService,
-    private val categoryService: CategoryService,
+    private val folderService: FolderService,
     private val retouchService: RetouchService,
     private val sanitizer: AdminAuditSanitizer,
     transactionManager: PlatformTransactionManager,
@@ -100,7 +100,7 @@ class AdminImpersonationReadModelService(
                     )
                 }
 
-            readable { categoryService.list(gallery.id, viewer.userId) }.orEmpty().mapTo(categories) { concept ->
+            readable { folderService.list(gallery.id, viewer.userId) }.orEmpty().mapTo(categories) { concept ->
                 linkedMapOf(
                     "galleryId" to gallery.id,
                     "conceptFolderId" to concept.id,

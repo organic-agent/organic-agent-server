@@ -1,16 +1,15 @@
 package com.soma.wes.recommendation.service
 
-import com.soma.wes.category.dto.FolderSetDetailDto
-import com.soma.wes.category.support.AiCategoryFolderSetReader
+import com.soma.wes.folder.dto.FolderSetDetailDto
+import com.soma.wes.folder.support.AiFolderSetReader
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.photo.domain.Photo
+import com.soma.wes.photo.domain.SubScoreKey
 import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.service.port.PreviewImageReader
 import com.soma.wes.recommendation.config.LlmProperties
-import com.soma.wes.recommendation.domain.AiJobStatus
 import com.soma.wes.recommendation.domain.AiRecommendation
-import com.soma.wes.recommendation.domain.AiSelectionJob
 import com.soma.wes.recommendation.domain.AiSelectionMode
 import com.soma.wes.recommendation.dto.ReasonInputDto
 import com.soma.wes.recommendation.dto.RecommendablePhotoDto
@@ -41,7 +40,7 @@ import org.springframework.transaction.support.TransactionTemplate
  *     폴더마다 f:  후보 = f.photos − 담은 사진 − 거절 − 폴더와 동떨어진 사진([FolderFitRule])
  *                  (이전 라운드 노출은 제외하지 않는다)
  *                  n_f = max(1, round(remaining·|f|/Σ|f'|)),  n_f ≤ ceil(|f|·0.5)
- *                  연사 클러스터당 1장 → MMR → n_f장, 폴더 안 점수 순위가 rank
+ *                  연사당 1장 → MMR → n_f장, 폴더 안 점수 순위가 rank
  *     미분류(세트에 없는 사진)는 가상 폴더로 같은 규칙.
  *     1단계: reason NULL로 INSERT + 라운드 확정 → 2단계: 큰 폴더부터 이유 문장 UPDATE → DONE.
  *
@@ -57,7 +56,7 @@ class AiSelectionJobRunner(
     private val galleryRepository: GalleryRepository,
     private val photoRepository: PhotoRepository,
     private val photoAnalysisRepository: PhotoAnalysisRepository,
-    private val folderSetReader: AiCategoryFolderSetReader,
+    private val folderSetReader: AiFolderSetReader,
     private val previewImageReader: PreviewImageReader,
     private val reasonGenerator: ReasonGenerator,
     private val llm: StructuredLlmClient,
@@ -179,7 +178,7 @@ class AiSelectionJobRunner(
             val job = aiSelectionJobRepository.findById(jobId).orElseThrow()
             if (job.resolvedQuery != null || (job.prompt == null && job.targetCount == null)) return@execute null
             val selection = photoSelectionRepository.findById(job.selectionId).orElseThrow()
-            val folders = job.folderSetJobId?.let { folderSetReader.setFolders(selection.galleryId, it) }.orEmpty().toMutableList()
+            val folders = job.analysisJobId?.let { folderSetReader.setFolders(selection.galleryId, it) }.orEmpty().toMutableList()
             job.detailFolderId?.let { id ->
                 val folder = folderSetReader.detailFolder(selection.galleryId, id)
                     ?: throw IllegalStateException("추천할 세부폴더가 없습니다.")
@@ -215,10 +214,10 @@ class AiSelectionJobRunner(
         // 범위. 폴더 하나면 그 폴더만 대상이되, 쿼터(폴더별 n장)는 전체 라운드였을 때와 같은 몫으로 정한다 —
         // 그래야 폴더 하나만 다시 받아도 장수가 널뛰지 않는다. 세트 폴더는 그 몫의 재료로만 읽는다.
         val scopeFolderIds = job.resolvedQuery?.detailFolderIds ?: job.detailFolderId?.let(::listOf)
-        val setFolders = job.folderSetJobId?.let { folderSetReader.setFolders(galleryId, it) }.orEmpty()
+        val setFolders = job.analysisJobId?.let { folderSetReader.setFolders(galleryId, it) }.orEmpty()
         val folders = when (scopeFolderIds) {
             null -> setFolders.ifEmpty {
-                throw IllegalStateException("AI 폴더 세트 ${job.folderSetJobId} 에 폴더가 없다")
+                throw IllegalStateException("AI 폴더 세트 ${job.analysisJobId} 에 폴더가 없다")
             }
             else -> scopeFolderIds.map { id ->
                 folderSetReader.detailFolder(galleryId, id)
@@ -317,8 +316,8 @@ class AiSelectionJobRunner(
         val quotaSizes = (quotaFolders + folders.filter { f -> quotaFolders.none { it.folderId == f.folderId } })
             .filter { it.photoIds.isNotEmpty() }
             .associate { it.folderId to it.photoIds.size }
-        val clusterIds = IntArray(n) { rows[it].clusterId }
-        val byCluster = rows.indices.filter { it !in exclude }.groupBy { rows[it].clusterId }
+        val burstIds = IntArray(n) { rows[it].burstId }
+        val byBurst = rows.indices.filter { it !in exclude }.groupBy { rows[it].burstId }
 
         val picks = mutableListOf<PlannedPick>()
         val perFolder = linkedMapOf<String, Int>()
@@ -329,36 +328,36 @@ class AiSelectionJobRunner(
             val misfit = if (folder.folderId == null) emptySet() else FolderFitRule.misfits(world.embeddings, allMembers)
             if (misfit.isNotEmpty()) {
                 misfitPhotoIds += misfit.map { rows[it].photoId }
-                log.info("폴더 {}›{} 에서 동떨어진 사진 {}장 제외: {}", folder.parentName, folder.name, misfit.size, misfit.map { rows[it].photoId })
+                log.info("폴더 {}›{} 에서 동떨어진 사진 {}장 제외: {}", folder.conceptName, folder.name, misfit.size, misfit.map { rows[it].photoId })
             }
             val members = allMembers.filter { it !in exclude && it !in misfit }
             folder.folderId to members
         }
         val quota = if (world.requestedCount == null) FolderQuota.quota(quotaSizes, remaining) else
-            ExactRecommendationQuota.allocate(membersByFolder.mapValues { (_, members) -> members.map { clusterIds[it] }.distinct().size }, remaining)
+            ExactRecommendationQuota.allocate(membersByFolder.mapValues { (_, members) -> members.map { burstIds[it] }.distinct().size }, remaining)
         folders.sortedByDescending { it.photoIds.size }.forEach { folder ->
             if (folder.photoIds.isEmpty()) return@forEach
             val members = membersByFolder.getValue(folder.folderId)
-            val folderPicks = MmrSelector.selectInFolder(score, world.embeddings, members, clusterIds, quota.getValue(folder.folderId))
-            perFolder["${folder.parentName}›${folder.name}"] = folderPicks.size
+            val folderPicks = MmrSelector.selectInFolder(score, world.embeddings, members, burstIds, quota.getValue(folder.folderId))
+            perFolder["${folder.conceptName}›${folder.name}"] = folderPicks.size
             folderPicks.forEach { pick ->
                 val i = pick.index
                 val row = rows[i]
                 val material = linkedMapOf<String, Any?>(
                     "prior_z" to combined.priorZ[i],
                     "folder" to mapOf(
-                        "parent" to folder.parentName, "name" to folder.name,
+                        "parent" to folder.conceptName, "name" to folder.name,
                         "size" to folder.photoIds.size, "rank" to pick.folderRank, "quota" to pick.quota,
                     ),
                 )
-                val siblings = byCluster[row.clusterId].orEmpty().map { rows[it] }.filter { it.photoId != row.photoId }
-                    .sortedBy { it.clusterRank }
+                val siblings = byBurst[row.burstId].orEmpty().map { rows[it] }.filter { it.photoId != row.photoId }
+                    .sortedBy { it.burstRank }
                 val alternatives = siblings.map { mapOf("photo_id" to it.photoId, "why_not" to ReasonMaterial.whyNot(row, it)) }
                 if (alternatives.isNotEmpty()) {
                     val whyCounts = linkedMapOf<String, Int>()
                     alternatives.forEach { a -> whyCounts.merge(a["why_not"] as String, 1, Int::plus) }
                     val sharpest = alternatives.all { it["why_not"] == "덜 선명함" } ||
-                        (row.subScore("sharpness") ?: 0.0) >= siblings.maxOf { it.subScore("sharpness") ?: 0.0 }
+                        (row.subScore(SubScoreKey.SHARPNESS) ?: 0.0) >= siblings.maxOf { it.subScore(SubScoreKey.SHARPNESS) ?: 0.0 }
                     material["sibling"] = mapOf("n" to alternatives.size + 1, "why_counts" to whyCounts, "sharpest" to sharpest)
                 }
                 ReasonMaterial.qualityMaterial(row)?.let { material["quality"] = it }
@@ -380,8 +379,8 @@ class AiSelectionJobRunner(
                     "prior_z" to round3(combined.priorZ[i]),
                     "balance_z" to round3(combined.balanceZ[i]), "affinity_z" to round3(combined.affinityZ[i]),
                     "technical_pct" to round1(row.technicalPct), "aesthetic_pct" to round1(row.aestheticPct),
-                    "cluster_id" to row.clusterId,
-                    "folder" to "${folder.parentName}›${folder.name}", "folder_size" to folder.photoIds.size,
+                    "burst_id" to row.burstId,   // [GLOSSARY-2 2026-09-27] 근거 키 cluster_id → burst_id (V23이 기존 행도 옮긴다)
+                    "folder" to "${folder.conceptName}›${folder.name}", "folder_size" to folder.photoIds.size,
                     "folder_rank" to pick.folderRank, "folder_quota" to pick.quota,
                     "alternatives" to alternatives, "primary_reason" to primary, "facts" to facts,
                     "reason_fallback" to fallback,
@@ -579,7 +578,8 @@ class AiSelectionJobRunner(
         private fun seconds(sinceNanos: Long) = round(Duration.ofNanos(System.nanoTime() - sinceNanos).toMillis() / 10.0) / 100
     }
 
-    private class VirtualFolder(val folderId: Long?, val parentName: String, val name: String, val photoIds: List<Long>)
+    // [GLOSSARY-1 2026-09-27] parentName → conceptName (용어집: 1층 이름은 concept_name, 층 뜻의 parent는 금지어). 추천 사유 재료의 키 "parent"는 LLM 입력이라 용어 3단계에서 바꾼다.
+    private class VirtualFolder(val folderId: Long?, val conceptName: String, val name: String, val photoIds: List<Long>)
 
     private class World(
         val job: JobRef,

@@ -1,7 +1,7 @@
 package com.soma.wes.collab.service
 
-import com.soma.wes.category.dto.request.MoveCategoryPhotosRequest
-import com.soma.wes.category.service.CategoryService
+import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
+import com.soma.wes.folder.service.FolderService
 import com.soma.wes.collab.domain.CollabSelectionMode
 import com.soma.wes.collab.dto.request.CollabPhotoIdsRequest
 import com.soma.wes.collab.dto.request.EnterCollabRequest
@@ -20,7 +20,6 @@ import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.support.IntegrationTest
-import java.time.ZonedDateTime
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
@@ -45,7 +44,7 @@ class CollabManualFolderServiceTest @Autowired constructor(
     private val galleryFixture: GalleryFixture,
     private val personalFixture: PersonalGalleryFixture,
     private val photoFixture: PhotoFixture,
-    private val categories: CategoryService,
+    private val categories: FolderService,
     private val sessions: CollabSessionRepository,
     private val memberships: CollabSessionPhotoRepository,
     private val photos: PhotoRepository,
@@ -92,7 +91,7 @@ class CollabManualFolderServiceTest @Autowired constructor(
                 CollabPhotoIdsRequest(listOf(shared.photoId, anotherPhoto, anotherPhoto)))
             service.addPhotos(shared.galleryId, manual.sessionId, userId, CollabPhotoIdsRequest(listOf(anotherPhoto)))
             categories.movePhotos(shared.galleryId, shared.gallery.photographer.requiredId,
-                MoveCategoryPhotosRequest(photoIds = listOf(shared.photoId), targetDetailFolderId = null))
+                MoveFolderPhotosRequest(photoIds = listOf(shared.photoId), targetDetailFolderId = null))
             // then
             assertThat(added.photoCount).isEqualTo(2L)
             assertThat(memberships.count()).isEqualTo(2L)
@@ -206,9 +205,9 @@ class CollabManualFolderServiceTest @Autowired constructor(
             val converted = service.convertToManual(shared.galleryId, shared.session.sessionId, userId)
             service.convertToManual(shared.galleryId, shared.session.sessionId, userId)
             categories.movePhotos(shared.galleryId, shared.gallery.photographer.requiredId,
-                MoveCategoryPhotosRequest(photoIds = listOf(extra), targetDetailFolderId = shared.detailId))
+                MoveFolderPhotosRequest(photoIds = listOf(extra), targetDetailFolderId = shared.detailId))
             categories.movePhotos(shared.galleryId, shared.gallery.photographer.requiredId,
-                MoveCategoryPhotosRequest(photoIds = listOf(shared.photoId), targetDetailFolderId = null))
+                MoveFolderPhotosRequest(photoIds = listOf(shared.photoId), targetDetailFolderId = null))
             // then
             assertThat(converted.selectionMode).isEqualTo(CollabSelectionMode.MANUAL)
             assertThat(converted.conceptFolderId).isNull()

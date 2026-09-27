@@ -1,8 +1,8 @@
 package com.soma.wes.recommendation.service
 
 import com.soma.wes.activity.repository.ActivityRepository
-import com.soma.wes.category.service.AiCategoryFolderService
-import com.soma.wes.category.service.FolderOrganizationService
+import com.soma.wes.folder.service.AiFolderMaterializeService
+import com.soma.wes.folder.service.FolderConfirmationService
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
 import com.soma.wes.gallery.repository.GalleryRepository
@@ -25,8 +25,10 @@ class RecommendationActivityTest @Autowired constructor(
     private val galleryRepository: GalleryRepository,
     private val photos: PhotoFixture,
     private val recommendations: RecommendationFixture,
-    private val aiFolders: AiCategoryFolderService,
-    private val organization: FolderOrganizationService,
+    // [REFACTOR-RENAME 2026-09-27] AiFolderService → AiFolderMaterializeService (클래스 이름만 변경, 동작 동일)
+    private val aiFolders: AiFolderMaterializeService,
+    // [REFACTOR-RENAME 2026-09-27] FolderOrganization* → FolderConfirmation* (클래스 이름만 변경, 동작·REST 경로 동일)
+    private val confirmation: FolderConfirmationService,
     private val service: AiRecommendationService,
     private val runner: AiSelectionJobRunner,
     private val llm: FakeStructuredLlmClient,
@@ -37,7 +39,7 @@ class RecommendationActivityTest @Autowired constructor(
         val fixture = galleries.멤버와_열린_갤러리()
         photos.임베딩된_사진(fixture.galleryId, 2).forEach { recommendations.분석_결과(it, embedGroupId = 1) }
         val job = recommendations.분석_잡(fixture.galleryId)
-        recommendations.컨셉_배정(job, fixture.galleryId, embedGroupId = 1, parentName = "야외 자연", conceptName = "해변")
+        recommendations.컨셉_배정(job, fixture.galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
         return fixture
     }
 
@@ -72,9 +74,9 @@ class RecommendationActivityTest @Autowired constructor(
         clearActivity(fixture)
 
         val photoId = photos.임베딩된_사진(fixture.galleryId, 1).single()
-        recommendations.분석_결과(photoId, embedGroupId = 2, clusterId = 2)
+        recommendations.분석_결과(photoId, embedGroupId = 2, burstId = 2)
         val jobId = recommendations.분석_잡(fixture.galleryId)
-        recommendations.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 2, parentName = "야외 정원·건물", conceptName = "정원")
+        recommendations.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 2, conceptName = "야외 정원·건물", detailName = "정원")
 
         val folders = aiFolders.materializeFromAnalysis(fixture.galleryId)
 
@@ -87,7 +89,8 @@ class RecommendationActivityTest @Autowired constructor(
         val fixture = prepared()
         aiFolders.materializeFromAnalysis(fixture.galleryId)
         clearActivity(fixture)
-        organization.save(fixture.galleryId, fixture.member.requiredId)
+        // [REFACTOR-CONFIRM 2026-09-27] FolderConfirmationService.save → confirm
+        confirmation.confirm(fixture.galleryId, fixture.member.requiredId)
         assertRecorded(fixture)
     }
 

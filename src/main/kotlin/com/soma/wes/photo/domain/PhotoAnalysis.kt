@@ -16,7 +16,7 @@ import org.hibernate.type.SqlTypes
  * 사진 한 장의 모델 파생값. [Photo]와 1:1이고 `photo_id`가 곧 키다.
  *
  * [Photo]에서 떼어 둔 이유는 생명주기다. 정체성(storage_key·EXIF)은 업로드 때 한 번 정해지지만
- * 임베딩·태그·점수·클러스터는 모델이 바뀔 때마다 갤러리 단위로 통째 다시 적는다. 목록 조회가
+ * 임베딩·피사체·점수·연사·임베딩 그룹은 모델이 바뀔 때마다 갤러리 단위로 통째 다시 적는다. 목록 조회가
  * 768차원 벡터를 읽지 않게 하는 효과도 같다(`PhotoRating`과 같은 이유).
  *
  * 이 행 하나가 사진의 분석 진행을 말한다 — [embedding](임베더) → [clipEmbedding]·[subScores](score) →
@@ -49,8 +49,8 @@ class PhotoAnalysis(
         protected set
 
     /**
-     * CLIP ViT-L/14 벡터. naming 잡이 소그룹 최근접 배정·부모 검증에 쓴다 — 사진 재분석 없이
-     * naming 잡만 다시 돌리기 위해 저장한다. 이 서버는 매핑만 하고 읽지 않는다.
+     * CLIP ViT-L/14 벡터. categorize 단계의 naming이 그룹 최근접 배정·컨셉 검증에 쓴다 — 사진 재분석 없이
+     * naming만 다시 돌리기 위해 저장한다. 이 서버는 매핑만 하고 읽지 않는다.
      */
     @JdbcTypeCode(SqlTypes.VECTOR)
     @Array(length = EMBEDDING_DIMENSION)
@@ -58,34 +58,38 @@ class PhotoAnalysis(
     val clipEmbedding: FloatArray? = null
 
     /**
-     * 임베딩 그룹(concat 계층 클러스터) 번호. 갤러리 안에서만 유일하고, -1은 미배정(임베딩 없음)이다.
-     * 화면에 나오지 않는 내부 단위다 — 컨셉 배정([AiConceptAssignment])과 폴더 상세 정렬이 쓴다.
+     * 임베딩 그룹 번호 — DINOv3·CLIP 벡터를 이어 붙인 공간에서 AI가 묶은 사진 덩어리. 갤러리 안에서만 유일하고, -1은 미배정(임베딩 없음)이다.
+     * 화면에 나오지 않는 내부 단위다 — 컨셉 배정([ConceptAssignment])과 폴더 상세 정렬이 쓴다.
      */
     @Column(name = "embed_group_id")
     val embedGroupId: Int? = null
 
-    /** CLIP zero-shot 피사체(신부/신랑/두 분/단체). 자식 폴더 category의 재료. */
+    /** CLIP zero-shot 피사체(신부/신랑/두 분/단체). 세부 폴더 컷 종류([com.soma.wes.folder.domain.CutType])의 재료. */
     @Column(name = "subjects", length = 20)
     val subjects: String? = null
 
-    /** 갤러리 안 백분위 0~100. 원점수가 아니라 모델마다 단위가 달라도 비교할 수 있다. CATEGORIZE 잡이 쓴다. */
+    /** 갤러리 안 백분위 0~100. 원점수가 아니라 모델마다 단위가 달라도 비교할 수 있다. categorize 단계가 쓴다. */
     @Column(name = "technical_pct")
     val technicalPct: Float? = null
 
     @Column(name = "aesthetic_pct")
     val aestheticPct: Float? = null
 
-    /** 근접 중복(연사) 클러스터 번호. 갤러리 안에서만 유일하다. */
-    @Column(name = "cluster_id")
-    val clusterId: Int? = null
+    // [GLOSSARY-1 2026-09-27] clusterId → burstId, clusterRank → burstRank (용어집: 연사).
+    // [GLOSSARY-2 2026-09-27] 컬럼 cluster_id·cluster_rank → burst_id·burst_rank (V23)
+    /** 연사 번호 — 같은 카메라에서 거의 같은 순간 연속으로 찍힌 사진 묶음. 갤러리 안에서만 유일하다. */
+    @Column(name = "burst_id")
+    val burstId: Int? = null
 
-    /** 클러스터 안 순위. 0이 대표다. */
-    @Column(name = "cluster_rank")
-    val clusterRank: Int? = null
+    /** 연사 안 순위. 0이 연사 대표다. */
+    @Column(name = "burst_rank")
+    val burstRank: Int? = null
 
-    /** 분석 컬럼을 만든 파이프라인 버전. SCORE 잡이 쓴다 — null이면 임베딩만 있고 분석은 아직이다. */
-    @Column(name = "model_version", length = 40)
-    val modelVersion: String? = null
+    // [GLOSSARY-1 2026-09-27] modelVersion → pipelineVersion (용어집 D3: 모델 id가 아니라 파이프라인 버전).
+    // [GLOSSARY-2 2026-09-27] 컬럼 model_version → pipeline_version (V23)
+    /** 분석 컬럼을 만든 파이프라인 버전(예: `photoselect-v3-a-0.1`). score 단계가 쓴다 — null이면 임베딩만 있고 분석은 아직이다. */
+    @Column(name = "pipeline_version", length = 40)
+    val pipelineVersion: String? = null
 
     @Column(name = "analyzed_at")
     val analyzedAt: ZonedDateTime? = null
@@ -106,15 +110,15 @@ class PhotoAnalysis(
     val subScores: Map<String, Any?> = emptyMap()
 
     /** 숫자 세부 점수 하나. 없거나 숫자가 아니면 null — 배치 버전에 따라 키가 빠질 수 있다. */
-    fun subScore(key: String): Double? = (subScores[key] as? Number)?.toDouble()
+    fun subScore(key: SubScoreKey): Double? = (subScores[key.key] as? Number)?.toDouble()
 
     /**
-     * 분석 완료 — 폴더·추천이 재료로 써도 되는 행인가. 배치가 SCORE(`model_version`)와 CATEGORIZE(백분위·그룹)
-     * 두 잡으로 갈라져 있어 `model_version`만으로는 부족하다. 그 사이 창의 행은 백분위가 비어 있고, 그런 행을
+     * 분석 완료 — 폴더·추천이 재료로 써도 되는 행인가. 배치가 score(`pipeline_version`)와 categorize(백분위·그룹)
+     * 두 단계로 갈라져 있어 `pipeline_version`만으로는 부족하다. 그 사이 창의 행은 백분위가 비어 있고, 그런 행을
      * 완료로 보면 추천이 기본값으로 조용히 틀린다. 소비자가 실제로 쓰는 백분위가 채워졌는지를 본다.
      */
     val isAnalyzed: Boolean
-        get() = modelVersion != null && technicalPct != null && aestheticPct != null
+        get() = pipelineVersion != null && technicalPct != null && aestheticPct != null
 
     val isFailed: Boolean
         get() = error != null

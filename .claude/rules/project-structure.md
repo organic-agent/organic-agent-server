@@ -11,7 +11,7 @@ paths:
 
 ## 도메인 단위 패키지
 
-`auth`, `user`, `studio`, `gallery`, `photo`, `analysis`, `category`,
+`auth`, `user`, `studio`, `gallery`, `photo`, `analysis`, `folder`,
 `selection`, `collab`, `trash`, `retouch`, `recommendation`, `admin` + 횡단 관심사 `global`/`security`.
 
 - `analysis`~`recommendation`은 전부 사진에 *관한* 도메인이지만 `photo`의 하위 패키지가
@@ -27,7 +27,7 @@ paths:
 ├── repository/      # Spring Data 인터페이스 (→ rules/repository.md)
 │   └── projection/  # 조회 전용 projection
 ├── service/         # 컨트롤러가 부르는 유스케이스 (→ rules/service.md)
-│   └── port/        # infrastructure 어댑터가 구현하는 포트 인터페이스 (→ rules/infrastructure.md)
+│   └── port/        # 바깥(infrastructure 어댑터·다른 도메인)이 구현하는 포트 인터페이스 (→ rules/infrastructure.md)
 ├── support/         # 유스케이스가 기대는 협력자 (→ rules/support.md)
 ├── controller/      # REST 컨트롤러 (→ rules/controller.md)
 │   └── docs/        # OpenAPI 애노테이션 인터페이스 ({Name}ControllerDocs)

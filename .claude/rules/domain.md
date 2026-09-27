@@ -22,7 +22,7 @@ paths:
 - 외부 입력으로 만드는 엔티티·값객체는 companion의 `of` 팩토리로 만들고, **검증은 `of`에만 둔다.
   생성자/init 블록에서 검증하지 마라** — JPA 하이드레이션도 생성자를 지나므로, 규칙이 나중에
   엄격해지면 어제 저장한 행이 오늘 목록 조회를 깨뜨린다 (`CollabSession.of`, `PhotoRating.of` 전례).
-- 도메인 규칙 위반은 **도메인 예외를 직접 던진다**: `throw CategoryException(CategoryErrorCode.EMPTY_PHOTO_IDS)`.
+- 도메인 규칙 위반은 **도메인 예외를 직접 던진다**: `throw FolderException(FolderErrorCode.EMPTY_PHOTO_IDS)`.
   `require`/`IllegalArgumentException`을 던지고 서비스에서 try-catch로 번역하는 방식은 쓰지 않는다.
 
 ## 값객체
@@ -33,7 +33,7 @@ paths:
 
 ## 불변식은 DB에도
 
-- DB가 지킬 수 있는 불변식은 DB에도 새긴다: UK(`photo_category_assignments(photo_id)`,
+- DB가 지킬 수 있는 불변식은 DB에도 새긴다: UK(`detail_folder_assignments(photo_id)`,
   `photo_ratings(photo_id)`), CHECK(`score BETWEEN 1 AND 5`), FK cascade. 애플리케이션 검증은
   좋은 에러 메시지를 위한 것이고, 최종 안전망은 제약이다.
 - UK를 위해 필요한 역정규화는 허용하되 근거를 KDoc으로 남긴다

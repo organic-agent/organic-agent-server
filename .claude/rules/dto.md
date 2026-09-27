@@ -10,8 +10,15 @@ paths:
 
 ## 파일과 이름
 
-- **한 파일에 DTO 하나**, 파일명은 클래스명 그대로. 유일한 예외는 감싸는 DTO만 쓰는 중첩 클래스다
-  (`IssueUploadUrlsRequest.FileRequest`).
+- 요청·응답 DTO는 **같은 기능에서 함께 쓰이는 것끼리 한 파일에 둘 수 있다**
+  (`folder/dto/request/FolderRequests.kt`의 `CreateConceptFolderRequest`·`CreateDetailFolderRequest`).
+  몇 줄짜리 `data class`마다 파일을 만들면 파일만 늘기 때문이다. 묶는 단위는 도메인 전체가 아니라
+  기능이다 — 도메인 하나를 한 파일에 몰면 DTO가 늘 때마다 그 파일이 끝없이 길어진다. 파일이
+  100~200줄을 넘거나 다른 기능의 DTO가 섞이기 시작하면 기능 단위로 나눈다. 따로 서는 DTO는
+  클래스명과 같은 파일에 둔다 (`MoveFolderPhotosRequest.kt`).
+- 감싸는 DTO만 쓰는 하위 클래스는 중첩한다 (`IssueUploadUrlsRequest.FileRequest`).
+- `dto` 루트의 내부 `~Dto`는 **한 파일에 하나**를 유지한다 — 다른 도메인이 가져다 쓰는 값이라
+  파일명으로 찾을 수 있어야 한다.
 - 이름은 `{동사/자원}{Request|Response}`. 상세형이 따로 있으면 `{...}DetailResponse`.
 - `request`/`response` 하위 패키지는 컨트롤러 경계를 오가는 DTO의 자리다. 그 경계를 지나지 않고
   **service ↔ repository·support·infrastructure 사이에서만 쓰이는 데이터 클래스는 `dto` 루트에
@@ -38,13 +45,13 @@ paths:
 - 요청 DTO에는 `@field:NotBlank`·`@field:Size` 등 bean validation을 붙인다 — 컨트롤러 경계에서
   좋은 400을 주기 위해서다.
 - **단, 애노테이션이 규칙의 유일한 방어여선 안 된다.** `@Valid`는 컨트롤러를 지날 때만 돈다.
-  같은 규칙이 도메인/서비스에도 있어야 한다 (`CategoryErrorCode.EMPTY_PHOTO_IDS`:
-  `CategoryService.movePhotos`가 빈 목록을 다시 막는다).
+  같은 규칙이 도메인/서비스에도 있어야 한다 (`FolderErrorCode.EMPTY_PHOTO_IDS`:
+  `FolderService.movePhotos`가 빈 목록을 다시 막는다).
 
 ## 문서화
 
 - 요청·응답 필드에는 `@field:Schema(description, example)`를 붙인다. description에는 타입 설명이
-  아니라 **정책과 사용 흐름**을 적는다 (`MoveCategoryPhotosRequest.targetDetailFolderId`: "null이면
+  아니라 **정책과 사용 흐름**을 적는다 (`MoveFolderPhotosRequest.targetDetailFolderId`: "null이면
   논리적 미분류 상태로 옮긴다").
 
 ## 조립

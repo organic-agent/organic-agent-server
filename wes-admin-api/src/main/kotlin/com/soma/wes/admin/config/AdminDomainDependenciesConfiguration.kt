@@ -5,14 +5,15 @@ import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.admin.resource.config.AdminWorkflowExecutorProperties
 import com.soma.wes.collab.config.CollabProperties
 import com.soma.wes.collab.service.CollabSessionQueryService
-import com.soma.wes.collab.support.CollabCategoryReactionCleaner
+import com.soma.wes.collab.support.CollabFolderReactionCleaner
 import com.soma.wes.collab.support.CollabLinkResolver
 import com.soma.wes.collab.support.CollabPhotoMembership
 import com.soma.wes.collab.support.CollabPhotoViewAssembler
-import com.soma.wes.category.service.CategoryService
-import com.soma.wes.category.repository.CategoryBulkWriter
-import com.soma.wes.category.service.AiCategoryFolderService
-import com.soma.wes.category.support.AiCategoryFolderPlanner
+import com.soma.wes.folder.service.FolderService
+import com.soma.wes.folder.repository.DetailFolderAssignmentBulkRepository
+import com.soma.wes.folder.service.AiFolderMaterializeService
+import com.soma.wes.folder.support.AiFolderPlanner
+import com.soma.wes.folder.support.FolderViewAssembler
 import com.soma.wes.global.config.AwsLambdaConfig
 import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.infrastructure.LambdaStageInvoker
@@ -33,7 +34,7 @@ import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.photo.service.PhotoService
 import com.soma.wes.photo.support.PhotoViewAssembler
 import com.soma.wes.notification.service.UserNotificationPublisher
-import com.soma.wes.analysis.support.AiConceptAssignmentLoader
+import com.soma.wes.analysis.support.ConceptAssignmentLoader
 import com.soma.wes.retouch.service.RetouchService
 import com.soma.wes.retouch.service.RetouchRequestService
 import com.soma.wes.retouch.support.RetouchPhotoLoader
@@ -90,8 +91,8 @@ import org.springframework.context.annotation.Import
     PhotoPipelineRepository::class,
     PhotoSelectionService::class,
     CollabSessionQueryService::class,
-    CategoryService::class,
-    CollabCategoryReactionCleaner::class,
+    FolderService::class,
+    CollabFolderReactionCleaner::class,
     RetouchService::class,
     PhotoViewAssembler::class,
     CollabPhotoViewAssembler::class,
@@ -102,10 +103,13 @@ import org.springframework.context.annotation.Import
     RetouchViewAssembler::class,
     ProductChildTrashRepository::class,
     ProductChildTrashService::class,
-    AiCategoryFolderPlanner::class,
-    AiConceptAssignmentLoader::class,
-    CategoryBulkWriter::class,
-    AiCategoryFolderService::class,
+    AiFolderPlanner::class,
+    // [REFACTOR-A 2026-09-27] FolderService·AiFolderMaterializeService가 주입받는 FolderViewAssembler를 admin 컨텍스트에도 등록
+    FolderViewAssembler::class,
+    ConceptAssignmentLoader::class,
+    DetailFolderAssignmentBulkRepository::class,
+    // [REFACTOR-RENAME 2026-09-27] AiFolderService → AiFolderMaterializeService (클래스 이름만 변경, 동작 동일)
+    AiFolderMaterializeService::class,
 )
 class AdminDomainDependenciesConfiguration {
     /**

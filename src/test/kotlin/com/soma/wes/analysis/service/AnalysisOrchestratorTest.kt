@@ -3,7 +3,7 @@ package com.soma.wes.analysis.service
 import com.soma.wes.analysis.domain.AnalysisJob
 import com.soma.wes.analysis.domain.AnalysisStatus
 import com.soma.wes.analysis.repository.AnalysisJobRepository
-import com.soma.wes.category.repository.ConceptFolderRepository
+import com.soma.wes.folder.repository.ConceptFolderRepository
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
 import com.soma.wes.notification.domain.UserNotificationType
@@ -62,7 +62,7 @@ class AnalysisOrchestratorTest @Autowired constructor(
     /** categorize Lambda 역할 — 백분위·그룹을 채우고 잡의 배정을 남긴다. */
     private fun categorizeByLambda(jobId: Long, photos: List<Long>, embedGroupId: Int = 1) {
         photos.forEach { photoFixture.백분위_적재(it, embedGroupId) }
-        recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = embedGroupId, parentName = "야외 자연", conceptName = "해변")
+        recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = embedGroupId, conceptName = "야외 자연", detailName = "해변")
     }
 
     private fun completionNotificationsOf(userId: Long): Int =
@@ -185,7 +185,7 @@ class AnalysisOrchestratorTest @Autowired constructor(
             // 요청의 afterCommit 걸음이 먼저 넘기지 않도록 실행기를 한 번 실패시켜 잡을 ANALYZING 에 남겨 둔다
             stageInvoker.failNext = true
             val jobId = request()
-            jdbcTemplate.update("UPDATE ai_analysis_jobs SET status = 'ANALYZING', attempts = 0, dispatched_at = NULL WHERE id = ?", jobId)
+            jdbcTemplate.update("UPDATE analysis_jobs SET status = 'ANALYZING', attempts = 0, dispatched_at = NULL WHERE id = ?", jobId)
 
             // when — 두 스레드가 같은 걸음을 동시에
             val barrier = CyclicBarrier(2)
@@ -238,7 +238,7 @@ class AnalysisOrchestratorTest @Autowired constructor(
             // given
             val photos = scoredPhotos(2)
             val jobId = request()
-            recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 1, parentName = "야외 자연", conceptName = "해변")
+            recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
             photoFixture.백분위_적재(photos[0])
 
             // when
@@ -261,7 +261,7 @@ class AnalysisOrchestratorTest @Autowired constructor(
 
             // when — 같은 사진으로 다시 요청, categorize 는 같은 결과를 다시 남긴다
             val second = request()
-            recommendationFixture.컨셉_배정(second, fixture.galleryId, embedGroupId = 1, parentName = "야외 자연", conceptName = "해변")
+            recommendationFixture.컨셉_배정(second, fixture.galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
             orchestrator.sweep()
 
             // then
@@ -279,7 +279,7 @@ class AnalysisOrchestratorTest @Autowired constructor(
             val jobId = request()
 
             // when
-            jdbcTemplate.update("UPDATE ai_analysis_jobs SET error = 'bedrock timeout', updated_at = now() WHERE id = ?", jobId)
+            jdbcTemplate.update("UPDATE analysis_jobs SET error = 'bedrock timeout', updated_at = now() WHERE id = ?", jobId)
             orchestrator.sweep()
 
             // then
@@ -345,7 +345,7 @@ class AnalysisOrchestratorTest @Autowired constructor(
         }
 
         private fun expireDispatch(jobId: Long) {
-            jdbcTemplate.update("UPDATE ai_analysis_jobs SET dispatched_at = now() - interval '30 minutes' WHERE id = ?", jobId)
+            jdbcTemplate.update("UPDATE analysis_jobs SET dispatched_at = now() - interval '30 minutes' WHERE id = ?", jobId)
         }
     }
 }

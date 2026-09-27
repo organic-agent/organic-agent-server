@@ -43,13 +43,19 @@ effort: xhigh
 
 1. 종류별 title 접두사·이슈 라벨·브랜치 접두사는 `.claude/spec/git-convention.md`의 커밋 타입 표를 참조하라 (접두사 `{종류}:`, 브랜치 `{종류}/`, 라벨은 표의 이슈 라벨).
    이슈 본문 템플릿은 종류에 관계없이 공통 템플릿 `.github/ISSUE_TEMPLATE/issue-template.md`를 Read해서 본문 구조를 그대로 따른다.
-2. Phase 1 결과를 template 규격에 맞춰 본문으로 구성하라:
-   - 1. Issue Description: 설명
-   - 2. Issue Task: 작업 항목을 `- [ ] {작업명}` 체크리스트로
+2. `.claude/spec/issue-pr-writing.md`를 Read로 읽어라. **본문은 이 가이드대로 쓴다** — 템플릿은 섹션 이름을,
+   가이드는 섹션 안을 채우는 방법(한 줄 요약, 한 줄에 한 사실, 약어 풀이)을 정한다.
+3. Phase 1 결과를 template 규격에 맞춰 본문으로 구성하라:
+   - 맨 위: `>` 한 줄 요약 — "무엇을 → 왜"를 한 문장에
+   - 1. Issue Description: **왜**만 2~3줄 — 지금 무엇이 불편하거나 틀렸는지. 해결 방법은 쓰지 않는다
+   - 2. Issue Task: 작업 항목을 `- [ ] {작업명}` 체크리스트 3~7개로. 하나하나가 "끝났다"고 말할 수 있는 크기로
    - 3. Related Domain: 해당 도메인만 `- [x]`, 나머지는 `- [ ]` 유지
-3. 본문을 스크래치 파일에 저장해두면 `gh` 전달이 안전하다 (`--body-file`로 넘김).
+4. 제목은 결과를 말하는 한국어 한 구절로 쓴다 (좋음: `사진 배정 이름을 세부 폴더 배정으로 변경`,
+   나쁨: `PhotoFolderAssignment → DetailFolderAssignment (D9)`).
+5. 가이드 끝의 **자가 점검** 항목을 확인해 걸리는 것을 고치고, 제목·본문을 사용자에게 보여 준 뒤 생성한다.
+6. 본문을 스크래치 파일에 저장해두면 `gh` 전달이 안전하다 (`--body-file`로 넘김).
 
-> 다음 Phase 조건: template 규격에 맞는 본문과 라벨이 준비되었을 때
+> 다음 Phase 조건: template 규격과 작성 가이드에 맞는 본문·라벨이 준비되고, 사용자가 초안을 확인했을 때
 
 > Skip 조건: 없음 (필수 Phase)
 

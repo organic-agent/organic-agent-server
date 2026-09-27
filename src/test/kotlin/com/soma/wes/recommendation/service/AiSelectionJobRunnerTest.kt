@@ -1,6 +1,6 @@
 package com.soma.wes.recommendation.service
 
-import com.soma.wes.category.service.AiCategoryFolderService
+import com.soma.wes.folder.service.AiFolderMaterializeService
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
 import com.soma.wes.photo.domain.PhotoAnalysis
@@ -38,7 +38,8 @@ class AiSelectionJobRunnerTest @Autowired constructor(
     private val runner: AiSelectionJobRunner,
     private val recovery: AiSelectionJobRecovery,
     private val aiRecommendationService: AiRecommendationService,
-    private val aiCategoryFolderService: AiCategoryFolderService,
+    // [REFACTOR-RENAME 2026-09-27] AiFolderService → AiFolderMaterializeService (클래스 이름만 변경, 동작 동일)
+    private val aiFolderMaterializeService: AiFolderMaterializeService,
     private val aiSelectionJobRepository: AiSelectionJobRepository,
     private val aiRecommendationRepository: AiRecommendationRepository,
     private val galleryFixture: GalleryFixture,
@@ -68,9 +69,9 @@ class AiSelectionJobRunnerTest @Autowired constructor(
         val beach = analyzedPhotos(count = 6, embedGroupId = 1, clusterOf = { i -> i / 2 }) // (0,1) (2,3) (4,5) 연사
         val garden = analyzedPhotos(count = 2, embedGroupId = 2, clusterOf = { i -> 10 + i })
         val jobId = recommendationFixture.분석_잡(fixture.galleryId)
-        recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 1, parentName = "야외 자연", conceptName = "해변")
-        recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 2, parentName = "야외 정원·건물", conceptName = "정원")
-        val concepts = aiCategoryFolderService.createFromAnalysis(fixture.galleryId, fixture.photographer.id!!)
+        recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
+        recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 2, conceptName = "야외 정원·건물", detailName = "정원")
+        val concepts = aiFolderMaterializeService.createFromAnalysis(fixture.galleryId, fixture.photographer.id!!)
         val folderIdByName = concepts.flatMap { it.details }.associate { it.name to it.id }
         val unfiled = analyzedPhotos(count = 1, embedGroupId = 3, clusterOf = { 20 }).single()
         (beach + garden + unfiled).forEach { recommendationFixture.미리보기(it) }
@@ -84,8 +85,8 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             recommendationFixture.분석_결과(
                 photoId,
                 embedGroupId = embedGroupId,
-                clusterId = clusterOf(i),
-                clusterRank = i % 2,
+                burstId = clusterOf(i),
+                burstRank = i % 2,
                 technicalPct = 90.0 - i * 5,
                 aestheticPct = 80.0 - i * 3,
                 sharpness = 100.0 + (count - i) * 10,
@@ -205,7 +206,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
 
         @Test
         fun `SCORE만 끝나 백분위가 없는 사진은 재료에서 빠진다`() {
-            // given — 벡터·model_version은 있지만 CATEGORIZE 전이라 백분위가 없는 사진 하나
+            // given — 벡터·pipeline_version은 있지만 CATEGORIZE 전이라 백분위가 없는 사진 하나
             val w = world()
             val scoredOnly = photoFixture.업로드된_사진(fixture.galleryId, 1).single()
             photoFixture.벡터_적재(scoredOnly, FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also { it[99] = 1f })
@@ -330,18 +331,18 @@ class AiSelectionJobRunnerTest @Autowired constructor(
         private fun misfitWorld(): Pair<List<Long>, Long> {
             val garden = photoFixture.업로드된_사진(fixture.galleryId, 6).mapIndexed { i, photoId ->
                 photoFixture.벡터_적재(photoId, FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also { it[50] = 1f })
-                recommendationFixture.분석_결과(photoId, embedGroupId = 2, clusterId = 10 + i, technicalPct = 80.0 - i, aestheticPct = 70.0 - i)
+                recommendationFixture.분석_결과(photoId, embedGroupId = 2, burstId = 10 + i, technicalPct = 80.0 - i, aestheticPct = 70.0 - i)
                 photoId
             }
             val beach = photoFixture.업로드된_사진(fixture.galleryId, 1).single()
             photoFixture.벡터_적재(beach, FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also { it[10] = 1f })
-            recommendationFixture.분석_결과(beach, embedGroupId = 1, clusterId = 1, technicalPct = 99.0, aestheticPct = 99.0)
+            recommendationFixture.분석_결과(beach, embedGroupId = 1, burstId = 1, technicalPct = 99.0, aestheticPct = 99.0)
             val jobId = recommendationFixture.분석_잡(fixture.galleryId)
-            recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 1, parentName = "야외 자연", conceptName = "해변")
-            recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 2, parentName = "야외 정원·건물", conceptName = "정원")
-            val concepts = aiCategoryFolderService.createFromAnalysis(fixture.galleryId, fixture.photographer.id!!)
+            recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
+            recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 2, conceptName = "야외 정원·건물", detailName = "정원")
+            val concepts = aiFolderMaterializeService.createFromAnalysis(fixture.galleryId, fixture.photographer.id!!)
             val gardenFolderId = concepts.flatMap { it.details }.first { it.name == "정원" }.id
-            jdbcTemplate.update("UPDATE photo_category_assignments SET detail_folder_id = ? WHERE photo_id = ?", gardenFolderId, beach)
+            jdbcTemplate.update("UPDATE detail_folder_assignments SET detail_folder_id = ? WHERE photo_id = ?", gardenFolderId, beach)
             (garden + beach).forEach { recommendationFixture.미리보기(it) }
             return garden to beach
         }
@@ -469,7 +470,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             val selectionId = selectionFixture.셀렉(fixture.galleryId)
             val moved = aiRecommendationRepository.findAllBySelectionId(selectionId)
                 .first { it.folderId == w.beachFolderId && it.rank == 1 }.photoId
-            jdbcTemplate.update("UPDATE photo_category_assignments SET detail_folder_id = ? WHERE photo_id = ?", w.gardenFolderId, moved)
+            jdbcTemplate.update("UPDATE detail_folder_assignments SET detail_folder_id = ? WHERE photo_id = ?", w.gardenFolderId, moved)
 
             // 옮긴 직후: 표시는 사진을 따라가 정원 화면에 보인다
             val gardenView = aiRecommendationService.list(fixture.galleryId, fixture.member.id!!, folderId = w.gardenFolderId)
@@ -662,7 +663,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             world()
             val selectionId = selectionFixture.셀렉(fixture.galleryId)
             val orphan = aiSelectionJobRepository.saveAndFlush(
-                AiSelectionJob(selectionId = selectionId, mode = AiSelectionMode.DRAFT, folderSetJobId = null),
+                AiSelectionJob(selectionId = selectionId, mode = AiSelectionMode.DRAFT, analysisJobId = null),
             )
             jdbcTemplate.update("UPDATE ai_selection_jobs SET status = 'RUNNING', started_at = now() WHERE id = ?", orphan.requiredId)
             executor.reset()
@@ -681,10 +682,10 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             val photos = photoFixture.임베딩된_사진(fixture.galleryId, 1)
             photos.forEach { recommendationFixture.분석_결과(it, embedGroupId = 1) }
             val analysisJobId = recommendationFixture.분석_잡(fixture.galleryId)
-            recommendationFixture.컨셉_배정(analysisJobId, fixture.galleryId, embedGroupId = 1, parentName = "야외 자연", conceptName = "해변")
-            aiCategoryFolderService.createFromAnalysis(fixture.galleryId, fixture.photographer.id!!)
+            recommendationFixture.컨셉_배정(analysisJobId, fixture.galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
+            aiFolderMaterializeService.createFromAnalysis(fixture.galleryId, fixture.photographer.id!!)
             val jobId = requestJob()
-            jdbcTemplate.update("UPDATE photo_analysis SET model_version = NULL")
+            jdbcTemplate.update("UPDATE photo_analysis SET pipeline_version = NULL")
 
             // when
             runner.run(jobId)
