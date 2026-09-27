@@ -8,7 +8,7 @@ import com.soma.wes.analysis.domain.AnalysisJob
 import com.soma.wes.analysis.repository.AnalysisJobRepository
 import com.soma.wes.folder.domain.ConceptFolder
 import com.soma.wes.folder.repository.DetailFolderRepository
-import com.soma.wes.folder.repository.PhotoFolderAssignmentRepository
+import com.soma.wes.folder.repository.DetailFolderAssignmentRepository
 import com.soma.wes.collab.domain.CollabSession
 import com.soma.wes.collab.repository.CollabSessionRepository
 import com.soma.wes.gallery.domain.Gallery
@@ -51,7 +51,7 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories
         AdminAccountRepository::class,
         AdminAuditLogRepository::class,
         DetailFolderRepository::class,
-        PhotoFolderAssignmentRepository::class,
+        DetailFolderAssignmentRepository::class,
         GalleryRepository::class,
         WorkspaceRepository::class,
         WorkspaceMemberRepository::class,

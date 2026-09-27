@@ -1,7 +1,7 @@
 package com.soma.wes.folder.service
 
 import com.soma.wes.folder.domain.FolderSource
-import com.soma.wes.folder.repository.PhotoFolderAssignmentRepository
+import com.soma.wes.folder.repository.DetailFolderAssignmentRepository
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.recommendation.fixture.RecommendationFixture
@@ -20,7 +20,7 @@ class AiFolderMaterializeServiceTest @Autowired constructor(
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
     private val recommendationFixture: RecommendationFixture,
-    private val assignmentRepository: PhotoFolderAssignmentRepository,
+    private val assignmentRepository: DetailFolderAssignmentRepository,
 ) {
 
     /**

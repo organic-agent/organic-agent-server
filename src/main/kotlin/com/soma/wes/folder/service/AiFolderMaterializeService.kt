@@ -11,10 +11,10 @@ import com.soma.wes.folder.dto.response.ConceptFolderResponse
 import com.soma.wes.folder.dto.response.DetailFolderResponse
 import com.soma.wes.folder.exception.FolderErrorCode
 import com.soma.wes.folder.exception.FolderException
-import com.soma.wes.folder.repository.PhotoFolderAssignmentBulkRepository
+import com.soma.wes.folder.repository.DetailFolderAssignmentBulkRepository
 import com.soma.wes.folder.repository.ConceptFolderRepository
 import com.soma.wes.folder.repository.DetailFolderRepository
-import com.soma.wes.folder.repository.PhotoFolderAssignmentRepository
+import com.soma.wes.folder.repository.DetailFolderAssignmentRepository
 import com.soma.wes.folder.support.AiFolderPlanner
 import com.soma.wes.folder.support.FolderViewAssembler
 import com.soma.wes.gallery.repository.GalleryRepository
@@ -43,8 +43,8 @@ class AiFolderMaterializeService(
     private val galleryRepository: GalleryRepository,
     private val conceptRepository: ConceptFolderRepository,
     private val detailRepository: DetailFolderRepository,
-    private val assignmentRepository: PhotoFolderAssignmentRepository,
-    private val assignmentBulkRepository: PhotoFolderAssignmentBulkRepository,
+    private val assignmentRepository: DetailFolderAssignmentRepository,
+    private val assignmentBulkRepository: DetailFolderAssignmentBulkRepository,
     private val photoAnalysisRepository: PhotoAnalysisRepository,
     private val conceptAssignmentLoader: ConceptAssignmentLoader,
     private val planner: AiFolderPlanner,

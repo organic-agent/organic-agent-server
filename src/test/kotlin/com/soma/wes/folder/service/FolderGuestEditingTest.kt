@@ -6,7 +6,7 @@ import com.soma.wes.folder.dto.request.CreateDetailFolderRequest
 import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
 import com.soma.wes.folder.exception.FolderErrorCode
 import com.soma.wes.folder.exception.FolderException
-import com.soma.wes.folder.repository.PhotoFolderAssignmentRepository
+import com.soma.wes.folder.repository.DetailFolderAssignmentRepository
 import com.soma.wes.gallery.domain.GalleryStatus
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
@@ -44,7 +44,7 @@ class FolderGuestEditingTest @Autowired constructor(
     private val photoFixture: PhotoFixture,
     private val userFixture: UserFixture,
     private val galleryRepository: GalleryRepository,
-    private val assignmentRepository: PhotoFolderAssignmentRepository,
+    private val assignmentRepository: DetailFolderAssignmentRepository,
     private val photoRepository: PhotoRepository,
     private val transactionManager: PlatformTransactionManager,
 ) {

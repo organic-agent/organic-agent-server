@@ -3,7 +3,7 @@ package com.soma.wes.folder.service
 import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
 import com.soma.wes.folder.dto.request.CreateDetailFolderRequest
 import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
-import com.soma.wes.folder.repository.PhotoFolderAssignmentRepository
+import com.soma.wes.folder.repository.DetailFolderAssignmentRepository
 import com.soma.wes.collab.dto.request.EnterCollabRequest
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
 import com.soma.wes.collab.dto.request.WriteCollabCommentRequest
@@ -28,7 +28,7 @@ class FolderCollabIntegrationTest @Autowired constructor(
     private val collabGuestQueryService: CollabGuestQueryService,
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
-    private val assignmentRepository: PhotoFolderAssignmentRepository,
+    private val assignmentRepository: DetailFolderAssignmentRepository,
     private val sessionRepository: CollabSessionRepository,
     private val commentRepository: CollabPhotoCommentRepository,
     private val likeRepository: CollabPhotoLikeRepository,

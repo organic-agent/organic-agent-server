@@ -3,7 +3,7 @@ package com.soma.wes.folder.support
 import com.soma.wes.folder.dto.FolderSetDetailDto
 import com.soma.wes.folder.repository.ConceptFolderRepository
 import com.soma.wes.folder.repository.DetailFolderRepository
-import com.soma.wes.folder.repository.PhotoFolderAssignmentRepository
+import com.soma.wes.folder.repository.DetailFolderAssignmentRepository
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
 
@@ -12,7 +12,7 @@ import org.springframework.transaction.annotation.Transactional
 class AiFolderSetReader(
     private val conceptFolderRepository: ConceptFolderRepository,
     private val detailFolderRepository: DetailFolderRepository,
-    private val assignmentRepository: PhotoFolderAssignmentRepository,
+    private val assignmentRepository: DetailFolderAssignmentRepository,
 ) {
     @Transactional(readOnly = true)
     fun latestSetJobId(galleryId: Long): Long? = conceptFolderRepository

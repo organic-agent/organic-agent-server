@@ -4,7 +4,7 @@ import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.folder.domain.ConceptFolder
 import com.soma.wes.folder.domain.DetailFolder
 import com.soma.wes.folder.domain.FolderSource
-import com.soma.wes.folder.domain.PhotoFolderAssignment
+import com.soma.wes.folder.domain.DetailFolderAssignment
 import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
 import com.soma.wes.folder.dto.request.CreateDetailFolderRequest
 import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
@@ -14,7 +14,7 @@ import com.soma.wes.folder.exception.FolderErrorCode
 import com.soma.wes.folder.exception.FolderException
 import com.soma.wes.folder.repository.ConceptFolderRepository
 import com.soma.wes.folder.repository.DetailFolderRepository
-import com.soma.wes.folder.repository.PhotoFolderAssignmentRepository
+import com.soma.wes.folder.repository.DetailFolderAssignmentRepository
 import com.soma.wes.folder.service.port.FolderReactionCleaner
 import com.soma.wes.folder.support.FolderViewAssembler
 import com.soma.wes.gallery.support.GalleryAccessPolicy
@@ -29,7 +29,7 @@ class FolderService(
     private val galleryAccessPolicy: GalleryAccessPolicy,
     private val conceptRepository: ConceptFolderRepository,
     private val detailRepository: DetailFolderRepository,
-    private val assignmentRepository: PhotoFolderAssignmentRepository,
+    private val assignmentRepository: DetailFolderAssignmentRepository,
     private val photoRepository: PhotoRepository,
     private val reactionCleaner: FolderReactionCleaner,
     // [REFACTOR-A 2026-09-27] list의 응답 조립을 FolderViewAssembler로 옮겼다.
@@ -106,7 +106,7 @@ class FolderService(
                 if (existing != null) assignmentRepository.delete(existing)
             } else if (existing == null) {
                 assignmentRepository.save(
-                    PhotoFolderAssignment(galleryId, photoId, target.requiredId, userId, FolderSource.USER, null, now),
+                    DetailFolderAssignment(galleryId, photoId, target.requiredId, userId, FolderSource.USER, null, now),
                 )
             } else {
                 existing.moveTo(target.requiredId, userId, now)

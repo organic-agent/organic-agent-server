@@ -4,7 +4,7 @@ import com.soma.wes.folder.domain.ConceptFolder
 import com.soma.wes.folder.dto.response.ConceptFolderResponse
 import com.soma.wes.folder.dto.response.DetailFolderResponse
 import com.soma.wes.folder.repository.DetailFolderRepository
-import com.soma.wes.folder.repository.PhotoFolderAssignmentRepository
+import com.soma.wes.folder.repository.DetailFolderAssignmentRepository
 import org.springframework.stereotype.Component
 
 // [REFACTOR-A 2026-09-27] 신규. FolderService.list 본문과 AiFolderService.responsesOf가 같은 조립을 한 벌씩 들고 있던 것을
@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component
 @Component
 class FolderViewAssembler(
     private val detailRepository: DetailFolderRepository,
-    private val assignmentRepository: PhotoFolderAssignmentRepository,
+    private val assignmentRepository: DetailFolderAssignmentRepository,
 ) {
 
     /** 컨셉 수와 무관하게 쿼리 2번(세부 폴더 IN, 배정 IN). 목록은 반드시 이것으로 조립한다. */

@@ -14,7 +14,7 @@ import jakarta.persistence.UniqueConstraint
  *
  * 사진을 `@ManyToOne`으로 잡지 않고 id만 든다. `open-in-view`가 false라 연관을 걸면 서비스
  * 트랜잭션 밖에서 지연 로딩이 터지고, 앨범을 읽을 때 필요한 것은 사진을 한 번에 가져오는 질의
- * 하나뿐이라 연관이 주는 것이 없다. [com.soma.wes.folder.domain.PhotoFolderAssignment]도 같은 이유로 id만 든다.
+ * 하나뿐이라 연관이 주는 것이 없다. [com.soma.wes.folder.domain.DetailFolderAssignment]도 같은 이유로 id만 든다.
  *
  * 셀렉 안의 명시적인 순서와 작성자를 함께 저장한다.
  */

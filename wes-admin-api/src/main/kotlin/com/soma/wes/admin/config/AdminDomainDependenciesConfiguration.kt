@@ -10,7 +10,7 @@ import com.soma.wes.collab.support.CollabLinkResolver
 import com.soma.wes.collab.support.CollabPhotoMembership
 import com.soma.wes.collab.support.CollabPhotoViewAssembler
 import com.soma.wes.folder.service.FolderService
-import com.soma.wes.folder.repository.PhotoFolderAssignmentBulkRepository
+import com.soma.wes.folder.repository.DetailFolderAssignmentBulkRepository
 import com.soma.wes.folder.service.AiFolderMaterializeService
 import com.soma.wes.folder.support.AiFolderPlanner
 import com.soma.wes.folder.support.FolderViewAssembler
@@ -107,7 +107,7 @@ import org.springframework.context.annotation.Import
     // [REFACTOR-A 2026-09-27] FolderService·AiFolderMaterializeService가 주입받는 FolderViewAssembler를 admin 컨텍스트에도 등록
     FolderViewAssembler::class,
     ConceptAssignmentLoader::class,
-    PhotoFolderAssignmentBulkRepository::class,
+    DetailFolderAssignmentBulkRepository::class,
     // [REFACTOR-RENAME 2026-09-27] AiFolderService → AiFolderMaterializeService (클래스 이름만 변경, 동작 동일)
     AiFolderMaterializeService::class,
 )

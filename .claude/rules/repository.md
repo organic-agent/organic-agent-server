@@ -40,7 +40,7 @@ repository는 쿼리 메서드가 계속 붙는 자리라 한 파일에 모이�
 - **수천 행 대량 INSERT는 엔티티를 거치지 않고 JDBC 배치(`JdbcTemplate.batchUpdate`)로 넣는다.**
   같은 트랜잭션에서 엔티티로 다시 읽지 않는 적재가 기준이다. 앱이 id를 정하는 엔티티의 `saveAll`은
   행마다 SELECT + INSERT가 된다(#160: 7천 장 100초). 클래스는 대상 엔티티 이름 + `BulkRepository`로
-  독립시키고(`PhotoFolderAssignmentBulkRepository`), JPA 저장소에 fragment로 섞지 않는다 —
+  독립시키고(`DetailFolderAssignmentBulkRepository`), JPA 저장소에 fragment로 섞지 않는다 —
   영속성 컨텍스트를 우회한다는 사실이 클래스 경계로 보여야 한다. 호출자 트랜잭션 안에서만 돌게
   `@Transactional(propagation = MANDATORY)`를 붙인다.
 

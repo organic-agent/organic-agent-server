@@ -9,9 +9,10 @@ import jakarta.persistence.Id
 import jakarta.persistence.Table
 import java.time.ZonedDateTime
 
+// [GLOSSARY-1 2026-09-27] PhotoFolderAssignment → DetailFolderAssignment (용어집 D9: 사진은 세부 폴더에만 배정된다). 테이블 이름은 용어 2단계에서 바꾼다.
 @Entity
 @Table(name = "photo_category_assignments")
-class PhotoFolderAssignment(
+class DetailFolderAssignment(
     @Column(name = "gallery_id", nullable = false, updatable = false)
     val galleryId: Long,
 
