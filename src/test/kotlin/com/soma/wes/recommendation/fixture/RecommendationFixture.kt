@@ -17,8 +17,8 @@ class RecommendationFixture(
         photoId: Long,
         embedGroupId: Int = 1,
         subjects: String = "couple",
-        clusterId: Int = 1,
-        clusterRank: Int = 0,
+        burstId: Int = 1,
+        burstRank: Int = 0,
         technicalPct: Double = 80.0,
         aestheticPct: Double = 70.0,
         sharpness: Double? = null,
@@ -32,7 +32,7 @@ class RecommendationFixture(
                 model_version = 'test-v1', analyzed_at = now(), updated_at = now()
             WHERE photo_id = ?
             """.trimIndent(),
-            embedGroupId, subjects, technicalPct, aestheticPct, clusterId, clusterRank, subScores, photoId,
+            embedGroupId, subjects, technicalPct, aestheticPct, burstId, burstRank, subScores, photoId,
         )
     }
 

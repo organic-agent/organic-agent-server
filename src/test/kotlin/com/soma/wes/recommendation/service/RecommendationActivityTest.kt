@@ -74,7 +74,7 @@ class RecommendationActivityTest @Autowired constructor(
         clearActivity(fixture)
 
         val photoId = photos.임베딩된_사진(fixture.galleryId, 1).single()
-        recommendations.분석_결과(photoId, embedGroupId = 2, clusterId = 2)
+        recommendations.분석_결과(photoId, embedGroupId = 2, burstId = 2)
         val jobId = recommendations.분석_잡(fixture.galleryId)
         recommendations.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 2, conceptName = "야외 정원·건물", detailName = "정원")
 

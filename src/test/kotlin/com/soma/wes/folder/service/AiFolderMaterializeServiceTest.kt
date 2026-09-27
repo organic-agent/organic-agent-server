@@ -61,6 +61,6 @@ class AiFolderMaterializeServiceTest @Autowired constructor(
 
     private fun analyzed(galleryId: Long, count: Int, embedGroupId: Int): List<Long> =
         photoFixture.임베딩된_사진(galleryId, count).onEach { photoId ->
-            recommendationFixture.분석_결과(photoId = photoId, embedGroupId = embedGroupId, clusterId = embedGroupId)
+            recommendationFixture.분석_결과(photoId = photoId, embedGroupId = embedGroupId, burstId = embedGroupId)
         }
 }

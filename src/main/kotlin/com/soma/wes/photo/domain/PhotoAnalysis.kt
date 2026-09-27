@@ -58,7 +58,7 @@ class PhotoAnalysis(
     val clipEmbedding: FloatArray? = null
 
     /**
-     * 임베딩 그룹(concat 계층 클러스터) 번호. 갤러리 안에서만 유일하고, -1은 미배정(임베딩 없음)이다.
+     * 임베딩 그룹 번호 — DINOv3·CLIP 벡터를 이어 붙인 공간에서 AI가 묶은 사진 덩어리. 갤러리 안에서만 유일하고, -1은 미배정(임베딩 없음)이다.
      * 화면에 나오지 않는 내부 단위다 — 컨셉 배정([AiConceptAssignment])과 폴더 상세 정렬이 쓴다.
      */
     @Column(name = "embed_group_id")
@@ -75,13 +75,14 @@ class PhotoAnalysis(
     @Column(name = "aesthetic_pct")
     val aestheticPct: Float? = null
 
-    /** 근접 중복(연사) 클러스터 번호. 갤러리 안에서만 유일하다. */
+    // [GLOSSARY-1 2026-09-27] clusterId → burstId, clusterRank → burstRank (용어집: 연사). 컬럼 이름은 용어 2단계에서 바꾼다.
+    /** 연사 번호 — 같은 카메라에서 거의 같은 순간 연속으로 찍힌 사진 묶음. 갤러리 안에서만 유일하다. */
     @Column(name = "cluster_id")
-    val clusterId: Int? = null
+    val burstId: Int? = null
 
-    /** 클러스터 안 순위. 0이 대표다. */
+    /** 연사 안 순위. 0이 연사 대표다. */
     @Column(name = "cluster_rank")
-    val clusterRank: Int? = null
+    val burstRank: Int? = null
 
     /** 분석 컬럼을 만든 파이프라인 버전. SCORE 잡이 쓴다 — null이면 임베딩만 있고 분석은 아직이다. */
     @Column(name = "model_version", length = 40)

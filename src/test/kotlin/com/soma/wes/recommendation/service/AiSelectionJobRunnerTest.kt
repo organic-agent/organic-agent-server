@@ -85,8 +85,8 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             recommendationFixture.분석_결과(
                 photoId,
                 embedGroupId = embedGroupId,
-                clusterId = clusterOf(i),
-                clusterRank = i % 2,
+                burstId = clusterOf(i),
+                burstRank = i % 2,
                 technicalPct = 90.0 - i * 5,
                 aestheticPct = 80.0 - i * 3,
                 sharpness = 100.0 + (count - i) * 10,
@@ -331,12 +331,12 @@ class AiSelectionJobRunnerTest @Autowired constructor(
         private fun misfitWorld(): Pair<List<Long>, Long> {
             val garden = photoFixture.업로드된_사진(fixture.galleryId, 6).mapIndexed { i, photoId ->
                 photoFixture.벡터_적재(photoId, FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also { it[50] = 1f })
-                recommendationFixture.분석_결과(photoId, embedGroupId = 2, clusterId = 10 + i, technicalPct = 80.0 - i, aestheticPct = 70.0 - i)
+                recommendationFixture.분석_결과(photoId, embedGroupId = 2, burstId = 10 + i, technicalPct = 80.0 - i, aestheticPct = 70.0 - i)
                 photoId
             }
             val beach = photoFixture.업로드된_사진(fixture.galleryId, 1).single()
             photoFixture.벡터_적재(beach, FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also { it[10] = 1f })
-            recommendationFixture.분석_결과(beach, embedGroupId = 1, clusterId = 1, technicalPct = 99.0, aestheticPct = 99.0)
+            recommendationFixture.분석_결과(beach, embedGroupId = 1, burstId = 1, technicalPct = 99.0, aestheticPct = 99.0)
             val jobId = recommendationFixture.분석_잡(fixture.galleryId)
             recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
             recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 2, conceptName = "야외 정원·건물", detailName = "정원")

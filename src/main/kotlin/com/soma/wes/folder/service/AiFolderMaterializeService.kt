@@ -141,7 +141,7 @@ class AiFolderMaterializeService(
                 photoId = it.photoId,
                 embedGroupId = it.embedGroupId,
                 subjects = it.subjects,
-                clusterId = it.clusterId,
+                burstId = it.burstId,
             )
         }
 }

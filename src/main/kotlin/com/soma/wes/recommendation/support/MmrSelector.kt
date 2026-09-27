@@ -50,18 +50,18 @@ object MmrSelector {
         score: DoubleArray,
         emb: Array<FloatArray>,
         members: List<Int>,
-        clusterIds: IntArray,
+        burstIds: IntArray,
         n: Int,
         lambda: Double = LAMBDA,
     ): List<Pick> {
         if (members.isEmpty() || n <= 0) return emptyList()
-        val bestPerCluster = linkedMapOf<Int, Int>()
+        val bestPerBurst = linkedMapOf<Int, Int>()
         members.forEach { i ->
-            val cluster = clusterIds[i]
-            val current = bestPerCluster[cluster]
-            if (current == null || score[i] > score[current]) bestPerCluster[cluster] = i
+            val burst = burstIds[i]
+            val current = bestPerBurst[burst]
+            if (current == null || score[i] > score[current]) bestPerBurst[burst] = i
         }
-        val candidates = bestPerCluster.values.toList()
+        val candidates = bestPerBurst.values.toList()
         val picked = mmrSelect(score, emb, n, lambda, candidates)
         val byScore = candidates.sortedByDescending { score[it] }.withIndex().associate { (rank, i) -> i to rank + 1 }
         return picked.map { Pick(index = it, folderRank = byScore.getValue(it), quota = n) }.sortedBy { it.folderRank }

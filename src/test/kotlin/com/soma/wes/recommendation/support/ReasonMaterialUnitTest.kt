@@ -69,8 +69,8 @@ class ReasonMaterialUnitTest {
         technicalPct = technicalPct,
         aestheticPct = aestheticPct,
         subjects = "couple",
-        clusterId = 1,
-        clusterRank = 0,
+        burstId = 1,
+        burstRank = 0,
         subScores = buildMap {
             sharpness?.let { put("sharpness", it) }
             technicalScore?.let { put("technical_score", it) }

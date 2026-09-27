@@ -8,5 +8,6 @@ interface PhotoAnalysisGrouping {
     val photoId: Long
     val embedGroupId: Int?
     val subjects: String?
-    val clusterId: Int?
+    // [GLOSSARY-1 2026-09-27] clusterId → burstId (용어집: 연사)
+    val burstId: Int?
 }

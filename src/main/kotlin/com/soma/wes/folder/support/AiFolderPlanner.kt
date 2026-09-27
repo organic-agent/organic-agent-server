@@ -17,7 +17,7 @@ class AiFolderPlanner {
         const val ETC_NAME = "기타"
         private val MEMBER_ORDER = compareBy<MemberPhotoDto>(
             { it.embedGroupId ?: Int.MAX_VALUE },
-            { it.clusterId ?: Int.MAX_VALUE },
+            { it.burstId ?: Int.MAX_VALUE },
         )
     }
 

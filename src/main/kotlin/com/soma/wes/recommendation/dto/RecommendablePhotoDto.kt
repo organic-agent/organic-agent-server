@@ -9,8 +9,9 @@ data class RecommendablePhotoDto(
     val technicalPct: Double,
     val aestheticPct: Double,
     val subjects: String,
-    val clusterId: Int,
-    val clusterRank: Int,
+    // [GLOSSARY-1 2026-09-27] clusterId → burstId (용어집: 연사)
+    val burstId: Int,
+    val burstRank: Int,
     val subScores: Map<String, Any?>,
 ) {
 
@@ -24,8 +25,8 @@ data class RecommendablePhotoDto(
             technicalPct = summary.technicalPct.toDouble(),
             aestheticPct = summary.aestheticPct.toDouble(),
             subjects = summary.subjects ?: "unknown",
-            clusterId = summary.clusterId ?: -1,
-            clusterRank = summary.clusterRank ?: 0,
+            burstId = summary.burstId ?: -1,
+            burstRank = summary.burstRank ?: 0,
             subScores = summary.subScores,
         )
     }

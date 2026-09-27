@@ -316,8 +316,8 @@ class AiSelectionJobRunner(
         val quotaSizes = (quotaFolders + folders.filter { f -> quotaFolders.none { it.folderId == f.folderId } })
             .filter { it.photoIds.isNotEmpty() }
             .associate { it.folderId to it.photoIds.size }
-        val clusterIds = IntArray(n) { rows[it].clusterId }
-        val byCluster = rows.indices.filter { it !in exclude }.groupBy { rows[it].clusterId }
+        val burstIds = IntArray(n) { rows[it].burstId }
+        val byBurst = rows.indices.filter { it !in exclude }.groupBy { rows[it].burstId }
 
         val picks = mutableListOf<PlannedPick>()
         val perFolder = linkedMapOf<String, Int>()
@@ -334,11 +334,11 @@ class AiSelectionJobRunner(
             folder.folderId to members
         }
         val quota = if (world.requestedCount == null) FolderQuota.quota(quotaSizes, remaining) else
-            ExactRecommendationQuota.allocate(membersByFolder.mapValues { (_, members) -> members.map { clusterIds[it] }.distinct().size }, remaining)
+            ExactRecommendationQuota.allocate(membersByFolder.mapValues { (_, members) -> members.map { burstIds[it] }.distinct().size }, remaining)
         folders.sortedByDescending { it.photoIds.size }.forEach { folder ->
             if (folder.photoIds.isEmpty()) return@forEach
             val members = membersByFolder.getValue(folder.folderId)
-            val folderPicks = MmrSelector.selectInFolder(score, world.embeddings, members, clusterIds, quota.getValue(folder.folderId))
+            val folderPicks = MmrSelector.selectInFolder(score, world.embeddings, members, burstIds, quota.getValue(folder.folderId))
             perFolder["${folder.parentName}›${folder.name}"] = folderPicks.size
             folderPicks.forEach { pick ->
                 val i = pick.index
@@ -350,8 +350,8 @@ class AiSelectionJobRunner(
                         "size" to folder.photoIds.size, "rank" to pick.folderRank, "quota" to pick.quota,
                     ),
                 )
-                val siblings = byCluster[row.clusterId].orEmpty().map { rows[it] }.filter { it.photoId != row.photoId }
-                    .sortedBy { it.clusterRank }
+                val siblings = byBurst[row.burstId].orEmpty().map { rows[it] }.filter { it.photoId != row.photoId }
+                    .sortedBy { it.burstRank }
                 val alternatives = siblings.map { mapOf("photo_id" to it.photoId, "why_not" to ReasonMaterial.whyNot(row, it)) }
                 if (alternatives.isNotEmpty()) {
                     val whyCounts = linkedMapOf<String, Int>()
@@ -379,7 +379,7 @@ class AiSelectionJobRunner(
                     "prior_z" to round3(combined.priorZ[i]),
                     "balance_z" to round3(combined.balanceZ[i]), "affinity_z" to round3(combined.affinityZ[i]),
                     "technical_pct" to round1(row.technicalPct), "aesthetic_pct" to round1(row.aestheticPct),
-                    "cluster_id" to row.clusterId,
+                    "cluster_id" to row.burstId,
                     "folder" to "${folder.parentName}›${folder.name}", "folder_size" to folder.photoIds.size,
                     "folder_rank" to pick.folderRank, "folder_quota" to pick.quota,
                     "alternatives" to alternatives, "primary_reason" to primary, "facts" to facts,
