@@ -30,7 +30,7 @@ interface PhotoAnalysisRepository : JpaRepository<PhotoAnalysis, Long> {
                a.subjects AS subjects, a.burstId AS burstId, a.burstRank AS burstRank, a.subScores AS subScores
         FROM PhotoAnalysis a
         WHERE a.photoId IN (SELECT p.id FROM Photo p WHERE p.galleryId = :galleryId)
-          AND a.modelVersion IS NOT NULL AND a.technicalPct IS NOT NULL AND a.aestheticPct IS NOT NULL
+          AND a.pipelineVersion IS NOT NULL AND a.technicalPct IS NOT NULL AND a.aestheticPct IS NOT NULL
           AND a.embedding IS NOT NULL
         """,
     )

@@ -84,9 +84,10 @@ class PhotoAnalysis(
     @Column(name = "cluster_rank")
     val burstRank: Int? = null
 
-    /** 분석 컬럼을 만든 파이프라인 버전. SCORE 잡이 쓴다 — null이면 임베딩만 있고 분석은 아직이다. */
+    // [GLOSSARY-1 2026-09-27] modelVersion → pipelineVersion (용어집 D3: 모델 id가 아니라 파이프라인 버전). 컬럼 이름은 용어 2단계에서 바꾼다.
+    /** 분석 컬럼을 만든 파이프라인 버전(예: `photoselect-v3-a-0.1`). score 단계가 쓴다 — null이면 임베딩만 있고 분석은 아직이다. */
     @Column(name = "model_version", length = 40)
-    val modelVersion: String? = null
+    val pipelineVersion: String? = null
 
     @Column(name = "analyzed_at")
     val analyzedAt: ZonedDateTime? = null
@@ -110,12 +111,12 @@ class PhotoAnalysis(
     fun subScore(key: SubScoreKey): Double? = (subScores[key.key] as? Number)?.toDouble()
 
     /**
-     * 분석 완료 — 폴더·추천이 재료로 써도 되는 행인가. 배치가 SCORE(`model_version`)와 CATEGORIZE(백분위·그룹)
-     * 두 잡으로 갈라져 있어 `model_version`만으로는 부족하다. 그 사이 창의 행은 백분위가 비어 있고, 그런 행을
+     * 분석 완료 — 폴더·추천이 재료로 써도 되는 행인가. 배치가 score(`model_version`)와 categorize(백분위·그룹)
+     * 두 단계로 갈라져 있어 `model_version`만으로는 부족하다. 그 사이 창의 행은 백분위가 비어 있고, 그런 행을
      * 완료로 보면 추천이 기본값으로 조용히 틀린다. 소비자가 실제로 쓰는 백분위가 채워졌는지를 본다.
      */
     val isAnalyzed: Boolean
-        get() = modelVersion != null && technicalPct != null && aestheticPct != null
+        get() = pipelineVersion != null && technicalPct != null && aestheticPct != null
 
     val isFailed: Boolean
         get() = error != null
