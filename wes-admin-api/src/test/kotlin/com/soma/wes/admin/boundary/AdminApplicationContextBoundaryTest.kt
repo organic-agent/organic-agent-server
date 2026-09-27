@@ -13,7 +13,7 @@ import com.soma.wes.auth.support.OAuthStateCleaner
 import com.soma.wes.auth.token.config.JwtProperties
 import com.soma.wes.folder.repository.ConceptFolderRepository
 import com.soma.wes.folder.service.FolderService
-import com.soma.wes.folder.service.AiFolderMaterializeService
+import com.soma.wes.folder.support.AiFolderMaterializer
 import com.soma.wes.folder.support.AiFolderPlanner
 import com.soma.wes.folder.support.FolderViewAssembler
 import com.soma.wes.collab.config.CollabProperties
@@ -145,11 +145,11 @@ class AdminApplicationContextBoundaryTest @Autowired constructor(
             ProductChildTrashRepository::class.java,
             ProductChildTrashService::class.java,
             AiFolderPlanner::class.java,
-            // [REFACTOR-A 2026-09-27] FolderService·AiFolderMaterializeService가 주입받는 FolderViewAssembler를 admin 컨텍스트에도 등록
+            // [REFACTOR-A 2026-09-27] FolderService·AiFolderMaterializer가 주입받는 FolderViewAssembler를 admin 컨텍스트에도 등록
             FolderViewAssembler::class.java,
             ConceptAssignmentLoader::class.java,
-            // [REFACTOR-RENAME 2026-09-27] AiFolderService → AiFolderMaterializeService (클래스 이름만 변경, 동작 동일)
-            AiFolderMaterializeService::class.java,
+            // [REFACTOR-SUPPORT 2026-09-27] folder/service/AiFolderMaterializeService → folder/support/AiFolderMaterializer
+            AiFolderMaterializer::class.java,
         )
 
         assertAbsent(

@@ -1,6 +1,6 @@
 package com.soma.wes.recommendation.service
 
-import com.soma.wes.folder.service.AiFolderMaterializeService
+import com.soma.wes.folder.support.AiFolderMaterializer
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
 import com.soma.wes.photo.domain.PhotoAnalysis
@@ -38,8 +38,8 @@ class AiSelectionJobRunnerTest @Autowired constructor(
     private val runner: AiSelectionJobRunner,
     private val recovery: AiSelectionJobRecovery,
     private val aiRecommendationService: AiRecommendationService,
-    // [REFACTOR-RENAME 2026-09-27] AiFolderService → AiFolderMaterializeService (클래스 이름만 변경, 동작 동일)
-    private val aiFolderMaterializeService: AiFolderMaterializeService,
+    // [REFACTOR-SUPPORT 2026-09-27] folder/service/AiFolderMaterializeService → folder/support/AiFolderMaterializer
+    private val aiFolderMaterializer: AiFolderMaterializer,
     private val aiSelectionJobRepository: AiSelectionJobRepository,
     private val aiRecommendationRepository: AiRecommendationRepository,
     private val galleryFixture: GalleryFixture,
@@ -71,7 +71,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
         val jobId = recommendationFixture.분석_잡(fixture.galleryId)
         recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
         recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 2, conceptName = "야외 정원·건물", detailName = "정원")
-        val concepts = aiFolderMaterializeService.createFromAnalysis(fixture.galleryId, fixture.photographer.id!!)
+        val concepts = aiFolderMaterializer.materialize(fixture.galleryId)
         val folderIdByName = concepts.flatMap { it.details }.associate { it.name to it.id }
         val unfiled = analyzedPhotos(count = 1, embedGroupId = 3, clusterOf = { 20 }).single()
         (beach + garden + unfiled).forEach { recommendationFixture.미리보기(it) }
@@ -340,7 +340,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             val jobId = recommendationFixture.분석_잡(fixture.galleryId)
             recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
             recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 2, conceptName = "야외 정원·건물", detailName = "정원")
-            val concepts = aiFolderMaterializeService.createFromAnalysis(fixture.galleryId, fixture.photographer.id!!)
+            val concepts = aiFolderMaterializer.materialize(fixture.galleryId)
             val gardenFolderId = concepts.flatMap { it.details }.first { it.name == "정원" }.id
             jdbcTemplate.update("UPDATE detail_folder_assignments SET detail_folder_id = ? WHERE photo_id = ?", gardenFolderId, beach)
             (garden + beach).forEach { recommendationFixture.미리보기(it) }
@@ -683,7 +683,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             photos.forEach { recommendationFixture.분석_결과(it, embedGroupId = 1) }
             val analysisJobId = recommendationFixture.분석_잡(fixture.galleryId)
             recommendationFixture.컨셉_배정(analysisJobId, fixture.galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
-            aiFolderMaterializeService.createFromAnalysis(fixture.galleryId, fixture.photographer.id!!)
+            aiFolderMaterializer.materialize(fixture.galleryId)
             val jobId = requestJob()
             jdbcTemplate.update("UPDATE photo_analysis SET pipeline_version = NULL")
 

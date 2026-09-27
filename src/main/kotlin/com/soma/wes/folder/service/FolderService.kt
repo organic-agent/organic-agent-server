@@ -16,6 +16,7 @@ import com.soma.wes.folder.repository.ConceptFolderRepository
 import com.soma.wes.folder.repository.DetailFolderRepository
 import com.soma.wes.folder.repository.DetailFolderAssignmentRepository
 import com.soma.wes.folder.service.port.FolderReactionCleaner
+import com.soma.wes.folder.support.AiFolderMaterializer
 import com.soma.wes.folder.support.FolderViewAssembler
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.repository.PhotoRepository
@@ -32,15 +33,15 @@ class FolderService(
     private val assignmentRepository: DetailFolderAssignmentRepository,
     private val photoRepository: PhotoRepository,
     private val reactionCleaner: FolderReactionCleaner,
-    // [REFACTOR-A 2026-09-27] list의 응답 조립을 FolderViewAssembler로 옮겼다.
     private val viewAssembler: FolderViewAssembler,
+    private val aiFolderMaterializer: AiFolderMaterializer,
     private val clock: Clock,
     private val activityRecorder: ActivityRecorder,
 ) {
     @Transactional
     fun createConcept(galleryId: Long, userId: Long, request: CreateConceptFolderRequest): ConceptFolderResponse {
         galleryAccessPolicy.requireFolderEditor(galleryId, userId)
-        val sortOrder = conceptRepository.findAllByGalleryIdOrderBySortOrderAscIdAsc(galleryId).size
+        val sortOrder = conceptRepository.findNextSortOrderByGalleryId(galleryId)
         val concept = conceptRepository.save(
             ConceptFolder(galleryId, request.name.trim(), sortOrder, FolderSource.USER),
         )
@@ -57,13 +58,20 @@ class FolderService(
     ): DetailFolderResponse {
         galleryAccessPolicy.requireFolderEditor(galleryId, userId)
         val concept = requireConcept(galleryId, conceptId)
-        val sortOrder = detailRepository.findAllByConceptFolderIdOrderBySortOrderAscIdAsc(conceptId).size
+        val sortOrder = detailRepository.findNextSortOrderByConceptFolderId(conceptId)
         val detail = detailRepository.save(
             DetailFolder(galleryId, concept.requiredId, request.name.trim(), sortOrder, FolderSource.USER),
         )
         activityRecorder.recordGallery(galleryId)
         // [REFACTOR-A 2026-09-27] private detailResponse(...) → DetailFolderResponse.of
         return DetailFolderResponse.of(detail, emptyList())
+    }
+
+    /** 작가의 "AI로 폴더 만들기" 버튼. 인가만 여기서 하고 물질화는 [AiFolderMaterializer]가 같은 트랜잭션에서 한다. */
+    @Transactional
+    fun createFromAnalysis(galleryId: Long, userId: Long): List<ConceptFolderResponse> {
+        galleryAccessPolicy.requireUploader(galleryId, userId)
+        return aiFolderMaterializer.materialize(galleryId)
     }
 
     @Transactional(readOnly = true)

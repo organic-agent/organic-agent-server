@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component
  * 컨셉 폴더를 세부 폴더·사진 id까지 채운 응답으로 만든다. 세부 폴더는 `sortOrder, id` 순서다.
  *
  * 방금 만든 AI 세트처럼 엔티티와 사진 id가 이미 손에 있는 경로는 이 클래스를 거치지 않고 메모리에서 조립한다 —
- * 수천 행을 다시 읽지 않기 위해서다(#160, `AiFolderMaterializeService`).
+ * 수천 행을 다시 읽지 않기 위해서다(#160, `AiFolderMaterializer`).
  */
 @Component
 class FolderViewAssembler(

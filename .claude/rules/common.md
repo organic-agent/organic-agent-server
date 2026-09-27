@@ -50,6 +50,7 @@ support가 service를, infrastructure가 service·repository를 참조하면 안
   ```
 - 생성자 주입 필드도 같은 형태로 한 줄에 하나씩.
 - import는 와일드카드 없이 전부 나열한다.
+- 마지막 import와 그 뒤의 첫 주석·코드 사이에는 빈 줄을 **정확히 한 줄** 둔다. 두 줄 이상 비우지 않는다.
 
 ## 메서드 본문 구성
 
@@ -83,7 +84,7 @@ return detailResponse(detail, emptyList())
 
 - 패키지는 도메인 단위로 나눈다 (`gallery`, `photo`, `folder`, `collab`).
   전부 소문자 한 단어 — 도메인 이름이 두 단어가 되면 이름을 다시 생각하라.
-- 클래스는 PascalCase (`AiFolderMaterializeService`, `GalleryAccessPolicy`).
+- 클래스는 PascalCase (`AiFolderMaterializer`, `GalleryAccessPolicy`).
 - 메서드는 camelCase + 역할이 드러나는 동사 접두사:
   - 조회: `find...`(nullable 반환) / `get...`(유스케이스) / `load...`(검증을 겸한 조회)
   - 강제: `require...`(아니면 예외) / `validate...`(검증만) / `lock...`(잠그고 조회)
