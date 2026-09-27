@@ -64,7 +64,7 @@ class Gallery(
     @Column(name = "max_retouch_round_count")
     var maxRetouchRoundCount: Int? = null,
 
-    /** 촬영 종류. AI 폴더의 큰 분류 목록을 고르는 키다 ([ShootType] 참조). */
+    /** 촬영 종류. AI 폴더의 컨셉 목록을 고르는 키다 ([ShootType] 참조). */
     @Enumerated(EnumType.STRING)
     @Column(name = "shoot_type", nullable = false, length = 20)
     var shootType: ShootType = ShootType.REHEARSAL,

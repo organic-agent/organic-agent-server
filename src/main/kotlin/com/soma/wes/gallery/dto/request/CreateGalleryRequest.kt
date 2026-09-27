@@ -40,7 +40,7 @@ data class CreateGalleryRequest(
     val maxRetouchRoundCount: Int? = null,
 
     @field:Schema(
-        description = "촬영 종류. REHEARSAL(리허설) | CEREMONY(본식) | OTHER. AI 폴더의 큰 분류 목록이 이 값으로 갈린다. 지정하지 않으면 REHEARSAL.",
+        description = "촬영 종류. REHEARSAL(리허설) | CEREMONY(본식) | OTHER. AI 폴더의 컨셉 목록이 이 값으로 갈린다. 지정하지 않으면 REHEARSAL.",
         example = "REHEARSAL",
     )
     val shootType: ShootType = ShootType.REHEARSAL,

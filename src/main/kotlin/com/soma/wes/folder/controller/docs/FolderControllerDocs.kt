@@ -106,9 +106,9 @@ interface FolderControllerDocs {
     fun list(loginUser: LoginUser, galleryId: Long): ResponseEntity<List<ConceptFolderResponse>>
 
     @Operation(
-        summary = "AI 분석 결과로 카테고리 생성",
+        summary = "AI 분석 결과로 폴더 세트 물질화",
         description = """
-            클러스터 공개 API를 복원하지 않고 분석 결과를 Concept/Detail 카테고리로 materialize한다.
+            최신 분석의 컨셉 배정으로 컨셉·세부 폴더(폴더 세트)를 물질화한다.
             담당 작가(개인 갤러리는 두 참여자)만 부를 수 있다. 보통은 분석 잡이 DONE 직전에 자동으로 만들므로 수동 재시도용이다.
 
             멱등이다 — 최신 분석 잡의 폴더 세트가 이미 있으면 새로 만들지 않고 그것을 돌려준다.

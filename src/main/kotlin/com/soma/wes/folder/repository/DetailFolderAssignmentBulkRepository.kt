@@ -10,7 +10,7 @@ import org.springframework.transaction.annotation.Transactional
 
 // [GLOSSARY-1 2026-09-27] PhotoFolderAssignmentBulkRepository → DetailFolderAssignmentBulkRepository (용어집 D9)
 /**
- * AI 폴더 실체화가 만드는 수천 행의 대량 적재. `photo_category_assignments`(PK = photo_id)는 id를 앱이 정하는 엔티티라
+ * AI 폴더 물질화가 만드는 수천 행의 대량 적재. `photo_category_assignments`(PK = photo_id)는 id를 앱이 정하는 엔티티라
  * Spring Data `saveAll`이 행마다 존재 확인 SELECT + INSERT 두 왕복을 한다 — 7천 장이면 3만 번 가까운 RDS 왕복으로 100초가 걸렸다(#160).
  * 여기서는 JDBC 배치로 한 번에 보낸다. 엔티티는 조회와 단건 갱신에만 쓴다.
  *

@@ -115,7 +115,7 @@ interface TrashControllerDocs {
     @Operation(
         summary = "사진 복원",
         description = """
-            휴지통의 사진들을 되살린다. 목록·클러스터에 다시 나타난다.
+            휴지통의 사진들을 되살린다. 목록·폴더에 다시 나타난다.
 
             전부-아니면-거부다. 휴지통에 없는 id가 섞여 있으면 한 장도 되살리지 않고 404를
             돌려준다.

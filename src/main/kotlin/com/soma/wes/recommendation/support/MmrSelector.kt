@@ -1,7 +1,7 @@
 package com.soma.wes.recommendation.support
 
 /**
- * 폴더 안 선택 — 연사 클러스터당 1장 남기고 MMR(λ·score − (1−λ)·maxCos)로 n장. AI repo `rerank.select_in_folder`의 자리다.
+ * 폴더 안 선택 — 연사당 1장 남기고 MMR(λ·score − (1−λ)·maxCos)로 n장. AI repo `rerank.select_in_folder`의 자리다.
  * 임베딩은 정규화돼 있다고 본다(내적 = 코사인).
  */
 object MmrSelector {

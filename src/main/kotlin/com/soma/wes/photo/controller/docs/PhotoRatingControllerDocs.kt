@@ -23,7 +23,7 @@ interface PhotoRatingControllerDocs {
 
             부부는 갤러리가 열려 있고 선택 마감 기한 안일 때만 매길 수 있고, 작가에게는 그 제약이 없다.
 
-            매긴 점수는 사진 목록·상세·클러스터·폴더 응답의 `score`로 함께 온다.
+            매긴 점수는 사진 목록·상세·폴더 응답의 `score`로 함께 온다.
         """,
     )
     @ApiResponses(

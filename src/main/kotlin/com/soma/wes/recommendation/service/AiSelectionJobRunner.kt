@@ -40,7 +40,7 @@ import org.springframework.transaction.support.TransactionTemplate
  *     폴더마다 f:  후보 = f.photos − 담은 사진 − 거절 − 폴더와 동떨어진 사진([FolderFitRule])
  *                  (이전 라운드 노출은 제외하지 않는다)
  *                  n_f = max(1, round(remaining·|f|/Σ|f'|)),  n_f ≤ ceil(|f|·0.5)
- *                  연사 클러스터당 1장 → MMR → n_f장, 폴더 안 점수 순위가 rank
+ *                  연사당 1장 → MMR → n_f장, 폴더 안 점수 순위가 rank
  *     미분류(세트에 없는 사진)는 가상 폴더로 같은 규칙.
  *     1단계: reason NULL로 INSERT + 라운드 확정 → 2단계: 큰 폴더부터 이유 문장 UPDATE → DONE.
  *

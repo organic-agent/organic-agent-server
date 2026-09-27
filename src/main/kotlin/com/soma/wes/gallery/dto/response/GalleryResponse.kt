@@ -26,7 +26,7 @@ data class GalleryResponse(
     @field:Schema(description = "계약한 보정 요청 횟수. null이면 제한이 없다")
     val maxRetouchRoundCount: Int?,
 
-    @field:Schema(description = "촬영 종류. AI 폴더의 큰 분류 목록이 이 값으로 갈린다.")
+    @field:Schema(description = "촬영 종류. AI 폴더의 컨셉 목록이 이 값으로 갈린다.")
     val shootType: ShootType,
 
     val createdAt: ZonedDateTime?,

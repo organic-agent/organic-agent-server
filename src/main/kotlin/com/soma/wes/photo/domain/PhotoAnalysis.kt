@@ -16,7 +16,7 @@ import org.hibernate.type.SqlTypes
  * 사진 한 장의 모델 파생값. [Photo]와 1:1이고 `photo_id`가 곧 키다.
  *
  * [Photo]에서 떼어 둔 이유는 생명주기다. 정체성(storage_key·EXIF)은 업로드 때 한 번 정해지지만
- * 임베딩·태그·점수·클러스터는 모델이 바뀔 때마다 갤러리 단위로 통째 다시 적는다. 목록 조회가
+ * 임베딩·피사체·점수·연사·임베딩 그룹은 모델이 바뀔 때마다 갤러리 단위로 통째 다시 적는다. 목록 조회가
  * 768차원 벡터를 읽지 않게 하는 효과도 같다(`PhotoRating`과 같은 이유).
  *
  * 이 행 하나가 사진의 분석 진행을 말한다 — [embedding](임베더) → [clipEmbedding]·[subScores](score) →
@@ -49,8 +49,8 @@ class PhotoAnalysis(
         protected set
 
     /**
-     * CLIP ViT-L/14 벡터. naming 잡이 소그룹 최근접 배정·부모 검증에 쓴다 — 사진 재분석 없이
-     * naming 잡만 다시 돌리기 위해 저장한다. 이 서버는 매핑만 하고 읽지 않는다.
+     * CLIP ViT-L/14 벡터. categorize 단계의 naming이 그룹 최근접 배정·컨셉 검증에 쓴다 — 사진 재분석 없이
+     * naming만 다시 돌리기 위해 저장한다. 이 서버는 매핑만 하고 읽지 않는다.
      */
     @JdbcTypeCode(SqlTypes.VECTOR)
     @Array(length = EMBEDDING_DIMENSION)
@@ -64,11 +64,11 @@ class PhotoAnalysis(
     @Column(name = "embed_group_id")
     val embedGroupId: Int? = null
 
-    /** CLIP zero-shot 피사체(신부/신랑/두 분/단체). 자식 폴더 category의 재료. */
+    /** CLIP zero-shot 피사체(신부/신랑/두 분/단체). 세부 폴더 컷 종류([com.soma.wes.folder.domain.CutType])의 재료. */
     @Column(name = "subjects", length = 20)
     val subjects: String? = null
 
-    /** 갤러리 안 백분위 0~100. 원점수가 아니라 모델마다 단위가 달라도 비교할 수 있다. CATEGORIZE 잡이 쓴다. */
+    /** 갤러리 안 백분위 0~100. 원점수가 아니라 모델마다 단위가 달라도 비교할 수 있다. categorize 단계가 쓴다. */
     @Column(name = "technical_pct")
     val technicalPct: Float? = null
 

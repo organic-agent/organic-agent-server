@@ -32,7 +32,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * 폴더별 AI 추천을 요청하고 읽는다.
  *
  * 요청은 `ai_selection_jobs`에 PENDING 행을 넣고 커밋 뒤 실행기에 넘긴다 — 계산(폴더마다 목표 비례 n장,
- * 연사 클러스터당 1장, 이유 문장)은 [AiSelectionJobRunner]가 요청 스레드 밖에서 한다.
+ * 연사당 1장, 이유 문장)은 [AiSelectionJobRunner]가 요청 스레드 밖에서 한다.
  *
  * 추천은 사진에 붙는다. 읽을 때는 라운드가 아니라 **사진마다 가장 최근 추천**에 사진·담김 여부·현재 폴더를
  * 붙여 돌려준다 — 사진을 다른 폴더로 옮겨도 표시가 따라가고, 폴더 하나만 다시 추천해도 다른 폴더의 표시는
