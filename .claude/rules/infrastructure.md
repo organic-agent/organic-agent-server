@@ -15,7 +15,7 @@ paths:
   어휘로 쓰고 벤더 타입을 노출하지 않는다 (`PhotoStorage.presignUpload`, `StageInvoker.invoke`).
   **포트는 "이 도메인이 선언하고 바깥이 구현하는 인터페이스"다** — 구현하는 쪽이 `infrastructure`
   어댑터든 다른 도메인이든 모두 여기다. 다른 도메인이 구현하는 도메인 간 훅도 포트다
-  (`folder/service/port/FolderReactionCleaner` ← `collab/support/CollabCategoryReactionCleaner`).
+  (`folder/service/port/FolderReactionCleaner` ← `collab/support/CollabFolderReactionCleaner`).
   `service` 루트에 인터페이스를 두지 않는다 — 그러면 "바깥에 기대는 지점"이 패키지로 보이지 않는다.
 - 포트가 주고받는 값 타입은 `dto/` 루트의 `~Dto`다 (`StageCallDto`, `ScoreWorkerDto`). 포트 파일에
   데이터 클래스를 같이 두지 않는다.

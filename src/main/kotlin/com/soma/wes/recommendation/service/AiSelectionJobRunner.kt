@@ -328,7 +328,7 @@ class AiSelectionJobRunner(
             val misfit = if (folder.folderId == null) emptySet() else FolderFitRule.misfits(world.embeddings, allMembers)
             if (misfit.isNotEmpty()) {
                 misfitPhotoIds += misfit.map { rows[it].photoId }
-                log.info("폴더 {}›{} 에서 동떨어진 사진 {}장 제외: {}", folder.parentName, folder.name, misfit.size, misfit.map { rows[it].photoId })
+                log.info("폴더 {}›{} 에서 동떨어진 사진 {}장 제외: {}", folder.conceptName, folder.name, misfit.size, misfit.map { rows[it].photoId })
             }
             val members = allMembers.filter { it !in exclude && it !in misfit }
             folder.folderId to members
@@ -339,14 +339,14 @@ class AiSelectionJobRunner(
             if (folder.photoIds.isEmpty()) return@forEach
             val members = membersByFolder.getValue(folder.folderId)
             val folderPicks = MmrSelector.selectInFolder(score, world.embeddings, members, burstIds, quota.getValue(folder.folderId))
-            perFolder["${folder.parentName}›${folder.name}"] = folderPicks.size
+            perFolder["${folder.conceptName}›${folder.name}"] = folderPicks.size
             folderPicks.forEach { pick ->
                 val i = pick.index
                 val row = rows[i]
                 val material = linkedMapOf<String, Any?>(
                     "prior_z" to combined.priorZ[i],
                     "folder" to mapOf(
-                        "parent" to folder.parentName, "name" to folder.name,
+                        "parent" to folder.conceptName, "name" to folder.name,
                         "size" to folder.photoIds.size, "rank" to pick.folderRank, "quota" to pick.quota,
                     ),
                 )
@@ -380,7 +380,7 @@ class AiSelectionJobRunner(
                     "balance_z" to round3(combined.balanceZ[i]), "affinity_z" to round3(combined.affinityZ[i]),
                     "technical_pct" to round1(row.technicalPct), "aesthetic_pct" to round1(row.aestheticPct),
                     "cluster_id" to row.burstId,
-                    "folder" to "${folder.parentName}›${folder.name}", "folder_size" to folder.photoIds.size,
+                    "folder" to "${folder.conceptName}›${folder.name}", "folder_size" to folder.photoIds.size,
                     "folder_rank" to pick.folderRank, "folder_quota" to pick.quota,
                     "alternatives" to alternatives, "primary_reason" to primary, "facts" to facts,
                     "reason_fallback" to fallback,
@@ -578,7 +578,8 @@ class AiSelectionJobRunner(
         private fun seconds(sinceNanos: Long) = round(Duration.ofNanos(System.nanoTime() - sinceNanos).toMillis() / 10.0) / 100
     }
 
-    private class VirtualFolder(val folderId: Long?, val parentName: String, val name: String, val photoIds: List<Long>)
+    // [GLOSSARY-1 2026-09-27] parentName → conceptName (용어집: 1층 이름은 concept_name, 층 뜻의 parent는 금지어). jsonb 키 "parent"는 용어 2단계에서 바꾼다.
+    private class VirtualFolder(val folderId: Long?, val conceptName: String, val name: String, val photoIds: List<Long>)
 
     private class World(
         val job: JobRef,

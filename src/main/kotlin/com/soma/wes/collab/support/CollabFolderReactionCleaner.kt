@@ -6,8 +6,9 @@ import com.soma.wes.collab.repository.CollabPhotoLikeRepository
 import com.soma.wes.collab.repository.CollabSessionRepository
 import org.springframework.stereotype.Component
 
+// [GLOSSARY-1 2026-09-27] CollabCategoryReactionCleaner → CollabFolderReactionCleaner (용어집: 명사 category 금지, 구현하는 포트 FolderReactionCleaner와 이름을 맞춤)
 @Component
-class CollabCategoryReactionCleaner(
+class CollabFolderReactionCleaner(
     private val sessionRepository: CollabSessionRepository,
     private val likeRepository: CollabPhotoLikeRepository,
     private val commentRepository: CollabPhotoCommentRepository,

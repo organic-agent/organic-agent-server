@@ -19,7 +19,7 @@ import com.soma.wes.folder.support.FolderViewAssembler
 import com.soma.wes.collab.config.CollabProperties
 import com.soma.wes.collab.repository.CollabSessionRepository
 import com.soma.wes.collab.service.CollabSessionQueryService
-import com.soma.wes.collab.support.CollabCategoryReactionCleaner
+import com.soma.wes.collab.support.CollabFolderReactionCleaner
 import com.soma.wes.collab.support.CollabLinkResolver
 import com.soma.wes.collab.support.CollabPhotoMembership
 import com.soma.wes.collab.support.CollabPhotoViewAssembler
@@ -133,7 +133,7 @@ class AdminApplicationContextBoundaryTest @Autowired constructor(
             PhotoSelectionService::class.java,
             CollabSessionQueryService::class.java,
             FolderService::class.java,
-            CollabCategoryReactionCleaner::class.java,
+            CollabFolderReactionCleaner::class.java,
             RetouchService::class.java,
             PhotoViewAssembler::class.java,
             CollabPhotoViewAssembler::class.java,
