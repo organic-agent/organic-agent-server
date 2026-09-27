@@ -38,8 +38,8 @@ effort: xhigh
 
 ## Phase 2: PR 제목 및 본문 작성
 
-1. `.github/pull_request_template.md`를 Read로 읽어 섹션 구조(`### 1. 연관 이슈`, `### 2. 구현 사항`)와
-   구분선(`---`)을 그대로 따르라. 템플릿의 안내 문구(`❗️...`)는 지우고 실제 내용으로 채운다.
+1. `.github/pull_request_template.md`를 Read로 읽어 섹션 구조(`## 1. 연관 이슈`, `## 2. 구현 사항`)를
+   그대로 따르라. 템플릿의 안내 문구(`❗️...`)는 지우고 실제 내용으로 채운다.
 2. `.claude/spec/git-convention.md`를 Read로 읽어 PR 제목의 커밋 메시지 형식을 확인하라.
 3. `.claude/spec/issue-pr-writing.md`를 Read로 읽어라. **본문은 이 가이드대로 쓴다** — 템플릿은 섹션 이름을,
    가이드는 섹션 안을 채우는 방법(한 줄 요약, 왜/무엇을/확인 세 칸, 전→후 표, 한 줄에 한 사실)을 정한다.
