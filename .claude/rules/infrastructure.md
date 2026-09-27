@@ -13,9 +13,10 @@ paths:
 
 - 도메인은 자기 `service/port` 패키지에 **port 인터페이스**를 선언한다. 이름과 시그니처는 도메인
   어휘로 쓰고 벤더 타입을 노출하지 않는다 (`PhotoStorage.presignUpload`, `StageInvoker.invoke`).
-  `infrastructure` 어댑터가 구현하는 인터페이스는 모두 여기다 — `service` 루트에 두지 않는다.
-  다른 도메인이 구현하는 도메인 간 훅(`category/service/CategoryReactionCleaner`)은 포트가 아니라
-  `service` 루트에 남는다.
+  **포트는 "이 도메인이 선언하고 바깥이 구현하는 인터페이스"다** — 구현하는 쪽이 `infrastructure`
+  어댑터든 다른 도메인이든 모두 여기다. 다른 도메인이 구현하는 도메인 간 훅도 포트다
+  (`folder/service/port/FolderReactionCleaner` ← `collab/support/CollabCategoryReactionCleaner`).
+  `service` 루트에 인터페이스를 두지 않는다 — 그러면 "바깥에 기대는 지점"이 패키지로 보이지 않는다.
 - 포트가 주고받는 값 타입은 `dto/` 루트의 `~Dto`다 (`StageCallDto`, `ScoreWorkerDto`). 포트 파일에
   데이터 클래스를 같이 두지 않는다.
 - `{domain}/infrastructure`의 **어댑터**가 그것을 구현하며, 기술 이름을 앞에 붙인다

@@ -22,7 +22,7 @@ paths:
 - 외부 입력으로 만드는 엔티티·값객체는 companion의 `of` 팩토리로 만들고, **검증은 `of`에만 둔다.
   생성자/init 블록에서 검증하지 마라** — JPA 하이드레이션도 생성자를 지나므로, 규칙이 나중에
   엄격해지면 어제 저장한 행이 오늘 목록 조회를 깨뜨린다 (`CollabSession.of`, `PhotoRating.of` 전례).
-- 도메인 규칙 위반은 **도메인 예외를 직접 던진다**: `throw CategoryException(CategoryErrorCode.EMPTY_PHOTO_IDS)`.
+- 도메인 규칙 위반은 **도메인 예외를 직접 던진다**: `throw FolderException(FolderErrorCode.EMPTY_PHOTO_IDS)`.
   `require`/`IllegalArgumentException`을 던지고 서비스에서 try-catch로 번역하는 방식은 쓰지 않는다.
 
 ## 값객체
