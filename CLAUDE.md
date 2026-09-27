@@ -43,7 +43,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   Lambda 폴백) → `categorize`(백분위·연사·그룹 + Bedrock 이름·배정, Lambda). 코드는 sibling repo `../../organic-agent-ai`의
   최상위 디렉토리 하나 = 함수 하나(AI #35). **사진 한 장의 진행은 `photo_analysis` 행 하나가 말한다**(파이프라인 v2):
   `analysis` 도메인의 5초 스윕이 업로드된 사진을 50장씩 임베더에 배정하고(`EmbedDispatcher`, `{galleryId, photoIds}`), 잡
-  (`ai_analysis_jobs`: ANALYZING → CATEGORIZING → DONE | FAILED)은 점수가 다 차기를 관측해 categorize를 한 번 부른 뒤
+  (`analysis_jobs`: ANALYZING → CATEGORIZING → DONE | FAILED)은 점수가 다 차기를 관측해 categorize를 한 번 부른 뒤
   AI 폴더를 자동 물질화하고 알림을 보낸다(`AnalysisOrchestrator`, `StageInvoker`). 점수는 GPU EC2 워커가 `photo_analysis`를 직접
   집어 내고 wes는 켜고 끄기만 한다(`ScoreWorkerSupervisor`·`ScoreWorkerPool`, `app.analysis.gpu.*`; 끄기는 워커의 유휴 30초 자기 정지가
   1차, wes는 2분 무진행 안전망). 워커가 없거나 멈추면 score Lambda 폴백을 `{galleryId, photoIds}`로 보낸다. Lambda는 잡 상태를

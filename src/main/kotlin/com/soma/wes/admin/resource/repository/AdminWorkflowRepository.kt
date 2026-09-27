@@ -837,7 +837,7 @@ class AdminWorkflowRepository(
             AdminResourceType.PHOTO -> "photos" to "id"
             AdminResourceType.CONCEPT_FOLDER -> "concept_folders" to "id"
             AdminResourceType.DETAIL_FOLDER -> "detail_folders" to "id"
-            AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT -> "photo_category_assignments" to "photo_id"
+            AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT -> "detail_folder_assignments" to "photo_id"
             AdminResourceType.PHOTO_RATING -> "photo_ratings" to "photo_id"
             AdminResourceType.SELECTION -> "photo_selections" to "id"
             AdminResourceType.COLLABORATION -> "collab_sessions" to "id"
@@ -1616,7 +1616,7 @@ class AdminWorkflowRepository(
                       SELECT 1 FROM concept_folders shared_concept
                       JOIN detail_folders shared_detail ON shared_detail.concept_folder_id = shared_concept.id
                         AND shared_detail.deleted_at IS NULL
-                      JOIN photo_category_assignments shared_assignment ON shared_assignment.detail_folder_id = shared_detail.id
+                      JOIN detail_folder_assignments shared_assignment ON shared_assignment.detail_folder_id = shared_detail.id
                       WHERE shared_concept.id = shared_session.concept_folder_id
                         AND shared_concept.deleted_at IS NULL
                         AND shared_assignment.photo_id = shared_photo.id

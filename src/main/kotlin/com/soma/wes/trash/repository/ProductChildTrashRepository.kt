@@ -41,7 +41,7 @@ class ProductChildTrashRepository(
           AND (
               EXISTS (
                   SELECT 1 FROM detail_folders d
-                  JOIN photo_category_assignments a ON a.detail_folder_id = d.id
+                  JOIN detail_folder_assignments a ON a.detail_folder_id = d.id
                   WHERE d.concept_folder_id = s.concept_folder_id AND d.deleted_at IS NULL
                     AND a.photo_id = p.id
               ) OR (s.concept_folder_id IS NULL AND EXISTS (

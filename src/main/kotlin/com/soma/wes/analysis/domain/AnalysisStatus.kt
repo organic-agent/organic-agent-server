@@ -21,7 +21,7 @@ enum class AnalysisStatus {
         get() = this == ANALYZING || this == CATEGORIZING
 
     companion object {
-        /** 갤러리당 하나만 허용되는 상태들. `uk_ai_analysis_jobs_active` 부분 유니크 인덱스와 같은 집합이다. */
+        /** 갤러리당 하나만 허용되는 상태들. `uk_analysis_jobs_active` 부분 유니크 인덱스와 같은 집합이다. */
         val ACTIVE: Set<AnalysisStatus> = setOf(ANALYZING, CATEGORIZING)
     }
 }

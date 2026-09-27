@@ -36,7 +36,7 @@ interface CollabSessionPhotoRepository : JpaRepository<CollabSessionPhoto, Long>
             )) OR (s.concept_folder_id IS NOT NULL AND EXISTS (
                 SELECT 1 FROM concept_folders c
                 JOIN detail_folders d ON d.concept_folder_id = c.id AND d.deleted_at IS NULL
-                JOIN photo_category_assignments a ON a.detail_folder_id = d.id
+                JOIN detail_folder_assignments a ON a.detail_folder_id = d.id
                 WHERE c.id = s.concept_folder_id AND c.gallery_id = s.gallery_id
                   AND c.deleted_at IS NULL AND a.photo_id = p.id
             ))

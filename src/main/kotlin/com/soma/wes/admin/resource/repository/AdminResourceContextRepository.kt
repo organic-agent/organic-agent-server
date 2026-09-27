@@ -38,7 +38,7 @@ class AdminResourceContextRepository(
         }
         AdminResourceType.PHOTO -> linkedSetOf<ResourceReference>().apply {
             addAll(references(AdminResourceType.GALLERY, "SELECT gallery_id AS id FROM photos WHERE id = :id", id))
-            addAll(references(AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT, "SELECT photo_id AS id FROM photo_category_assignments WHERE photo_id = :id", id))
+            addAll(references(AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT, "SELECT photo_id AS id FROM detail_folder_assignments WHERE photo_id = :id", id))
             addAll(references(AdminResourceType.PHOTO_RATING, "SELECT photo_id AS id FROM photo_ratings WHERE photo_id = :id", id))
         }
         AdminResourceType.CONCEPT_FOLDER -> linkedSetOf<ResourceReference>().apply {
@@ -48,13 +48,13 @@ class AdminResourceContextRepository(
         }
         AdminResourceType.DETAIL_FOLDER -> linkedSetOf<ResourceReference>().apply {
             addAll(references(AdminResourceType.CONCEPT_FOLDER, "SELECT concept_folder_id AS id FROM detail_folders WHERE id = :id", id))
-            addAll(references(AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT, "SELECT photo_id AS id FROM photo_category_assignments WHERE detail_folder_id = :id", id))
-            addAll(references(AdminResourceType.PHOTO, "SELECT photo_id AS id FROM photo_category_assignments WHERE detail_folder_id = :id", id))
+            addAll(references(AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT, "SELECT photo_id AS id FROM detail_folder_assignments WHERE detail_folder_id = :id", id))
+            addAll(references(AdminResourceType.PHOTO, "SELECT photo_id AS id FROM detail_folder_assignments WHERE detail_folder_id = :id", id))
         }
         AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT -> linkedSetOf<ResourceReference>().apply {
             add(ResourceReference(AdminResourceType.PHOTO, id))
-            addAll(references(AdminResourceType.DETAIL_FOLDER, "SELECT detail_folder_id AS id FROM photo_category_assignments WHERE photo_id = :id", id))
-            addAll(references(AdminResourceType.USER, "SELECT assigned_by_user_id AS id FROM photo_category_assignments WHERE photo_id = :id AND assigned_by_user_id IS NOT NULL", id))
+            addAll(references(AdminResourceType.DETAIL_FOLDER, "SELECT detail_folder_id AS id FROM detail_folder_assignments WHERE photo_id = :id", id))
+            addAll(references(AdminResourceType.USER, "SELECT assigned_by_user_id AS id FROM detail_folder_assignments WHERE photo_id = :id AND assigned_by_user_id IS NOT NULL", id))
         }
         AdminResourceType.PHOTO_RATING -> linkedSetOf<ResourceReference>().apply {
             add(ResourceReference(AdminResourceType.PHOTO, id))
@@ -138,7 +138,7 @@ class AdminResourceContextRepository(
                     (SELECT COUNT(*) FROM photos WHERE gallery_id = :id) AS photos,
                     (SELECT COUNT(*) FROM concept_folders WHERE gallery_id = :id AND deleted_at IS NULL) AS concept_folders,
                     (SELECT COUNT(*) FROM detail_folders d JOIN concept_folders c ON c.id = d.concept_folder_id WHERE c.gallery_id = :id AND d.deleted_at IS NULL AND c.deleted_at IS NULL) AS detail_folders,
-                    (SELECT COUNT(*) FROM photo_category_assignments a JOIN detail_folders d ON d.id = a.detail_folder_id JOIN concept_folders c ON c.id = d.concept_folder_id WHERE c.gallery_id = :id) AS category_assignments,
+                    (SELECT COUNT(*) FROM detail_folder_assignments a JOIN detail_folders d ON d.id = a.detail_folder_id JOIN concept_folders c ON c.id = d.concept_folder_id WHERE c.gallery_id = :id) AS category_assignments,
                     (SELECT COUNT(*) FROM photo_ratings r JOIN photos p ON p.id = r.photo_id WHERE p.gallery_id = :id) AS ratings,
                     (SELECT COUNT(*) FROM photo_selection_items i JOIN photo_selections s ON s.id = i.selection_id WHERE s.gallery_id = :id) AS selected_photos,
                     (SELECT CASE WHEN revoked_at IS NOT NULL THEN 'REVOKED'
@@ -176,8 +176,8 @@ class AdminResourceContextRepository(
                        EXISTS (SELECT 1 FROM photo_analysis a WHERE a.photo_id = photos.id AND a.embedding IS NOT NULL) AS analyzed,
                        (SELECT COUNT(*) FROM photo_selection_items WHERE photo_id = :id) AS selection_references,
                        (SELECT COUNT(*) FROM retouch_photos WHERE photo_id = :id) AS retouch_references,
-                       (SELECT detail_folder_id FROM photo_category_assignments WHERE photo_id = :id) AS detail_folder_id,
-                       (SELECT assigned_source FROM photo_category_assignments WHERE photo_id = :id) AS category_source,
+                       (SELECT detail_folder_id FROM detail_folder_assignments WHERE photo_id = :id) AS detail_folder_id,
+                       (SELECT assigned_source FROM detail_folder_assignments WHERE photo_id = :id) AS category_source,
                        (SELECT score FROM photo_ratings WHERE photo_id = :id) AS rating_score,
                        (SELECT rated_by FROM photo_ratings WHERE photo_id = :id) AS rated_by_user_id
                 FROM photos WHERE id = :id
@@ -201,7 +201,7 @@ class AdminResourceContextRepository(
             """
                 SELECT
                     (SELECT COUNT(*) FROM detail_folders WHERE concept_folder_id = :id AND deleted_at IS NULL) AS detail_folders,
-                    (SELECT COUNT(*) FROM photo_category_assignments a JOIN detail_folders d ON d.id = a.detail_folder_id WHERE d.concept_folder_id = :id) AS assigned_photos,
+                    (SELECT COUNT(*) FROM detail_folder_assignments a JOIN detail_folders d ON d.id = a.detail_folder_id WHERE d.concept_folder_id = :id) AS assigned_photos,
                     (SELECT COUNT(*) FROM collab_sessions WHERE concept_folder_id = :id AND deleted_at IS NULL) AS collaboration_sessions
             """.trimIndent(), id,
         ) { rs -> linkedMapOf(
@@ -210,13 +210,13 @@ class AdminResourceContextRepository(
             "collaborationSessions" to rs.getLong("collaboration_sessions"),
         ) }
         AdminResourceType.DETAIL_FOLDER -> singleFacts(
-            "SELECT COUNT(*) AS assigned_photos FROM photo_category_assignments WHERE detail_folder_id = :id",
+            "SELECT COUNT(*) AS assigned_photos FROM detail_folder_assignments WHERE detail_folder_id = :id",
             id,
         ) { rs -> linkedMapOf("assignedPhotos" to rs.getLong("assigned_photos")) }
         AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT -> singleFacts(
             """
                 SELECT p.gallery_id, c.id AS concept_folder_id
-                FROM photo_category_assignments a
+                FROM detail_folder_assignments a
                 JOIN photos p ON p.id = a.photo_id
                 JOIN detail_folders d ON d.id = a.detail_folder_id
                 JOIN concept_folders c ON c.id = d.concept_folder_id
@@ -570,7 +570,7 @@ class AdminResourceContextRepository(
                 """
                     SELECT c.id, c.name, c.sort_order, c.created_source, c.version, c.deleted_at,
                            (SELECT COUNT(*) FROM detail_folders d WHERE d.concept_folder_id = c.id AND d.deleted_at IS NULL) AS detail_count,
-                           (SELECT COUNT(*) FROM photo_category_assignments a JOIN detail_folders d ON d.id = a.detail_folder_id WHERE d.concept_folder_id = c.id) AS photo_count,
+                           (SELECT COUNT(*) FROM detail_folder_assignments a JOIN detail_folders d ON d.id = a.detail_folder_id WHERE d.concept_folder_id = c.id) AS photo_count,
                            (SELECT id FROM collab_sessions s WHERE s.concept_folder_id = c.id AND s.deleted_at IS NULL) AS collaboration_id
                     FROM concept_folders c WHERE c.gallery_id = :id
                     ORDER BY c.sort_order, c.id LIMIT 100
@@ -591,7 +591,7 @@ class AdminResourceContextRepository(
                 """
                     SELECT d.id, d.concept_folder_id, d.name, d.sort_order, d.created_source,
                            d.version, d.deleted_at,
-                           (SELECT COUNT(*) FROM photo_category_assignments a WHERE a.detail_folder_id = d.id) AS photo_count
+                           (SELECT COUNT(*) FROM detail_folder_assignments a WHERE a.detail_folder_id = d.id) AS photo_count
                     FROM detail_folders d
                     JOIN concept_folders c ON c.id = d.concept_folder_id
                     WHERE c.gallery_id = :id
@@ -612,7 +612,7 @@ class AdminResourceContextRepository(
                 """
                     SELECT a.photo_id, a.detail_folder_id, d.concept_folder_id, p.original_file_name,
                            a.assigned_by_user_id, a.assigned_source, a.confidence, a.assigned_at, a.version
-                    FROM photo_category_assignments a
+                    FROM detail_folder_assignments a
                     JOIN photos p ON p.id = a.photo_id
                     JOIN detail_folders d ON d.id = a.detail_folder_id
                     JOIN concept_folders c ON c.id = d.concept_folder_id
@@ -716,7 +716,7 @@ class AdminResourceContextRepository(
                     SELECT a.photo_id, a.detail_folder_id, d.concept_folder_id,
                            a.assigned_by_user_id, a.assigned_source, a.confidence,
                            a.assigned_at, a.version
-                    FROM photo_category_assignments a
+                    FROM detail_folder_assignments a
                     JOIN detail_folders d ON d.id = a.detail_folder_id
                     WHERE a.photo_id = :id
                 """.trimIndent(),
@@ -846,7 +846,7 @@ class AdminResourceContextRepository(
                     SELECT d.id, d.name, d.sort_order, d.created_source, d.version, d.deleted_at,
                            COUNT(a.photo_id) AS photo_count
                     FROM detail_folders d
-                    LEFT JOIN photo_category_assignments a ON a.detail_folder_id = d.id
+                    LEFT JOIN detail_folder_assignments a ON a.detail_folder_id = d.id
                     WHERE d.concept_folder_id = :id
                     GROUP BY d.id ORDER BY d.sort_order, d.id
                 """.trimIndent(),
@@ -1086,7 +1086,7 @@ class AdminResourceContextRepository(
         """
             SELECT a.photo_id, a.detail_folder_id, d.concept_folder_id, p.original_file_name,
                    a.assigned_by_user_id, a.assigned_source, a.confidence, a.assigned_at, a.version
-            FROM photo_category_assignments a
+            FROM detail_folder_assignments a
             JOIN detail_folders d ON d.id = a.detail_folder_id
             JOIN photos p ON p.id = a.photo_id
             $predicate
@@ -1109,7 +1109,7 @@ class AdminResourceContextRepository(
         SELECT a.photo_id, a.assigned_at AS created_at
         FROM collab_sessions s
         JOIN detail_folders d ON d.concept_folder_id = s.concept_folder_id AND d.deleted_at IS NULL
-        JOIN photo_category_assignments a ON a.detail_folder_id = d.id
+        JOIN detail_folder_assignments a ON a.detail_folder_id = d.id
         WHERE s.id = :id
         UNION ALL
         SELECT membership.photo_id, membership.created_at

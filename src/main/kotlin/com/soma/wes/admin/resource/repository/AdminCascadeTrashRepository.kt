@@ -113,7 +113,7 @@ class AdminCascadeTrashRepository(
                 SELECT a.photo_id AS id
                 FROM collab_sessions s
                 JOIN detail_folders d ON d.concept_folder_id = s.concept_folder_id AND d.deleted_at IS NULL
-                JOIN photo_category_assignments a ON a.detail_folder_id = d.id
+                JOIN detail_folder_assignments a ON a.detail_folder_id = d.id
                 WHERE s.id = :rootId
                 UNION ALL
                 SELECT membership.photo_id AS id
@@ -136,12 +136,12 @@ class AdminCascadeTrashRepository(
                 """
                 SELECT a.photo_id AS id
                 FROM detail_folders d
-                JOIN photo_category_assignments a ON a.detail_folder_id = d.id
+                JOIN detail_folder_assignments a ON a.detail_folder_id = d.id
                 WHERE d.concept_folder_id = :rootId ORDER BY a.photo_id
                 """.trimIndent(),
             ).param("rootId", rootId).query { rs, _ -> rs.getLong("id") }.list()
             AdminResourceType.DETAIL_FOLDER -> relatedPhotoIds(
-                "photo_category_assignments",
+                "detail_folder_assignments",
                 "detail_folder_id",
                 rootId,
             )
@@ -338,7 +338,7 @@ class AdminCascadeTrashRepository(
                               WHERE s.id = e.resource_id AND (
                                   EXISTS (
                                       SELECT 1 FROM detail_folders d
-                                      JOIN photo_category_assignments a ON a.detail_folder_id = d.id
+                                      JOIN detail_folder_assignments a ON a.detail_folder_id = d.id
                                       WHERE d.concept_folder_id = s.concept_folder_id AND a.photo_id = claim.resource_id
                                   ) OR (s.concept_folder_id IS NULL AND EXISTS (
                                       SELECT 1 FROM collab_session_photos membership
@@ -354,13 +354,13 @@ class AdminCascadeTrashRepository(
                           OR (e.resource_type = 'CONCEPT_FOLDER' AND EXISTS (
                               SELECT 1
                               FROM detail_folders d
-                              JOIN photo_category_assignments a ON a.detail_folder_id = d.id
+                              JOIN detail_folder_assignments a ON a.detail_folder_id = d.id
                               WHERE d.concept_folder_id = e.resource_id
                                 AND a.photo_id = claim.resource_id
                           ))
                           OR (e.resource_type = 'DETAIL_FOLDER' AND EXISTS (
                               SELECT 1
-                              FROM photo_category_assignments a
+                              FROM detail_folder_assignments a
                               WHERE a.detail_folder_id = e.resource_id
                                 AND a.photo_id = claim.resource_id
                           ))
@@ -382,13 +382,13 @@ class AdminCascadeTrashRepository(
                               OR (b.root_type = 'CONCEPT_FOLDER' AND EXISTS (
                                   SELECT 1
                                   FROM detail_folders d
-                                  JOIN photo_category_assignments a ON a.detail_folder_id = d.id
+                                  JOIN detail_folder_assignments a ON a.detail_folder_id = d.id
                                   WHERE d.concept_folder_id = b.root_id
                                     AND a.photo_id = claim.resource_id
                               ))
                               OR (b.root_type = 'DETAIL_FOLDER' AND EXISTS (
                                   SELECT 1
-                                  FROM photo_category_assignments a
+                                  FROM detail_folder_assignments a
                                   WHERE a.detail_folder_id = b.root_id
                                     AND a.photo_id = claim.resource_id
                               ))

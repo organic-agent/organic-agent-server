@@ -28,21 +28,21 @@ class RecommendationFixture(
             """
             UPDATE photo_analysis
             SET embed_group_id = ?, subjects = ?, technical_pct = ?, aesthetic_pct = ?,
-                cluster_id = ?, cluster_rank = ?, sub_scores = ?::jsonb,
-                model_version = 'test-v1', analyzed_at = now(), updated_at = now()
+                burst_id = ?, burst_rank = ?, sub_scores = ?::jsonb,
+                pipeline_version = 'test-v1', analyzed_at = now(), updated_at = now()
             WHERE photo_id = ?
             """.trimIndent(),
             embedGroupId, subjects, technicalPct, aestheticPct, burstId, burstRank, subScores, photoId,
         )
     }
 
-    /** SCORE 잡만 끝난 상태 — `model_version`은 있지만 CATEGORIZE가 채우는 백분위·그룹은 아직 비어 있다. */
+    /** SCORE 잡만 끝난 상태 — `pipeline_version`은 있지만 CATEGORIZE가 채우는 백분위·그룹은 아직 비어 있다. */
     fun 점수만(photoId: Long, subjects: String = "couple") {
         jdbcTemplate.update(
             """
             UPDATE photo_analysis
             SET subjects = ?, sub_scores = '{"sharpness": 120.0}'::jsonb,
-                model_version = 'test-v1', analyzed_at = now(), updated_at = now()
+                pipeline_version = 'test-v1', analyzed_at = now(), updated_at = now()
             WHERE photo_id = ?
             """.trimIndent(),
             subjects, photoId,
@@ -58,7 +58,7 @@ class RecommendationFixture(
     fun 분석_잡(galleryId: Long, status: String = "DONE"): Long =
         jdbcTemplate.queryForObject(
             """
-            INSERT INTO ai_analysis_jobs (gallery_id, status, finished_at, created_at, updated_at)
+            INSERT INTO analysis_jobs (gallery_id, status, finished_at, created_at, updated_at)
             VALUES (?, ?, CASE WHEN ? IN ('DONE', 'FAILED') THEN now() END, now(), now())
             RETURNING id
             """.trimIndent(),
@@ -113,8 +113,8 @@ class RecommendationFixture(
     ): Long =
         jdbcTemplate.queryForObject(
             """
-            INSERT INTO ai_concept_assignments
-                (job_id, gallery_id, embed_group_id, parent_name, concept_name, confidence, assigned_by,
+            INSERT INTO concept_assignments
+                (job_id, gallery_id, embed_group_id, concept_name, detail_name, confidence, assigned_by,
                  needs_review, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, 0.9, 'vlm', ?, now(), now())
             RETURNING id

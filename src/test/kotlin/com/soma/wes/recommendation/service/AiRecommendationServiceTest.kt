@@ -300,7 +300,7 @@ class AiRecommendationServiceTest @Autowired constructor(
             val selectionId = selectionFixture.셀렉(fixture.galleryId)
             recommendationFixture.추천(selectionId, set.photoIds[0], rank = 1, folderId = set.folderId)
             recommendationFixture.추천(selectionId, set.photoIds[1], rank = 2, folderId = set.folderId)
-            jdbcTemplate.update("DELETE FROM photo_category_assignments WHERE photo_id = ?", set.photoIds[1])
+            jdbcTemplate.update("DELETE FROM detail_folder_assignments WHERE photo_id = ?", set.photoIds[1])
 
             // when
             val inFolder = aiRecommendationService.list(fixture.galleryId, fixture.member.id!!, folderId = set.folderId)

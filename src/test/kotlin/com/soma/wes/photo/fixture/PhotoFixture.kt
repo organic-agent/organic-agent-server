@@ -40,7 +40,7 @@ class PhotoFixture(
         jdbcTemplate.update(
             """
             UPDATE photo_analysis
-            SET clip_embedding = embedding, subjects = 'couple', model_version = 'score-test', analyzed_at = now(), updated_at = now()
+            SET clip_embedding = embedding, subjects = 'couple', pipeline_version = 'score-test', analyzed_at = now(), updated_at = now()
             WHERE photo_id = ? AND embedding IS NOT NULL
             """.trimIndent(),
             photoId,
@@ -52,7 +52,7 @@ class PhotoFixture(
         jdbcTemplate.update(
             """
             UPDATE photo_analysis
-            SET technical_pct = 80.0, aesthetic_pct = 70.0, cluster_id = 1, cluster_rank = 0, embed_group_id = ?, updated_at = now()
+            SET technical_pct = 80.0, aesthetic_pct = 70.0, burst_id = 1, burst_rank = 0, embed_group_id = ?, updated_at = now()
             WHERE photo_id = ? AND clip_embedding IS NOT NULL
             """.trimIndent(),
             embedGroupId,

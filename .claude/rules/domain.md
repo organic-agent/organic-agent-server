@@ -33,7 +33,7 @@ paths:
 
 ## 불변식은 DB에도
 
-- DB가 지킬 수 있는 불변식은 DB에도 새긴다: UK(`photo_category_assignments(photo_id)`,
+- DB가 지킬 수 있는 불변식은 DB에도 새긴다: UK(`detail_folder_assignments(photo_id)`,
   `photo_ratings(photo_id)`), CHECK(`score BETWEEN 1 AND 5`), FK cascade. 애플리케이션 검증은
   좋은 에러 메시지를 위한 것이고, 최종 안전망은 제약이다.
 - UK를 위해 필요한 역정규화는 허용하되 근거를 KDoc으로 남긴다

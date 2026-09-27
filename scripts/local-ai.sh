@@ -3,7 +3,7 @@
 #
 # 정식 경로는 웹 버튼이다 — 로컬 wes(local 프로필)의 analysis 도메인이 업로드된 사진을 50장씩 embedder.sh 에 배정하고,
 # 점수가 다 차면 categorize.sh 를 부른 뒤 폴더를 만든다. 이 스크립트는 그 경로 없이 갤러리 하나를 CLI 로 끝까지 밀어 보는
-# 지름길이라 잡이 없고, 따라서 배정(ai_concept_assignments)·폴더는 저장되지 않는다. 폴더 세트가 필요하면 웹 버튼을 쓴다.
+# 지름길이라 잡이 없고, 따라서 배정(concept_assignments)·폴더는 저장되지 않는다. 폴더 세트가 필요하면 웹 버튼을 쓴다.
 # 재계산이 필요하면 관리자 재처리(분석 리셋)로 photo_analysis 행을 지운 뒤 돌린다 — --force 는 없다.
 #
 #   scripts/local-ai.sh <galleryId> [--skip-embed] [--skip-analyze]
@@ -36,4 +36,4 @@ fi
 "$LAMBDA/score.sh" --gallery-id "$GALLERY_ID"
 "$LAMBDA/categorize.sh" --gallery-id "$GALLERY_ID"
 
-echo "끝. 확인: psql -h \${DB_HOST:-localhost} -p \${DB_PORT:-5432} -U \${DB_USER:-wes} \${DB_NAME:-wes} -c \"SELECT count(*) FILTER (WHERE embedding IS NOT NULL) AS embedded, count(model_version) AS scored, count(embed_group_id) AS categorized FROM photo_analysis a JOIN photos p ON p.id = a.photo_id WHERE p.gallery_id = $GALLERY_ID\""
+echo "끝. 확인: psql -h \${DB_HOST:-localhost} -p \${DB_PORT:-5432} -U \${DB_USER:-wes} \${DB_NAME:-wes} -c \"SELECT count(*) FILTER (WHERE embedding IS NOT NULL) AS embedded, count(pipeline_version) AS scored, count(embed_group_id) AS categorized FROM photo_analysis a JOIN photos p ON p.id = a.photo_id WHERE p.gallery_id = $GALLERY_ID\""

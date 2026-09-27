@@ -185,7 +185,7 @@ class AnalysisOrchestratorTest @Autowired constructor(
             // 요청의 afterCommit 걸음이 먼저 넘기지 않도록 실행기를 한 번 실패시켜 잡을 ANALYZING 에 남겨 둔다
             stageInvoker.failNext = true
             val jobId = request()
-            jdbcTemplate.update("UPDATE ai_analysis_jobs SET status = 'ANALYZING', attempts = 0, dispatched_at = NULL WHERE id = ?", jobId)
+            jdbcTemplate.update("UPDATE analysis_jobs SET status = 'ANALYZING', attempts = 0, dispatched_at = NULL WHERE id = ?", jobId)
 
             // when — 두 스레드가 같은 걸음을 동시에
             val barrier = CyclicBarrier(2)
@@ -279,7 +279,7 @@ class AnalysisOrchestratorTest @Autowired constructor(
             val jobId = request()
 
             // when
-            jdbcTemplate.update("UPDATE ai_analysis_jobs SET error = 'bedrock timeout', updated_at = now() WHERE id = ?", jobId)
+            jdbcTemplate.update("UPDATE analysis_jobs SET error = 'bedrock timeout', updated_at = now() WHERE id = ?", jobId)
             orchestrator.sweep()
 
             // then
@@ -345,7 +345,7 @@ class AnalysisOrchestratorTest @Autowired constructor(
         }
 
         private fun expireDispatch(jobId: Long) {
-            jdbcTemplate.update("UPDATE ai_analysis_jobs SET dispatched_at = now() - interval '30 minutes' WHERE id = ?", jobId)
+            jdbcTemplate.update("UPDATE analysis_jobs SET dispatched_at = now() - interval '30 minutes' WHERE id = ?", jobId)
         }
     }
 }

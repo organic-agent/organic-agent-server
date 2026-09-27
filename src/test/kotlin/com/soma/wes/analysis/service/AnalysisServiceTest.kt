@@ -193,7 +193,7 @@ class AnalysisServiceTest @Autowired constructor(
             photoFixture.업로드된_사진(fixture.galleryId, count = 1)
             val job = analysisService.request(fixture.galleryId, fixture.photographer.id!!)
             jdbcTemplate.update(
-                "UPDATE ai_analysis_jobs SET status = 'FAILED', finished_at = now(), error = ? WHERE id = ?",
+                "UPDATE analysis_jobs SET status = 'FAILED', finished_at = now(), error = ? WHERE id = ?",
                 "bedrock timeout",
                 job.jobId,
             )
@@ -220,6 +220,6 @@ class AnalysisServiceTest @Autowired constructor(
     }
 
     private fun finish(jobId: Long) {
-        jdbcTemplate.update("UPDATE ai_analysis_jobs SET status = 'DONE', finished_at = now() WHERE id = ?", jobId)
+        jdbcTemplate.update("UPDATE analysis_jobs SET status = 'DONE', finished_at = now() WHERE id = ?", jobId)
     }
 }

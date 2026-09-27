@@ -379,7 +379,7 @@ class AiSelectionJobRunner(
                     "prior_z" to round3(combined.priorZ[i]),
                     "balance_z" to round3(combined.balanceZ[i]), "affinity_z" to round3(combined.affinityZ[i]),
                     "technical_pct" to round1(row.technicalPct), "aesthetic_pct" to round1(row.aestheticPct),
-                    "cluster_id" to row.burstId,
+                    "burst_id" to row.burstId,   // [GLOSSARY-2 2026-09-27] 근거 키 cluster_id → burst_id (V23이 기존 행도 옮긴다)
                     "folder" to "${folder.conceptName}›${folder.name}", "folder_size" to folder.photoIds.size,
                     "folder_rank" to pick.folderRank, "folder_quota" to pick.quota,
                     "alternatives" to alternatives, "primary_reason" to primary, "facts" to facts,
@@ -578,7 +578,7 @@ class AiSelectionJobRunner(
         private fun seconds(sinceNanos: Long) = round(Duration.ofNanos(System.nanoTime() - sinceNanos).toMillis() / 10.0) / 100
     }
 
-    // [GLOSSARY-1 2026-09-27] parentName → conceptName (용어집: 1층 이름은 concept_name, 층 뜻의 parent는 금지어). jsonb 키 "parent"는 용어 2단계에서 바꾼다.
+    // [GLOSSARY-1 2026-09-27] parentName → conceptName (용어집: 1층 이름은 concept_name, 층 뜻의 parent는 금지어). 추천 사유 재료의 키 "parent"는 LLM 입력이라 용어 3단계에서 바꾼다.
     private class VirtualFolder(val folderId: Long?, val conceptName: String, val name: String, val photoIds: List<Long>)
 
     private class World(

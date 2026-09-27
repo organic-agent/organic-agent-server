@@ -344,7 +344,7 @@ class TrashRepository(
                 ) OR EXISTS (
                     SELECT 1
                     FROM detail_folders d
-                    JOIN photo_category_assignments a ON a.detail_folder_id = d.id
+                    JOIN detail_folder_assignments a ON a.detail_folder_id = d.id
                     WHERE d.concept_folder_id = s.concept_folder_id
                       AND a.photo_id IN (:photoIds)
                 ) OR (s.concept_folder_id IS NULL AND EXISTS (
@@ -788,7 +788,7 @@ class TrashRepository(
                           WHERE session.id = e.resource_id AND (
                               EXISTS (
                                   SELECT 1 FROM detail_folders detail
-                                  JOIN photo_category_assignments assignment ON assignment.detail_folder_id = detail.id
+                                  JOIN detail_folder_assignments assignment ON assignment.detail_folder_id = detail.id
                                   WHERE detail.concept_folder_id = session.concept_folder_id
                                     AND assignment.photo_id = $photoIdExpression
                               ) OR (session.concept_folder_id IS NULL AND EXISTS (

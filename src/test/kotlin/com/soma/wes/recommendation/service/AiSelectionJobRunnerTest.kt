@@ -206,7 +206,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
 
         @Test
         fun `SCORE만 끝나 백분위가 없는 사진은 재료에서 빠진다`() {
-            // given — 벡터·model_version은 있지만 CATEGORIZE 전이라 백분위가 없는 사진 하나
+            // given — 벡터·pipeline_version은 있지만 CATEGORIZE 전이라 백분위가 없는 사진 하나
             val w = world()
             val scoredOnly = photoFixture.업로드된_사진(fixture.galleryId, 1).single()
             photoFixture.벡터_적재(scoredOnly, FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also { it[99] = 1f })
@@ -342,7 +342,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 2, conceptName = "야외 정원·건물", detailName = "정원")
             val concepts = aiFolderMaterializeService.createFromAnalysis(fixture.galleryId, fixture.photographer.id!!)
             val gardenFolderId = concepts.flatMap { it.details }.first { it.name == "정원" }.id
-            jdbcTemplate.update("UPDATE photo_category_assignments SET detail_folder_id = ? WHERE photo_id = ?", gardenFolderId, beach)
+            jdbcTemplate.update("UPDATE detail_folder_assignments SET detail_folder_id = ? WHERE photo_id = ?", gardenFolderId, beach)
             (garden + beach).forEach { recommendationFixture.미리보기(it) }
             return garden to beach
         }
@@ -470,7 +470,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             val selectionId = selectionFixture.셀렉(fixture.galleryId)
             val moved = aiRecommendationRepository.findAllBySelectionId(selectionId)
                 .first { it.folderId == w.beachFolderId && it.rank == 1 }.photoId
-            jdbcTemplate.update("UPDATE photo_category_assignments SET detail_folder_id = ? WHERE photo_id = ?", w.gardenFolderId, moved)
+            jdbcTemplate.update("UPDATE detail_folder_assignments SET detail_folder_id = ? WHERE photo_id = ?", w.gardenFolderId, moved)
 
             // 옮긴 직후: 표시는 사진을 따라가 정원 화면에 보인다
             val gardenView = aiRecommendationService.list(fixture.galleryId, fixture.member.id!!, folderId = w.gardenFolderId)
@@ -685,7 +685,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             recommendationFixture.컨셉_배정(analysisJobId, fixture.galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
             aiFolderMaterializeService.createFromAnalysis(fixture.galleryId, fixture.photographer.id!!)
             val jobId = requestJob()
-            jdbcTemplate.update("UPDATE photo_analysis SET model_version = NULL")
+            jdbcTemplate.update("UPDATE photo_analysis SET pipeline_version = NULL")
 
             // when
             runner.run(jobId)

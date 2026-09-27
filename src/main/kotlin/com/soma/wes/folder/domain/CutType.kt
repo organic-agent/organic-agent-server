@@ -4,7 +4,7 @@ package com.soma.wes.folder.domain
  * 세부폴더의 컷 종류 — 인물 구성 기준(신부·신랑 단독 / 두 분 / 단체). 구도(바스트·풀샷)가 아니다.
  *
  * 폴더 사진들의 AI 분석 `subjects`를 다수결로 모아 과반일 때만 붙는다. 폴더 이름과는 독립된 표시 칩이다.
- * DB 컬럼(`detail_folders.category`)과 응답 필드(`category`)는 아직 옛 이름이다 — 웹과 함께 바꾼다.
+ * DB 컬럼은 `detail_folders.cut_type`이다. 응답 필드(`category`)는 아직 옛 이름이다 — 웹과 함께 바꾼다.
  */
 enum class CutType(val label: String) {
     BRIDE("신부"),
