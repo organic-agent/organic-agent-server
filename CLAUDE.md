@@ -90,3 +90,4 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `.claude/spec/` — 스킬·작업에서 필요할 때만 참조 (자동 로드 아님)
 
 - Git 작업 (커밋, 브랜치, PR) → `git-convention.md`
+- 이슈·PR 본문 쓰는 법 (한 줄 요약, 왜/무엇을/확인, 전→후 표, 자가 점검) → `issue-pr-writing.md`
