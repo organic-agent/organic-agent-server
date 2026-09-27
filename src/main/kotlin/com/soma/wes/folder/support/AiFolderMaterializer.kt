@@ -62,7 +62,7 @@ class AiFolderMaterializer(
         // 3. 계획대로 컨셉 폴더 → 세부 폴더 → 사진 배정 순으로 저장한다(뒤 행이 앞 행의 id를 FK로 쓴다).
         //    새 컨셉 폴더는 기존 폴더 맨 뒤에 붙고, 이번 잡 id를 달아 다음 호출의 1번 멱등 검사에 걸리게 한다.
         //    배정은 세부 폴더마다 JDBC 배치로 넣고, 응답은 방금 저장한 것으로 바로 만든다 — 수천 행을 다시 읽지 않는다
-        val firstSortOrder = conceptRepository.countByGalleryId(galleryId).toInt()
+        val firstSortOrder = conceptRepository.findNextSortOrderByGalleryId(galleryId)
         val assignedAt = ZonedDateTime.now(clock)
         val responses = plans.mapIndexed { conceptIndex, plan ->
             // 컨셉 폴더 저장

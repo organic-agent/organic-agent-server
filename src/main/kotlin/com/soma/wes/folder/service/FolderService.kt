@@ -41,7 +41,7 @@ class FolderService(
     @Transactional
     fun createConcept(galleryId: Long, userId: Long, request: CreateConceptFolderRequest): ConceptFolderResponse {
         galleryAccessPolicy.requireFolderEditor(galleryId, userId)
-        val sortOrder = conceptRepository.findAllByGalleryIdOrderBySortOrderAscIdAsc(galleryId).size
+        val sortOrder = conceptRepository.findNextSortOrderByGalleryId(galleryId)
         val concept = conceptRepository.save(
             ConceptFolder(galleryId, request.name.trim(), sortOrder, FolderSource.USER),
         )
@@ -58,7 +58,7 @@ class FolderService(
     ): DetailFolderResponse {
         galleryAccessPolicy.requireFolderEditor(galleryId, userId)
         val concept = requireConcept(galleryId, conceptId)
-        val sortOrder = detailRepository.findAllByConceptFolderIdOrderBySortOrderAscIdAsc(conceptId).size
+        val sortOrder = detailRepository.findNextSortOrderByConceptFolderId(conceptId)
         val detail = detailRepository.save(
             DetailFolder(galleryId, concept.requiredId, request.name.trim(), sortOrder, FolderSource.USER),
         )

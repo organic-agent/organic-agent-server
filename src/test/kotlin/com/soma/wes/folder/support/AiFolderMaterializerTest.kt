@@ -1,6 +1,7 @@
 package com.soma.wes.folder.support
 
 import com.soma.wes.folder.domain.FolderSource
+import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
 import com.soma.wes.folder.repository.DetailFolderAssignmentRepository
 import com.soma.wes.folder.service.FolderService
 import com.soma.wes.gallery.fixture.GalleryFixture
@@ -60,6 +61,29 @@ class AiFolderMaterializerTest @Autowired constructor(
                 .containsOnly(FolderSource.AI)
         }
         assertThat(created.flatMap { it.details }.map { it.galleryId }).containsOnly(fixture.galleryId)
+    }
+
+    /** 폴더를 지워도 남은 폴더의 sortOrder는 당겨지지 않는다 — 개수로 정렬 순서를 정하면 새 세트가 기존 폴더 사이에 끼었다. */
+    @Test
+    fun `앞쪽 폴더를 지운 뒤에도 새 세트는 기존 폴더 맨 뒤에 붙는다`() {
+        // given
+        val fixture = galleryFixture.멤버와_열린_갤러리()
+        val userId = fixture.photographer.requiredId
+        val (first, second, third, fourth) = listOf("A", "B", "C", "D").map { name ->
+            folderService.createConcept(fixture.galleryId, userId, CreateConceptFolderRequest(name))
+        }
+        folderService.deleteConcept(fixture.galleryId, first.id, userId)
+        folderService.deleteConcept(fixture.galleryId, second.id, userId)
+        analyzed(fixture.galleryId, count = 2, embedGroupId = 1)
+        val jobId = recommendationFixture.분석_잡(fixture.galleryId)
+        recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
+
+        // when
+        materializer.materialize(fixture.galleryId)
+
+        // then
+        assertThat(folderService.list(fixture.galleryId, userId).map { it.name })
+            .containsExactly(third.name, fourth.name, "야외 자연")
     }
 
     private fun analyzed(galleryId: Long, count: Int, embedGroupId: Int): List<Long> =
