@@ -64,7 +64,7 @@ class PhotoAnalysis(
     @Column(name = "embed_group_id")
     val embedGroupId: Int? = null
 
-    /** CLIP zero-shot 피사체(신부/신랑/두 분/단체). 세부 폴더 컷 종류([com.soma.wes.folder.domain.CutType])의 재료. */
+    /** CLIP zero-shot 피사체(신부/신랑/두 분/단체). 추천이 사진별로 읽는다. */
     @Column(name = "subjects", length = 20)
     val subjects: String? = null
 

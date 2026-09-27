@@ -1,7 +1,6 @@
 package com.soma.wes.folder.support
 
 import com.soma.wes.analysis.dto.ConceptAssignmentDto
-import com.soma.wes.folder.domain.CutType
 import com.soma.wes.folder.dto.ConceptFolderPlanDto
 import com.soma.wes.folder.dto.DetailFolderPlanDto
 import com.soma.wes.folder.dto.PhotoAnalysisGroupingDto
@@ -50,7 +49,6 @@ class AiFolderPlanner {
             val sorted = detailPhotos.sortedWith(PHOTO_ORDER)
             DetailFolderPlanDto(
                 name = detailName,
-                cutType = majorityCutType(sorted),
                 needsReview = sorted.any { photo ->
                     photo.embedGroupId?.let { assignmentByEmbedGroup[it] }?.needsReview ?: false
                 },
@@ -61,16 +59,5 @@ class AiFolderPlanner {
                 .thenByDescending { it.photoIds.size },
         )
         return ConceptFolderPlanDto(name = conceptName, details = detailPlans)
-    }
-
-    private fun majorityCutType(photos: List<PhotoAnalysisGroupingDto>): CutType? {
-        // {신부 = 5, 남편 = 1 두 분 =2} 과 같은 규격으로 생성
-        val counts = photos.mapNotNull { CutType.fromSubjects(it.subjects) }
-            .groupingBy { it }
-            .eachCount()
-        // 가장 많은 종류와 그 장수를 꺼낸다. 동점이면 먼저 나온 종류가 골라짐.
-        val (cutType, count) = counts.maxByOrNull { it.value } ?: return null
-        // 그 종류가 전체 사진 수의 절반을 넘을 때만 리턴
-        return cutType.takeIf { count * 2 > photos.size }
     }
 }

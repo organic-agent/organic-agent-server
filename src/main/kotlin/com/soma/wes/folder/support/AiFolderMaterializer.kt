@@ -84,7 +84,6 @@ class AiFolderMaterializer(
                         name = detailPlan.name,
                         sortOrder = detailIndex,
                         createdSource = FolderSource.AI,
-                        cutType = detailPlan.cutType,
                         needsReview = detailPlan.needsReview,
                     ),
                 )
