@@ -1,4 +1,4 @@
-package com.soma.wes.category.domain
+package com.soma.wes.folder.domain
 
 import com.soma.wes.global.BaseEntity
 import jakarta.persistence.Column
@@ -27,7 +27,7 @@ class PhotoFolderAssignment(
 
     @Enumerated(EnumType.STRING)
     @Column(name = "assigned_source", nullable = false, length = 20)
-    var assignedSource: CategorySource,
+    var assignedSource: FolderSource,
 
     @Column
     var confidence: Double? = null,
@@ -35,11 +35,15 @@ class PhotoFolderAssignment(
     @Column(name = "assigned_at", nullable = false)
     var assignedAt: ZonedDateTime,
 ) : BaseEntity() {
-    fun moveTo(detailFolderId: Long, userId: Long, assignedAt: ZonedDateTime) {
+    fun moveTo(
+        detailFolderId: Long,
+        userId: Long,
+        at: ZonedDateTime
+    ) {
         this.detailFolderId = detailFolderId
-        assignedByUserId = userId
-        assignedSource = CategorySource.USER
-        confidence = null
-        this.assignedAt = assignedAt
+        this.assignedByUserId = userId
+        this.assignedSource = FolderSource.USER
+        this.confidence = null
+        this.assignedAt = at
     }
 }

@@ -1,7 +1,7 @@
 package com.soma.wes.recommendation.service
 
 import com.soma.wes.activity.service.ActivityRecorder
-import com.soma.wes.category.support.AiCategoryFolderSetReader
+import com.soma.wes.folder.support.AiFolderSetReader
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.repository.PhotoRepository
@@ -41,7 +41,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 @Service
 class AiRecommendationService(
     private val galleryAccessPolicy: GalleryAccessPolicy,
-    private val aiFolderSetReader: AiCategoryFolderSetReader,
+    private val aiFolderSetReader: AiFolderSetReader,
     private val photoSelectionRepository: PhotoSelectionRepository,
     private val photoSelectionItemRepository: PhotoSelectionItemRepository,
     private val aiSelectionJobRepository: AiSelectionJobRepository,

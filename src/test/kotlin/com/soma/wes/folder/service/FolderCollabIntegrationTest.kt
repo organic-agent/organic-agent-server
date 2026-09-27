@@ -1,9 +1,9 @@
-package com.soma.wes.category.service
+package com.soma.wes.folder.service
 
-import com.soma.wes.category.dto.request.CreateConceptFolderRequest
-import com.soma.wes.category.dto.request.CreateDetailFolderRequest
-import com.soma.wes.category.dto.request.MoveCategoryPhotosRequest
-import com.soma.wes.category.repository.PhotoFolderAssignmentRepository
+import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
+import com.soma.wes.folder.dto.request.CreateDetailFolderRequest
+import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
+import com.soma.wes.folder.repository.PhotoFolderAssignmentRepository
 import com.soma.wes.collab.dto.request.EnterCollabRequest
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
 import com.soma.wes.collab.dto.request.WriteCollabCommentRequest
@@ -21,8 +21,8 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 
 @IntegrationTest
-class CategoryCollabIntegrationTest @Autowired constructor(
-    private val categoryService: CategoryService,
+class FolderCollabIntegrationTest @Autowired constructor(
+    private val folderService: FolderService,
     private val collabSessionService: CollabSessionService,
     private val collabGuestService: CollabGuestService,
     private val collabGuestQueryService: CollabGuestQueryService,
@@ -37,21 +37,21 @@ class CategoryCollabIntegrationTest @Autowired constructor(
     fun `한 컨셉은 한 링크를 재사용하고 현재 배정을 동적으로 보여준다`() {
         val fixture = galleryFixture.멤버와_열린_갤러리()
         val photoIds = photoFixture.업로드된_사진(fixture.galleryId, 2)
-        val concept = categoryService.createConcept(
+        val concept = folderService.createConcept(
             fixture.galleryId,
             fixture.photographer.requiredId,
             CreateConceptFolderRequest("본식"),
         )
-        val detail = categoryService.createDetail(
+        val detail = folderService.createDetail(
             fixture.galleryId,
             concept.id,
             fixture.photographer.requiredId,
             CreateDetailFolderRequest("메인"),
         )
-        categoryService.movePhotos(
+        folderService.movePhotos(
             fixture.galleryId,
             fixture.photographer.requiredId,
-            MoveCategoryPhotosRequest(photoIds, detail.id),
+            MoveFolderPhotosRequest(photoIds, detail.id),
         )
 
         val first = collabSessionService.open(
@@ -59,10 +59,10 @@ class CategoryCollabIntegrationTest @Autowired constructor(
             fixture.member.requiredId,
             OpenCollabSessionRequest(concept.id, "본식 의견"),
         )
-        categoryService.movePhotos(
+        folderService.movePhotos(
             fixture.galleryId,
             fixture.photographer.requiredId,
-            MoveCategoryPhotosRequest(listOf(photoIds.first()), null),
+            MoveFolderPhotosRequest(listOf(photoIds.first()), null),
         )
         val afterUnassign = collabGuestQueryService.listPhotos(first.collabUrl.substringAfterLast('/'), null, 0, 20)
         val reopened = collabSessionService.open(
@@ -81,38 +81,38 @@ class CategoryCollabIntegrationTest @Autowired constructor(
     fun `같은 컨셉 안의 이동은 반응을 보존하고 컨셉을 벗어나면 삭제한다`() {
         val fixture = galleryFixture.멤버와_열린_갤러리()
         val photoId = photoFixture.업로드된_사진(fixture.galleryId, 1).single()
-        val firstConcept = categoryService.createConcept(
+        val firstConcept = folderService.createConcept(
             fixture.galleryId,
             fixture.photographer.requiredId,
             CreateConceptFolderRequest("본식"),
         )
-        val firstDetail = categoryService.createDetail(
+        val firstDetail = folderService.createDetail(
             fixture.galleryId,
             firstConcept.id,
             fixture.photographer.requiredId,
             CreateDetailFolderRequest("원본"),
         )
-        val secondDetail = categoryService.createDetail(
+        val secondDetail = folderService.createDetail(
             fixture.galleryId,
             firstConcept.id,
             fixture.photographer.requiredId,
             CreateDetailFolderRequest("후보"),
         )
-        val otherConcept = categoryService.createConcept(
+        val otherConcept = folderService.createConcept(
             fixture.galleryId,
             fixture.photographer.requiredId,
             CreateConceptFolderRequest("피로연"),
         )
-        val otherDetail = categoryService.createDetail(
+        val otherDetail = folderService.createDetail(
             fixture.galleryId,
             otherConcept.id,
             fixture.photographer.requiredId,
             CreateDetailFolderRequest("메인"),
         )
-        categoryService.movePhotos(
+        folderService.movePhotos(
             fixture.galleryId,
             fixture.photographer.requiredId,
-            MoveCategoryPhotosRequest(listOf(photoId), firstDetail.id),
+            MoveFolderPhotosRequest(listOf(photoId), firstDetail.id),
         )
         val session = collabSessionService.open(
             fixture.galleryId,
@@ -124,18 +124,18 @@ class CategoryCollabIntegrationTest @Autowired constructor(
         collabGuestService.like(token, photoId, guest.guestToken)
         collabGuestService.writeComment(token, photoId, guest.guestToken, WriteCollabCommentRequest("좋아요"))
 
-        categoryService.movePhotos(
+        folderService.movePhotos(
             fixture.galleryId,
             fixture.photographer.requiredId,
-            MoveCategoryPhotosRequest(listOf(photoId), secondDetail.id),
+            MoveFolderPhotosRequest(listOf(photoId), secondDetail.id),
         )
         assertThat(likeRepository.count()).isEqualTo(1)
         assertThat(commentRepository.count()).isEqualTo(1)
 
-        categoryService.movePhotos(
+        folderService.movePhotos(
             fixture.galleryId,
             fixture.photographer.requiredId,
-            MoveCategoryPhotosRequest(listOf(photoId), otherDetail.id),
+            MoveFolderPhotosRequest(listOf(photoId), otherDetail.id),
         )
         assertThat(likeRepository.count()).isZero()
         assertThat(commentRepository.count()).isZero()

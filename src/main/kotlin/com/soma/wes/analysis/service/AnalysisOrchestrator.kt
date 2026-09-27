@@ -11,9 +11,9 @@ import com.soma.wes.analysis.repository.AiConceptAssignmentRepository
 import com.soma.wes.analysis.repository.AnalysisJobRepository
 import com.soma.wes.analysis.service.port.StageInvoker
 import com.soma.wes.analysis.support.AnalysisCompletionNotifier
-import com.soma.wes.category.exception.CategoryErrorCode
-import com.soma.wes.category.exception.CategoryException
-import com.soma.wes.category.service.AiCategoryFolderService
+import com.soma.wes.folder.exception.FolderErrorCode
+import com.soma.wes.folder.exception.FolderException
+import com.soma.wes.folder.service.AiFolderMaterializeService
 import com.soma.wes.global.exception.BusinessException
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.photo.repository.projection.GalleryAnalysisProgress
@@ -44,7 +44,8 @@ class AnalysisOrchestrator(
     private val stageInvoker: StageInvoker,
     private val embedDispatcher: EmbedDispatcher,
     private val scoreWorkerSupervisor: ScoreWorkerSupervisor,
-    private val aiCategoryFolderService: AiCategoryFolderService,
+    // [REFACTOR-RENAME 2026-09-27] AiFolderService → AiFolderMaterializeService (클래스 이름만 변경, 동작 동일)
+    private val aiFolderMaterializeService: AiFolderMaterializeService,
     private val completionNotifier: AnalysisCompletionNotifier,
     private val properties: AnalysisProperties,
     private val transactionTemplate: TransactionTemplate,
@@ -182,7 +183,7 @@ class AnalysisOrchestrator(
      */
     private fun materialize(action: OrchestratorActionDto.Materialize) {
         val outcome = try {
-            val folders = aiCategoryFolderService.materializeFromAnalysis(action.galleryId)
+            val folders = aiFolderMaterializeService.materializeFromAnalysis(action.galleryId)
             MaterializeOutcomeDto.Created(
                 folders = folders.size,
                 details = folders.sumOf { it.details.size },
@@ -190,7 +191,7 @@ class AnalysisOrchestrator(
             )
         } catch (e: BusinessException) {
             // 갤러리가 사라졌거나(GalleryException) 배정이 없는 등 규칙 위반은 다시 돌려도 같으므로 잡을 닫는다.
-            if (e is CategoryException && e.errorCode == CategoryErrorCode.NO_PHOTOS_TO_ORGANIZE) {
+            if (e is FolderException && e.errorCode == FolderErrorCode.NO_PHOTOS_TO_ORGANIZE) {
                 MaterializeOutcomeDto.NothingNew
             } else {
                 MaterializeOutcomeDto.Failed(e.errorCode.message)

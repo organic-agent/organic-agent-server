@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
 
 /**
- * 다른 도메인(category)이 컨셉 배정을 읽는 입구. repository를 직접 주입하는 대신 이 로더를 지난다.
+ * 다른 도메인(folder)이 컨셉 배정을 읽는 입구. repository를 직접 주입하는 대신 이 로더를 지난다.
  */
 @Component
 class AiConceptAssignmentLoader(

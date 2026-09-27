@@ -106,7 +106,7 @@ class PhotoAnalysis(
     val subScores: Map<String, Any?> = emptyMap()
 
     /** 숫자 세부 점수 하나. 없거나 숫자가 아니면 null — 배치 버전에 따라 키가 빠질 수 있다. */
-    fun subScore(key: String): Double? = (subScores[key] as? Number)?.toDouble()
+    fun subScore(key: SubScoreKey): Double? = (subScores[key.key] as? Number)?.toDouble()
 
     /**
      * 분석 완료 — 폴더·추천이 재료로 써도 되는 행인가. 배치가 SCORE(`model_version`)와 CATEGORIZE(백분위·그룹)

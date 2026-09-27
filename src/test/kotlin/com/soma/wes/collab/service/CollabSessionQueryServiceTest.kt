@@ -1,7 +1,7 @@
 package com.soma.wes.collab.service
 
-import com.soma.wes.category.repository.ConceptFolderRepository
-import com.soma.wes.category.repository.DetailFolderRepository
+import com.soma.wes.folder.repository.ConceptFolderRepository
+import com.soma.wes.folder.repository.DetailFolderRepository
 import com.soma.wes.collab.dto.request.EnterCollabRequest
 import com.soma.wes.collab.dto.request.WriteCollabCommentRequest
 import com.soma.wes.collab.exception.CollabErrorCode

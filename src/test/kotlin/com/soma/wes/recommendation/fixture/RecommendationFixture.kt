@@ -107,8 +107,8 @@ class RecommendationFixture(
         jobId: Long,
         galleryId: Long,
         embedGroupId: Int,
-        parentName: String,
         conceptName: String,
+        detailName: String,
         needsReview: Boolean = false,
     ): Long =
         jdbcTemplate.queryForObject(
@@ -120,6 +120,6 @@ class RecommendationFixture(
             RETURNING id
             """.trimIndent(),
             Long::class.java,
-            jobId, galleryId, embedGroupId, parentName, conceptName, needsReview,
+            jobId, galleryId, embedGroupId, conceptName, detailName, needsReview,
         )!!
 }

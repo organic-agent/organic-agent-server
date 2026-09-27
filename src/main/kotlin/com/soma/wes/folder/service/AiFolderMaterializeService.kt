@@ -5,6 +5,8 @@ import com.soma.wes.analysis.support.AiConceptAssignmentLoader
 import com.soma.wes.folder.domain.ConceptFolder
 import com.soma.wes.folder.domain.DetailFolder
 import com.soma.wes.folder.domain.FolderSource
+import com.soma.wes.folder.dto.GroupAssignmentDto
+import com.soma.wes.folder.dto.MemberPhotoDto
 import com.soma.wes.folder.dto.response.ConceptFolderResponse
 import com.soma.wes.folder.dto.response.DetailFolderResponse
 import com.soma.wes.folder.exception.FolderErrorCode
@@ -24,7 +26,7 @@ import java.time.ZonedDateTime
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
-// [REFACTOR-RENAME 2026-09-27] AiFolderService → AiFolderSetMaterializer (클래스 이름만 변경, 동작 동일)
+// [REFACTOR-RENAME 2026-09-27] AiFolderService → AiFolderMaterializeService (클래스 이름만 변경, 동작 동일)
 /**
  * 최신 AI 컨셉 배정을 최종 카테고리 ERD에 물질화한다.
  *
@@ -36,7 +38,7 @@ import org.springframework.transaction.annotation.Transactional
  * (분석 잡의 자동 물질화, 부부의 폴더 확정, 관리자 워크플로). 관리자 전용 경로는 없다.
  */
 @Service
-class AiFolderSetMaterializer(
+class AiFolderMaterializeService(
     private val galleryAccessPolicy: GalleryAccessPolicy,
     private val galleryRepository: GalleryRepository,
     private val conceptRepository: ConceptFolderRepository,
@@ -46,7 +48,6 @@ class AiFolderSetMaterializer(
     private val photoAnalysisRepository: PhotoAnalysisRepository,
     private val aiConceptAssignmentLoader: AiConceptAssignmentLoader,
     private val planner: AiFolderPlanner,
-    // [REFACTOR-A 2026-09-27] 멱등 경로(이미 있는 세트)의 응답 조립을 FolderViewAssembler로 옮겼다.
     private val viewAssembler: FolderViewAssembler,
     private val clock: Clock,
     private val activityRecorder: ActivityRecorder,
@@ -73,7 +74,6 @@ class AiFolderSetMaterializer(
             ?: throw FolderException(FolderErrorCode.ANALYSIS_NOT_COMPLETE)
         val existingSet = conceptRepository
             .findAllByGalleryIdAndAnalysisJobIdOrderBySortOrderAscIdAsc(galleryId, latest.jobId)
-        // [REFACTOR-A 2026-09-27] private responsesOf(...) → FolderViewAssembler.toResponses
         if (existingSet.isNotEmpty()) return viewAssembler.toResponses(existingSet)
 
         // 이미 폴더에 든 사진(사용자가 옮긴 것 포함)은 다시 배정하지 않는다 — 재물질화가 USER 배정을 건드리지 않는 이유가 이 한 줄이다.
@@ -84,7 +84,8 @@ class AiFolderSetMaterializer(
 
         val plans = planner.plan(
             assignments = latest.assignments.map {
-                AiFolderPlanner.GroupAssignment(
+                // [REFACTOR-PLANNER-DTO 2026-09-27] AiFolderPlanner.GroupAssignment → GroupAssignmentDto
+                GroupAssignmentDto(
                     embedGroupId = it.embedGroupId,
                     conceptName = it.conceptName,
                     detailName = it.detailName,
@@ -133,9 +134,10 @@ class AiFolderSetMaterializer(
      * 폴더 계획의 재료 — 분석 행이 있는 사진 전부를 화면 순서로. 벡터를 빼고 그룹·피사체·연사만 읽는다.
      * 분석이 안 끝난 사진(그룹 null)도 포함해 "기타"로 보낸다 — 예전 엔티티 읽기와 같은 범위다.
      */
-    private fun loadMembers(galleryId: Long): List<AiFolderPlanner.MemberPhoto> =
+    // [REFACTOR-PLANNER-DTO 2026-09-27] AiFolderPlanner.MemberPhoto → MemberPhotoDto
+    private fun loadMembers(galleryId: Long): List<MemberPhotoDto> =
         photoAnalysisRepository.findAllGroupingByGalleryIdOrderByDisplay(galleryId).map {
-            AiFolderPlanner.MemberPhoto(
+            MemberPhotoDto(
                 photoId = it.photoId,
                 embedGroupId = it.embedGroupId,
                 subjects = it.subjects,

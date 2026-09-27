@@ -1,14 +1,14 @@
-package com.soma.wes.category.controller
+package com.soma.wes.folder.controller
 
 import com.soma.wes.auth.domain.LoginUser
-import com.soma.wes.category.controller.docs.CategoryControllerDocs
-import com.soma.wes.category.dto.request.CreateConceptFolderRequest
-import com.soma.wes.category.dto.request.CreateDetailFolderRequest
-import com.soma.wes.category.dto.request.MoveCategoryPhotosRequest
-import com.soma.wes.category.dto.response.ConceptFolderResponse
-import com.soma.wes.category.dto.response.DetailFolderResponse
-import com.soma.wes.category.service.AiCategoryFolderService
-import com.soma.wes.category.service.CategoryService
+import com.soma.wes.folder.controller.docs.FolderControllerDocs
+import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
+import com.soma.wes.folder.dto.request.CreateDetailFolderRequest
+import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
+import com.soma.wes.folder.dto.response.ConceptFolderResponse
+import com.soma.wes.folder.dto.response.DetailFolderResponse
+import com.soma.wes.folder.service.AiFolderMaterializeService
+import com.soma.wes.folder.service.FolderService
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -23,10 +23,11 @@ import org.springframework.web.bind.annotation.RestController
 
 @RestController
 @RequestMapping("/api/v1/galleries/{galleryId}")
-class CategoryController(
-    private val categoryService: CategoryService,
-    private val aiCategoryFolderService: AiCategoryFolderService,
-) : CategoryControllerDocs {
+class FolderController(
+    private val folderService: FolderService,
+    // [REFACTOR-RENAME 2026-09-27] AiFolderService → AiFolderMaterializeService (클래스 이름만 변경, 동작 동일)
+    private val aiFolderMaterializeService: AiFolderMaterializeService,
+) : FolderControllerDocs {
 
     @PostMapping("/concept-folders")
     override fun createConcept(
@@ -35,7 +36,7 @@ class CategoryController(
         @Valid @RequestBody request: CreateConceptFolderRequest,
     ): ResponseEntity<ConceptFolderResponse> {
         return ResponseEntity.status(HttpStatus.CREATED)
-            .body(categoryService.createConcept(galleryId, loginUser.id, request))
+            .body(folderService.createConcept(galleryId, loginUser.id, request))
     }
 
     @GetMapping("/concept-folders")
@@ -43,7 +44,7 @@ class CategoryController(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
     ): ResponseEntity<List<ConceptFolderResponse>> {
-        return ResponseEntity.ok(categoryService.list(galleryId, loginUser.id))
+        return ResponseEntity.ok(folderService.list(galleryId, loginUser.id))
     }
 
     @PostMapping("/concept-folders/ai")
@@ -52,7 +53,7 @@ class CategoryController(
         @PathVariable galleryId: Long,
     ): ResponseEntity<List<ConceptFolderResponse>> {
         return ResponseEntity.status(HttpStatus.CREATED)
-            .body(aiCategoryFolderService.createFromAnalysis(galleryId, loginUser.id))
+            .body(aiFolderMaterializeService.createFromAnalysis(galleryId, loginUser.id))
     }
 
     @PostMapping("/concept-folders/{conceptId}/detail-folders")
@@ -63,16 +64,16 @@ class CategoryController(
         @Valid @RequestBody request: CreateDetailFolderRequest,
     ): ResponseEntity<DetailFolderResponse> {
         return ResponseEntity.status(HttpStatus.CREATED)
-            .body(categoryService.createDetail(galleryId, conceptId, loginUser.id, request))
+            .body(folderService.createDetail(galleryId, conceptId, loginUser.id, request))
     }
 
     @PostMapping("/category-assignments/move")
     override fun movePhotos(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
-        @Valid @RequestBody request: MoveCategoryPhotosRequest,
+        @Valid @RequestBody request: MoveFolderPhotosRequest,
     ): ResponseEntity<Unit> {
-        categoryService.movePhotos(galleryId, loginUser.id, request)
+        folderService.movePhotos(galleryId, loginUser.id, request)
         return ResponseEntity.noContent().build()
     }
 
@@ -83,7 +84,7 @@ class CategoryController(
         @PathVariable conceptId: Long,
         @PathVariable detailId: Long,
     ): ResponseEntity<Unit> {
-        categoryService.deleteDetail(galleryId, conceptId, detailId, loginUser.id)
+        folderService.deleteDetail(galleryId, conceptId, detailId, loginUser.id)
         return ResponseEntity.noContent().build()
     }
 
@@ -93,7 +94,7 @@ class CategoryController(
         @PathVariable galleryId: Long,
         @PathVariable conceptId: Long,
     ): ResponseEntity<Unit> {
-        categoryService.deleteConcept(galleryId, conceptId, loginUser.id)
+        folderService.deleteConcept(galleryId, conceptId, loginUser.id)
         return ResponseEntity.noContent().build()
     }
 }

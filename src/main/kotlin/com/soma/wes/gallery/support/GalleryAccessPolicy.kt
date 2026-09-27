@@ -50,7 +50,7 @@ class GalleryAccessPolicy(
      * 작업공간 관리자는 제출 이후에도 기존 관리 권한을 유지한다.
      */
     @Transactional
-    fun requireCategoryEditor(galleryId: Long, userId: Long): Gallery {
+    fun requireFolderEditor(galleryId: Long, userId: Long): Gallery {
         val gallery = galleryRepository.requireWithLockById(galleryId)
         gallery.requireWritable(ZonedDateTime.now(clock))
         if (isManager(gallery, userId) || isPersonalParticipant(gallery, userId)) {

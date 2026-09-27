@@ -1,12 +1,12 @@
-package com.soma.wes.category.service
+package com.soma.wes.folder.service
 
-import com.soma.wes.category.domain.CategorySource
-import com.soma.wes.category.dto.request.CreateConceptFolderRequest
-import com.soma.wes.category.dto.request.CreateDetailFolderRequest
-import com.soma.wes.category.dto.request.MoveCategoryPhotosRequest
-import com.soma.wes.category.exception.CategoryErrorCode
-import com.soma.wes.category.exception.CategoryException
-import com.soma.wes.category.repository.PhotoFolderAssignmentRepository
+import com.soma.wes.folder.domain.FolderSource
+import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
+import com.soma.wes.folder.dto.request.CreateDetailFolderRequest
+import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
+import com.soma.wes.folder.exception.FolderErrorCode
+import com.soma.wes.folder.exception.FolderException
+import com.soma.wes.folder.repository.PhotoFolderAssignmentRepository
 import com.soma.wes.gallery.domain.GalleryStatus
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
@@ -37,8 +37,8 @@ import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 
 @IntegrationTest
-class CategoryGuestEditingTest @Autowired constructor(
-    private val categoryService: CategoryService,
+class FolderGuestEditingTest @Autowired constructor(
+    private val folderService: FolderService,
     private val selectionService: PhotoSelectionService,
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
@@ -57,34 +57,34 @@ class CategoryGuestEditingTest @Autowired constructor(
             val fixture = galleryFixture.멤버와_열린_갤러리()
             val photoIds = photoFixture.업로드된_사진(fixture.galleryId, 2)
             val userId = fixture.member.requiredId
-            val first = categoryService.createConcept(fixture.galleryId, userId, CreateConceptFolderRequest("실내"))
-            val second = categoryService.createConcept(fixture.galleryId, userId, CreateConceptFolderRequest("야외"))
-            val firstDetail = categoryService.createDetail(
+            val first = folderService.createConcept(fixture.galleryId, userId, CreateConceptFolderRequest("실내"))
+            val second = folderService.createConcept(fixture.galleryId, userId, CreateConceptFolderRequest("야외"))
+            val firstDetail = folderService.createDetail(
                 fixture.galleryId, first.id, userId, CreateDetailFolderRequest("함께"),
             )
-            val secondDetail = categoryService.createDetail(
+            val secondDetail = folderService.createDetail(
                 fixture.galleryId, second.id, userId, CreateDetailFolderRequest("걷는 순간"),
             )
 
             // when
-            categoryService.movePhotos(fixture.galleryId, userId, MoveCategoryPhotosRequest(photoIds, firstDetail.id))
-            categoryService.movePhotos(fixture.galleryId, userId, MoveCategoryPhotosRequest(photoIds, secondDetail.id))
+            folderService.movePhotos(fixture.galleryId, userId, MoveFolderPhotosRequest(photoIds, firstDetail.id))
+            folderService.movePhotos(fixture.galleryId, userId, MoveFolderPhotosRequest(photoIds, secondDetail.id))
 
             // then
             val assigned = assignmentRepository.findById(photoIds.first()).orElseThrow()
             assertThat(assigned.detailFolderId).isEqualTo(secondDetail.id)
-            assertThat(assigned.assignedSource).isEqualTo(CategorySource.USER)
+            assertThat(assigned.assignedSource).isEqualTo(FolderSource.USER)
             assertThat(assigned.assignedByUserId).isEqualTo(userId)
 
             // when
-            categoryService.movePhotos(fixture.galleryId, userId, MoveCategoryPhotosRequest(photoIds, null))
-            categoryService.deleteDetail(fixture.galleryId, first.id, firstDetail.id, userId)
-            categoryService.deleteConcept(fixture.galleryId, second.id, userId)
+            folderService.movePhotos(fixture.galleryId, userId, MoveFolderPhotosRequest(photoIds, null))
+            folderService.deleteDetail(fixture.galleryId, first.id, firstDetail.id, userId)
+            folderService.deleteConcept(fixture.galleryId, second.id, userId)
 
             // then
             assertThat(assignmentRepository.findAllByPhotoIdIn(photoIds)).isEmpty()
             assertThat(photoRepository.findAllById(photoIds)).hasSize(2)
-            assertThat(categoryService.list(fixture.galleryId, userId).single().details).isEmpty()
+            assertThat(folderService.list(fixture.galleryId, userId).single().details).isEmpty()
         }
 
         @Test
@@ -94,16 +94,16 @@ class CategoryGuestEditingTest @Autowired constructor(
             val other = galleryFixture.멤버와_열린_갤러리()
             val photoIds = photoFixture.업로드된_사진(fixture.galleryId, 1)
             val otherPhotos = photoFixture.업로드된_사진(other.galleryId, 1)
-            val concept = categoryService.createConcept(other.galleryId, other.member.requiredId, CreateConceptFolderRequest("다른 갤러리"))
-            val detail = categoryService.createDetail(other.galleryId, concept.id, other.member.requiredId, CreateDetailFolderRequest("다른 사진"))
+            val concept = folderService.createConcept(other.galleryId, other.member.requiredId, CreateConceptFolderRequest("다른 갤러리"))
+            val detail = folderService.createDetail(other.galleryId, concept.id, other.member.requiredId, CreateDetailFolderRequest("다른 사진"))
 
             // when & then
             assertThatThrownBy {
-                categoryService.movePhotos(fixture.galleryId, fixture.member.requiredId, MoveCategoryPhotosRequest(otherPhotos, null))
-            }.isInstanceOf(CategoryException::class.java).extracting("errorCode").isEqualTo(CategoryErrorCode.PHOTO_NOT_FOUND)
+                folderService.movePhotos(fixture.galleryId, fixture.member.requiredId, MoveFolderPhotosRequest(otherPhotos, null))
+            }.isInstanceOf(FolderException::class.java).extracting("errorCode").isEqualTo(FolderErrorCode.PHOTO_NOT_FOUND)
             assertThatThrownBy {
-                categoryService.movePhotos(fixture.galleryId, fixture.member.requiredId, MoveCategoryPhotosRequest(photoIds, detail.id))
-            }.isInstanceOf(CategoryException::class.java).extracting("errorCode").isEqualTo(CategoryErrorCode.DETAIL_NOT_FOUND)
+                folderService.movePhotos(fixture.galleryId, fixture.member.requiredId, MoveFolderPhotosRequest(photoIds, detail.id))
+            }.isInstanceOf(FolderException::class.java).extracting("errorCode").isEqualTo(FolderErrorCode.DETAIL_NOT_FOUND)
             assertThat(assignmentRepository.findAllByPhotoIdIn(photoIds + otherPhotos)).isEmpty()
         }
     }
@@ -157,7 +157,7 @@ class CategoryGuestEditingTest @Autowired constructor(
 
             // when & then
             assertAllMutationsDenied(fixture.galleryId, fixture.member.requiredId, SelectionException::class.java, SelectionErrorCode.SELECTION_ALREADY_SUBMITTED)
-            val created = categoryService.createConcept(fixture.galleryId, fixture.photographer.requiredId, CreateConceptFolderRequest("작가 정리"))
+            val created = folderService.createConcept(fixture.galleryId, fixture.photographer.requiredId, CreateConceptFolderRequest("작가 정리"))
             assertThat(created.name).isEqualTo("작가 정리")
         }
 
@@ -166,8 +166,8 @@ class CategoryGuestEditingTest @Autowired constructor(
             // given
             val fixture = galleryFixture.멤버와_열린_갤러리()
             val photoIds = photoFixture.업로드된_사진(fixture.galleryId, 1)
-            val concept = categoryService.createConcept(fixture.galleryId, fixture.member.requiredId, CreateConceptFolderRequest("컨셉"))
-            val detail = categoryService.createDetail(fixture.galleryId, concept.id, fixture.member.requiredId, CreateDetailFolderRequest("세부"))
+            val concept = folderService.createConcept(fixture.galleryId, fixture.member.requiredId, CreateConceptFolderRequest("컨셉"))
+            val detail = folderService.createDetail(fixture.galleryId, concept.id, fixture.member.requiredId, CreateDetailFolderRequest("세부"))
             selectionService.select(fixture.galleryId, fixture.member.requiredId, SelectPhotosRequest(photoIds = photoIds))
             val submitted = CountDownLatch(1)
             val releaseCommit = CountDownLatch(1)
@@ -188,7 +188,7 @@ class CategoryGuestEditingTest @Autowired constructor(
                 val move = executor.submit<Throwable?> {
                     moveStarted.countDown()
                     runCatching {
-                        categoryService.movePhotos(fixture.galleryId, fixture.member.requiredId, MoveCategoryPhotosRequest(photoIds, detail.id))
+                        folderService.movePhotos(fixture.galleryId, fixture.member.requiredId, MoveFolderPhotosRequest(photoIds, detail.id))
                     }.exceptionOrNull()
                 }
                 check(moveStarted.await(10, TimeUnit.SECONDS))
@@ -211,11 +211,11 @@ class CategoryGuestEditingTest @Autowired constructor(
 
     private fun assertAllMutationsDenied(galleryId: Long, userId: Long, type: Class<out Throwable>, errorCode: Any) {
         val mutations: List<() -> Any?> = listOf(
-            { categoryService.createConcept(galleryId, userId, CreateConceptFolderRequest("금지")) },
-            { categoryService.createDetail(galleryId, -1L, userId, CreateDetailFolderRequest("금지")) },
-            { categoryService.movePhotos(galleryId, userId, MoveCategoryPhotosRequest(listOf(-1L), null)) },
-            { categoryService.deleteDetail(galleryId, -1L, -1L, userId) },
-            { categoryService.deleteConcept(galleryId, -1L, userId) },
+            { folderService.createConcept(galleryId, userId, CreateConceptFolderRequest("금지")) },
+            { folderService.createDetail(galleryId, -1L, userId, CreateDetailFolderRequest("금지")) },
+            { folderService.movePhotos(galleryId, userId, MoveFolderPhotosRequest(listOf(-1L), null)) },
+            { folderService.deleteDetail(galleryId, -1L, -1L, userId) },
+            { folderService.deleteConcept(galleryId, -1L, userId) },
         )
         mutations.forEach { mutation ->
             assertThatThrownBy { mutation() }.isInstanceOf(type).extracting("errorCode").isEqualTo(errorCode)

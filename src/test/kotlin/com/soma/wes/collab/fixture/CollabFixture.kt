@@ -1,9 +1,9 @@
 package com.soma.wes.collab.fixture
 
-import com.soma.wes.category.dto.request.CreateConceptFolderRequest
-import com.soma.wes.category.dto.request.CreateDetailFolderRequest
-import com.soma.wes.category.dto.request.MoveCategoryPhotosRequest
-import com.soma.wes.category.service.CategoryService
+import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
+import com.soma.wes.folder.dto.request.CreateDetailFolderRequest
+import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
+import com.soma.wes.folder.service.FolderService
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
 import com.soma.wes.collab.dto.response.CollabSessionResponse
 import com.soma.wes.collab.service.CollabSessionService
@@ -16,26 +16,26 @@ import org.springframework.stereotype.Component
 class CollabFixture(
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
-    private val categoryService: CategoryService,
+    private val folderService: FolderService,
     private val sessionService: CollabSessionService,
 ) {
     fun 사진이_있는_세션(gallery: OpenGallery = galleryFixture.멤버와_열린_갤러리()): SharedCollab {
         val photoId = photoFixture.업로드된_사진(gallery.galleryId, 1).single()
-        val concept = categoryService.createConcept(
+        val concept = folderService.createConcept(
             gallery.galleryId,
             gallery.photographer.requiredId,
             CreateConceptFolderRequest(name = "본식"),
         )
-        val detail = categoryService.createDetail(
+        val detail = folderService.createDetail(
             gallery.galleryId,
             concept.id,
             gallery.photographer.requiredId,
             CreateDetailFolderRequest(name = "함께"),
         )
-        categoryService.movePhotos(
+        folderService.movePhotos(
             gallery.galleryId,
             gallery.photographer.requiredId,
-            MoveCategoryPhotosRequest(photoIds = listOf(photoId), targetDetailFolderId = detail.id),
+            MoveFolderPhotosRequest(photoIds = listOf(photoId), targetDetailFolderId = detail.id),
         )
         val session = sessionService.open(
             gallery.galleryId,

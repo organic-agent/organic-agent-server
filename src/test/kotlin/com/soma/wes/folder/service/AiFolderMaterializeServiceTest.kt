@@ -12,11 +12,11 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 
-// [REFACTOR-RENAME 2026-09-27] AiFolderService → AiFolderSetMaterializer (클래스 이름만 변경, 동작 동일). 테스트 파일도 AiFolderServiceTest에서 이름 변경
+// [REFACTOR-RENAME 2026-09-27] AiFolderService → AiFolderMaterializeService (클래스 이름만 변경, 동작 동일). 테스트 파일도 AiFolderServiceTest에서 이름 변경
 @IntegrationTest
 @DisplayName("AI 폴더 세트를 실체화할 때")
-class AiFolderSetMaterializerTest @Autowired constructor(
-    private val service: AiFolderSetMaterializer,
+class AiFolderMaterializeServiceTest @Autowired constructor(
+    private val service: AiFolderMaterializeService,
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
     private val recommendationFixture: RecommendationFixture,
@@ -26,7 +26,7 @@ class AiFolderSetMaterializerTest @Autowired constructor(
     /**
      * 배경: 해변 3장(그룹 1) + 정원 2장(그룹 2) + 분석 행은 있지만 그룹이 없는 1장(→ "기타").
      * 새 세트를 만드는 응답은 DB를 다시 읽지 않고 메모리에서 조립하므로, 같은 세트를 두 번째 요청했을 때
-     * DB에서 읽어 만든 응답과 같아야 한다. 인가 없는 진입점([AiFolderSetMaterializer.materializeFromAnalysis])도 같은 세트를 돌려준다.
+     * DB에서 읽어 만든 응답과 같아야 한다. 인가 없는 진입점([AiFolderMaterializeService.materializeFromAnalysis])도 같은 세트를 돌려준다.
      */
     @Test
     fun `새로 만든 응답은 DB에서 다시 읽은 응답과 같고 배정 행이 배치로 적재된다`() {

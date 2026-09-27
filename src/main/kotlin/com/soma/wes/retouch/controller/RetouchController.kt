@@ -37,7 +37,7 @@ class RetouchController(
     private val refinementService: RetouchRefinementService,
 ) : RetouchControllerDocs {
 
-    @GetMapping("", "/rounds")
+    @GetMapping("/rounds")
     override fun get(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
@@ -105,7 +105,7 @@ class RetouchController(
         return ResponseEntity.ok(result)
     }
 
-    @PostMapping("/rounds/{roundNo}/complete", "/rounds/{roundNo}/send")
+    @PostMapping("/rounds/{roundNo}/send")
     override fun completeRound(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,

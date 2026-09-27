@@ -1,5 +1,6 @@
 package com.soma.wes.recommendation.dto
 
+import com.soma.wes.photo.domain.SubScoreKey
 import com.soma.wes.photo.repository.projection.PhotoAnalysisSummary
 
 /** 추천 계산이 보는 사진 한 장 — 분석 행에서 숫자만 뗀 것. 계산 코드는 엔티티·DB를 모른다. */
@@ -13,7 +14,7 @@ data class RecommendablePhotoDto(
     val subScores: Map<String, Any?>,
 ) {
 
-    fun subScore(key: String): Double? = (subScores[key] as? Number)?.toDouble()
+    fun subScore(key: SubScoreKey): Double? = (subScores[key.key] as? Number)?.toDouble()
 
     companion object {
 

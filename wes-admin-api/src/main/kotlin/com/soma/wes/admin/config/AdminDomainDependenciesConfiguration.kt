@@ -9,10 +9,11 @@ import com.soma.wes.collab.support.CollabCategoryReactionCleaner
 import com.soma.wes.collab.support.CollabLinkResolver
 import com.soma.wes.collab.support.CollabPhotoMembership
 import com.soma.wes.collab.support.CollabPhotoViewAssembler
-import com.soma.wes.category.service.CategoryService
-import com.soma.wes.category.repository.CategoryBulkWriter
-import com.soma.wes.category.service.AiCategoryFolderService
-import com.soma.wes.category.support.AiCategoryFolderPlanner
+import com.soma.wes.folder.service.FolderService
+import com.soma.wes.folder.repository.PhotoFolderAssignmentBulkRepository
+import com.soma.wes.folder.service.AiFolderMaterializeService
+import com.soma.wes.folder.support.AiFolderPlanner
+import com.soma.wes.folder.support.FolderViewAssembler
 import com.soma.wes.global.config.AwsLambdaConfig
 import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.infrastructure.LambdaStageInvoker
@@ -90,7 +91,7 @@ import org.springframework.context.annotation.Import
     PhotoPipelineRepository::class,
     PhotoSelectionService::class,
     CollabSessionQueryService::class,
-    CategoryService::class,
+    FolderService::class,
     CollabCategoryReactionCleaner::class,
     RetouchService::class,
     PhotoViewAssembler::class,
@@ -102,10 +103,13 @@ import org.springframework.context.annotation.Import
     RetouchViewAssembler::class,
     ProductChildTrashRepository::class,
     ProductChildTrashService::class,
-    AiCategoryFolderPlanner::class,
+    AiFolderPlanner::class,
+    // [REFACTOR-A 2026-09-27] FolderService·AiFolderMaterializeService가 주입받는 FolderViewAssembler를 admin 컨텍스트에도 등록
+    FolderViewAssembler::class,
     AiConceptAssignmentLoader::class,
-    CategoryBulkWriter::class,
-    AiCategoryFolderService::class,
+    PhotoFolderAssignmentBulkRepository::class,
+    // [REFACTOR-RENAME 2026-09-27] AiFolderService → AiFolderMaterializeService (클래스 이름만 변경, 동작 동일)
+    AiFolderMaterializeService::class,
 )
 class AdminDomainDependenciesConfiguration {
     /**

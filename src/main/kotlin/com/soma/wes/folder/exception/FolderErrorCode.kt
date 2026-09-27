@@ -1,9 +1,9 @@
-package com.soma.wes.category.exception
+package com.soma.wes.folder.exception
 
 import com.soma.wes.global.exception.ErrorCode
 import org.springframework.http.HttpStatus
 
-enum class CategoryErrorCode(
+enum class FolderErrorCode(
     override val httpStatus: HttpStatus,
     override val code: String,
     override val message: String,

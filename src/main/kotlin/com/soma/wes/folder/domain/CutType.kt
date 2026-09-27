@@ -1,4 +1,4 @@
-package com.soma.wes.category.domain
+package com.soma.wes.folder.domain
 
 /**
  * 세부폴더의 컷 종류 — 인물 구성 기준(신부·신랑 단독 / 두 분 / 단체). 구도(바스트·풀샷)가 아니다.

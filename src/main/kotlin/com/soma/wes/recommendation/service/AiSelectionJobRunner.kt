@@ -1,16 +1,15 @@
 package com.soma.wes.recommendation.service
 
-import com.soma.wes.category.dto.FolderSetDetailDto
-import com.soma.wes.category.support.AiCategoryFolderSetReader
+import com.soma.wes.folder.dto.FolderSetDetailDto
+import com.soma.wes.folder.support.AiFolderSetReader
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.photo.domain.Photo
+import com.soma.wes.photo.domain.SubScoreKey
 import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.service.port.PreviewImageReader
 import com.soma.wes.recommendation.config.LlmProperties
-import com.soma.wes.recommendation.domain.AiJobStatus
 import com.soma.wes.recommendation.domain.AiRecommendation
-import com.soma.wes.recommendation.domain.AiSelectionJob
 import com.soma.wes.recommendation.domain.AiSelectionMode
 import com.soma.wes.recommendation.dto.ReasonInputDto
 import com.soma.wes.recommendation.dto.RecommendablePhotoDto
@@ -57,7 +56,7 @@ class AiSelectionJobRunner(
     private val galleryRepository: GalleryRepository,
     private val photoRepository: PhotoRepository,
     private val photoAnalysisRepository: PhotoAnalysisRepository,
-    private val folderSetReader: AiCategoryFolderSetReader,
+    private val folderSetReader: AiFolderSetReader,
     private val previewImageReader: PreviewImageReader,
     private val reasonGenerator: ReasonGenerator,
     private val llm: StructuredLlmClient,
@@ -358,7 +357,7 @@ class AiSelectionJobRunner(
                     val whyCounts = linkedMapOf<String, Int>()
                     alternatives.forEach { a -> whyCounts.merge(a["why_not"] as String, 1, Int::plus) }
                     val sharpest = alternatives.all { it["why_not"] == "덜 선명함" } ||
-                        (row.subScore("sharpness") ?: 0.0) >= siblings.maxOf { it.subScore("sharpness") ?: 0.0 }
+                        (row.subScore(SubScoreKey.SHARPNESS) ?: 0.0) >= siblings.maxOf { it.subScore(SubScoreKey.SHARPNESS) ?: 0.0 }
                     material["sibling"] = mapOf("n" to alternatives.size + 1, "why_counts" to whyCounts, "sharpest" to sharpest)
                 }
                 ReasonMaterial.qualityMaterial(row)?.let { material["quality"] = it }

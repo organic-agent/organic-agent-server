@@ -1,5 +1,6 @@
 package com.soma.wes.recommendation.support
 
+import com.soma.wes.photo.domain.SubScoreKey
 import com.soma.wes.recommendation.dto.RecommendablePhotoDto
 import kotlin.math.roundToInt
 
@@ -28,8 +29,8 @@ object ReasonMaterial {
 
     /** 형제(연사) 컷이 밀린 이유 한 마디. [SHARPNESS_RATIO]·[PCT_GAP]이 기준이다. */
     fun whyNot(pick: RecommendablePhotoDto, other: RecommendablePhotoDto): String {
-        val ps = pick.subScore("sharpness") ?: 0.0
-        val os = other.subScore("sharpness") ?: 0.0
+        val ps = pick.subScore(SubScoreKey.SHARPNESS) ?: 0.0
+        val os = other.subScore(SubScoreKey.SHARPNESS) ?: 0.0
         if (ps > SHARPNESS_RATIO * os && ps > 0) return "덜 선명함"
         if (pick.technicalPct - other.technicalPct > PCT_GAP) return "화질이 떨어짐"
         if (pick.aestheticPct - other.aestheticPct > PCT_GAP) return "인상이 약함"
@@ -41,8 +42,8 @@ object ReasonMaterial {
      * 소거는 근거 문장에서만이고 후보에서는 아니다.
      */
     fun qualityMaterial(row: RecommendablePhotoDto): Map<String, Any?>? {
-        val technicalScore = row.subScore("technical_score")
-        val aestheticScore = row.subScore("aesthetic_score")
+        val technicalScore = row.subScore(SubScoreKey.TECHNICAL_SCORE)
+        val aestheticScore = row.subScore(SubScoreKey.AESTHETIC_SCORE)
         if ((technicalScore != null && technicalScore < QUALITY_FLOOR_TECHNICAL) ||
             (aestheticScore != null && aestheticScore < QUALITY_FLOOR_AESTHETIC)
         ) return null
@@ -52,8 +53,8 @@ object ReasonMaterial {
         if (row.technicalPct >= top) material["technical_top"] = topPct(row.technicalPct)
         if (material.isEmpty()) return null
         val descriptors = mutableListOf<String>()
-        if ((row.subScore("sharpness_pct") ?: 0.0) >= top) descriptors += "초점이 또렷함"
-        if ((row.subScore("highlight_clip") ?: 1.0) < 0.01 && (row.subScore("shadow_clip") ?: 1.0) < 0.02) descriptors += "노출이 안정적"
+        if ((row.subScore(SubScoreKey.SHARPNESS_PCT) ?: 0.0) >= top) descriptors += "초점이 또렷함"
+        if ((row.subScore(SubScoreKey.HIGHLIGHT_CLIP) ?: 1.0) < 0.01 && (row.subScore(SubScoreKey.SHADOW_CLIP) ?: 1.0) < 0.02) descriptors += "노출이 안정적"
         material["descriptors"] = descriptors
         return material
     }

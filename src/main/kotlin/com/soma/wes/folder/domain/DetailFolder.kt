@@ -1,4 +1,4 @@
-package com.soma.wes.category.domain
+package com.soma.wes.folder.domain
 
 import com.soma.wes.global.BaseEntity
 import jakarta.persistence.Column
@@ -19,7 +19,7 @@ import org.hibernate.annotations.SQLRestriction
     name = "detail_folders",
     indexes = [Index(name = "idx_detail_folders_concept", columnList = "concept_folder_id, sort_order")],
 )
-class CategoryDetailFolder(
+class DetailFolder(
     @Column(name = "gallery_id", nullable = false, updatable = false)
     val galleryId: Long,
 
@@ -34,7 +34,7 @@ class CategoryDetailFolder(
 
     @Enumerated(EnumType.STRING)
     @Column(name = "created_source", nullable = false, updatable = false, length = 20)
-    val createdSource: CategorySource,
+    val createdSource: FolderSource,
 
     @Enumerated(EnumType.STRING)
     @Column(name = "category", length = 20)

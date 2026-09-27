@@ -1,4 +1,4 @@
-package com.soma.wes.category.dto
+package com.soma.wes.folder.dto
 
 /** AI 카테고리 세트의 세부 폴더 하나와 지금 그 안에 배정된 사진들. 추천 도메인이 폴더 단위로 후보를 고르는 재료다. */
 data class FolderSetDetailDto(

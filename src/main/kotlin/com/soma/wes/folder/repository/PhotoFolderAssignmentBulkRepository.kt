@@ -1,6 +1,6 @@
-package com.soma.wes.category.repository
+package com.soma.wes.folder.repository
 
-import com.soma.wes.category.domain.CategorySource
+import com.soma.wes.folder.domain.FolderSource
 import java.sql.Timestamp
 import java.time.ZonedDateTime
 import org.springframework.jdbc.core.JdbcTemplate
@@ -18,13 +18,18 @@ import org.springframework.transaction.annotation.Transactional
  * 조회는 DB로 간다(1차 캐시에 없다).
  */
 @Repository
-class CategoryBulkWriter(
+class PhotoFolderAssignmentBulkRepository(
     private val jdbcTemplate: JdbcTemplate,
 ) {
 
     /** 한 세부 폴더에 AI 배정으로 사진들을 넣는다. 이미 배정된 사진은 호출자가 걸러 둔다(PK 충돌은 예외로 올라온다). */
     @Transactional(propagation = Propagation.MANDATORY)
-    fun insertAiAssignments(galleryId: Long, detailFolderId: Long, photoIds: List<Long>, assignedAt: ZonedDateTime) {
+    fun insertAiAssignments(
+        galleryId: Long,
+        detailFolderId: Long,
+        photoIds: List<Long>,
+        assignedAt: ZonedDateTime
+    ) {
         if (photoIds.isEmpty()) return
         val at = Timestamp.from(assignedAt.toInstant())
         jdbcTemplate.batchUpdate(
@@ -33,7 +38,7 @@ class CategoryBulkWriter(
                 (gallery_id, photo_id, detail_folder_id, assigned_by_user_id, assigned_source, confidence, assigned_at, version, created_at, updated_at)
             VALUES (?, ?, ?, NULL, ?, NULL, ?, 0, ?, ?)
             """.trimIndent(),
-            photoIds.map { photoId -> arrayOf<Any>(galleryId, photoId, detailFolderId, CategorySource.AI.name, at, at, at) },
+            photoIds.map { photoId -> arrayOf<Any>(galleryId, photoId, detailFolderId, FolderSource.AI.name, at, at, at) },
         )
     }
 }

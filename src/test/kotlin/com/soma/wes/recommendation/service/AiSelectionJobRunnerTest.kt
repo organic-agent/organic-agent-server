@@ -1,6 +1,6 @@
 package com.soma.wes.recommendation.service
 
-import com.soma.wes.category.service.AiCategoryFolderService
+import com.soma.wes.folder.service.AiFolderMaterializeService
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
 import com.soma.wes.photo.domain.PhotoAnalysis
@@ -38,7 +38,8 @@ class AiSelectionJobRunnerTest @Autowired constructor(
     private val runner: AiSelectionJobRunner,
     private val recovery: AiSelectionJobRecovery,
     private val aiRecommendationService: AiRecommendationService,
-    private val aiCategoryFolderService: AiCategoryFolderService,
+    // [REFACTOR-RENAME 2026-09-27] AiFolderService → AiFolderMaterializeService (클래스 이름만 변경, 동작 동일)
+    private val aiFolderMaterializeService: AiFolderMaterializeService,
     private val aiSelectionJobRepository: AiSelectionJobRepository,
     private val aiRecommendationRepository: AiRecommendationRepository,
     private val galleryFixture: GalleryFixture,
@@ -68,9 +69,9 @@ class AiSelectionJobRunnerTest @Autowired constructor(
         val beach = analyzedPhotos(count = 6, embedGroupId = 1, clusterOf = { i -> i / 2 }) // (0,1) (2,3) (4,5) 연사
         val garden = analyzedPhotos(count = 2, embedGroupId = 2, clusterOf = { i -> 10 + i })
         val jobId = recommendationFixture.분석_잡(fixture.galleryId)
-        recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 1, parentName = "야외 자연", conceptName = "해변")
-        recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 2, parentName = "야외 정원·건물", conceptName = "정원")
-        val concepts = aiCategoryFolderService.createFromAnalysis(fixture.galleryId, fixture.photographer.id!!)
+        recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
+        recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 2, conceptName = "야외 정원·건물", detailName = "정원")
+        val concepts = aiFolderMaterializeService.createFromAnalysis(fixture.galleryId, fixture.photographer.id!!)
         val folderIdByName = concepts.flatMap { it.details }.associate { it.name to it.id }
         val unfiled = analyzedPhotos(count = 1, embedGroupId = 3, clusterOf = { 20 }).single()
         (beach + garden + unfiled).forEach { recommendationFixture.미리보기(it) }
@@ -337,9 +338,9 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             photoFixture.벡터_적재(beach, FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also { it[10] = 1f })
             recommendationFixture.분석_결과(beach, embedGroupId = 1, clusterId = 1, technicalPct = 99.0, aestheticPct = 99.0)
             val jobId = recommendationFixture.분석_잡(fixture.galleryId)
-            recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 1, parentName = "야외 자연", conceptName = "해변")
-            recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 2, parentName = "야외 정원·건물", conceptName = "정원")
-            val concepts = aiCategoryFolderService.createFromAnalysis(fixture.galleryId, fixture.photographer.id!!)
+            recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
+            recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 2, conceptName = "야외 정원·건물", detailName = "정원")
+            val concepts = aiFolderMaterializeService.createFromAnalysis(fixture.galleryId, fixture.photographer.id!!)
             val gardenFolderId = concepts.flatMap { it.details }.first { it.name == "정원" }.id
             jdbcTemplate.update("UPDATE photo_category_assignments SET detail_folder_id = ? WHERE photo_id = ?", gardenFolderId, beach)
             (garden + beach).forEach { recommendationFixture.미리보기(it) }
@@ -681,8 +682,8 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             val photos = photoFixture.임베딩된_사진(fixture.galleryId, 1)
             photos.forEach { recommendationFixture.분석_결과(it, embedGroupId = 1) }
             val analysisJobId = recommendationFixture.분석_잡(fixture.galleryId)
-            recommendationFixture.컨셉_배정(analysisJobId, fixture.galleryId, embedGroupId = 1, parentName = "야외 자연", conceptName = "해변")
-            aiCategoryFolderService.createFromAnalysis(fixture.galleryId, fixture.photographer.id!!)
+            recommendationFixture.컨셉_배정(analysisJobId, fixture.galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
+            aiFolderMaterializeService.createFromAnalysis(fixture.galleryId, fixture.photographer.id!!)
             val jobId = requestJob()
             jdbcTemplate.update("UPDATE photo_analysis SET model_version = NULL")
 

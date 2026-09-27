@@ -1,4 +1,4 @@
-package com.soma.wes.category.domain
+package com.soma.wes.folder.domain
 
 import com.soma.wes.global.BaseEntity
 import jakarta.persistence.Column
@@ -19,7 +19,7 @@ import org.hibernate.annotations.SQLRestriction
     name = "concept_folders",
     indexes = [Index(name = "idx_concept_folders_gallery", columnList = "gallery_id, sort_order")],
 )
-class CategoryFolder(
+class ConceptFolder(
     @Column(name = "gallery_id", nullable = false, updatable = false)
     val galleryId: Long,
 
@@ -31,7 +31,7 @@ class CategoryFolder(
 
     @Enumerated(EnumType.STRING)
     @Column(name = "created_source", nullable = false, updatable = false, length = 20)
-    val createdSource: CategorySource,
+    val createdSource: FolderSource,
 
     /** AI가 만든 컨셉 세트의 분석 잡. 사용자가 직접 만든 컨셉은 null이다. */
     @Column(name = "analysis_job_id", updatable = false)

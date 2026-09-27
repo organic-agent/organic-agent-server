@@ -1,5 +1,5 @@
-package com.soma.wes.category.exception
+package com.soma.wes.folder.exception
 
 import com.soma.wes.global.exception.BusinessException
 
-class CategoryException(errorCode: CategoryErrorCode) : BusinessException(errorCode)
+class FolderException(errorCode: FolderErrorCode) : BusinessException(errorCode)

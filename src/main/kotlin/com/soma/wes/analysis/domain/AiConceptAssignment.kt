@@ -9,7 +9,10 @@ import jakarta.persistence.Id
 import jakarta.persistence.Table
 
 /**
- * categorize 단계(naming)가 남긴 컨셉 배정 한 건: 임베딩 그룹 → (큰 분류, 컨셉 이름).
+ * categorize 단계(naming)가 남긴 배정 한 건: 임베딩 그룹 → (컨셉 이름, 세부 이름). 컨셉은 컨셉 폴더(1층), 세부는 세부 폴더(2층)가 된다.
+ *
+ * 필드 이름은 wes의 폴더 층을 따르고, 컬럼 이름은 AI가 정한 옛 이름 그대로다 — [conceptName]은 `parent_name`,
+ * [detailName]은 `concept_name` 컬럼이다(같은 "concept"가 컬럼에선 2층을 가리킨다). 컬럼 이름 변경은 AI와 배포를 맞춰야 해서 따로 한다.
  *
  * 잡 1회의 산출물이라 [jobId]에 매단다 — 같은 갤러리를 다시 돌리면 새 잡 밑에 새 배정이 쌓이고,
  * 폴더 생성은 가장 최근 잡의 배정만 읽는다. 쓰는 쪽은 전부 AI Lambda라 이 서버에서는
@@ -28,13 +31,13 @@ class AiConceptAssignment(
     @Column(name = "embed_group_id", nullable = false, updatable = false)
     val embedGroupId: Int,
 
-    /** 큰 분류('야외 자연'). 촬영 종류별 고정 목록 안의 값 또는 '기타'. */
+    /** 컨셉 이름('야외 자연') — 컨셉 폴더(1층). 촬영 종류별 고정 목록 안의 값 또는 '기타'. */
     @Column(name = "parent_name", nullable = false, updatable = false, length = 100)
-    val parentName: String,
-
-    /** 컨셉 이름('해변'). VLM의 열린 답 또는 작가 정의 컨셉. */
-    @Column(name = "concept_name", nullable = false, updatable = false, length = 100)
     val conceptName: String,
+
+    /** 세부 이름('해변') — 세부 폴더(2층). VLM의 열린 답 또는 작가 정의 이름. */
+    @Column(name = "concept_name", nullable = false, updatable = false, length = 100)
+    val detailName: String,
 
     @Column(name = "confidence", nullable = false, updatable = false)
     val confidence: Float,
@@ -51,11 +54,11 @@ class AiConceptAssignment(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null
 
-    /** [parentName]이 '기타'일 때 VLM이 제안한 이름. 고정 목록 확장의 근거로만 쓴다. */
+    /** [conceptName]이 '기타'일 때 VLM이 제안한 컨셉 이름. 고정 목록 확장의 근거로만 쓴다. */
     @Column(name = "proposed_parent", updatable = false, length = 100)
-    val proposedParent: String? = null
+    val proposedConceptName: String? = null
 
-    /** CLIP zero-shot 다수결이 판정한 큰 분류. [parentName]과 다르면 [needsReview]의 근거다. */
+    /** CLIP zero-shot 다수결이 판정한 컨셉 이름. [conceptName]과 다르면 [needsReview]의 근거다. */
     @Column(name = "clip_parent", updatable = false, length = 100)
-    val clipParent: String? = null
+    val clipConceptName: String? = null
 }

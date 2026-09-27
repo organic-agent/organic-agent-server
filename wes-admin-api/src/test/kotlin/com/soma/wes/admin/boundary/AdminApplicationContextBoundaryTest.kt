@@ -11,10 +11,11 @@ import com.soma.wes.auth.service.AuthTokenProvider
 import com.soma.wes.auth.support.OAuthRegistrations
 import com.soma.wes.auth.support.OAuthStateCleaner
 import com.soma.wes.auth.token.config.JwtProperties
-import com.soma.wes.category.repository.ConceptFolderRepository
-import com.soma.wes.category.service.CategoryService
-import com.soma.wes.category.service.AiCategoryFolderService
-import com.soma.wes.category.support.AiCategoryFolderPlanner
+import com.soma.wes.folder.repository.ConceptFolderRepository
+import com.soma.wes.folder.service.FolderService
+import com.soma.wes.folder.service.AiFolderMaterializeService
+import com.soma.wes.folder.support.AiFolderPlanner
+import com.soma.wes.folder.support.FolderViewAssembler
 import com.soma.wes.collab.config.CollabProperties
 import com.soma.wes.collab.repository.CollabSessionRepository
 import com.soma.wes.collab.service.CollabSessionQueryService
@@ -131,7 +132,7 @@ class AdminApplicationContextBoundaryTest @Autowired constructor(
             PhotoPipelineRepository::class.java,
             PhotoSelectionService::class.java,
             CollabSessionQueryService::class.java,
-            CategoryService::class.java,
+            FolderService::class.java,
             CollabCategoryReactionCleaner::class.java,
             RetouchService::class.java,
             PhotoViewAssembler::class.java,
@@ -143,9 +144,12 @@ class AdminApplicationContextBoundaryTest @Autowired constructor(
             RetouchViewAssembler::class.java,
             ProductChildTrashRepository::class.java,
             ProductChildTrashService::class.java,
-            AiCategoryFolderPlanner::class.java,
+            AiFolderPlanner::class.java,
+            // [REFACTOR-A 2026-09-27] FolderService·AiFolderMaterializeService가 주입받는 FolderViewAssembler를 admin 컨텍스트에도 등록
+            FolderViewAssembler::class.java,
             AiConceptAssignmentLoader::class.java,
-            AiCategoryFolderService::class.java,
+            // [REFACTOR-RENAME 2026-09-27] AiFolderService → AiFolderMaterializeService (클래스 이름만 변경, 동작 동일)
+            AiFolderMaterializeService::class.java,
         )
 
         assertAbsent(

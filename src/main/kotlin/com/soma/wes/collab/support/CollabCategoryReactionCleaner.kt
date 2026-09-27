@@ -1,6 +1,6 @@
 package com.soma.wes.collab.support
 
-import com.soma.wes.category.service.CategoryReactionCleaner
+import com.soma.wes.folder.service.port.FolderReactionCleaner
 import com.soma.wes.collab.repository.CollabPhotoCommentRepository
 import com.soma.wes.collab.repository.CollabPhotoLikeRepository
 import com.soma.wes.collab.repository.CollabSessionRepository
@@ -11,7 +11,7 @@ class CollabCategoryReactionCleaner(
     private val sessionRepository: CollabSessionRepository,
     private val likeRepository: CollabPhotoLikeRepository,
     private val commentRepository: CollabPhotoCommentRepository,
-) : CategoryReactionCleaner {
+) : FolderReactionCleaner {
     override fun deleteForConceptExit(conceptFolderId: Long, photoIds: Collection<Long>) {
         if (photoIds.isEmpty()) return
         val session = sessionRepository.findByConceptFolderId(conceptFolderId) ?: return

@@ -1,6 +1,6 @@
-package com.soma.wes.category.service
+package com.soma.wes.folder.service.port
 
-interface CategoryReactionCleaner {
+interface FolderReactionCleaner {
     fun deleteForConceptExit(conceptFolderId: Long, photoIds: Collection<Long>)
     fun deleteForConcept(conceptFolderId: Long)
 }

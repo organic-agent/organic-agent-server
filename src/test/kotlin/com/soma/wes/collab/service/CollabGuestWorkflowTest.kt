@@ -1,7 +1,7 @@
 package com.soma.wes.collab.service
 
-import com.soma.wes.category.dto.request.CreateConceptFolderRequest
-import com.soma.wes.category.service.CategoryService
+import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
+import com.soma.wes.folder.service.FolderService
 import com.soma.wes.collab.dto.request.EnterCollabRequest
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
 import com.soma.wes.collab.dto.request.RenameCollabSessionRequest
@@ -43,7 +43,7 @@ class CollabGuestWorkflowTest @Autowired constructor(
     private val comments: CollabPhotoCommentRepository,
     private val photos: PhotoRepository,
     private val ratings: PhotoRatingService,
-    private val categories: CategoryService,
+    private val categories: FolderService,
     private val clock: Clock,
 ) {
     @Test

@@ -1,6 +1,6 @@
 package com.soma.wes.collab.service
 
-import com.soma.wes.category.repository.ConceptFolderRepository
+import com.soma.wes.folder.repository.ConceptFolderRepository
 import com.soma.wes.collab.dto.response.CollabCommentResponse
 import com.soma.wes.collab.dto.response.CollabPhotoPageResponse
 import com.soma.wes.collab.dto.response.CollabSessionResponse

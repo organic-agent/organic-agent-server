@@ -1,6 +1,6 @@
 package com.soma.wes.recommendation.service
 
-import com.soma.wes.category.service.AiCategoryFolderService
+import com.soma.wes.folder.service.AiFolderMaterializeService
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.fixture.GalleryFixture
@@ -29,7 +29,8 @@ import org.springframework.jdbc.core.JdbcTemplate
 @IntegrationTest
 class AiRecommendationServiceTest @Autowired constructor(
     private val aiRecommendationService: AiRecommendationService,
-    private val aiCategoryFolderService: AiCategoryFolderService,
+    // [REFACTOR-RENAME 2026-09-27] AiFolderService → AiFolderMaterializeService (클래스 이름만 변경, 동작 동일)
+    private val aiFolderMaterializeService: AiFolderMaterializeService,
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
     private val recommendationFixture: RecommendationFixture,
@@ -49,9 +50,9 @@ class AiRecommendationServiceTest @Autowired constructor(
         val photoIds = photoFixture.임베딩된_사진(fixture.galleryId, count = photoCount)
         photoIds.forEach { recommendationFixture.분석_결과(it, embedGroupId = 1) }
         val jobId = recommendationFixture.분석_잡(fixture.galleryId)
-        recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 1, parentName = "야외 자연", conceptName = "해변")
+        recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
 
-        val concepts = aiCategoryFolderService.createFromAnalysis(fixture.galleryId, fixture.photographer.id!!)
+        val concepts = aiFolderMaterializeService.createFromAnalysis(fixture.galleryId, fixture.photographer.id!!)
         return AiSet(
             analysisJobId = jobId,
             folderId = concepts.single().details.single().id,
