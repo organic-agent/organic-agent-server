@@ -50,6 +50,7 @@ support가 service를, infrastructure가 service·repository를 참조하면 안
   ```
 - 생성자 주입 필드도 같은 형태로 한 줄에 하나씩.
 - import는 와일드카드 없이 전부 나열한다.
+- 마지막 import와 그 뒤의 첫 주석·코드 사이에는 빈 줄을 **정확히 한 줄** 둔다. 두 줄 이상 비우지 않는다.
 
 ## 메서드 본문 구성
 
