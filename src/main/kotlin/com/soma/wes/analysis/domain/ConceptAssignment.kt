@@ -8,20 +8,7 @@ import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
 
-// [GLOSSARY-1 2026-09-27] AiConceptAssignment → ConceptAssignment (용어집 D4: Ai 접두사 제거).
-// [GLOSSARY-2 2026-09-27] 테이블 ai_concept_assignments → concept_assignments, 컬럼 parent_name·concept_name·proposed_parent·clip_parent →
-// concept_name·detail_name·proposed_concept_name·clip_concept_name (V23). 필드 이름과 컬럼 이름이 같아졌다.
-/**
- * categorize 단계(naming)가 남긴 배정 한 건: 임베딩 그룹 → (컨셉 이름, 세부 이름). 컨셉은 컨셉 폴더(1층), 세부는 세부 폴더(2층)가 된다.
- *
- * 필드·컬럼·AI dataclass 이름이 모두 용어집(WES-DOCS docs/glossary.md)을 따른다 — 1층 [conceptName] = `concept_name`,
- * 2층 [detailName] = `detail_name`.
- *
- * 잡 1회의 산출물이라 [jobId]에 매단다 — 같은 갤러리를 다시 돌리면 새 잡 밑에 새 배정이 쌓이고,
- * 폴더 생성은 가장 최근 잡의 배정만 읽는다. 쓰는 쪽은 전부 AI Lambda라 이 서버에서는
- * 읽기 전용 엔티티다. [needsReview] 판정 규칙(CLIP 불일치, 낮은 confidence, 최근접 거리 초과)도
- * 배치가 결정하고 서버는 읽기만 한다.
- */
+/** categorize 단계(naming)가 남긴 배정 한 건: 임베딩 그룹 → (컨셉 이름, 세부 이름). 컨셉은 컨셉 폴더(1층), 세부는 세부 폴더(2층)가 된다. */
 @Entity
 @Table(name = "concept_assignments")
 class ConceptAssignment(

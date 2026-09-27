@@ -1,11 +1,11 @@
 package com.soma.wes.analysis.support
 
-import com.soma.wes.analysis.dto.LatestAssignmentsDto
+import com.soma.wes.analysis.dto.ConceptAssignmentDto
+import com.soma.wes.analysis.dto.LatestConceptAssignmentsDto
 import com.soma.wes.analysis.repository.ConceptAssignmentRepository
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
 
-// [GLOSSARY-1 2026-09-27] AiConceptAssignmentLoader → ConceptAssignmentLoader (용어집 D4)
 /**
  * 다른 도메인(folder)이 컨셉 배정을 읽는 입구. repository를 직접 주입하는 대신 이 로더를 지난다.
  */
@@ -20,12 +20,19 @@ class ConceptAssignmentLoader(
      * 것이 곧 그 잡의 이름 붙이기가 완료됐다는 뜻이다.
      */
     @Transactional(readOnly = true)
-    fun loadLatest(galleryId: Long): LatestAssignmentsDto? {
-        val latest = conceptAssignmentRepository.findFirstByGalleryIdOrderByJobIdDesc(galleryId)
-            ?: return null
-        return LatestAssignmentsDto(
-            jobId = latest.jobId,
-            assignments = conceptAssignmentRepository.findAllByJobId(latest.jobId),
+    fun loadLatest(galleryId: Long): LatestConceptAssignmentsDto? {
+        val assignments = conceptAssignmentRepository.findAllOfLatestJobByGalleryId(galleryId)
+        if (assignments.isEmpty()) return null
+        return LatestConceptAssignmentsDto(
+            analysisJobId = assignments.first().jobId,
+            assignments = assignments.map {
+                ConceptAssignmentDto(
+                    embedGroupId = it.embedGroupId,
+                    conceptName = it.conceptName,
+                    detailName = it.detailName,
+                    needsReview = it.needsReview,
+                )
+            },
         )
     }
 }

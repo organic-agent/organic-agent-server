@@ -28,7 +28,7 @@ paths:
   (`StageCallDto`, `ScoreWorkerStateDto`, `OrchestratorActionDto`). 접미사 없는 이름이 섞이면 어느 것이
   API 계약인지 파일명만으로 가릴 수 없다.
 - **서비스·support·포트 클래스 안에 데이터 클래스를 중첩하지 않는다.** 결과 묶음, 트랜잭션 밖으로 넘기는
-  값, 다른 도메인이 받아 가는 값은 `dto` 루트의 파일 하나다 (`LatestAssignmentsDto`). 허용되는 중첩은
+  값, 다른 도메인이 받아 가는 값은 `dto` 루트의 파일 하나다 (`LatestConceptAssignmentsDto`). 허용되는 중첩은
   감싸는 DTO만 쓰는 하위 클래스(위 예외)와 `@ConfigurationProperties`의 중첩 설정(`AnalysisProperties.Gpu`)뿐이다.
 
 ## 형태

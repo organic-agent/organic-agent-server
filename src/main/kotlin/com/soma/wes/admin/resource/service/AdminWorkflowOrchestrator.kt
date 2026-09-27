@@ -18,7 +18,7 @@ import com.soma.wes.admin.resource.repository.AdminResourceContextRepository
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
 import com.soma.wes.admin.resource.repository.AdminRetouchArtifactRepository
 import com.soma.wes.admin.resource.repository.AdminWorkflowRepository
-import com.soma.wes.folder.service.AiFolderMaterializeService
+import com.soma.wes.folder.support.AiFolderMaterializer
 import com.soma.wes.collab.support.CollabLinkResolver
 import com.soma.wes.gallery.domain.GalleryInviteKind
 import com.soma.wes.gallery.service.GalleryInviteService
@@ -58,8 +58,8 @@ class AdminWorkflowService(
     private val tokenGenerator: SecureTokenGenerator,
     private val galleryInviteUrlResolver: GalleryInviteUrlResolver,
     private val collabLinkResolver: CollabLinkResolver,
-    // [REFACTOR-RENAME 2026-09-27] AiFolderService → AiFolderMaterializeService (클래스 이름만 변경, 동작 동일)
-    private val aiFolderMaterializeService: AiFolderMaterializeService,
+    // [REFACTOR-SUPPORT 2026-09-27] AiFolderMaterializeService.materializeFromAnalysis → folder/support/AiFolderMaterializer.materialize
+    private val aiFolderMaterializer: AiFolderMaterializer,
     private val objectMapper: ObjectMapper,
     private val transactionTemplate: TransactionTemplate,
     private val clock: Clock,
@@ -330,7 +330,7 @@ class AdminWorkflowService(
         }
         AdminWorkflowAction.RUN_CATEGORIZATION -> {
             requireType(type, AdminResourceType.GALLERY)
-            val folders = aiFolderMaterializeService.materializeFromAnalysis(id)
+            val folders = aiFolderMaterializer.materialize(id)
             workflowRepository.bumpResourceVersion(type, id, request.expectedVersion)
             WorkflowExecution(details = mapOf(
                 "conceptFolderCount" to folders.size,

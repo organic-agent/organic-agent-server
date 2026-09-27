@@ -7,7 +7,6 @@ import com.soma.wes.folder.dto.request.CreateDetailFolderRequest
 import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
 import com.soma.wes.folder.dto.response.ConceptFolderResponse
 import com.soma.wes.folder.dto.response.DetailFolderResponse
-import com.soma.wes.folder.service.AiFolderMaterializeService
 import com.soma.wes.folder.service.FolderService
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
@@ -24,9 +23,8 @@ import org.springframework.web.bind.annotation.RestController
 @RestController
 @RequestMapping("/api/v1/galleries/{galleryId}")
 class FolderController(
+    // [REFACTOR-SUPPORT 2026-09-27] AiFolderMaterializeService 의존 제거 — AI 폴더 버튼도 FolderService를 부른다.
     private val folderService: FolderService,
-    // [REFACTOR-RENAME 2026-09-27] AiFolderService → AiFolderMaterializeService (클래스 이름만 변경, 동작 동일)
-    private val aiFolderMaterializeService: AiFolderMaterializeService,
 ) : FolderControllerDocs {
 
     @PostMapping("/concept-folders")
@@ -53,7 +51,7 @@ class FolderController(
         @PathVariable galleryId: Long,
     ): ResponseEntity<List<ConceptFolderResponse>> {
         return ResponseEntity.status(HttpStatus.CREATED)
-            .body(aiFolderMaterializeService.createFromAnalysis(galleryId, loginUser.id))
+            .body(folderService.createFromAnalysis(galleryId, loginUser.id))
     }
 
     @PostMapping("/concept-folders/{conceptId}/detail-folders")

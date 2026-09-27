@@ -3,6 +3,7 @@ package com.soma.wes.folder.service
 import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.folder.dto.response.ConceptFolderResponse
 import com.soma.wes.folder.repository.ConceptFolderRepository
+import com.soma.wes.folder.support.AiFolderMaterializer
 import com.soma.wes.folder.support.FolderViewAssembler
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.repository.requireWithLockById
@@ -22,8 +23,8 @@ class FolderConfirmationService(
     // folderService.list(galleryId, userId)는 자체 인가(requireViewer)를 한 번 더 돌렸다.
     private val conceptRepository: ConceptFolderRepository,
     private val viewAssembler: FolderViewAssembler,
-    // [REFACTOR-RENAME 2026-09-27] AiFolderService → AiFolderMaterializeService (클래스 이름만 변경, 동작 동일)
-    private val aiFolderMaterializeService: AiFolderMaterializeService,
+    // [REFACTOR-SUPPORT 2026-09-27] AiFolderMaterializeService.materializeFromAnalysis → folder/support/AiFolderMaterializer.materialize
+    private val aiFolderMaterializer: AiFolderMaterializer,
     private val clock: Clock,
     private val activityRecorder: ActivityRecorder,
 ) {
@@ -39,7 +40,7 @@ class FolderConfirmationService(
         val result = if (existing.isNotEmpty()) {
             viewAssembler.toResponses(existing)
         } else {
-            aiFolderMaterializeService.materializeFromAnalysis(galleryId)
+            aiFolderMaterializer.materialize(galleryId)
         }
         gallery.markSelectionInProgress()
         // [REFACTOR-CONFIRM 2026-09-27] 조건문 `if (existing.isNotEmpty())` 제거 — 물질화 경로가 내부에서 이미 기록하는지

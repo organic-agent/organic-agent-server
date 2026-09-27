@@ -11,7 +11,7 @@ import com.soma.wes.collab.support.CollabPhotoMembership
 import com.soma.wes.collab.support.CollabPhotoViewAssembler
 import com.soma.wes.folder.service.FolderService
 import com.soma.wes.folder.repository.DetailFolderAssignmentBulkRepository
-import com.soma.wes.folder.service.AiFolderMaterializeService
+import com.soma.wes.folder.support.AiFolderMaterializer
 import com.soma.wes.folder.support.AiFolderPlanner
 import com.soma.wes.folder.support.FolderViewAssembler
 import com.soma.wes.global.config.AwsLambdaConfig
@@ -104,12 +104,12 @@ import org.springframework.context.annotation.Import
     ProductChildTrashRepository::class,
     ProductChildTrashService::class,
     AiFolderPlanner::class,
-    // [REFACTOR-A 2026-09-27] FolderService·AiFolderMaterializeService가 주입받는 FolderViewAssembler를 admin 컨텍스트에도 등록
+    // [REFACTOR-A 2026-09-27] FolderService·AiFolderMaterializer가 주입받는 FolderViewAssembler를 admin 컨텍스트에도 등록
     FolderViewAssembler::class,
     ConceptAssignmentLoader::class,
     DetailFolderAssignmentBulkRepository::class,
-    // [REFACTOR-RENAME 2026-09-27] AiFolderService → AiFolderMaterializeService (클래스 이름만 변경, 동작 동일)
-    AiFolderMaterializeService::class,
+    // [REFACTOR-SUPPORT 2026-09-27] folder/service/AiFolderMaterializeService → folder/support/AiFolderMaterializer
+    AiFolderMaterializer::class,
 )
 class AdminDomainDependenciesConfiguration {
     /**

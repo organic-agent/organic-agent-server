@@ -13,7 +13,7 @@ import com.soma.wes.analysis.service.port.StageInvoker
 import com.soma.wes.analysis.support.AnalysisCompletionNotifier
 import com.soma.wes.folder.exception.FolderErrorCode
 import com.soma.wes.folder.exception.FolderException
-import com.soma.wes.folder.service.AiFolderMaterializeService
+import com.soma.wes.folder.support.AiFolderMaterializer
 import com.soma.wes.global.exception.BusinessException
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.photo.repository.projection.GalleryAnalysisProgress
@@ -44,8 +44,8 @@ class AnalysisOrchestrator(
     private val stageInvoker: StageInvoker,
     private val embedDispatcher: EmbedDispatcher,
     private val scoreWorkerSupervisor: ScoreWorkerSupervisor,
-    // [REFACTOR-RENAME 2026-09-27] AiFolderService → AiFolderMaterializeService (클래스 이름만 변경, 동작 동일)
-    private val aiFolderMaterializeService: AiFolderMaterializeService,
+    // [REFACTOR-SUPPORT 2026-09-27] AiFolderMaterializeService.materializeFromAnalysis → folder/support/AiFolderMaterializer.materialize
+    private val aiFolderMaterializer: AiFolderMaterializer,
     private val completionNotifier: AnalysisCompletionNotifier,
     private val properties: AnalysisProperties,
     private val transactionTemplate: TransactionTemplate,
@@ -183,7 +183,7 @@ class AnalysisOrchestrator(
      */
     private fun materialize(action: OrchestratorActionDto.Materialize) {
         val outcome = try {
-            val folders = aiFolderMaterializeService.materializeFromAnalysis(action.galleryId)
+            val folders = aiFolderMaterializer.materialize(action.galleryId)
             MaterializeOutcomeDto.Created(
                 folders = folders.size,
                 details = folders.sumOf { it.details.size },

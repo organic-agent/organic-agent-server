@@ -83,7 +83,7 @@ return detailResponse(detail, emptyList())
 
 - 패키지는 도메인 단위로 나눈다 (`gallery`, `photo`, `folder`, `collab`).
   전부 소문자 한 단어 — 도메인 이름이 두 단어가 되면 이름을 다시 생각하라.
-- 클래스는 PascalCase (`AiFolderMaterializeService`, `GalleryAccessPolicy`).
+- 클래스는 PascalCase (`AiFolderMaterializer`, `GalleryAccessPolicy`).
 - 메서드는 camelCase + 역할이 드러나는 동사 접두사:
   - 조회: `find...`(nullable 반환) / `get...`(유스케이스) / `load...`(검증을 겸한 조회)
   - 강제: `require...`(아니면 예외) / `validate...`(검증만) / `lock...`(잠그고 조회)
