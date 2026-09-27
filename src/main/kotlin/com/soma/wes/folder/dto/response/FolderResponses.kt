@@ -1,7 +1,6 @@
 package com.soma.wes.folder.dto.response
 
 import com.soma.wes.folder.domain.ConceptFolder
-import com.soma.wes.folder.domain.CutType
 import com.soma.wes.folder.domain.DetailFolder
 import com.soma.wes.folder.domain.FolderSource
 
@@ -12,7 +11,6 @@ data class DetailFolderResponse(
     val name: String,
     val sortOrder: Int,
     val createdSource: FolderSource,
-    val category: CutType?,
     val needsReview: Boolean,
     val photoIds: List<Long>,
 ) {
@@ -25,7 +23,6 @@ data class DetailFolderResponse(
             name = detail.name,
             sortOrder = detail.sortOrder,
             createdSource = detail.createdSource,
-            category = detail.cutType,
             needsReview = detail.needsReview,
             photoIds = photoIds,
         )

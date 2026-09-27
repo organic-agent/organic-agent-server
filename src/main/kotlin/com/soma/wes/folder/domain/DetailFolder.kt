@@ -36,11 +36,6 @@ class DetailFolder(
     @Column(name = "created_source", nullable = false, updatable = false, length = 20)
     val createdSource: FolderSource,
 
-    @Enumerated(EnumType.STRING)
-    // [GLOSSARY-2 2026-09-27] 컬럼 category → cut_type (V23). 응답 필드 category 는 웹 계약이라 용어 4단계에서 바꾼다.
-    @Column(name = "cut_type", length = 20)
-    var cutType: CutType? = null,
-
     @Column(name = "needs_review", nullable = false)
     var needsReview: Boolean = false,
 ) : BaseEntity() {
