@@ -15,7 +15,8 @@ class AiFolderSetReader(
     private val assignmentRepository: DetailFolderAssignmentRepository,
 ) {
     @Transactional(readOnly = true)
-    fun latestSetJobId(galleryId: Long): Long? = conceptFolderRepository
+    // [GLOSSARY-1 2026-09-27] latestSetJobId → latestAnalysisJobId (용어집: 폴더 세트의 키는 analysis_job_id)
+    fun latestAnalysisJobId(galleryId: Long): Long? = conceptFolderRepository
         .findFirstByGalleryIdAndAnalysisJobIdIsNotNullOrderByAnalysisJobIdDesc(galleryId)
         ?.analysisJobId
 

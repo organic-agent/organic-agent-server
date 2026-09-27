@@ -663,7 +663,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             world()
             val selectionId = selectionFixture.셀렉(fixture.galleryId)
             val orphan = aiSelectionJobRepository.saveAndFlush(
-                AiSelectionJob(selectionId = selectionId, mode = AiSelectionMode.DRAFT, folderSetJobId = null),
+                AiSelectionJob(selectionId = selectionId, mode = AiSelectionMode.DRAFT, analysisJobId = null),
             )
             jdbcTemplate.update("UPDATE ai_selection_jobs SET status = 'RUNNING', started_at = now() WHERE id = ?", orphan.requiredId)
             executor.reset()

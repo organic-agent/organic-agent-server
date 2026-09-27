@@ -178,7 +178,7 @@ class AiSelectionJobRunner(
             val job = aiSelectionJobRepository.findById(jobId).orElseThrow()
             if (job.resolvedQuery != null || (job.prompt == null && job.targetCount == null)) return@execute null
             val selection = photoSelectionRepository.findById(job.selectionId).orElseThrow()
-            val folders = job.folderSetJobId?.let { folderSetReader.setFolders(selection.galleryId, it) }.orEmpty().toMutableList()
+            val folders = job.analysisJobId?.let { folderSetReader.setFolders(selection.galleryId, it) }.orEmpty().toMutableList()
             job.detailFolderId?.let { id ->
                 val folder = folderSetReader.detailFolder(selection.galleryId, id)
                     ?: throw IllegalStateException("추천할 세부폴더가 없습니다.")
@@ -214,10 +214,10 @@ class AiSelectionJobRunner(
         // 범위. 폴더 하나면 그 폴더만 대상이되, 쿼터(폴더별 n장)는 전체 라운드였을 때와 같은 몫으로 정한다 —
         // 그래야 폴더 하나만 다시 받아도 장수가 널뛰지 않는다. 세트 폴더는 그 몫의 재료로만 읽는다.
         val scopeFolderIds = job.resolvedQuery?.detailFolderIds ?: job.detailFolderId?.let(::listOf)
-        val setFolders = job.folderSetJobId?.let { folderSetReader.setFolders(galleryId, it) }.orEmpty()
+        val setFolders = job.analysisJobId?.let { folderSetReader.setFolders(galleryId, it) }.orEmpty()
         val folders = when (scopeFolderIds) {
             null -> setFolders.ifEmpty {
-                throw IllegalStateException("AI 폴더 세트 ${job.folderSetJobId} 에 폴더가 없다")
+                throw IllegalStateException("AI 폴더 세트 ${job.analysisJobId} 에 폴더가 없다")
             }
             else -> scopeFolderIds.map { id ->
                 folderSetReader.detailFolder(galleryId, id)
