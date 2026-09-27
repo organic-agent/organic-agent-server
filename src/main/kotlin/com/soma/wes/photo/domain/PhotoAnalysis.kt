@@ -59,7 +59,7 @@ class PhotoAnalysis(
 
     /**
      * 임베딩 그룹 번호 — DINOv3·CLIP 벡터를 이어 붙인 공간에서 AI가 묶은 사진 덩어리. 갤러리 안에서만 유일하고, -1은 미배정(임베딩 없음)이다.
-     * 화면에 나오지 않는 내부 단위다 — 컨셉 배정([AiConceptAssignment])과 폴더 상세 정렬이 쓴다.
+     * 화면에 나오지 않는 내부 단위다 — 컨셉 배정([ConceptAssignment])과 폴더 상세 정렬이 쓴다.
      */
     @Column(name = "embed_group_id")
     val embedGroupId: Int? = null

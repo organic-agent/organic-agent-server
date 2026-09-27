@@ -7,7 +7,7 @@ import com.soma.wes.analysis.dto.MaterializeOutcomeDto
 import com.soma.wes.analysis.dto.OrchestratorActionDto
 import com.soma.wes.analysis.dto.StageCallDto
 import com.soma.wes.analysis.exception.AnalysisException
-import com.soma.wes.analysis.repository.AiConceptAssignmentRepository
+import com.soma.wes.analysis.repository.ConceptAssignmentRepository
 import com.soma.wes.analysis.repository.AnalysisJobRepository
 import com.soma.wes.analysis.service.port.StageInvoker
 import com.soma.wes.analysis.support.AnalysisCompletionNotifier
@@ -40,7 +40,7 @@ import org.springframework.transaction.support.TransactionTemplate
 class AnalysisOrchestrator(
     private val analysisJobRepository: AnalysisJobRepository,
     private val photoPipelineRepository: PhotoPipelineRepository,
-    private val aiConceptAssignmentRepository: AiConceptAssignmentRepository,
+    private val conceptAssignmentRepository: ConceptAssignmentRepository,
     private val stageInvoker: StageInvoker,
     private val embedDispatcher: EmbedDispatcher,
     private val scoreWorkerSupervisor: ScoreWorkerSupervisor,
@@ -148,7 +148,7 @@ class AnalysisOrchestrator(
         }
 
         val progress = progressOf(job, now)
-        if (aiConceptAssignmentRepository.existsByJobId(job.requiredId) && progress.categorized == progress.expected) {
+        if (conceptAssignmentRepository.existsByJobId(job.requiredId) && progress.categorized == progress.expected) {
             return OrchestratorActionDto.Materialize(jobId = job.requiredId, galleryId = job.galleryId)
         }
 

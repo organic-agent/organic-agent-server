@@ -1,11 +1,11 @@
 package com.soma.wes.folder.service
 
 import com.soma.wes.activity.service.ActivityRecorder
-import com.soma.wes.analysis.support.AiConceptAssignmentLoader
+import com.soma.wes.analysis.support.ConceptAssignmentLoader
 import com.soma.wes.folder.domain.ConceptFolder
 import com.soma.wes.folder.domain.DetailFolder
 import com.soma.wes.folder.domain.FolderSource
-import com.soma.wes.folder.dto.GroupAssignmentDto
+import com.soma.wes.folder.dto.ConceptAssignmentDto
 import com.soma.wes.folder.dto.MemberPhotoDto
 import com.soma.wes.folder.dto.response.ConceptFolderResponse
 import com.soma.wes.folder.dto.response.DetailFolderResponse
@@ -46,7 +46,7 @@ class AiFolderMaterializeService(
     private val assignmentRepository: PhotoFolderAssignmentRepository,
     private val assignmentBulkRepository: PhotoFolderAssignmentBulkRepository,
     private val photoAnalysisRepository: PhotoAnalysisRepository,
-    private val aiConceptAssignmentLoader: AiConceptAssignmentLoader,
+    private val conceptAssignmentLoader: ConceptAssignmentLoader,
     private val planner: AiFolderPlanner,
     private val viewAssembler: FolderViewAssembler,
     private val clock: Clock,
@@ -70,7 +70,7 @@ class AiFolderMaterializeService(
     private fun createFromAnalysisLocked(galleryId: Long): List<ConceptFolderResponse> {
         galleryRepository.requireWithLockById(galleryId)
 
-        val latest = aiConceptAssignmentLoader.loadLatest(galleryId)
+        val latest = conceptAssignmentLoader.loadLatest(galleryId)
             ?: throw FolderException(FolderErrorCode.ANALYSIS_NOT_COMPLETE)
         val existingSet = conceptRepository
             .findAllByGalleryIdAndAnalysisJobIdOrderBySortOrderAscIdAsc(galleryId, latest.jobId)
@@ -85,7 +85,7 @@ class AiFolderMaterializeService(
         val plans = planner.plan(
             assignments = latest.assignments.map {
                 // [REFACTOR-PLANNER-DTO 2026-09-27] AiFolderPlanner.GroupAssignment → GroupAssignmentDto
-                GroupAssignmentDto(
+                ConceptAssignmentDto(
                     embedGroupId = it.embedGroupId,
                     conceptName = it.conceptName,
                     detailName = it.detailName,

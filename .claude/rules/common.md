@@ -27,7 +27,7 @@ support가 service를, infrastructure가 service·repository를 참조하면 안
 
 - 외부 입력으로 만드는 엔티티·값객체는 companion의 정적 팩토리(`of`)로만 만들고 검증을 거기 둔다
   (domain.md 참조).
-- 검증이 필요 없는 단순 연결 행(`AiConceptAssignment`)과 DTO는 생성자를 직접 써도 된다.
+- 검증이 필요 없는 단순 연결 행(`ConceptAssignment`)과 DTO는 생성자를 직접 써도 된다.
   이때 **인자 2개 이상이면 named argument로 쓴다** — `StageCallDto.Embed(galleryId = ..., photoIds = ...)`.
 
 ## 상수
@@ -93,7 +93,7 @@ return detailResponse(detail, emptyList())
 
 - 코드가 이미 말하는 것을 반복하는 주석은 달지 마라 — 무엇을 하는지는 이름과 구조로 드러낸다.
 - **코드가 보여줄 수 없는 것은 KDoc으로 남긴다**: 정책의 이유, 버린 대안, 어기면 무엇이 깨지는지
-  (`RetouchPhoto.galleryId`의 역정규화 근거, `AiConceptAssignment`의 읽기 전용 근거).
+  (`RetouchPhoto.galleryId`의 역정규화 근거, `ConceptAssignment`의 읽기 전용 근거).
   이 저장소의 주석은 한국어로 쓴다.
 - 리뷰어에게 말하는 주석("이 변경이 맞는 이유", "다음 줄이 하는 일")은 금지 — 머지되는 순간
   소음이 된다.

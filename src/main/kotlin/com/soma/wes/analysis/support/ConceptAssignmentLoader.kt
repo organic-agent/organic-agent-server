@@ -1,16 +1,17 @@
 package com.soma.wes.analysis.support
 
 import com.soma.wes.analysis.dto.LatestAssignmentsDto
-import com.soma.wes.analysis.repository.AiConceptAssignmentRepository
+import com.soma.wes.analysis.repository.ConceptAssignmentRepository
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
 
+// [GLOSSARY-1 2026-09-27] AiConceptAssignmentLoader → ConceptAssignmentLoader (용어집 D4)
 /**
  * 다른 도메인(folder)이 컨셉 배정을 읽는 입구. repository를 직접 주입하는 대신 이 로더를 지난다.
  */
 @Component
-class AiConceptAssignmentLoader(
-    private val aiConceptAssignmentRepository: AiConceptAssignmentRepository,
+class ConceptAssignmentLoader(
+    private val conceptAssignmentRepository: ConceptAssignmentRepository,
 ) {
 
     /**
@@ -20,11 +21,11 @@ class AiConceptAssignmentLoader(
      */
     @Transactional(readOnly = true)
     fun loadLatest(galleryId: Long): LatestAssignmentsDto? {
-        val latest = aiConceptAssignmentRepository.findFirstByGalleryIdOrderByJobIdDesc(galleryId)
+        val latest = conceptAssignmentRepository.findFirstByGalleryIdOrderByJobIdDesc(galleryId)
             ?: return null
         return LatestAssignmentsDto(
             jobId = latest.jobId,
-            assignments = aiConceptAssignmentRepository.findAllByJobId(latest.jobId),
+            assignments = conceptAssignmentRepository.findAllByJobId(latest.jobId),
         )
     }
 }

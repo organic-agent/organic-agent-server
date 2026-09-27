@@ -8,6 +8,7 @@ import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
 
+// [GLOSSARY-1 2026-09-27] AiConceptAssignment → ConceptAssignment (용어집 D4: Ai 접두사 제거). 테이블 이름은 용어 2단계에서 바꾼다.
 /**
  * categorize 단계(naming)가 남긴 배정 한 건: 임베딩 그룹 → (컨셉 이름, 세부 이름). 컨셉은 컨셉 폴더(1층), 세부는 세부 폴더(2층)가 된다.
  *
@@ -21,7 +22,7 @@ import jakarta.persistence.Table
  */
 @Entity
 @Table(name = "ai_concept_assignments")
-class AiConceptAssignment(
+class ConceptAssignment(
     @Column(name = "job_id", nullable = false, updatable = false)
     val jobId: Long,
 
