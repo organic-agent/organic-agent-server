@@ -23,7 +23,6 @@ import org.springframework.web.bind.annotation.RestController
 @RestController
 @RequestMapping("/api/v1/galleries/{galleryId}")
 class FolderController(
-    // [REFACTOR-SUPPORT 2026-09-27] AiFolderMaterializeService 의존 제거 — AI 폴더 버튼도 FolderService를 부른다.
     private val folderService: FolderService,
 ) : FolderControllerDocs {
 
