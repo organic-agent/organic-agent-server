@@ -63,7 +63,6 @@ class FolderService(
             DetailFolder(galleryId, concept.requiredId, request.name.trim(), sortOrder, FolderSource.USER),
         )
         activityRecorder.recordGallery(galleryId)
-        // [REFACTOR-A 2026-09-27] private detailResponse(...) → DetailFolderResponse.of
         return DetailFolderResponse.of(detail, emptyList())
     }
 
@@ -78,49 +77,7 @@ class FolderService(
     fun list(galleryId: Long, userId: Long): List<ConceptFolderResponse> {
         galleryAccessPolicy.requireViewer(galleryId, userId)
         val concepts = conceptRepository.findAllByGalleryIdOrderBySortOrderAscIdAsc(galleryId)
-        // [REFACTOR-A 2026-09-27] 세부 폴더·배정 조회와 조립을 FolderViewAssembler.toResponses로 옮겼다(쿼리·정렬 동일).
         return viewAssembler.toResponses(concepts)
-    }
-
-    @Transactional
-    fun movePhotos(galleryId: Long, userId: Long, request: MoveFolderPhotosRequest) {
-        galleryAccessPolicy.requireFolderEditor(galleryId, userId)
-        if (request.photoIds.isEmpty()) throw FolderException(FolderErrorCode.EMPTY_PHOTO_IDS)
-        val photoIds = request.photoIds.distinct()
-        if (photoRepository.findAllByGalleryIdAndIdIn(galleryId, photoIds).size != photoIds.size) {
-            throw FolderException(FolderErrorCode.PHOTO_NOT_FOUND)
-        }
-
-        val target = request.targetDetailFolderId?.let { targetId ->
-            val detail = detailRepository.findByIdAndGalleryId(targetId, galleryId)
-                ?: throw FolderException(FolderErrorCode.DETAIL_NOT_FOUND)
-            detail
-        }
-        val current = assignmentRepository.findAllByGalleryIdAndPhotoIdIn(galleryId, photoIds).associateBy { it.photoId }
-        val currentDetails = detailRepository.findAllById(current.values.map { it.detailFolderId })
-            .associateBy { it.requiredId }
-
-        current.values.groupBy { currentDetails[it.detailFolderId]?.conceptFolderId }
-            .forEach { (sourceConceptId, rows) ->
-                if (sourceConceptId != null && sourceConceptId != target?.conceptFolderId) {
-                    reactionCleaner.deleteForConceptExit(sourceConceptId, rows.map { it.photoId })
-                }
-            }
-
-        val now = ZonedDateTime.now(clock)
-        photoIds.forEach { photoId ->
-            val existing = current[photoId]
-            if (target == null) {
-                if (existing != null) assignmentRepository.delete(existing)
-            } else if (existing == null) {
-                assignmentRepository.save(
-                    DetailFolderAssignment(galleryId, photoId, target.requiredId, userId, FolderSource.USER, null, now),
-                )
-            } else {
-                existing.moveTo(target.requiredId, userId, now)
-            }
-        }
-        activityRecorder.recordGallery(galleryId)
     }
 
     @Transactional
@@ -151,4 +108,87 @@ class FolderService(
     private fun requireConcept(galleryId: Long, conceptId: Long): ConceptFolder =
         conceptRepository.findByIdAndGalleryId(conceptId, galleryId)
             ?: throw FolderException(FolderErrorCode.CONCEPT_NOT_FOUND)
+
+    /**
+     * 사진을 세부 폴더로 옮기거나, 목적지가 null이면 미분류(배정 행 없음)로 뺀다.
+     * 하나라도 잘못된 사진이 섞이면 전체를 거절하고, 컨셉을 벗어나는 사진은 그 컨셉 협업 링크의 반응을 지운다.
+     */
+    @Transactional
+    fun movePhotos(galleryId: Long, userId: Long, request: MoveFolderPhotosRequest) {
+        galleryAccessPolicy.requireFolderEditor(galleryId, userId)
+
+        val photoIds = validatePhotoIds(galleryId, request.photoIds)
+        val targetDetail = request.targetDetailFolderId?.let { requireDetail(galleryId, it) }
+
+        val assignmentByPhotoId = assignmentRepository.findAllByGalleryIdAndPhotoIdIn(galleryId, photoIds)
+            .associateBy { it.photoId }
+        deleteReactionsOnConceptExit(assignmentByPhotoId.values, targetDetail)
+        if (targetDetail == null) {
+            assignmentRepository.deleteAll(assignmentByPhotoId.values)
+        } else {
+            assignTo(galleryId, userId, targetDetail, photoIds, assignmentByPhotoId)
+        }
+
+        activityRecorder.recordGallery(galleryId)
+    }
+
+    /** 중복을 걷어낸 id를 돌려준다. 휴지통 사진은 `@SQLRestriction`에 걸러져 "없음"으로 센다. */
+    private fun validatePhotoIds(galleryId: Long, requested: List<Long>): List<Long> {
+        if (requested.isEmpty()) throw FolderException(FolderErrorCode.EMPTY_PHOTO_IDS)
+        val photoIds = requested.distinct()
+        if (photoRepository.findAllByGalleryIdAndIdIn(galleryId, photoIds).size != photoIds.size) {
+            throw FolderException(FolderErrorCode.PHOTO_NOT_FOUND)
+        }
+        return photoIds
+    }
+
+    private fun requireDetail(galleryId: Long, detailId: Long): DetailFolder =
+        detailRepository.findByIdAndGalleryId(detailId, galleryId)
+            ?: throw FolderException(FolderErrorCode.DETAIL_NOT_FOUND)
+
+    /**
+     * 컨셉 폴더 협업 링크는 컨셉의 현재 배정을 읽어 보여주므로, 컨셉을 떠나는 사진(다른 컨셉·미분류)의 반응은
+     * 아무도 볼 수 없는 고아가 된다. 같은 컨셉 안에서 세부 폴더만 바뀌면 같은 화면에 남으니 유지한다.
+     */
+    private fun deleteReactionsOnConceptExit(
+        currentAssignments: Collection<DetailFolderAssignment>,
+        targetDetail: DetailFolder?,
+    ) {
+        val conceptIdByDetailId = detailRepository.findAllById(currentAssignments.map { it.detailFolderId })
+            .associate { it.requiredId to it.conceptFolderId }
+        val assignmentsBySourceConcept = currentAssignments.groupBy { conceptIdByDetailId[it.detailFolderId] }
+        for ((sourceConceptId, leavingAssignments) in assignmentsBySourceConcept) {
+            if (sourceConceptId == null || sourceConceptId == targetDetail?.conceptFolderId) continue
+            reactionCleaner.deleteForConceptExit(sourceConceptId, leavingAssignments.map { it.photoId })
+        }
+    }
+
+    /** 사람이 옮긴 배정은 USER가 되어, 이후 AI 폴더 물질화가 이 사진을 다시 배치하지 않는다. */
+    private fun assignTo(
+        galleryId: Long,
+        userId: Long,
+        targetDetail: DetailFolder,
+        photoIds: List<Long>,
+        assignmentByPhotoId: Map<Long, DetailFolderAssignment>,
+    ) {
+        val now = ZonedDateTime.now(clock)
+        for (photoId in photoIds) {
+            val currentAssignment = assignmentByPhotoId[photoId]
+            if (currentAssignment == null) {
+                assignmentRepository.save(
+                    DetailFolderAssignment(
+                        galleryId = galleryId,
+                        photoId = photoId,
+                        detailFolderId = targetDetail.requiredId,
+                        assignedByUserId = userId,
+                        assignedSource = FolderSource.USER,
+                        confidence = null,
+                        assignedAt = now,
+                    ),
+                )
+            } else {
+                currentAssignment.moveTo(targetDetail.requiredId, userId, now)
+            }
+        }
+    }
 }
