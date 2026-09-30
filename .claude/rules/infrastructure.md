@@ -12,17 +12,17 @@ paths:
 ## Port와 Adapter
 
 - 도메인은 자기 `service/port` 패키지에 **port 인터페이스**를 선언한다. 이름과 시그니처는 도메인
-  어휘로 쓰고 벤더 타입을 노출하지 않는다 (`PhotoStorage.presignUpload`, `StageInvoker.invoke`).
+  어휘로 쓰고 벤더 타입을 노출하지 않는다 (`PhotoStorage.presignUpload`, `AiTaskSender.send`).
   **포트는 "이 도메인이 선언하고 바깥이 구현하는 인터페이스"다** — 구현하는 쪽이 `infrastructure`
   어댑터든 다른 도메인이든 모두 여기다. 다른 도메인이 구현하는 도메인 간 훅도 포트다
   (`folder/service/port/FolderReactionCleaner` ← `collab/support/CollabFolderReactionCleaner`).
   `service` 루트에 인터페이스를 두지 않는다 — 그러면 "바깥에 기대는 지점"이 패키지로 보이지 않는다.
-- 포트가 주고받는 값 타입은 `dto/` 루트의 `~Dto`다 (`StageCallDto`, `ScoreWorkerDto`). 포트 파일에
+- 포트가 주고받는 값 타입은 `dto/` 루트의 `~Dto`다 (`AiTaskDto`, `ScoreWorkerDto`). 포트 파일에
   데이터 클래스를 같이 두지 않는다.
 - `{domain}/infrastructure`의 **어댑터**가 그것을 구현하며, 기술 이름을 앞에 붙인다
-  (`S3PhotoStorage`, `LambdaStageInvoker`). 서비스는 port만 주입받는다.
+  (`S3PhotoStorage`, `LambdaAiTaskSender`). 서비스는 port만 주입받는다.
   예외로 `@Profile("local")` 전용 대역 어댑터는 기술 이름 대신 `Local`을 붙인다 — 운영 어댑터와 짝이 되는
-  것은 "어디서 도느냐"라서다 (`Ec2ScoreWorkerPool` ↔ `LocalScoreWorkerPool`, `LambdaStageInvoker` ↔ `LocalStageInvoker`).
+  것은 "어디서 도느냐"라서다 (`Ec2ScoreWorkerPool` ↔ `LocalScoreWorkerPool`, `LambdaAiTaskSender` ↔ `LocalAiTaskSender`).
 - SDK 클라이언트 빈과 프로퍼티는 그 도메인의 `config`에 둔다 (`embedding/config/AwsLambdaConfig`).
   두 번째 도메인이 같은 클라이언트를 쓰게 되는 날에만 `global/config`로 올린다.
 

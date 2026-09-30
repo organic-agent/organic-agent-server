@@ -11,7 +11,7 @@ import com.soma.wes.notification.service.UserNotificationService
 import com.soma.wes.photo.domain.PhotoAnalysis
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.recommendation.fixture.RecommendationFixture
-import com.soma.wes.support.FakeStageInvoker
+import com.soma.wes.support.FakeAiTaskSender
 import com.soma.wes.support.IntegrationTest
 import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.Executors
@@ -26,7 +26,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.jdbc.core.JdbcTemplate
 
 /**
- * 상태 기계 검증. Lambda는 [FakeStageInvoker]가 호출을 기록만 하고, Lambda·GPU 워커가 DB에 쓰는 일(벡터·점수·백분위·배정·error)은
+ * 상태 기계 검증. Lambda는 [FakeAiTaskSender]가 호출을 기록만 하고, Lambda·GPU 워커가 DB에 쓰는 일(벡터·점수·백분위·배정·error)은
  * 픽스처와 jdbc로 직접 흉내 낸다. 시간은 컬럼을 과거로 돌려 재현한다.
  */
 @IntegrationTest
@@ -38,7 +38,7 @@ class AnalysisOrchestratorTest @Autowired constructor(
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
     private val recommendationFixture: RecommendationFixture,
-    private val stageInvoker: FakeStageInvoker,
+    private val aiTaskSender: FakeAiTaskSender,
     private val jdbcTemplate: JdbcTemplate,
     private val notifications: UserNotificationService,
 ) {
@@ -47,7 +47,7 @@ class AnalysisOrchestratorTest @Autowired constructor(
 
     @BeforeEach
     fun setUpBaseData() {
-        stageInvoker.reset()
+        aiTaskSender.reset()
         fixture = galleryFixture.멤버와_열린_갤러리()
     }
 
@@ -80,18 +80,18 @@ class AnalysisOrchestratorTest @Autowired constructor(
 
             // when — 첫 스윕: 임베더에 배정, 잡은 기다린다
             orchestrator.sweep()
-            assertThat(stageInvoker.embedCalls.single().photoIds).containsExactlyElementsOf(photos)
+            assertThat(aiTaskSender.embedTasks.single().photoIds).containsExactlyElementsOf(photos)
             assertThat(job(jobId).status).isEqualTo(AnalysisStatus.ANALYZING)
 
             // 두 번째 스윕: 이미 배정된 사진은 다시 보내지 않는다
             orchestrator.sweep()
-            assertThat(stageInvoker.embedCalls).hasSize(1)
+            assertThat(aiTaskSender.embedTasks).hasSize(1)
 
             // 임베더 역할: 벡터 적재 → 아직 점수가 없으니 기다린다(GPU 가 없어 score 폴백이 나간다)
             photos.forEach { photoFixture.벡터_적재(it, FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also { v -> v[0] = 1f }) }
             orchestrator.sweep()
             assertThat(job(jobId).status).isEqualTo(AnalysisStatus.ANALYZING)
-            assertThat(stageInvoker.scoreCalls.single().photoIds).containsExactlyElementsOf(photos)
+            assertThat(aiTaskSender.scoreTasks.single().photoIds).containsExactlyElementsOf(photos)
 
             // score 역할: 점수 적재 → CATEGORIZING
             photos.forEach { photoFixture.점수_적재(it) }
@@ -103,8 +103,8 @@ class AnalysisOrchestratorTest @Autowired constructor(
                 softly.assertThat(job.status).isEqualTo(AnalysisStatus.CATEGORIZING)
                 softly.assertThat(job.attempts).isEqualTo(1)
                 softly.assertThat(job.dispatchedAt).isNotNull()
-                softly.assertThat(stageInvoker.categorizeCalls.map { it.jobId }).containsExactly(jobId)
-                softly.assertThat(stageInvoker.categorizeCalls.single().galleryId).isEqualTo(fixture.galleryId)
+                softly.assertThat(aiTaskSender.categorizeTasks.map { it.jobId }).containsExactly(jobId)
+                softly.assertThat(aiTaskSender.categorizeTasks.single().galleryId).isEqualTo(fixture.galleryId)
             }
         }
 
@@ -118,7 +118,7 @@ class AnalysisOrchestratorTest @Autowired constructor(
             // when — 살아 있는 PENDING 은 곧 UPLOADED 가 될 사진이다
             orchestrator.sweep()
             assertThat(job(jobId).status).isEqualTo(AnalysisStatus.ANALYZING)
-            assertThat(stageInvoker.categorizeCalls).isEmpty()
+            assertThat(aiTaskSender.categorizeTasks).isEmpty()
 
             // 발급이 오래되면 "올라오는 중"이 아니다 — 보정 스윕이 처리할 행이고 기대 장수에도 들지 않는다
             jdbcTemplate.update("UPDATE photos SET created_at = now() - interval '3 minutes' WHERE id = ?", pending)
@@ -126,7 +126,7 @@ class AnalysisOrchestratorTest @Autowired constructor(
 
             // then
             assertThat(job(jobId).status).isEqualTo(AnalysisStatus.CATEGORIZING)
-            assertThat(stageInvoker.categorizeCalls).hasSize(1)
+            assertThat(aiTaskSender.categorizeTasks).hasSize(1)
         }
 
         @Test
@@ -141,7 +141,7 @@ class AnalysisOrchestratorTest @Autowired constructor(
 
             // then
             assertThat(job(jobId).status).isEqualTo(AnalysisStatus.CATEGORIZING)
-            assertThat(stageInvoker.categorizeCalls.map { it.jobId }).containsExactly(jobId)
+            assertThat(aiTaskSender.categorizeTasks.map { it.jobId }).containsExactly(jobId)
         }
 
         @Test
@@ -174,8 +174,8 @@ class AnalysisOrchestratorTest @Autowired constructor(
             orchestrator.sweep()
 
             // then
-            assertThat(stageInvoker.scoreCalls).hasSize(1)
-            assertThat(stageInvoker.scoreCalls.single().photoIds).containsExactlyElementsOf(photos)
+            assertThat(aiTaskSender.scoreTasks).hasSize(1)
+            assertThat(aiTaskSender.scoreTasks.single().photoIds).containsExactlyElementsOf(photos)
         }
 
         @Test
@@ -183,7 +183,7 @@ class AnalysisOrchestratorTest @Autowired constructor(
             // given
             scoredPhotos(2)
             // 요청의 afterCommit 걸음이 먼저 넘기지 않도록 실행기를 한 번 실패시켜 잡을 ANALYZING 에 남겨 둔다
-            stageInvoker.failNext = true
+            aiTaskSender.failNext = true
             val jobId = request()
             jdbcTemplate.update("UPDATE analysis_jobs SET status = 'ANALYZING', attempts = 0, dispatched_at = NULL WHERE id = ?", jobId)
 
@@ -199,7 +199,7 @@ class AnalysisOrchestratorTest @Autowired constructor(
 
             // then — CAS: 진 쪽은 EVENT 를 보내지 않는다
             assertThat(job(jobId).status).isEqualTo(AnalysisStatus.CATEGORIZING)
-            assertThat(stageInvoker.categorizeCalls).hasSize(1)
+            assertThat(aiTaskSender.categorizeTasks).hasSize(1)
             assertThat(job(jobId).attempts).isEqualTo(1)
         }
     }
@@ -229,7 +229,7 @@ class AnalysisOrchestratorTest @Autowired constructor(
                 softly.assertThat(conceptFolderRepository.existsByGalleryIdAndAnalysisJobId(fixture.galleryId, jobId)).isTrue()
                 softly.assertThat(completionNotificationsOf(fixture.photographer.requiredId)).isEqualTo(1)
                 softly.assertThat(completionNotificationsOf(fixture.member.requiredId)).isEqualTo(1)
-                softly.assertThat(stageInvoker.categorizeCalls).hasSize(1)
+                softly.assertThat(aiTaskSender.categorizeTasks).hasSize(1)
             }
         }
 
@@ -296,16 +296,16 @@ class AnalysisOrchestratorTest @Autowired constructor(
             // given
             scoredPhotos(1)
             val jobId = request()
-            assertThat(stageInvoker.categorizeCalls).hasSize(1)
+            assertThat(aiTaskSender.categorizeTasks).hasSize(1)
 
             // when — 타임아웃 안에는 기다린다
             orchestrator.sweep()
-            assertThat(stageInvoker.categorizeCalls).hasSize(1)
+            assertThat(aiTaskSender.categorizeTasks).hasSize(1)
 
             // 타임아웃이 지나면 다시 보낸다
             expireDispatch(jobId)
             orchestrator.sweep()
-            assertThat(stageInvoker.categorizeCalls).hasSize(2)
+            assertThat(aiTaskSender.categorizeTasks).hasSize(2)
             assertThat(job(jobId).attempts).isEqualTo(2)
 
             expireDispatch(jobId)
@@ -316,7 +316,7 @@ class AnalysisOrchestratorTest @Autowired constructor(
             // then — 3회를 넘긴 네 번째는 포기
             val job = job(jobId)
             assertSoftly { softly ->
-                softly.assertThat(stageInvoker.categorizeCalls).hasSize(3)
+                softly.assertThat(aiTaskSender.categorizeTasks).hasSize(3)
                 softly.assertThat(job.status).isEqualTo(AnalysisStatus.FAILED)
                 softly.assertThat(job.error).contains("3회")
             }
@@ -326,9 +326,9 @@ class AnalysisOrchestratorTest @Autowired constructor(
         fun `호출이 실패하면 잡을 닫지 않고 다음 스윕이 바로 다시 보낸다`() {
             // given
             scoredPhotos(1)
-            stageInvoker.failNext = true
+            aiTaskSender.failNext = true
             val jobId = request()
-            assertThat(stageInvoker.categorizeCalls).isEmpty()
+            assertThat(aiTaskSender.categorizeTasks).isEmpty()
             assertThat(job(jobId).dispatchedAt).isNull()
 
             // when
@@ -337,7 +337,7 @@ class AnalysisOrchestratorTest @Autowired constructor(
             // then
             val job = job(jobId)
             assertSoftly { softly ->
-                softly.assertThat(stageInvoker.categorizeCalls).hasSize(1)
+                softly.assertThat(aiTaskSender.categorizeTasks).hasSize(1)
                 softly.assertThat(job.status).isEqualTo(AnalysisStatus.CATEGORIZING)
                 softly.assertThat(job.attempts).isEqualTo(2)
                 softly.assertThat(job.dispatchedAt).isNotNull()

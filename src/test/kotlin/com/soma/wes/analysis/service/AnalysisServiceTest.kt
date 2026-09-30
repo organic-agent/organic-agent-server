@@ -10,7 +10,7 @@ import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
 import com.soma.wes.photo.domain.PhotoAnalysis
 import com.soma.wes.photo.fixture.PhotoFixture
-import com.soma.wes.support.FakeStageInvoker
+import com.soma.wes.support.FakeAiTaskSender
 import com.soma.wes.support.IntegrationTest
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -28,7 +28,7 @@ class AnalysisServiceTest @Autowired constructor(
     private val analysisJobRepository: AnalysisJobRepository,
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
-    private val stageInvoker: FakeStageInvoker,
+    private val aiTaskSender: FakeAiTaskSender,
     private val jdbcTemplate: JdbcTemplate,
 ) {
 
@@ -36,7 +36,7 @@ class AnalysisServiceTest @Autowired constructor(
 
     @BeforeEach
     fun setUpBaseData() {
-        stageInvoker.reset()
+        aiTaskSender.reset()
         fixture = galleryFixture.멤버와_열린_갤러리()
     }
 
@@ -62,7 +62,7 @@ class AnalysisServiceTest @Autowired constructor(
                 softly.assertThat(response.finishedAt).isNull()
             }
             // 요청 자체는 Lambda 를 부르지 않는다 — 점수가 없으니 categorize 도, 벡터가 없으니 score 폴백도 나갈 것이 없다.
-            assertThat(stageInvoker.categorizeCalls).isEmpty()
+            assertThat(aiTaskSender.categorizeTasks).isEmpty()
         }
 
         @Test
@@ -76,7 +76,7 @@ class AnalysisServiceTest @Autowired constructor(
 
             // then — afterCommit 의 한 걸음이 ANALYZING→CATEGORIZING 을 지났다
             assertThat(analysisJobRepository.findById(response.jobId).orElseThrow().status).isEqualTo(AnalysisStatus.CATEGORIZING)
-            assertThat(stageInvoker.categorizeCalls.map { it.jobId }).containsExactly(response.jobId)
+            assertThat(aiTaskSender.categorizeTasks.map { it.jobId }).containsExactly(response.jobId)
         }
 
         @Test
@@ -109,13 +109,13 @@ class AnalysisServiceTest @Autowired constructor(
         fun `실행기가 설정되지 않았으면 잡을 만들지 않는다`() {
             // given
             photoFixture.업로드된_사진(fixture.galleryId, count = 1)
-            stageInvoker.available = false
+            aiTaskSender.available = false
 
             // when & then
             assertThatThrownBy { analysisService.request(fixture.galleryId, fixture.photographer.id!!) }
                 .isInstanceOf(AnalysisException::class.java)
                 .extracting("errorCode")
-                .isEqualTo(AnalysisErrorCode.STAGE_NOT_CONFIGURED)
+                .isEqualTo(AnalysisErrorCode.AI_TASK_NOT_CONFIGURED)
             assertThat(analysisJobRepository.count()).isZero()
         }
 

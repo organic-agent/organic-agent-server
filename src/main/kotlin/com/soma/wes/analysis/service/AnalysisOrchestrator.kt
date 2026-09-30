@@ -5,11 +5,11 @@ import com.soma.wes.analysis.domain.AnalysisJob
 import com.soma.wes.analysis.domain.AnalysisStatus
 import com.soma.wes.analysis.dto.MaterializeOutcomeDto
 import com.soma.wes.analysis.dto.OrchestratorActionDto
-import com.soma.wes.analysis.dto.StageCallDto
+import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.exception.AnalysisException
 import com.soma.wes.analysis.repository.ConceptAssignmentRepository
 import com.soma.wes.analysis.repository.AnalysisJobRepository
-import com.soma.wes.analysis.service.port.StageInvoker
+import com.soma.wes.analysis.service.port.AiTaskSender
 import com.soma.wes.analysis.support.AnalysisCompletionNotifier
 import com.soma.wes.folder.exception.FolderErrorCode
 import com.soma.wes.folder.exception.FolderException
@@ -41,7 +41,7 @@ class AnalysisOrchestrator(
     private val analysisJobRepository: AnalysisJobRepository,
     private val photoPipelineRepository: PhotoPipelineRepository,
     private val conceptAssignmentRepository: ConceptAssignmentRepository,
-    private val stageInvoker: StageInvoker,
+    private val aiTaskSender: AiTaskSender,
     private val embedDispatcher: EmbedDispatcher,
     private val scoreWorkerSupervisor: ScoreWorkerSupervisor,
     // [REFACTOR-SUPPORT 2026-09-27] AiFolderMaterializeService.materializeFromAnalysis → folder/support/AiFolderMaterializer.materialize
@@ -100,7 +100,7 @@ class AnalysisOrchestrator(
             null
         }
         when (action) {
-            is OrchestratorActionDto.Invoke -> invoke(action)
+            is OrchestratorActionDto.Send -> send(action)
             is OrchestratorActionDto.Materialize -> materialize(action)
             null -> Unit
         }
@@ -131,7 +131,7 @@ class AnalysisOrchestrator(
         if (progress.livePending == 0L && progress.isFullyScored) {
             job.startCategorizing(now)
             logTransition(job, "ANALYZING->CATEGORIZING", progress, now)
-            return OrchestratorActionDto.Invoke(job.requiredId, StageCallDto.Categorize(galleryId = job.galleryId, jobId = job.requiredId))
+            return OrchestratorActionDto.Send(jobId = job.requiredId, task = AiTaskDto.Categorize(galleryId = job.galleryId, jobId = job.requiredId))
         }
         return null
     }
@@ -161,18 +161,18 @@ class AnalysisOrchestrator(
         }
         job.redispatchCategorize(now)
         log.warn("analysis job={} gallery={} categorize redispatch attempts={}", job.requiredId, job.galleryId, job.attempts)
-        return OrchestratorActionDto.Invoke(job.requiredId, StageCallDto.Categorize(galleryId = job.galleryId, jobId = job.requiredId))
+        return OrchestratorActionDto.Send(jobId = job.requiredId, task = AiTaskDto.Categorize(galleryId = job.galleryId, jobId = job.requiredId))
     }
 
     private fun progressOf(job: AnalysisJob, now: ZonedDateTime): GalleryAnalysisProgress =
         photoPipelineRepository.progressOf(job.galleryId, liveSince = now.minus(properties.uploadQuietAfter))
 
-    private fun invoke(action: OrchestratorActionDto.Invoke) {
+    private fun send(action: OrchestratorActionDto.Send) {
         try {
-            stageInvoker.invoke(action.call)
+            aiTaskSender.send(action.task)
         } catch (e: AnalysisException) {
             // 호출 실패는 잡을 닫지 않는다 — 시각을 지워 다음 스윕이 타임아웃을 기다리지 않고 다시 보내게 한다. 상한은 시도 수가 지킨다.
-            log.warn("AI 분석 호출 실패 — 스윕이 다시 보낸다: job={} call={} code={}", action.jobId, action.call, e.errorCode.code)
+            log.warn("AI 분석 호출 실패 — 스윕이 다시 보낸다: job={} task={} code={}", action.jobId, action.task, e.errorCode.code)
             tx.executeWithoutResult { analysisJobRepository.findById(action.jobId).ifPresent { it.dispatchFailed() } }
         }
     }

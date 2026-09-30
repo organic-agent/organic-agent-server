@@ -2,10 +2,10 @@ package com.soma.wes.analysis.service
 
 import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.dto.ScoreWorkerDto
-import com.soma.wes.analysis.dto.StageCallDto
+import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.exception.AnalysisException
 import com.soma.wes.analysis.service.port.ScoreWorkerPool
-import com.soma.wes.analysis.service.port.StageInvoker
+import com.soma.wes.analysis.service.port.AiTaskSender
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import java.time.Clock
 import java.time.ZonedDateTime
@@ -30,7 +30,7 @@ import org.springframework.stereotype.Service
 class ScoreWorkerSupervisor(
     private val scoreWorkerPool: ScoreWorkerPool,
     private val photoPipelineRepository: PhotoPipelineRepository,
-    private val stageInvoker: StageInvoker,
+    private val aiTaskSender: AiTaskSender,
     private val properties: AnalysisProperties,
     private val clock: Clock,
 ) {
@@ -136,7 +136,7 @@ class ScoreWorkerSupervisor(
 
     /** 갤러리마다 미점수 사진 전부를 [AnalysisProperties.scoreBatchSize]장씩. 호출 실패는 남은 갤러리도 같이 실패할 것이라 걸음을 멈춘다. */
     private fun fallback(now: ZonedDateTime) {
-        if (!stageInvoker.isAvailable(StageCallDto.Score::class)) return
+        if (!aiTaskSender.isAvailable(AiTaskDto.Score::class)) return
         for (galleryId in photoPipelineRepository.findGalleryIdsWithUnscoredPhotos()) {
             val last = fallbackSentAt[galleryId]
             if (last != null && last.plus(properties.gpu.fallbackInterval).isAfter(now)) continue
@@ -145,7 +145,7 @@ class ScoreWorkerSupervisor(
             val batches = photoIds.chunked(properties.scoreBatchSize)
             for (batch in batches) {
                 try {
-                    stageInvoker.invoke(StageCallDto.Score(galleryId = galleryId, photoIds = batch))
+                    aiTaskSender.send(AiTaskDto.Score(galleryId = galleryId, photoIds = batch))
                 } catch (e: AnalysisException) {
                     log.warn("score fallback failed gallery={} code={} — 다음 스윕에서 다시 보낸다", galleryId, e.errorCode.code)
                     return

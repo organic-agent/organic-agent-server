@@ -9,11 +9,11 @@ import com.soma.wes.admin.resource.repository.AdminIdempotencyStore
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
 import com.soma.wes.analysis.domain.AnalysisJob
 import com.soma.wes.analysis.domain.AnalysisStatus
-import com.soma.wes.analysis.dto.StageCallDto
+import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
 import com.soma.wes.analysis.repository.AnalysisJobRepository
-import com.soma.wes.analysis.service.port.StageInvoker
+import com.soma.wes.analysis.service.port.AiTaskSender
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -34,7 +34,7 @@ class AdminReprocessService(
     private val idempotencyStore: AdminIdempotencyStore,
     private val photoPipelineRepository: PhotoPipelineRepository,
     private val analysisJobRepository: AnalysisJobRepository,
-    private val stageInvoker: StageInvoker,
+    private val aiTaskSender: AiTaskSender,
     private val transactionTemplate: TransactionTemplate,
     private val clock: Clock,
 ) {
@@ -60,8 +60,8 @@ class AdminReprocessService(
         if (gallery.deleted || gallery.version != request.expectedVersion) {
             throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
         }
-        if (!stageInvoker.isAvailable(StageCallDto.Embed::class)) {
-            throw AnalysisException(AnalysisErrorCode.STAGE_NOT_CONFIGURED)
+        if (!aiTaskSender.isAvailable(AiTaskDto.Embed::class)) {
+            throw AnalysisException(AnalysisErrorCode.AI_TASK_NOT_CONFIGURED)
         }
 
         val targets = countTargets(id)

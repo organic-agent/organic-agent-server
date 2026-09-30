@@ -1,9 +1,9 @@
 package com.soma.wes.analysis.service
 
 import com.soma.wes.analysis.config.AnalysisProperties
-import com.soma.wes.analysis.dto.StageCallDto
+import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.exception.AnalysisException
-import com.soma.wes.analysis.service.port.StageInvoker
+import com.soma.wes.analysis.service.port.AiTaskSender
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import java.time.Clock
 import java.time.ZonedDateTime
@@ -21,7 +21,7 @@ import org.springframework.stereotype.Service
 @Service
 class EmbedDispatcher(
     private val photoPipelineRepository: PhotoPipelineRepository,
-    private val stageInvoker: StageInvoker,
+    private val aiTaskSender: AiTaskSender,
     private val properties: AnalysisProperties,
     private val clock: Clock,
 ) {
@@ -30,7 +30,7 @@ class EmbedDispatcher(
 
     /** 보낸 배치 수를 돌려준다. 실행기가 없으면(로컬·테스트) 아무것도 하지 않는다. */
     fun dispatch(): Int {
-        if (!stageInvoker.isAvailable(StageCallDto.Embed::class)) return 0
+        if (!aiTaskSender.isAvailable(AiTaskDto.Embed::class)) return 0
         val now = ZonedDateTime.now(clock)
 
         val released = photoPipelineRepository.releaseStaleDispatches(before = now.minus(properties.embedRedispatchAfter))
@@ -56,7 +56,7 @@ class EmbedDispatcher(
                     maxAttempts = properties.embedMaxAttempts,
                 )
                 if (photoIds.isEmpty()) continue
-                if (!invoke(StageCallDto.Embed(galleryId = galleryId, photoIds = photoIds))) return sent
+                if (!send(AiTaskDto.Embed(galleryId = galleryId, photoIds = photoIds))) return sent
                 slots--
                 sent++
                 sentThisRound++
@@ -67,13 +67,13 @@ class EmbedDispatcher(
     }
 
     /** 호출 실패는 배정을 되돌리고 걸음을 멈춘다 — 권한·스로틀링이면 남은 갤러리도 같이 실패할 것이라 다음 스윕에 맡긴다. */
-    private fun invoke(call: StageCallDto.Embed): Boolean = try {
-        stageInvoker.invoke(call)
-        log.info("embed dispatch gallery={} photos={}", call.galleryId, call.photoIds.size)
+    private fun send(task: AiTaskDto.Embed): Boolean = try {
+        aiTaskSender.send(task)
+        log.info("embed dispatch gallery={} photos={}", task.galleryId, task.photoIds.size)
         true
     } catch (e: AnalysisException) {
-        photoPipelineRepository.releaseClaim(call.photoIds)
-        log.warn("embed dispatch failed — 배정을 되돌리고 다음 스윕에 다시 보낸다: gallery={} photos={} code={}", call.galleryId, call.photoIds.size, e.errorCode.code)
+        photoPipelineRepository.releaseClaim(task.photoIds)
+        log.warn("embed dispatch failed — 배정을 되돌리고 다음 스윕에 다시 보낸다: gallery={} photos={} code={}", task.galleryId, task.photoIds.size, e.errorCode.code)
         false
     }
 }

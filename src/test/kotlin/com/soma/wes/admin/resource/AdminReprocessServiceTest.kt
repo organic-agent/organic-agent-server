@@ -13,7 +13,7 @@ import com.soma.wes.analysis.domain.AnalysisStatus
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
 import com.soma.wes.analysis.repository.AnalysisJobRepository
-import com.soma.wes.support.FakeStageInvoker
+import com.soma.wes.support.FakeAiTaskSender
 import com.soma.wes.support.IntegrationTest
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -29,13 +29,13 @@ class AdminReprocessServiceTest @Autowired constructor(
     private val resourceService: AdminResourceService,
     private val adminAccountFixture: AdminAccountFixture,
     private val analysisJobRepository: AnalysisJobRepository,
-    private val stageInvoker: FakeStageInvoker,
+    private val aiTaskSender: FakeAiTaskSender,
     private val jdbcTemplate: JdbcTemplate,
 ) {
 
     @BeforeEach
     fun setUp() {
-        stageInvoker.reset()
+        aiTaskSender.reset()
     }
 
     @Test
@@ -63,7 +63,7 @@ class AdminReprocessServiceTest @Autowired constructor(
             }
             softly.assertThat(job.status).isEqualTo(AnalysisStatus.ANALYZING)
             // Lambda 를 직접 부르지 않는다 — 다시 배정하는 것은 스윕이다.
-            softly.assertThat(stageInvoker.calls).isEmpty()
+            softly.assertThat(aiTaskSender.tasks).isEmpty()
         }
     }
 
@@ -117,7 +117,7 @@ class AdminReprocessServiceTest @Autowired constructor(
         val actor = adminAccountFixture.관리자("reprocess-unconfigured")
         val gallery = createGallery(actor.requiredId)
         embeddedPhotos(gallery.id, count = 1)
-        stageInvoker.available = false
+        aiTaskSender.available = false
 
         assertThatThrownBy {
             service.reprocess(
@@ -128,7 +128,7 @@ class AdminReprocessServiceTest @Autowired constructor(
                 "127.0.0.1",
             )
         }.isInstanceOfSatisfying(AnalysisException::class.java) {
-            assertThat(it.errorCode).isEqualTo(AnalysisErrorCode.STAGE_NOT_CONFIGURED)
+            assertThat(it.errorCode).isEqualTo(AnalysisErrorCode.AI_TASK_NOT_CONFIGURED)
         }
         assertThat(analysisRows(gallery.id)).isEqualTo(1)
         assertThat(analysisJobRepository.count()).isZero()

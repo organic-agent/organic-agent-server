@@ -10,8 +10,8 @@ import com.soma.wes.admin.resource.repository.AdminWorkflowExecutionRepository
 import com.soma.wes.admin.resource.repository.AdminWorkflowRepository
 import com.soma.wes.admin.resource.service.AdminResourceService
 import com.soma.wes.admin.resource.service.AdminWorkflowExecutor
-import com.soma.wes.analysis.dto.StageCallDto
-import com.soma.wes.analysis.service.port.StageInvoker
+import com.soma.wes.analysis.dto.AiTaskDto
+import com.soma.wes.analysis.service.port.AiTaskSender
 import com.soma.wes.support.IntegrationTest
 import java.time.Duration
 import org.assertj.core.api.Assertions.assertThat
@@ -46,11 +46,11 @@ class AdminWorkflowExecutorTest @Autowired constructor(
 ) {
 
     @MockitoBean
-    private lateinit var stageInvoker: StageInvoker
+    private lateinit var aiTaskSender: AiTaskSender
 
     @BeforeEach
     fun setUp() {
-        whenever(stageInvoker.isAvailable(StageCallDto.ExactPhoto::class)).thenReturn(true)
+        whenever(aiTaskSender.isAvailable(AiTaskDto.ExactPhoto::class)).thenReturn(true)
     }
 
     @Test
@@ -75,8 +75,8 @@ class AdminWorkflowExecutorTest @Autowired constructor(
             .containsExactly("REPROCESS_DISPATCHED:SUCCESS")
         assertThat(dispatchAudits(AdminResourceType.PHOTO, graph.photos[1].id))
             .containsExactly("REPROCESS_DISPATCHED:SUCCESS")
-        val requests = argumentCaptor<StageCallDto.ExactPhoto>()
-        verify(stageInvoker, times(2)).invoke(requests.capture())
+        val requests = argumentCaptor<AiTaskDto.ExactPhoto>()
+        verify(aiTaskSender, times(2)).send(requests.capture())
         assertThat(requests.allValues.map { it.jobType })
             .containsExactlyInAnyOrder("EMBEDDING", "DERIVATIVE")
         assertThat(requests.allValues).allSatisfy { request ->
@@ -91,7 +91,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
         val deletedTargetJob = processingJob("EMBEDDING", AdminResourceType.PHOTO, graph.photos[1].id)
         executor.runOnce()
         assertThat(processingState(deletedTargetJob)).isEqualTo(State("CANCELED", 0, "TARGET_DELETED"))
-        verify(stageInvoker, times(2)).invoke(any<StageCallDto.ExactPhoto>())
+        verify(aiTaskSender, times(2)).send(any<AiTaskDto.ExactPhoto>())
     }
 
     @Test
@@ -107,7 +107,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
                 staleTimeout = Duration.ofSeconds(1),
                 dispatchedTimeout = Duration.ofSeconds(1),
             ),
-            stageInvoker = stageInvoker,
+            aiTaskSender = aiTaskSender,
             auditService = auditService,
             transactionTemplate = transactionTemplate,
         )
@@ -125,7 +125,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
             "REPROCESS_DISPATCHED:SUCCESS",
             "REPROCESS_DISPATCH_FAILED:FAILURE",
         )
-        verify(stageInvoker, times(1)).invoke(any<StageCallDto.ExactPhoto>())
+        verify(aiTaskSender, times(1)).send(any<AiTaskDto.ExactPhoto>())
     }
 
     @Test
@@ -137,7 +137,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
             graph.photos.single().id,
             mapOf("galleryId" to graph.gallery.id),
         )
-        whenever(stageInvoker.invoke(any<StageCallDto.ExactPhoto>()))
+        whenever(aiTaskSender.send(any<AiTaskDto.ExactPhoto>()))
             .thenThrow(IllegalStateException("timeout-after-send"))
         val shortTimeoutExecutor = AdminWorkflowExecutor(
             repository = workflowExecutionRepository,
@@ -147,7 +147,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
                 staleTimeout = Duration.ofSeconds(1),
                 dispatchedTimeout = Duration.ofSeconds(1),
             ),
-            stageInvoker = stageInvoker,
+            aiTaskSender = aiTaskSender,
             auditService = auditService,
             transactionTemplate = transactionTemplate,
         )
@@ -170,7 +170,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
             "REPROCESS_DISPATCH_UNKNOWN:FAILURE",
             "REPROCESS_DISPATCH_FAILED:FAILURE",
         )
-        verify(stageInvoker, times(1)).invoke(any<StageCallDto.ExactPhoto>())
+        verify(aiTaskSender, times(1)).send(any<AiTaskDto.ExactPhoto>())
     }
 
     @Test
@@ -204,7 +204,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
                 staleTimeout = Duration.ofSeconds(1),
                 dispatchedTimeout = Duration.ofSeconds(1),
             ),
-            stageInvoker = stageInvoker,
+            aiTaskSender = aiTaskSender,
             auditService = auditService,
             transactionTemplate = transactionTemplate,
         )
@@ -217,7 +217,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
             .containsExactly("REPROCESS_DISPATCH_FAILED:FAILURE")
         assertThat(workflowRepository.cancelProcessingJob(cancelJobId)).isEqualTo(1)
         assertThat(processingState(cancelJobId)).isEqualTo(State("CANCELED", 1, null))
-        verify(stageInvoker, times(0)).invoke(any<StageCallDto.ExactPhoto>())
+        verify(aiTaskSender, times(0)).send(any<AiTaskDto.ExactPhoto>())
 
         jdbcClient.sql(
             "UPDATE admin_processing_jobs SET last_run_at=CURRENT_TIMESTAMP-INTERVAL '1 day' WHERE id=:id",
@@ -226,7 +226,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
 
         assertThat(processingState(retryJobId)).isEqualTo(State("DISPATCHED", 2, null))
         assertThat(processingState(cancelJobId)).isEqualTo(State("CANCELED", 1, null))
-        verify(stageInvoker).invoke(argThat<StageCallDto.ExactPhoto> {
+        verify(aiTaskSender).send(argThat<AiTaskDto.ExactPhoto> {
             jobId == retryJobId && attemptCount == 2
         })
     }
@@ -247,7 +247,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
             second.photos.single().id,
             mapOf("galleryId" to second.gallery.id),
         )
-        whenever(stageInvoker.invoke(argThat<StageCallDto.ExactPhoto> { galleryId == first.gallery.id }))
+        whenever(aiTaskSender.send(argThat<AiTaskDto.ExactPhoto> { galleryId == first.gallery.id }))
             .thenThrow(AssertionError("simulated process termination"))
 
         assertThatThrownBy { executor.runOnce() }.isInstanceOf(AssertionError::class.java)
@@ -263,8 +263,8 @@ class AdminWorkflowExecutorTest @Autowired constructor(
 
         assertThat(processingState(firstJobId)).isEqualTo(State("DISPATCHING", 1, null))
         assertThat(processingState(secondJobId)).isEqualTo(State("DISPATCHED", 1, null))
-        verify(stageInvoker, times(1)).invoke(argThat<StageCallDto.ExactPhoto> { galleryId == first.gallery.id })
-        verify(stageInvoker, times(1)).invoke(argThat<StageCallDto.ExactPhoto> { galleryId == second.gallery.id })
+        verify(aiTaskSender, times(1)).send(argThat<AiTaskDto.ExactPhoto> { galleryId == first.gallery.id })
+        verify(aiTaskSender, times(1)).send(argThat<AiTaskDto.ExactPhoto> { galleryId == second.gallery.id })
     }
 
     @Test
@@ -300,7 +300,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
         executor.runOnce()
 
         assertThat(processingState(jobId)).isEqualTo(State("DISPATCHED", 1, null))
-        verify(stageInvoker, times(1)).invoke(any<StageCallDto.ExactPhoto>())
+        verify(aiTaskSender, times(1)).send(any<AiTaskDto.ExactPhoto>())
     }
 
     @Test
@@ -312,7 +312,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
             graph.photos.single().id,
             mapOf("galleryId" to graph.gallery.id),
         )
-        whenever(stageInvoker.isAvailable(StageCallDto.ExactPhoto::class)).thenAnswer {
+        whenever(aiTaskSender.isAvailable(AiTaskDto.ExactPhoto::class)).thenAnswer {
             jdbcClient.sql(
                 """
                 UPDATE admin_processing_jobs
@@ -327,7 +327,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
 
         assertThat(processingState(jobId)).isEqualTo(State("CANCELED", 0, null))
         assertThat(dispatchAudits(AdminResourceType.PHOTO, graph.photos.single().id)).isEmpty()
-        verify(stageInvoker, times(0)).invoke(any<StageCallDto.ExactPhoto>())
+        verify(aiTaskSender, times(0)).send(any<AiTaskDto.ExactPhoto>())
     }
 
     @Test
@@ -340,7 +340,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
             photo.id,
             mapOf("galleryId" to graph.gallery.id),
         )
-        whenever(stageInvoker.isAvailable(StageCallDto.ExactPhoto::class)).thenAnswer {
+        whenever(aiTaskSender.isAvailable(AiTaskDto.ExactPhoto::class)).thenAnswer {
             jdbcClient.sql("UPDATE photos SET deleted_at=CURRENT_TIMESTAMP WHERE id=:id")
                 .param("id", photo.id).update()
             true
@@ -350,7 +350,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
 
         assertThat(processingState(jobId)).isEqualTo(State("CANCELED", 0, "TARGET_DELETED"))
         assertThat(dispatchAudits(AdminResourceType.PHOTO, photo.id)).isEmpty()
-        verify(stageInvoker, times(0)).invoke(any<StageCallDto.ExactPhoto>())
+        verify(aiTaskSender, times(0)).send(any<AiTaskDto.ExactPhoto>())
     }
 
     @Test
@@ -402,7 +402,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
             "UPDATE admin_processing_jobs SET last_run_at=CURRENT_TIMESTAMP-INTERVAL '1 day' WHERE id=:id",
         ).param("id", jobId).update()
         executor.runOnce()
-        verify(stageInvoker, times(1)).invoke(any<StageCallDto.ExactPhoto>())
+        verify(aiTaskSender, times(1)).send(any<AiTaskDto.ExactPhoto>())
     }
 
     @Test
@@ -424,14 +424,14 @@ class AdminWorkflowExecutorTest @Autowired constructor(
                 """.trimIndent(),
             ).param("id", jobId).update()
             null
-        }.whenever(stageInvoker).invoke(any<StageCallDto.ExactPhoto>())
+        }.whenever(aiTaskSender).send(any<AiTaskDto.ExactPhoto>())
 
         executor.runOnce()
 
         assertThat(processingState(jobId)).isEqualTo(State("CANCELED", 1, null))
         assertThat(dispatchAudits(AdminResourceType.PHOTO, photo.id))
             .containsExactly("REPROCESS_DISPATCHED:SUCCESS")
-        verify(stageInvoker, times(1)).invoke(any<StageCallDto.ExactPhoto>())
+        verify(aiTaskSender, times(1)).send(any<AiTaskDto.ExactPhoto>())
     }
 
     private fun graph(suffix: String, photoCount: Int): Graph {

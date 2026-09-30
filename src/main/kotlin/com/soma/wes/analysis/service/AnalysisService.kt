@@ -3,12 +3,12 @@ package com.soma.wes.analysis.service
 import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.domain.AnalysisJob
 import com.soma.wes.analysis.domain.AnalysisStatus
-import com.soma.wes.analysis.dto.StageCallDto
+import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.dto.response.AnalysisJobResponse
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
 import com.soma.wes.analysis.repository.AnalysisJobRepository
-import com.soma.wes.analysis.service.port.StageInvoker
+import com.soma.wes.analysis.service.port.AiTaskSender
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.photo.repository.projection.GalleryAnalysisProgress
@@ -30,7 +30,7 @@ class AnalysisService(
     private val galleryAccessPolicy: GalleryAccessPolicy,
     private val photoPipelineRepository: PhotoPipelineRepository,
     private val analysisJobRepository: AnalysisJobRepository,
-    private val stageInvoker: StageInvoker,
+    private val aiTaskSender: AiTaskSender,
     private val orchestrator: AnalysisOrchestrator,
     private val properties: AnalysisProperties,
     private val clock: Clock,
@@ -74,10 +74,10 @@ class AnalysisService(
     }
 
     private fun validateInvokerConfigured() {
-        val required = listOf(StageCallDto.Embed::class, StageCallDto.Categorize::class) +
-            if (properties.gpu.enabled) emptyList() else listOf(StageCallDto.Score::class)
-        if (required.any { !stageInvoker.isAvailable(it) }) {
-            throw AnalysisException(AnalysisErrorCode.STAGE_NOT_CONFIGURED)
+        val required = listOf(AiTaskDto.Embed::class, AiTaskDto.Categorize::class) +
+            if (properties.gpu.enabled) emptyList() else listOf(AiTaskDto.Score::class)
+        if (required.any { !aiTaskSender.isAvailable(it) }) {
+            throw AnalysisException(AnalysisErrorCode.AI_TASK_NOT_CONFIGURED)
         }
     }
 

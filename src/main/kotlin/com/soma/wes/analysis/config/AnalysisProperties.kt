@@ -1,6 +1,6 @@
 package com.soma.wes.analysis.config
 
-import com.soma.wes.analysis.dto.StageCallDto
+import com.soma.wes.analysis.dto.AiTaskDto
 import java.time.Duration
 import kotlin.reflect.KClass
 import org.springframework.boot.context.properties.ConfigurationProperties
@@ -68,20 +68,20 @@ data class AnalysisProperties(
     val isLocalConfigured: Boolean
         get() = localScriptDir.isNotBlank()
 
-    fun functionNameOf(call: KClass<out StageCallDto>): String = when (call) {
-        StageCallDto.Embed::class, StageCallDto.ExactPhoto::class -> embedderFunctionName
-        StageCallDto.Score::class -> scoreFunctionName
-        StageCallDto.Categorize::class -> categorizeFunctionName
+    fun functionNameOf(call: KClass<out AiTaskDto>): String = when (call) {
+        AiTaskDto.Embed::class, AiTaskDto.ExactPhoto::class -> embedderFunctionName
+        AiTaskDto.Score::class -> scoreFunctionName
+        AiTaskDto.Categorize::class -> categorizeFunctionName
         else -> error("모르는 단계 호출: $call")
     }
 
     companion object {
 
         /** 단계 호출 → 로컬 대역 스크립트 이름. 운영 Lambda 함수·AI repo 모듈과 같은 이름이라 셋을 나란히 읽을 수 있다. */
-        fun localFunctionOf(call: KClass<out StageCallDto>): String = when (call) {
-            StageCallDto.Embed::class, StageCallDto.ExactPhoto::class -> "embedder"
-            StageCallDto.Score::class -> "score"
-            StageCallDto.Categorize::class -> "categorize"
+        fun localFunctionOf(call: KClass<out AiTaskDto>): String = when (call) {
+            AiTaskDto.Embed::class, AiTaskDto.ExactPhoto::class -> "embedder"
+            AiTaskDto.Score::class -> "score"
+            AiTaskDto.Categorize::class -> "categorize"
             else -> error("모르는 단계 호출: $call")
         }
     }

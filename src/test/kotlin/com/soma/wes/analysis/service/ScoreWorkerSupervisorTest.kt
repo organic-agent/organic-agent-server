@@ -5,7 +5,7 @@ import com.soma.wes.analysis.dto.ScoreWorkerStateDto
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.repository.PhotoPipelineRepository
-import com.soma.wes.support.FakeStageInvoker
+import com.soma.wes.support.FakeAiTaskSender
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.support.ManualScoreWorkerPool
 import java.time.Clock
@@ -30,7 +30,7 @@ class ScoreWorkerSupervisorTest @Autowired constructor(
     private val photoPipelineRepository: PhotoPipelineRepository,
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
-    private val stageInvoker: FakeStageInvoker,
+    private val aiTaskSender: FakeAiTaskSender,
     private val pool: ManualScoreWorkerPool,
 ) {
 
@@ -39,7 +39,7 @@ class ScoreWorkerSupervisorTest @Autowired constructor(
 
     @BeforeEach
     fun setUpBaseData() {
-        stageInvoker.reset()
+        aiTaskSender.reset()
         pool.reset()
         clock = MutableClock(ZonedDateTime.now())
         pool.now = { ZonedDateTime.now(clock) }
@@ -49,7 +49,7 @@ class ScoreWorkerSupervisorTest @Autowired constructor(
     private fun controller(enabled: Boolean = true) = ScoreWorkerSupervisor(
         pool,
         photoPipelineRepository,
-        stageInvoker,
+        aiTaskSender,
         AnalysisProperties(
             gpu = AnalysisProperties.Gpu(
                 enabled = enabled,
@@ -81,7 +81,7 @@ class ScoreWorkerSupervisorTest @Autowired constructor(
             assertSoftly { softly ->
                 softly.assertThat(pool.starts).hasSize(1)
                 softly.assertThat(pool.workers.single().state).isEqualTo(ScoreWorkerStateDto.PENDING)
-                softly.assertThat(stageInvoker.scoreCalls).isEmpty()
+                softly.assertThat(aiTaskSender.scoreTasks).isEmpty()
             }
         }
 
@@ -169,8 +169,8 @@ class ScoreWorkerSupervisorTest @Autowired constructor(
 
             // then — 처음과 간격 뒤, 둘
             assertSoftly { softly ->
-                softly.assertThat(stageInvoker.scoreCalls).hasSize(2)
-                softly.assertThat(stageInvoker.scoreCalls.first().photoIds).containsExactlyElementsOf(photos)
+                softly.assertThat(aiTaskSender.scoreTasks).hasSize(2)
+                softly.assertThat(aiTaskSender.scoreTasks.first().photoIds).containsExactlyElementsOf(photos)
                 softly.assertThat(pool.starts).isEmpty()
             }
         }
@@ -187,14 +187,14 @@ class ScoreWorkerSupervisorTest @Autowired constructor(
             // when — 유예 안: 폴백 없음
             clock.advance(Duration.ofMinutes(4))
             controller.control()
-            assertThat(stageInvoker.scoreCalls).isEmpty()
+            assertThat(aiTaskSender.scoreTasks).isEmpty()
 
             // 유예 뒤 fallbackAfter(10분)까지 무진행
             clock.advance(Duration.ofMinutes(11))
             controller.control()
 
             // then
-            assertThat(stageInvoker.scoreCalls.single().photoIds).containsExactlyElementsOf(photos)
+            assertThat(aiTaskSender.scoreTasks.single().photoIds).containsExactlyElementsOf(photos)
         }
 
         @Test
@@ -213,7 +213,7 @@ class ScoreWorkerSupervisorTest @Autowired constructor(
             controller.control()
 
             // then — 마지막 진행 뒤 10분이 안 됐다
-            assertThat(stageInvoker.scoreCalls).isEmpty()
+            assertThat(aiTaskSender.scoreTasks).isEmpty()
         }
 
         @Test
@@ -228,7 +228,7 @@ class ScoreWorkerSupervisorTest @Autowired constructor(
             controller.control()
 
             // then
-            assertThat(stageInvoker.scoreCalls.single().photoIds).containsExactlyElementsOf(photos)
+            assertThat(aiTaskSender.scoreTasks.single().photoIds).containsExactlyElementsOf(photos)
         }
     }
 

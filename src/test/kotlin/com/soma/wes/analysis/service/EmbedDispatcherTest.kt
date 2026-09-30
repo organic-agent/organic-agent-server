@@ -6,7 +6,7 @@ import com.soma.wes.photo.domain.PhotoAnalysis
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoPipelineRepository
-import com.soma.wes.support.FakeStageInvoker
+import com.soma.wes.support.FakeAiTaskSender
 import com.soma.wes.support.IntegrationTest
 import java.time.Clock
 import java.time.Duration
@@ -31,7 +31,7 @@ class EmbedDispatcherTest @Autowired constructor(
     private val photoAnalysisRepository: PhotoAnalysisRepository,
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
-    private val stageInvoker: FakeStageInvoker,
+    private val aiTaskSender: FakeAiTaskSender,
     private val jdbcTemplate: JdbcTemplate,
     private val clock: Clock,
 ) {
@@ -40,7 +40,7 @@ class EmbedDispatcherTest @Autowired constructor(
 
     @BeforeEach
     fun setUpBaseData() {
-        stageInvoker.reset()
+        aiTaskSender.reset()
         galleryId = galleryFixture.멤버와_열린_갤러리().galleryId
     }
 
@@ -51,7 +51,7 @@ class EmbedDispatcherTest @Autowired constructor(
         redispatchAfter: Duration = Duration.ofMinutes(10),
     ) = EmbedDispatcher(
         photoPipelineRepository,
-        stageInvoker,
+        aiTaskSender,
         AnalysisProperties(
             embedBatchSize = batchSize,
             embedMaxInFlight = maxInFlight,
@@ -91,9 +91,9 @@ class EmbedDispatcherTest @Autowired constructor(
             assertSoftly { softly ->
                 softly.assertThat(sent).isEqualTo(2)
                 softly.assertThat(sentAgain).isZero()
-                softly.assertThat(stageInvoker.embedCalls.map { it.galleryId }).containsExactly(galleryId, other)
-                softly.assertThat(stageInvoker.embedCalls[0].photoIds).containsExactlyElementsOf(first)
-                softly.assertThat(stageInvoker.embedCalls[1].photoIds).containsExactlyElementsOf(second)
+                softly.assertThat(aiTaskSender.embedTasks.map { it.galleryId }).containsExactly(galleryId, other)
+                softly.assertThat(aiTaskSender.embedTasks[0].photoIds).containsExactlyElementsOf(first)
+                softly.assertThat(aiTaskSender.embedTasks[1].photoIds).containsExactlyElementsOf(second)
                 softly.assertThat(photoPipelineRepository.countInFlightEmbedBatches()).isEqualTo(2)
             }
         }
@@ -106,18 +106,18 @@ class EmbedDispatcherTest @Autowired constructor(
 
             // when — 자리 둘: 2장 + 2장, 한 장은 남는다
             dispatcher.dispatch()
-            assertThat(stageInvoker.embedCalls.map { it.photoIds }).containsExactly(photos.take(2), photos.drop(2).take(2))
+            assertThat(aiTaskSender.embedTasks.map { it.photoIds }).containsExactly(photos.take(2), photos.drop(2).take(2))
             dispatcher.dispatch()
-            assertThat(stageInvoker.embedCalls).hasSize(2)
+            assertThat(aiTaskSender.embedTasks).hasSize(2)
 
             // 임베더 역할: 첫 배치가 끝나면 자리가 하나 난다
             embedByLambda(photos.take(2))
             dispatcher.dispatch()
 
             // then
-            assertThat(stageInvoker.embedCalls).hasSize(3)
-            assertThat(stageInvoker.embedCalls.last().photoIds).containsExactly(photos.last())
-            assertThat(stageInvoker.embeddedPhotoIds).containsExactlyElementsOf(photos)
+            assertThat(aiTaskSender.embedTasks).hasSize(3)
+            assertThat(aiTaskSender.embedTasks.last().photoIds).containsExactly(photos.last())
+            assertThat(aiTaskSender.embeddedPhotoIds).containsExactlyElementsOf(photos)
         }
 
         @Test
@@ -131,7 +131,7 @@ class EmbedDispatcherTest @Autowired constructor(
             embedDispatcher.dispatch()
 
             // then
-            assertThat(stageInvoker.embeddedPhotoIds).containsExactlyElementsOf(fresh).doesNotContainAnyElementsOf(embedded + failed)
+            assertThat(aiTaskSender.embeddedPhotoIds).containsExactlyElementsOf(fresh).doesNotContainAnyElementsOf(embedded + failed)
         }
 
         @Test
@@ -151,7 +151,7 @@ class EmbedDispatcherTest @Autowired constructor(
             }
 
             // then
-            assertThat(stageInvoker.embeddedPhotoIds).containsExactlyInAnyOrderElementsOf(photos).doesNotHaveDuplicates()
+            assertThat(aiTaskSender.embeddedPhotoIds).containsExactlyInAnyOrderElementsOf(photos).doesNotHaveDuplicates()
         }
     }
 
@@ -169,14 +169,14 @@ class EmbedDispatcherTest @Autowired constructor(
             dispatcher.dispatch()
             dispatchedLongAgo(listOf(photo))
             dispatcher.dispatch()
-            assertThat(stageInvoker.embedCalls).hasSize(2)
+            assertThat(aiTaskSender.embedTasks).hasSize(2)
             dispatchedLongAgo(listOf(photo))
             dispatcher.dispatch()
 
             // then — 더 보내지 않고 사진 단위 실패로 남아 기대 장수에서 빠진다
             val progress = photoPipelineRepository.progressOf(galleryId, liveSince = ZonedDateTime.now(clock))
             assertSoftly { softly ->
-                softly.assertThat(stageInvoker.embedCalls).hasSize(2)
+                softly.assertThat(aiTaskSender.embedTasks).hasSize(2)
                 softly.assertThat(photoAnalysisRepository.findById(photo).orElseThrow().error).isEqualTo(PhotoPipelineRepository.EMBED_ATTEMPTS_EXCEEDED)
                 softly.assertThat(progress.failed).isEqualTo(1)
                 softly.assertThat(progress.expected).isZero()
@@ -195,15 +195,15 @@ class EmbedDispatcherTest @Autowired constructor(
             embedDispatcher.dispatch()
 
             // then — 벡터 없는 한 장만 다시 나간다
-            assertThat(stageInvoker.embedCalls).hasSize(2)
-            assertThat(stageInvoker.embedCalls.last().photoIds).containsExactly(photos[1])
+            assertThat(aiTaskSender.embedTasks).hasSize(2)
+            assertThat(aiTaskSender.embedTasks.last().photoIds).containsExactly(photos[1])
         }
 
         @Test
         fun `호출이 실패하면 배정과 시도 수를 되돌려 다음 걸음이 다시 집는다`() {
             // given
             val photo = photoFixture.업로드된_사진(galleryId, count = 1).single()
-            stageInvoker.failNext = true
+            aiTaskSender.failNext = true
 
             // when
             val sent = embedDispatcher.dispatch()
@@ -216,7 +216,7 @@ class EmbedDispatcherTest @Autowired constructor(
                 softly.assertThat(row["dispatched_at"]).isNull()
                 softly.assertThat(row["embed_attempts"]).isEqualTo(0)
                 softly.assertThat(sentAgain).isEqualTo(1)
-                softly.assertThat(stageInvoker.embeddedPhotoIds).containsExactly(photo)
+                softly.assertThat(aiTaskSender.embeddedPhotoIds).containsExactly(photo)
             }
         }
 
@@ -234,7 +234,7 @@ class EmbedDispatcherTest @Autowired constructor(
             assertSoftly { softly ->
                 softly.assertThat(deleted).isEqualTo(2)
                 softly.assertThat(photoAnalysisRepository.findAllById(photos)).isEmpty()
-                softly.assertThat(stageInvoker.embeddedPhotoIds).containsExactlyElementsOf(photos)
+                softly.assertThat(aiTaskSender.embeddedPhotoIds).containsExactlyElementsOf(photos)
             }
         }
     }

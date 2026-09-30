@@ -22,7 +22,7 @@ class FakeLlmConfig {
 
     @Bean
     @Primary
-    fun fakeStageInvoker(): FakeStageInvoker = FakeStageInvoker()
+    fun fakeAiTaskSender(): FakeAiTaskSender = FakeAiTaskSender()
 
     @Bean
     @Primary
