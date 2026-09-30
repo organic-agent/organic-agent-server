@@ -4,7 +4,7 @@ import com.soma.wes.admin.audit.service.AdminAuditService
 import com.soma.wes.admin.config.AdminAuthProperties
 import com.soma.wes.admin.config.AdminObservabilityProperties
 import com.soma.wes.admin.resource.dto.AdminSystemSettingsResponse
-import com.soma.wes.analysis.config.AnalysisProperties
+import com.soma.wes.analysis.config.LambdaAiTaskProperties
 import com.soma.wes.gallery.config.MockGalleryProperties
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.trash.config.TrashProperties
@@ -13,7 +13,7 @@ import org.springframework.stereotype.Service
 @Service
 class AdminSystemSettingsService(
     private val adminAuthProperties: AdminAuthProperties,
-    private val analysisProperties: AnalysisProperties,
+    private val lambdaAiTaskProperties: LambdaAiTaskProperties,
     private val storageProperties: StorageProperties,
     private val mockGalleryProperties: MockGalleryProperties,
     private val trashProperties: TrashProperties,
@@ -28,7 +28,7 @@ class AdminSystemSettingsService(
             accountLockoutSeconds = adminAuthProperties.lockout.duration.seconds,
             revisionRetentionDays = AdminAuditService.REVISION_RETENTION_DAYS,
             trashRetentionDays = trashProperties.retention.toDays(),
-            embeddingConfigured = analysisProperties.isEmbedderConfigured,
+            embeddingConfigured = lambdaAiTaskProperties.isEmbedderConfigured,
             uploadMaxBatchSize = storageProperties.maxBatchSize,
             uploadUrlTtlSeconds = storageProperties.uploadUrlTtl.seconds,
             viewUrlTtlSeconds = storageProperties.viewUrlTtl.seconds,
@@ -37,7 +37,7 @@ class AdminSystemSettingsService(
             notificationConfigured = false,
             notificationInboxEnabled = true,
             featureFlags = linkedMapOf(
-                "embedding" to analysisProperties.isEmbedderConfigured,
+                "embedding" to lambdaAiTaskProperties.isEmbedderConfigured,
                 "mockGallery" to mockGalleryProperties.isConfigured,
                 "adminReadOnlyImpersonation" to true,
                 "adminCascadeTrash" to true,

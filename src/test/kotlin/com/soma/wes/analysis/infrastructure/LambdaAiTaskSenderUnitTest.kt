@@ -1,6 +1,6 @@
 package com.soma.wes.analysis.infrastructure
 
-import com.soma.wes.analysis.config.AnalysisProperties
+import com.soma.wes.analysis.config.LambdaAiTaskProperties
 import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
@@ -26,7 +26,7 @@ class LambdaAiTaskSenderUnitTest {
     private val objectMapper = JsonMapper.builder().build()
     private val sender = LambdaAiTaskSender(
         lambdaClient,
-        AnalysisProperties(embedderFunctionName = "wes-embedder", scoreFunctionName = "wes-score", categorizeFunctionName = ""),
+        LambdaAiTaskProperties(embedderFunctionName = "wes-embedder", scoreFunctionName = "wes-score", categorizeFunctionName = ""),
         objectMapper,
     )
 
@@ -60,7 +60,7 @@ class LambdaAiTaskSenderUnitTest {
     @Test
     fun `categorize 페이로드는 갤러리와 잡 id다`() {
         whenever(lambdaClient.invoke(any<InvokeRequest>())).thenReturn(InvokeResponse.builder().statusCode(202).build())
-        val configured = LambdaAiTaskSender(lambdaClient, AnalysisProperties(categorizeFunctionName = "wes-categorize"), objectMapper)
+        val configured = LambdaAiTaskSender(lambdaClient, LambdaAiTaskProperties(categorizeFunctionName = "wes-categorize"), objectMapper)
 
         configured.send(AiTaskDto.Categorize(galleryId = 8, jobId = 13))
 
@@ -117,7 +117,7 @@ class LambdaAiTaskSenderUnitTest {
             softly.assertThat(sender.isAvailable(AiTaskDto.Categorize::class)).isFalse()
             // exact photo 는 임베더 함수를 같이 쓴다.
             softly.assertThat(sender.isAvailable(AiTaskDto.ExactPhoto::class)).isTrue()
-            softly.assertThat(LambdaAiTaskSender(lambdaClient, AnalysisProperties(), objectMapper).isAvailable(AiTaskDto.ExactPhoto::class)).isFalse()
+            softly.assertThat(LambdaAiTaskSender(lambdaClient, LambdaAiTaskProperties(), objectMapper).isAvailable(AiTaskDto.ExactPhoto::class)).isFalse()
         }
     }
 

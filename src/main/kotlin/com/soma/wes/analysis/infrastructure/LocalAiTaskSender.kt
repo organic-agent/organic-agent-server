@@ -1,6 +1,6 @@
 package com.soma.wes.analysis.infrastructure
 
-import com.soma.wes.analysis.config.AnalysisProperties
+import com.soma.wes.analysis.config.LocalProcessProperties
 import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
@@ -23,13 +23,13 @@ import org.springframework.stereotype.Component
 @Component
 @Profile("local")
 class LocalAiTaskSender(
-    private val properties: AnalysisProperties,
+    private val properties: LocalProcessProperties,
 ) : AiTaskSender {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
     override fun isAvailable(task: KClass<out AiTaskDto>): Boolean =
-        task != AiTaskDto.ExactPhoto::class && properties.isLocalConfigured && scriptOf(task).canExecute()
+        task != AiTaskDto.ExactPhoto::class && properties.isConfigured && scriptOf(task).canExecute()
 
     override fun send(task: AiTaskDto) {
         if (task is AiTaskDto.ExactPhoto) {
@@ -45,7 +45,7 @@ class LocalAiTaskSender(
                 is AiTaskDto.Embed -> { add("--photo-ids"); add(task.photoIds.joinToString(",")) }
                 is AiTaskDto.Score -> { add("--photo-ids"); add(task.photoIds.joinToString(",")) }
                 is AiTaskDto.Categorize -> { add("--job-id"); add(task.jobId.toString()) }
-                is AiTaskDto.ExactPhoto -> error("위에서 거른 호출: $task")
+                is AiTaskDto.ExactPhoto -> error("위에서 거른 작업: $task")
             }
         }
         val logFile = File(System.getProperty("java.io.tmpdir"), "wes-lambda-${script.nameWithoutExtension}-${task.galleryId}.log")
@@ -61,5 +61,13 @@ class LocalAiTaskSender(
         log.info("로컬 Lambda 대역 시작: script={}, galleryId={}, pid={}, log={}", script.name, task.galleryId, process.pid(), logFile)
     }
 
-    private fun scriptOf(task: KClass<out AiTaskDto>): File = File(properties.localScriptDir, "${AnalysisProperties.localFunctionOf(task)}.sh")
+    private fun scriptOf(task: KClass<out AiTaskDto>): File = File(properties.localScriptDir, "${scriptNameOf(task)}.sh")
+
+    /** AI 작업 → 대역 스크립트 이름. 운영 Lambda 함수·AI repo 모듈과 같은 이름이라 셋을 나란히 읽을 수 있다. */
+    private fun scriptNameOf(task: KClass<out AiTaskDto>): String = when (task) {
+        AiTaskDto.Embed::class -> "embedder"
+        AiTaskDto.Score::class -> "score"
+        AiTaskDto.Categorize::class -> "categorize"
+        else -> error("로컬 대역이 없는 AI 작업: $task")
+    }
 }

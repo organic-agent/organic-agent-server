@@ -1,6 +1,6 @@
 package com.soma.wes.analysis.infrastructure
 
-import com.soma.wes.analysis.config.AnalysisProperties
+import com.soma.wes.analysis.config.LocalProcessProperties
 import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
@@ -19,11 +19,11 @@ class LocalAiTaskSenderUnitTest {
 
     @Test
     fun `디렉토리가 비어 있거나 그 호출의 스크립트가 없으면 사용할 수 없다`() {
-        val unconfigured = LocalAiTaskSender(AnalysisProperties())
+        val unconfigured = LocalAiTaskSender(LocalProcessProperties())
         assertThat(listOf(AiTaskDto.Embed::class, AiTaskDto.Score::class, AiTaskDto.Categorize::class).none { unconfigured.isAvailable(it) }).isTrue()
 
         fakeScript("score.sh")
-        val sender = LocalAiTaskSender(AnalysisProperties(localScriptDir = dir.path))
+        val sender = LocalAiTaskSender(LocalProcessProperties(localScriptDir = dir.path))
         assertSoftly { softly ->
             softly.assertThat(sender.isAvailable(AiTaskDto.Score::class)).isTrue()
             softly.assertThat(sender.isAvailable(AiTaskDto.Embed::class)).isFalse()
@@ -36,7 +36,7 @@ class LocalAiTaskSenderUnitTest {
         // given: 받은 인자를 파일에 적는 가짜 스크립트 — 함수 이름은 AI repo 모듈과 같다(embedder·score·categorize)
         val embedder = fakeScript("embedder.sh")
         val categorize = fakeScript("categorize.sh")
-        val sender = LocalAiTaskSender(AnalysisProperties(localScriptDir = dir.path))
+        val sender = LocalAiTaskSender(LocalProcessProperties(localScriptDir = dir.path))
 
         // when
         sender.send(AiTaskDto.Embed(galleryId = 42, photoIds = listOf(1, 2, 3)))
@@ -51,7 +51,7 @@ class LocalAiTaskSenderUnitTest {
     @Test
     fun `exact photo 는 embedder 스크립트가 있어도 지원하지 않는다`() {
         fakeScript("embedder.sh")
-        val sender = LocalAiTaskSender(AnalysisProperties(localScriptDir = dir.path))
+        val sender = LocalAiTaskSender(LocalProcessProperties(localScriptDir = dir.path))
         val task = AiTaskDto.ExactPhoto(jobId = 1, attemptCount = 1, jobType = "EMBEDDING", photoId = 2, galleryId = 3, storageKey = "k", revisionId = 4)
 
         assertThat(sender.isAvailable(AiTaskDto.Embed::class)).isTrue()
@@ -64,7 +64,7 @@ class LocalAiTaskSenderUnitTest {
 
     @Test
     fun `프로세스를 못 띄우면 호출 실패 코드다`() {
-        val sender = LocalAiTaskSender(AnalysisProperties(localScriptDir = dir.path))
+        val sender = LocalAiTaskSender(LocalProcessProperties(localScriptDir = dir.path))
         assertThatThrownBy { sender.send(AiTaskDto.Categorize(galleryId = 1, jobId = 1)) }
             .isInstanceOf(AnalysisException::class.java)
             .extracting("errorCode")

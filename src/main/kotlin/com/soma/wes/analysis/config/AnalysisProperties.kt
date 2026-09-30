@@ -1,29 +1,16 @@
 package com.soma.wes.analysis.config
 
-import com.soma.wes.analysis.dto.AiTaskDto
 import java.time.Duration
-import kotlin.reflect.KClass
 import org.springframework.boot.context.properties.ConfigurationProperties
 
 /**
- * 분석 파이프라인 설정 — Lambda 함수 이름, 임베더 배정, 잡의 categorize 타임아웃, GPU 스위치.
+ * 분석 파이프라인 설정 — 임베더 배정, 잡의 categorize 타임아웃, GPU 스위치. 운영·로컬 프로필의 서비스가 함께 읽는다.
  *
- * 함수 이름이 비어 있는 것은 오류가 아니다. 로컬·테스트에는 Lambda가 없는 것이 정상이라 기동을 막지 않고,
- * 실제로 부르려는 순간에 실패한다. 시간 상수는 전부 여기 있다 — Phase 4 실측 뒤 설정으로 조정한다.
+ * 어댑터 한쪽만 쓰는 값은 같은 prefix의 다른 클래스에 있다: Lambda 함수 이름은 [LambdaAiTaskProperties],
+ * 로컬 대역 스크립트 자리는 [LocalProcessProperties]. 시간 상수는 전부 여기 있다 — Phase 4 실측 뒤 설정으로 조정한다.
  */
 @ConfigurationProperties(prefix = "app.analysis")
 data class AnalysisProperties(
-    /** embedder Lambda 함수 이름. prod는 Parameter Store(`app.analysis.embedder-function-name`)가 채운다. */
-    val embedderFunctionName: String = "",
-    /** score Lambda 함수 이름 — GPU 워커가 없을 때의 폴백. */
-    val scoreFunctionName: String = "",
-    /** categorize Lambda 함수 이름. */
-    val categorizeFunctionName: String = "",
-    /**
-     * local 프로필만: Lambda 대신 띄울 대역 스크립트 디렉토리(작업 디렉토리 기준). Lambda 함수 하나가 `<디렉토리>/<함수>.sh` 하나이고
-     * 함수 이름은 AI repo 최상위 모듈과 같다([localFunctionOf]). 프로필 블록(application.yml)이 채운다.
-     */
-    val localScriptDir: String = "",
     /** 임베더 EVENT 하나에 담는 사진 수. Lambda 15분 안에 넉넉히 끝나는 크기다. */
     val embedBatchSize: Int = 50,
     /** score Lambda 폴백 EVENT 하나에 담는 사진 수. GPU 워커가 못 낼 때만 쓰인다. */
@@ -61,28 +48,4 @@ data class AnalysisProperties(
         /** 같은 갤러리에 폴백을 다시 보내는 최소 간격. */
         val fallbackInterval: Duration = Duration.ofMinutes(10),
     )
-
-    val isEmbedderConfigured: Boolean
-        get() = embedderFunctionName.isNotBlank()
-
-    val isLocalConfigured: Boolean
-        get() = localScriptDir.isNotBlank()
-
-    fun functionNameOf(call: KClass<out AiTaskDto>): String = when (call) {
-        AiTaskDto.Embed::class, AiTaskDto.ExactPhoto::class -> embedderFunctionName
-        AiTaskDto.Score::class -> scoreFunctionName
-        AiTaskDto.Categorize::class -> categorizeFunctionName
-        else -> error("모르는 단계 호출: $call")
-    }
-
-    companion object {
-
-        /** 단계 호출 → 로컬 대역 스크립트 이름. 운영 Lambda 함수·AI repo 모듈과 같은 이름이라 셋을 나란히 읽을 수 있다. */
-        fun localFunctionOf(call: KClass<out AiTaskDto>): String = when (call) {
-            AiTaskDto.Embed::class, AiTaskDto.ExactPhoto::class -> "embedder"
-            AiTaskDto.Score::class -> "score"
-            AiTaskDto.Categorize::class -> "categorize"
-            else -> error("모르는 단계 호출: $call")
-        }
-    }
 }

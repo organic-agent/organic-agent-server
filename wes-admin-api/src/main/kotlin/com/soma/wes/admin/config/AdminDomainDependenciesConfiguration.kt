@@ -15,7 +15,7 @@ import com.soma.wes.folder.support.AiFolderMaterializer
 import com.soma.wes.folder.support.AiFolderPlanner
 import com.soma.wes.folder.support.FolderViewAssembler
 import com.soma.wes.global.config.AwsLambdaConfig
-import com.soma.wes.analysis.config.AnalysisProperties
+import com.soma.wes.analysis.config.LambdaAiTaskProperties
 import com.soma.wes.analysis.infrastructure.LambdaAiTaskSender
 import com.soma.wes.gallery.config.GalleryLifecycleProperties
 import com.soma.wes.gallery.config.GalleryInviteProperties
@@ -64,7 +64,7 @@ import org.springframework.context.annotation.Import
     AdminWorkflowExecutorProperties::class,
     StorageProperties::class,
     TrashProperties::class,
-    AnalysisProperties::class,
+    LambdaAiTaskProperties::class,
     MockGalleryProperties::class,
     GalleryInviteProperties::class,
     GalleryLifecycleProperties::class,

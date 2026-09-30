@@ -1,6 +1,6 @@
 package com.soma.wes.analysis.infrastructure
 
-import com.soma.wes.analysis.config.AnalysisProperties
+import com.soma.wes.analysis.config.LambdaAiTaskProperties
 import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
@@ -28,7 +28,7 @@ import tools.jackson.databind.ObjectMapper
 @Profile("!local")
 class LambdaAiTaskSender(
     private val lambdaClient: LambdaClient,
-    private val properties: AnalysisProperties,
+    private val properties: LambdaAiTaskProperties,
     private val objectMapper: ObjectMapper,
 ) : AiTaskSender {
 

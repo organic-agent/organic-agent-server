@@ -1,6 +1,7 @@
 package com.soma.wes.analysis.infrastructure
 
 import com.soma.wes.analysis.config.AnalysisProperties
+import com.soma.wes.analysis.config.LocalProcessProperties
 import com.soma.wes.analysis.dto.ScoreWorkerDto
 import com.soma.wes.analysis.dto.ScoreWorkerStateDto
 import com.soma.wes.analysis.exception.AnalysisErrorCode
@@ -22,13 +23,14 @@ import org.springframework.stereotype.Component
 @Profile("local")
 class LocalScoreWorkerPool(
     private val properties: AnalysisProperties,
+    private val localProcessProperties: LocalProcessProperties,
     private val clock: Clock,
 ) : ScoreWorkerPool {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
     private val script: File
-        get() = File(properties.localScriptDir, "../gpu/$SCRIPT_NAME")
+        get() = File(localProcessProperties.localScriptDir, "../gpu/$SCRIPT_NAME")
 
     @Volatile
     private var process: Process? = null
@@ -37,7 +39,7 @@ class LocalScoreWorkerPool(
     private var launchedAt: ZonedDateTime? = null
 
     override val isAvailable: Boolean
-        get() = properties.gpu.enabled && properties.isLocalConfigured && script.canExecute()
+        get() = properties.gpu.enabled && localProcessProperties.isConfigured && script.canExecute()
 
     override fun snapshot(): List<ScoreWorkerDto> {
         val alive = process?.isAlive == true
