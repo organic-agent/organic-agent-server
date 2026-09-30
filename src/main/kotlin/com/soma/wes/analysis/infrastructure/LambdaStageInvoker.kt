@@ -17,7 +17,7 @@ import software.amazon.awssdk.services.lambda.model.InvokeRequest
 import tools.jackson.databind.ObjectMapper
 
 /**
- * 운영 실행기 — 호출 종류마다 다른 Lambda 함수를 EVENT로 부른다. 로컬 프로필에서는 [LocalProcessStageInvoker]가 이 자리를 대신한다.
+ * 운영 실행기 — 호출 종류마다 다른 Lambda 함수를 EVENT로 부른다. 로컬 프로필에서는 [LocalStageInvoker]가 이 자리를 대신한다.
  *
  * 페이로드는 [StageCallDto]를 그대로 직렬화한 것이다 — 프로퍼티 이름이 곧 AI repo 계약의 키다:
  * - embedder·score `{galleryId, photoIds}` — `jobId` 키는 임베더가 관리자 사진 교체 이벤트로 해석하므로 배정에는 없다.

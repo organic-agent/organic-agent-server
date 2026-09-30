@@ -21,7 +21,7 @@ import software.amazon.awssdk.services.ec2.model.StartInstancesRequest
 import software.amazon.awssdk.services.ec2.model.StopInstancesRequest
 
 /**
- * 운영 워커 풀 — `Name` 태그가 [AnalysisProperties.Gpu.tag]인 EC2 인스턴스들. 로컬 프로필에서는 [LocalProcessScoreWorkerPool]이 이 자리를 대신한다.
+ * 운영 워커 풀 — `Name` 태그가 [AnalysisProperties.Gpu.tag]인 EC2 인스턴스들. 로컬 프로필에서는 [LocalScoreWorkerPool]이 이 자리를 대신한다.
  * 인스턴스는 인프라(Terraform)가 만들고 여기서는 켜고 끄기만 한다. 태그가 붙은 인스턴스가 하나도 없으면 풀은 "없음"이다.
  */
 @Component

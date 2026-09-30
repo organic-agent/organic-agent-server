@@ -65,10 +65,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     그 계정에 딸린 워크스페이스·갤러리·사진·S3 객체만 삭제. 다른 사용자·관리자 계정은 남긴다.
   - `lambda/{embedder,score}.sh --gallery-id G --photo-ids 1,2,3` · `lambda/categorize.sh --gallery-id G --job-id J` — **로컬 Lambda
     대역.** 운영 Lambda 함수 하나 = 스크립트 하나(AI repo 최상위 모듈과 같은 이름), 인자는 Lambda 페이로드 키 그대로. 로컬 wes
-    (local 프로필)의 `analysis` 스윕이 배정·categorize 때 이것을 띄운다(`LocalProcessStageInvoker`, 운영의 EVENT 자리).
+    (local 프로필)의 `analysis` 스윕이 배정·categorize 때 이것을 띄운다(`LocalStageInvoker`, 운영의 EVENT 자리).
     접속 정보는 `lib/ai-env.sh`.
   - `gpu/score-worker.sh` — **로컬 GPU 워커 대역.** 운영의 EC2 score 워커 한 대에 해당한다(AI repo `score worker --gpu --no-idle-stop`, 큐를 비우고 유휴 30초 뒤 종료).
-    로컬 wes 에서 `app.analysis.gpu.enabled=true` 면 `ScoreWorkerSupervisor` 가 "켜기" 자리에서 이것을 띄운다(`LocalProcessScoreWorkerPool`).
+    로컬 wes 에서 `app.analysis.gpu.enabled=true` 면 `ScoreWorkerSupervisor` 가 "켜기" 자리에서 이것을 띄운다(`LocalScoreWorkerPool`).
   - `local-ai.sh <galleryId> [--skip-embed] [--skip-analyze]` — 위 셋을 잡 없이 갤러리 전체로 순서대로 도는 지름길(배정·폴더는
     저장되지 않음). 로컬 pg + dev 버킷(`/wes/local/app.storage.bucket`)을 쓴다.
   - `load/clone-gallery-photos.sh [local|remote] --source G --count N [--strip embed|score|categorize]` — 부하 실측용. 원본 갤러리의

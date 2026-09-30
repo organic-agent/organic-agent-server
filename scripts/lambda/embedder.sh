@@ -6,7 +6,7 @@
 #
 # 배정받은 사진 목록만 미리보기 PUT → DINOv3 벡터 → EXIF 를 photos·photo_analysis 에 적는다. 잡을 모른다 — 배정은 wes 스윕
 # (EmbedDispatcher)이 50장씩 하고 완료는 photo_analysis 를 관측해 판정한다. --photo-ids 없이 부르면 갤러리 전체(옛 경로,
-# scripts/local-ai.sh 용). 기다리지 않고 띄우는 것은 부르는 쪽(wes LocalProcessStageInvoker)의 일이고, 이 스크립트 자체는 끝날 때까지 돈다.
+# scripts/local-ai.sh 용). 기다리지 않고 띄우는 것은 부르는 쪽(wes LocalStageInvoker)의 일이고, 이 스크립트 자체는 끝날 때까지 돈다.
 set -euo pipefail
 WES_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 AI_ROOT="${AI_ROOT:-$WES_ROOT/../../organic-agent-ai}"

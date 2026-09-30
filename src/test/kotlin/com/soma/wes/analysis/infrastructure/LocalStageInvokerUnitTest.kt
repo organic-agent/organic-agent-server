@@ -12,18 +12,18 @@ import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
-class LocalProcessStageInvokerUnitTest {
+class LocalStageInvokerUnitTest {
 
     @TempDir
     lateinit var dir: File
 
     @Test
     fun `디렉토리가 비어 있거나 그 호출의 스크립트가 없으면 사용할 수 없다`() {
-        val unconfigured = LocalProcessStageInvoker(AnalysisProperties())
+        val unconfigured = LocalStageInvoker(AnalysisProperties())
         assertThat(listOf(StageCallDto.Embed::class, StageCallDto.Score::class, StageCallDto.Categorize::class).none { unconfigured.isAvailable(it) }).isTrue()
 
         fakeScript("score.sh")
-        val invoker = LocalProcessStageInvoker(AnalysisProperties(localScriptDir = dir.path))
+        val invoker = LocalStageInvoker(AnalysisProperties(localScriptDir = dir.path))
         assertSoftly { softly ->
             softly.assertThat(invoker.isAvailable(StageCallDto.Score::class)).isTrue()
             softly.assertThat(invoker.isAvailable(StageCallDto.Embed::class)).isFalse()
@@ -36,7 +36,7 @@ class LocalProcessStageInvokerUnitTest {
         // given: 받은 인자를 파일에 적는 가짜 스크립트 — 함수 이름은 AI repo 모듈과 같다(embedder·score·categorize)
         val embedder = fakeScript("embedder.sh")
         val categorize = fakeScript("categorize.sh")
-        val invoker = LocalProcessStageInvoker(AnalysisProperties(localScriptDir = dir.path))
+        val invoker = LocalStageInvoker(AnalysisProperties(localScriptDir = dir.path))
 
         // when
         invoker.invoke(StageCallDto.Embed(galleryId = 42, photoIds = listOf(1, 2, 3)))
@@ -51,7 +51,7 @@ class LocalProcessStageInvokerUnitTest {
     @Test
     fun `exact photo 는 embedder 스크립트가 있어도 지원하지 않는다`() {
         fakeScript("embedder.sh")
-        val invoker = LocalProcessStageInvoker(AnalysisProperties(localScriptDir = dir.path))
+        val invoker = LocalStageInvoker(AnalysisProperties(localScriptDir = dir.path))
         val call = StageCallDto.ExactPhoto(jobId = 1, attemptCount = 1, jobType = "EMBEDDING", photoId = 2, galleryId = 3, storageKey = "k", revisionId = 4)
 
         assertThat(invoker.isAvailable(StageCallDto.Embed::class)).isTrue()
@@ -64,7 +64,7 @@ class LocalProcessStageInvokerUnitTest {
 
     @Test
     fun `프로세스를 못 띄우면 호출 실패 코드다`() {
-        val invoker = LocalProcessStageInvoker(AnalysisProperties(localScriptDir = dir.path))
+        val invoker = LocalStageInvoker(AnalysisProperties(localScriptDir = dir.path))
         assertThatThrownBy { invoker.invoke(StageCallDto.Categorize(galleryId = 1, jobId = 1)) }
             .isInstanceOf(AnalysisException::class.java)
             .extracting("errorCode")

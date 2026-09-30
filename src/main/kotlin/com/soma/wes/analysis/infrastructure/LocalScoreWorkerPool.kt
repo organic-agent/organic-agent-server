@@ -20,7 +20,7 @@ import org.springframework.stereotype.Component
  */
 @Component
 @Profile("local")
-class LocalProcessScoreWorkerPool(
+class LocalScoreWorkerPool(
     private val properties: AnalysisProperties,
     private val clock: Clock,
 ) : ScoreWorkerPool {

@@ -22,7 +22,7 @@ import org.springframework.stereotype.Component
  */
 @Component
 @Profile("local")
-class LocalProcessStageInvoker(
+class LocalStageInvoker(
     private val properties: AnalysisProperties,
 ) : StageInvoker {
 
