@@ -57,10 +57,10 @@ paths:
 ## 코드 배치
 
 - **서비스 안에 데이터 클래스를 중첩하지 않는다.** 트랜잭션 밖으로 넘기는 값, 결과 묶음, 다른 도메인이
-  받아 가는 값은 전부 `dto/` 루트의 `~Dto`다 (dto.md). `AnalysisOrchestrator`가 걸음 뒤 할 일을
-  `OrchestratorActionDto`로 돌려주는 것이 기준 형태다. private sealed interface라도 예외가 아니다.
-- **`Controller`라는 이름은 REST 컨트롤러에만 쓴다.** 무언가를 제어하는 서비스는 `Supervisor`·`Dispatcher`
-  등 역할 이름을 쓴다 (`ScoreWorkerSupervisor`, `EmbedDispatcher`).
+  받아 가는 값은 전부 `dto/` 루트의 `~Dto`다 (dto.md). `FolderStep`이 물질화 결과를
+  `MaterializeOutcomeDto`로 `AnalysisJobCloser`에 넘기는 것이 기준 형태다. private sealed interface라도 예외가 아니다.
+- **`Controller`라는 이름은 REST 컨트롤러에만 쓴다.** 무언가를 제어하는 클래스는 역할 이름을 쓴다
+  (파이프라인 단계는 `~Step`: `EmbedStep`, `ScoreStep`).
 - private 헬퍼는 **부르는 메서드 바로 아래**에 둔다. 여러 곳이 부르면 가장 아래 호출자 밑에.
   파일 하단으로 쓸어 모으지 마라.
 - public 메서드의 KDoc에는 정책과 그 이유를 적는다 — 시그니처가 이미 말하는 것을 반복하지 않는다.

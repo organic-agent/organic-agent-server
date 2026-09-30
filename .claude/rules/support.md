@@ -6,7 +6,8 @@ paths:
 # Support 컨벤션
 
 `{domain}/support`는 유스케이스가 기대는 협력자의 자리다. 구분 기준은 호출자다:
-**컨트롤러가 부르면 `service`, 서비스가 기대면 `support`.**
+**컨트롤러·스케줄러가 부르면 `service`, 서비스가 기대면 `support`.** 스케줄러 자신(`@Scheduled`)은
+알람만 울리는 얇은 support 클래스이고 판단은 부르는 서비스가 한다 (`AnalysisPipelineScheduler` → `AnalysisPipelineService`).
 
 ## 무엇이 여기 사는가
 

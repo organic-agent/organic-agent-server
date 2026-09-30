@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 로컬 GPU 워커 대역 — 운영의 EC2 score 워커 한 대에 해당한다. wes(local 프로필, app.analysis.gpu.enabled=true)의
-# ScoreWorkerSupervisor 가 "켜기" 자리에서 이 스크립트를 한 번 띄운다(LocalScoreWorkerPool).
+# ScoreStep 이 "켜기" 자리에서 이 스크립트를 한 번 띄운다(LocalScoreWorkerPool).
 #
 #   scripts/gpu/score-worker.sh
 #
