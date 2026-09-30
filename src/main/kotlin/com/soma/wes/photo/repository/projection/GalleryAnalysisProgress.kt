@@ -31,4 +31,16 @@ data class GalleryAnalysisProgress(
 
     val isFullyScored: Boolean
         get() = expected > 0 && scored == expected
+
+    /** 올라오는 중인 사진도 분석 대상도 남지 않았다(전부 실패·삭제) — 분석 잡을 닫을 때다. */
+    val hasNothingToAnalyze: Boolean
+        get() = livePending == 0L && pending == 0L && expected == 0L
+
+    /** 업로드가 잠잠해졌고 대상 전부에 점수가 있다 — categorize를 보낼 때다. */
+    val isReadyToCategorize: Boolean
+        get() = livePending == 0L && isFullyScored
+
+    /** 대상 전부에 백분위가 있다 — categorize가 모든 사진을 지났다. */
+    val isFullyCategorized: Boolean
+        get() = categorized == expected
 }

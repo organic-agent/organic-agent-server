@@ -1,4 +1,4 @@
-package com.soma.wes.analysis.service
+package com.soma.wes.analysis.support
 
 import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.dto.ScoreWorkerStateDto
@@ -23,10 +23,10 @@ import org.springframework.beans.factory.annotation.Autowired
 
 /**
  * GPU 제어·폴백 검증. 워커 풀은 [ManualScoreWorkerPool]이 상태를 들고 켜기·끄기를 기록하고, 점수 적재는 픽스처가 흉내 낸다.
- * 시간은 컨트롤러에 넣는 시계를 앞으로 돌려 재현한다(인메모리 판단이라 컬럼을 돌릴 것이 없다).
+ * 시간은 단계에 넣는 시계를 앞으로 돌려 재현한다(인메모리 판단이라 컬럼을 돌릴 것이 없다).
  */
 @IntegrationTest
-class ScoreWorkerSupervisorTest @Autowired constructor(
+class ScoreStepTest @Autowired constructor(
     private val photoPipelineRepository: PhotoPipelineRepository,
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
@@ -46,7 +46,7 @@ class ScoreWorkerSupervisorTest @Autowired constructor(
         galleryId = galleryFixture.멤버와_열린_갤러리().galleryId
     }
 
-    private fun controller(enabled: Boolean = true) = ScoreWorkerSupervisor(
+    private fun step(enabled: Boolean = true) = ScoreStep(
         pool,
         photoPipelineRepository,
         aiTaskSender,
@@ -71,11 +71,11 @@ class ScoreWorkerSupervisorTest @Autowired constructor(
             // given
             photoFixture.업로드된_사진(galleryId, count = 1)
             pool.worker("i-1", ScoreWorkerStateDto.STOPPED)
-            val controller = controller()
+            val step = step()
 
             // when
-            controller.control()
-            controller.control()
+            step.advance()
+            step.advance()
 
             // then — 두 번째 걸음은 PENDING 을 보고 다시 켜지 않는다
             assertSoftly { softly ->
@@ -92,7 +92,7 @@ class ScoreWorkerSupervisorTest @Autowired constructor(
             pool.worker("i-1", ScoreWorkerStateDto.STOPPED)
 
             // when
-            controller().control()
+            step().advance()
 
             // then
             assertThat(pool.starts).isEmpty()
@@ -103,15 +103,15 @@ class ScoreWorkerSupervisorTest @Autowired constructor(
             // given — 워커가 방금 점수를 다 냈다
             val photos = photoFixture.임베딩된_사진(galleryId, count = 1)
             pool.worker("i-1", ScoreWorkerStateDto.RUNNING, launchedAt = ZonedDateTime.now(clock).minusMinutes(10))
-            val controller = controller()
-            controller.control()
+            val step = step()
+            step.advance()
             photos.forEach { photoFixture.점수_적재(it) }
-            controller.control()
+            step.advance()
             assertThat(pool.stops).isEmpty()
 
             // when — 진행 뒤 2분이 지나도록 워커가 살아 있다
             clock.advance(Duration.ofMinutes(3))
-            controller.control()
+            step.advance()
 
             // then
             assertThat(pool.stops).containsExactly("i-1")
@@ -122,12 +122,12 @@ class ScoreWorkerSupervisorTest @Autowired constructor(
         fun `켠 지 얼마 안 된 워커는 일이 없어도 끄지 않는다`() {
             // given — 부팅 중(모델 로드)인데 backlog 는 0
             pool.worker("i-1", ScoreWorkerStateDto.RUNNING, launchedAt = ZonedDateTime.now(clock).minusMinutes(1))
-            val controller = controller()
+            val step = step()
 
             // when
-            controller.control()
+            step.advance()
             clock.advance(Duration.ofMinutes(3))
-            controller.control()
+            step.advance()
 
             // then — 유예(5분) 안이다
             assertThat(pool.stops).isEmpty()
@@ -139,11 +139,11 @@ class ScoreWorkerSupervisorTest @Autowired constructor(
             photoFixture.업로드된_사진(galleryId, count = 1)
             pool.worker("i-1", ScoreWorkerStateDto.STOPPED)
             pool.failNext = true
-            val controller = controller()
+            val step = step()
 
             // when
-            controller.control()
-            controller.control()
+            step.advance()
+            step.advance()
 
             // then
             assertThat(pool.starts).hasSize(1)
@@ -159,13 +159,13 @@ class ScoreWorkerSupervisorTest @Autowired constructor(
             // given
             val photos = photoFixture.임베딩된_사진(galleryId, count = 3)
             photoFixture.업로드된_사진(galleryId, count = 1) // 벡터 없는 사진은 보내지 않는다
-            val controller = controller(enabled = false)
+            val step = step(enabled = false)
 
             // when
-            controller.control()
-            controller.control()
+            step.advance()
+            step.advance()
             clock.advance(Duration.ofMinutes(11))
-            controller.control()
+            step.advance()
 
             // then — 처음과 간격 뒤, 둘
             assertSoftly { softly ->
@@ -180,18 +180,18 @@ class ScoreWorkerSupervisorTest @Autowired constructor(
             // given — 워커를 켰지만 점수가 오지 않는다
             val photos = photoFixture.임베딩된_사진(galleryId, count = 2)
             pool.worker("i-1", ScoreWorkerStateDto.STOPPED)
-            val controller = controller()
-            controller.control()
+            val step = step()
+            step.advance()
             assertThat(pool.starts).hasSize(1)
 
             // when — 유예 안: 폴백 없음
             clock.advance(Duration.ofMinutes(4))
-            controller.control()
+            step.advance()
             assertThat(aiTaskSender.scoreTasks).isEmpty()
 
             // 유예 뒤 fallbackAfter(10분)까지 무진행
             clock.advance(Duration.ofMinutes(11))
-            controller.control()
+            step.advance()
 
             // then
             assertThat(aiTaskSender.scoreTasks.single().photoIds).containsExactlyElementsOf(photos)
@@ -202,15 +202,15 @@ class ScoreWorkerSupervisorTest @Autowired constructor(
             // given
             val photos = photoFixture.임베딩된_사진(galleryId, count = 2)
             pool.worker("i-1", ScoreWorkerStateDto.RUNNING, launchedAt = ZonedDateTime.now(clock).minusMinutes(30))
-            val controller = controller()
-            controller.control()
+            val step = step()
+            step.advance()
 
             // when — 8분마다 한 장씩 진행
             clock.advance(Duration.ofMinutes(8))
             photoFixture.점수_적재(photos[0])
-            controller.control()
+            step.advance()
             clock.advance(Duration.ofMinutes(8))
-            controller.control()
+            step.advance()
 
             // then — 마지막 진행 뒤 10분이 안 됐다
             assertThat(aiTaskSender.scoreTasks).isEmpty()
@@ -220,12 +220,12 @@ class ScoreWorkerSupervisorTest @Autowired constructor(
         fun `켜진 워커가 없고 켤 수도 없으면 fallbackAfter 뒤에 보낸다`() {
             // given — 풀에 인스턴스가 없다
             val photos = photoFixture.임베딩된_사진(galleryId, count = 1)
-            val controller = controller()
+            val step = step()
 
             // when
-            controller.control()
+            step.advance()
             clock.advance(Duration.ofMinutes(11))
-            controller.control()
+            step.advance()
 
             // then
             assertThat(aiTaskSender.scoreTasks.single().photoIds).containsExactlyElementsOf(photos)

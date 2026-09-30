@@ -1,4 +1,4 @@
-package com.soma.wes.analysis.service
+package com.soma.wes.analysis.support
 
 import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.dto.ScoreWorkerDto
@@ -11,10 +11,10 @@ import java.time.Clock
 import java.time.ZonedDateTime
 import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.LoggerFactory
-import org.springframework.stereotype.Service
+import org.springframework.stereotype.Component
 
 /**
- * GPU score 워커 제어 + score Lambda 폴백 — 잡과 무관하게 스윕마다 돈다. 점수는 워커가 `photo_analysis`를 직접 집어 내므로
+ * 파이프라인 2단계: GPU score 워커 제어 + score Lambda 폴백. 잡과 무관하게 회차마다 돈다. 점수는 워커가 `photo_analysis`를 직접 집어 내므로
  * 여기서는 "일이 있으면 켜고, 일이 없는데 안 꺼졌으면 끄고, 워커가 못 내면 Lambda로 보낸다"만 한다.
  *
  * - 켜기: backlog(점수 없는 UPLOADED 사진) > 0 ∧ 켜진 워커 0. 벡터가 오기 전에 미리 켜 부팅이 임베딩과 겹치게 한다.
@@ -26,8 +26,8 @@ import org.springframework.stereotype.Service
  *
  * 진행·전송 시각은 인메모리다(컬럼 없음). 인스턴스가 여럿이면 각자 판단해 겹칠 수 있는데, 켜기·끄기·score 전부 멱등이라 무방하다.
  */
-@Service
-class ScoreWorkerSupervisor(
+@Component
+class ScoreStep(
     private val scoreWorkerPool: ScoreWorkerPool,
     private val photoPipelineRepository: PhotoPipelineRepository,
     private val aiTaskSender: AiTaskSender,
@@ -55,7 +55,7 @@ class ScoreWorkerSupervisor(
     /** score 폴백을 갤러리마다 마지막으로 보낸 시각. */
     private val fallbackSentAt = ConcurrentHashMap<Long, ZonedDateTime>()
 
-    fun control() {
+    fun advance() {
         val now = ZonedDateTime.now(clock)
         val backlog = photoPipelineRepository.countScoreBacklog()
         observeProgress(now)

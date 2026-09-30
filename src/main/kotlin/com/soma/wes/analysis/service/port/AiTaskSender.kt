@@ -5,7 +5,7 @@ import kotlin.reflect.KClass
 
 /**
  * AI 작업 요청 하나([AiTaskDto])를 외부 실행기(Lambda 또는 로컬 서브프로세스)에 보낸다. 언제·무엇을 보낼지는 호출자
- * (EmbedDispatcher·ScoreWorkerSupervisor·AnalysisOrchestrator·관리자 재처리)가 정하고, 어느 작업이 어느 함수·스크립트로 가는지는
+ * (파이프라인 단계 EmbedStep·ScoreStep·CategorizeStep·FolderStep, 관리자 재처리)가 정하고, 어느 작업이 어느 함수·스크립트로 가는지는
  * 어댑터가 정한다.
  */
 interface AiTaskSender {

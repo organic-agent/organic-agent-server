@@ -1,4 +1,4 @@
-package com.soma.wes.analysis.service
+package com.soma.wes.analysis.support
 
 import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.gallery.fixture.GalleryFixture
@@ -23,10 +23,10 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.jdbc.core.JdbcTemplate
 
-/** 임베더 배정 검증. 임베더가 DB에 쓰는 일(벡터·되돌림)은 픽스처와 jdbc로 흉내 낸다. 배치·상한은 작은 값의 설정으로 직접 만든 디스패처가 본다. */
+/** 임베더 배정 검증. 임베더가 DB에 쓰는 일(벡터·되돌림)은 픽스처와 jdbc로 흉내 낸다. 배치·상한은 작은 값의 설정으로 직접 만든 단계가 본다. */
 @IntegrationTest
-class EmbedDispatcherTest @Autowired constructor(
-    private val embedDispatcher: EmbedDispatcher,
+class EmbedStepTest @Autowired constructor(
+    private val embedStep: EmbedStep,
     private val photoPipelineRepository: PhotoPipelineRepository,
     private val photoAnalysisRepository: PhotoAnalysisRepository,
     private val galleryFixture: GalleryFixture,
@@ -44,12 +44,12 @@ class EmbedDispatcherTest @Autowired constructor(
         galleryId = galleryFixture.멤버와_열린_갤러리().galleryId
     }
 
-    private fun dispatcher(
+    private fun step(
         batchSize: Int = 50,
         maxInFlight: Int = 32,
         maxAttempts: Int = 3,
         redispatchAfter: Duration = Duration.ofMinutes(10),
-    ) = EmbedDispatcher(
+    ) = EmbedStep(
         photoPipelineRepository,
         aiTaskSender,
         AnalysisProperties(
@@ -84,8 +84,8 @@ class EmbedDispatcherTest @Autowired constructor(
             photoFixture.대기중_사진(galleryId, count = 1)
 
             // when
-            val sent = embedDispatcher.dispatch()
-            val sentAgain = embedDispatcher.dispatch()
+            val sent = embedStep.advance()
+            val sentAgain = embedStep.advance()
 
             // then — PENDING 은 대상이 아니고, 갤러리마다 EVENT 하나
             assertSoftly { softly ->
@@ -102,17 +102,17 @@ class EmbedDispatcherTest @Autowired constructor(
         fun `배치 크기와 전역 in-flight 상한을 지키고 벡터가 오면 자리가 난다`() {
             // given
             val photos = photoFixture.업로드된_사진(galleryId, count = 5)
-            val dispatcher = dispatcher(batchSize = 2, maxInFlight = 2)
+            val step = step(batchSize = 2, maxInFlight = 2)
 
             // when — 자리 둘: 2장 + 2장, 한 장은 남는다
-            dispatcher.dispatch()
+            step.advance()
             assertThat(aiTaskSender.embedTasks.map { it.photoIds }).containsExactly(photos.take(2), photos.drop(2).take(2))
-            dispatcher.dispatch()
+            step.advance()
             assertThat(aiTaskSender.embedTasks).hasSize(2)
 
             // 임베더 역할: 첫 배치가 끝나면 자리가 하나 난다
             embedByLambda(photos.take(2))
-            dispatcher.dispatch()
+            step.advance()
 
             // then
             assertThat(aiTaskSender.embedTasks).hasSize(3)
@@ -128,7 +128,7 @@ class EmbedDispatcherTest @Autowired constructor(
             val fresh = photoFixture.업로드된_사진(galleryId, count = 1)
 
             // when
-            embedDispatcher.dispatch()
+            embedStep.advance()
 
             // then
             assertThat(aiTaskSender.embeddedPhotoIds).containsExactlyElementsOf(fresh).doesNotContainAnyElementsOf(embedded + failed)
@@ -138,13 +138,13 @@ class EmbedDispatcherTest @Autowired constructor(
         fun `두 스윕이 동시에 집어도 사진은 한 번씩만 보낸다`() {
             // given
             val photos = photoFixture.업로드된_사진(galleryId, count = 10)
-            val dispatcher = dispatcher(batchSize = 3)
+            val step = step(batchSize = 3)
 
             // when
             val barrier = CyclicBarrier(2)
             val pool = Executors.newFixedThreadPool(2)
             try {
-                val runs = (1..2).map { pool.submit { barrier.await(5, TimeUnit.SECONDS); dispatcher.dispatch() } }
+                val runs = (1..2).map { pool.submit { barrier.await(5, TimeUnit.SECONDS); step.advance() } }
                 runs.forEach { it.get(30, TimeUnit.SECONDS) }
             } finally {
                 pool.shutdownNow()
@@ -163,15 +163,15 @@ class EmbedDispatcherTest @Autowired constructor(
         fun `오래된 배정은 되돌려 다시 보내고 상한에 닿으면 실패로 표시한다`() {
             // given
             val photo = photoFixture.업로드된_사진(galleryId, count = 1).single()
-            val dispatcher = dispatcher(maxAttempts = 2)
+            val step = step(maxAttempts = 2)
 
             // when — 첫 배정 → 오래됨 → 두 번째 배정 → 오래됨 → 상한
-            dispatcher.dispatch()
+            step.advance()
             dispatchedLongAgo(listOf(photo))
-            dispatcher.dispatch()
+            step.advance()
             assertThat(aiTaskSender.embedTasks).hasSize(2)
             dispatchedLongAgo(listOf(photo))
-            dispatcher.dispatch()
+            step.advance()
 
             // then — 더 보내지 않고 사진 단위 실패로 남아 기대 장수에서 빠진다
             val progress = photoPipelineRepository.progressOf(galleryId, liveSince = ZonedDateTime.now(clock))
@@ -187,12 +187,12 @@ class EmbedDispatcherTest @Autowired constructor(
         fun `오래됐어도 벡터가 온 사진은 되돌리지 않는다`() {
             // given
             val photos = photoFixture.업로드된_사진(galleryId, count = 2)
-            embedDispatcher.dispatch()
+            embedStep.advance()
             embedByLambda(listOf(photos[0]))
             dispatchedLongAgo(photos)
 
             // when
-            embedDispatcher.dispatch()
+            embedStep.advance()
 
             // then — 벡터 없는 한 장만 다시 나간다
             assertThat(aiTaskSender.embedTasks).hasSize(2)
@@ -206,9 +206,9 @@ class EmbedDispatcherTest @Autowired constructor(
             aiTaskSender.failNext = true
 
             // when
-            val sent = embedDispatcher.dispatch()
+            val sent = embedStep.advance()
             val row = jdbcTemplate.queryForMap("SELECT dispatched_at, embed_attempts FROM photos WHERE id = ?", photo)
-            val sentAgain = embedDispatcher.dispatch()
+            val sentAgain = embedStep.advance()
 
             // then
             assertSoftly { softly ->
@@ -228,7 +228,7 @@ class EmbedDispatcherTest @Autowired constructor(
 
             // when
             val deleted = photoPipelineRepository.resetAnalysis(galleryId)
-            embedDispatcher.dispatch()
+            embedStep.advance()
 
             // then — 전부 다시 배정 대상이다
             assertSoftly { softly ->
