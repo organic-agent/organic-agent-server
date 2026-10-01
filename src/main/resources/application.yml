@@ -24,6 +24,10 @@ app:
     # 로컬에는 Lambda가 없다. "AI 분석" 버튼이 이 디렉토리의 <함수>.sh(embedder·score·categorize)를
     # 운영의 Lambda EVENT 자리에서 띄운다 (AI repo venv·S3 버킷은 스크립트가 정한다).
     local-script-dir: scripts/lambda
+    # 대역 스크립트는 호출마다 torch 프로세스 하나(2~4GB)다. 운영 기본값(임베더 32개 동시, score 50장씩 상한 없이)을
+    # 그대로 쓰면 노트북 메모리를 넘긴다 — 로컬은 샤딩하지 않는다. 임베더는 한 번에 하나씩, score 폴백은 갤러리당 프로세스 하나.
+    embed-max-in-flight: 1
+    score-batch-size: 10000
 
 ---
 spring:
