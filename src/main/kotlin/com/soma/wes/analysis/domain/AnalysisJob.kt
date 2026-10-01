@@ -16,7 +16,8 @@ import org.hibernate.annotations.DynamicUpdate
  * 갤러리 한 번의 "폴더 만들기" — ANALYZING → CATEGORIZING → DONE | FAILED. 행이 곧 큐 항목이다.
  *
  * 사진별 진행(임베딩·점수·백분위)은 잡이 아니라 `photo_analysis` 행이 말한다. 잡은 그것을 관측해 점수가 다 차면 categorize를
- * 한 번 부르고([startCategorizing]), 배정이 오면 폴더를 물질화한 뒤 닫는다([finish]). 누가 무엇을 쓰는지가 계약이다:
+ * 한 번 부르고, 배정이 오면 폴더를 물질화한 뒤 닫는다. 전이는 엔티티 메서드가 아니라 [com.soma.wes.analysis.repository.AnalysisJobRepository]의
+ * 조건부 UPDATE다 — 스윕 둘 중 한쪽만 옮기게 하는 것이 그 문장의 영향 행 수다. 누가 무엇을 쓰는지가 계약이다:
  * - 이 서버: [status]·[dispatchedAt]·[attempts]·[finishedAt], 그리고 잡을 닫을 때의 [error].
  * - categorize Lambda: 실패했을 때의 [error] 한 컬럼(photoselect의 `UPDATE (error)` GRANT). 상태는 쓰지 않는다.
  *
@@ -64,37 +65,11 @@ class AnalysisJob(
     val requiredId: Long
         get() = id ?: kotlin.error("아직 저장되지 않은 AnalysisJob 이다")
 
-    /** 점수가 다 찼다 — categorize를 보내기 직전. 같은 트랜잭션의 `version` 조건이 두 스윕 중 한쪽만 보내게 한다. */
-    fun startCategorizing(now: ZonedDateTime) {
-        check(status == AnalysisStatus.ANALYZING) { "ANALYZING 잡만 CATEGORIZING 으로 옮길 수 있습니다." }
-        status = AnalysisStatus.CATEGORIZING
-        redispatchCategorize(now)
-    }
-
-    /** categorize가 시간 안에 결과를 남기지 않아 다시 보낸다. 시도 수는 여기서만 오른다. */
-    fun redispatchCategorize(now: ZonedDateTime) {
-        dispatchedAt = now
-        attempts += 1
-    }
-
-    /** 호출 자체가 실패했다(권한·스로틀링). 시각을 지워 다음 스윕이 타임아웃을 기다리지 않고 바로 다시 보내게 한다. */
-    fun dispatchFailed() {
-        dispatchedAt = null
-    }
-
-    fun finish(now: ZonedDateTime) {
-        status = AnalysisStatus.DONE
-        finishedAt = now
-    }
-
-    fun fail(error: String, now: ZonedDateTime) {
-        status = AnalysisStatus.FAILED
-        finishedAt = now
-        this.error = error.take(MAX_ERROR_LENGTH)
-    }
-
     companion object {
         /** `error` 컬럼은 text지만 Lambda 쪽과 같은 길이로 자른다. */
         private const val MAX_ERROR_LENGTH = 4000
+
+        /** 잡을 FAILED로 닫을 때 남길 오류 — 길이를 Lambda 쪽과 맞춘다. */
+        fun trimError(error: String): String = error.take(MAX_ERROR_LENGTH)
     }
 }

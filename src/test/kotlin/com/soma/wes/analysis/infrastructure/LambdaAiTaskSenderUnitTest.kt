@@ -1,7 +1,7 @@
 package com.soma.wes.analysis.infrastructure
 
-import com.soma.wes.analysis.config.AnalysisProperties
-import com.soma.wes.analysis.dto.StageCallDto
+import com.soma.wes.analysis.config.LambdaAiTaskProperties
+import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -20,13 +20,13 @@ import software.amazon.awssdk.services.lambda.model.InvokeRequest
 import software.amazon.awssdk.services.lambda.model.InvokeResponse
 import tools.jackson.databind.json.JsonMapper
 
-class LambdaStageInvokerUnitTest {
+class LambdaAiTaskSenderUnitTest {
 
     private val lambdaClient = mock<LambdaClient>()
     private val objectMapper = JsonMapper.builder().build()
-    private val invoker = LambdaStageInvoker(
+    private val sender = LambdaAiTaskSender(
         lambdaClient,
-        AnalysisProperties(embedderFunctionName = "wes-embedder", scoreFunctionName = "wes-score", categorizeFunctionName = ""),
+        LambdaAiTaskProperties(embedderFunctionName = "wes-embedder", scoreFunctionName = "wes-score", categorizeFunctionName = ""),
         objectMapper,
     )
 
@@ -34,8 +34,8 @@ class LambdaStageInvokerUnitTest {
     fun `호출 종류마다 함수와 페이로드 계약이 다르다`() {
         whenever(lambdaClient.invoke(any<InvokeRequest>())).thenReturn(InvokeResponse.builder().statusCode(202).build())
 
-        invoker.invoke(StageCallDto.Embed(galleryId = 3, photoIds = listOf(10, 11, 12)))
-        invoker.invoke(StageCallDto.Score(galleryId = 3, photoIds = listOf(10)))
+        sender.send(AiTaskDto.Embed(galleryId = 3, photoIds = listOf(10, 11, 12)))
+        sender.send(AiTaskDto.Score(galleryId = 3, photoIds = listOf(10)))
 
         val requests = argumentCaptor<InvokeRequest>()
         verify(lambdaClient, times(2)).invoke(requests.capture())
@@ -60,9 +60,9 @@ class LambdaStageInvokerUnitTest {
     @Test
     fun `categorize 페이로드는 갤러리와 잡 id다`() {
         whenever(lambdaClient.invoke(any<InvokeRequest>())).thenReturn(InvokeResponse.builder().statusCode(202).build())
-        val configured = LambdaStageInvoker(lambdaClient, AnalysisProperties(categorizeFunctionName = "wes-categorize"), objectMapper)
+        val configured = LambdaAiTaskSender(lambdaClient, LambdaAiTaskProperties(categorizeFunctionName = "wes-categorize"), objectMapper)
 
-        configured.invoke(StageCallDto.Categorize(galleryId = 8, jobId = 13))
+        configured.send(AiTaskDto.Categorize(galleryId = 8, jobId = 13))
 
         val request = argumentCaptor<InvokeRequest>()
         verify(lambdaClient).invoke(request.capture())
@@ -79,8 +79,8 @@ class LambdaStageInvokerUnitTest {
     fun `exact photo 는 임베더 함수로 관리자 사진 교체 계약 그대로 간다`() {
         whenever(lambdaClient.invoke(any<InvokeRequest>())).thenReturn(InvokeResponse.builder().statusCode(202).build())
 
-        invoker.invoke(
-            StageCallDto.ExactPhoto(
+        sender.send(
+            AiTaskDto.ExactPhoto(
                 jobId = 11,
                 attemptCount = 2,
                 jobType = "EMBEDDING",
@@ -112,27 +112,27 @@ class LambdaStageInvokerUnitTest {
     @Test
     fun `함수 이름이 비어 있는 호출은 사용할 수 없다`() {
         assertSoftly { softly ->
-            softly.assertThat(invoker.isAvailable(StageCallDto.Embed::class)).isTrue()
-            softly.assertThat(invoker.isAvailable(StageCallDto.Score::class)).isTrue()
-            softly.assertThat(invoker.isAvailable(StageCallDto.Categorize::class)).isFalse()
+            softly.assertThat(sender.isAvailable(AiTaskDto.Embed::class)).isTrue()
+            softly.assertThat(sender.isAvailable(AiTaskDto.Score::class)).isTrue()
+            softly.assertThat(sender.isAvailable(AiTaskDto.Categorize::class)).isFalse()
             // exact photo 는 임베더 함수를 같이 쓴다.
-            softly.assertThat(invoker.isAvailable(StageCallDto.ExactPhoto::class)).isTrue()
-            softly.assertThat(LambdaStageInvoker(lambdaClient, AnalysisProperties(), objectMapper).isAvailable(StageCallDto.ExactPhoto::class)).isFalse()
+            softly.assertThat(sender.isAvailable(AiTaskDto.ExactPhoto::class)).isTrue()
+            softly.assertThat(LambdaAiTaskSender(lambdaClient, LambdaAiTaskProperties(), objectMapper).isAvailable(AiTaskDto.ExactPhoto::class)).isFalse()
         }
     }
 
     @Test
     fun `SDK 예외와 202가 아닌 응답은 호출 실패 코드다`() {
         whenever(lambdaClient.invoke(any<InvokeRequest>())).thenThrow(SdkClientException.create("no credentials"))
-        assertThatThrownBy { invoker.invoke(StageCallDto.Score(galleryId = 1, photoIds = listOf(1))) }
+        assertThatThrownBy { sender.send(AiTaskDto.Score(galleryId = 1, photoIds = listOf(1))) }
             .isInstanceOf(AnalysisException::class.java)
             .extracting("errorCode")
-            .isEqualTo(AnalysisErrorCode.STAGE_INVOCATION_FAILED)
+            .isEqualTo(AnalysisErrorCode.AI_TASK_SEND_FAILED)
 
         whenever(lambdaClient.invoke(any<InvokeRequest>())).thenReturn(InvokeResponse.builder().statusCode(500).build())
-        assertThatThrownBy { invoker.invoke(StageCallDto.Score(galleryId = 1, photoIds = listOf(1))) }
+        assertThatThrownBy { sender.send(AiTaskDto.Score(galleryId = 1, photoIds = listOf(1))) }
             .isInstanceOf(AnalysisException::class.java)
             .extracting("errorCode")
-            .isEqualTo(AnalysisErrorCode.STAGE_INVOCATION_FAILED)
+            .isEqualTo(AnalysisErrorCode.AI_TASK_SEND_FAILED)
     }
 }

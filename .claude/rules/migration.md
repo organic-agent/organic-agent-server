@@ -49,7 +49,7 @@ paths:
   `attempts`(categorize 호출 수)·`finished_at`·`error`·`version`·`created_at`·`updated_at`뿐이다. 이 서버가 상태 전부를 쓰고,
   Lambda(categorize, DB 유저 `photoselect`)는 실패했을 때 `error` 한 컬럼만 쓴다(GRANT `UPDATE (error, updated_at)`).
   단계·모드·force·result 컬럼은 없다 — 사진별 진행은 `photo_analysis` 행이 말하고, 임베더 배정은 잡과 무관하게 스윕이 한다
-  (`EmbedDispatcher`, `photos.dispatched_at`·`embed_attempts`). 재분석은 `photo_analysis` 행 삭제(`PhotoPipelineRepository.resetAnalysis`)다.
+  (`EmbedStep`, `photos.dispatched_at`·`embed_attempts`). 재분석은 `photo_analysis` 행 삭제(`PhotoPipelineRepository.resetAnalysis`)다.
   `AnalysisJob`은 `@DynamicUpdate`다 — Lambda가 쓰는 `error`를 이 서버의 오래된 스냅샷이 덮지 않게 바뀐 컬럼만 UPDATE한다.
 - 폴더 물질화 기록 테이블(`categorization_jobs`·`categorization_job_photos`)은 V17에서 지웠다 — "처리한 사진"은
   `detail_folder_assignments`가 말하고, 물질화 진입점은 `AiFolderMaterializer.materialize`(인가 없음, 멱등) 하나다.

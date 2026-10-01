@@ -10,7 +10,7 @@ import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
 import com.soma.wes.photo.domain.PhotoAnalysis
 import com.soma.wes.photo.fixture.PhotoFixture
-import com.soma.wes.support.FakeStageInvoker
+import com.soma.wes.support.FakeAiTaskSender
 import com.soma.wes.support.IntegrationTest
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -25,10 +25,11 @@ import org.springframework.jdbc.core.JdbcTemplate
 @IntegrationTest
 class AnalysisServiceTest @Autowired constructor(
     private val analysisService: AnalysisService,
+    private val pipeline: AnalysisPipelineService,
     private val analysisJobRepository: AnalysisJobRepository,
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
-    private val stageInvoker: FakeStageInvoker,
+    private val aiTaskSender: FakeAiTaskSender,
     private val jdbcTemplate: JdbcTemplate,
 ) {
 
@@ -36,7 +37,7 @@ class AnalysisServiceTest @Autowired constructor(
 
     @BeforeEach
     fun setUpBaseData() {
-        stageInvoker.reset()
+        aiTaskSender.reset()
         fixture = galleryFixture.멤버와_열린_갤러리()
     }
 
@@ -62,21 +63,28 @@ class AnalysisServiceTest @Autowired constructor(
                 softly.assertThat(response.finishedAt).isNull()
             }
             // 요청 자체는 Lambda 를 부르지 않는다 — 점수가 없으니 categorize 도, 벡터가 없으니 score 폴백도 나갈 것이 없다.
-            assertThat(stageInvoker.categorizeCalls).isEmpty()
+            assertThat(aiTaskSender.categorizeTasks).isEmpty()
         }
 
         @Test
-        fun `이미 점수가 다 찬 갤러리는 커밋 직후 categorize 가 나간다`() {
+        fun `이미 점수가 다 찬 갤러리도 요청은 잡만 만들고 categorize 는 다음 회차가 보낸다`() {
             // given
             val photos = photoFixture.임베딩된_사진(fixture.galleryId, count = 2)
             photos.forEach { photoFixture.점수_적재(it) }
 
             // when
             val response = analysisService.request(fixture.galleryId, fixture.photographer.id!!)
+            val statusAfterRequest = analysisJobRepository.findById(response.jobId).orElseThrow().status
+            val tasksAfterRequest = aiTaskSender.categorizeTasks.size
+            pipeline.advance()
 
-            // then — afterCommit 의 한 걸음이 ANALYZING→CATEGORIZING 을 지났다
-            assertThat(analysisJobRepository.findById(response.jobId).orElseThrow().status).isEqualTo(AnalysisStatus.CATEGORIZING)
-            assertThat(stageInvoker.categorizeCalls.map { it.jobId }).containsExactly(response.jobId)
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(statusAfterRequest).isEqualTo(AnalysisStatus.ANALYZING)
+                softly.assertThat(tasksAfterRequest).isZero()
+                softly.assertThat(analysisJobRepository.findById(response.jobId).orElseThrow().status).isEqualTo(AnalysisStatus.CATEGORIZING)
+                softly.assertThat(aiTaskSender.categorizeTasks.map { it.jobId }).containsExactly(response.jobId)
+            }
         }
 
         @Test
@@ -109,13 +117,13 @@ class AnalysisServiceTest @Autowired constructor(
         fun `실행기가 설정되지 않았으면 잡을 만들지 않는다`() {
             // given
             photoFixture.업로드된_사진(fixture.galleryId, count = 1)
-            stageInvoker.available = false
+            aiTaskSender.available = false
 
             // when & then
             assertThatThrownBy { analysisService.request(fixture.galleryId, fixture.photographer.id!!) }
                 .isInstanceOf(AnalysisException::class.java)
                 .extracting("errorCode")
-                .isEqualTo(AnalysisErrorCode.STAGE_NOT_CONFIGURED)
+                .isEqualTo(AnalysisErrorCode.AI_TASK_NOT_CONFIGURED)
             assertThat(analysisJobRepository.count()).isZero()
         }
 

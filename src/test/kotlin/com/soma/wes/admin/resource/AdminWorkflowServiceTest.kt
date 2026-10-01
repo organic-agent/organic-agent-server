@@ -15,8 +15,8 @@ import com.soma.wes.admin.resource.service.AdminOperationsOverviewService
 import com.soma.wes.admin.resource.service.AdminResourceContextService
 import com.soma.wes.admin.resource.service.AdminResourceService
 import com.soma.wes.admin.resource.service.AdminWorkflowService
-import com.soma.wes.analysis.dto.StageCallDto
-import com.soma.wes.analysis.service.port.StageInvoker
+import com.soma.wes.analysis.dto.AiTaskDto
+import com.soma.wes.analysis.service.port.AiTaskSender
 import com.soma.wes.global.filter.HttpLoggingFilter
 import com.soma.wes.photo.dto.PresignedUploadDto
 import com.soma.wes.photo.service.port.PhotoStorage
@@ -60,11 +60,11 @@ class AdminWorkflowServiceTest @Autowired constructor(
     private lateinit var photoStorage: PhotoStorage
 
     @MockitoBean
-    private lateinit var stageInvoker: StageInvoker
+    private lateinit var aiTaskSender: AiTaskSender
 
     @BeforeEach
     fun setUp() {
-        whenever(stageInvoker.isAvailable(StageCallDto.ExactPhoto::class)).thenReturn(true)
+        whenever(aiTaskSender.isAvailable(AiTaskDto.ExactPhoto::class)).thenReturn(true)
     }
 
     @Test
@@ -1163,7 +1163,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
         assertThat(persistedAudit).doesNotContain("secret-signature", "upload.example.test")
         verify(photoStorage, times(2)).presignUpload(eq(replacementKey), eq("image/jpeg"), anyOrNull(), anyOrNull())
         verify(photoStorage).exists(replacementKey)
-        verify(stageInvoker, never()).invoke(any())
+        verify(aiTaskSender, never()).send(any())
     }
 
     @Test
@@ -1244,7 +1244,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
                 """.trimIndent(),
             ).query { rs, _ -> rs.getString(1) }.single(),
         ).isEqualTo("COMPLETED")
-        verify(stageInvoker, never()).invoke(any())
+        verify(aiTaskSender, never()).send(any())
     }
 
     @Test
@@ -1321,7 +1321,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
                 """.trimIndent(),
             ).query { rs, _ -> rs.getLong(1) }.single(),
         ).isZero()
-        verify(stageInvoker, never()).invoke(any())
+        verify(aiTaskSender, never()).send(any())
     }
 
     @Test
@@ -1439,7 +1439,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
                 "SELECT COUNT(*) FROM admin_ai_selection_jobs WHERE selection_id = :selectionId AND status = 'SUCCEEDED'",
             ).param("selectionId", emptySelection.id).query { rs, _ -> rs.getLong(1) }.single(),
         ).isZero()
-        verify(stageInvoker, never()).invoke(any())
+        verify(aiTaskSender, never()).send(any())
     }
 
     @Test

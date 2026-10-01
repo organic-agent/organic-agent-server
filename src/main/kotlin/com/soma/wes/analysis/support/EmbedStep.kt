@@ -1,27 +1,27 @@
-package com.soma.wes.analysis.service
+package com.soma.wes.analysis.support
 
 import com.soma.wes.analysis.config.AnalysisProperties
-import com.soma.wes.analysis.dto.StageCallDto
+import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.exception.AnalysisException
-import com.soma.wes.analysis.service.port.StageInvoker
+import com.soma.wes.analysis.service.port.AiTaskSender
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import java.time.Clock
 import java.time.ZonedDateTime
 import org.slf4j.LoggerFactory
-import org.springframework.stereotype.Service
+import org.springframework.stereotype.Component
 
 /**
- * 임베더 배정 — 잡과 무관하게 스윕마다 돈다. 업로드가 끝났고 벡터·실패·배정이 없는 사진을 갤러리마다 50장씩 집어
+ * 파이프라인 1단계: 임베더 배정. 잡과 무관하게 회차마다 돈다. 업로드가 끝났고 벡터·실패·배정이 없는 사진을 갤러리마다 50장씩 집어
  * `{galleryId, photoIds}` EVENT로 보낸다. 프론트가 죽어도 올라온 사진은 여기서 끝까지 임베딩된다.
  *
  * 걸음 하나: 오래된 배정 되돌리기 → 시도 상한 표시 → 빈 자리(전역 in-flight 상한)만큼 갤러리를 돌며 한 배치씩.
  * 집기와 배정 표시는 문장 하나(`SKIP LOCKED`)라 스윕 둘이 같은 갤러리를 봐도 겹치지 않는다. Lambda 호출은
  * 트랜잭션 밖이고, 호출 자체가 실패하면 배정을 되돌려 다음 스윕이 다시 집는다.
  */
-@Service
-class EmbedDispatcher(
+@Component
+class EmbedStep(
     private val photoPipelineRepository: PhotoPipelineRepository,
-    private val stageInvoker: StageInvoker,
+    private val aiTaskSender: AiTaskSender,
     private val properties: AnalysisProperties,
     private val clock: Clock,
 ) {
@@ -29,8 +29,8 @@ class EmbedDispatcher(
     private val log = LoggerFactory.getLogger(javaClass)
 
     /** 보낸 배치 수를 돌려준다. 실행기가 없으면(로컬·테스트) 아무것도 하지 않는다. */
-    fun dispatch(): Int {
-        if (!stageInvoker.isAvailable(StageCallDto.Embed::class)) return 0
+    fun advance(): Int {
+        if (!aiTaskSender.isAvailable(AiTaskDto.Embed::class)) return 0
         val now = ZonedDateTime.now(clock)
 
         val released = photoPipelineRepository.releaseStaleDispatches(before = now.minus(properties.embedRedispatchAfter))
@@ -56,7 +56,7 @@ class EmbedDispatcher(
                     maxAttempts = properties.embedMaxAttempts,
                 )
                 if (photoIds.isEmpty()) continue
-                if (!invoke(StageCallDto.Embed(galleryId = galleryId, photoIds = photoIds))) return sent
+                if (!send(AiTaskDto.Embed(galleryId = galleryId, photoIds = photoIds))) return sent
                 slots--
                 sent++
                 sentThisRound++
@@ -67,13 +67,13 @@ class EmbedDispatcher(
     }
 
     /** 호출 실패는 배정을 되돌리고 걸음을 멈춘다 — 권한·스로틀링이면 남은 갤러리도 같이 실패할 것이라 다음 스윕에 맡긴다. */
-    private fun invoke(call: StageCallDto.Embed): Boolean = try {
-        stageInvoker.invoke(call)
-        log.info("embed dispatch gallery={} photos={}", call.galleryId, call.photoIds.size)
+    private fun send(task: AiTaskDto.Embed): Boolean = try {
+        aiTaskSender.send(task)
+        log.info("embed dispatch gallery={} photos={}", task.galleryId, task.photoIds.size)
         true
     } catch (e: AnalysisException) {
-        photoPipelineRepository.releaseClaim(call.photoIds)
-        log.warn("embed dispatch failed — 배정을 되돌리고 다음 스윕에 다시 보낸다: gallery={} photos={} code={}", call.galleryId, call.photoIds.size, e.errorCode.code)
+        photoPipelineRepository.releaseClaim(task.photoIds)
+        log.warn("embed dispatch failed — 배정을 되돌리고 다음 스윕에 다시 보낸다: gallery={} photos={} code={}", task.galleryId, task.photoIds.size, e.errorCode.code)
         false
     }
 }

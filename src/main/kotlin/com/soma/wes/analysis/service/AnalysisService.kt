@@ -3,12 +3,12 @@ package com.soma.wes.analysis.service
 import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.domain.AnalysisJob
 import com.soma.wes.analysis.domain.AnalysisStatus
-import com.soma.wes.analysis.dto.StageCallDto
+import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.dto.response.AnalysisJobResponse
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
 import com.soma.wes.analysis.repository.AnalysisJobRepository
-import com.soma.wes.analysis.service.port.StageInvoker
+import com.soma.wes.analysis.service.port.AiTaskSender
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.photo.repository.projection.GalleryAnalysisProgress
@@ -18,20 +18,17 @@ import org.slf4j.LoggerFactory
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import org.springframework.transaction.support.TransactionSynchronization
-import org.springframework.transaction.support.TransactionSynchronizationManager
 
 /**
- * 작가의 "AI 분석" 버튼(프론트는 업로드 큐가 비면 자동으로도 부른다). 잡 행을 만들고 커밋 뒤 [AnalysisOrchestrator]에 넘기는
- * 것까지가 이 서비스의 일이다 — 임베더 배정·categorize 호출·물질화는 오케스트레이터와 스윕의 일이다.
+ * 작가의 "AI 분석" 버튼(프론트는 업로드 큐가 비면 자동으로도 부른다). ANALYZING 잡 행을 만드는 것까지가 이 서비스의 일이다 —
+ * 임베더 배정·categorize 호출·물질화는 5초마다 도는 [AnalysisPipelineService]가 잡의 상태를 보고 이어받는다.
  */
 @Service
 class AnalysisService(
     private val galleryAccessPolicy: GalleryAccessPolicy,
     private val photoPipelineRepository: PhotoPipelineRepository,
     private val analysisJobRepository: AnalysisJobRepository,
-    private val stageInvoker: StageInvoker,
-    private val orchestrator: AnalysisOrchestrator,
+    private val aiTaskSender: AiTaskSender,
     private val properties: AnalysisProperties,
     private val clock: Clock,
 ) {
@@ -61,23 +58,16 @@ class AnalysisService(
             throw AnalysisException(AnalysisErrorCode.ANALYSIS_JOB_ALREADY_ACTIVE)
         }
 
-        // 커밋 뒤에 한 걸음 — 이미 점수가 다 찬 갤러리(재실행)는 기다리지 않고 바로 categorize가 나간다.
-        val jobId = job.requiredId
-        TransactionSynchronizationManager.registerSynchronization(
-            object : TransactionSynchronization {
-                override fun afterCommit() = orchestrator.dispatch(jobId)
-            },
-        )
-        log.info("AI 분석 요청: galleryId={}, jobId={}, expected={}", galleryId, jobId, progress.expected)
+        log.info("AI 분석 요청: galleryId={}, jobId={}, expected={}", galleryId, job.requiredId, progress.expected)
 
         return AnalysisJobResponse.from(job, progress)
     }
 
     private fun validateInvokerConfigured() {
-        val required = listOf(StageCallDto.Embed::class, StageCallDto.Categorize::class) +
-            if (properties.gpu.enabled) emptyList() else listOf(StageCallDto.Score::class)
-        if (required.any { !stageInvoker.isAvailable(it) }) {
-            throw AnalysisException(AnalysisErrorCode.STAGE_NOT_CONFIGURED)
+        val required = listOf(AiTaskDto.Embed::class, AiTaskDto.Categorize::class) +
+            if (properties.gpu.enabled) emptyList() else listOf(AiTaskDto.Score::class)
+        if (required.any { !aiTaskSender.isAvailable(it) }) {
+            throw AnalysisException(AnalysisErrorCode.AI_TASK_NOT_CONFIGURED)
         }
     }
 

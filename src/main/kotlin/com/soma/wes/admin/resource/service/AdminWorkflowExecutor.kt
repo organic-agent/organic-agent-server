@@ -8,8 +8,8 @@ import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.repository.AdminWorkflowExecutionRepository
 import com.soma.wes.admin.resource.repository.AdminWorkflowExecutionRepository.ProcessingExecutionJob
 import com.soma.wes.admin.resource.repository.WorkflowExecutionException
-import com.soma.wes.analysis.dto.StageCallDto
-import com.soma.wes.analysis.service.port.StageInvoker
+import com.soma.wes.analysis.dto.AiTaskDto
+import com.soma.wes.analysis.service.port.AiTaskSender
 import com.soma.wes.global.exception.BusinessException
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
@@ -21,7 +21,7 @@ import org.springframework.transaction.support.TransactionTemplate
 class AdminWorkflowExecutor(
     private val repository: AdminWorkflowExecutionRepository,
     private val properties: AdminWorkflowExecutorProperties,
-    private val stageInvoker: StageInvoker,
+    private val aiTaskSender: AiTaskSender,
     private val auditService: AdminAuditService,
     private val transactionTemplate: TransactionTemplate,
 ) {
@@ -61,7 +61,7 @@ class AdminWorkflowExecutor(
 
     private fun executeExactPhotoProcessing(job: ProcessingExecutionJob) {
         val requestSeed = try {
-            if (!stageInvoker.isAvailable(StageCallDto.ExactPhoto::class)) throw WorkflowExecutionException("PHOTO_PROCESSING_NOT_CONFIGURED")
+            if (!aiTaskSender.isAvailable(AiTaskDto.ExactPhoto::class)) throw WorkflowExecutionException("PHOTO_PROCESSING_NOT_CONFIGURED")
             if (job.targetType != AdminResourceType.PHOTO) throw WorkflowExecutionException("PHOTO_TARGET_REQUIRED")
             ExactPhotoRequestSeed(
                 galleryId = job.payload.long("galleryId")
@@ -92,8 +92,8 @@ class AdminWorkflowExecutor(
         val startedJob = job.copy(attemptCount = startedAttempt)
 
         try {
-            stageInvoker.invoke(
-                StageCallDto.ExactPhoto(
+            aiTaskSender.send(
+                AiTaskDto.ExactPhoto(
                     jobId = startedJob.id,
                     attemptCount = startedJob.attemptCount,
                     jobType = startedJob.jobType,

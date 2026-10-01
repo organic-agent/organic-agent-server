@@ -14,7 +14,7 @@ import software.amazon.awssdk.services.lambda.LambdaClient
  *
  * `embedding/config`에서 여기로 온 이유: 처음에는 임베딩 호출 하나만 쓰다가 두 번째 도메인이 붙으면서
  * 도메인 공용 규칙(두 번째 도메인이 필요로 하는 날 `global`로)을 따랐다. 지금 사용처는
- * [com.soma.wes.analysis.infrastructure.LambdaStageInvoker] 하나다.
+ * [com.soma.wes.analysis.infrastructure.LambdaAiTaskSender] 하나다.
  */
 @Configuration
 class AwsLambdaConfig {

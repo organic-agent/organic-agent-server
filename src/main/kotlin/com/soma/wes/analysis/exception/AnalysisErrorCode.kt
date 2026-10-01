@@ -37,7 +37,7 @@ enum class AnalysisErrorCode(
      * 둘을 같은 코드로 돌려주면 "Lambda 로그를 볼 것"과 "IAM을 볼 것"을 구분할 수 없다.
      * 잡 경로에서는 사용자에게 나가지 않고 스윕이 다시 부른다. 관리자 재처리 경로만 그대로 돌려준다.
      */
-    STAGE_INVOCATION_FAILED(HttpStatus.BAD_GATEWAY, "PHOTO_502_1", "AI 분석 실행을 시작하지 못했습니다."),
+    AI_TASK_SEND_FAILED(HttpStatus.BAD_GATEWAY, "PHOTO_502_1", "AI 분석 실행을 시작하지 못했습니다."),
 
     /**
      * GPU 워커 인스턴스를 켜거나 끄는 호출 자체가 실패한 경우(EC2 권한·API 오류). 스윕이 잡아 로그로 남기고 다음 걸음에 다시 본다 —
@@ -46,5 +46,5 @@ enum class AnalysisErrorCode(
     SCORE_WORKER_CONTROL_FAILED(HttpStatus.BAD_GATEWAY, "PHOTO_502_6", "GPU 워커를 제어하지 못했습니다."),
 
     /** 잡이 지나는 호출(embedder·categorize, GPU가 없으면 score) 중 실행기가 설정되지 않은 것이 있는 경우. 로컬·테스트에는 Lambda가 없는 것이 정상이다. */
-    STAGE_NOT_CONFIGURED(HttpStatus.SERVICE_UNAVAILABLE, "PHOTO_503_1", "AI 분석 실행이 설정되지 않았습니다."),
+    AI_TASK_NOT_CONFIGURED(HttpStatus.SERVICE_UNAVAILABLE, "PHOTO_503_1", "AI 분석 실행이 설정되지 않았습니다."),
 }

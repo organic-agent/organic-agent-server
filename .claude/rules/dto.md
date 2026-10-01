@@ -25,7 +25,7 @@ paths:
   `~Dto` 접미사로 둔다** (`photo/dto/PresignedUploadDto`). 위치와 접미사가 "API 계약이 아니다"를
   말해주므로, 이 클래스는 바꿔도 클라이언트가 깨지지 않는다.
 - **접미사 `Dto`는 `dto` 루트의 모든 클래스에 필수다** — data class뿐 아니라 sealed interface·enum도
-  (`StageCallDto`, `ScoreWorkerStateDto`, `OrchestratorActionDto`). 접미사 없는 이름이 섞이면 어느 것이
+  (`AiTaskDto`, `ScoreWorkerStateDto`, `MaterializeOutcomeDto`). 접미사 없는 이름이 섞이면 어느 것이
   API 계약인지 파일명만으로 가릴 수 없다.
 - **서비스·support·포트 클래스 안에 데이터 클래스를 중첩하지 않는다.** 결과 묶음, 트랜잭션 밖으로 넘기는
   값, 다른 도메인이 받아 가는 값은 `dto` 루트의 파일 하나다 (`LatestConceptAssignmentsDto`). 허용되는 중첩은

@@ -24,8 +24,8 @@ import com.soma.wes.collab.support.CollabLinkResolver
 import com.soma.wes.collab.support.CollabPhotoMembership
 import com.soma.wes.collab.support.CollabPhotoViewAssembler
 import com.soma.wes.global.config.AwsLambdaConfig
-import com.soma.wes.analysis.config.AnalysisProperties
-import com.soma.wes.analysis.infrastructure.LambdaStageInvoker
+import com.soma.wes.analysis.config.LambdaAiTaskProperties
+import com.soma.wes.analysis.infrastructure.LambdaAiTaskSender
 import com.soma.wes.gallery.config.GalleryLifecycleProperties
 import com.soma.wes.gallery.config.GalleryInviteProperties
 import com.soma.wes.gallery.config.MockGalleryProperties
@@ -100,7 +100,7 @@ class AdminApplicationContextBoundaryTest @Autowired constructor(
             AdminWorkflowExecutorProperties::class.java,
             StorageProperties::class.java,
             TrashProperties::class.java,
-            AnalysisProperties::class.java,
+            LambdaAiTaskProperties::class.java,
             MockGalleryProperties::class.java,
             GalleryInviteProperties::class.java,
             GalleryLifecycleProperties::class.java,
@@ -123,7 +123,7 @@ class AdminApplicationContextBoundaryTest @Autowired constructor(
             SecureTokenGenerator::class.java,
             S3PhotoStorage::class.java,
             AwsLambdaConfig::class.java,
-            LambdaStageInvoker::class.java,
+            LambdaAiTaskSender::class.java,
             GalleryInviteUrlResolver::class.java,
             CollabLinkResolver::class.java,
             GalleryAccessPolicy::class.java,
