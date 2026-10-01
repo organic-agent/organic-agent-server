@@ -30,10 +30,15 @@ done
 . "$WES_ROOT/scripts/lib/ai-venv.sh"
 ai_env "$WES_ROOT"
 
+# naming 모델. 조직 SCP가 `global.` 프로필(리전 미지정 호출)을 막아서 로컬은 미국 프로필을 미국 리전에서 부른다.
+# DB·S3 는 AWS_REGION(ai-env.sh) 그대로이고 Bedrock 만 리전이 다르다. 환경변수로 덮어쓴다.
+export BEDROCK_REGION="${BEDROCK_REGION:-us-east-1}"
+export BEDROCK_MODEL_ID="${BEDROCK_MODEL_ID:-us.anthropic.claude-sonnet-4-6}"
+
 # categorize 는 score venv 에 같이 깔린다(scripts/lib/ai-venv.sh) — 둘 다 numpy·psycopg 를 쓴다.
 PY="$(ai_python "$AI_ROOT" score)"
 ARGS=(--gallery-id "$GALLERY_ID" --llm)
 [ -n "$JOB_ID" ] && ARGS+=(--job-id "$JOB_ID")
 [ -n "$CONCEPT_COUNT" ] && ARGS+=(--concept-count "$CONCEPT_COUNT")
-echo "[categorize] python -m categorize ${ARGS[*]}  db=$DB_USER@$DB_HOST:$DB_PORT/$DB_NAME"
+echo "[categorize] python -m categorize ${ARGS[*]}  bedrock=$BEDROCK_MODEL_ID@$BEDROCK_REGION  db=$DB_USER@$DB_HOST:$DB_PORT/$DB_NAME"
 exec "$PY" -m categorize "${ARGS[@]}"
