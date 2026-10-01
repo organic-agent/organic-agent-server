@@ -72,6 +72,25 @@ class LambdaAiTaskSenderUnitTest {
             softly.assertThat(payload["galleryId"].asLong()).isEqualTo(8)
             softly.assertThat(payload["jobId"].asLong()).isEqualTo(13)
             softly.assertThat(payload.has("photoIds")).isFalse()
+            // 컨셉 수가 없으면 키 자체가 없다 — 옛 categorize 가 보던 페이로드 그대로다.
+            softly.assertThat(payload.has("conceptCount")).isFalse()
+        }
+    }
+
+    @Test
+    fun `컨셉 수가 있으면 categorize 페이로드에 conceptCount 로 실린다`() {
+        whenever(lambdaClient.invoke(any<InvokeRequest>())).thenReturn(InvokeResponse.builder().statusCode(202).build())
+        val configured = LambdaAiTaskSender(lambdaClient, LambdaAiTaskProperties(categorizeFunctionName = "wes-categorize"), objectMapper)
+
+        configured.send(AiTaskDto.Categorize(galleryId = 8, jobId = 13, conceptCount = 4))
+
+        val request = argumentCaptor<InvokeRequest>()
+        verify(lambdaClient).invoke(request.capture())
+        val payload = objectMapper.readTree(request.firstValue.payload().asUtf8String())
+        assertSoftly { softly ->
+            softly.assertThat(payload["galleryId"].asLong()).isEqualTo(8)
+            softly.assertThat(payload["jobId"].asLong()).isEqualTo(13)
+            softly.assertThat(payload["conceptCount"].asInt()).isEqualTo(4)
         }
     }
 

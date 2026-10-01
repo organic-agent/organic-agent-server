@@ -1,5 +1,7 @@
 package com.soma.wes.analysis.dto
 
+import com.fasterxml.jackson.annotation.JsonInclude
+
 /**
  * 외부 실행기(Lambda 또는 로컬 서브프로세스)에 보내는 AI 작업 요청 하나. 트랜잭션 안에서 정한 "무엇을 부를지"를
  * 트랜잭션 밖의 호출로 넘기는 전달용 값이기도 하다. 페이로드 키는 AI repo 계약 그대로다(계획서 §7) — 각 하위 타입의
@@ -21,10 +23,16 @@ sealed interface AiTaskDto {
         val photoIds: List<Long>,
     ) : AiTaskDto
 
-    /** categorize — 갤러리 전체의 백분위·연사·그룹 + Bedrock 이름·배정(`concept_assignments(job_id)`). */
+    /**
+     * categorize — 갤러리 전체의 백분위·연사·구간 → 1층(컨셉)·2층 + Bedrock 이름·배정(`concept_assignments(job_id)`).
+     * [conceptCount]는 사용자가 기억하는 컨셉 수(선택)다. 없으면 키 자체를 싣지 않아 페이로드가 `{galleryId, jobId}` 그대로이고,
+     * categorize 가 개수를 정한다.
+     */
     data class Categorize(
         override val galleryId: Long,
         val jobId: Long,
+        @get:JsonInclude(JsonInclude.Include.NON_NULL)
+        val conceptCount: Int? = null,
     ) : AiTaskDto
 
     /**

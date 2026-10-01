@@ -33,6 +33,10 @@ import org.hibernate.annotations.DynamicUpdate
 class AnalysisJob(
     @Column(name = "gallery_id", nullable = false, updatable = false)
     val galleryId: Long,
+
+    /** 사용자가 기억하는 컨셉 수(선택). categorize 가 촬영 시각 구간을 이 수의 1층으로 묶는다. null 이면 AI 가 정한다. */
+    @Column(name = "concept_count", updatable = false)
+    val conceptCount: Int? = null,
 ) : BaseEntity() {
 
     @Id

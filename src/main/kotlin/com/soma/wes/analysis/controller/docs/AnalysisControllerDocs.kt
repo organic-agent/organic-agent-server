@@ -1,5 +1,6 @@
 package com.soma.wes.analysis.controller.docs
 
+import com.soma.wes.analysis.dto.request.AnalysisRequest
 import com.soma.wes.analysis.dto.response.AnalysisJobResponse
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.global.exception.ErrorResponse
@@ -87,7 +88,7 @@ interface AnalysisControllerDocs {
             ],
         ),
     )
-    fun request(loginUser: LoginUser, galleryId: Long): ResponseEntity<AnalysisJobResponse>
+    fun request(loginUser: LoginUser, galleryId: Long, request: AnalysisRequest?): ResponseEntity<AnalysisJobResponse>
 
     @Operation(
         summary = "갤러리 AI 분석 상태",

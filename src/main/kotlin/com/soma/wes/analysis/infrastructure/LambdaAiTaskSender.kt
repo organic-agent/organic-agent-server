@@ -21,7 +21,7 @@ import tools.jackson.databind.ObjectMapper
  *
  * 페이로드는 [AiTaskDto]를 그대로 직렬화한 것이다 — 프로퍼티 이름이 곧 AI repo 계약의 키다:
  * - embedder·score `{galleryId, photoIds}` — `jobId` 키는 임베더가 관리자 사진 교체 이벤트로 해석하므로 배정에는 없다.
- * - categorize `{galleryId, jobId}`.
+ * - categorize `{galleryId, jobId, conceptCount?}` — 컨셉 수는 사용자가 넣었을 때만 실린다.
  * - exact photo(관리자 사진 교체) `{jobId, attemptCount, jobType, photoId, galleryId, storageKey, revisionId}` — embedder 함수로 간다.
  */
 @Component
