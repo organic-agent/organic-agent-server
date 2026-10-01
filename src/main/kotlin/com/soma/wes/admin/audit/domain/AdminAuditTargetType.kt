@@ -1,6 +1,7 @@
 package com.soma.wes.admin.audit.domain
 
 enum class AdminAuditTargetType {
+    PRO_COUPON,
     AUTHENTICATION,
     ADMIN_ACCOUNT,
     USER,

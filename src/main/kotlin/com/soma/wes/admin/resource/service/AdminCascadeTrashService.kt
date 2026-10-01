@@ -15,6 +15,7 @@ import com.soma.wes.admin.resource.repository.AdminCascadeTrashRepository
 import com.soma.wes.admin.resource.repository.AdminCascadeTrashRepository.BatchRow
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
 import com.soma.wes.trash.config.TrashProperties
+import com.soma.wes.admin.support.AdminPhotoRestoreQuota
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -30,6 +31,7 @@ class AdminCascadeTrashService(
     private val auditSanitizer: AdminAuditSanitizer,
     private val trashProperties: TrashProperties,
     private val clock: Clock,
+    private val photoRestoreQuota: AdminPhotoRestoreQuota,
 ) {
 
     @Transactional(readOnly = true)
@@ -159,6 +161,7 @@ class AdminCascadeTrashService(
         if (batch.status != "ACTIVE") {
             throw AdminException(AdminErrorCode.TRASH_BATCH_CONFLICT)
         }
+        photoRestoreQuota.requireCapacity(type = batch.rootType, id = batch.rootId)
         val expectedCount = trashRepository.affectedCounts(batch.id).values.sum().toInt()
         val restoredCount = trashRepository.restore(batch)
         if (restoredCount != expectedCount || trashRepository.markRestored(batch.id) != 1) {
@@ -195,6 +198,7 @@ class AdminCascadeTrashService(
         if (!ZonedDateTime.now(clock).isBefore(deletedAt.plus(trashProperties.retention))) {
             throw AdminException(AdminErrorCode.TRASH_BATCH_EXPIRED)
         }
+        photoRestoreQuota.requireCapacity(type = before.type, id = before.id)
         if (resourceRepository.restore(before.type, before.id, before.version) != 1) {
             throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
         }

@@ -8,11 +8,11 @@ import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.http.ResponseEntity
 
-@Tag(name = "Payment", description = "테스트 플랜 및 이용권 발급. 실결제는 제공하지 않는다.")
+@Tag(name = "Payment", description = "무료·프로 요금제. 카드 결제는 준비 중이며 프로는 쿠폰으로 이용한다.")
 interface BillingControllerDocs {
-    @Operation(summary = "플랜 목록", description = "설정 가능한 테스트 플랜과 테스트 결제 활성 여부를 반환한다.")
+    @Operation(summary = "요금제 목록", description = "무료는 계정당 한 번, 갤러리 생성일부터 달력 기준 한 달·500장이다. 프로는 갤러리 생성일부터 180일·10,000장이다. 카드 결제는 COMING_SOON이고 프로 쿠폰만 사용할 수 있다. 사진을 삭제하면 해당 갤러리의 업로드 가능 장수를 돌려준다.")
     fun plans(): ResponseEntity<PlansResponse>
-    @Operation(summary = "테스트 결제", description = "app.billing.test-checkout-enabled로 활성화한 경우만 완료된다. 배포 환경에서도 테스트 이용권만 발급하며 실제 금전 결제는 발생하지 않는다.")
+    @Operation(summary = "결제 준비 중", description = "카드 결제는 아직 제공하지 않으며 항상 503으로 거절한다. 이전 테스트 결제 설정으로 활성화할 수 없다.")
     fun checkout(loginUser: LoginUser, request: CheckoutRequest): ResponseEntity<CheckoutResponse>
     @Operation(summary = "내 테스트 결제 조회")
     fun getCheckout(loginUser: LoginUser, checkoutId: String): ResponseEntity<CheckoutResponse>

@@ -1,6 +1,9 @@
 package com.soma.wes.admin.audit.domain
 
 enum class AdminAuditAction {
+    COUPON_CODE_ISSUED,
+    COUPON_CODE_DISABLED,
+    COUPON_CODE_ENABLED,
     LOGIN_SUCCEEDED,
     LOGIN_FAILED,
     ACCOUNT_LOCKED,

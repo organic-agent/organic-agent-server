@@ -5,10 +5,16 @@ import com.soma.wes.user.domain.User
 import com.soma.wes.user.exception.UserErrorCode
 import com.soma.wes.user.exception.UserException
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Lock
+import jakarta.persistence.LockModeType
 
 interface UserRepository : JpaRepository<User, Long> {
 
     fun findByProviderAndProviderId(provider: OAuthProvider, providerId: String): User?
+
+    /** 계정당 무료 갤러리 개설과 쿠폰 사용을 같은 사용자 행으로 직렬화한다. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    fun findWithLockById(id: Long): User?
 }
 
 /**
@@ -19,3 +25,6 @@ interface UserRepository : JpaRepository<User, Long> {
  */
 fun UserRepository.requireById(id: Long): User =
     findById(id).orElseThrow { UserException(UserErrorCode.USER_NOT_FOUND) }
+
+fun UserRepository.requireWithLockById(id: Long): User =
+    findWithLockById(id) ?: throw UserException(UserErrorCode.USER_NOT_FOUND)

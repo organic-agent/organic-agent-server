@@ -1,8 +1,6 @@
 package com.soma.wes.gallery.service
 
-import com.soma.wes.billing.exception.BillingErrorCode
-import com.soma.wes.billing.exception.BillingException
-import com.soma.wes.billing.repository.TestCheckoutRepository
+import com.soma.wes.billing.support.GalleryPasses
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryStatus
 import com.soma.wes.gallery.dto.request.CreatePersonalGalleryRequest
@@ -16,16 +14,17 @@ import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.selection.domain.PhotoSelection
 import com.soma.wes.selection.repository.PhotoSelectionRepository
 import com.soma.wes.user.repository.UserRepository
-import com.soma.wes.user.repository.requireById
+import com.soma.wes.user.repository.requireWithLockById
 import com.soma.wes.workspace.service.WorkspaceService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.ZonedDateTime
+import java.time.temporal.ChronoUnit
 
 @Service
 class PersonalGalleryService(
-    private val checkoutRepository: TestCheckoutRepository,
+    private val galleryPasses: GalleryPasses,
     private val userRepository: UserRepository,
     private val workspaceService: WorkspaceService,
     private val galleryRepository: GalleryRepository,
@@ -33,17 +32,18 @@ class PersonalGalleryService(
     private val accessPolicy: GalleryAccessPolicy,
     private val clock: Clock,
 ) {
-    /** 결제 주인과 사용 여부를 같은 잠금 안에서 검증해 갤러리 중복 개설을 막는다. */
+    /** 무료 1회·프로 쿠폰 1회를 사용자 잠금 안에서 소비한다. 기간은 갤러리 생성 시점부터 시작한다. */
     @Transactional
     fun create(userId: Long, request: CreatePersonalGalleryRequest): GalleryResponse {
-        val user = userRepository.requireById(userId)
-        val checkout = checkoutRepository.findWithLockByIdAndUserId(request.checkoutId, userId)
-            ?: throw BillingException(BillingErrorCode.CHECKOUT_NOT_FOUND)
-        if (checkout.consumedAt != null) throw BillingException(BillingErrorCode.CHECKOUT_ALREADY_USED)
-        val now = ZonedDateTime.now(clock)
-        if (!checkout.expiresAt.isAfter(now)) throw BillingException(BillingErrorCode.CHECKOUT_EXPIRED)
-        val deadline = request.selectionDeadline ?: checkout.expiresAt
-        if (deadline.isAfter(checkout.expiresAt)) throw GalleryException(GalleryErrorCode.INVALID_SELECTION_DEADLINE)
+        val user = userRepository.requireWithLockById(userId)
+
+        val now = ZonedDateTime.now(clock).truncatedTo(ChronoUnit.MICROS)
+        val pass = galleryPasses.prepare(
+            userId = userId, planId = request.planId, couponId = request.couponId,
+            checkoutId = request.checkoutId, at = now,
+        )
+        val deadline = request.selectionDeadline ?: pass.expiresAt
+        if (deadline.isAfter(pass.expiresAt)) throw GalleryException(GalleryErrorCode.INVALID_SELECTION_DEADLINE)
         val workspace = workspaceService.ensurePersonalWorkspace(user)
         val gallery = Gallery.create(
             workspaceId = workspace.requiredId, createdByUserId = userId, title = request.title,
@@ -51,12 +51,12 @@ class PersonalGalleryService(
             maxRetouchRoundCount = null, shootType = request.shootType, at = now,
         )
         gallery.status = GalleryStatus.OPEN
-        gallery.planExpiresAt = checkout.expiresAt
-        gallery.planMaxPhotoCount = checkout.maxPhotoCount
+        gallery.planExpiresAt = pass.expiresAt
+        gallery.planMaxPhotoCount = pass.maxPhotoCount
+        gallery.planType = pass.plan
         galleryRepository.save(gallery)
         selectionRepository.save(PhotoSelection(galleryId = gallery.requiredId))
-        checkout.galleryId = gallery.requiredId
-        checkout.consumedAt = now
+        galleryPasses.consume(userId = userId, galleryId = gallery.requiredId, pass = pass, at = now)
         return GalleryResponse.from(gallery)
     }
 

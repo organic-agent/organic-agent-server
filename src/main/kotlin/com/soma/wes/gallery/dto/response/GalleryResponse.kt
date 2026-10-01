@@ -36,6 +36,8 @@ data class GalleryResponse(
     val archivedUntil: ZonedDateTime? = null,
     val planExpiresAt: ZonedDateTime? = null,
     val planMaxPhotoCount: Int? = null,
+    @field:Schema(description = "free 또는 pro. 요금제가 없거나 이전 테스트 이용권으로 만든 갤러리는 null")
+    val planId: String? = null,
 ) {
 
     companion object {
@@ -58,6 +60,7 @@ data class GalleryResponse(
             archivedUntil = gallery.archivedUntil,
             planExpiresAt = gallery.planExpiresAt,
             planMaxPhotoCount = gallery.planMaxPhotoCount,
+            planId = gallery.planType?.planId,
         )
     }
 }

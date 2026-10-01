@@ -3,6 +3,7 @@ package com.soma.wes.gallery.domain
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.global.BaseEntity
+import com.soma.wes.billing.domain.GalleryPlan
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
@@ -176,6 +177,10 @@ class Gallery(
 
     @Column(name = "plan_max_photo_count")
     var planMaxPhotoCount: Int? = null
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "plan_type", nullable = true, length = 10, updatable = false)
+    var planType: GalleryPlan? = null
 
     fun markFoldersSaved(at: ZonedDateTime) {
         if (foldersSavedAt != null) throw GalleryException(GalleryErrorCode.FOLDERS_ALREADY_SAVED)

@@ -22,6 +22,7 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.patch
 
 @IntegrationTest
 class AdminResourceControllerSecurityTest @Autowired constructor(
@@ -35,6 +36,10 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
     @Test
     fun `관리자 세션 없는 요청은 리소스와 설정 API에 접근할 수 없다`() {
         mockMvc.get("/internal/admin/v1/resources").andExpect { status { isUnauthorized() } }
+        mockMvc.get("/internal/admin/v1/pro-coupons").andExpect { status { isUnauthorized() } }
+        mockMvc.post("/internal/admin/v1/pro-coupons") {
+            header(AdminMutationHeaderFilter.HEADER_NAME, AdminMutationHeaderFilter.HEADER_VALUE)
+        }.andExpect { status { isUnauthorized() } }
         mockMvc.get("/internal/admin/v1/resources/USER/1").andExpect { status { isUnauthorized() } }
         mockMvc.get("/internal/admin/v1/system-settings").andExpect { status { isUnauthorized() } }
         mockMvc.get("/internal/admin/v1/operations/overview").andExpect { status { isUnauthorized() } }
@@ -44,6 +49,70 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             header(AdminMutationHeaderFilter.HEADER_NAME, AdminMutationHeaderFilter.HEADER_VALUE)
         }.andExpect { status { isUnauthorized() } }
         mockMvc.get("/internal/admin/v1/resources/USER/1/context").andExpect { status { isUnauthorized() } }
+    }
+
+    @Test
+    fun `프로 코드 발급 조회와 버전 기반 상태 변경은 관리자 보안 계약을 지킨다`() {
+        // given
+        val account = adminAccountFixture.관리자("coupon-controller")
+        val session = adminAuthService.changePassword(
+            account.requiredId,
+            ChangeAdminPasswordRequest(AdminAccountFixture.DEFAULT_PASSWORD, "coupon-controller-password-456"),
+            "127.0.0.1",
+        )
+        val cookie = Cookie(AdminSessionCookie.NAME, session.rawSessionToken)
+
+        // when & then
+        mockMvc.post("/internal/admin/v1/pro-coupons") {
+            cookie(cookie)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"reason":"[TEST_OPERATION] 코드 발급"}"""
+        }.andExpect { status { isForbidden() } }
+        val response = mockMvc.post("/internal/admin/v1/pro-coupons") {
+            cookie(cookie)
+            header(AdminMutationHeaderFilter.HEADER_NAME, AdminMutationHeaderFilter.HEADER_VALUE)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"reason":"[TEST_OPERATION] 코드 발급"}"""
+        }.andExpect {
+            status { isCreated() }
+            header { string("Cache-Control", "no-store") }
+            jsonPath("$.code") { isString() }
+        }.andReturn().response
+        val issued = tools.jackson.databind.json.JsonMapper.builder().build().readTree(response.contentAsString)
+        val id = issued.path("couponId").asLong()
+        val code = issued.path("code").asString()
+        mockMvc.get("/internal/admin/v1/pro-coupons") {
+            cookie(cookie)
+            param("status", "ISSUED")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.totalCount") { value(1) }
+            jsonPath("$.contents[0].codeSuffix") { value(code.takeLast(8)) }
+            jsonPath("$.contents[0].code") { doesNotExist() }
+            jsonPath("$.contents[0].codeHash") { doesNotExist() }
+        }
+        mockMvc.get("/internal/admin/v1/pro-coupons/$id") {
+            cookie(cookie)
+        }.andExpect { status { isOk() }; jsonPath("$.status") { value("ISSUED") } }
+        mockMvc.patch("/internal/admin/v1/pro-coupons/$id/status") {
+            cookie(cookie)
+            header(AdminMutationHeaderFilter.HEADER_NAME, AdminMutationHeaderFilter.HEADER_VALUE)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"enabled":false,"expectedVersion":0,"reason":"[POLICY_ENFORCEMENT] 차단"}"""
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.status") { value("DISABLED") }
+            jsonPath("$.version") { value(1) }
+        }
+        mockMvc.patch("/internal/admin/v1/pro-coupons/$id/status") {
+            cookie(cookie)
+            header(AdminMutationHeaderFilter.HEADER_NAME, AdminMutationHeaderFilter.HEADER_VALUE)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"enabled":true,"expectedVersion":0,"reason":"[CUSTOMER_REQUEST] 재활성화"}"""
+        }.andExpect {
+            status { isConflict() }
+            jsonPath("$.code") { value("ADMIN_409_5") }
+        }
     }
 
     @Test

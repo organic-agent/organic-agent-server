@@ -3,9 +3,8 @@ package com.soma.wes.photo.service
 import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
-import com.soma.wes.gallery.repository.GalleryRepository
-import com.soma.wes.gallery.repository.requireWithLockById
 import com.soma.wes.gallery.support.GalleryAccessPolicy
+import com.soma.wes.gallery.support.GalleryPhotoQuota
 import com.soma.wes.global.page.PageRequests
 import com.soma.wes.global.page.PageResponse
 import com.soma.wes.photo.config.StorageProperties
@@ -44,7 +43,7 @@ class PhotoService(
     private val photoRepository: PhotoRepository,
     private val photoPipelineRepository: PhotoPipelineRepository,
     private val galleryAccessPolicy: GalleryAccessPolicy,
-    private val galleryRepository: GalleryRepository,
+    private val galleryPhotoQuota: GalleryPhotoQuota,
     private val photoStorage: PhotoStorage,
     private val photoViewAssembler: PhotoViewAssembler,
     private val properties: StorageProperties,
@@ -77,12 +76,8 @@ class PhotoService(
     ): IssueUploadUrlsResponse {
         galleryAccessPolicy.requireUploader(galleryId, userId)
 
-        val gallery = galleryRepository.requireWithLockById(galleryId)
-        gallery.planMaxPhotoCount?.let { limit ->
-            if (photoRepository.countByGalleryId(galleryId) + request.files.size > limit) {
-                throw GalleryException(GalleryErrorCode.PHOTO_PLAN_LIMIT_EXCEEDED)
-            }
-        }
+        val gallery = galleryPhotoQuota.requireCapacity(galleryId = galleryId, additionalPhotoCount = request.files.size)
+        gallery.requireWritable(ZonedDateTime.now(clock))
         if (request.files.size > properties.maxBatchSize) {
             throw PhotoException(PhotoErrorCode.TOO_MANY_PHOTOS)
         }
