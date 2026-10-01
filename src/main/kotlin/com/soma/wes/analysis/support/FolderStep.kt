@@ -116,7 +116,7 @@ class FolderStep(
 
         log.warn("analysis job={} gallery={} categorize redispatch attempts={}", job.requiredId, job.galleryId, job.attempts + 1)
         try {
-            aiTaskSender.send(AiTaskDto.Categorize(galleryId = job.galleryId, jobId = job.requiredId))
+            aiTaskSender.send(AiTaskDto.Categorize(galleryId = job.galleryId, jobId = job.requiredId, conceptCount = job.conceptCount))
         } catch (e: AnalysisException) {
             log.warn("categorize 재전송 실패 — 다음 회차에 다시 보낸다: job={} code={}", job.requiredId, e.errorCode.code)
             analysisJobRepository.clearDispatchedAt(job.requiredId, now)

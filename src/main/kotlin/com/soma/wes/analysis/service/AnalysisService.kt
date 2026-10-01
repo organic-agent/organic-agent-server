@@ -40,7 +40,7 @@ class AnalysisService(
      * 잡고, 그 위반을 같은 409로 번역해 두 경로가 같은 코드로 보이게 한다. 모드·force는 없다: 재분석은 관리자 리셋이다.
      */
     @Transactional
-    fun request(galleryId: Long, userId: Long): AnalysisJobResponse {
+    fun request(galleryId: Long, userId: Long, conceptCount: Int? = null): AnalysisJobResponse {
         galleryAccessPolicy.requireUploader(galleryId, userId)
 
         // 기동이 아니라 여기서 실패한다. 로컬·테스트에는 실행기가 없는 것이 정상이라
@@ -53,12 +53,12 @@ class AnalysisService(
         }
 
         val job = try {
-            analysisJobRepository.saveAndFlush(AnalysisJob(galleryId = galleryId))
+            analysisJobRepository.saveAndFlush(AnalysisJob(galleryId = galleryId, conceptCount = conceptCount))
         } catch (e: DataIntegrityViolationException) {
             throw AnalysisException(AnalysisErrorCode.ANALYSIS_JOB_ALREADY_ACTIVE)
         }
 
-        log.info("AI 분석 요청: galleryId={}, jobId={}, expected={}", galleryId, job.requiredId, progress.expected)
+        log.info("AI 분석 요청: galleryId={}, jobId={}, expected={}, conceptCount={}", galleryId, job.requiredId, progress.expected, conceptCount)
 
         return AnalysisJobResponse.from(job, progress)
     }

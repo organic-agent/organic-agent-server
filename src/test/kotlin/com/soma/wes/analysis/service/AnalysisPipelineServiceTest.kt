@@ -295,6 +295,37 @@ class AnalysisPipelineServiceTest @Autowired constructor(
         }
 
         @Test
+        fun `요청에 실린 컨셉 수는 잡에 남고 categorize 를 처음 보낼 때와 다시 보낼 때 모두 실린다`() {
+            // given
+            scoredPhotos(1)
+            val jobId = analysisService.request(fixture.galleryId, fixture.photographer.id!!, conceptCount = 4).jobId
+
+            // when — 첫 전송, 타임아웃 뒤 재전송
+            pipeline.advance()
+            expireDispatch(jobId)
+            pipeline.advance()
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(job(jobId).conceptCount).isEqualTo(4)
+                softly.assertThat(aiTaskSender.categorizeTasks.map { it.conceptCount }).containsExactly(4, 4)
+            }
+        }
+
+        @Test
+        fun `컨셉 수 없이 요청하면 categorize 에도 실리지 않는다`() {
+            scoredPhotos(1)
+            val jobId = request()
+
+            pipeline.advance()
+
+            assertSoftly { softly ->
+                softly.assertThat(job(jobId).conceptCount).isNull()
+                softly.assertThat(aiTaskSender.categorizeTasks.single().conceptCount).isNull()
+            }
+        }
+
+        @Test
         fun `시간 안에 결과가 없으면 다시 보내고 상한을 넘기면 FAILED 다`() {
             // given
             scoredPhotos(1)

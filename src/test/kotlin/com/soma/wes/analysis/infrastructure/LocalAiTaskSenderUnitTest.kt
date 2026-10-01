@@ -49,6 +49,17 @@ class LocalAiTaskSenderUnitTest {
     }
 
     @Test
+    fun `컨셉 수가 있으면 categorize 에 concept-count 인자로 넘긴다`() {
+        val categorize = fakeScript("categorize.sh")
+        val sender = LocalAiTaskSender(LocalProcessProperties(localScriptDir = dir.path))
+
+        sender.send(AiTaskDto.Categorize(galleryId = 42, jobId = 9, conceptCount = 4))
+
+        waitFor { categorize.exists() }
+        assertThat(categorize.readText().trim()).isEqualTo("--gallery-id 42 --job-id 9 --concept-count 4")
+    }
+
+    @Test
     fun `exact photo 는 embedder 스크립트가 있어도 지원하지 않는다`() {
         fakeScript("embedder.sh")
         val sender = LocalAiTaskSender(LocalProcessProperties(localScriptDir = dir.path))

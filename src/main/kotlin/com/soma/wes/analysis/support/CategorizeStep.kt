@@ -62,7 +62,7 @@ class CategorizeStep(
 
     private fun send(job: AnalysisJob, now: ZonedDateTime) {
         try {
-            aiTaskSender.send(AiTaskDto.Categorize(galleryId = job.galleryId, jobId = job.requiredId))
+            aiTaskSender.send(AiTaskDto.Categorize(galleryId = job.galleryId, jobId = job.requiredId, conceptCount = job.conceptCount))
         } catch (e: AnalysisException) {
             log.warn("categorize 전송 실패 — 곧바로 다시 보낸다: job={} code={}", job.requiredId, e.errorCode.code)
             analysisJobRepository.clearDispatchedAt(job.requiredId, now)
