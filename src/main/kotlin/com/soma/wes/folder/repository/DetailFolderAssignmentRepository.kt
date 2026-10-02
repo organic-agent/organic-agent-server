@@ -22,6 +22,13 @@ interface DetailFolderAssignmentRepository : JpaRepository<DetailFolderAssignmen
     @Query("SELECT a.photoId AS photoId, a.detailFolderId AS detailFolderId FROM DetailFolderAssignment a WHERE a.galleryId = :galleryId")
     fun findAllPlacementsByGalleryId(@Param("galleryId") galleryId: Long): List<PhotoPlacement>
 
+    /** 한 분석 잡이 넣은 사진과 그 사진이 지금 든 세부 폴더. 물질화 재호출이 그 잡의 결과를 다시 조립하는 재료다. */
+    @Query(
+        "SELECT a.photoId AS photoId, a.detailFolderId AS detailFolderId FROM DetailFolderAssignment a " +
+            "WHERE a.analysisJobId = :analysisJobId ORDER BY a.photoId",
+    )
+    fun findAllPlacementsByAnalysisJobId(@Param("analysisJobId") analysisJobId: Long): List<PhotoPlacement>
+
     fun deleteAllByDetailFolderId(detailFolderId: Long)
     fun deleteAllByDetailFolderIdIn(detailFolderIds: Collection<Long>)
 }
