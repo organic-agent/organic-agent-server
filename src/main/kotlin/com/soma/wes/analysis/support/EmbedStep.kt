@@ -4,6 +4,7 @@ import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.exception.AnalysisException
 import com.soma.wes.analysis.service.port.AiTaskSender
+import com.soma.wes.global.logging.LogContext
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import java.time.Clock
 import java.time.ZonedDateTime
@@ -34,9 +35,15 @@ class EmbedStep(
         val now = ZonedDateTime.now(clock)
 
         val released = photoPipelineRepository.releaseStaleDispatches(before = now.minus(properties.embedRedispatchAfter))
+        if (released > 0) log.warn("event=embed.released photos={}", released)
         val exceeded = photoPipelineRepository.markEmbedAttemptsExceeded(properties.embedMaxAttempts, now)
-        if (released > 0 || exceeded > 0) {
-            log.warn("embed dispatch released={} exceeded={}", released, exceeded)
+        for ((galleryId, photoIds) in exceeded) {
+            LogContext.gallery(galleryId) {
+                log.warn(
+                    "event=embed.exceeded gallery={} photos={} photoIds={}",
+                    galleryId, photoIds.size, photoIds.take(MAX_LOGGED_PHOTO_IDS).joinToString(","),
+                )
+            }
         }
 
         var slots = properties.embedMaxInFlight - photoPipelineRepository.countInFlightEmbedBatches()
@@ -56,7 +63,8 @@ class EmbedStep(
                     maxAttempts = properties.embedMaxAttempts,
                 )
                 if (photoIds.isEmpty()) continue
-                if (!send(AiTaskDto.Embed(galleryId = galleryId, photoIds = photoIds))) return sent
+                val delivered = LogContext.gallery(galleryId) { send(AiTaskDto.Embed(galleryId = galleryId, photoIds = photoIds)) }
+                if (!delivered) return sent
                 slots--
                 sent++
                 sentThisRound++
@@ -69,11 +77,16 @@ class EmbedStep(
     /** 호출 실패는 배정을 되돌리고 걸음을 멈춘다 — 권한·스로틀링이면 남은 갤러리도 같이 실패할 것이라 다음 스윕에 맡긴다. */
     private fun send(task: AiTaskDto.Embed): Boolean = try {
         aiTaskSender.send(task)
-        log.info("embed dispatch gallery={} photos={}", task.galleryId, task.photoIds.size)
+        log.info("event=embed.dispatch gallery={} photos={}", task.galleryId, task.photoIds.size)
         true
     } catch (e: AnalysisException) {
         photoPipelineRepository.releaseClaim(task.photoIds)
         log.warn("embed dispatch failed — 배정을 되돌리고 다음 스윕에 다시 보낸다: gallery={} photos={} code={}", task.galleryId, task.photoIds.size, e.errorCode.code)
         false
+    }
+
+    companion object {
+        /** 로그 한 줄에 싣는 사진 id 상한. 전체 수는 `photos=`로 따로 찍는다. */
+        private const val MAX_LOGGED_PHOTO_IDS = 20
     }
 }

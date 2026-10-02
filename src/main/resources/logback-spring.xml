@@ -4,14 +4,18 @@
 
   포맷은 logfmt(key=value)다 — Loki에서 `| logfmt`로 파싱해 traceId·level로 바로 거를 수 있다.
   traceId는 HttpLoggingFilter가 요청마다 MDC에 심는 값이라, 한 요청이 남긴 모든 줄을 한 번에 모을 수 있다.
-  스케줄러처럼 요청 밖에서 찍히는 줄은 traceId=null이 된다.
+  업로드·분석 스케줄러는 회차마다 LogContext.sweep 이 traceId=sweep-… 를 심는다. 그 밖의 요청 밖 줄은 traceId=null이다.
+
+  galleryId·jobId·uploadSessionId·userId 는 MDC에 값이 있을 때만 찍힌다(키 이름은 LogContext 와 같아야 한다).
+  %replace 가 "값 없는 키"(` galleryId=` 로 끝나는 조각)를 통째로 지운다 — 빈 키 네 개가 모든 줄에 붙지 않게 하려는 것이다.
+  이 패턴은 prod 의 파일 appender 만 쓴다. 콘솔(local·test 포함)은 스프링 부트 기본 패턴이라 이 키들이 찍히지 않는다.
 -->
 <configuration scan="true" scanPeriod="60 seconds">
   <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
   <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
 
   <property name="LOG_PATTERN"
-    value="timestamp=%d{yyyy-MM-dd'T'HH:mm:ss,Asia/Seoul} level=%-5level traceId=%X{traceId:-null} logger=%logger{36} %msg%n%ex"/>
+    value="timestamp=%d{yyyy-MM-dd'T'HH:mm:ss,Asia/Seoul} level=%-5level traceId=%X{traceId:-null}%replace( galleryId=%X{galleryId}){' galleryId=$', ''}%replace( jobId=%X{jobId}){' jobId=$', ''}%replace( uploadSessionId=%X{uploadSessionId}){' uploadSessionId=$', ''}%replace( userId=%X{userId}){' userId=$', ''} logger=%logger{36} %msg%n%ex"/>
 
   <!--
     prod: 레벨별 파일로 나눠 쓴다. 컨테이너의 /var/log/spring은 호스트 디렉터리(docker-compose.prod.yml의

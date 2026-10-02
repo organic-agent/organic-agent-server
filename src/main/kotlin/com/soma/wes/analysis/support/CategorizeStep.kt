@@ -7,6 +7,7 @@ import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.exception.AnalysisException
 import com.soma.wes.analysis.repository.AnalysisJobRepository
 import com.soma.wes.analysis.service.port.AiTaskSender
+import com.soma.wes.global.logging.LogContext
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import java.time.Clock
 import java.time.ZonedDateTime
@@ -34,7 +35,7 @@ class CategorizeStep(
     fun advance() {
         for (job in analysisJobRepository.findAllByStatusOrderByIdAsc(AnalysisStatus.ANALYZING)) {
             try {
-                advance(job)
+                LogContext.gallery(job.galleryId, job.requiredId) { advance(job) }
             } catch (e: RuntimeException) {
                 log.error("분석 잡 {} categorize 단계 실패 — 다음 회차에 다시 본다", job.requiredId, e)
             }
@@ -47,14 +48,17 @@ class CategorizeStep(
 
         if (progress.hasNothingToAnalyze) {
             analysisJobRepository.fail(job.requiredId, AnalysisJob.trimError("분석할 사진이 없습니다(실패 ${progress.failed}장)"), now)
-            log.info("analysis job={} gallery={} ANALYZING->FAILED failed={}", job.requiredId, job.galleryId, progress.failed)
+            log.info(
+                "event=job.transition job={} gallery={} from=ANALYZING to=FAILED failed={}",
+                job.requiredId, job.galleryId, progress.failed,
+            )
             return
         }
         if (!progress.isReadyToCategorize) return
         if (analysisJobRepository.startCategorizing(job.requiredId, now) == 0) return
 
         log.info(
-            "analysis job={} gallery={} ANALYZING->CATEGORIZING expected={} embedded={} scored={} failed={}",
+            "event=job.transition job={} gallery={} from=ANALYZING to=CATEGORIZING expected={} embedded={} scored={} failed={}",
             job.requiredId, job.galleryId, progress.expected, progress.embedded, progress.scored, progress.failed,
         )
         send(job, now)

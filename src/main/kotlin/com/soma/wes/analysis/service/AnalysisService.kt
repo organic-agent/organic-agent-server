@@ -58,7 +58,10 @@ class AnalysisService(
             throw AnalysisException(AnalysisErrorCode.ANALYSIS_JOB_ALREADY_ACTIVE)
         }
 
-        log.info("AI 분석 요청: galleryId={}, jobId={}, expected={}, conceptCount={}", galleryId, job.requiredId, progress.expected, conceptCount)
+        log.info(
+            "event=job.created job={} gallery={} expected={} conceptCount={}",
+            job.requiredId, galleryId, progress.expected, conceptCount,
+        )
 
         return AnalysisJobResponse.from(job, progress)
     }

@@ -5,6 +5,7 @@ import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.gallery.support.GalleryPhotoQuota
+import com.soma.wes.global.exception.BusinessException
 import com.soma.wes.global.page.PageRequests
 import com.soma.wes.global.page.PageResponse
 import com.soma.wes.photo.config.StorageProperties
@@ -29,6 +30,7 @@ import com.soma.wes.photo.service.port.PhotoStorage
 import com.soma.wes.photo.support.PhotoViewAssembler
 import java.time.Clock
 import java.time.ZonedDateTime
+import org.slf4j.LoggerFactory
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort
@@ -50,6 +52,8 @@ class PhotoService(
     private val clock: Clock,
     private val activityRecorder: ActivityRecorder,
 ) {
+
+    private val log = LoggerFactory.getLogger(javaClass)
 
     companion object {
         /** 받아줄 이미지 형식. */
@@ -76,18 +80,7 @@ class PhotoService(
     ): IssueUploadUrlsResponse {
         galleryAccessPolicy.requireUploader(galleryId, userId)
 
-        val gallery = galleryPhotoQuota.requireCapacity(galleryId = galleryId, additionalPhotoCount = request.files.size)
-        gallery.requireWritable(ZonedDateTime.now(clock))
-        if (request.files.size > properties.maxBatchSize) {
-            throw PhotoException(PhotoErrorCode.TOO_MANY_PHOTOS)
-        }
-        request.files.forEach {
-            if (it.contentType.lowercase() !in ALLOWED_CONTENT_TYPES) {
-                throw PhotoException(PhotoErrorCode.UNSUPPORTED_CONTENT_TYPE)
-            }
-            validateContentLength(it.contentLength)
-            validateCrc32c(it.crc32c)
-        }
+        loggingRejection(galleryId, photoCount = request.files.size) { validateIssuable(galleryId, request) }
 
         // 이미 있는 사진 뒤에 이어 붙인다. 같은 갤러리에 두 배치를 동시에 발급하면 순서가
         // 겹칠 수 있지만, 목록이 id로 한 번 더 정렬하므로 뒤섞이지는 않는다.
@@ -109,10 +102,30 @@ class PhotoService(
         }
 
         if (photos.isNotEmpty()) activityRecorder.recordGallery(galleryId)
+        log.info(
+            "event=upload.issue gallery={} user={} photos={} bytes={}",
+            galleryId, userId, photos.size, request.files.sumOf { it.contentLength },
+        )
         return IssueUploadUrlsResponse(
             uploads = uploads,
             uploadUrlTtlSeconds = properties.uploadUrlTtl.seconds,
         )
+    }
+
+    /** 한도·마감·배치 크기·형식. 사진 행을 만들기 전에 전부 본다 — 거절될 요청이 PENDING 행을 남기지 않는다. */
+    private fun validateIssuable(galleryId: Long, request: IssueUploadUrlsRequest) {
+        val gallery = galleryPhotoQuota.requireCapacity(galleryId = galleryId, additionalPhotoCount = request.files.size)
+        gallery.requireWritable(ZonedDateTime.now(clock))
+        if (request.files.size > properties.maxBatchSize) {
+            throw PhotoException(PhotoErrorCode.TOO_MANY_PHOTOS)
+        }
+        request.files.forEach {
+            if (it.contentType.lowercase() !in ALLOWED_CONTENT_TYPES) {
+                throw PhotoException(PhotoErrorCode.UNSUPPORTED_CONTENT_TYPE)
+            }
+            validateContentLength(it.contentLength)
+            validateCrc32c(it.crc32c)
+        }
     }
 
     /** 크기는 서명에 들어가므로 여기서 상한만 보면 된다 — 다른 크기의 객체는 S3가 거절한다. */
@@ -152,26 +165,33 @@ class PhotoService(
     fun reissueUploadUrls(galleryId: Long, userId: Long, request: ReissueUploadUrlsRequest): IssueUploadUrlsResponse {
         galleryAccessPolicy.requireUploader(galleryId, userId)
 
-        val photos = checkAndLoadPhotos(galleryId, request.photos.map { it.photoId })
-        if (photos.any { it.status != PhotoStatus.PENDING }) {
-            throw PhotoException(PhotoErrorCode.PHOTO_ALREADY_UPLOADED)
-        }
-        val requestById = request.photos.associateBy { it.photoId }
-        requestById.values.forEach {
-            validateContentLength(it.contentLength)
-            validateCrc32c(it.crc32c)
-        }
+        val photos = loggingRejection(galleryId, photoCount = request.photos.size) { loadReissuable(galleryId, request) }
 
+        val requestById = request.photos.associateBy { it.photoId }
         val uploads = photos.map { photo ->
             val photoRequest = requestById.getValue(photo.requiredId)
             issue(photo, contentLength = photoRequest.contentLength, crc32c = photoRequest.crc32c)
         }
 
         if (photos.isNotEmpty()) activityRecorder.recordGallery(galleryId)
+        log.info("event=upload.reissue gallery={} user={} photos={}", galleryId, userId, photos.size)
         return IssueUploadUrlsResponse(
             uploads = uploads,
             uploadUrlTtlSeconds = properties.uploadUrlTtl.seconds,
         )
+    }
+
+    /** 이 갤러리의 PENDING 사진이고 새 크기·체크섬이 형식에 맞는가. */
+    private fun loadReissuable(galleryId: Long, request: ReissueUploadUrlsRequest): List<Photo> {
+        val photos = checkAndLoadPhotos(galleryId, request.photos.map { it.photoId })
+        if (photos.any { it.status != PhotoStatus.PENDING }) {
+            throw PhotoException(PhotoErrorCode.PHOTO_ALREADY_UPLOADED)
+        }
+        request.photos.forEach {
+            validateContentLength(it.contentLength)
+            validateCrc32c(it.crc32c)
+        }
+        return photos
     }
 
     /**
@@ -183,10 +203,22 @@ class PhotoService(
     fun completeUpload(galleryId: Long, userId: Long, request: CompleteUploadRequest): PhotoCountResponse {
         galleryAccessPolicy.requireUploader(galleryId, userId)
 
-        val photos = checkAndLoadPhotos(galleryId, request.photoIds)
+        val photos = loggingRejection(galleryId, photoCount = request.photoIds.size) { checkAndLoadPhotos(galleryId, request.photoIds) }
         photos.forEach { it.markUploaded() }
         if (photos.isNotEmpty()) activityRecorder.recordGallery(galleryId)
+        log.info("event=upload.complete gallery={} user={} photos={}", galleryId, userId, photos.size)
         return PhotoCountResponse(photos.size)
+    }
+
+    /**
+     * 업로드 요청의 검증·한도 거부를 한 줄 남기고 그대로 다시 던진다 — "사진이 안 올라간다"는 문의에서 이유를 찾는 줄이다.
+     * 인가 실패는 감싸지 않는다. 권한 없는 호출은 업로드 문제가 아니다.
+     */
+    private inline fun <T> loggingRejection(galleryId: Long, photoCount: Int, block: () -> T): T = try {
+        block()
+    } catch (e: BusinessException) {
+        log.warn("event=upload.rejected gallery={} code={} photos={}", galleryId, e.errorCode.code, photoCount)
+        throw e
     }
 
     /**

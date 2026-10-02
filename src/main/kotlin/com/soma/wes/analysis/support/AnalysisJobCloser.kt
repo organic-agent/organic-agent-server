@@ -51,17 +51,19 @@ class AnalysisJobCloser(
             is MaterializeOutcomeDto.Created -> {
                 notifyFoldersCreated(job.galleryId)
                 log.info(
-                    "analysis job={} gallery={} CATEGORIZING->DONE folders={} details={} assigned={} elapsed={}s total={}s",
+                    "event=job.transition job={} gallery={} from=CATEGORIZING to=DONE folders={} details={} assigned={} elapsed={}s total={}s",
                     job.requiredId, job.galleryId, outcome.folders, outcome.details, outcome.assigned,
                     secondsSince(job.dispatchedAt, now), secondsSince(job.createdAt, now),
                 )
             }
             MaterializeOutcomeDto.NothingNew -> log.info(
-                "analysis job={} gallery={} CATEGORIZING->DONE folders=0 details=0 assigned=0 elapsed={}s total={}s",
+                "event=job.transition job={} gallery={} from=CATEGORIZING to=DONE folders=0 details=0 assigned=0 elapsed={}s total={}s",
                 job.requiredId, job.galleryId, secondsSince(job.dispatchedAt, now), secondsSince(job.createdAt, now),
             )
-            is MaterializeOutcomeDto.Failed ->
-                log.warn("analysis job={} gallery={} CATEGORIZING->FAILED error={}", job.requiredId, job.galleryId, outcome.error)
+            is MaterializeOutcomeDto.Failed -> log.warn(
+                "event=job.transition job={} gallery={} from=CATEGORIZING to=FAILED attempts={} error=\"{}\"",
+                job.requiredId, job.galleryId, job.attempts, outcome.error,
+            )
         }
     }
 

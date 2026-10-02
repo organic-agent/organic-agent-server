@@ -5,11 +5,13 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.auth.service.AuthTokenProvider
+import com.soma.wes.global.logging.LogContext
 import com.soma.wes.support.TestSequence
 import com.soma.wes.support.TestcontainersConfiguration
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -106,6 +108,43 @@ class HttpLoggingFilterTest @Autowired constructor(
     }
 
     @Test
+    fun `갤러리 경로와 업로드 세션 헤더와 로그인 사용자는 그 요청의 줄에 실린다`() {
+        // given
+        val user = userRepository.save(
+            User(provider = OAuthProvider.KAKAO, providerId = "logging-probe-${TestSequence.next()}", nickname = "테스터"),
+        )
+        val accessToken = authTokenProvider.generateAccessToken(user)
+        val uploadSession = "3f0c1a52-7c1e-4a55-9f0e-2b6a4a1d9c11"
+
+        // when — 갤러리가 없어 거절되지만, 어느 갤러리·업로드의 요청이었는지는 줄에 남아야 한다
+        send("/api/v1/galleries/987654/photos/summary", accessToken.value, uploadSession = uploadSession)
+
+        // then
+        val request = appender.list.single { it.formattedMessage.startsWith("[REQUEST]") }
+        val result = appender.list.single { it.formattedMessage.startsWith("[RESPONSE]") }
+        assertSoftly { softly ->
+            softly.assertThat(request.mdcPropertyMap[LogContext.GALLERY_ID]).isEqualTo("987654")
+            softly.assertThat(request.mdcPropertyMap[LogContext.UPLOAD_SESSION_ID]).isEqualTo(uploadSession)
+            softly.assertThat(result.mdcPropertyMap[LogContext.GALLERY_ID]).isEqualTo("987654")
+            softly.assertThat(result.mdcPropertyMap[LogContext.USER_ID]).isEqualTo(user.id.toString())
+        }
+    }
+
+    @Test
+    fun `형식이 다른 업로드 세션 헤더와 갤러리 밖 경로는 싣지 않는다`() {
+        // when — 헤더 값은 그대로 로그에 찍히므로 UUID 꼴이 아니면 버린다
+        send("/api/v1/users/me", accessToken = null, uploadSession = "a=b c;d".repeat(20))
+
+        // then
+        val request = appender.list.single { it.formattedMessage.startsWith("[REQUEST]") }
+        assertSoftly { softly ->
+            softly.assertThat(request.mdcPropertyMap).doesNotContainKey(LogContext.UPLOAD_SESSION_ID)
+            softly.assertThat(request.mdcPropertyMap).doesNotContainKey(LogContext.GALLERY_ID)
+            softly.assertThat(request.mdcPropertyMap).doesNotContainKey(LogContext.USER_ID)
+        }
+    }
+
+    @Test
     fun `헬스체크는 기록하지 않는다`() {
         // when
         val response = send("/actuator/health", accessToken = null)
@@ -115,9 +154,10 @@ class HttpLoggingFilterTest @Autowired constructor(
         assertThat(response.headers().firstValue(HttpLoggingFilter.CORRELATION_ID_HEADER)).isPresent
     }
 
-    private fun send(path: String, accessToken: String?): HttpResponse<String> {
+    private fun send(path: String, accessToken: String?, uploadSession: String? = null): HttpResponse<String> {
         val builder = HttpRequest.newBuilder().uri(URI.create("http://localhost:$port$path")).GET()
         accessToken?.let { builder.header("Authorization", "Bearer $it") }
+        uploadSession?.let { builder.header(HttpLoggingFilter.UPLOAD_SESSION_HEADER, it) }
         return HttpClient.newHttpClient().send(builder.build(), HttpResponse.BodyHandlers.ofString())
     }
 }

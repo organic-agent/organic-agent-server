@@ -17,6 +17,7 @@ import com.soma.wes.folder.repository.DetailFolderRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.repository.requireWithLockById
 import com.soma.wes.photo.repository.PhotoAnalysisRepository
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -38,9 +39,12 @@ class AiFolderMaterializer(
     private val activityRecorder: ActivityRecorder,
 ) {
 
+    private val log = LoggerFactory.getLogger(javaClass)
+
     /** 같은 잡의 세트가 이미 있으면 그것을 돌려준다(멱등). */
     @Transactional
     fun materialize(galleryId: Long): List<ConceptFolderResponse> {
+        val startedAt = clock.millis()
         galleryRepository.requireWithLockById(galleryId)
 
         // 1. 최신 컨셉 배정(= 가장 최근 분석 잡의 결과)을 읽는다. 컨셉 배정은 특정 job 에서 추출한 {컨셉 - 컨셉 디테일 - 임베딩 그룹(디테일 폴더 대상) Id} 의 묶음이다.
@@ -96,6 +100,11 @@ class AiFolderMaterializer(
 
         // 해당 작업 기록
         activityRecorder.recordGallery(galleryId)
+        log.info(
+            "event=folder.materialized gallery={} job={} concepts={} details={} assigned={} elapsedMs={}",
+            galleryId, latest.analysisJobId, plans.size, plans.sumOf { it.details.size },
+            plans.sumOf { concept -> concept.details.sumOf { it.photoIds.size } }, clock.millis() - startedAt,
+        )
         return responses
     }
 

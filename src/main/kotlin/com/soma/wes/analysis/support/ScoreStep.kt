@@ -6,6 +6,7 @@ import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.exception.AnalysisException
 import com.soma.wes.analysis.service.port.ScoreWorkerPool
 import com.soma.wes.analysis.service.port.AiTaskSender
+import com.soma.wes.global.logging.LogContext
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import java.time.Clock
 import java.time.ZonedDateTime
@@ -95,12 +96,15 @@ class ScoreStep(
             if (backlog > 0 && up.isEmpty() && isStartDue(now)) {
                 scoreWorkerPool.start()
                 lastStartAt = now
-                log.info("gpu start backlog={} workers={}", backlog, workers.size)
+                log.info("event=score.gpu.start backlog={} workers={}", backlog, workers.size)
             }
             if (backlog == 0L) {
                 up.filter { isPastGrace(it, now) && isIdle(it, now) }.forEach { worker ->
                     scoreWorkerPool.stop(worker.instanceId)
-                    log.warn("gpu stop instance={} reason=idle-safety-net launched={}", worker.instanceId, worker.launchedAt)
+                    log.warn(
+                        "event=score.gpu.stop instance={} reason=idle-safety-net launched={}",
+                        worker.instanceId, worker.launchedAt,
+                    )
                 }
             }
         } catch (e: AnalysisException) {
@@ -140,19 +144,26 @@ class ScoreStep(
         for (galleryId in photoPipelineRepository.findGalleryIdsWithUnscoredPhotos()) {
             val last = fallbackSentAt[galleryId]
             if (last != null && last.plus(properties.gpu.fallbackInterval).isAfter(now)) continue
-            val photoIds = photoPipelineRepository.findUnscoredPhotoIds(galleryId)
-            if (photoIds.isEmpty()) continue
-            val batches = photoIds.chunked(properties.scoreBatchSize)
-            for (batch in batches) {
-                try {
-                    aiTaskSender.send(AiTaskDto.Score(galleryId = galleryId, photoIds = batch))
-                } catch (e: AnalysisException) {
-                    log.warn("score fallback failed gallery={} code={} — 다음 스윕에서 다시 보낸다", galleryId, e.errorCode.code)
-                    return
-                }
-            }
-            fallbackSentAt[galleryId] = now
-            log.info("score fallback gallery={} photos={} batches={}", galleryId, photoIds.size, batches.size)
+            val delivered = LogContext.gallery(galleryId) { fallbackGallery(galleryId, now) }
+            if (!delivered) return
         }
+    }
+
+    /** 갤러리 하나의 미점수 사진을 보낸다. 호출이 실패하면 false — 걸음을 멈추라는 뜻이다. */
+    private fun fallbackGallery(galleryId: Long, now: ZonedDateTime): Boolean {
+        val photoIds = photoPipelineRepository.findUnscoredPhotoIds(galleryId)
+        if (photoIds.isEmpty()) return true
+        val batches = photoIds.chunked(properties.scoreBatchSize)
+        for (batch in batches) {
+            try {
+                aiTaskSender.send(AiTaskDto.Score(galleryId = galleryId, photoIds = batch))
+            } catch (e: AnalysisException) {
+                log.warn("score fallback failed gallery={} code={} — 다음 스윕에서 다시 보낸다", galleryId, e.errorCode.code)
+                return false
+            }
+        }
+        fallbackSentAt[galleryId] = now
+        log.info("event=score.fallback gallery={} photos={} batches={}", galleryId, photoIds.size, batches.size)
+        return true
     }
 }
