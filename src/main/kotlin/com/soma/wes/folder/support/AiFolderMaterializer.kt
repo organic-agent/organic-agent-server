@@ -117,7 +117,8 @@ class AiFolderMaterializer(
     }
 
     /**
-     * 폴더 계획의 재료 — 분석 행이 있는 사진 전부를 화면 순서로. 벡터를 빼고 그룹·피사체·연사만 읽는다.
+     * 폴더 계획의 재료 — categorize 까지 끝난 사진을 화면 순서로. 벡터를 빼고 그룹·피사체·연사만 읽는다.
+     * 분류가 덜 끝난 사진(잡이 categorize 를 보낸 뒤에 올라온 사진)은 여기 없으므로 폴더에 들어가지 않고 다음 잡을 기다린다.
      */
     private fun loadPhotoGroupings(galleryId: Long): List<PhotoAnalysisGroupingDto> =
         photoAnalysisRepository.findAllGroupingByGalleryIdOrderByDisplay(galleryId).map {

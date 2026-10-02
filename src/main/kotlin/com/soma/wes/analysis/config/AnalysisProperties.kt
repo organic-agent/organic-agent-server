@@ -27,6 +27,22 @@ data class AnalysisProperties(
     val categorizeTimeout: Duration = Duration.ofMinutes(20),
     /** categorize를 이 횟수까지 부른다. 넘으면 잡을 FAILED로 닫는다. */
     val categorizeMaxAttempts: Int = 3,
+    /**
+     * ANALYZING 잡의 진행(대상·임베딩·점수 장수)이 이 시간 동안 바뀌지 않으면 멈춘 것으로 본다. 임베더가 한 사진을 포기하기까지의
+     * 시간([embedRedispatchAfter] × [embedMaxAttempts])보다 길어야 한다 — 짧으면 다시 배정돼 돌고 있는 배치를 멈춤으로 읽는다.
+     */
+    val analyzingStallAfter: Duration = Duration.ofMinutes(35),
+    /**
+     * 멈췄을 때 뒤처진 사진(점수 없는 대상)이 대상의 이 비율 이하면 그 사진만 떼어 내고 잡은 계속 간다. 넘으면 사진이 아니라
+     * 실행기의 문제로 보고 잡을 닫는다. 대상이 적은 갤러리에서도 한 장은 떼어 낼 수 있다.
+     */
+    val stallDetachRatio: Double = 0.05,
+    /** CATEGORIZING 에 들어간 뒤 이 시간이 지나면 잡을 닫는다. [categorizeTimeout] × [categorizeMaxAttempts]에 여유를 더한 값이다. */
+    val categorizingDeadline: Duration = Duration.ofMinutes(70),
+    /** 폴더 만들기가 예상 밖 예외로 이 횟수만큼 실패하면 잡을 닫는다. */
+    val materializeMaxAttempts: Int = 3,
+    /** 한 갤러리에 score Lambda 폴백을 이 횟수까지 보낸다. 그 뒤에도 점수가 없으면 진행 감시가 처리한다. */
+    val scoreFallbackMax: Int = 3,
     val gpu: Gpu = Gpu(),
 ) {
 

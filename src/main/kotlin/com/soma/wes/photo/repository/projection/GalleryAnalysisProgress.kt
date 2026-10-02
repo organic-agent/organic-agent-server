@@ -40,6 +40,17 @@ data class GalleryAnalysisProgress(
     val isReadyToCategorize: Boolean
         get() = livePending == 0L && isFullyScored
 
+    /** 대상 중 아직 점수가 없는 사진 — 임베딩도 못 받은 사진을 포함한다. 진행이 멈췄을 때 "뒤처진 사진"이다. */
+    val unscored: Long
+        get() = expected - scored
+
+    /**
+     * 진행 감시가 견주는 값. 대상이 늘거나(새 사진) 임베딩·점수가 하나라도 붙으면 바뀐다 — 이 값이 오래 같으면
+     * 임베딩·점수 단계가 멈춘 것이다. 대상을 넣는 이유: 새 사진이 막 올라온 것을 "멈춤"으로 읽지 않기 위해서다.
+     */
+    val progressSignature: Int
+        get() = (expected + embedded + scored).toInt()
+
     /** 대상 전부에 백분위가 있다 — categorize가 모든 사진을 지났다. */
     val isFullyCategorized: Boolean
         get() = categorized == expected

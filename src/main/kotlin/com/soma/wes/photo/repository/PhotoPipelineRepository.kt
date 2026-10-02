@@ -18,7 +18,8 @@ import org.springframework.stereotype.Repository
  *
  * 네 묶음이 있다 — 진행 카운트([progressOf]), PENDING 보정([findPendingToCheck]·[markUploaded]·[touchPending]·[moveToTrash]),
  * 임베더 배정과 리셋([claimForEmbedding]·[releaseStaleDispatches]·[markEmbedAttemptsExceeded]·[resetAnalysis]),
- * GPU 제어·score 폴백([countScoreBacklog]·[countScored]·[findGalleryIdsWithUnscoredPhotos]·[findUnscoredPhotoIds]).
+ * 잡의 대기 끝내기([markAnalysisStalled]·[isCategorizedAsOf]),
+ * GPU 제어·score 폴백([countScoreBacklog]·[findGalleryIdsWithUnscoredPhotos]·[findUnscoredPhotoIds]).
  * 하트비트는 이 중 대기량([countPending]·[countInFlightEmbedBatches]·[countScoreBacklog])을 1분마다 읽는다.
  */
 @Repository
@@ -260,6 +261,51 @@ class PhotoPipelineRepository(
         .list()
         .groupBy({ (galleryId, _) -> galleryId }, { (_, photoId) -> photoId })
 
+    /**
+     * 진행이 멈춘 갤러리에서 뒤처진 사진(점수가 없는 대상 — 분석 행이 없거나 CLIP 벡터가 없다)을 결정적 실패로 표시한다.
+     * 이후 기대 장수에서 빠져 잡이 나머지로 계속 간다. 표시한 사진 id를 돌려준다. 되돌리는 길은 재분석 리셋([resetAnalysis])뿐이다.
+     */
+    fun markAnalysisStalled(galleryId: Long, now: ZonedDateTime): List<Long> = jdbcClient.sql(
+        """
+        INSERT INTO photo_analysis (photo_id, error, created_at, updated_at)
+        SELECT p.id, :error, :now, :now
+        FROM photos p
+        LEFT JOIN photo_analysis a ON a.photo_id = p.id
+        WHERE p.gallery_id = :galleryId AND p.status = 'UPLOADED' AND p.deleted_at IS NULL
+          AND a.clip_embedding IS NULL AND a.error IS NULL
+        ON CONFLICT (photo_id) DO UPDATE
+        SET error = EXCLUDED.error, version = photo_analysis.version + 1, updated_at = EXCLUDED.updated_at
+        RETURNING photo_id
+        """.trimIndent(),
+    )
+        .param("galleryId", galleryId)
+        .param("error", ANALYSIS_STALLED)
+        .param("now", Timestamp.from(now.toInstant()))
+        .query { rs, _ -> rs.getLong(1) }
+        .list()
+
+    /**
+     * categorize 를 보낸 시각([dispatchedAt])까지 올라온 대상 사진 전부에 백분위가 있는가. 보낸 뒤에 올라온 사진은 그 categorize 가
+     * 보지 못했을 수 있어 기다리지 않는다 — 기다리면 분류 중에 사진을 더 올린 잡이 영영 "덜 끝난" 상태로 남는다.
+     * 올라온 시각이 비어 있는 사진은 보낸 시각 이전에 올라온 것으로 친다(기다리는 쪽이 안전하다).
+     */
+    fun isCategorizedAsOf(galleryId: Long, dispatchedAt: ZonedDateTime): Boolean = jdbcClient.sql(
+        """
+        SELECT NOT EXISTS (
+            SELECT 1
+            FROM photos p
+            LEFT JOIN photo_analysis a ON a.photo_id = p.id
+            WHERE p.gallery_id = :galleryId AND p.status = 'UPLOADED' AND p.deleted_at IS NULL
+              AND (p.uploaded_at IS NULL OR p.uploaded_at <= :dispatchedAt)
+              AND a.error IS NULL AND a.technical_pct IS NULL
+        )
+        """.trimIndent(),
+    )
+        .param("galleryId", galleryId)
+        .param("dispatchedAt", Timestamp.from(dispatchedAt.toInstant()))
+        .query { rs, _ -> rs.getBoolean(1) }
+        .single()
+
     /** 완료 통보도 서버 확인도 아직 없는 PENDING 사진 전체 수. 하트비트가 "올라오다 만 사진이 쌓이고 있나"를 보는 값이다. */
     fun countPending(): Long = jdbcClient.sql(
         "SELECT count(*) FROM photos p WHERE p.status = 'PENDING' AND p.deleted_at IS NULL",
@@ -291,18 +337,6 @@ class PhotoPipelineRepository(
         LEFT JOIN photo_analysis a ON a.photo_id = p.id
         WHERE p.status = 'UPLOADED' AND p.deleted_at IS NULL
           AND a.clip_embedding IS NULL AND a.error IS NULL
-        """.trimIndent(),
-    )
-        .query { rs, _ -> rs.getLong(1) }
-        .single()
-
-    /** 점수가 있는 사진 전체 수. 스윕 사이에 늘었으면 워커가 살아 있는 것이다(무진행 판정의 재료). */
-    fun countScored(): Long = jdbcClient.sql(
-        """
-        SELECT count(*)
-        FROM photo_analysis a
-        JOIN photos p ON p.id = a.photo_id
-        WHERE p.deleted_at IS NULL AND a.clip_embedding IS NOT NULL
         """.trimIndent(),
     )
         .query { rs, _ -> rs.getLong(1) }
@@ -358,7 +392,10 @@ class PhotoPipelineRepository(
     }
 
     companion object {
-        /** 이 서버가 쓰는 유일한 `photo_analysis.error` 값. 임베더·score의 값(디코드 실패 등)과 같은 컬럼을 나눠 쓴다. */
+        /** 이 서버가 쓰는 `photo_analysis.error` 값 — 임베더 배정 상한. 임베더·score의 값(디코드 실패 등)과 같은 컬럼을 나눠 쓴다. */
         const val EMBED_ATTEMPTS_EXCEEDED = "EMBED_ATTEMPTS_EXCEEDED"
+
+        /** 이 서버가 쓰는 `photo_analysis.error` 값 — 진행이 멈춘 잡에서 떼어 낸 사진. */
+        const val ANALYSIS_STALLED = "ANALYSIS_STALLED"
     }
 }

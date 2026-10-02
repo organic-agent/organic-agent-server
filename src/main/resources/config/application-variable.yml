@@ -113,6 +113,16 @@ app:
     # categorize EVENT 뒤 이 시간 안에 배정 행이 없으면 다시 보낸다(7천 장 약 70초보다 넉넉히). 상한을 넘기면 잡 FAILED.
     categorize-timeout: PT20M
     categorize-max-attempts: 3
+    # 잡의 모든 대기에 끝을 둔다.
+    # - analyzing-stall-after: ANALYZING 의 진행이 이 시간 동안 없으면 멈춤. embed-redispatch-after × embed-max-attempts 보다 길어야 한다.
+    # - stall-detach-ratio: 멈췄을 때 뒤처진 사진이 대상의 이 비율 이하면 그 사진만 떼어 내고(photo_analysis.error) 잡은 계속 간다. 넘으면 잡 FAILED.
+    # - categorizing-deadline: CATEGORIZING 진입 뒤 이 시간이 지나면 잡 FAILED. categorize-timeout × categorize-max-attempts + 여유.
+    # - materialize-max-attempts: 폴더 만들기 예외 상한. score-fallback-max: 갤러리당 score Lambda 폴백 상한.
+    analyzing-stall-after: PT35M
+    stall-detach-ratio: 0.05
+    categorizing-deadline: PT70M
+    materialize-max-attempts: 3
+    score-fallback-max: 3
     # GPU score 워커. 켜져 있으면 스윕이 backlog(점수 없는 UPLOADED 사진)를 보고 EC2 인스턴스(Name 태그 = tag)를 켠다. 끄기는
     # 워커의 유휴 30초 자기 정지가 1차이고 idle-stop-after 는 그것이 실패했을 때의 안전망이다. 워커가 fallback-after 동안 뜨지 않거나
     # 점수가 멈추면 score Lambda 폴백을 갤러리당 fallback-interval 마다 보낸다. 꺼져 있으면(로컬·테스트·GPU 배포 전) 폴백만 돈다.

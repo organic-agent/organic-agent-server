@@ -37,15 +37,18 @@ interface PhotoAnalysisRepository : JpaRepository<PhotoAnalysis, Long> {
     fun findAllAnalyzedSummaryByGalleryId(@Param("galleryId") galleryId: Long): List<PhotoAnalysisSummary>
 
     /**
-     * 갤러리의 분석 행 전부를 폴더 계획에 필요한 컬럼만으로, 화면 순서([Photo.DISPLAY_ORDER]와 같은
+     * 갤러리에서 categorize 까지 끝난(백분위가 있는) 분석 행을 폴더 계획에 필요한 컬럼만으로, 화면 순서([Photo.DISPLAY_ORDER]와 같은
      * display_order → id)로 읽는다. 벡터를 나르지 않고 Photo 엔티티도 따로 읽지 않는다 —
      * 7천 장 갤러리에서 엔티티째 읽기가 2분 가까이 걸렸다(#160).
+     *
+     * 분류가 덜 끝난 사진을 빼는 이유: 잡은 categorize 를 보낸 뒤에 올라온 사진을 기다리지 않고 닫힌다. 그 사진을 여기서 읽으면
+     * 그룹이 없어 "기타" 폴더에 들어가 버리고, 다음 잡이 제자리에 넣을 기회가 사라진다.
      */
     @Query(
         """
         SELECT a.photoId AS photoId, a.embedGroupId AS embedGroupId, a.subjects AS subjects, a.burstId AS burstId
         FROM PhotoAnalysis a JOIN Photo p ON p.id = a.photoId
-        WHERE p.galleryId = :galleryId
+        WHERE p.galleryId = :galleryId AND a.technicalPct IS NOT NULL
         ORDER BY p.displayOrder ASC, p.id ASC
         """,
     )

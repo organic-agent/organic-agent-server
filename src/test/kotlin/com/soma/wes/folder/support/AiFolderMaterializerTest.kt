@@ -38,7 +38,10 @@ class AiFolderMaterializerTest @Autowired constructor(
         val fixture = galleryFixture.멤버와_열린_갤러리()
         val beach = analyzed(fixture.galleryId, count = 3, embedGroupId = 1)
         val garden = analyzed(fixture.galleryId, count = 2, embedGroupId = 2)
-        val ungrouped = photoFixture.임베딩된_사진(fixture.galleryId, 1).single()
+        // 분류는 끝났지만 그룹에 이름이 붙지 않은 사진은 "기타"로 간다. 분류가 아직 안 끝난 사진은 폴더에 넣지 않는다 —
+        // 잡이 categorize 를 보낸 뒤에 올라온 사진이고, 다음 잡이 제자리에 넣는다.
+        val unnamed = analyzed(fixture.galleryId, count = 1, embedGroupId = 9)
+        val uncategorized = photoFixture.임베딩된_사진(fixture.galleryId, 1).single()
         val jobId = recommendationFixture.분석_잡(fixture.galleryId)
         recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
         recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 2, conceptName = "야외 정원·건물", detailName = "정원")
@@ -55,8 +58,9 @@ class AiFolderMaterializerTest @Autowired constructor(
             softly.assertThat(fromButton).isEqualTo(created)
             softly.assertThat(created.map { it.name }).containsExactly("야외 자연", "야외 정원·건물", "기타")
             softly.assertThat(created.flatMap { c -> c.details.map { it.photoIds } })
-                .containsExactly(beach, garden, listOf(ungrouped))
-            softly.assertThat(assignments).containsExactlyInAnyOrderElementsOf(beach + garden + ungrouped)
+                .containsExactly(beach, garden, unnamed)
+            softly.assertThat(assignments).containsExactlyInAnyOrderElementsOf(beach + garden + unnamed)
+            softly.assertThat(assignments).doesNotContain(uncategorized)
             softly.assertThat(assignmentRepository.findAllByPhotoIdIn(beach).map { it.assignedSource })
                 .containsOnly(FolderSource.AI)
         }

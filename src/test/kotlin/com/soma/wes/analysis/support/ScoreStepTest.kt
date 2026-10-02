@@ -176,6 +176,30 @@ class ScoreStepTest @Autowired constructor(
         }
 
         @Test
+        fun `한 갤러리에는 상한까지만 보내고 사진이 다 처리된 뒤 새로 올라오면 처음부터 다시 센다`() {
+            // given — 점수가 끝내 오지 않는 사진
+            val photos = photoFixture.임베딩된_사진(galleryId, count = 2)
+            val step = step(enabled = false)
+
+            // when — 간격마다 한 번씩, 상한(3)을 넘겨 다섯 번 기회를 준다
+            repeat(5) {
+                step.advance()
+                clock.advance(Duration.ofMinutes(11))
+            }
+
+            // then — 끝없이 보내지 않는다. 남은 것은 잡의 진행 감시가 처리한다
+            assertThat(aiTaskSender.scoreTasks).hasSize(3)
+
+            // 그 사진들이 점수를 받고, 나중에 새 사진이 올라오면 다시 보낸다
+            photos.forEach { photoFixture.점수_적재(it) }
+            step.advance()
+            photoFixture.임베딩된_사진(galleryId, count = 1)
+            clock.advance(Duration.ofMinutes(11))
+            step.advance()
+            assertThat(aiTaskSender.scoreTasks).hasSize(4)
+        }
+
+        @Test
         fun `GPU 가 켜져 있으면 워커가 오래 아무것도 내지 못할 때만 보낸다`() {
             // given — 워커를 켰지만 점수가 오지 않는다
             val photos = photoFixture.임베딩된_사진(galleryId, count = 2)
