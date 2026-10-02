@@ -43,6 +43,7 @@ import com.soma.wes.global.exception.GlobalExceptionHandler
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.infrastructure.S3PhotoStorage
 import com.soma.wes.photo.repository.PhotoPipelineRepository
+import com.soma.wes.photo.repository.PhotoSourceHashRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.service.PhotoService
 import com.soma.wes.photo.support.PhotoViewAssembler
@@ -130,6 +131,7 @@ class AdminApplicationContextBoundaryTest @Autowired constructor(
             GalleryService::class.java,
             PhotoService::class.java,
             PhotoPipelineRepository::class.java,
+            PhotoSourceHashRepository::class.java,
             PhotoSelectionService::class.java,
             CollabSessionQueryService::class.java,
             FolderService::class.java,

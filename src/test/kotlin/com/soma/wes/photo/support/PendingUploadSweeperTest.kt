@@ -76,6 +76,8 @@ class PendingUploadSweeperTest @Autowired constructor(
             assertSoftly { softly ->
                 softly.assertThat(photoStorage.existsCalls).hasSize(2)
                 softly.assertThat(photos).allSatisfy { assertThat(it.status).isEqualTo(PhotoStatus.UPLOADED) }
+                // 완료 통보가 없던 사진도 올라온 시각이 남는다 — 자동 분석이 "마지막으로 올라온 때"를 이 값으로 본다
+                softly.assertThat(photos).allSatisfy { assertThat(it.uploadedAt).isNotNull() }
             }
         }
 

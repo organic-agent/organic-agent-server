@@ -91,6 +91,7 @@ class MockGallerySeeder(
      */
     @Transactional
     fun persistPhotos(gallery: Gallery, plans: List<MockGalleryCopyPlan>) {
+        val now = ZonedDateTime.now(clock)
         val copies = photoRepository.saveAll(
             plans.mapIndexed { index, plan ->
                 Photo.copyOf(
@@ -99,6 +100,7 @@ class MockGallerySeeder(
                     storageKey = plan.storageKey,
                     previewKey = plan.previewKey,
                     displayOrder = index,
+                    at = now,
                 )
             },
         )

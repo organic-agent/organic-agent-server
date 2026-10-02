@@ -60,7 +60,7 @@ class MockGallerySeederTest @Autowired constructor(
             val second = 임베딩_사진(template.requiredId, displayOrder = 5)
             val first = 임베딩_사진(template.requiredId, displayOrder = 2)
             photoRepository.save(사진(template.requiredId, displayOrder = 0)) // PENDING
-            photoRepository.save(사진(template.requiredId, displayOrder = 1).also { it.markUploaded() })
+            photoRepository.save(사진(template.requiredId, displayOrder = 1).also { it.markUploaded(java.time.ZonedDateTime.now()) })
 
             // when
             val templates = mockGallerySeeder.loadTemplatePhotos(template.requiredId)
@@ -303,7 +303,7 @@ class MockGallerySeederTest @Autowired constructor(
                 if (withPreview) {
                     photo.previewKey = "previews/${photo.storageKey.substringBeforeLast('.')}.jpg"
                 }
-                photo.markUploaded()
+                photo.markUploaded(java.time.ZonedDateTime.now())
             },
         )
         photoAnalysisRepository.save(

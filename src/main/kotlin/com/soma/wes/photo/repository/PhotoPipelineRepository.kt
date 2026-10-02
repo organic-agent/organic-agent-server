@@ -105,7 +105,7 @@ class PhotoPipelineRepository(
         return jdbcClient.sql(
             """
             UPDATE photos
-            SET status = 'UPLOADED', version = version + 1, updated_at = :now
+            SET status = 'UPLOADED', uploaded_at = :now, version = version + 1, updated_at = :now
             WHERE id IN (:photoIds) AND status = 'PENDING' AND deleted_at IS NULL
             """.trimIndent(),
         )

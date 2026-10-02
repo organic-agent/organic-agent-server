@@ -9,7 +9,7 @@ import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.Size
 
-@Schema(description = "업로드 URL 일괄 발급 요청. 파일 하나당 사진 행 하나가 PENDING으로 생긴다. 리사이즈를 끝낸 배치 단위로 부른다.")
+@Schema(description = "업로드 URL 일괄 발급 요청. 새 원본 하나당 사진 행 하나가 PENDING으로 생긴다(같은 지문의 사진이 있으면 그 행을 쓴다). 리사이즈를 끝낸 배치 단위로 부른다.")
 data class IssueUploadUrlsRequest(
 
     @field:NotEmpty
@@ -48,5 +48,15 @@ data class IssueUploadUrlsRequest(
             example = "wdRDgw==",
         )
         val crc32c: String,
+
+        @field:Pattern(regexp = Photo.SOURCE_HASH_PATTERN)
+        @field:Schema(
+            description = "리사이즈 전 원본의 지문 — `{원본 바이트 크기}-{원본 앞 64KB 의 CRC32C 를 소문자 hex 8자로}`. "
+                + "보내면 발급이 멱등해진다: 이 갤러리에 같은 지문의 사진이 올리는 중이면 그 사진의 URL 을 다시 주고, "
+                + "이미 올라왔으면 URL 없이 UPLOADED 로 답한다. 보내지 않으면 파일마다 새 사진 행이 생긴다.",
+            example = "18432000-c1d44383",
+            nullable = true,
+        )
+        val sourceHash: String? = null,
     )
 }
