@@ -2,6 +2,7 @@ package com.soma.wes.photo.repository
 
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoStatus
+import java.time.Instant
 import jakarta.persistence.LockModeType
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
@@ -89,4 +90,22 @@ interface PhotoRepository : JpaRepository<Photo, Long> {
     fun nextDisplayOrder(@Param("galleryId") galleryId: Long): Int
 
     fun countByGalleryId(galleryId: Long): Long
+
+    /**
+     * 장수 한도에 드는 사진 수. PUT URL 이 죽었는데 아직 올라오지 않은 PENDING 은 뺀다 — 올라올 길이 없는 행이 자리를 차지하면
+     * 실패한 업로드를 다시 올릴 때 한도에 막힌다. 그 행이 URL 을 다시 받으면 다시 센다([Photo.isUploadExpired]와 같은 조건).
+     */
+    @Query(
+        """
+            SELECT COUNT(p) FROM Photo p
+            WHERE p.galleryId = :galleryId
+              AND (p.status <> com.soma.wes.photo.domain.PhotoStatus.PENDING
+                   OR p.uploadUrlExpiresAt IS NULL
+                   OR p.uploadUrlExpiresAt >= :now)
+        """,
+    )
+    fun countAgainstQuota(@Param("galleryId") galleryId: Long, @Param("now") now: Instant): Long
+
+    /** 이 갤러리에서 같은 지문으로 살아 있는 사진. 지문마다 많아야 한 장이다(`uk_photos_gallery_source_hash`). */
+    fun findAllByGalleryIdAndSourceHashIn(galleryId: Long, sourceHashes: Collection<String>): List<Photo>
 }

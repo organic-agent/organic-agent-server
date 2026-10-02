@@ -94,7 +94,7 @@ class PhotoFixture(
                 displayOrder = index,
             )
             if (uploaded) {
-                photo.markUploaded()
+                photo.markUploaded(java.time.ZonedDateTime.now())
             }
             photoRepository.save(photo).requiredId
         }

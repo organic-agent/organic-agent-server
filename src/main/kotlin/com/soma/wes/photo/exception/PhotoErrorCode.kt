@@ -39,6 +39,12 @@ enum class PhotoErrorCode(
      */
     INVALID_CHECKSUM(HttpStatus.BAD_REQUEST, "PHOTO_400_8", "업로드할 사진의 CRC32C 체크섬 형식이 올바르지 않습니다."),
 
+    /**
+     * 지문이 `{바이트 크기}-{CRC32C hex 8자}` 형식이 아니다. 지문은 중복 판정의 키라, 형식이 다른 값을 받아 두면 같은 원본이
+     * 다른 사진으로 갈린다.
+     */
+    INVALID_SOURCE_HASH(HttpStatus.BAD_REQUEST, "PHOTO_400_9", "사진 지문 형식이 올바르지 않습니다."),
+
     /** URL 재발급은 아직 올라오지 않은(PENDING) 사진에만 뜻이 있다. 이미 올라온 사진에 새 PUT URL을 주면 원본이 덮인다. */
     PHOTO_ALREADY_UPLOADED(HttpStatus.CONFLICT, "PHOTO_409_1", "이미 업로드가 끝난 사진입니다."),
 

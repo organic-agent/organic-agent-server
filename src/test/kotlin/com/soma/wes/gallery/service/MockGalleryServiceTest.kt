@@ -129,7 +129,7 @@ class MockGalleryServiceTest @Autowired constructor(
             // given
             seedTemplate(photoCount = 1)
             photoRepository.save(templatePhoto(index = 9))                             // PENDING
-            photoRepository.save(templatePhoto(index = 10).also { it.markUploaded() }) // UPLOADED
+            photoRepository.save(templatePhoto(index = 10).also { it.markUploaded(java.time.ZonedDateTime.now()) }) // UPLOADED
             val photographer = studioFixture.작가()
 
             // when
@@ -236,7 +236,7 @@ class MockGalleryServiceTest @Autowired constructor(
             val photo = photoRepository.save(
                 templatePhoto(index, withPreview).also { photo ->
                     photo.applyMetadata(PhotoMetadata(cameraMake = "Canon", width = 1024, height = 768))
-                    photo.markUploaded()
+                    photo.markUploaded(java.time.ZonedDateTime.now())
                 },
             )
             photoAnalysisRepository.save(

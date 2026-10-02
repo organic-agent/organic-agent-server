@@ -55,6 +55,17 @@ class Photo(
     @Column(name = "display_order", nullable = false)
     var displayOrder: Int = 0,
 
+    /**
+     * 원본 파일의 지문([SOURCE_HASH_PATTERN]). web 이 리사이즈 전의 원본에서 계산해 보내고, 한 갤러리에서 살아 있는 사진끼리는
+     * 겹치지 않는다(`uk_photos_gallery_source_hash`). 같은 원본을 다시 올리는 요청이 새 행을 만들지 않고 이 행을 찾게 하는 키다.
+     * null 은 지문 없이 올라온 사진(옛 web, Mock 갤러리 복제)이고 중복 검사에서 빠진다.
+     *
+     * 휴지통에 든 뒤 같은 원본이 새로 올라오면 네이티브 UPDATE 가 이 값을 비운다
+     * ([com.soma.wes.photo.repository.PhotoSourceHashRepository.releaseTrashed]) — 복원이 유니크에 걸리지 않게 하려는 것이다.
+     */
+    @Column(name = "source_hash", updatable = false, length = 40)
+    val sourceHash: String? = null,
+
 ) : BaseEntity() {
 
     @Id
@@ -92,6 +103,11 @@ class Photo(
     var uploadUrlExpiresAt: Instant? = null
         protected set
 
+    /** UPLOADED 가 된 시각. 완료 통보([markUploaded])와 서버의 HeadObject 보정(배치 SQL)이 채운다. PENDING 이면 null 이다. */
+    @Column(name = "uploaded_at")
+    var uploadedAt: ZonedDateTime? = null
+        protected set
+
     @Embedded
     var metadata: PhotoMetadata? = null
 
@@ -124,10 +140,22 @@ class Photo(
         uploadUrlExpiresAt = expiresAt
     }
 
-    /** 원본이 S3에 있음을 표시한다. 프론트의 완료 통보와 서버의 HeadObject 보정이 부르며, 재통보는 멱등이다. */
-    fun markUploaded() {
+    /**
+     * 원본이 S3에 있음을 표시한다. 재통보는 멱등이다 — 이미 올라온 사진은 처음 올라온 시각을 그대로 둔다.
+     * 서버의 HeadObject 보정은 엔티티를 지나지 않고 같은 일을 배치 SQL 로 한다.
+     */
+    fun markUploaded(at: ZonedDateTime) {
+        if (status == PhotoStatus.UPLOADED) return
         status = PhotoStatus.UPLOADED
+        uploadedAt = at
     }
+
+    /**
+     * 발급한 PUT URL 이 죽었는데도 아직 올라오지 않았는가. 이런 행은 장수 한도에서 빠진다 — 올라올 길이 없는 행이
+     * 24시간 동안 자리를 차지하지 않게 한다. URL 을 다시 받으면 다시 한도에 든다.
+     */
+    fun isUploadExpired(now: Instant): Boolean =
+        status == PhotoStatus.PENDING && uploadUrlExpiresAt?.isBefore(now) == true
 
     /** 정상 경로는 임베더 Lambda의 UPDATE라 이 메서드를 지나지 않는다 — Mock 갤러리 복제와 테스트가 쓴다. */
     fun applyMetadata(metadata: PhotoMetadata) {
@@ -141,6 +169,13 @@ class Photo(
          * 발급 요청이 이 값을 가져오고 서명에 그대로 들어가므로, 형식이 틀리면 발급 단계에서 막는다.
          */
         const val CRC32C_BASE64_PATTERN = "^[A-Za-z0-9+/]{6}==$"
+
+        /**
+         * 지문의 형식 — `{원본 바이트 크기}-{원본 앞 64KB 의 CRC32C 를 소문자 hex 8자로}` (예: `18432000-c1d44383`).
+         * 파일 전체를 읽지 않아 수천 장도 수 초에 계산되고, JPEG 앞부분에는 촬영 시각·카메라 일련번호가 있어 사실상 겹치지 않는다.
+         * 이름·수정 시각·경로를 쓰지 않으므로 파일 선택·폴더·zip 어느 길로 와도 같은 원본은 같은 값이다. 계산은 web 이 한다.
+         */
+        const val SOURCE_HASH_PATTERN = "^[0-9]{1,15}-[0-9a-f]{8}$"
 
         /**
          * 화면 순서는 갤러리에서 정한 노출 순서를 따른다. 같으면 id로 한 번 더 갈라, 같은
@@ -158,6 +193,7 @@ class Photo(
          * 촬영 정보는 값을 새로 떠서 담는다. detached 원본과 인스턴스를 나눠 가지면 한쪽 상태
          * 변경이 다른 엔티티에 새어 들어간다. 벡터는 [PhotoAnalysis]에 있으므로 호출자가 따로
          * 복제한다 — 여기서는 원본이 있다는 표시([markUploaded])만 한다.
+         * 지문은 복제하지 않는다 — 템플릿의 원본을 사용자가 가진 것이 아니라 다시 올릴 일이 없다.
          */
         fun copyOf(
             source: Photo,
@@ -165,6 +201,7 @@ class Photo(
             storageKey: String,
             previewKey: String?,
             displayOrder: Int,
+            at: ZonedDateTime,
         ): Photo = Photo(
             galleryId = galleryId,
             storageKey = storageKey,
@@ -188,7 +225,7 @@ class Photo(
                     ),
                 )
             }
-            copy.markUploaded()
+            copy.markUploaded(at)
         }
     }
 }
