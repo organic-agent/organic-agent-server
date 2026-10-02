@@ -12,6 +12,8 @@ import com.soma.wes.folder.repository.DetailFolderAssignmentRepository
 import com.soma.wes.collab.domain.CollabSession
 import com.soma.wes.collab.repository.CollabSessionRepository
 import com.soma.wes.gallery.domain.Gallery
+import com.soma.wes.billing.domain.ProCoupon
+import com.soma.wes.billing.repository.ProCouponRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.repository.PhotoRepository
@@ -37,6 +39,7 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories
         AdminAuditLog::class,
         ConceptFolder::class,
         Gallery::class,
+        ProCoupon::class,
         Workspace::class,
         Studio::class,
         Photo::class,
@@ -53,6 +56,7 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories
         DetailFolderRepository::class,
         DetailFolderAssignmentRepository::class,
         GalleryRepository::class,
+        ProCouponRepository::class,
         WorkspaceRepository::class,
         WorkspaceMemberRepository::class,
         StudioRepository::class,

@@ -220,15 +220,3 @@ oauth:
 logging:
   level:
     com.soma.wes: INFO
-
----
-spring:
-  config:
-    activate:
-      on-profile: local | prod
-
-app:
-  billing:
-    # 배포된 테스트 UI에서도 실제 금전 처리 없는 이용권을 발급한다.
-    # Parameter Store의 같은 설정을 false로 지정하면 발급을 중단한다.
-    test-checkout-enabled: true

@@ -1,6 +1,7 @@
 package com.soma.wes.trash.service
 
 import com.soma.wes.gallery.support.GalleryAccessPolicy
+import com.soma.wes.gallery.support.GalleryPhotoQuota
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.exception.PhotoErrorCode
@@ -41,6 +42,7 @@ class TrashService(
     private val trashEraser: TrashEraser,
     private val workspaceMemberRepository: WorkspaceMemberRepository,
     private val galleryAccessPolicy: GalleryAccessPolicy,
+    private val galleryPhotoQuota: GalleryPhotoQuota,
     private val photoStorage: PhotoStorage,
     private val trashProperties: TrashProperties,
     private val storageProperties: StorageProperties,
@@ -129,6 +131,7 @@ class TrashService(
         galleryAccessPolicy.requireManager(galleryId, userId)
 
         val photoIds = requireBatchSize(request.photoIds)
+        galleryPhotoQuota.requireCapacity(galleryId = galleryId, additionalPhotoCount = photoIds.size)
         if (trashRepository.restorePhotos(galleryId, photoIds) != photoIds.size) {
             throw TrashException(TrashErrorCode.PHOTO_NOT_IN_TRASH)
         }

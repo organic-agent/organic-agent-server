@@ -1,6 +1,15 @@
 package com.soma.wes.photo.service
 
 import com.soma.wes.gallery.domain.GalleryStatus
+import com.soma.wes.billing.fixture.BillingFixture
+import com.soma.wes.gallery.dto.request.CreatePersonalGalleryRequest
+import com.soma.wes.gallery.service.PersonalGalleryService
+import com.soma.wes.photo.dto.request.DeletePhotosRequest
+import com.soma.wes.trash.dto.request.RestorePhotosRequest
+import com.soma.wes.trash.service.TrashService
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.fixture.GalleryFixture
@@ -33,6 +42,8 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.web.util.UriComponentsBuilder
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import java.time.Clock
+import java.time.ZonedDateTime
 import java.time.Instant
 import java.time.LocalDateTime
 
@@ -54,6 +65,10 @@ class PhotoServiceTest @Autowired constructor(
     private val photoRepository: PhotoRepository,
     private val photoAnalysisRepository: PhotoAnalysisRepository,
     private val galleryRepository: GalleryRepository,
+    private val personalGalleryService: PersonalGalleryService,
+    private val billing: BillingFixture,
+    private val trashService: TrashService,
+    private val clock: Clock,
 ) {
 
     private lateinit var fixture: OpenGallery
@@ -690,6 +705,115 @@ class PhotoServiceTest @Autowired constructor(
                 .isEqualTo(PhotoErrorCode.PHOTO_NOT_FOUND)
         }
     }
+
+
+    @Nested
+    @DisplayName("요금제 사진 한도를 적용할 때")
+    inner class PlanQuota {
+        @Test
+        fun `이용 기간이 만료되면 사진 업로드를 발급하지 않는다`() {
+            // given
+            val owner = userFixture.사용자()
+            val gallery = personalGalleryService.create(owner.requiredId, CreatePersonalGalleryRequest(title = "만료할 무료"))
+            val stored = galleryRepository.findById(gallery.id).orElseThrow()
+            stored.planExpiresAt = ZonedDateTime.now(clock).minusSeconds(1)
+            galleryRepository.saveAndFlush(stored)
+
+            // when & then
+            assertThatThrownBy { photoService.issueUploadUrls(gallery.id, owner.requiredId, singlePhotoRequest()) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode").isEqualTo(GalleryErrorCode.GALLERY_ARCHIVED)
+            assertThat(photoRepository.countByGalleryId(gallery.id)).isZero()
+        }
+
+        @Test
+        fun `무료 500장까지 발급하고 삭제하면 한도를 돌려준다`() {
+            // given
+            val owner = userFixture.사용자()
+            val gallery = personalGalleryService.create(owner.requiredId, CreatePersonalGalleryRequest(title = "무료 한도"))
+            photoFixture.업로드된_사진(gallery.id, count = 499)
+            val request = singlePhotoRequest()
+            val last = photoService.issueUploadUrls(gallery.id, owner.requiredId, request).uploads.single().photoId
+
+            // when & then
+            assertThatThrownBy { photoService.issueUploadUrls(gallery.id, owner.requiredId, request) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode").isEqualTo(GalleryErrorCode.PHOTO_PLAN_LIMIT_EXCEEDED)
+            photoService.moveToTrash(gallery.id, owner.requiredId, DeletePhotosRequest(listOf(last)))
+            assertThat(photoService.issueUploadUrls(gallery.id, owner.requiredId, request).uploads).hasSize(1)
+            assertThat(photoRepository.countByGalleryId(gallery.id)).isEqualTo(500L)
+        }
+
+        @Test
+        fun `프로 10000장 경계에서도 삭제 후 다시 업로드할 수 있다`() {
+            // given
+            val owner = userFixture.사용자()
+            val coupon = billing.미사용_프로_쿠폰(owner.requiredId)
+            val gallery = personalGalleryService.create(owner.requiredId, CreatePersonalGalleryRequest(
+                title = "프로 한도", planId = "pro", couponId = coupon.requiredId,
+            ))
+            photoFixture.대량_업로드된_사진(gallery.id, count = 9999)
+            val request = singlePhotoRequest()
+            val last = photoService.issueUploadUrls(gallery.id, owner.requiredId, request).uploads.single().photoId
+
+            // when & then
+            assertThatThrownBy { photoService.issueUploadUrls(gallery.id, owner.requiredId, request) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode").isEqualTo(GalleryErrorCode.PHOTO_PLAN_LIMIT_EXCEEDED)
+            photoService.moveToTrash(gallery.id, owner.requiredId, DeletePhotosRequest(listOf(last)))
+            assertThat(photoService.issueUploadUrls(gallery.id, owner.requiredId, request).uploads).hasSize(1)
+            assertThat(photoRepository.countByGalleryId(gallery.id)).isEqualTo(10_000L)
+        }
+
+        @Test
+        fun `삭제한 자리에 새 사진을 올렸으면 기존 사진을 복원해 한도를 넘을 수 없다`() {
+            // given
+            val gallery = galleryRepository.findById(fixture.galleryId).orElseThrow()
+            gallery.planMaxPhotoCount = 1
+            galleryRepository.saveAndFlush(gallery)
+            val deleted = issueUploadUrls(1).single()
+            photoService.moveToTrash(fixture.galleryId, fixture.photographer.requiredId, DeletePhotosRequest(listOf(deleted)))
+            val replacement = issueUploadUrls(1).single()
+
+            // when & then
+            assertThatThrownBy { trashService.restorePhotos(fixture.galleryId, fixture.photographer.requiredId, RestorePhotosRequest(listOf(deleted))) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode").isEqualTo(GalleryErrorCode.PHOTO_PLAN_LIMIT_EXCEEDED)
+            photoService.moveToTrash(fixture.galleryId, fixture.photographer.requiredId, DeletePhotosRequest(listOf(replacement)))
+            trashService.restorePhotos(fixture.galleryId, fixture.photographer.requiredId, RestorePhotosRequest(listOf(deleted)))
+            assertThat(photoRepository.countByGalleryId(fixture.galleryId)).isEqualTo(1L)
+        }
+
+        @Test
+        fun `남은 한 장을 동시에 업로드해도 하나만 발급된다`() {
+            // given
+            val gallery = galleryRepository.findById(fixture.galleryId).orElseThrow()
+            gallery.planMaxPhotoCount = 1
+            galleryRepository.saveAndFlush(gallery)
+            val start = CountDownLatch(1)
+
+            // when
+            val results = Executors.newFixedThreadPool(2).use { executor ->
+                val futures = (1..2).map { executor.submit<Result<Long>> {
+                    start.await()
+                    runCatching { photoService.issueUploadUrls(fixture.galleryId, fixture.photographer.requiredId, singlePhotoRequest()).uploads.single().photoId }
+                } }
+                start.countDown()
+                futures.map { it.get(10, TimeUnit.SECONDS) }
+            }
+
+            // then
+            assertThat(results.count { it.isSuccess }).isEqualTo(1)
+            assertThat(checkNotNull(results.single { it.isFailure }.exceptionOrNull()))
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode").isEqualTo(GalleryErrorCode.PHOTO_PLAN_LIMIT_EXCEEDED)
+            assertThat(photoRepository.countByGalleryId(fixture.galleryId)).isEqualTo(1L)
+        }
+    }
+
+    private fun singlePhotoRequest(): IssueUploadUrlsRequest = IssueUploadUrlsRequest(listOf(
+        IssueUploadUrlsRequest.FileRequest(fileName = "quota.jpg", contentType = "image/jpeg", contentLength = 1024, crc32c = "wdRDgw=="),
+    ))
 
     // --- helpers ---
 

@@ -99,6 +99,19 @@ class PhotoFixture(
             photoRepository.save(photo).requiredId
         }
 
+    /** 사진 한도 경계의 대량 배경 데이터. 분석 행 없이 실제 업로드된 사진만 만든다. */
+    fun 대량_업로드된_사진(galleryId: Long, count: Int) {
+        val sequence = TestSequence.next()
+        jdbcTemplate.update(
+            """
+            INSERT INTO photos (gallery_id, storage_key, original_file_name, content_type, display_order, status, version, created_at, updated_at)
+            SELECT ?, 'galleries/' || ? || '/quota-' || ? || '-' || n || '.jpg', n || '.jpg', 'image/jpeg', n, 'UPLOADED', 0, now(), now()
+            FROM generate_series(1, ?) AS n
+            """.trimIndent(),
+            galleryId, galleryId, sequence, count,
+        )
+    }
+
     companion object {
         const val EMBEDDING_MODEL = "facebook/dinov3-vitb16-pretrain-lvd1689m"
     }

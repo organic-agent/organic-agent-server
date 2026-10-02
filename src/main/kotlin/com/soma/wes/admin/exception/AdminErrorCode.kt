@@ -8,6 +8,7 @@ enum class AdminErrorCode(
     override val code: String,
     override val message: String,
 ) : ErrorCode {
+    INVALID_COUPON_FILTER(HttpStatus.BAD_REQUEST, "ADMIN_400_9", "쿠폰 검색어는 80자 이하여야 합니다."),
     INVALID_USERNAME(HttpStatus.BAD_REQUEST, "ADMIN_400_1", "관리자 아이디 형식이 올바르지 않습니다."),
     INVALID_DISPLAY_NAME(HttpStatus.BAD_REQUEST, "ADMIN_400_2", "관리자 이름 형식이 올바르지 않습니다."),
     PASSWORD_POLICY_VIOLATION(HttpStatus.BAD_REQUEST, "ADMIN_400_3", "비밀번호는 12자 이상 128자 이하여야 합니다."),
@@ -30,6 +31,9 @@ enum class AdminErrorCode(
     IMPERSONATION_NOT_FOUND(HttpStatus.NOT_FOUND, "ADMIN_404_5", "활성 대리보기 세션을 찾을 수 없습니다."),
     TRASH_BATCH_NOT_FOUND(HttpStatus.NOT_FOUND, "ADMIN_404_6", "연쇄 삭제 배치를 찾을 수 없습니다."),
 
+    /** 사용한 쿠폰 회수는 갤러리 만료 정책까지 변경하므로 미사용 코드만 관리한다. */
+    COUPON_STATE_CHANGE_FORBIDDEN(HttpStatus.CONFLICT, "ADMIN_409_16", "이미 사용한 쿠폰의 상태는 변경할 수 없습니다."),
+    COUPON_STATE_UNCHANGED(HttpStatus.CONFLICT, "ADMIN_409_17", "요청한 쿠폰 상태와 현재 상태가 같습니다."),
     USERNAME_ALREADY_EXISTS(HttpStatus.CONFLICT, "ADMIN_409_1", "이미 사용 중인 관리자 아이디입니다."),
     PASSWORD_REUSE(HttpStatus.CONFLICT, "ADMIN_409_2", "현재 비밀번호와 다른 비밀번호를 사용해 주세요."),
     SELF_TEMPORARY_PASSWORD_FORBIDDEN(HttpStatus.CONFLICT, "ADMIN_409_3", "본인의 비밀번호는 비밀번호 변경 화면에서 변경해 주세요."),

@@ -1,7 +1,6 @@
 package com.soma.wes.security
 
 import com.soma.wes.auth.service.AuthTokenProvider
-import com.soma.wes.billing.domain.TestCheckout
 import com.soma.wes.billing.repository.TestCheckoutRepository
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.repository.GalleryRepository
@@ -18,7 +17,6 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
-import java.time.ZonedDateTime
 
 /** 실제 인증 필터와 JSON 직렬화를 지나 새 화면의 HTTP 계약을 검증한다. */
 @IntegrationTest
@@ -40,13 +38,21 @@ class WireframeApiContractTest @Autowired constructor(
             header("Authorization", "Bearer $token")
         }.andExpect {
             status { isOk() }
-            jsonPath("$.mode") { value("DISABLED") }
+            jsonPath("$.mode") { value("COUPON") }
             jsonPath("$.testCheckoutEnabled") { value(false) }
+            jsonPath("$.cardPaymentStatus") { value("COMING_SOON") }
+            jsonPath("$.plans[0].id") { value("free") }
+            jsonPath("$.plans[0].durationMonths") { value(1) }
+            jsonPath("$.plans[0].maxPhotoCount") { value(500) }
+            jsonPath("$.plans[1].id") { value("pro") }
+            jsonPath("$.plans[1].durationDays") { value(null) }
+            jsonPath("$.plans[1].durationMonths") { value(12) }
+            jsonPath("$.plans[1].maxPhotoCount") { value(10_000) }
         }
         mvc.post("/api/v1/payments/checkout") {
             header("Authorization", "Bearer $token")
             contentType = MediaType.APPLICATION_JSON
-            content = """{"planId":"test-30-days"}"""
+            content = """{"planId":"pro"}"""
         }.andExpect {
             status { isServiceUnavailable() }
             jsonPath("$.code") { value("BILLING_503_1") }
@@ -55,14 +61,10 @@ class WireframeApiContractTest @Autowired constructor(
     }
 
     @Test
-    fun `개인 온보딩은 본인 테스트 이용권으로 한 번만 개설하고 설정을 저장한다`() {
+    fun `개인 온보딩은 무료 요금제로 한 번만 개설하고 설정을 저장한다`() {
         val owner = users.사용자()
         val token = tokens.generateAccessToken(owner).value
-        val checkout = checkouts.save(TestCheckout(
-            userId = owner.requiredId, planId = "test-30-days", amount = 0, currency = "KRW",
-            maxPhotoCount = 100, expiresAt = ZonedDateTime.now().plusDays(30),
-        ))
-        val body = """{"checkoutId":"${checkout.id}","title":"우리의 사진","maxSelectablePhotoCount":20}"""
+        val body = """{"planId":"free","title":"우리의 사진","maxSelectablePhotoCount":20}"""
         mvc.post("/api/v1/galleries/personal") {
             header("Authorization", "Bearer $token")
             contentType = MediaType.APPLICATION_JSON
@@ -72,7 +74,8 @@ class WireframeApiContractTest @Autowired constructor(
             jsonPath("$.status") { value("OPEN") }
             jsonPath("$.stage") { value("UPLOAD") }
             jsonPath("$.photoOrganizationRequired") { value(true) }
-            jsonPath("$.planMaxPhotoCount") { value(100) }
+            jsonPath("$.planId") { value("free") }
+            jsonPath("$.planMaxPhotoCount") { value(500) }
         }
         val galleryId = galleries.findAll().single().requiredId
         mvc.patch("/api/v1/galleries/$galleryId/personal") {
@@ -90,7 +93,7 @@ class WireframeApiContractTest @Autowired constructor(
             content = body
         }.andExpect {
             status { isConflict() }
-            jsonPath("$.code") { value("BILLING_409_1") }
+            jsonPath("$.code") { value("BILLING_409_2") }
         }
     }
 

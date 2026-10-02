@@ -11,6 +11,7 @@ import com.soma.wes.admin.resource.dto.ChangeAdminResourceStateRequest
 import com.soma.wes.admin.resource.dto.CreateAdminResourceRequest
 import com.soma.wes.admin.resource.dto.UpdateAdminResourceRequest
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
+import com.soma.wes.admin.support.AdminPhotoRestoreQuota
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -19,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional
 class AdminResourceService(
     private val repository: AdminResourceRepository,
     private val auditService: AdminAuditService,
+    private val photoRestoreQuota: AdminPhotoRestoreQuota,
 ) {
 
     @Transactional(readOnly = true)
@@ -128,6 +130,7 @@ class AdminResourceService(
         if (!before.deleted) {
             throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
         }
+        photoRestoreQuota.requireCapacity(type = type, id = id)
         if (repository.restore(type, id, request.expectedVersion) == 0) {
             throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
         }

@@ -1,5 +1,7 @@
 package com.soma.wes.admin.resource
 
+import com.soma.wes.gallery.exception.GalleryErrorCode
+import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.fixture.AdminAccountFixture
@@ -40,6 +42,60 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
 ) {
     @BeforeEach
     fun resetStorage() = photoStorage.reset()
+
+    @Test
+    fun `관리자 사진 배치 복원도 삭제 후 재업로드한 한도를 넘을 수 없다`() {
+        // given
+        val actor = adminAccountFixture.관리자("quota-batch-restore")
+        val user = create(actor.requiredId, AdminResourceType.USER, mapOf(
+            "provider" to "GOOGLE", "providerId" to "quota-batch-restore", "nickname" to "한도 소유자",
+        ))
+        val studio = create(actor.requiredId, AdminResourceType.STUDIO, mapOf(
+            "ownerUserId" to user.id, "name" to "한도 스튜디오", "galleryUrl" to "quota-batch-restore",
+        ))
+        val gallery = create(actor.requiredId, AdminResourceType.GALLERY, mapOf("workspaceId" to studio.id, "title" to "한도 갤러리"))
+        jdbcClient.sql("UPDATE galleries SET plan_max_photo_count = 1 WHERE id = :id").param("id", gallery.id).update()
+        val photo = createPhoto(actor.requiredId, gallery.id, "deleted.jpg")
+        val batch = service.delete(actor.requiredId, AdminResourceType.PHOTO, photo.id,
+            ChangeAdminResourceStateRequest("삭제", photo.version), null)
+        val replacement = createPhoto(actor.requiredId, gallery.id, "replacement.jpg")
+
+        // when & then
+        assertThatThrownBy { service.restoreBatch(actor.requiredId, batch.id, AdminReasonRequest("복원"), null) }
+            .isInstanceOf(GalleryException::class.java)
+            .extracting("errorCode").isEqualTo(GalleryErrorCode.PHOTO_PLAN_LIMIT_EXCEEDED)
+        assertThat(deletedAt("photos", photo.id)).isNotNull()
+        service.delete(actor.requiredId, AdminResourceType.PHOTO, replacement.id,
+            ChangeAdminResourceStateRequest("복원 자리 확보", replacement.version), null)
+        service.restoreBatch(actor.requiredId, batch.id, AdminReasonRequest("복원"), null)
+        assertThat(deletedAt("photos", photo.id)).isNull()
+    }
+
+    @Test
+    fun `관리자 직접 복원도 갤러리의 사진 한도를 지킨다`() {
+        // given
+        val actor = adminAccountFixture.관리자("quota-direct-restore")
+        val user = create(actor.requiredId, AdminResourceType.USER, mapOf(
+            "provider" to "GOOGLE", "providerId" to "quota-direct-restore", "nickname" to "한도 소유자",
+        ))
+        val studio = create(actor.requiredId, AdminResourceType.STUDIO, mapOf(
+            "ownerUserId" to user.id, "name" to "한도 스튜디오", "galleryUrl" to "quota-direct-restore",
+        ))
+        val gallery = create(actor.requiredId, AdminResourceType.GALLERY, mapOf("workspaceId" to studio.id, "title" to "한도 갤러리"))
+        jdbcClient.sql("UPDATE galleries SET plan_max_photo_count = 1 WHERE id = :id").param("id", gallery.id).update()
+        val photo = createPhoto(actor.requiredId, gallery.id, "legacy-deleted.jpg")
+        jdbcClient.sql("UPDATE photos SET deleted_at = CURRENT_TIMESTAMP, version = version + 1 WHERE id = :id").param("id", photo.id).update()
+        val deleted = resourceService.get(AdminResourceType.PHOTO, photo.id)
+        createPhoto(actor.requiredId, gallery.id, "replacement.jpg")
+
+        // when & then
+        assertThatThrownBy { resourceService.restore(actor.requiredId, AdminResourceType.PHOTO, photo.id,
+            ChangeAdminResourceStateRequest("복원", deleted.version), null) }
+            .isInstanceOf(GalleryException::class.java)
+            .extracting("errorCode").isEqualTo(GalleryErrorCode.PHOTO_PLAN_LIMIT_EXCEEDED)
+        assertThat(deletedAt("photos", photo.id)).isNotNull()
+    }
+
 
     @Test
     fun `수동 공유폴더 삭제 복원과 영구 삭제는 원본 사진을 보존한다`() {
