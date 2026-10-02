@@ -1,5 +1,6 @@
 package com.soma.wes.analysis.repository
 
+import com.soma.wes.analysis.domain.AnalysisFailureCode
 import com.soma.wes.analysis.domain.AnalysisJob
 import com.soma.wes.analysis.domain.AnalysisStatus
 import java.time.ZonedDateTime
@@ -34,7 +35,7 @@ interface AnalysisJobRepository : JpaRepository<AnalysisJob, Long> {
     @Query(
         """
         UPDATE AnalysisJob j
-        SET j.status = :categorizing, j.dispatchedAt = :now, j.attempts = j.attempts + 1,
+        SET j.status = :categorizing, j.dispatchedAt = :now, j.categorizingAt = :now, j.attempts = j.attempts + 1,
             j.version = j.version + 1, j.updatedAt = :now
         WHERE j.id = :id AND j.status = :analyzing
         """,
@@ -101,19 +102,60 @@ interface AnalysisJobRepository : JpaRepository<AnalysisJob, Long> {
         @Param("done") done: AnalysisStatus = AnalysisStatus.DONE,
     ): Int
 
-    /** 살아 있는 잡(ANALYZING·CATEGORIZING) → FAILED. [error]는 [AnalysisJob.trimError]로 자른 값을 넘긴다. */
+    /**
+     * ANALYZING 잡의 진행 감시 값을 옮긴다 — 진행 값이 바뀌었을 때만 부른다. 그래서 [AnalysisJob.progressAt]이 곧
+     * "마지막으로 진행이 있던 시각"이다.
+     */
     @Transactional
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(
         """
         UPDATE AnalysisJob j
-        SET j.status = :failed, j.error = :error, j.finishedAt = :now, j.version = j.version + 1, j.updatedAt = :now
+        SET j.progressCount = :progressCount, j.progressAt = :now, j.version = j.version + 1, j.updatedAt = :now
+        WHERE j.id = :id AND j.status = :analyzing
+        """,
+    )
+    fun recordProgress(
+        @Param("id") id: Long,
+        @Param("progressCount") progressCount: Int,
+        @Param("now") now: ZonedDateTime,
+        @Param("analyzing") analyzing: AnalysisStatus = AnalysisStatus.ANALYZING,
+    ): Int
+
+    /** 폴더 만들기가 예상 밖 예외로 실패했다 — 횟수를 하나 올린다. 호출자가 올린 뒤의 값을 상한과 견준다. */
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(
+        """
+        UPDATE AnalysisJob j
+        SET j.materializeAttempts = j.materializeAttempts + 1, j.version = j.version + 1, j.updatedAt = :now
+        WHERE j.id = :id AND j.status = :categorizing
+        """,
+    )
+    fun countMaterializeFailure(
+        @Param("id") id: Long,
+        @Param("now") now: ZonedDateTime,
+        @Param("categorizing") categorizing: AnalysisStatus = AnalysisStatus.CATEGORIZING,
+    ): Int
+
+    /**
+     * 살아 있는 잡(ANALYZING·CATEGORIZING) → FAILED. [error]는 [AnalysisJob.trimError]로 자른 내부 문장이고 DB 에만 남는다.
+     * 사용자와 운영 알림이 보는 것은 [errorCode]다.
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(
+        """
+        UPDATE AnalysisJob j
+        SET j.status = :failed, j.error = :error, j.errorCode = :errorCode, j.finishedAt = :now,
+            j.version = j.version + 1, j.updatedAt = :now
         WHERE j.id = :id AND j.status IN :active
         """,
     )
     fun fail(
         @Param("id") id: Long,
         @Param("error") error: String,
+        @Param("errorCode") errorCode: AnalysisFailureCode,
         @Param("now") now: ZonedDateTime,
         @Param("active") active: Collection<AnalysisStatus> = AnalysisStatus.ACTIVE,
         @Param("failed") failed: AnalysisStatus = AnalysisStatus.FAILED,

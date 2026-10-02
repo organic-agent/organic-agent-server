@@ -1,5 +1,6 @@
 package com.soma.wes.analysis.service
 
+import com.soma.wes.analysis.domain.AnalysisFailureCode
 import com.soma.wes.analysis.domain.AnalysisJob
 import com.soma.wes.analysis.domain.AnalysisStatus
 import com.soma.wes.analysis.repository.AnalysisJobRepository
@@ -11,9 +12,11 @@ import com.soma.wes.notification.domain.UserNotificationType
 import com.soma.wes.notification.service.UserNotificationService
 import com.soma.wes.photo.domain.PhotoAnalysis
 import com.soma.wes.photo.fixture.PhotoFixture
+import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.recommendation.fixture.RecommendationFixture
 import com.soma.wes.support.FakeAiTaskSender
 import com.soma.wes.support.IntegrationTest
+import java.time.ZonedDateTime
 import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -290,6 +293,7 @@ class AnalysisPipelineServiceTest @Autowired constructor(
             assertSoftly { softly ->
                 softly.assertThat(job.status).isEqualTo(AnalysisStatus.FAILED)
                 softly.assertThat(job.error).isEqualTo("bedrock timeout")
+                softly.assertThat(job.errorCode).isEqualTo(AnalysisFailureCode.CATEGORIZE_FAILED)
                 softly.assertThat(job.finishedAt).isNotNull()
             }
         }
@@ -354,6 +358,7 @@ class AnalysisPipelineServiceTest @Autowired constructor(
                 softly.assertThat(aiTaskSender.categorizeTasks).hasSize(3)
                 softly.assertThat(job.status).isEqualTo(AnalysisStatus.FAILED)
                 softly.assertThat(job.error).contains("3회")
+                softly.assertThat(job.errorCode).isEqualTo(AnalysisFailureCode.CATEGORIZE_TIMEOUT)
             }
         }
 
@@ -381,4 +386,190 @@ class AnalysisPipelineServiceTest @Autowired constructor(
             jdbcTemplate.update("UPDATE analysis_jobs SET dispatched_at = now() - interval '30 minutes' WHERE id = ?", jobId)
         }
     }
+
+    @Nested
+    @DisplayName("ANALYZING 의 진행이 멈췄을 때")
+    inner class Stalled {
+
+        @Test
+        fun `뒤처진 사진이 적으면 그 사진만 떼어 내고 나머지로 계속 간다`() {
+            // given — 점수가 찬 3장과, 벡터만 있고 점수가 오지 않는 1장
+            scoredPhotos(3)
+            val lagging = photoFixture.임베딩된_사진(fixture.galleryId, count = 1).single()
+            val jobId = request()
+            pipeline.advance()
+            assertThat(job(jobId).progressAt).isNotNull()
+
+            // when — 진행 없이 기준 시간이 지났다
+            stallSince(jobId, minutes = 36)
+            pipeline.advance()
+            pipeline.advance()
+
+            // then — 떼어 낸 사진은 실패로 남고, 잡은 나머지 3장으로 categorize 를 보낸다
+            assertSoftly { softly ->
+                softly.assertThat(analysisErrorOf(lagging)).isEqualTo(PhotoPipelineRepository.ANALYSIS_STALLED)
+                softly.assertThat(job(jobId).status).isEqualTo(AnalysisStatus.CATEGORIZING)
+                softly.assertThat(aiTaskSender.categorizeTasks).hasSize(1)
+            }
+        }
+
+        @Test
+        fun `뒤처진 사진이 많으면 사진은 두고 잡을 SCORE_STAGE_DOWN 으로 닫는다`() {
+            // given — 절반이 점수를 받지 못했다. 사진이 아니라 실행기의 문제다
+            scoredPhotos(2)
+            val lagging = photoFixture.임베딩된_사진(fixture.galleryId, count = 2)
+            val jobId = request()
+            pipeline.advance()
+
+            // when
+            stallSince(jobId, minutes = 36)
+            pipeline.advance()
+
+            // then
+            val job = job(jobId)
+            assertSoftly { softly ->
+                softly.assertThat(job.status).isEqualTo(AnalysisStatus.FAILED)
+                softly.assertThat(job.errorCode).isEqualTo(AnalysisFailureCode.SCORE_STAGE_DOWN)
+                softly.assertThat(lagging.map { analysisErrorOf(it) }).containsOnlyNulls()
+            }
+        }
+
+        @Test
+        fun `기준 시간 전에는 기다린다`() {
+            // given
+            scoredPhotos(3)
+            val lagging = photoFixture.임베딩된_사진(fixture.galleryId, count = 1).single()
+            val jobId = request()
+            pipeline.advance()
+
+            // when
+            stallSince(jobId, minutes = 20)
+            pipeline.advance()
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(job(jobId).status).isEqualTo(AnalysisStatus.ANALYZING)
+                softly.assertThat(analysisErrorOf(lagging)).isNull()
+            }
+        }
+
+        @Test
+        fun `사진이 아직 올라오는 중이면 감시가 발동하지 않는다`() {
+            // given
+            scoredPhotos(3)
+            val lagging = photoFixture.임베딩된_사진(fixture.galleryId, count = 1).single()
+            val jobId = request()
+            pipeline.advance()
+            photoFixture.대기중_사진(fixture.galleryId, count = 1)
+
+            // when
+            stallSince(jobId, minutes = 36)
+            pipeline.advance()
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(job(jobId).status).isEqualTo(AnalysisStatus.ANALYZING)
+                softly.assertThat(analysisErrorOf(lagging)).isNull()
+            }
+        }
+
+        @Test
+        fun `새 사진이 올라오거나 점수가 붙으면 멈춘 시각을 다시 센다`() {
+            // given
+            scoredPhotos(3)
+            val lagging = photoFixture.임베딩된_사진(fixture.galleryId, count = 1).single()
+            val jobId = request()
+            pipeline.advance()
+            stallSince(jobId, minutes = 36)
+
+            // when — 기준 시간이 지났지만 그 사이 새 사진이 올라왔다
+            val late = photoFixture.임베딩된_사진(fixture.galleryId, count = 1).single()
+            pipeline.advance()
+            pipeline.advance()
+
+            // then — 방금 올라온 사진을 "멈춘 사진"으로 떼어 내지 않는다
+            assertSoftly { softly ->
+                softly.assertThat(job(jobId).status).isEqualTo(AnalysisStatus.ANALYZING)
+                softly.assertThat(listOf(lagging, late).map { analysisErrorOf(it) }).containsOnlyNulls()
+                softly.assertThat(job(jobId).progressAt).isAfter(ZonedDateTime.now().minusMinutes(5))
+            }
+        }
+
+        @Test
+        fun `올라온 사진이 한 장도 없이 멈추면 NOTHING_TO_ANALYZE 로 닫는다`() {
+            // given — 요청 뒤 올라온 사진은 지워졌고, 올라오지 않는 PENDING 만 남았다
+            val uploaded = photoFixture.업로드된_사진(fixture.galleryId, count = 1)
+            val pending = photoFixture.대기중_사진(fixture.galleryId, count = 1)
+            val jobId = request()
+            jdbcTemplate.update("UPDATE photos SET deleted_at = now() WHERE id = ?", uploaded.single())
+            jdbcTemplate.update("UPDATE photos SET created_at = now() - interval '1 hour' WHERE id = ?", pending.single())
+            pipeline.advance()
+
+            // when
+            stallSince(jobId, minutes = 36)
+            pipeline.advance()
+
+            // then — 그 PENDING 이 휴지통으로 갈 때까지 하루를 기다리지 않는다
+            val job = job(jobId)
+            assertSoftly { softly ->
+                softly.assertThat(job.status).isEqualTo(AnalysisStatus.FAILED)
+                softly.assertThat(job.errorCode).isEqualTo(AnalysisFailureCode.NOTHING_TO_ANALYZE)
+            }
+        }
+
+        private fun stallSince(jobId: Long, minutes: Int) {
+            jdbcTemplate.update("UPDATE analysis_jobs SET progress_at = now() - make_interval(mins => ?) WHERE id = ?", minutes, jobId)
+        }
+    }
+
+    @Nested
+    @DisplayName("CATEGORIZING 의 대기를 끝낼 때")
+    inner class CategorizingLimits {
+
+        @Test
+        fun `categorize 를 보낸 뒤에 올라온 사진은 기다리지 않고 닫으며 그 사진은 폴더에 넣지 않는다`() {
+            // given
+            val photos = scoredPhotos(3)
+            val jobId = request()
+            pipeline.advance()
+            assertThat(job(jobId).status).isEqualTo(AnalysisStatus.CATEGORIZING)
+
+            // when — 분류 중에 사진이 더 올라왔다(벡터까지 받았지만 이 categorize 는 보지 못했다)
+            val late = photoFixture.임베딩된_사진(fixture.galleryId, count = 1).single()
+            categorizeByLambda(jobId, photos)
+            pipeline.advance()
+
+            // then — 전에는 "전부 분류됨"이 거짓이 되어 한 시간 뒤 FAILED 였다
+            assertSoftly { softly ->
+                softly.assertThat(job(jobId).status).isEqualTo(AnalysisStatus.DONE)
+                softly.assertThat(assignedPhotoIds()).containsExactlyInAnyOrderElementsOf(photos)
+                softly.assertThat(assignedPhotoIds()).doesNotContain(late)
+            }
+        }
+
+        @Test
+        fun `CATEGORIZING 에 들어간 지 기한이 지나면 CATEGORIZE_TIMEOUT 으로 닫는다`() {
+            // given — 방금 다시 보냈지만 잡 전체로는 기한을 넘겼다
+            scoredPhotos(1)
+            val jobId = request()
+            pipeline.advance()
+            jdbcTemplate.update("UPDATE analysis_jobs SET categorizing_at = now() - interval '71 minutes' WHERE id = ?", jobId)
+
+            // when
+            pipeline.advance()
+
+            // then
+            val job = job(jobId)
+            assertSoftly { softly ->
+                softly.assertThat(job.status).isEqualTo(AnalysisStatus.FAILED)
+                softly.assertThat(job.errorCode).isEqualTo(AnalysisFailureCode.CATEGORIZE_TIMEOUT)
+            }
+        }
+
+        private fun assignedPhotoIds(): List<Long> =
+            jdbcTemplate.query("SELECT photo_id FROM detail_folder_assignments WHERE gallery_id = ?", { rs, _ -> rs.getLong(1) }, fixture.galleryId)
+    }
+
+    private fun analysisErrorOf(photoId: Long): String? =
+        jdbcTemplate.queryForList("SELECT error FROM photo_analysis WHERE photo_id = ?", String::class.java, photoId).firstOrNull()
 }

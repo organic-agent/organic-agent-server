@@ -1,5 +1,6 @@
 package com.soma.wes.analysis.service
 
+import com.soma.wes.analysis.domain.AnalysisFailureCode
 import com.soma.wes.analysis.domain.AnalysisStatus
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
@@ -196,12 +197,12 @@ class AnalysisServiceTest @Autowired constructor(
         }
 
         @Test
-        fun `FAILED 잡의 오류를 그대로 보여 준다`() {
+        fun `FAILED 잡은 이유 코드와 사용자 문장만 보여 주고 내부 오류 문장은 내보내지 않는다`() {
             // given
             photoFixture.업로드된_사진(fixture.galleryId, count = 1)
             val job = analysisService.request(fixture.galleryId, fixture.photographer.id!!)
             jdbcTemplate.update(
-                "UPDATE analysis_jobs SET status = 'FAILED', finished_at = now(), error = ? WHERE id = ?",
+                "UPDATE analysis_jobs SET status = 'FAILED', finished_at = now(), error = ?, error_code = 'CATEGORIZE_FAILED' WHERE id = ?",
                 "bedrock timeout",
                 job.jobId,
             )
@@ -212,8 +213,30 @@ class AnalysisServiceTest @Autowired constructor(
             // then
             assertSoftly { softly ->
                 softly.assertThat(latest.status).isEqualTo(AnalysisStatus.FAILED)
-                softly.assertThat(latest.error).isEqualTo("bedrock timeout")
+                softly.assertThat(latest.errorCode).isEqualTo(AnalysisFailureCode.CATEGORIZE_FAILED)
+                softly.assertThat(latest.error).isEqualTo(AnalysisFailureCode.CATEGORIZE_FAILED.userMessage)
+                softly.assertThat(latest.error).doesNotContain("bedrock")
                 softly.assertThat(latest.finishedAt).isNotNull()
+            }
+        }
+
+        @Test
+        fun `이유 코드가 생기기 전에 닫힌 FAILED 잡도 내부 문장 대신 일반 문장을 보여 준다`() {
+            // given
+            photoFixture.업로드된_사진(fixture.galleryId, count = 1)
+            val job = analysisService.request(fixture.galleryId, fixture.photographer.id!!)
+            jdbcTemplate.update(
+                "UPDATE analysis_jobs SET status = 'FAILED', finished_at = now(), error = 'NoRegionError: ...' WHERE id = ?",
+                job.jobId,
+            )
+
+            // when
+            val latest = analysisService.latest(fixture.galleryId, fixture.photographer.id!!)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(latest.errorCode).isNull()
+                softly.assertThat(latest.error).isEqualTo(AnalysisFailureCode.UNKNOWN_USER_MESSAGE)
             }
         }
 

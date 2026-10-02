@@ -18,7 +18,8 @@ import org.hibernate.annotations.DynamicUpdate
  * 사진별 진행(임베딩·점수·백분위)은 잡이 아니라 `photo_analysis` 행이 말한다. 잡은 그것을 관측해 점수가 다 차면 categorize를
  * 한 번 부르고, 배정이 오면 폴더를 물질화한 뒤 닫는다. 전이는 엔티티 메서드가 아니라 [com.soma.wes.analysis.repository.AnalysisJobRepository]의
  * 조건부 UPDATE다 — 스윕 둘 중 한쪽만 옮기게 하는 것이 그 문장의 영향 행 수다. 누가 무엇을 쓰는지가 계약이다:
- * - 이 서버: [status]·[dispatchedAt]·[attempts]·[finishedAt], 그리고 잡을 닫을 때의 [error].
+ * - 이 서버: [status]·[dispatchedAt]·[attempts]·[finishedAt]·진행 감시([progressCount]·[progressAt])·[categorizingAt]·
+ *   [materializeAttempts], 그리고 잡을 닫을 때의 [error]·[errorCode].
  * - categorize Lambda: 실패했을 때의 [error] 한 컬럼(photoselect의 `UPDATE (error)` GRANT). 상태는 쓰지 않는다.
  *
  * [DynamicUpdate]인 이유: Lambda가 [error]를 쓰는 동안 이 서버가 다른 컬럼을 갱신할 수 있다. 바뀐 컬럼만 UPDATE해야
@@ -64,6 +65,34 @@ class AnalysisJob(
 
     @Column(name = "error")
     var error: String? = null
+        protected set
+
+    /** FAILED 로 닫힌 이유. 이 컬럼이 생기기 전에 닫힌 잡과 살아 있는 잡은 null 이다. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "error_code", length = 40)
+    var errorCode: AnalysisFailureCode? = null
+        protected set
+
+    /**
+     * ANALYZING 의 진행 감시 값 — 스윕이 본 갤러리의 진행([com.soma.wes.photo.repository.projection.GalleryAnalysisProgress.progressSignature])과
+     * 그 값이 마지막으로 바뀐 시각. 시각이 오래 멈춰 있으면 임베딩·점수가 멈춘 것이다.
+     */
+    @Column(name = "progress_count")
+    var progressCount: Int? = null
+        protected set
+
+    @Column(name = "progress_at")
+    var progressAt: ZonedDateTime? = null
+        protected set
+
+    /** CATEGORIZING 에 들어간 시각. [dispatchedAt]은 다시 보낼 때마다 옮겨지므로 잡 전체 기한은 이 값으로 잰다. */
+    @Column(name = "categorizing_at")
+    var categorizingAt: ZonedDateTime? = null
+        protected set
+
+    /** 폴더 만들기가 예상 밖 예외로 실패한 횟수. 상한에서 잡을 닫는다 — 없으면 5초마다 끝없이 다시 시도한다. */
+    @Column(name = "materialize_attempts", nullable = false)
+    var materializeAttempts: Int = 0
         protected set
 
     val requiredId: Long

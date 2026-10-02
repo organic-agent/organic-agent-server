@@ -1,5 +1,6 @@
 package com.soma.wes.analysis.support
 
+import com.soma.wes.analysis.domain.AnalysisFailureCode
 import com.soma.wes.analysis.domain.AnalysisJob
 import com.soma.wes.analysis.dto.MaterializeOutcomeDto
 import com.soma.wes.analysis.repository.AnalysisJobRepository
@@ -40,7 +41,8 @@ class AnalysisJobCloser(
         val now = ZonedDateTime.now(clock)
         val closed = when (outcome) {
             is MaterializeOutcomeDto.Created, MaterializeOutcomeDto.NothingNew -> analysisJobRepository.finish(job.requiredId, now)
-            is MaterializeOutcomeDto.Failed -> analysisJobRepository.fail(job.requiredId, AnalysisJob.trimError(outcome.error), now)
+            is MaterializeOutcomeDto.Failed ->
+                analysisJobRepository.fail(job.requiredId, AnalysisJob.trimError(outcome.error), AnalysisFailureCode.FOLDER_FAILED, now)
         }
         if (closed == 0) {
             log.debug("분석 잡 {} 은 다른 스윕이 먼저 닫았다", job.requiredId)
@@ -61,8 +63,8 @@ class AnalysisJobCloser(
                 job.requiredId, job.galleryId, secondsSince(job.dispatchedAt, now), secondsSince(job.createdAt, now),
             )
             is MaterializeOutcomeDto.Failed -> log.warn(
-                "event=job.transition job={} gallery={} from=CATEGORIZING to=FAILED attempts={} error=\"{}\"",
-                job.requiredId, job.galleryId, job.attempts, outcome.error,
+                "event=job.transition job={} gallery={} from=CATEGORIZING to=FAILED errorCode={} attempts={} error=\"{}\"",
+                job.requiredId, job.galleryId, AnalysisFailureCode.FOLDER_FAILED, job.attempts, outcome.error,
             )
         }
     }

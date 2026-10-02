@@ -23,7 +23,8 @@ import org.springframework.stereotype.Component
  *   [AnalysisProperties.Gpu.idleStopAfter] 동안 점수 진행 없음일 때만 끄는 안전망이다.
  * - 폴백: backlog가 있는데 [AnalysisProperties.Gpu.fallbackAfter] 동안 워커가 뜨지 않거나 점수가 늘지 않으면, 벡터는 있는데 점수가
  *   없는 사진을 갤러리마다 [AnalysisProperties.scoreBatchSize]장씩 score Lambda에 보낸다(갤러리당 [AnalysisProperties.Gpu.fallbackInterval] 1회). GPU가 꺼져 있으면
- *   기다리지 않고 폴백만 돈다. score는 UPSERT라 워커와 겹쳐도 같은 값을 덮을 뿐이다.
+ *   기다리지 않고 폴백만 돈다. score는 UPSERT라 워커와 겹쳐도 같은 값을 덮을 뿐이다. 한 갤러리에는
+ *   [AnalysisProperties.scoreFallbackMax]번까지만 보낸다 — 그 뒤에도 점수가 없으면 잡의 진행 감시([CategorizeStep])가 처리한다.
  *
  * 진행·전송 시각은 인메모리다(컬럼 없음). 인스턴스가 여럿이면 각자 판단해 겹칠 수 있는데, 켜기·끄기·score 전부 멱등이라 무방하다.
  */
@@ -38,9 +39,12 @@ class ScoreStep(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    /** 마지막 스윕에서 본 점수 있는 사진 수와 그것이 마지막으로 늘어난 시각. */
+    /**
+     * 마지막 스윕에서 본 대기 수(점수 없는 사진)와 그것이 마지막으로 바뀐 시각. 줄면 워커가 내고 있는 것이고, 늘면 새 사진이 들어온 것이다 —
+     * 둘 다 "멈춤"이 아니다. 끝난 사진 전체를 세지 않으므로 사진이 쌓여도 이 판정의 비용은 대기 중인 양에만 비례한다.
+     */
     @Volatile
-    private var lastScored: Long? = null
+    private var lastBacklog: Long? = null
 
     @Volatile
     private var lastProgressAt: ZonedDateTime? = null
@@ -56,14 +60,18 @@ class ScoreStep(
     /** score 폴백을 갤러리마다 마지막으로 보낸 시각. */
     private val fallbackSentAt = ConcurrentHashMap<Long, ZonedDateTime>()
 
+    /** score 폴백을 갤러리마다 보낸 횟수. 미점수 사진이 없어진 갤러리는 지운다 — 다음에 올라온 사진은 처음부터 센다. */
+    private val fallbackCount = ConcurrentHashMap<Long, Int>()
+
     fun advance() {
         val now = ZonedDateTime.now(clock)
         val backlog = photoPipelineRepository.countScoreBacklog()
-        observeProgress(now)
+        observeProgress(backlog, now)
 
         if (isWorkerPoolActive) controlWorkers(backlog, now)
         if (backlog == 0L) {
             deliveringAt = null
+            fallbackCount.clear()
             return
         }
         if (isFallbackDue(now)) fallback(now)
@@ -72,14 +80,13 @@ class ScoreStep(
     private val isWorkerPoolActive: Boolean
         get() = properties.gpu.enabled && scoreWorkerPool.isAvailable
 
-    private fun observeProgress(now: ZonedDateTime) {
-        val scored = photoPipelineRepository.countScored()
-        val previous = lastScored
-        if (previous == null || scored > previous) {
+    private fun observeProgress(backlog: Long, now: ZonedDateTime) {
+        val previous = lastBacklog
+        if (previous == null || backlog != previous) {
             lastProgressAt = now
             if (previous != null) deliveringAt = now
         }
-        lastScored = scored
+        lastBacklog = backlog
     }
 
     /** 켜진 워커가 없으면 켜고, 일이 없는데 켜져 있으면 안전망으로 끈다. 호출 실패는 다음 스윕에 다시 본다. */
@@ -141,7 +148,10 @@ class ScoreStep(
     /** 갤러리마다 미점수 사진 전부를 [AnalysisProperties.scoreBatchSize]장씩. 호출 실패는 남은 갤러리도 같이 실패할 것이라 걸음을 멈춘다. */
     private fun fallback(now: ZonedDateTime) {
         if (!aiTaskSender.isAvailable(AiTaskDto.Score::class)) return
-        for (galleryId in photoPipelineRepository.findGalleryIdsWithUnscoredPhotos()) {
+        val galleryIds = photoPipelineRepository.findGalleryIdsWithUnscoredPhotos()
+        fallbackCount.keys.retainAll(galleryIds.toSet())
+        for (galleryId in galleryIds) {
+            if ((fallbackCount[galleryId] ?: 0) >= properties.scoreFallbackMax) continue
             val last = fallbackSentAt[galleryId]
             if (last != null && last.plus(properties.gpu.fallbackInterval).isAfter(now)) continue
             val delivered = LogContext.gallery(galleryId) { fallbackGallery(galleryId, now) }
@@ -163,7 +173,11 @@ class ScoreStep(
             }
         }
         fallbackSentAt[galleryId] = now
-        log.info("event=score.fallback gallery={} photos={} batches={}", galleryId, photoIds.size, batches.size)
+        val attempt = fallbackCount.merge(galleryId, 1, Int::plus)
+        log.info(
+            "event=score.fallback gallery={} photos={} batches={} attempt={} max={}",
+            galleryId, photoIds.size, batches.size, attempt, properties.scoreFallbackMax,
+        )
         return true
     }
 }
