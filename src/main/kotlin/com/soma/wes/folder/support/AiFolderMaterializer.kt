@@ -28,7 +28,7 @@ import java.time.ZonedDateTime
 /**
  * 최신 AI 컨셉 배정을 폴더로 물질화한다. 아직 폴더에 없는 사진만 넣는다 — 이미 있는 폴더의 이름·순서·배정은 건드리지 않는다.
  *
- * 새 사진의 자리는 [AiFolderPlanner]가 정한다: 같은 그룹의 옛 사진이 든 기존 폴더 → 기존 컨셉 폴더 아래 새 세부 폴더 →
+ * 새 사진의 자리는 [AiFolderPlanner]가 정한다: 같은 그룹·같은 세부 이름의 옛 사진이 든 기존 폴더 → 기존 컨셉 폴더 아래 새 세부 폴더 →
  * 새 컨셉 폴더. 새 폴더를 이룰 만큼 모이지 않은 사진은 미분류로 남는다.
  */
 @Component
@@ -80,6 +80,7 @@ class AiFolderMaterializer(
             // 같은 이름이 여럿이면 화면 순서상 앞의 폴더로 — 뒤에서부터 넣어 앞의 것이 남게 한다.
             conceptFolderIdByName = concepts.asReversed().associate { it.name to it.requiredId },
             minNewDetailPhotos = properties.minNewDetailPhotos,
+            minOldShareForDetailMerge = properties.minOldShareForDetailMerge,
         )
         // 넣을 곳이 정해진 사진이 없다 — 전부 미분류로 남는 소수다. 할 일이 없는 것이다.
         if (plan.isEmpty) throw FolderException(FolderErrorCode.NO_PHOTOS_TO_ORGANIZE)

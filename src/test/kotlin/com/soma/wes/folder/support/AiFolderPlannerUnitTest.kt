@@ -38,6 +38,7 @@ class AiFolderPlannerUnitTest {
         conceptFolderIdByDetailFolderId = conceptFolderIdByDetailFolderId,
         conceptFolderIdByName = conceptFolderIdByName,
         minNewDetailPhotos = minNewDetailPhotos,
+        minOldShareForDetailMerge = 0.1,
     )
 
     @Nested
@@ -73,6 +74,41 @@ class AiFolderPlannerUnitTest {
 
             // then
             assertThat(plan.merges).isEqualTo(mapOf(20L to listOf(100L)))
+        }
+
+        @Test
+        fun `새 사진뿐인 그룹은 같은 세부 이름의 옛 사진이 든 세부 폴더에 넣는다`() {
+            // given — 이번 분석이 그룹 1(옛 사진)과 그룹 2(새 사진뿐)를 같은 세부 이름으로 묶었다
+            val photos = listOf(photo(1, 1), photo(2, 1), photo(100, 1)) + (101L..106L).map { photo(it, 2) }
+            val placed = mapOf(1L to 10L, 2L to 10L)
+            val assignments = listOf(assignment(1, "화이트스튜디오", "흰 벽 전신"), assignment(2, "화이트스튜디오", "흰 벽 전신"))
+
+            // when
+            val plan = plan(assignments, photos, placed)
+
+            // then — 이름이 거의 같은 폴더가 옆에 하나 더 생기지 않는다
+            assertSoftly { softly ->
+                softly.assertThat(plan.merges.getValue(10L)).hasSize(7)
+                softly.assertThat(plan.newDetails).isEmpty()
+                softly.assertThat(plan.newConcepts).isEmpty()
+            }
+        }
+
+        @Test
+        fun `같은 세부 이름이어도 옛 사진이 극히 일부면 새 사진뿐인 그룹을 끌고 가지 않는다`() {
+            // given — 세부 이름의 사진 31장 중 옛 사진은 1장(10% 미만)
+            val photos = listOf(photo(1, 1)) + (100L..129L).map { photo(it, 2) }
+            val placed = mapOf(1L to 10L)
+            val assignments = listOf(assignment(1, "화이트스튜디오", "흰 문틀 옆"), assignment(2, "화이트스튜디오", "흰 문틀 옆"))
+
+            // when
+            val plan = plan(assignments, photos, placed)
+
+            // then — 컨셉 폴더는 옛 사진을 따라가되 세부 폴더는 새로 만든다
+            assertSoftly { softly ->
+                softly.assertThat(plan.merges).isEmpty()
+                softly.assertThat(plan.newDetails.getValue(1L).single().photoIds).hasSize(30)
+            }
         }
 
         @Test

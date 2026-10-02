@@ -11,4 +11,9 @@ data class FolderProperties(
      * 하나도 없을 때)에는 걸지 않는다.
      */
     val minNewDetailPhotos: Int = 5,
+    /**
+     * 새 사진뿐인 그룹을 "같은 세부 이름의 옛 사진이 든 폴더"로 합치려면, 그 세부 이름의 사진 중 옛 사진이 이 비율 이상이어야 한다.
+     * 옛 사진 몇 장이 새 사진 수백 장을 끌고 가지 않게 한다.
+     */
+    val minOldShareForDetailMerge: Double = 0.1,
 )
