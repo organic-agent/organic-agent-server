@@ -13,6 +13,7 @@ import com.soma.wes.collab.support.CollabPhotoMembership
 import com.soma.wes.collab.support.CollabPhotoViewAssembler
 import com.soma.wes.folder.service.FolderService
 import com.soma.wes.folder.repository.DetailFolderAssignmentBulkRepository
+import com.soma.wes.folder.config.FolderProperties
 import com.soma.wes.folder.support.AiFolderMaterializer
 import com.soma.wes.folder.support.AiFolderPlanner
 import com.soma.wes.folder.support.FolderViewAssembler
@@ -66,6 +67,7 @@ import org.springframework.context.annotation.Import
     AdminObservabilityProperties::class,
     AdminWorkflowExecutorProperties::class,
     StorageProperties::class,
+    FolderProperties::class,
     TrashProperties::class,
     LambdaAiTaskProperties::class,
     MockGalleryProperties::class,

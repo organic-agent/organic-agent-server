@@ -2,6 +2,9 @@ package com.soma.wes.folder.support
 
 import com.soma.wes.folder.domain.FolderSource
 import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
+import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
+import com.soma.wes.folder.exception.FolderErrorCode
+import com.soma.wes.folder.exception.FolderException
 import com.soma.wes.folder.repository.DetailFolderAssignmentRepository
 import com.soma.wes.folder.service.FolderService
 import com.soma.wes.gallery.fixture.GalleryFixture
@@ -9,8 +12,10 @@ import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.recommendation.fixture.RecommendationFixture
 import com.soma.wes.support.IntegrationTest
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 
@@ -88,6 +93,140 @@ class AiFolderMaterializerTest @Autowired constructor(
         // then
         assertThat(folderService.list(fixture.galleryId, userId).map { it.name })
             .containsExactly(third.name, fourth.name, "야외 자연")
+    }
+
+    /**
+     * 사진을 나눠 올린 경우 — 먼저 올린 사진으로 폴더가 만들어진 뒤 사진이 더 올라와 다시 분석했다.
+     * AI 가 붙이는 이름은 실행마다 달라지므로, 새 잡의 배정에는 일부러 다른 이름을 준다.
+     */
+    @Nested
+    @DisplayName("나눠 올린 사진을 합칠 때")
+    inner class Merge {
+
+        @Test
+        fun `새 사진은 같은 그룹의 옛 사진이 든 폴더에 들어가고 폴더는 늘지 않는다`() {
+            // given — 해변(그룹 1) 3장, 정원(그룹 2) 2장으로 폴더가 만들어졌다
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val userId = fixture.photographer.requiredId
+            val beach = analyzed(fixture.galleryId, count = 3, embedGroupId = 1)
+            val garden = analyzed(fixture.galleryId, count = 2, embedGroupId = 2)
+            firstJob(fixture.galleryId)
+            materializer.materialize(fixture.galleryId)
+            val before = folderService.list(fixture.galleryId, userId)
+
+            // when — 해변 2장, 정원 1장이 더 올라왔고 새 잡은 같은 그룹을 다른 이름으로 불렀다
+            val moreBeach = analyzed(fixture.galleryId, count = 2, embedGroupId = 1)
+            val moreGarden = analyzed(fixture.galleryId, count = 1, embedGroupId = 2)
+            val secondJob = recommendationFixture.분석_잡(fixture.galleryId)
+            recommendationFixture.컨셉_배정(secondJob, fixture.galleryId, embedGroupId = 1, conceptName = "바닷가", detailName = "모래사장")
+            recommendationFixture.컨셉_배정(secondJob, fixture.galleryId, embedGroupId = 2, conceptName = "정원", detailName = "꽃밭")
+            val added = materializer.materialize(fixture.galleryId)
+
+            // then — 전에는 "바닷가"·"정원" 폴더가 뒤에 따로 붙었다
+            val after = folderService.list(fixture.galleryId, userId)
+            assertSoftly { softly ->
+                softly.assertThat(after.map { it.name }).containsExactly("야외 자연", "야외 정원·건물")
+                softly.assertThat(after.map { concept -> concept.details.map { it.name } }).isEqualTo(before.map { concept -> concept.details.map { it.name } })
+                softly.assertThat(after[0].details.single().photoIds).containsExactlyInAnyOrderElementsOf(beach + moreBeach)
+                softly.assertThat(after[1].details.single().photoIds).containsExactlyInAnyOrderElementsOf(garden + moreGarden)
+                // 응답은 이번에 넣은 사진만 싣는다
+                softly.assertThat(added.flatMap { concept -> concept.details.flatMap { it.photoIds } })
+                    .containsExactlyInAnyOrderElementsOf(moreBeach + moreGarden)
+            }
+        }
+
+        @Test
+        fun `사용자가 옮겨 둔 폴더를 새 사진이 따라간다`() {
+            // given — 사용자가 해변 사진을 전부 정원 폴더로 옮겼다
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val userId = fixture.photographer.requiredId
+            val beach = analyzed(fixture.galleryId, count = 3, embedGroupId = 1)
+            analyzed(fixture.galleryId, count = 2, embedGroupId = 2)
+            firstJob(fixture.galleryId)
+            materializer.materialize(fixture.galleryId)
+            val gardenDetailId = folderService.list(fixture.galleryId, userId)[1].details.single().id
+            folderService.movePhotos(fixture.galleryId, userId, MoveFolderPhotosRequest(photoIds = beach, targetDetailFolderId = gardenDetailId))
+
+            // when
+            val moreBeach = analyzed(fixture.galleryId, count = 1, embedGroupId = 1).single()
+            secondJobWithSameNames(fixture.galleryId)
+            materializer.materialize(fixture.galleryId)
+
+            // then
+            val gardenDetail = folderService.list(fixture.galleryId, userId)[1].details.single()
+            assertThat(gardenDetail.photoIds).contains(moreBeach)
+        }
+
+        @Test
+        fun `기존 폴더에 맞지 않는 사진은 최소 장수가 모일 때까지 미분류로 남는다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val userId = fixture.photographer.requiredId
+            analyzed(fixture.galleryId, count = 3, embedGroupId = 1)
+            analyzed(fixture.galleryId, count = 2, embedGroupId = 2)
+            firstJob(fixture.galleryId)
+            materializer.materialize(fixture.galleryId)
+
+            // when — 새 장면(그룹 3) 3장만 올라왔다. 최소 5장에 못 미친다
+            val few = analyzed(fixture.galleryId, count = 3, embedGroupId = 3)
+            val secondJob = secondJobWithSameNames(fixture.galleryId)
+            recommendationFixture.컨셉_배정(secondJob, fixture.galleryId, embedGroupId = 3, conceptName = "한복", detailName = "마당")
+
+            // then — 넣을 곳이 없으니 "새로 넣을 사진 없음"이고 폴더는 그대로다
+            assertThatThrownBy { materializer.materialize(fixture.galleryId) }
+                .isInstanceOf(FolderException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(FolderErrorCode.NO_PHOTOS_TO_ORGANIZE)
+            assertThat(assignmentRepository.findAllPhotoIdsByGalleryId(fixture.galleryId)).doesNotContainAnyElementsOf(few)
+
+            // 2장이 더 올라와 5장이 되면 새 폴더로 묶인다
+            val more = analyzed(fixture.galleryId, count = 2, embedGroupId = 3)
+            val thirdJob = secondJobWithSameNames(fixture.galleryId)
+            recommendationFixture.컨셉_배정(thirdJob, fixture.galleryId, embedGroupId = 3, conceptName = "한복", detailName = "마당")
+            materializer.materialize(fixture.galleryId)
+
+            val folders = folderService.list(fixture.galleryId, userId)
+            assertSoftly { softly ->
+                softly.assertThat(folders.map { it.name }).containsExactly("야외 자연", "야외 정원·건물", "한복")
+                softly.assertThat(folders.last().details.single().photoIds).containsExactlyInAnyOrderElementsOf(few + more)
+            }
+        }
+
+        @Test
+        fun `옛 사진이 없는 그룹은 같은 컨셉의 옛 사진이 든 컨셉 폴더 아래에 새 세부 폴더로 붙는다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val userId = fixture.photographer.requiredId
+            analyzed(fixture.galleryId, count = 3, embedGroupId = 1)
+            analyzed(fixture.galleryId, count = 2, embedGroupId = 2)
+            firstJob(fixture.galleryId)
+            materializer.materialize(fixture.galleryId)
+
+            // when — 새 그룹 3(5장)을 새 잡이 해변과 같은 컨셉으로 묶었다. 컨셉 이름은 전과 다르다
+            val rocks = analyzed(fixture.galleryId, count = 5, embedGroupId = 3)
+            val secondJob = recommendationFixture.분석_잡(fixture.galleryId)
+            recommendationFixture.컨셉_배정(secondJob, fixture.galleryId, embedGroupId = 1, conceptName = "바닷가", detailName = "모래사장")
+            recommendationFixture.컨셉_배정(secondJob, fixture.galleryId, embedGroupId = 2, conceptName = "정원", detailName = "꽃밭")
+            recommendationFixture.컨셉_배정(secondJob, fixture.galleryId, embedGroupId = 3, conceptName = "바닷가", detailName = "갯바위")
+            materializer.materialize(fixture.galleryId)
+
+            // then — "야외 자연" 아래, 기존 세부 폴더 뒤에 붙는다
+            val folders = folderService.list(fixture.galleryId, userId)
+            assertSoftly { softly ->
+                softly.assertThat(folders.map { it.name }).containsExactly("야외 자연", "야외 정원·건물")
+                softly.assertThat(folders[0].details.map { it.name }).containsExactly("해변", "갯바위")
+                softly.assertThat(folders[0].details.last().photoIds).containsExactlyInAnyOrderElementsOf(rocks)
+            }
+        }
+
+        private fun firstJob(galleryId: Long): Long {
+            val jobId = recommendationFixture.분석_잡(galleryId)
+            recommendationFixture.컨셉_배정(jobId, galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
+            recommendationFixture.컨셉_배정(jobId, galleryId, embedGroupId = 2, conceptName = "야외 정원·건물", detailName = "정원")
+            return jobId
+        }
+
+        private fun secondJobWithSameNames(galleryId: Long): Long = firstJob(galleryId)
     }
 
     private fun analyzed(galleryId: Long, count: Int, embedGroupId: Int): List<Long> =

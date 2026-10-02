@@ -4,7 +4,9 @@ import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.analysis.support.ConceptAssignmentLoader
 import com.soma.wes.folder.domain.ConceptFolder
 import com.soma.wes.folder.domain.DetailFolder
+import com.soma.wes.folder.config.FolderProperties
 import com.soma.wes.folder.domain.FolderSource
+import com.soma.wes.folder.dto.DetailFolderPlanDto
 import com.soma.wes.folder.dto.PhotoAnalysisGroupingDto
 import com.soma.wes.folder.dto.response.ConceptFolderResponse
 import com.soma.wes.folder.dto.response.DetailFolderResponse
@@ -23,7 +25,12 @@ import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.ZonedDateTime
 
-/** 최신 AI 컨셉 배정을 최종 카테고리 ERD에 물질화한다. */
+/**
+ * 최신 AI 컨셉 배정을 폴더로 물질화한다. 아직 폴더에 없는 사진만 넣는다 — 이미 있는 폴더의 이름·순서·배정은 건드리지 않는다.
+ *
+ * 새 사진의 자리는 [AiFolderPlanner]가 정한다: 같은 그룹·같은 세부 이름의 옛 사진이 든 기존 폴더 → 기존 컨셉 폴더 아래 새 세부 폴더 →
+ * 새 컨셉 폴더. 새 폴더를 이룰 만큼 모이지 않은 사진은 미분류로 남는다.
+ */
 @Component
 class AiFolderMaterializer(
     private val galleryRepository: GalleryRepository,
@@ -35,85 +42,127 @@ class AiFolderMaterializer(
     private val conceptAssignmentLoader: ConceptAssignmentLoader,
     private val planner: AiFolderPlanner,
     private val viewAssembler: FolderViewAssembler,
+    private val properties: FolderProperties,
     private val clock: Clock,
     private val activityRecorder: ActivityRecorder,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    /** 같은 잡의 세트가 이미 있으면 그것을 돌려준다(멱등). */
+    /**
+     * 이번 호출이 사진을 넣은 폴더만 돌려준다 — 컨셉 폴더마다 사진이 들어간 세부 폴더와 그 사진들이다(이미 들어 있던 사진은 싣지 않는다).
+     * 그래서 호출자가 응답으로 "이번에 몇 장을 몇 폴더에 넣었나"를 셀 수 있다. 같은 잡의 세트가 이미 있으면 그것을 돌려준다(멱등).
+     */
     @Transactional
     fun materialize(galleryId: Long): List<ConceptFolderResponse> {
         val startedAt = clock.millis()
         galleryRepository.requireWithLockById(galleryId)
 
         // 1. 최신 컨셉 배정(= 가장 최근 분석 잡의 결과)을 읽는다. 컨셉 배정은 특정 job 에서 추출한 {컨셉 - 컨셉 디테일 - 임베딩 그룹(디테일 폴더 대상) Id} 의 묶음이다.
-        //    폴더 세트는 분석 잡 하나당 하나라,  이 잡으로 만든 세트가 이미 있으면 새로 만들지 않고 그대로 돌려준다.
-        //    사진을 더 올려도 새 분석 잡이 끝나기 전까지는 최신 잡이 그대로라 여기서 끝난다.
+        //    이 잡이 새 컨셉 폴더를 만든 적이 있으면 다시 만들지 않고 그 세트를 돌려준다.
         val latest = conceptAssignmentLoader.loadLatest(galleryId)
             ?: throw FolderException(FolderErrorCode.ANALYSIS_NOT_COMPLETE)
         val existingSet = conceptRepository.findAllByGalleryIdAndAnalysisJobIdOrderBySortOrderAscIdAsc(galleryId, latest.analysisJobId)
         if (existingSet.isNotEmpty()) return viewAssembler.toResponses(existingSet)
 
-        // 2. 새 분석 잡이면 세트가 아직 없다. 이전 잡의 세트에 이미 든 사진(과 사용자가 옮긴 사진)은 빼고,
-        //    남은 사진과 이번 잡의 배정으로 폴더 계획을 세운다.
-        val unassignedPhotos = loadUnassignedPhotos(galleryId)
-        val plans = planner.plan(
+        // 2. 분류가 끝난 사진 전부와 지금의 폴더 구조를 읽어 계획을 세운다. 계획은 아직 폴더에 없는 사진만 다룬다.
+        val photos = loadPhotoGroupings(galleryId)
+        val detailFolderIdByPhotoId = assignmentRepository.findAllPlacementsByGalleryId(galleryId)
+            .associate { it.photoId to it.detailFolderId }
+        if (photos.none { it.photoId !in detailFolderIdByPhotoId }) throw FolderException(FolderErrorCode.NO_PHOTOS_TO_ORGANIZE)
+        val concepts = conceptRepository.findAllByGalleryIdOrderBySortOrderAscIdAsc(galleryId)
+        val details = detailRepository.findAllByConceptFolderIdIn(concepts.map { it.requiredId })
+        val plan = planner.plan(
             assignments = latest.assignments,
-            photos = unassignedPhotos,
+            photos = photos,
+            detailFolderIdByPhotoId = detailFolderIdByPhotoId,
+            conceptFolderIdByDetailFolderId = details.associate { it.requiredId to it.conceptFolderId },
+            // 같은 이름이 여럿이면 화면 순서상 앞의 폴더로 — 뒤에서부터 넣어 앞의 것이 남게 한다.
+            conceptFolderIdByName = concepts.asReversed().associate { it.name to it.requiredId },
+            minNewDetailPhotos = properties.minNewDetailPhotos,
+            minOldShareForDetailMerge = properties.minOldShareForDetailMerge,
         )
+        // 넣을 곳이 정해진 사진이 없다 — 전부 미분류로 남는 소수다. 할 일이 없는 것이다.
+        if (plan.isEmpty) throw FolderException(FolderErrorCode.NO_PHOTOS_TO_ORGANIZE)
 
-        // 3. 계획대로 컨셉 폴더 → 세부 폴더 → 사진 배정 순으로 저장한다(뒤 행이 앞 행의 id를 FK로 쓴다).
-        //    새 컨셉 폴더는 기존 폴더 맨 뒤에 붙고, 이번 잡 id를 달아 다음 호출의 1번 멱등 검사에 걸리게 한다.
-        //    배정은 세부 폴더마다 JDBC 배치로 넣고, 응답은 방금 저장한 것으로 바로 만든다 — 수천 행을 다시 읽지 않는다
-        val firstSortOrder = conceptRepository.findNextSortOrderByGalleryId(galleryId)
+        // 3. 계획대로 저장한다. 배정은 세부 폴더마다 JDBC 배치로 넣고, 응답은 방금 넣은 것으로 바로 만든다 — 수천 행을 다시 읽지 않는다.
         val assignedAt = ZonedDateTime.now(clock)
-        val responses = plans.mapIndexed { conceptIndex, plan ->
-            // 컨셉 폴더 저장
+        val detailById = details.associateBy { it.requiredId }
+
+        // 3-1. 기존 세부 폴더에 합친다.
+        val mergedDetailsByConceptId = plan.merges.entries
+            .map { (detailFolderId, photoIds) ->
+                val detail = detailById.getValue(detailFolderId)
+                assignmentBulkRepository.insertAiAssignments(galleryId, detailFolderId, photoIds, assignedAt)
+                detail.conceptFolderId to DetailFolderResponse.of(detail, photoIds)
+            }
+            .groupBy({ (conceptFolderId, _) -> conceptFolderId }, { (_, response) -> response })
+
+        // 3-2. 기존 컨셉 폴더 아래에 새 세부 폴더를 만든다. 그 컨셉의 기존 세부 폴더 맨 뒤에 붙인다.
+        val newDetailsByConceptId = plan.newDetails.mapValues { (conceptFolderId, detailPlans) ->
+            val firstSortOrder = detailRepository.findNextSortOrderByConceptFolderId(conceptFolderId)
+            detailPlans.mapIndexed { index, detailPlan -> saveDetail(galleryId, conceptFolderId, firstSortOrder + index, detailPlan, assignedAt) }
+        }
+
+        // 3-3. 새 컨셉 폴더는 기존 폴더 맨 뒤에 붙고, 이번 잡 id를 달아 다음 호출의 1번 멱등 검사에 걸리게 한다.
+        val firstSortOrder = conceptRepository.findNextSortOrderByGalleryId(galleryId)
+        val newConceptResponses = plan.newConcepts.mapIndexed { conceptIndex, conceptPlan ->
             val concept = conceptRepository.save(
                 ConceptFolder(
                     galleryId = galleryId,
-                    name = plan.name,
+                    name = conceptPlan.name,
                     sortOrder = firstSortOrder + conceptIndex,
                     createdSource = FolderSource.AI,
                     analysisJobId = latest.analysisJobId,
                 ),
             )
-            // 컨셉 폴더 - 디테일 컨셉 폴더 저장
-            val details = plan.details.mapIndexed { detailIndex, detailPlan ->
-                val detail = detailRepository.save(
-                    DetailFolder(
-                        galleryId = galleryId,
-                        conceptFolderId = concept.requiredId,
-                        name = detailPlan.name,
-                        sortOrder = detailIndex,
-                        createdSource = FolderSource.AI,
-                        needsReview = detailPlan.needsReview,
-                    ),
-                )
-                // 디테일 폴더 - 사진 저장
-                assignmentBulkRepository.insertAiAssignments(galleryId, detail.requiredId, detailPlan.photoIds, assignedAt)
-                DetailFolderResponse.of(detail, detailPlan.photoIds)
+            val newDetails = conceptPlan.details.mapIndexed { detailIndex, detailPlan ->
+                saveDetail(galleryId, concept.requiredId, detailIndex, detailPlan, assignedAt)
             }
-            ConceptFolderResponse.of(concept, details)
+            ConceptFolderResponse.of(concept, newDetails)
         }
 
-        // 해당 작업 기록
+        // 4. 응답 — 손댄 기존 컨셉 폴더(화면 순서), 그 뒤에 새 컨셉 폴더.
+        val touchedExisting = concepts
+            .filter { it.requiredId in mergedDetailsByConceptId || it.requiredId in newDetailsByConceptId }
+            .map { concept ->
+                ConceptFolderResponse.of(
+                    concept,
+                    mergedDetailsByConceptId[concept.requiredId].orEmpty() + newDetailsByConceptId[concept.requiredId].orEmpty(),
+                )
+            }
+
         activityRecorder.recordGallery(galleryId)
         log.info(
-            "event=folder.materialized gallery={} job={} concepts={} details={} assigned={} elapsedMs={}",
-            galleryId, latest.analysisJobId, plans.size, plans.sumOf { it.details.size },
-            plans.sumOf { concept -> concept.details.sumOf { it.photoIds.size } }, clock.millis() - startedAt,
+            "event=folder.materialized gallery={} job={} merged={} mergedDetails={} newDetails={} newConcepts={} assigned={} leftUnclassified={} elapsedMs={}",
+            galleryId, latest.analysisJobId,
+            plan.merges.values.sumOf { it.size }, plan.merges.size,
+            plan.newDetails.values.sumOf { it.size } + plan.newConcepts.sumOf { it.details.size }, plan.newConcepts.size,
+            (touchedExisting + newConceptResponses).sumOf { concept -> concept.details.sumOf { it.photoIds.size } },
+            plan.leftUnclassified.size, clock.millis() - startedAt,
         )
-        return responses
+        return touchedExisting + newConceptResponses
     }
 
-    /** 이미 폴더에 든 사진(이전 세트·사용자가 옮긴 사진)은 건드리지 않도록, 아직 어느 세부 폴더에도 없는 사진만 돌려준다. */
-    private fun loadUnassignedPhotos(galleryId: Long): List<PhotoAnalysisGroupingDto> {
-        val assignedIds = assignmentRepository.findAllPhotoIdsByGalleryId(galleryId).toSet()
-        val unassignedPhotos = loadPhotoGroupings(galleryId).filter { it.photoId !in assignedIds }
-        if (unassignedPhotos.isEmpty()) throw FolderException(FolderErrorCode.NO_PHOTOS_TO_ORGANIZE)
-        return unassignedPhotos
+    private fun saveDetail(
+        galleryId: Long,
+        conceptFolderId: Long,
+        sortOrder: Int,
+        plan: DetailFolderPlanDto,
+        assignedAt: ZonedDateTime,
+    ): DetailFolderResponse {
+        val detail = detailRepository.save(
+            DetailFolder(
+                galleryId = galleryId,
+                conceptFolderId = conceptFolderId,
+                name = plan.name,
+                sortOrder = sortOrder,
+                createdSource = FolderSource.AI,
+                needsReview = plan.needsReview,
+            ),
+        )
+        assignmentBulkRepository.insertAiAssignments(galleryId, detail.requiredId, plan.photoIds, assignedAt)
+        return DetailFolderResponse.of(detail, plan.photoIds)
     }
 
     /**

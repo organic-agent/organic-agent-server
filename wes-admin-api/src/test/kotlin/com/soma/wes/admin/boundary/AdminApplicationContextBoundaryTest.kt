@@ -13,6 +13,7 @@ import com.soma.wes.auth.support.OAuthStateCleaner
 import com.soma.wes.auth.token.config.JwtProperties
 import com.soma.wes.folder.repository.ConceptFolderRepository
 import com.soma.wes.folder.service.FolderService
+import com.soma.wes.folder.config.FolderProperties
 import com.soma.wes.folder.support.AiFolderMaterializer
 import com.soma.wes.folder.support.AiFolderPlanner
 import com.soma.wes.folder.support.FolderViewAssembler
@@ -100,6 +101,7 @@ class AdminApplicationContextBoundaryTest @Autowired constructor(
             AdminObservabilityProperties::class.java,
             AdminWorkflowExecutorProperties::class.java,
             StorageProperties::class.java,
+            FolderProperties::class.java,
             TrashProperties::class.java,
             LambdaAiTaskProperties::class.java,
             MockGalleryProperties::class.java,
