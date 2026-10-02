@@ -38,6 +38,7 @@ class FolderStepTest @Autowired constructor(
     private val photoPipelineRepository: PhotoPipelineRepository,
     private val conceptAssignmentRepository: ConceptAssignmentRepository,
     private val jobCloser: AnalysisJobCloser,
+    private val eventRecorder: AnalysisJobEventRecorder,
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
     private val recommendationFixture: RecommendationFixture,
@@ -65,6 +66,7 @@ class FolderStepTest @Autowired constructor(
             aiTaskSender,
             failing,
             jobCloser,
+            eventRecorder,
             AnalysisProperties(materializeMaxAttempts = 3),
             clock,
         )

@@ -31,6 +31,7 @@ class ScoreStepTest @Autowired constructor(
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
     private val aiTaskSender: FakeAiTaskSender,
+    private val eventRecorder: AnalysisJobEventRecorder,
     private val pool: ManualScoreWorkerPool,
 ) {
 
@@ -50,6 +51,7 @@ class ScoreStepTest @Autowired constructor(
         pool,
         photoPipelineRepository,
         aiTaskSender,
+        eventRecorder,
         AnalysisProperties(
             gpu = AnalysisProperties.Gpu(
                 enabled = enabled,

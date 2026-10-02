@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component
  * 모델 출력을 작가에게 넘기기 전의 마지막 문.
  *
  * 프롬프트에 적은 규칙은 지켜지는 편이지 보장되지 않는다(05 자료의 τ-bench). 그래서 지키지 못하면 해로운 것만
- * 골라 서버가 다시 판정한다. 규칙별 실측(평가셋 94건 × 3회)은 `docs/plans/retouch-refine-v2.md` §3의 표에 있다.
+ * 골라 서버가 다시 판정한다. 규칙별 실측(평가셋 94건 × 3회)은 `docs/plans/2026-09-12/retouch-refine-v2.md` §3의 표에 있다.
  */
 @Component
 class RetouchRefinePostcheck {

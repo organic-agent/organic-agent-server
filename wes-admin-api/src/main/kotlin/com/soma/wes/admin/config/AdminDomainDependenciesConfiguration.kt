@@ -38,6 +38,7 @@ import com.soma.wes.photo.repository.PhotoSourceHashRepository
 import com.soma.wes.photo.service.PhotoService
 import com.soma.wes.photo.support.PhotoViewAssembler
 import com.soma.wes.notification.service.UserNotificationPublisher
+import com.soma.wes.analysis.support.AnalysisJobEventRecorder
 import com.soma.wes.analysis.support.ConceptAssignmentLoader
 import com.soma.wes.retouch.service.RetouchService
 import com.soma.wes.retouch.service.RetouchRequestService
@@ -115,6 +116,7 @@ import org.springframework.context.annotation.Import
     // [REFACTOR-A 2026-09-27] FolderService·AiFolderMaterializer가 주입받는 FolderViewAssembler를 admin 컨텍스트에도 등록
     FolderViewAssembler::class,
     ConceptAssignmentLoader::class,
+    AnalysisJobEventRecorder::class,
     DetailFolderAssignmentBulkRepository::class,
     // [REFACTOR-SUPPORT 2026-09-27] folder/service/AiFolderMaterializeService → folder/support/AiFolderMaterializer
     AiFolderMaterializer::class,

@@ -1,11 +1,12 @@
 package com.soma.wes.analysis.support
 
 import com.soma.wes.analysis.config.AnalysisProperties
-import com.soma.wes.analysis.dto.ScoreWorkerDto
+import com.soma.wes.analysis.domain.AnalysisJobEventType
 import com.soma.wes.analysis.dto.AiTaskDto
+import com.soma.wes.analysis.dto.ScoreWorkerDto
 import com.soma.wes.analysis.exception.AnalysisException
-import com.soma.wes.analysis.service.port.ScoreWorkerPool
 import com.soma.wes.analysis.service.port.AiTaskSender
+import com.soma.wes.analysis.service.port.ScoreWorkerPool
 import com.soma.wes.global.logging.LogContext
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import java.time.Clock
@@ -33,6 +34,7 @@ class ScoreStep(
     private val scoreWorkerPool: ScoreWorkerPool,
     private val photoPipelineRepository: PhotoPipelineRepository,
     private val aiTaskSender: AiTaskSender,
+    private val eventRecorder: AnalysisJobEventRecorder,
     private val properties: AnalysisProperties,
     private val clock: Clock,
 ) {
@@ -177,6 +179,10 @@ class ScoreStep(
         log.info(
             "event=score.fallback gallery={} photos={} batches={} attempt={} max={}",
             galleryId, photoIds.size, batches.size, attempt, properties.scoreFallbackMax,
+        )
+        eventRecorder.recordForActiveJob(
+            galleryId, AnalysisJobEventType.SCORE_FALLBACK,
+            mapOf("photos" to photoIds.size, "batches" to batches.size, "attempt" to attempt, "max" to properties.scoreFallbackMax),
         )
         return true
     }
