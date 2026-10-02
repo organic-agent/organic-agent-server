@@ -1,6 +1,7 @@
 package com.soma.wes.folder.repository
 
 import com.soma.wes.folder.domain.DetailFolderAssignment
+import com.soma.wes.folder.repository.projection.PhotoPlacement
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
@@ -14,6 +15,13 @@ interface DetailFolderAssignmentRepository : JpaRepository<DetailFolderAssignmen
     /** 갤러리에서 이미 폴더에 든 사진 id. 사진 id 수천 개를 IN으로 보내는 대신 gallery_id 한 번으로 읽는다. */
     @Query("SELECT a.photoId FROM DetailFolderAssignment a WHERE a.galleryId = :galleryId")
     fun findAllPhotoIdsByGalleryId(@Param("galleryId") galleryId: Long): List<Long>
+    /**
+     * 갤러리에서 이미 폴더에 든 사진과 그 세부 폴더. AI 폴더 계획이 "새 사진과 같은 그룹의 옛 사진이 어디에 있나"를 보는 재료다.
+     * 수천 행이라 엔티티가 아니라 두 컬럼만 읽는다.
+     */
+    @Query("SELECT a.photoId AS photoId, a.detailFolderId AS detailFolderId FROM DetailFolderAssignment a WHERE a.galleryId = :galleryId")
+    fun findAllPlacementsByGalleryId(@Param("galleryId") galleryId: Long): List<PhotoPlacement>
+
     fun deleteAllByDetailFolderId(detailFolderId: Long)
     fun deleteAllByDetailFolderIdIn(detailFolderIds: Collection<Long>)
 }

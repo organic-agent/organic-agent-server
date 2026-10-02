@@ -103,7 +103,7 @@ class AnalysisPipelineSchedulerTest @Autowired constructor(
         // then
         assertSoftly { softly ->
             softly.assertThat(materialized.formattedMessage)
-                .contains("gallery=${fixture.galleryId} job=$jobId concepts=1 details=1 assigned=3 elapsedMs=")
+                .contains("gallery=${fixture.galleryId} job=$jobId merged=0 mergedDetails=0 newDetails=1 newConcepts=1 assigned=3 leftUnclassified=0 elapsedMs=")
             softly.assertThat(closed.formattedMessage).contains("from=CATEGORIZING to=DONE folders=1 details=1 assigned=3")
             softly.assertThat(materialized.mdcPropertyMap[LogContext.JOB_ID]).isEqualTo(jobId.toString())
             softly.assertThat(closed.mdcPropertyMap[LogContext.JOB_ID]).isEqualTo(jobId.toString())

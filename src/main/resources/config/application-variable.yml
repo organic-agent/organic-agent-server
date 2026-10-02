@@ -90,6 +90,11 @@ app:
     pending-recheck-every: 10m
     pending-give-up-after: 24h
 
+  folder:
+    # 이미 폴더가 있는 갤러리에 새 세부 폴더를 만드는 최소 장수. 기존 폴더에 못 들어간 새 사진이 이보다 적으면 미분류로 둔다.
+    # 처음 분석에는 걸지 않는다.
+    min-new-detail-photos: 5
+
   analysis:
     # 분석 파이프라인 — 임베더 배정(스윕) · 잡(ANALYZING → CATEGORIZING → DONE) · Lambda 함수 이름.
     # prod는 Parameter Store(app.analysis.embedder-function-name, score-function-name, categorize-function-name)가 덮어쓴다.

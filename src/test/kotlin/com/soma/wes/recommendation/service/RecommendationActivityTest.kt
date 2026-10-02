@@ -76,15 +76,16 @@ class RecommendationActivityTest @Autowired constructor(
         aiFolders.materialize(fixture.galleryId)
         clearActivity(fixture)
 
-        val photoId = photos.임베딩된_사진(fixture.galleryId, 1).single()
-        recommendations.분석_결과(photoId, embedGroupId = 2, burstId = 2)
+        // 기존 폴더에 맞지 않는 새 사진은 최소 장수(5장)가 모여야 새 폴더가 된다
+        val photoIds = photos.임베딩된_사진(fixture.galleryId, 5)
+        photoIds.forEach { recommendations.분석_결과(it, embedGroupId = 2, burstId = 2) }
         val jobId = recommendations.분석_잡(fixture.galleryId)
         recommendations.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 2, conceptName = "야외 정원·건물", detailName = "정원")
 
         val folders = aiFolders.materialize(fixture.galleryId)
 
         assertRecorded(fixture)
-        assertThat(folders.flatMap { it.details }.flatMap { it.photoIds }).containsExactly(photoId)
+        assertThat(folders.flatMap { it.details }.flatMap { it.photoIds }).containsExactlyInAnyOrderElementsOf(photoIds)
     }
 
     @Test
