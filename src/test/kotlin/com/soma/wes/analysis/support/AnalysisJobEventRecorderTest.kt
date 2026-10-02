@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.transaction.support.TransactionTemplate
 
 /**
  * 분석 잡의 이력 — 잡이 단계를 넘을 때마다 `analysis_job_events` 에 한 줄씩 남는다. 로그(`job.*`)와 같은 지점이고,
@@ -34,7 +35,13 @@ class AnalysisJobEventRecorderTest @Autowired constructor(
     private val recommendationFixture: RecommendationFixture,
     private val aiTaskSender: FakeAiTaskSender,
     private val jdbcTemplate: JdbcTemplate,
+    private val transactionTemplate: TransactionTemplate,
 ) {
+
+    companion object {
+        /** 없는 잡 번호 — 이 번호로 이력을 남기면 FK 위반으로 실패한다. */
+        private const val MISSING_JOB_ID = -1L
+    }
 
     private lateinit var fixture: OpenGallery
 
@@ -168,6 +175,79 @@ class AnalysisJobEventRecorderTest @Autowired constructor(
             // then
             assertThat(eventRepository.findAll().filter { it.galleryId == fixture.galleryId }).isEmpty()
         }
+    }
+
+    /**
+     * 이력은 호출자의 트랜잭션에 실리지 않는다 — 기록이 실패해도 잡 생성·닫기·물질화가 되돌아가지 않고,
+     * 호출자가 되돌아가면 이력도 남지 않는다.
+     */
+    @Nested
+    @DisplayName("호출자가 트랜잭션 안일 때")
+    inner class InsideTransaction {
+
+        @Test
+        fun `기록이 실패해도 호출자의 트랜잭션은 커밋된다`() {
+            // given
+            val (jobId, _) = scoredJob()
+
+            // when — 같은 트랜잭션에서 잡을 고치고, 없는 잡 번호로 이력을 남긴다(FK 위반)
+            transactionTemplate.executeWithoutResult {
+                jdbcTemplate.update("UPDATE analysis_jobs SET attempts = 7 WHERE id = ?", jobId)
+                eventRecorder.record(MISSING_JOB_ID, fixture.galleryId, AnalysisJobEventType.DONE)
+            }
+
+            // then — 예외가 올라오지 않고 잡의 변경은 남는다
+            val attempts = jdbcTemplate.queryForObject("SELECT attempts FROM analysis_jobs WHERE id = ?", Int::class.java, jobId)
+            assertSoftly { softly ->
+                softly.assertThat(attempts).isEqualTo(7)
+                softly.assertThat(eventRepository.findAllByJobIdOrderByIdAsc(MISSING_JOB_ID)).isEmpty()
+            }
+        }
+
+        @Test
+        fun `호출자가 되돌아가면 이력도 남지 않는다`() {
+            // given
+            val (jobId, _) = scoredJob()
+
+            // when
+            transactionTemplate.executeWithoutResult { status ->
+                eventRecorder.record(jobId, fixture.galleryId, AnalysisJobEventType.DONE)
+                status.setRollbackOnly()
+            }
+
+            // then
+            assertThat(typesOf(jobId)).containsExactly(AnalysisJobEventType.CREATED)
+        }
+
+        @Test
+        fun `커밋되면 부른 순서대로 남는다`() {
+            // given
+            val (jobId, _) = scoredJob()
+
+            // when
+            transactionTemplate.executeWithoutResult {
+                eventRecorder.record(jobId, fixture.galleryId, AnalysisJobEventType.FOLDER_MATERIALIZED)
+                eventRecorder.record(jobId, fixture.galleryId, AnalysisJobEventType.DONE)
+                // 커밋 전에는 아직 쓰이지 않았다
+                assertThat(typesOf(jobId)).containsExactly(AnalysisJobEventType.CREATED)
+            }
+
+            // then
+            assertThat(typesOf(jobId)).containsExactly(
+                AnalysisJobEventType.CREATED,
+                AnalysisJobEventType.FOLDER_MATERIALIZED,
+                AnalysisJobEventType.DONE,
+            )
+        }
+    }
+
+    @Test
+    fun `트랜잭션 밖에서 기록이 실패해도 예외가 올라오지 않는다`() {
+        // when
+        eventRecorder.record(MISSING_JOB_ID, fixture.galleryId, AnalysisJobEventType.DONE)
+
+        // then
+        assertThat(eventRepository.findAllByJobIdOrderByIdAsc(MISSING_JOB_ID)).isEmpty()
     }
 
     @Test
