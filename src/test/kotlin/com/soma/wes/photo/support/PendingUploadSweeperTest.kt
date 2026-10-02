@@ -2,9 +2,11 @@ package com.soma.wes.photo.support
 
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
+import com.soma.wes.global.logging.LogContext
 import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.repository.PhotoRepository
+import com.soma.wes.support.CapturedLogs
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.trash.RecordingTrashPhotoStorage
 import com.soma.wes.trash.RecordingTrashPhotoStorageConfig
@@ -146,6 +148,53 @@ class PendingUploadSweeperTest @Autowired constructor(
             // then
             val photo = photoRepository.findById(photoIds.single()).orElseThrow()
             assertThat(photo.status).isEqualTo(PhotoStatus.UPLOADED)
+        }
+    }
+
+    @Nested
+    @DisplayName("로그를 남길 때")
+    inner class Logging {
+
+        @Test
+        fun `올린 사진과 버린 사진의 번호를 스윕 traceId 와 함께 한 줄로 남긴다`() {
+            // given — 통보 없이 올라온 1장, 24시간이 지나도 오지 않은 1장
+            val arrived = photoFixture.대기중_사진(fixture.galleryId, count = 1).single()
+            val lost = photoFixture.대기중_사진(fixture.galleryId, count = 1).single()
+            age(listOf(arrived), Duration.ofMinutes(2))
+            age(listOf(lost), Duration.ofHours(25), lastCheckedAgo = Duration.ofMinutes(20))
+            val lostKey = photoRepository.findById(lost).orElseThrow().storageKey
+            photoStorage.existsAnswer = { key -> key != lostKey }
+
+            // when
+            val sweep = CapturedLogs(PendingUploadSweeper::class).use { logs ->
+                sweeper.sweep()
+                logs.eventsOf("upload.sweep").single()
+            }
+
+            // then — "유실 의심" 알림이 trashed 를 보고, 어느 사진인지는 이 줄에서 찾는다
+            assertSoftly { softly ->
+                softly.assertThat(sweep.formattedMessage).isEqualTo(
+                    "event=upload.sweep checked=2 uploaded=1 trashed=1 waiting=0 uploadedPhotoIds=$arrived trashedPhotoIds=$lost",
+                )
+                softly.assertThat(sweep.mdcPropertyMap[LogContext.TRACE_ID]).startsWith(LogContext.SWEEP_TRACE_PREFIX)
+            }
+        }
+
+        @Test
+        fun `변화가 없으면 남기지 않는다`() {
+            // given — 아직 오지 않았지만 기다릴 사진
+            val photoIds = photoFixture.대기중_사진(fixture.galleryId, count = 1)
+            age(photoIds, Duration.ofMinutes(2))
+            photoStorage.existsAnswer = { false }
+
+            // when
+            val sweeps = CapturedLogs(PendingUploadSweeper::class).use { logs ->
+                sweeper.sweep()
+                logs.eventsOf("upload.sweep")
+            }
+
+            // then
+            assertThat(sweeps).isEmpty()
         }
     }
 

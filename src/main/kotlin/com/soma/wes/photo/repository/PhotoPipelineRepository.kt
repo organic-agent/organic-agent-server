@@ -19,6 +19,7 @@ import org.springframework.stereotype.Repository
  * 네 묶음이 있다 — 진행 카운트([progressOf]), PENDING 보정([findPendingToCheck]·[markUploaded]·[touchPending]·[moveToTrash]),
  * 임베더 배정과 리셋([claimForEmbedding]·[releaseStaleDispatches]·[markEmbedAttemptsExceeded]·[resetAnalysis]),
  * GPU 제어·score 폴백([countScoreBacklog]·[countScored]·[findGalleryIdsWithUnscoredPhotos]·[findUnscoredPhotoIds]).
+ * 하트비트는 이 중 대기량([countPending]·[countInFlightEmbedBatches]·[countScoreBacklog])을 1분마다 읽는다.
  */
 @Repository
 class PhotoPipelineRepository(
@@ -229,24 +230,42 @@ class PhotoPipelineRepository(
     /**
      * 시도 상한에 닿고도 벡터가 없는 사진을 결정적 실패로 표시한다 — `photo_analysis.error`를 UPSERT. 이후 배정·기대 장수·
      * 집기 전부에서 빠지고, 사진 상세·요약에 실패로 드러난다. 되돌리는 길은 재분석 리셋([resetAnalysis])뿐이다.
+     *
+     * 표시한 사진 id를 갤러리별로 돌려준다 — "어느 갤러리의 어느 사진을 포기했나"를 로그에 남기기 위해서다. 없으면 빈 맵이다.
      */
-    fun markEmbedAttemptsExceeded(maxAttempts: Int, now: ZonedDateTime): Int = jdbcClient.sql(
+    fun markEmbedAttemptsExceeded(maxAttempts: Int, now: ZonedDateTime): Map<Long, List<Long>> = jdbcClient.sql(
         """
-        INSERT INTO photo_analysis (photo_id, error, created_at, updated_at)
-        SELECT p.id, :error, :now, :now
-        FROM photos p
-        LEFT JOIN photo_analysis a ON a.photo_id = p.id
-        WHERE p.status = 'UPLOADED' AND p.deleted_at IS NULL
-          AND p.dispatched_at IS NULL AND p.embed_attempts >= :maxAttempts
-          AND a.embedding IS NULL AND a.error IS NULL
-        ON CONFLICT (photo_id) DO UPDATE
-        SET error = EXCLUDED.error, version = photo_analysis.version + 1, updated_at = EXCLUDED.updated_at
+        WITH marked AS (
+            INSERT INTO photo_analysis (photo_id, error, created_at, updated_at)
+            SELECT p.id, :error, :now, :now
+            FROM photos p
+            LEFT JOIN photo_analysis a ON a.photo_id = p.id
+            WHERE p.status = 'UPLOADED' AND p.deleted_at IS NULL
+              AND p.dispatched_at IS NULL AND p.embed_attempts >= :maxAttempts
+              AND a.embedding IS NULL AND a.error IS NULL
+            ON CONFLICT (photo_id) DO UPDATE
+            SET error = EXCLUDED.error, version = photo_analysis.version + 1, updated_at = EXCLUDED.updated_at
+            RETURNING photo_id
+        )
+        SELECT p.gallery_id, p.id
+        FROM marked m
+        JOIN photos p ON p.id = m.photo_id
+        ORDER BY p.gallery_id, p.id
         """.trimIndent(),
     )
         .param("error", EMBED_ATTEMPTS_EXCEEDED)
         .param("maxAttempts", maxAttempts)
         .param("now", Timestamp.from(now.toInstant()))
-        .update()
+        .query { rs, _ -> rs.getLong(1) to rs.getLong(2) }
+        .list()
+        .groupBy({ (galleryId, _) -> galleryId }, { (_, photoId) -> photoId })
+
+    /** 완료 통보도 서버 확인도 아직 없는 PENDING 사진 전체 수. 하트비트가 "올라오다 만 사진이 쌓이고 있나"를 보는 값이다. */
+    fun countPending(): Long = jdbcClient.sql(
+        "SELECT count(*) FROM photos p WHERE p.status = 'PENDING' AND p.deleted_at IS NULL",
+    )
+        .query { rs, _ -> rs.getLong(1) }
+        .single()
 
     /** 지금 떠 있는 임베더 배치 수. 한 배치의 사진은 같은 `dispatched_at`을 받으므로 서로 다른 시각의 수가 곧 배치 수다. */
     fun countInFlightEmbedBatches(): Int = jdbcClient.sql(

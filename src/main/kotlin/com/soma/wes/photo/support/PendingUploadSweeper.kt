@@ -1,5 +1,6 @@
 package com.soma.wes.photo.support
 
+import com.soma.wes.global.logging.LogContext
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.dto.PendingPhotoDto
 import com.soma.wes.photo.exception.PhotoException
@@ -31,6 +32,10 @@ class PendingUploadSweeper(
 
     @Scheduled(fixedDelayString = "\${app.storage.pending-sweep-interval:PT5S}")
     fun sweep() {
+        LogContext.sweep { sweepOnce() }
+    }
+
+    private fun sweepOnce() {
         val now = ZonedDateTime.now(clock)
         val candidates = photoPipelineRepository.findPendingToCheck(
             now = now,
@@ -49,10 +54,17 @@ class PendingUploadSweeper(
         val trashed = photoPipelineRepository.moveToTrash(expired.map { it.photoId }, now)
         photoPipelineRepository.touchPending(waiting.map { it.photoId }, now)
 
+        // 변화가 있을 때만 남긴다. 사진 id 는 "어느 사진이 통보 없이 올라왔고 어느 사진을 버렸나"를 로그만으로 찾기 위한 것이다.
         if (uploaded > 0 || trashed > 0) {
-            log.info("pending sweep checked={} uploaded={} trashed={} waiting={}", checked.size, uploaded, trashed, waiting.size)
+            log.info(
+                "event=upload.sweep checked={} uploaded={} trashed={} waiting={} uploadedPhotoIds={} trashedPhotoIds={}",
+                checked.size, uploaded, trashed, waiting.size,
+                loggedIds(present), loggedIds(expired),
+            )
         }
     }
+
+    private fun loggedIds(photos: List<PendingPhotoDto>): String = photos.take(MAX_LOGGED_PHOTO_IDS).joinToString(",") { it.photoId.toString() }
 
     /** 저장소 조회 자체가 실패한 사진(null)은 이번 걸음에서 빼고 다음 걸음에 다시 본다 — 판단하지 않은 행을 옮기지 않는다. */
     private fun existsInStorage(photo: PendingPhotoDto): Boolean? = try {
@@ -65,5 +77,8 @@ class PendingUploadSweeper(
     companion object {
         /** 한 걸음에서 확인하는 최대 장수. 500장 발급이 한 번에 만료돼도 스윕 두 걸음 안에 지난다. */
         private const val BATCH_SIZE = 300
+
+        /** 로그 한 줄에 싣는 사진 id 상한. 전체 수는 `uploaded=`·`trashed=`로 따로 찍는다. */
+        private const val MAX_LOGGED_PHOTO_IDS = 20
     }
 }

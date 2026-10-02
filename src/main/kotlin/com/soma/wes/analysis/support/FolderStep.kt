@@ -13,6 +13,7 @@ import com.soma.wes.folder.exception.FolderErrorCode
 import com.soma.wes.folder.exception.FolderException
 import com.soma.wes.folder.support.AiFolderMaterializer
 import com.soma.wes.global.exception.BusinessException
+import com.soma.wes.global.logging.LogContext
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import java.time.Clock
 import java.time.ZonedDateTime
@@ -48,7 +49,7 @@ class FolderStep(
     fun advance() {
         for (job in analysisJobRepository.findAllByStatusOrderByIdAsc(AnalysisStatus.CATEGORIZING)) {
             try {
-                advance(job)
+                LogContext.gallery(job.galleryId, job.requiredId) { advance(job) }
             } catch (e: RuntimeException) {
                 log.error("분석 잡 {} folder 단계 실패 — 다음 회차에 다시 본다", job.requiredId, e)
             }
@@ -61,7 +62,10 @@ class FolderStep(
         val error = job.error
         if (error != null) {
             analysisJobRepository.fail(job.requiredId, AnalysisJob.trimError(error), now)
-            log.warn("analysis job={} gallery={} CATEGORIZING->FAILED error={}", job.requiredId, job.galleryId, error)
+            log.warn(
+                "event=job.transition job={} gallery={} from=CATEGORIZING to=FAILED attempts={} error=\"{}\"",
+                job.requiredId, job.galleryId, job.attempts, error,
+            )
             return
         }
 
@@ -78,7 +82,10 @@ class FolderStep(
                 AnalysisJob.trimError("categorize 를 ${properties.categorizeMaxAttempts}회 시도했지만 끝나지 않았습니다"),
                 now,
             )
-            log.warn("analysis job={} gallery={} CATEGORIZING->FAILED attempts={}", job.requiredId, job.galleryId, job.attempts)
+            log.warn(
+                "event=job.transition job={} gallery={} from=CATEGORIZING to=FAILED attempts={} error=\"categorize timeout\"",
+                job.requiredId, job.galleryId, job.attempts,
+            )
             return
         }
         redispatch(job, now)

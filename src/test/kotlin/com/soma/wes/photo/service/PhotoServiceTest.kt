@@ -29,6 +29,7 @@ import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.studio.fixture.StudioFixture
+import com.soma.wes.support.CapturedLogs
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.user.fixture.UserFixture
 import org.assertj.core.api.Assertions.assertThat
@@ -360,6 +361,64 @@ class PhotoServiceTest @Autowired constructor(
                 .isInstanceOf(PhotoException::class.java)
                 .extracting("errorCode")
                 .isEqualTo(PhotoErrorCode.PHOTO_NOT_FOUND)
+        }
+    }
+
+    @Nested
+    @DisplayName("업로드 로그를 남길 때")
+    inner class UploadLogging {
+
+        @Test
+        fun `발급과 재발급과 완료 통보가 한 줄씩 남는다`() {
+            // when
+            val events = CapturedLogs(PhotoService::class).use { logs ->
+                val photoIds = issueUploadUrls(count = 2)
+                photoService.reissueUploadUrls(
+                    fixture.galleryId,
+                    fixture.photographer.id!!,
+                    ReissueUploadUrlsRequest(
+                        photos = listOf(ReissueUploadUrlsRequest.PhotoRequest(photoId = photoIds.first(), contentLength = 1024, crc32c = "wdRDgw==")),
+                    ),
+                )
+                photoService.completeUpload(fixture.galleryId, fixture.photographer.id!!, CompleteUploadRequest(photoIds))
+                listOf("upload.issue", "upload.reissue", "upload.complete")
+                    .map { event -> logs.eventsOf(event).single().formattedMessage }
+            }
+
+            // then
+            val who = "gallery=${fixture.galleryId} user=${fixture.photographer.id}"
+            assertThat(events).containsExactly(
+                "event=upload.issue $who photos=2 bytes=2048",
+                "event=upload.reissue $who photos=1",
+                "event=upload.complete $who photos=2",
+            )
+        }
+
+        @Test
+        fun `검증에서 거절된 발급은 코드와 장수를 남기고 발급 줄은 남기지 않는다`() {
+            // when
+            val (rejected, issued) = CapturedLogs(PhotoService::class).use { logs ->
+                assertThatThrownBy {
+                    photoService.issueUploadUrls(
+                        fixture.galleryId,
+                        fixture.photographer.id!!,
+                        IssueUploadUrlsRequest(
+                            files = listOf(
+                                IssueUploadUrlsRequest.FileRequest(fileName = "a.gif", contentType = "image/gif", contentLength = 1024, crc32c = "wdRDgw=="),
+                            ),
+                        ),
+                    )
+                }.isInstanceOf(PhotoException::class.java)
+                logs.eventsOf("upload.rejected") to logs.eventsOf("upload.issue")
+            }
+
+            // then — "사진이 안 올라간다"는 문의에서 이유를 찾는 줄이다
+            assertSoftly { softly ->
+                softly.assertThat(rejected.single().formattedMessage).isEqualTo(
+                    "event=upload.rejected gallery=${fixture.galleryId} code=${PhotoErrorCode.UNSUPPORTED_CONTENT_TYPE.code} photos=1",
+                )
+                softly.assertThat(issued).isEmpty()
+            }
         }
     }
 

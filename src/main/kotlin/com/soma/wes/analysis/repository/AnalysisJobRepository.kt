@@ -22,6 +22,9 @@ interface AnalysisJobRepository : JpaRepository<AnalysisJob, Long> {
 
     fun existsByGalleryIdAndStatusIn(galleryId: Long, statuses: Collection<AnalysisStatus>): Boolean
 
+    /** 지금 돌고 있는 잡 수. 하트비트가 찍는 값이다. */
+    fun countByStatusIn(statuses: Collection<AnalysisStatus>): Long
+
     /** 파이프라인 단계의 입력 — 한 상태의 잡 전부. 오래된 것부터 본다. */
     fun findAllByStatusOrderByIdAsc(status: AnalysisStatus): List<AnalysisJob>
 

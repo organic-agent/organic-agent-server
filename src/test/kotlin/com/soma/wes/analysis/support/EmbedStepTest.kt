@@ -2,10 +2,12 @@ package com.soma.wes.analysis.support
 
 import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.gallery.fixture.GalleryFixture
+import com.soma.wes.global.logging.LogContext
 import com.soma.wes.photo.domain.PhotoAnalysis
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoPipelineRepository
+import com.soma.wes.support.CapturedLogs
 import com.soma.wes.support.FakeAiTaskSender
 import com.soma.wes.support.IntegrationTest
 import java.time.Clock
@@ -180,6 +182,33 @@ class EmbedStepTest @Autowired constructor(
                 softly.assertThat(photoAnalysisRepository.findById(photo).orElseThrow().error).isEqualTo(PhotoPipelineRepository.EMBED_ATTEMPTS_EXCEEDED)
                 softly.assertThat(progress.failed).isEqualTo(1)
                 softly.assertThat(progress.expected).isZero()
+            }
+        }
+
+        @Test
+        fun `포기한 사진은 갤러리별로 사진 번호와 함께 로그에 남는다`() {
+            // given — 두 갤러리에서 한 장씩, 시도 상한 1
+            val photo = photoFixture.업로드된_사진(galleryId, count = 1).single()
+            val other = galleryFixture.멤버와_열린_갤러리().galleryId
+            val otherPhoto = photoFixture.업로드된_사진(other, count = 1).single()
+            val step = step(maxAttempts = 1)
+            step.advance()
+            dispatchedLongAgo(listOf(photo, otherPhoto))
+
+            // when
+            val exceeded = CapturedLogs(EmbedStep::class).use { logs ->
+                step.advance()
+                logs.eventsOf("embed.exceeded")
+            }
+
+            // then — 운영 알림과 런북이 이 줄로 "어느 갤러리의 어느 사진이 분석에서 빠졌나"를 찾는다
+            assertSoftly { softly ->
+                softly.assertThat(exceeded.map { it.formattedMessage }).containsExactlyInAnyOrder(
+                    "event=embed.exceeded gallery=$galleryId photos=1 photoIds=$photo",
+                    "event=embed.exceeded gallery=$other photos=1 photoIds=$otherPhoto",
+                )
+                softly.assertThat(exceeded.map { it.mdcPropertyMap[LogContext.GALLERY_ID] })
+                    .containsExactlyInAnyOrder(galleryId.toString(), other.toString())
             }
         }
 
