@@ -3,6 +3,7 @@ package com.soma.wes.analysis.support
 import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.domain.AnalysisFailureCode
 import com.soma.wes.analysis.domain.AnalysisJob
+import com.soma.wes.analysis.domain.AnalysisJobEventType
 import com.soma.wes.analysis.domain.AnalysisStatus
 import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.dto.MaterializeOutcomeDto
@@ -42,6 +43,7 @@ class FolderStep(
     private val aiTaskSender: AiTaskSender,
     private val aiFolderMaterializer: AiFolderMaterializer,
     private val jobCloser: AnalysisJobCloser,
+    private val eventRecorder: AnalysisJobEventRecorder,
     private val properties: AnalysisProperties,
     private val clock: Clock,
 ) {
@@ -93,6 +95,10 @@ class FolderStep(
             "event=job.transition job={} gallery={} from=CATEGORIZING to=FAILED errorCode={} attempts={} error=\"{}\"",
             job.requiredId, job.galleryId, code, job.attempts, error,
         )
+        eventRecorder.record(
+            job.requiredId, job.galleryId, AnalysisJobEventType.FAILED,
+            mapOf("from" to AnalysisStatus.CATEGORIZING.name, "errorCode" to code.name, "attempts" to job.attempts, "error" to error),
+        )
     }
 
     /**
@@ -126,6 +132,10 @@ class FolderStep(
         analysisJobRepository.countMaterializeFailure(job.requiredId, now)
         val attempts = job.materializeAttempts + 1
         log.error("분석 잡 {} 폴더 만들기 실패 {}회 — 상한 {}회", job.requiredId, attempts, properties.materializeMaxAttempts, e)
+        eventRecorder.record(
+            job.requiredId, job.galleryId, AnalysisJobEventType.MATERIALIZE_FAILED,
+            mapOf("attempts" to attempts, "exception" to e::class.simpleName),
+        )
         if (attempts >= properties.materializeMaxAttempts) {
             MaterializeOutcomeDto.Failed("폴더 만들기가 ${attempts}회 실패했습니다: ${e::class.simpleName}")
         } else {
@@ -143,10 +153,12 @@ class FolderStep(
         if (claimed == 0) return
 
         log.warn("analysis job={} gallery={} categorize redispatch attempts={}", job.requiredId, job.galleryId, job.attempts + 1)
+        eventRecorder.record(job.requiredId, job.galleryId, AnalysisJobEventType.CATEGORIZE_RESENT, mapOf("attempts" to job.attempts + 1))
         try {
             aiTaskSender.send(AiTaskDto.Categorize(galleryId = job.galleryId, jobId = job.requiredId, conceptCount = job.conceptCount))
         } catch (e: AnalysisException) {
             log.warn("categorize 재전송 실패 — 다음 회차에 다시 보낸다: job={} code={}", job.requiredId, e.errorCode.code)
+            eventRecorder.record(job.requiredId, job.galleryId, AnalysisJobEventType.CATEGORIZE_SEND_FAILED, mapOf("code" to e.errorCode.code))
             analysisJobRepository.clearDispatchedAt(job.requiredId, now)
         }
     }

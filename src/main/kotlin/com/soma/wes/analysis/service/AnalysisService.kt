@@ -2,6 +2,7 @@ package com.soma.wes.analysis.service
 
 import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.domain.AnalysisJob
+import com.soma.wes.analysis.domain.AnalysisJobEventType
 import com.soma.wes.analysis.domain.AnalysisStatus
 import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.dto.response.AnalysisJobResponse
@@ -9,6 +10,7 @@ import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
 import com.soma.wes.analysis.repository.AnalysisJobRepository
 import com.soma.wes.analysis.service.port.AiTaskSender
+import com.soma.wes.analysis.support.AnalysisJobEventRecorder
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.photo.repository.projection.GalleryAnalysisProgress
@@ -29,6 +31,7 @@ class AnalysisService(
     private val photoPipelineRepository: PhotoPipelineRepository,
     private val analysisJobRepository: AnalysisJobRepository,
     private val aiTaskSender: AiTaskSender,
+    private val eventRecorder: AnalysisJobEventRecorder,
     private val properties: AnalysisProperties,
     private val clock: Clock,
 ) {
@@ -61,6 +64,10 @@ class AnalysisService(
         log.info(
             "event=job.created job={} gallery={} expected={} conceptCount={}",
             job.requiredId, galleryId, progress.expected, conceptCount,
+        )
+        eventRecorder.record(
+            job.requiredId, galleryId, AnalysisJobEventType.CREATED,
+            mapOf("expected" to progress.expected, "conceptCount" to conceptCount),
         )
 
         return AnalysisJobResponse.from(job, progress)

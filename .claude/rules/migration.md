@@ -58,6 +58,8 @@ paths:
   멱등의 표식은 V30의 `detail_folder_assignments.analysis_job_id`(이 사진을 처음 넣은 잡)다 — 기존 폴더에 합치기만 한 잡은 컨셉 폴더를
   만들지 않으므로 `concept_folders.analysis_job_id`로는 알아볼 수 없다. 사용자가 옮겨도 값은 남는다.
   관리자 리소스 `CATEGORIZATION_JOB`도 함께 지웠고 `AdminAuditTargetType`의 값만 옛 감사 로그 읽기용으로 남는다(V2의 ALBUM과 같은 방식).
+- 잡의 지나간 일(전송·재전송·폴백·떼어내기·물질화·닫힘)은 V31의 `analysis_job_events`에 한 줄씩 남는다 — 로그의 `job.*` 줄과 같은 지점에서
+  `AnalysisJobEventRecorder`가 쓴다. 판단에 쓰지 않는 운영 기록이고 기록 실패는 파이프라인을 멈추지 않는다. `type`에는 CHECK가 없다.
 - `photo_analysis`는 세 주체가 나눠 쓴다 — 임베더가 `embedding·embedding_model`, score 단계가
   `subjects·sub_scores·clip_embedding·pipeline_version`, categorize 단계가 `technical_pct·aesthetic_pct·burst_*·
   embed_group_id`. 두 단계 사이에 `pipeline_version`만 있고 백분위가 없는 창이 있으므로 "분석 완료"는

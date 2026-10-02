@@ -3,6 +3,7 @@ package com.soma.wes.analysis.support
 import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.domain.AnalysisFailureCode
 import com.soma.wes.analysis.domain.AnalysisJob
+import com.soma.wes.analysis.domain.AnalysisJobEventType
 import com.soma.wes.analysis.domain.AnalysisStatus
 import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.exception.AnalysisException
@@ -30,6 +31,7 @@ class CategorizeStep(
     private val analysisJobRepository: AnalysisJobRepository,
     private val photoPipelineRepository: PhotoPipelineRepository,
     private val aiTaskSender: AiTaskSender,
+    private val eventRecorder: AnalysisJobEventRecorder,
     private val properties: AnalysisProperties,
     private val clock: Clock,
 ) {
@@ -63,6 +65,10 @@ class CategorizeStep(
         log.info(
             "event=job.transition job={} gallery={} from=ANALYZING to=CATEGORIZING expected={} embedded={} scored={} failed={}",
             job.requiredId, job.galleryId, progress.expected, progress.embedded, progress.scored, progress.failed,
+        )
+        eventRecorder.record(
+            job.requiredId, job.galleryId, AnalysisJobEventType.CATEGORIZE_SENT,
+            mapOf("expected" to progress.expected, "embedded" to progress.embedded, "scored" to progress.scored, "failed" to progress.failed),
         )
         send(job, now)
     }
@@ -102,6 +108,10 @@ class CategorizeStep(
             job.requiredId, job.galleryId, stalledPhotoIds.size, progress.expected,
             stalledPhotoIds.take(MAX_LOGGED_PHOTO_IDS).joinToString(","),
         )
+        eventRecorder.record(
+            job.requiredId, job.galleryId, AnalysisJobEventType.PHOTOS_DETACHED,
+            mapOf("stalledPhotos" to stalledPhotoIds.size, "expected" to progress.expected, "photoIds" to stalledPhotoIds.take(MAX_LOGGED_PHOTO_IDS)),
+        )
     }
 
     private fun fail(job: AnalysisJob, code: AnalysisFailureCode, error: String, now: ZonedDateTime) {
@@ -110,6 +120,10 @@ class CategorizeStep(
             "event=job.transition job={} gallery={} from=ANALYZING to=FAILED errorCode={} error=\"{}\"",
             job.requiredId, job.galleryId, code, error,
         )
+        eventRecorder.record(
+            job.requiredId, job.galleryId, AnalysisJobEventType.FAILED,
+            mapOf("from" to AnalysisStatus.ANALYZING.name, "errorCode" to code.name, "error" to error),
+        )
     }
 
     private fun send(job: AnalysisJob, now: ZonedDateTime) {
@@ -117,6 +131,7 @@ class CategorizeStep(
             aiTaskSender.send(AiTaskDto.Categorize(galleryId = job.galleryId, jobId = job.requiredId, conceptCount = job.conceptCount))
         } catch (e: AnalysisException) {
             log.warn("categorize 전송 실패 — 곧바로 다시 보낸다: job={} code={}", job.requiredId, e.errorCode.code)
+            eventRecorder.record(job.requiredId, job.galleryId, AnalysisJobEventType.CATEGORIZE_SEND_FAILED, mapOf("code" to e.errorCode.code))
             analysisJobRepository.clearDispatchedAt(job.requiredId, now)
         }
     }

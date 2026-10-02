@@ -2,6 +2,8 @@ package com.soma.wes.analysis.support
 
 import com.soma.wes.analysis.domain.AnalysisFailureCode
 import com.soma.wes.analysis.domain.AnalysisJob
+import com.soma.wes.analysis.domain.AnalysisJobEventType
+import com.soma.wes.analysis.domain.AnalysisStatus
 import com.soma.wes.analysis.dto.MaterializeOutcomeDto
 import com.soma.wes.analysis.repository.AnalysisJobRepository
 import com.soma.wes.gallery.repository.GalleryMemberRepository
@@ -31,6 +33,7 @@ class AnalysisJobCloser(
     private val workspaceMembers: WorkspaceMemberRepository,
     private val galleryMembers: GalleryMemberRepository,
     private val publisher: UserNotificationPublisher,
+    private val eventRecorder: AnalysisJobEventRecorder,
     private val clock: Clock,
 ) {
 
@@ -57,16 +60,44 @@ class AnalysisJobCloser(
                     job.requiredId, job.galleryId, outcome.folders, outcome.details, outcome.assigned,
                     secondsSince(job.dispatchedAt, now), secondsSince(job.createdAt, now),
                 )
+                recordDone(job, now, folders = outcome.folders, details = outcome.details, assigned = outcome.assigned)
             }
-            MaterializeOutcomeDto.NothingNew -> log.info(
-                "event=job.transition job={} gallery={} from=CATEGORIZING to=DONE folders=0 details=0 assigned=0 elapsed={}s total={}s",
-                job.requiredId, job.galleryId, secondsSince(job.dispatchedAt, now), secondsSince(job.createdAt, now),
-            )
-            is MaterializeOutcomeDto.Failed -> log.warn(
-                "event=job.transition job={} gallery={} from=CATEGORIZING to=FAILED errorCode={} attempts={} error=\"{}\"",
-                job.requiredId, job.galleryId, AnalysisFailureCode.FOLDER_FAILED, job.attempts, outcome.error,
-            )
+            MaterializeOutcomeDto.NothingNew -> {
+                log.info(
+                    "event=job.transition job={} gallery={} from=CATEGORIZING to=DONE folders=0 details=0 assigned=0 elapsed={}s total={}s",
+                    job.requiredId, job.galleryId, secondsSince(job.dispatchedAt, now), secondsSince(job.createdAt, now),
+                )
+                recordDone(job, now, folders = 0, details = 0, assigned = 0)
+            }
+            is MaterializeOutcomeDto.Failed -> {
+                log.warn(
+                    "event=job.transition job={} gallery={} from=CATEGORIZING to=FAILED errorCode={} attempts={} error=\"{}\"",
+                    job.requiredId, job.galleryId, AnalysisFailureCode.FOLDER_FAILED, job.attempts, outcome.error,
+                )
+                eventRecorder.record(
+                    job.requiredId, job.galleryId, AnalysisJobEventType.FAILED,
+                    mapOf(
+                        "from" to AnalysisStatus.CATEGORIZING.name,
+                        "errorCode" to AnalysisFailureCode.FOLDER_FAILED.name,
+                        "attempts" to job.attempts,
+                        "error" to outcome.error,
+                    ),
+                )
+            }
         }
+    }
+
+    private fun recordDone(job: AnalysisJob, now: ZonedDateTime, folders: Int, details: Int, assigned: Int) {
+        eventRecorder.record(
+            job.requiredId, job.galleryId, AnalysisJobEventType.DONE,
+            mapOf(
+                "folders" to folders,
+                "details" to details,
+                "assigned" to assigned,
+                "categorizeSeconds" to secondsSince(job.dispatchedAt, now),
+                "totalSeconds" to secondsSince(job.createdAt, now),
+            ),
+        )
     }
 
     private fun notifyFoldersCreated(galleryId: Long) {

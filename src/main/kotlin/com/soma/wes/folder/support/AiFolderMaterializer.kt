@@ -1,6 +1,8 @@
 package com.soma.wes.folder.support
 
 import com.soma.wes.activity.service.ActivityRecorder
+import com.soma.wes.analysis.domain.AnalysisJobEventType
+import com.soma.wes.analysis.support.AnalysisJobEventRecorder
 import com.soma.wes.analysis.support.ConceptAssignmentLoader
 import com.soma.wes.folder.config.FolderProperties
 import com.soma.wes.folder.domain.ConceptFolder
@@ -46,6 +48,7 @@ class AiFolderMaterializer(
     private val properties: FolderProperties,
     private val clock: Clock,
     private val activityRecorder: ActivityRecorder,
+    private val eventRecorder: AnalysisJobEventRecorder,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -144,6 +147,17 @@ class AiFolderMaterializer(
             plan.newDetails.values.sumOf { it.size } + plan.newConcepts.sumOf { it.details.size }, plan.newConcepts.size,
             (touchedExisting + newConceptResponses).sumOf { concept -> concept.details.sumOf { it.photoIds.size } },
             plan.leftUnclassified.size, clock.millis() - startedAt,
+        )
+        eventRecorder.record(
+            latest.analysisJobId, galleryId, AnalysisJobEventType.FOLDER_MATERIALIZED,
+            mapOf(
+                "merged" to plan.merges.values.sumOf { it.size },
+                "mergedDetails" to plan.merges.size,
+                "newDetails" to plan.newDetails.values.sumOf { it.size } + plan.newConcepts.sumOf { it.details.size },
+                "newConcepts" to plan.newConcepts.size,
+                "leftUnclassified" to plan.leftUnclassified.size,
+                "elapsedMs" to clock.millis() - startedAt,
+            ),
         )
         return touchedExisting + newConceptResponses
     }
