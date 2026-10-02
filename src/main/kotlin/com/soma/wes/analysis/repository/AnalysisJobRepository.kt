@@ -26,6 +26,26 @@ interface AnalysisJobRepository : JpaRepository<AnalysisJob, Long> {
     /** 이 잡([id])보다 앞선 같은 갤러리의 [status] 잡 중 가장 최근 것. 실패 알림이 "이번 잡의 몫"을 세는 기준 시각(직전 DONE)을 준다. */
     fun findFirstByGalleryIdAndIdLessThanAndStatusOrderByIdDesc(galleryId: Long, id: Long, status: AnalysisStatus): AnalysisJob?
 
+    /** 갤러리의 살아 있는 잡. 부분 유니크(`uk_analysis_jobs_active`) 때문에 많아야 하나다. */
+    fun findFirstByGalleryIdAndStatusInOrderByIdDesc(galleryId: Long, statuses: Collection<AnalysisStatus>): AnalysisJob?
+
+    /**
+     * [finishedSince] 뒤에 닫힌 FAILED 잡 중 그 갤러리의 가장 최근 잡인 것. 자동 재시도의 후보다 — 그 뒤에 다른 잡이
+     * 만들어졌으면(사용자가 다시 요청했거나 이미 재시도했으면) 후보가 아니다.
+     */
+    @Query(
+        """
+        SELECT j FROM AnalysisJob j
+        WHERE j.status = :failed AND j.finishedAt > :finishedSince
+          AND j.id = (SELECT max(l.id) FROM AnalysisJob l WHERE l.galleryId = j.galleryId)
+        ORDER BY j.id ASC
+        """,
+    )
+    fun findLatestFailedSince(
+        @Param("finishedSince") finishedSince: ZonedDateTime,
+        @Param("failed") failed: AnalysisStatus = AnalysisStatus.FAILED,
+    ): List<AnalysisJob>
+
     /** 지금 돌고 있는 잡 수. 하트비트가 찍는 값이다. */
     fun countByStatusIn(statuses: Collection<AnalysisStatus>): Long
 

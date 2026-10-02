@@ -1,5 +1,6 @@
 package com.soma.wes.analysis.service
 
+import com.soma.wes.analysis.support.AutoAnalysisStep
 import com.soma.wes.analysis.support.CategorizeStep
 import com.soma.wes.analysis.support.EmbedStep
 import com.soma.wes.analysis.support.FolderStep
@@ -8,7 +9,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 
 /**
- * AI 분석 파이프라인 — 업로드된 사진이 AI 폴더가 되기까지를 한 칸씩 민다. 순서는 실제 AI 단계 그대로다:
+ * AI 분석 파이프라인 — 업로드된 사진이 AI 폴더가 되기까지를 한 칸씩 민다. 맨 앞에서 잡이 필요한 갤러리에 잡을 만들고
+ * ([AutoAnalysisStep]), 그 뒤는 실제 AI 단계 그대로다:
  * 임베딩([EmbedStep]) → 점수([ScoreStep]) → 묶고 이름 붙이기([CategorizeStep]) → 폴더로 만들고 잡 닫기([FolderStep]).
  *
  * 단계는 서로를 부르지 않는다. 각자 DB에서 자기 입력(사진·잡의 상태)을 집고, 조건부 UPDATE로 선점한 뒤 바깥(Lambda·GPU·folder)에
@@ -17,6 +19,7 @@ import org.springframework.stereotype.Service
  */
 @Service
 class AnalysisPipelineService(
+    private val autoAnalysisStep: AutoAnalysisStep,
     private val embedStep: EmbedStep,
     private val scoreStep: ScoreStep,
     private val categorizeStep: CategorizeStep,
@@ -27,6 +30,7 @@ class AnalysisPipelineService(
 
     /** 모든 단계를 한 번씩. 한 단계의 실패는 가둬 뒤 단계를 막지 않고, 실패한 일은 다음 회차가 다시 집는다. */
     fun advance() {
+        runStep("auto") { autoAnalysisStep.advance() }
         runStep("embed") { embedStep.advance() }
         runStep("score") { scoreStep.advance() }
         runStep("categorize") { categorizeStep.advance() }

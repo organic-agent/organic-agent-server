@@ -117,8 +117,8 @@ class CategorizeStep(
     private fun fail(job: AnalysisJob, code: AnalysisFailureCode, error: String, now: ZonedDateTime) {
         if (analysisJobRepository.fail(job.requiredId, AnalysisJob.trimError(error), code, now) == 0) return
         log.warn(
-            "event=job.transition job={} gallery={} from=ANALYZING to=FAILED errorCode={} error=\"{}\"",
-            job.requiredId, job.galleryId, code, error,
+            "event=job.transition job={} gallery={} from=ANALYZING to=FAILED errorCode={} trigger={} retry={} error=\"{}\"",
+            job.requiredId, job.galleryId, code, job.trigger, job.retryCount, error,
         )
         eventRecorder.record(
             job.requiredId, job.galleryId, AnalysisJobEventType.FAILED,
