@@ -2,9 +2,9 @@ package com.soma.wes.folder.support
 
 import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.analysis.support.ConceptAssignmentLoader
+import com.soma.wes.folder.config.FolderProperties
 import com.soma.wes.folder.domain.ConceptFolder
 import com.soma.wes.folder.domain.DetailFolder
-import com.soma.wes.folder.config.FolderProperties
 import com.soma.wes.folder.domain.FolderSource
 import com.soma.wes.folder.dto.DetailFolderPlanDto
 import com.soma.wes.folder.dto.PhotoAnalysisGroupingDto
@@ -16,14 +16,15 @@ import com.soma.wes.folder.repository.ConceptFolderRepository
 import com.soma.wes.folder.repository.DetailFolderAssignmentBulkRepository
 import com.soma.wes.folder.repository.DetailFolderAssignmentRepository
 import com.soma.wes.folder.repository.DetailFolderRepository
+import com.soma.wes.folder.repository.projection.PhotoPlacement
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.repository.requireWithLockById
 import com.soma.wes.photo.repository.PhotoAnalysisRepository
+import java.time.Clock
+import java.time.ZonedDateTime
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
-import java.time.Clock
-import java.time.ZonedDateTime
 
 /**
  * 최신 AI 컨셉 배정을 폴더로 물질화한다. 아직 폴더에 없는 사진만 넣는다 — 이미 있는 폴더의 이름·순서·배정은 건드리지 않는다.
@@ -51,7 +52,7 @@ class AiFolderMaterializer(
 
     /**
      * 이번 호출이 사진을 넣은 폴더만 돌려준다 — 컨셉 폴더마다 사진이 들어간 세부 폴더와 그 사진들이다(이미 들어 있던 사진은 싣지 않는다).
-     * 그래서 호출자가 응답으로 "이번에 몇 장을 몇 폴더에 넣었나"를 셀 수 있다. 같은 잡의 세트가 이미 있으면 그것을 돌려준다(멱등).
+     * 그래서 호출자가 응답으로 "이번에 몇 장을 몇 폴더에 넣었나"를 셀 수 있다. 같은 잡을 이미 물질화했으면 그 결과를 다시 돌려준다(멱등).
      */
     @Transactional
     fun materialize(galleryId: Long): List<ConceptFolderResponse> {
@@ -59,9 +60,12 @@ class AiFolderMaterializer(
         galleryRepository.requireWithLockById(galleryId)
 
         // 1. 최신 컨셉 배정(= 가장 최근 분석 잡의 결과)을 읽는다. 컨셉 배정은 특정 job 에서 추출한 {컨셉 - 컨셉 디테일 - 임베딩 그룹(디테일 폴더 대상) Id} 의 묶음이다.
-        //    이 잡이 새 컨셉 폴더를 만든 적이 있으면 다시 만들지 않고 그 세트를 돌려준다.
+        //    이 잡을 이미 물질화했으면 다시 넣지 않고 그 결과를 돌려준다. 표식은 배정 행의 잡 번호다 — 기존 폴더에 합치기만 한 잡은
+        //    컨셉 폴더를 만들지 않아 폴더로는 알아볼 수 없다. 컨셉 폴더의 잡 번호는 배정 행에 번호가 없던 시절의 세트를 위한 것이다.
         val latest = conceptAssignmentLoader.loadLatest(galleryId)
             ?: throw FolderException(FolderErrorCode.ANALYSIS_NOT_COMPLETE)
+        val alreadyPlaced = assignmentRepository.findAllPlacementsByAnalysisJobId(latest.analysisJobId)
+        if (alreadyPlaced.isNotEmpty()) return materializedResponses(galleryId, alreadyPlaced)
         val existingSet = conceptRepository.findAllByGalleryIdAndAnalysisJobIdOrderBySortOrderAscIdAsc(galleryId, latest.analysisJobId)
         if (existingSet.isNotEmpty()) return viewAssembler.toResponses(existingSet)
 
@@ -93,7 +97,7 @@ class AiFolderMaterializer(
         val mergedDetailsByConceptId = plan.merges.entries
             .map { (detailFolderId, photoIds) ->
                 val detail = detailById.getValue(detailFolderId)
-                assignmentBulkRepository.insertAiAssignments(galleryId, detailFolderId, photoIds, assignedAt)
+                assignmentBulkRepository.insertAiAssignments(galleryId, detailFolderId, photoIds, assignedAt, latest.analysisJobId)
                 detail.conceptFolderId to DetailFolderResponse.of(detail, photoIds)
             }
             .groupBy({ (conceptFolderId, _) -> conceptFolderId }, { (_, response) -> response })
@@ -101,7 +105,7 @@ class AiFolderMaterializer(
         // 3-2. 기존 컨셉 폴더 아래에 새 세부 폴더를 만든다. 그 컨셉의 기존 세부 폴더 맨 뒤에 붙인다.
         val newDetailsByConceptId = plan.newDetails.mapValues { (conceptFolderId, detailPlans) ->
             val firstSortOrder = detailRepository.findNextSortOrderByConceptFolderId(conceptFolderId)
-            detailPlans.mapIndexed { index, detailPlan -> saveDetail(galleryId, conceptFolderId, firstSortOrder + index, detailPlan, assignedAt) }
+            detailPlans.mapIndexed { index, detailPlan -> saveDetail(galleryId, conceptFolderId, firstSortOrder + index, detailPlan, assignedAt, latest.analysisJobId) }
         }
 
         // 3-3. 새 컨셉 폴더는 기존 폴더 맨 뒤에 붙고, 이번 잡 id를 달아 다음 호출의 1번 멱등 검사에 걸리게 한다.
@@ -117,7 +121,7 @@ class AiFolderMaterializer(
                 ),
             )
             val newDetails = conceptPlan.details.mapIndexed { detailIndex, detailPlan ->
-                saveDetail(galleryId, concept.requiredId, detailIndex, detailPlan, assignedAt)
+                saveDetail(galleryId, concept.requiredId, detailIndex, detailPlan, assignedAt, latest.analysisJobId)
             }
             ConceptFolderResponse.of(concept, newDetails)
         }
@@ -144,12 +148,26 @@ class AiFolderMaterializer(
         return touchedExisting + newConceptResponses
     }
 
+    /**
+     * 잡이 넣은 사진을 지금 든 세부 폴더별로 묶어 첫 호출과 같은 모양으로 돌려준다. 그 뒤 사용자가 옮긴 사진은 옮겨진 폴더에 실린다.
+     */
+    private fun materializedResponses(galleryId: Long, placements: List<PhotoPlacement>): List<ConceptFolderResponse> {
+        val photoIdsByDetailFolderId = placements.groupBy({ it.detailFolderId }, { it.photoId })
+        val detailsByConceptFolderId = detailRepository.findAllById(photoIdsByDetailFolderId.keys)
+            .sortedWith(compareBy({ it.sortOrder }, { it.requiredId }))
+            .groupBy({ it.conceptFolderId }, { DetailFolderResponse.of(it, photoIdsByDetailFolderId.getValue(it.requiredId)) })
+        return conceptRepository.findAllByGalleryIdOrderBySortOrderAscIdAsc(galleryId)
+            .filter { it.requiredId in detailsByConceptFolderId }
+            .map { ConceptFolderResponse.of(it, detailsByConceptFolderId.getValue(it.requiredId)) }
+    }
+
     private fun saveDetail(
         galleryId: Long,
         conceptFolderId: Long,
         sortOrder: Int,
         plan: DetailFolderPlanDto,
         assignedAt: ZonedDateTime,
+        analysisJobId: Long,
     ): DetailFolderResponse {
         val detail = detailRepository.save(
             DetailFolder(
@@ -161,7 +179,7 @@ class AiFolderMaterializer(
                 needsReview = plan.needsReview,
             ),
         )
-        assignmentBulkRepository.insertAiAssignments(galleryId, detail.requiredId, plan.photoIds, assignedAt)
+        assignmentBulkRepository.insertAiAssignments(galleryId, detail.requiredId, plan.photoIds, assignedAt, analysisJobId)
         return DetailFolderResponse.of(detail, plan.photoIds)
     }
 

@@ -36,6 +36,10 @@ class DetailFolderAssignment(
 
     @Column(name = "assigned_at", nullable = false)
     var assignedAt: ZonedDateTime,
+
+    /** 이 사진을 폴더에 처음 넣은 분석 잡. 사용자가 직접 넣었으면 null. 사용자가 옮겨도 남는다 — 물질화 재호출이 잡의 결과를 다시 찾는 표식이다. */
+    @Column(name = "analysis_job_id", updatable = false)
+    val analysisJobId: Long? = null,
 ) : BaseEntity() {
     fun moveTo(
         detailFolderId: Long,

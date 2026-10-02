@@ -55,6 +55,8 @@ paths:
   `AnalysisJob`은 `@DynamicUpdate`다 — Lambda가 쓰는 `error`를 이 서버의 오래된 스냅샷이 덮지 않게 바뀐 컬럼만 UPDATE한다.
 - 폴더 물질화 기록 테이블(`categorization_jobs`·`categorization_job_photos`)은 V17에서 지웠다 — "처리한 사진"은
   `detail_folder_assignments`가 말하고, 물질화 진입점은 `AiFolderMaterializer.materialize`(인가 없음, 멱등) 하나다.
+  멱등의 표식은 V30의 `detail_folder_assignments.analysis_job_id`(이 사진을 처음 넣은 잡)다 — 기존 폴더에 합치기만 한 잡은 컨셉 폴더를
+  만들지 않으므로 `concept_folders.analysis_job_id`로는 알아볼 수 없다. 사용자가 옮겨도 값은 남는다.
   관리자 리소스 `CATEGORIZATION_JOB`도 함께 지웠고 `AdminAuditTargetType`의 값만 옛 감사 로그 읽기용으로 남는다(V2의 ALBUM과 같은 방식).
 - `photo_analysis`는 세 주체가 나눠 쓴다 — 임베더가 `embedding·embedding_model`, score 단계가
   `subjects·sub_scores·clip_embedding·pipeline_version`, categorize 단계가 `technical_pct·aesthetic_pct·burst_*·

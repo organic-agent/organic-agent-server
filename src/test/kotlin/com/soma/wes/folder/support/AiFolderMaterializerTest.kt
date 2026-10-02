@@ -219,6 +219,58 @@ class AiFolderMaterializerTest @Autowired constructor(
             }
         }
 
+        @Test
+        fun `합치기만 한 잡을 다시 물질화하면 에러 없이 같은 결과를 돌려준다`() {
+            // given — 두 번째 잡은 기존 폴더에 합치기만 했다(새 컨셉 폴더 없음)
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            analyzed(fixture.galleryId, count = 3, embedGroupId = 1)
+            analyzed(fixture.galleryId, count = 2, embedGroupId = 2)
+            firstJob(fixture.galleryId)
+            materializer.materialize(fixture.galleryId)
+            val moreBeach = analyzed(fixture.galleryId, count = 2, embedGroupId = 1)
+            secondJobWithSameNames(fixture.galleryId)
+            val first = materializer.materialize(fixture.galleryId)
+            val assignedAfterFirst = assignmentRepository.findAllPhotoIdsByGalleryId(fixture.galleryId)
+
+            // when
+            val second = materializer.materialize(fixture.galleryId)
+
+            // then — 배정은 그대로이고 응답도 첫 호출과 같다
+            assertSoftly { softly ->
+                softly.assertThat(second).isEqualTo(first)
+                softly.assertThat(second.flatMap { concept -> concept.details.flatMap { it.photoIds } })
+                    .containsExactlyInAnyOrderElementsOf(moreBeach)
+                softly.assertThat(assignmentRepository.findAllPhotoIdsByGalleryId(fixture.galleryId))
+                    .containsExactlyInAnyOrderElementsOf(assignedAfterFirst)
+            }
+        }
+
+        @Test
+        fun `새 세부 폴더만 만든 잡을 다시 물질화해도 폴더가 또 생기지 않는다`() {
+            // given — 두 번째 잡은 기존 컨셉 폴더 아래에 새 세부 폴더를 만들었다
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val userId = fixture.photographer.requiredId
+            analyzed(fixture.galleryId, count = 3, embedGroupId = 1)
+            analyzed(fixture.galleryId, count = 2, embedGroupId = 2)
+            firstJob(fixture.galleryId)
+            materializer.materialize(fixture.galleryId)
+            analyzed(fixture.galleryId, count = 5, embedGroupId = 3)
+            val secondJob = recommendationFixture.분석_잡(fixture.galleryId)
+            recommendationFixture.컨셉_배정(secondJob, fixture.galleryId, embedGroupId = 1, conceptName = "바닷가", detailName = "모래사장")
+            recommendationFixture.컨셉_배정(secondJob, fixture.galleryId, embedGroupId = 2, conceptName = "정원", detailName = "꽃밭")
+            recommendationFixture.컨셉_배정(secondJob, fixture.galleryId, embedGroupId = 3, conceptName = "바닷가", detailName = "갯바위")
+            val first = materializer.materialize(fixture.galleryId)
+
+            // when
+            val second = materializer.materialize(fixture.galleryId)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(second).isEqualTo(first)
+                softly.assertThat(folderService.list(fixture.galleryId, userId)[0].details.map { it.name }).containsExactly("해변", "갯바위")
+            }
+        }
+
         private fun firstJob(galleryId: Long): Long {
             val jobId = recommendationFixture.분석_잡(galleryId)
             recommendationFixture.컨셉_배정(jobId, galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")

@@ -23,23 +23,24 @@ class DetailFolderAssignmentBulkRepository(
     private val jdbcTemplate: JdbcTemplate,
 ) {
 
-    /** 한 세부 폴더에 AI 배정으로 사진들을 넣는다. 이미 배정된 사진은 호출자가 걸러 둔다(PK 충돌은 예외로 올라온다). */
+    /** 한 세부 폴더에 AI 배정으로 사진들을 넣는다. 넣은 잡 번호를 같이 적어 같은 잡의 재호출이 이 행들을 다시 찾게 한다. 이미 배정된 사진은 호출자가 걸러 둔다(PK 충돌은 예외로 올라온다). */
     @Transactional(propagation = Propagation.MANDATORY)
     fun insertAiAssignments(
         galleryId: Long,
         detailFolderId: Long,
         photoIds: List<Long>,
-        assignedAt: ZonedDateTime
+        assignedAt: ZonedDateTime,
+        analysisJobId: Long,
     ) {
         if (photoIds.isEmpty()) return
         val at = Timestamp.from(assignedAt.toInstant())
         jdbcTemplate.batchUpdate(
             """
             INSERT INTO detail_folder_assignments
-                (gallery_id, photo_id, detail_folder_id, assigned_by_user_id, assigned_source, confidence, assigned_at, version, created_at, updated_at)
-            VALUES (?, ?, ?, NULL, ?, NULL, ?, 0, ?, ?)
+                (gallery_id, photo_id, detail_folder_id, assigned_by_user_id, assigned_source, confidence, assigned_at, analysis_job_id, version, created_at, updated_at)
+            VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, 0, ?, ?)
             """.trimIndent(),
-            photoIds.map { photoId -> arrayOf<Any>(galleryId, photoId, detailFolderId, FolderSource.AI.name, at, at, at) },
+            photoIds.map { photoId -> arrayOf<Any>(galleryId, photoId, detailFolderId, FolderSource.AI.name, at, analysisJobId, at, at) },
         )
     }
 }
