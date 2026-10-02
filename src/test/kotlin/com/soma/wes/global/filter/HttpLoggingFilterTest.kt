@@ -24,6 +24,7 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.time.Duration
 
 /**
  * 요청 로그의 규약을 지키는 회귀 가드 — traceId가 붙고, 민감한 쿼리 값이 가려지고,
@@ -68,8 +69,8 @@ class HttpLoggingFilterTest @Autowired constructor(
         // then
         assertThat(response.statusCode()).isEqualTo(200)
 
-        val request = appender.list.single { it.formattedMessage.startsWith("[REQUEST]") }
-        val result = appender.list.single { it.formattedMessage.startsWith("[RESPONSE]") }
+        val request = loggedEvents().single { it.formattedMessage.startsWith("[REQUEST]") }
+        val result = loggedEvents().single { it.formattedMessage.startsWith("[RESPONSE]") }
 
         assertThat(request.formattedMessage).isEqualTo("[REQUEST] GET /api/v1/users/me")
         assertThat(result.formattedMessage).isEqualTo("[RESPONSE] /api/v1/users/me userId=${user.id} (200 OK)")
@@ -89,7 +90,7 @@ class HttpLoggingFilterTest @Autowired constructor(
         )
 
         // then
-        val request = appender.list.single { it.formattedMessage.startsWith("[REQUEST]") }
+        val request = loggedEvents().single { it.formattedMessage.startsWith("[REQUEST]") }
         assertThat(request.formattedMessage)
             .isEqualTo("[REQUEST] GET /api/v1/users/me?token=****&page=1&AccessToken=****&query=****")
         assertThat(request.formattedMessage).doesNotContain("private@example.com")
@@ -103,7 +104,7 @@ class HttpLoggingFilterTest @Autowired constructor(
         // then
         assertThat(response.statusCode()).isEqualTo(401)
         assertThat(response.body()).contains("\"correlationId\":\"")
-        assertThat(appender.list.map { it.formattedMessage })
+        assertThat(loggedEvents().map { it.formattedMessage })
             .contains("[RESPONSE] /api/v1/users/me userId=null (401 UNAUTHORIZED)")
     }
 
@@ -120,8 +121,8 @@ class HttpLoggingFilterTest @Autowired constructor(
         send("/api/v1/galleries/987654/photos/summary", accessToken.value, uploadSession = uploadSession)
 
         // then
-        val request = appender.list.single { it.formattedMessage.startsWith("[REQUEST]") }
-        val result = appender.list.single { it.formattedMessage.startsWith("[RESPONSE]") }
+        val request = loggedEvents().single { it.formattedMessage.startsWith("[REQUEST]") }
+        val result = loggedEvents().single { it.formattedMessage.startsWith("[RESPONSE]") }
         assertSoftly { softly ->
             softly.assertThat(request.mdcPropertyMap[LogContext.GALLERY_ID]).isEqualTo("987654")
             softly.assertThat(request.mdcPropertyMap[LogContext.UPLOAD_SESSION_ID]).isEqualTo(uploadSession)
@@ -136,7 +137,7 @@ class HttpLoggingFilterTest @Autowired constructor(
         send("/api/v1/users/me", accessToken = null, uploadSession = "a=b c;d".repeat(20))
 
         // then
-        val request = appender.list.single { it.formattedMessage.startsWith("[REQUEST]") }
+        val request = loggedEvents().single { it.formattedMessage.startsWith("[REQUEST]") }
         assertSoftly { softly ->
             softly.assertThat(request.mdcPropertyMap).doesNotContainKey(LogContext.UPLOAD_SESSION_ID)
             softly.assertThat(request.mdcPropertyMap).doesNotContainKey(LogContext.GALLERY_ID)
@@ -152,6 +153,20 @@ class HttpLoggingFilterTest @Autowired constructor(
         // then
         assertThat(appender.list).isEmpty()
         assertThat(response.headers().firstValue(HttpLoggingFilter.CORRELATION_ID_HEADER)).isPresent
+    }
+
+    /**
+     * 요청 한 건의 [REQUEST]·[RESPONSE] 줄이 다 찍힌 뒤의 사본. 필터는 응답을 내보낸 뒤에 [RESPONSE] 줄을 찍으므로, 응답을 받은
+     * 직후에 목록을 그대로 읽으면 서버 스레드가 줄을 더하는 중일 수 있다(ConcurrentModificationException). 줄이 찍히기를 기다렸다가 복사한다.
+     */
+    private fun loggedEvents(): List<ILoggingEvent> {
+        val deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos()
+        while (System.nanoTime() < deadline) {
+            val snapshot = runCatching { appender.list.toList() }.getOrNull()
+            if (snapshot != null && snapshot.any { it.formattedMessage.startsWith("[RESPONSE]") }) return snapshot
+            Thread.sleep(10)
+        }
+        return appender.list.toList()
     }
 
     private fun send(path: String, accessToken: String?, uploadSession: String? = null): HttpResponse<String> {
