@@ -183,7 +183,7 @@ class PersonalGalleryServiceTest @Autowired constructor(
     @DisplayName("프로 갤러리를 만들 때")
     inner class ProPlan {
         @Test
-        fun `쿠폰 사용 시점부터 180일과 만 장을 제공한다`() {
+        fun `쿠폰 사용 시점부터 달력 기준 1년과 만 장을 제공한다`() {
             // given
             val user = userFixture.사용자()
             val coupon = billing.미사용_프로_쿠폰(userId = user.requiredId, registeredAt = ZonedDateTime.now(clock).minusYears(1))
@@ -200,7 +200,7 @@ class PersonalGalleryServiceTest @Autowired constructor(
             assertSoftly { softly ->
                 softly.assertThat(result.planId).isEqualTo("pro")
                 softly.assertThat(result.planMaxPhotoCount).isEqualTo(10_000)
-                softly.assertThat(result.planExpiresAt).isBetween(before.plusDays(180), after.plusDays(180))
+                softly.assertThat(result.planExpiresAt).isBetween(before.plusYears(1), after.plusYears(1))
                 softly.assertThat(used.status).isEqualTo("USED")
                 softly.assertThat(used.galleryId).isEqualTo(result.id)
                 softly.assertThat(used.expiresAt).isEqualTo(result.planExpiresAt)
@@ -250,7 +250,7 @@ class PersonalGalleryServiceTest @Autowired constructor(
             // when & then
             assertThatThrownBy { target.create(user.requiredId, CreatePersonalGalleryRequest(
                 title = "실패하는 프로", planId = "pro", couponId = coupon.requiredId,
-                selectionDeadline = ZonedDateTime.now(clock).plusYears(1),
+                selectionDeadline = ZonedDateTime.now(clock).plusYears(2),
             )) }.isInstanceOf(GalleryException::class.java)
                 .extracting("errorCode").isEqualTo(GalleryErrorCode.INVALID_SELECTION_DEADLINE)
             assertThat(benefits.getMyBenefits(user.requiredId).coupons.single().status).isEqualTo("AVAILABLE")

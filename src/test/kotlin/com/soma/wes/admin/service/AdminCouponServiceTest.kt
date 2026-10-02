@@ -129,7 +129,7 @@ class AdminCouponServiceTest @Autowired constructor(
             val now = ZonedDateTime.now(clock)
             val gallery = resources.갤러리(admin.requiredId, owner.id)
             val used = billing.미사용_프로_쿠폰(owner.id)
-            used.consume(gallery.id, now, now.plusDays(180))
+            used.consume(gallery.id, now, now.plusYears(1))
             coupons.saveAndFlush(used)
             val expired = billing.미사용_프로_쿠폰(owner.id, registeredAt = now.minusDays(200))
             expired.consume(gallery.id, now.minusDays(181), now.minusDays(1))
@@ -245,7 +245,7 @@ class AdminCouponServiceTest @Autowired constructor(
             val owner = resources.사용자(admin.requiredId)
             val coupon = billing.미사용_프로_쿠폰(owner.id)
             val now = ZonedDateTime.now(clock)
-            coupon.consume(resources.갤러리(admin.requiredId, owner.id).id, now, now.plusDays(180))
+            coupon.consume(resources.갤러리(admin.requiredId, owner.id).id, now, now.plusYears(1))
             coupons.saveAndFlush(coupon)
             val before = target.getCoupon(coupon.requiredId, admin.requiredId)
 

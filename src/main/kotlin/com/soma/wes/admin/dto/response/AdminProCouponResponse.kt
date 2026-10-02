@@ -18,7 +18,7 @@ data class AdminProCouponResponse(
     @field:Schema(description = "새 갤러리를 생성하면서 소비한 시각") val consumedAt: ZonedDateTime?,
     @field:Schema(description = "연결 갤러리 id. 영구 삭제되면 null") val galleryId: Long?,
     @field:Schema(description = "현재 연결 갤러리 이름. 휴지통 또는 삭제된 갤러리는 null") val galleryTitle: String?,
-    @field:Schema(description = "사용일부터 180일의 만료 시각. 미사용이면 null") val expiresAt: ZonedDateTime?,
+    @field:Schema(description = "사용일부터 달력 기준 1년의 만료 시각. 미사용이면 null") val expiresAt: ZonedDateTime?,
     @field:Schema(description = "미사용 코드 비활성화 시각. 활성 코드이면 null") val disabledAt: ZonedDateTime?,
 ) {
     companion object {

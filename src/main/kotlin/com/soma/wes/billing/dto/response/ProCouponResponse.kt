@@ -18,7 +18,7 @@ data class ProCouponResponse(
     val consumedAt: ZonedDateTime?,
     @field:Schema(description = "사용한 갤러리 id. 미사용 또는 영구 삭제된 갤러리이면 null")
     val galleryId: Long?,
-    @field:Schema(description = "사용일부터 180일 후의 만료 시각. 미사용이면 null")
+    @field:Schema(description = "사용일부터 달력 기준 1년 후의 만료 시각. 미사용이면 null")
     val expiresAt: ZonedDateTime?,
 ) {
     companion object {

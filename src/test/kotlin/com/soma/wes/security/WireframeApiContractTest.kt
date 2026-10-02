@@ -45,7 +45,8 @@ class WireframeApiContractTest @Autowired constructor(
             jsonPath("$.plans[0].durationMonths") { value(1) }
             jsonPath("$.plans[0].maxPhotoCount") { value(500) }
             jsonPath("$.plans[1].id") { value("pro") }
-            jsonPath("$.plans[1].durationDays") { value(180) }
+            jsonPath("$.plans[1].durationDays") { value(null) }
+            jsonPath("$.plans[1].durationMonths") { value(12) }
             jsonPath("$.plans[1].maxPhotoCount") { value(10_000) }
         }
         mvc.post("/api/v1/payments/checkout") {

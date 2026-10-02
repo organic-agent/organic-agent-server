@@ -39,7 +39,8 @@ class BillingServiceTest @Autowired constructor(
             softly.assertThat(free.durationDays).isNull()
             softly.assertThat(free.oncePerAccount).isTrue()
             softly.assertThat(pro.maxPhotoCount).isEqualTo(10_000)
-            softly.assertThat(pro.durationDays).isEqualTo(180L)
+            softly.assertThat(pro.durationDays).isNull()
+            softly.assertThat(pro.durationMonths).isEqualTo(12L)
             softly.assertThat(pro.amount).isNull()
             softly.assertThat(pro.couponRequired).isTrue()
         }

@@ -23,9 +23,9 @@ data class PlanResponse(
     val amount: Long?,
     @field:Schema(description = "가격 표시 통화", example = "KRW")
     val currency: String,
-    @field:Schema(description = "프로는 생성일부터 180일. 무료는 달력 기준이므로 null", example = "180")
+    @field:Schema(description = "무료·프로 모두 달력 기준이므로 null")
     val durationDays: Long?,
-    @field:Schema(description = "무료는 생성일부터 달력 기준 한 달. 프로는 null", example = "1")
+    @field:Schema(description = "생성일부터 달력 기준 이용 기간. 무료는 1개월, 프로는 12개월(1년)", example = "12")
     val durationMonths: Long?,
     @field:Schema(description = "갤러리에서 삭제되지 않은 사진의 최대 장수. 업로드 대기도 예약 장수로 포함한다.", example = "500")
     val maxPhotoCount: Int,
@@ -40,8 +40,11 @@ data class PlanResponse(
             name = plan.displayName,
             amount = if (plan == GalleryPlan.FREE) 0 else null,
             currency = "KRW",
-            durationDays = if (plan == GalleryPlan.PRO) GalleryPlan.PRO_DURATION_DAYS else null,
-            durationMonths = if (plan == GalleryPlan.FREE) GalleryPlan.FREE_DURATION_MONTHS else null,
+            durationDays = null,
+            durationMonths = when (plan) {
+                GalleryPlan.FREE -> GalleryPlan.FREE_DURATION_MONTHS
+                GalleryPlan.PRO -> GalleryPlan.PRO_DURATION_MONTHS
+            },
             maxPhotoCount = plan.maxPhotoCount,
             oncePerAccount = plan == GalleryPlan.FREE,
             couponRequired = plan == GalleryPlan.PRO,
