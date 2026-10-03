@@ -38,6 +38,16 @@ jwt:
   refresh-token-expiration: 14d
 
 app:
+  retouch:
+    pdf:
+      # 1GB 공개 API 컨테이너에서 동기 생성 메모리와 ALB 응답 시간을 제한한다.
+      max-photos: 200
+      max-pages: 1000
+      max-text-characters: 200000
+      max-output-bytes: 52428800
+      image-long-edge: 2048
+      max-concurrent-generations: 1
+      generation-timeout: 45s
   admin:
     session:
       absolute-ttl: 8h
