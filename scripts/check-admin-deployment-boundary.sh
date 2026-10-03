@@ -242,4 +242,23 @@ fi
 [ "$(grep -Fc -- '--timeout-seconds 1800' "$cd_workflow")" -eq 2 ]
 [ "$(grep -Fc 'for i in $(seq 1 180); do' "$cd_workflow")" -eq 2 ]
 
+# 옛 태그 이미지는 롤백 기준점을 잡은 뒤, 새 이미지를 받기 전에 지운다.
+for deploy_script in "$public_deploy_script" "$admin_deploy_script"; do
+  grep -Fq 'remove_stale_images()' "$deploy_script"
+  grep -Fq 'require_free_disk()' "$deploy_script"
+  grep -Fq '"$TARGET_IMAGE" "$PREVIOUS_IMAGE"' "$deploy_script"
+  previous_capture_line="$(grep -nF 'printf '"'"'%s\n'"'"' "$PREVIOUS_IMAGE_ID" > "$ROLLBACK_DIR/previous-image-id"' "$deploy_script" | head -n 1 | cut -d: -f1)"
+  stale_cleanup_line="$(grep -nE '^remove_stale_images ' "$deploy_script" | head -n 1 | cut -d: -f1)"
+  free_disk_line="$(grep -nFx 'require_free_disk' "$deploy_script" | head -n 1 | cut -d: -f1)"
+  candidate_pull_line="$(grep -nE '\.yml" pull$' "$deploy_script" | head -n 1 | cut -d: -f1)"
+  if [ -z "$previous_capture_line" ] || [ -z "$stale_cleanup_line" ] || \
+    [ -z "$free_disk_line" ] || [ -z "$candidate_pull_line" ] || \
+    [ "$previous_capture_line" -ge "$stale_cleanup_line" ] || \
+    [ "$stale_cleanup_line" -ge "$free_disk_line" ] || \
+    [ "$free_disk_line" -ge "$candidate_pull_line" ]; then
+    echo "$(basename "$deploy_script"): 롤백 기준점 기록, 옛 이미지 정리, 디스크 확인, 이미지 받기 순서가 안전하지 않습니다." >&2
+    exit 1
+  fi
+done
+
 echo "Admin deployment boundary checks passed"
