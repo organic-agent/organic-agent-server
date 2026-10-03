@@ -49,7 +49,7 @@ paths:
   `attempts`(categorize 호출 수)·`finished_at`·`error`·`version`·`created_at`·`updated_at`, 그리고 대기에 끝을 두는 V29의
   `progress_count`·`progress_at`(ANALYZING 진행 감시)·`categorizing_at`(잡 전체 기한)·`materialize_attempts`·`error_code`
   (`AnalysisFailureCode` — 응답에는 이 코드와 사용자 문장만 나가고 `error`는 내부 문장으로 DB에만 남는다), V32의 `trigger`
-  (`USER`·`AUTO`·`RETRY` — 분석 요청 API · 서버의 자동 생성 `AutoAnalysisStep` · 자동 재시도)·`retry_count`다. 이 서버가 상태 전부를 쓰고,
+  (`USER`·`AUTO`·`RETRY`·`ADMIN` — 분석 요청 API · 서버의 자동 생성 `AutoAnalysisStep` · 자동 재시도 · 관리자 재처리)·`retry_count`다. 이 서버가 상태 전부를 쓰고,
   Lambda(categorize, DB 유저 `photoselect`)는 실패했을 때 `error` 한 컬럼만 쓴다(GRANT `UPDATE (error, updated_at)`).
   단계·모드·force·result 컬럼은 없다 — 사진별 진행은 `photo_analysis` 행이 말하고, 임베더 배정은 잡과 무관하게 스윕이 한다
   (`EmbedStep`, `photos.dispatched_at`·`embed_attempts`). 재분석은 `photo_analysis` 행 삭제(`PhotoPipelineRepository.resetAnalysis`)다.

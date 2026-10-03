@@ -12,6 +12,7 @@ import com.soma.wes.admin.resource.service.AdminReprocessService
 import com.soma.wes.admin.resource.service.AdminResourceService
 import com.soma.wes.analysis.domain.AnalysisJob
 import com.soma.wes.analysis.domain.AnalysisStatus
+import com.soma.wes.analysis.domain.AnalysisTrigger
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
 import com.soma.wes.analysis.repository.AnalysisJobRepository
@@ -67,6 +68,7 @@ class AdminReprocessServiceTest @Autowired constructor(
                 assertThat(row["embed_attempts"]).isEqualTo(0)
             }
             softly.assertThat(job.status).isEqualTo(AnalysisStatus.ANALYZING)
+            softly.assertThat(job.trigger).isEqualTo(AnalysisTrigger.ADMIN)
             // Lambda 를 직접 부르지 않는다 — 다시 배정하는 것은 스윕이다.
             softly.assertThat(aiTaskSender.tasks).isEmpty()
         }

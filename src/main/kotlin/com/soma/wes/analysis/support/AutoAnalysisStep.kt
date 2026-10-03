@@ -30,6 +30,8 @@ import org.springframework.stereotype.Component
  * **자동 재시도** — 가장 최근 잡이 일시적 실패로 닫혔으면 [AnalysisProperties.autoRetryDelays]만큼 기다렸다가
  * [AnalysisTrigger.RETRY] 잡을 만든다. 대기 목록을 다 쓰면 멈추고 사용자의 요청을 기다린다.
  *
+ * 휴지통에 든 갤러리는 두 경우 모두 보지 않는다.
+ *
  * 갤러리마다 잡 생성은 자기 트랜잭션([AnalysisJobCreator])이다. 다른 스윕이나 분석 요청 API 가 먼저 만들었으면 유니크 충돌이 나는데,
  * "이미 누가 만들었다"는 뜻이라 삼키고 다음 갤러리로 간다.
  */

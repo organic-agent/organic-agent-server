@@ -332,12 +332,14 @@ class PhotoPipelineRepository(
 
     /**
      * [uploadedSince] 뒤에 사진이 올라온 갤러리와 그 갤러리의 마지막 업로드 시각. 서버가 분석 잡을 만들 후보다.
+     * 휴지통에 든 갤러리는 뺀다 — 지운 갤러리에 분석 비용을 쓰지 않는다.
      * 최근 올라온 사진만 읽는다(`idx_photos_uploaded_at`) — 5초마다 도는 조회가 사진 전체에 비례하지 않게 한다.
      */
     fun findRecentUploads(uploadedSince: ZonedDateTime): Map<Long, ZonedDateTime> = jdbcClient.sql(
         """
         SELECT p.gallery_id, max(p.uploaded_at) AS last_uploaded_at
         FROM photos p
+        JOIN galleries g ON g.id = p.gallery_id AND g.deleted_at IS NULL
         WHERE p.status = 'UPLOADED' AND p.deleted_at IS NULL AND p.uploaded_at > :uploadedSince
         GROUP BY p.gallery_id
         ORDER BY p.gallery_id

@@ -11,4 +11,7 @@ enum class AnalysisTrigger {
 
     /** 일시적 실패로 닫힌 잡을 서버가 다시 돌리는 잡. */
     RETRY,
+
+    /** 관리자 재처리가 분석 행을 리셋한 뒤 만든 잡. */
+    ADMIN,
 }

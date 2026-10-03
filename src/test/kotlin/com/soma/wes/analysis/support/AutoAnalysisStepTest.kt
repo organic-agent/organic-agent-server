@@ -123,6 +123,19 @@ class AutoAnalysisStepTest @Autowired constructor(
         }
 
         @Test
+        fun `휴지통에 든 갤러리에는 만들지 않는다`() {
+            // given — 사진을 올리고 바로 갤러리를 지웠다
+            uploadedMinutesAgo(count = 3, minutes = 2)
+            trashGallery()
+
+            // when
+            step.advance()
+
+            // then
+            assertThat(jobs()).isEmpty()
+        }
+
+        @Test
         fun `끝난 잡 뒤에 사진이 더 올라오면 직전 잡의 컨셉 수를 이어 받아 다시 만든다`() {
             // given — 컨셉 수 4로 요청해 끝난 잡
             uploadedMinutesAgo(count = 2, minutes = 30)
@@ -280,6 +293,21 @@ class AutoAnalysisStepTest @Autowired constructor(
         }
 
         @Test
+        fun `휴지통에 든 갤러리의 실패는 다시 돌리지 않는다`() {
+            // given — 일시적 실패로 닫혔고 재시도 시각도 지났지만, 갤러리를 지웠다
+            uploadedMinutesAgo(count = 2, minutes = 120)
+            val first = analysisService.request(fixture.galleryId, fixture.photographer.requiredId).jobId
+            close(first, AnalysisStatus.FAILED, minutesAgo = 3, errorCode = "CATEGORIZE_TIMEOUT")
+            trashGallery()
+
+            // when
+            step.advance()
+
+            // then
+            assertThat(jobs()).hasSize(1)
+        }
+
+        @Test
         fun `실패한 뒤 입력이 그대로면 AUTO 잡은 만들지 않는다`() {
             // given — 재시도 대상이 아닌 실패, 그리고 그 뒤 새 사진이 없다
             uploadedMinutesAgo(count = 2, minutes = 30)
@@ -303,6 +331,10 @@ class AutoAnalysisStepTest @Autowired constructor(
             minutes,
         )
         return photoIds
+    }
+
+    private fun trashGallery() {
+        jdbcTemplate.update("UPDATE galleries SET deleted_at = now() WHERE id = ?", fixture.galleryId)
     }
 
     /** 잡을 [minutesAgo]분 전에 닫힌 것으로 만든다. 만든 시각은 그보다 조금 앞에 둔다. */

@@ -31,13 +31,14 @@ interface AnalysisJobRepository : JpaRepository<AnalysisJob, Long> {
 
     /**
      * [finishedSince] 뒤에 닫힌 FAILED 잡 중 그 갤러리의 가장 최근 잡인 것. 자동 재시도의 후보다 — 그 뒤에 다른 잡이
-     * 만들어졌으면(사용자가 다시 요청했거나 이미 재시도했으면) 후보가 아니다.
+     * 만들어졌으면(사용자가 다시 요청했거나 이미 재시도했으면) 후보가 아니다. 휴지통에 든 갤러리의 잡도 후보가 아니다.
      */
     @Query(
         """
         SELECT j FROM AnalysisJob j
         WHERE j.status = :failed AND j.finishedAt > :finishedSince
           AND j.id = (SELECT max(l.id) FROM AnalysisJob l WHERE l.galleryId = j.galleryId)
+          AND EXISTS (SELECT g.id FROM Gallery g WHERE g.id = j.galleryId AND g.deletedAt IS NULL)
         ORDER BY j.id ASC
         """,
     )

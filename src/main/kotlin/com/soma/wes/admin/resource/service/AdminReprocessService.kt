@@ -11,6 +11,7 @@ import com.soma.wes.admin.resource.repository.AdminIdempotencyStore
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
 import com.soma.wes.analysis.domain.AnalysisJob
 import com.soma.wes.analysis.domain.AnalysisStatus
+import com.soma.wes.analysis.domain.AnalysisTrigger
 import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
@@ -22,6 +23,7 @@ import java.security.MessageDigest
 import java.time.Clock
 import java.time.ZonedDateTime
 import org.slf4j.LoggerFactory
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
 
@@ -45,7 +47,10 @@ class AdminReprocessService(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    /** 멱등성 저장소는 자기 트랜잭션(REQUIRES_NEW)이라 이 메서드는 트랜잭션이 없고, 리셋과 잡 생성만 하나로 묶는다. */
+    /**
+     * 멱등성 저장소는 자기 트랜잭션(REQUIRES_NEW)이라 이 메서드는 트랜잭션이 없다. 리셋을 커밋한 **뒤에** 잡을 만든다 —
+     * 잡이 리셋 전의 사진을 보고 categorize 를 먼저 보내지 않게 하고, 서버의 자동 생성과 부딪혀도 리셋이 되돌아가지 않게 한다.
+     */
     fun reprocess(
         actorAdminId: Long,
         type: AdminResourceType,
@@ -101,9 +106,8 @@ class AdminReprocessService(
         }
 
         try {
-            val (reset, jobCreated) = transactionTemplate.execute {
-                reset(id, request.scope) to ensureAnalysisJob(id)
-            }!!
+            val reset = transactionTemplate.execute { reset(id, request.scope) }!!
+            val jobCreated = ensureAnalysisJob(id)
             idempotencyStore.complete(ACTION, request.idempotencyKey, targets)
             log.info(
                 "관리자 분석 재처리(리셋): galleryId={}, 범위={}, 대상={}장, 지운 분석 행={}, 잡 생성={}",
@@ -151,11 +155,23 @@ class AdminReprocessService(
         AdminReprocessScope.FAILED_ONLY -> photoPipelineRepository.resetFailedAnalysis(galleryId).size
     }
 
-    /** 살아 있는 잡이 있으면 그 잡이 리셋된 사진을 다시 관측한다. 없으면 하나 만든다 — 폴더 물질화까지 자동으로 잇기 위해서다. */
+    /**
+     * 살아 있는 잡이 있으면 그 잡이 리셋된 사진을 다시 관측한다. 없으면 하나 만든다 — 폴더 물질화까지 자동으로 잇기 위해서다.
+     * 만드는 사이 서버의 자동 생성(`AutoAnalysisStep`)이 먼저 만들었으면(유니크 충돌) 그 잡이 같은 일을 한다.
+     * 자기 트랜잭션이다 — 충돌한 트랜잭션은 PostgreSQL 이 이어 쓰지 못하게 하므로, 리셋과 같은 트랜잭션이면 리셋까지 되돌아간다.
+     * 관리자 서버에는 분석 도메인의 잡 생성기(`AnalysisJobCreator`)가 없어 행을 직접 만든다. 그래서 잡 이력의 `CREATED` 줄은 남지 않는다.
+     */
     private fun ensureAnalysisJob(galleryId: Long): Boolean {
         if (analysisJobRepository.existsByGalleryIdAndStatusIn(galleryId, AnalysisStatus.ACTIVE)) return false
-        analysisJobRepository.save(AnalysisJob(galleryId = galleryId))
-        return true
+        return try {
+            transactionTemplate.execute {
+                analysisJobRepository.saveAndFlush(AnalysisJob(galleryId = galleryId, trigger = AnalysisTrigger.ADMIN))
+            }
+            true
+        } catch (e: DataIntegrityViolationException) {
+            log.info("갤러리 {} 의 분석 잡은 서버가 먼저 만들었다 — 그 잡이 리셋한 사진을 이어 받는다", galleryId)
+            false
+        }
     }
 
     /**
