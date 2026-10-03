@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional
  *
  * 닫기와 발행이 한 트랜잭션이다 — 닫기는 조건부 UPDATE라 스윕 둘 중 1을 받은 쪽만 발행하고, 발행이 실패하면 닫기도 되돌아가
  * 다음 회차가 다시 닫는다. 그래서 별도 스윕·마커 없이 알림은 정확히 한 번이다. 수신자는 작가 워크스페이스 구성원과 초대된 부부 전원이다.
+ * DONE 이면 실패 사진이 많은지도 본다([FailedPhotoAlerter]) — 운영자에게 가는 알림이고 커밋 뒤에 보낸다.
  */
 @Service
 class AnalysisJobCloser(
@@ -34,6 +35,7 @@ class AnalysisJobCloser(
     private val galleryMembers: GalleryMemberRepository,
     private val publisher: UserNotificationPublisher,
     private val eventRecorder: AnalysisJobEventRecorder,
+    private val failedPhotoAlerter: FailedPhotoAlerter,
     private val clock: Clock,
 ) {
 
@@ -61,6 +63,7 @@ class AnalysisJobCloser(
                     secondsSince(job.dispatchedAt, now), secondsSince(job.createdAt, now),
                 )
                 recordDone(job, now, folders = outcome.folders, details = outcome.details, assigned = outcome.assigned)
+                failedPhotoAlerter.alertIfAny(job, finishedAt = now)
             }
             MaterializeOutcomeDto.NothingNew -> {
                 log.info(
@@ -68,6 +71,7 @@ class AnalysisJobCloser(
                     job.requiredId, job.galleryId, secondsSince(job.dispatchedAt, now), secondsSince(job.createdAt, now),
                 )
                 recordDone(job, now, folders = 0, details = 0, assigned = 0)
+                failedPhotoAlerter.alertIfAny(job, finishedAt = now)
             }
             is MaterializeOutcomeDto.Failed -> {
                 log.warn(

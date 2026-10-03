@@ -130,6 +130,10 @@ app:
     categorizing-deadline: PT70M
     materialize-max-attempts: 3
     score-fallback-max: 3
+    # 잡이 끝날 때 그 잡의 몫인 분석 실패 사진(photo_analysis.error)이 한 장이라도 있으면 디스코드로 알린다. 알림의 링크는 백오피스의 그 갤러리다.
+    # 웹훅 주소는 비밀값이라 여기 두지 않는다 — prod 는 Parameter Store(app.analysis.discord-webhook-url)가 채우고, 비어 있으면 로그만 남긴다.
+    backoffice-base-url: https://admin.easyselect.kr
+    discord-webhook-url: ""
     # GPU score 워커. 켜져 있으면 스윕이 backlog(점수 없는 UPLOADED 사진)를 보고 EC2 인스턴스(Name 태그 = tag)를 켠다. 끄기는
     # 워커의 유휴 30초 자기 정지가 1차이고 idle-stop-after 는 그것이 실패했을 때의 안전망이다. 워커가 fallback-after 동안 뜨지 않거나
     # 점수가 멈추면 score Lambda 폴백을 갤러리당 fallback-interval 마다 보낸다. 꺼져 있으면(로컬·테스트·GPU 배포 전) 폴백만 돈다.

@@ -43,6 +43,8 @@ data class AnalysisProperties(
     val materializeMaxAttempts: Int = 3,
     /** 한 갤러리에 score Lambda 폴백을 이 횟수까지 보낸다. 그 뒤에도 점수가 없으면 진행 감시가 처리한다. */
     val scoreFallbackMax: Int = 3,
+    /** 관리자 백오피스 주소. 실패 사진 알림이 그 갤러리를 여는 링크(`/resources?type=GALLERY&id=`)를 이 위에 만든다. */
+    val backofficeBaseUrl: String = "https://admin.easyselect.kr",
     val gpu: Gpu = Gpu(),
 ) {
 
