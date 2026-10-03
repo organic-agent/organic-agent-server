@@ -34,6 +34,16 @@ enum class AdminErrorCode(
     /** 사용한 쿠폰 회수는 갤러리 만료 정책까지 변경하므로 미사용 코드만 관리한다. */
     COUPON_STATE_CHANGE_FORBIDDEN(HttpStatus.CONFLICT, "ADMIN_409_16", "이미 사용한 쿠폰의 상태는 변경할 수 없습니다."),
     COUPON_STATE_UNCHANGED(HttpStatus.CONFLICT, "ADMIN_409_17", "요청한 쿠폰 상태와 현재 상태가 같습니다."),
+
+    /** 실패한 사진만 재처리(`FAILED_ONLY`)를 요청했는데 그 갤러리에 `photo_analysis.error`가 있는 사진이 없다 — 빈 재처리로 잡을 만들지 않는다. */
+    NO_FAILED_ANALYSIS(HttpStatus.CONFLICT, "ADMIN_409_18", "분석에 실패한 사진이 없습니다."),
+
+    /**
+     * 실패한 사진만 재처리(`FAILED_ONLY`)는 잡이 CATEGORIZING 이면 받지 않는다. 되살린 사진은 categorize 를 보내기 전에 올라온
+     * 사진이라 잡이 그 사진의 백분위를 기다리게 되는데, 이미 보낸 categorize 는 그 사진을 다시 보지 않는다. 잡이 끝난 뒤 다시 요청한다.
+     */
+    ANALYSIS_CATEGORIZING(HttpStatus.CONFLICT, "ADMIN_409_19", "AI 폴더를 만드는 중입니다. 끝난 뒤 다시 시도해 주세요."),
+
     USERNAME_ALREADY_EXISTS(HttpStatus.CONFLICT, "ADMIN_409_1", "이미 사용 중인 관리자 아이디입니다."),
     PASSWORD_REUSE(HttpStatus.CONFLICT, "ADMIN_409_2", "현재 비밀번호와 다른 비밀번호를 사용해 주세요."),
     SELF_TEMPORARY_PASSWORD_FORBIDDEN(HttpStatus.CONFLICT, "ADMIN_409_3", "본인의 비밀번호는 비밀번호 변경 화면에서 변경해 주세요."),
