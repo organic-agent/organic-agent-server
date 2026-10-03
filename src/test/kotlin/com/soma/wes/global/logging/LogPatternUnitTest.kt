@@ -51,6 +51,15 @@ class LogPatternUnitTest {
     }
 
     @Test
+    fun `시각은 밀리초까지 찍혀 같은 초 안의 줄 순서를 알 수 있다`() {
+        // when
+        val line = format(emptyMap())
+
+        // then
+        assertThat(line).matches("^timestamp=\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3} level=(?s).*")
+    }
+
+    @Test
     fun `메시지는 맨 뒤에 그대로 붙어 event 로 거를 수 있다`() {
         // when
         val line = format(mapOf(LogContext.GALLERY_ID to "7"))

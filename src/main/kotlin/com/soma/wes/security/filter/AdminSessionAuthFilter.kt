@@ -5,10 +5,12 @@ import com.soma.wes.admin.exception.AdminAuthenticationException
 import com.soma.wes.admin.service.AdminSessionService
 import com.soma.wes.admin.support.AdminSessionCookie
 import com.soma.wes.global.filter.HttpLoggingFilter
+import com.soma.wes.global.logging.LogContext
 import com.soma.wes.security.exception.CustomAuthenticationEntryPoint
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
+import org.slf4j.MDC
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.filter.OncePerRequestFilter
 
@@ -36,6 +38,8 @@ class AdminSessionAuthFilter(
             SecurityContextHolder.getContext().authentication = authentication
             val principal = authentication.principal as AdminLoginUser
             request.setAttribute(HttpLoggingFilter.USER_ID_ATTRIBUTE, principal.id)
+            // 요청 로그 줄 앞의 userId= 키로 관리자 번호를 찍는다. 비우는 것은 HttpLoggingFilter 다.
+            MDC.put(LogContext.USER_ID, principal.id.toString())
         } catch (e: AdminAuthenticationException) {
             SecurityContextHolder.clearContext()
             authenticationEntryPoint.commence(request, response, e)

@@ -28,7 +28,7 @@ import java.time.Duration
 
 /**
  * 요청 로그의 규약을 지키는 회귀 가드 — traceId가 붙고, 민감한 쿼리 값이 가려지고,
- * 인증된 요청의 RESPONSE 줄에 userId가 찍히는지. 실제 톰캣(RANDOM_PORT)이어야 서블릿 필터 순서와
+ * 인증된 요청의 RESPONSE 줄에 userId가 MDC 키로 한 번만 실리고, 사전 요청(OPTIONS)은 줄을 남기지 않는지. 실제 톰캣(RANDOM_PORT)이어야 서블릿 필터 순서와
  * 시큐리티 체인이 그대로 재현된다.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -73,7 +73,8 @@ class HttpLoggingFilterTest @Autowired constructor(
         val result = loggedEvents().single { it.formattedMessage.startsWith("[RESPONSE]") }
 
         assertThat(request.formattedMessage).isEqualTo("[REQUEST] GET /api/v1/users/me")
-        assertThat(result.formattedMessage).isEqualTo("[RESPONSE] /api/v1/users/me userId=${user.id} (200 OK)")
+        assertThat(result.formattedMessage).isEqualTo("[RESPONSE] /api/v1/users/me (200 OK)")
+        assertThat(result.mdcPropertyMap[LogContext.USER_ID]).isEqualTo(user.id.toString())
 
         val traceId = request.mdcPropertyMap[HttpLoggingFilter.TRACE_ID_KEY]
         assertThat(traceId).hasSize(16)
@@ -97,15 +98,16 @@ class HttpLoggingFilterTest @Autowired constructor(
     }
 
     @Test
-    fun `인증에서 거절된 요청도 RESPONSE 줄이 남는다`() {
+    fun `인증에서 거절된 요청도 RESPONSE 줄이 남고 사용자 번호는 싣지 않는다`() {
         // when
         val response = send("/api/v1/users/me", accessToken = null)
 
         // then
         assertThat(response.statusCode()).isEqualTo(401)
         assertThat(response.body()).contains("\"correlationId\":\"")
-        assertThat(loggedEvents().map { it.formattedMessage })
-            .contains("[RESPONSE] /api/v1/users/me userId=null (401 UNAUTHORIZED)")
+        val result = loggedEvents().single { it.formattedMessage.startsWith("[RESPONSE]") }
+        assertThat(result.formattedMessage).isEqualTo("[RESPONSE] /api/v1/users/me (401 UNAUTHORIZED)")
+        assertThat(result.mdcPropertyMap).doesNotContainKey(LogContext.USER_ID)
     }
 
     @Test
@@ -153,6 +155,28 @@ class HttpLoggingFilterTest @Autowired constructor(
         // then
         assertThat(appender.list).isEmpty()
         assertThat(response.headers().firstValue(HttpLoggingFilter.CORRELATION_ID_HEADER)).isPresent
+    }
+
+    @Test
+    fun `CORS 사전 요청은 기록하지 않고 브라우저가 결과를 한 시간 다시 쓰게 한다`() {
+        // when
+        val response = HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:$port/api/v1/users/me"))
+                .method("OPTIONS", HttpRequest.BodyPublishers.noBody())
+                .header("Origin", "http://localhost:3000")
+                .header("Access-Control-Request-Method", "GET")
+                .build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
+        // then
+        assertSoftly { softly ->
+            softly.assertThat(response.statusCode()).isEqualTo(200)
+            softly.assertThat(response.headers().firstValue("Access-Control-Max-Age")).hasValue("3600")
+            softly.assertThat(response.headers().firstValue(HttpLoggingFilter.CORRELATION_ID_HEADER)).isPresent
+            softly.assertThat(appender.list).isEmpty()
+        }
     }
 
     /**

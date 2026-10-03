@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
+import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
 import org.springframework.http.server.PathContainer
 import org.springframework.web.filter.OncePerRequestFilter
@@ -17,7 +18,7 @@ import java.util.UUID
 
 /**
  * 요청마다 traceId를 MDC에 심고 `[REQUEST]`·`[RESPONSE]` 한 줄씩을 남긴다. 경로의 갤러리 번호와 업로드 세션 헤더도 같이 심어,
- * 그 요청이 남긴 모든 줄을 갤러리·업로드 한 번 단위로 모을 수 있게 한다(사용자 번호는 인증 필터가 심는다).
+ * 그 요청이 남긴 모든 줄을 갤러리·업로드 한 번 단위로 모을 수 있게 한다(사용자 번호는 인증 필터가 MDC 에 심어 줄 앞에 붙는다).
  * `@Component`를 붙이지 않는다. 붙이면 Spring Boot가 서블릿 필터로 한 번 더 등록한다
  */
 class HttpLoggingFilter : OncePerRequestFilter() {
@@ -38,7 +39,7 @@ class HttpLoggingFilter : OncePerRequestFilter() {
         /** 갤러리 아래 자원의 경로(`/api/v1/galleries/{galleryId}/…`)에서 갤러리 번호를 꺼낸다. */
         private val GALLERY_PATH_PATTERN = Regex("/galleries/(\\d{1,18})(?:/|$)")
 
-        /** 인증 필터가 로그인 사용자 id(Long)를 실어 보내는 request attribute 이름. */
+        /** 관리자 인증 필터가 로그인 관리자 id(Long)를 실어 보내는 request attribute 이름. 관리자 감사 필터가 읽는다. */
         const val USER_ID_ATTRIBUTE = "userId"
 
         /** UUID 32자 중 앞부분만 쓴다. 한 서버의 동시 요청을 구분하기엔 충분하고 로그 줄이 짧아진다. */
@@ -105,7 +106,9 @@ class HttpLoggingFilter : OncePerRequestFilter() {
         }
     }
 
+    /** 브라우저의 CORS 사전 요청(`OPTIONS`)도 뺀다 — 호출마다 줄이 두 배가 되고 알려주는 것이 없다. */
     private fun isExcluded(request: HttpServletRequest): Boolean {
+        if (request.method == HttpMethod.OPTIONS.name()) return true
         val path = PathContainer.parsePath(request.requestURI)
         return EXCLUDE_PATTERNS.any { it.matches(path) }
     }
@@ -117,11 +120,11 @@ class HttpLoggingFilter : OncePerRequestFilter() {
         log.info("[REQUEST] {} {}", request.method, decodedRequestUri(request))
     }
 
+    /** 사용자 번호는 메시지에 넣지 않는다 — 인증 필터가 MDC 에 심어 줄 앞의 `userId=` 키로 이미 찍힌다. */
     private fun logResponse(request: HttpServletRequest, response: HttpServletResponse) {
-        val userId = request.getAttribute(USER_ID_ATTRIBUTE) as? Long
         val status = HttpStatus.resolve(response.status) ?: response.status
 
-        log.info("[RESPONSE] {} userId={} ({})", decodedRequestUri(request), userId, status)
+        log.info("[RESPONSE] {} ({})", decodedRequestUri(request), status)
     }
 
     private fun decodedRequestUri(request: HttpServletRequest): String {
