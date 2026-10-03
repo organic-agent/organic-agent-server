@@ -2,6 +2,7 @@ package com.soma.wes.analysis.service
 
 import com.soma.wes.analysis.domain.AnalysisFailureCode
 import com.soma.wes.analysis.domain.AnalysisStatus
+import com.soma.wes.analysis.domain.AnalysisTrigger
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
 import com.soma.wes.analysis.repository.AnalysisJobRepository
@@ -129,18 +130,36 @@ class AnalysisServiceTest @Autowired constructor(
         }
 
         @Test
-        fun `진행 중인 잡이 있으면 새 잡을 만들지 않는다`() {
+        fun `진행 중인 잡이 있으면 새 잡을 만들지 않고 그 잡을 돌려준다`() {
             // given
             photoFixture.업로드된_사진(fixture.galleryId, count = 1)
             val first = analysisService.request(fixture.galleryId, fixture.photographer.id!!)
 
-            // when & then
-            assertThatThrownBy { analysisService.request(fixture.galleryId, fixture.photographer.id!!) }
-                .isInstanceOf(AnalysisException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(AnalysisErrorCode.ANALYSIS_JOB_ALREADY_ACTIVE)
-            assertThat(analysisJobRepository.count()).isEqualTo(1L)
-            assertThat(analysisJobRepository.findById(first.jobId).orElseThrow().status).isEqualTo(AnalysisStatus.ANALYZING)
+            // when — 같은 요청이 두 번 왔거나, 서버가 먼저 잡을 만든 뒤에 요청이 온 경우. 전에는 409 였다
+            val second = analysisService.request(fixture.galleryId, fixture.photographer.id!!)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(second.jobId).isEqualTo(first.jobId)
+                softly.assertThat(second.status).isEqualTo(AnalysisStatus.ANALYZING)
+                softly.assertThat(analysisJobRepository.count()).isEqualTo(1L)
+            }
+        }
+
+        @Test
+        fun `요청으로 만든 잡은 USER 로 남는다`() {
+            // given
+            photoFixture.업로드된_사진(fixture.galleryId, count = 1)
+
+            // when
+            val response = analysisService.request(fixture.galleryId, fixture.photographer.id!!)
+
+            // then
+            val job = analysisJobRepository.findById(response.jobId).orElseThrow()
+            assertSoftly { softly ->
+                softly.assertThat(job.trigger).isEqualTo(AnalysisTrigger.USER)
+                softly.assertThat(job.retryCount).isZero()
+            }
         }
 
         @Test

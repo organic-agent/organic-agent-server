@@ -92,8 +92,8 @@ class FolderStep(
     private fun fail(job: AnalysisJob, code: AnalysisFailureCode, error: String, now: ZonedDateTime) {
         if (analysisJobRepository.fail(job.requiredId, AnalysisJob.trimError(error), code, now) == 0) return
         log.warn(
-            "event=job.transition job={} gallery={} from=CATEGORIZING to=FAILED errorCode={} attempts={} error=\"{}\"",
-            job.requiredId, job.galleryId, code, job.attempts, error,
+            "event=job.transition job={} gallery={} from=CATEGORIZING to=FAILED errorCode={} trigger={} retry={} attempts={} error=\"{}\"",
+            job.requiredId, job.galleryId, code, job.trigger, job.retryCount, job.attempts, error,
         )
         eventRecorder.record(
             job.requiredId, job.galleryId, AnalysisJobEventType.FAILED,

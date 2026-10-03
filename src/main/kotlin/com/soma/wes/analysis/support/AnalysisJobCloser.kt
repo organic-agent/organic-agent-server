@@ -75,14 +75,16 @@ class AnalysisJobCloser(
             }
             is MaterializeOutcomeDto.Failed -> {
                 log.warn(
-                    "event=job.transition job={} gallery={} from=CATEGORIZING to=FAILED errorCode={} attempts={} error=\"{}\"",
-                    job.requiredId, job.galleryId, AnalysisFailureCode.FOLDER_FAILED, job.attempts, outcome.error,
+                    "event=job.transition job={} gallery={} from=CATEGORIZING to=FAILED errorCode={} trigger={} retry={} attempts={} error=\"{}\"",
+                    job.requiredId, job.galleryId, AnalysisFailureCode.FOLDER_FAILED, job.trigger, job.retryCount, job.attempts, outcome.error,
                 )
                 eventRecorder.record(
                     job.requiredId, job.galleryId, AnalysisJobEventType.FAILED,
                     mapOf(
                         "from" to AnalysisStatus.CATEGORIZING.name,
                         "errorCode" to AnalysisFailureCode.FOLDER_FAILED.name,
+                        "trigger" to job.trigger.name,
+                        "retry" to job.retryCount,
                         "attempts" to job.attempts,
                         "error" to outcome.error,
                     ),

@@ -29,8 +29,12 @@ interface AnalysisControllerDocs {
             이미 벡터·점수가 있는 사진은 다시 계산하지 않는다 — 사진을 더 올린 뒤 다시 눌러도 새 사진만 처리된다.
             전량 재계산(모델 교체)은 관리자 재처리(분석 리셋)의 일이다.
 
-            업로드가 끝난 사진이 한 장도 없으면 409_2다. 진행 중(ANALYZING·CATEGORIZING)인 잡이 있으면 새 잡을 만들지 않고
-            409_1이다. 끝난 뒤 다시 요청하면 새 잡이 만들어지고, 새로 올라온 사진이 없으면 폴더 추가 없이 DONE으로 닫힌다.
+            멱등하다. 진행 중(ANALYZING·CATEGORIZING)인 잡이 있으면 새 잡을 만들지 않고 그 잡을 그대로 돌려준다 — 같은 요청을
+            두 번 보내거나 재시도해도 잡은 하나다. 가장 최근 잡이 끝났고 분류할 사진이 남아 있지 않으면 그 끝난 잡을 돌려준다.
+            업로드가 끝난 사진이 한 장도 없으면 409_2다.
+
+            이 요청이 없어도 서버가 잡을 만든다: 마지막 사진이 올라오고 1분이 지나면 자동으로 분석을 시작하고, 일시적인 실패는
+            2분·10분 뒤 두 번까지 스스로 다시 돌린다. 이 요청은 그 1분을 기다리지 않고 바로 시작하는 빠른 길이다.
         """,
     )
     @ApiResponses(
@@ -53,16 +57,12 @@ interface AnalysisControllerDocs {
         ),
         ApiResponse(
             responseCode = "409",
-            description = "진행 중인 잡이 있거나, 분석할 사진이 없음",
+            description = "분석할 사진이 없음",
             content = [
                 Content(
                     mediaType = MediaType.APPLICATION_JSON_VALUE,
                     schema = Schema(implementation = ErrorResponse::class),
                     examples = [
-                        ExampleObject(
-                            name = "진행 중인 잡",
-                            value = """{"code": "RECOMMENDATION_409_1", "message": "이미 진행 중인 AI 분석이 있습니다."}""",
-                        ),
                         ExampleObject(
                             name = "업로드된 사진 없음",
                             value = """{"code": "RECOMMENDATION_409_2", "message": "업로드가 끝난 사진이 없어 AI 분석을 시작할 수 없습니다."}""",

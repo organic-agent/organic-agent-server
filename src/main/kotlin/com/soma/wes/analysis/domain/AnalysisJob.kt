@@ -38,6 +38,18 @@ class AnalysisJob(
     /** 사용자가 기억하는 컨셉 수(선택). categorize 가 촬영 시각 구간을 이 수의 1층으로 묶는다. null 이면 AI 가 정한다. */
     @Column(name = "concept_count", updatable = false)
     val conceptCount: Int? = null,
+
+    /** 누가 만들었나. 운영 로그와 알림이 "사용자가 누른 잡인가 서버가 만든 잡인가"를 가르는 값이다. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "trigger", nullable = false, updatable = false, length = 10)
+    val trigger: AnalysisTrigger = AnalysisTrigger.USER,
+
+    /**
+     * 몇 번째 자동 재시도인가. [AnalysisTrigger.RETRY]가 아니면 0이고, 재시도 잡은 앞 잡의 값에 1을 더한다.
+     * 일시적 실패가 이어질 때 정해진 횟수에서 멈추게 하는 값이다 — 사용자가 다시 요청하면 0부터 다시 센다.
+     */
+    @Column(name = "retry_count", nullable = false, updatable = false)
+    val retryCount: Int = 0,
 ) : BaseEntity() {
 
     @Id

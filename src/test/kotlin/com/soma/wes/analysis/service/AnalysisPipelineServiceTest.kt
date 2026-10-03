@@ -264,9 +264,16 @@ class AnalysisPipelineServiceTest @Autowired constructor(
             assertThat(job(first).status).isEqualTo(AnalysisStatus.DONE)
             val folders = conceptFolderRepository.countByGalleryId(fixture.galleryId)
 
-            // when — 같은 사진으로 다시 요청, categorize 는 같은 결과를 다시 남긴다
+            // when — 분류 값이 리셋돼(관리자 재분석) 다시 요청, categorize 는 같은 결과를 다시 남긴다
+            jdbcTemplate.update(
+                """
+                UPDATE photo_analysis
+                SET technical_pct = NULL, aesthetic_pct = NULL, burst_id = NULL, burst_rank = NULL, embed_group_id = NULL
+                WHERE photo_id IN (${photos.joinToString(",")})
+                """.trimIndent(),
+            )
             val second = request()
-            recommendationFixture.컨셉_배정(second, fixture.galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
+            categorizeByLambda(second, photos)
             pipeline.advance()
 
             // then
@@ -274,6 +281,25 @@ class AnalysisPipelineServiceTest @Autowired constructor(
                 softly.assertThat(job(second).status).isEqualTo(AnalysisStatus.DONE)
                 softly.assertThat(conceptFolderRepository.countByGalleryId(fixture.galleryId)).isEqualTo(folders)
                 softly.assertThat(completionNotificationsOf(fixture.photographer.requiredId)).isEqualTo(1)
+            }
+        }
+
+        @Test
+        fun `할 일이 없으면 다시 요청해도 새 잡을 만들지 않고 끝난 잡을 돌려준다`() {
+            // given — 폴더까지 만들어진 갤러리
+            val photos = scoredPhotos(2)
+            val first = request()
+            categorizeByLambda(first, photos)
+            pipeline.advance()
+            assertThat(job(first).status).isEqualTo(AnalysisStatus.DONE)
+
+            // when — 전에는 여기서 잡이 하나 더 만들어졌다(운영에서 잡이 연달아 두 번 생긴 원인)
+            val again = request()
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(again).isEqualTo(first)
+                softly.assertThat(analysisJobRepository.count()).isEqualTo(1L)
             }
         }
 

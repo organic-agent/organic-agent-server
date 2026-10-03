@@ -144,6 +144,13 @@ app:
     # 웹훅 주소는 비밀값이라 여기 두지 않는다 — prod 는 Parameter Store(app.analysis.discord-webhook-url)가 채우고, 비어 있으면 로그만 남긴다.
     backoffice-base-url: https://admin.easyselect.kr
     discord-webhook-url: ""
+    # 서버가 분석 잡을 만든다(AutoAnalysisStep).
+    # - auto-analysis-quiet-after: 마지막 사진이 올라온 뒤 이 시간이 지나야 만든다(나눠 올리는 중간에 만들지 않게).
+    # - auto-analysis-window: 이 시간 안에 사진이 올라온 갤러리만 본다. 배포 순간 옛 갤러리 전부에 잡이 생기는 것을 막는다.
+    # - auto-retry-delays: 일시적 실패 뒤 다시 돌리기까지의 대기. 개수가 자동 재시도 횟수다.
+    auto-analysis-quiet-after: PT1M
+    auto-analysis-window: PT6H
+    auto-retry-delays: PT2M, PT10M
     # GPU score 워커. 켜져 있으면 스윕이 backlog(점수 없는 UPLOADED 사진)를 보고 EC2 인스턴스(Name 태그 = tag)를 켠다. 끄기는
     # 워커의 유휴 30초 자기 정지가 1차이고 idle-stop-after 는 그것이 실패했을 때의 안전망이다. 워커가 fallback-after 동안 뜨지 않거나
     # 점수가 멈추면 score Lambda 폴백을 갤러리당 fallback-interval 마다 보낸다. 꺼져 있으면(로컬·테스트·GPU 배포 전) 폴백만 돈다.
