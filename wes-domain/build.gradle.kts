@@ -46,6 +46,7 @@ dependencies {
     // Bedrock 클라이언트의 소켓 타임아웃을 직접 잡기 위해 컴파일 의존으로 올린다(원래는 런타임 전이).
     api("software.amazon.awssdk:apache-client")
 
+    api("org.apache.pdfbox:pdfbox:3.0.8")
     api("org.jetbrains.kotlin:kotlin-reflect")
     api("tools.jackson.module:jackson-module-kotlin")
     api("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3")
@@ -64,7 +65,7 @@ sourceSets {
         )
 
         resources.srcDir("../src/main/resources")
-        resources.include("config/**", "logback-spring.xml")
+        resources.include("config/**", "logback-spring.xml", "fonts/retouch/**")
     }
 }
 

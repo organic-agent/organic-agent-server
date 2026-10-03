@@ -87,6 +87,14 @@ enum class RetouchErrorCode(
     DUPLICATE_RESULT(HttpStatus.BAD_REQUEST, "RETOUCH_400_18", "중복된 사진이나 결과 파일이 포함되어 있습니다."),
     INVALID_FILENAME(HttpStatus.BAD_REQUEST, "RETOUCH_400_19", "보정 파일명이 올바르지 않습니다."),
 
+    INVALID_PDF_SCOPE(HttpStatus.BAD_REQUEST, "RETOUCH_400_20", "PDF 범위는 all, noResult, memo 중 하나여야 합니다."),
+    EMPTY_PDF(HttpStatus.BAD_REQUEST, "RETOUCH_400_21", "내려받을 요청이 없습니다."),
+    PDF_LIMIT_EXCEEDED(HttpStatus.BAD_REQUEST, "RETOUCH_400_22", "PDF 생성 범위를 줄여 다시 시도해 주세요."),
+    PDF_PREVIEW_NOT_READY(HttpStatus.CONFLICT, "RETOUCH_409_4", "사진 미리보기가 준비된 후 다시 시도해 주세요."),
+    PDF_GENERATION_BUSY(HttpStatus.TOO_MANY_REQUESTS, "RETOUCH_429_1", "다른 요청서를 만드는 중입니다. 잠시 후 다시 시도해 주세요."),
+    PDF_GENERATION_FAILED(HttpStatus.SERVICE_UNAVAILABLE, "RETOUCH_503_1", "요청서를 만들지 못했습니다. 다시 시도해 주세요."),
+    PDF_GENERATION_TIMEOUT(HttpStatus.SERVICE_UNAVAILABLE, "RETOUCH_503_2", "PDF 생성 시간이 초과됐습니다. 범위를 줄여 다시 시도해 주세요."),
+
     /** 진행 중인 DRAFTING 회차에 없는 사진을 빼거나 요청을 적으려는 경우. */
     PHOTO_NOT_IN_ROUND(HttpStatus.NOT_FOUND, "RETOUCH_404_1", "보정 요청 목록에 없는 사진입니다."),
 
