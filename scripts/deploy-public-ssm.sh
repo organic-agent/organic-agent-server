@@ -18,6 +18,40 @@ PREVIOUS_IMAGE_TAG=
 PREVIOUS_SERVICE=
 EXPECTED_PREVIOUS_SERVICE=
 TARGET_SERVICE=wes-api
+# 공개 API 이미지 한 벌(압축본 + 풀린 층)이 들어가고도 남는 여유.
+MIN_FREE_DISK_KB=2097152
+
+# 같은 저장소의 태그 이미지는 인자로 받은 것만 남긴다.
+# `docker image prune`은 태그 없는 이미지만 지워 커밋마다 받은 이미지가 디스크를 채운다.
+remove_stale_images() (
+  IMAGE_REPOSITORY="$1"
+  shift
+  docker images --format '{{.Repository}}:{{.Tag}}' "$IMAGE_REPOSITORY" |
+    while IFS= read -r stale_image; do
+      case "$stale_image" in
+        *:"<none>") continue ;;
+      esac
+      case " $* " in
+        *" $stale_image "*) continue ;;
+      esac
+      docker rmi "$stale_image" >/dev/null ||
+        echo "옛 공개 API 이미지를 지우지 못했습니다: $stale_image" >&2
+    done
+)
+
+# 이미지를 풀다가 디스크가 차면 SSM 작업자까지 죽어 원인이 로그에 남지 않는다.
+require_free_disk() (
+  set -eu
+
+  for docker_data_dir in "$(docker info --format '{{.DockerRootDir}}')" /var/lib/containerd; do
+    [ -d "$docker_data_dir" ] || continue
+    FREE_DISK_KB=$(df -Pk "$docker_data_dir" | awk 'NR == 2 { print $4 }')
+    [ "$FREE_DISK_KB" -ge "$MIN_FREE_DISK_KB" ] || {
+      echo "디스크 여유가 부족해 공개 API 이미지를 받지 않습니다: $docker_data_dir 남은 $((FREE_DISK_KB / 1024))MB, 필요 $((MIN_FREE_DISK_KB / 1024))MB" >&2
+      return 1
+    }
+  done
+)
 
 handoff_public_service() (
   set -eu
@@ -200,6 +234,12 @@ chmod 0600 "$CANDIDATE_DIR/docker-compose.prod.yml" "$CANDIDATE_DIR/config.alloy
   [ -s "$CANDIDATE_DIR/config.alloy" ]
 docker compose --project-directory "$WORK_DIR" \
   -f "$CANDIDATE_DIR/docker-compose.prod.yml" config --quiet
+
+# 롤백은 지금 도는 이미지 하나만 쓴다. 그 밖의 옛 태그를 받기 전에 지워 자리를 만든다.
+TARGET_IMAGE="ghcr.io/${OWNER_LOWERCASE}/${PUBLIC_IMAGE_BASENAME}:$TARGET_IMAGE_TAG"
+remove_stale_images "ghcr.io/${OWNER_LOWERCASE}/${PUBLIC_IMAGE_BASENAME}" \
+  "$TARGET_IMAGE" "$PREVIOUS_IMAGE"
+require_free_disk
 
 echo "$GITHUB_TOKEN" \
   | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
