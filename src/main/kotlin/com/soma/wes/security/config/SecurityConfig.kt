@@ -29,6 +29,11 @@ class SecurityConfig(
     private val allowedOrigins: List<String>,
 ) {
 
+    companion object {
+        /** 브라우저가 사전 요청(`OPTIONS`) 결과를 다시 쓰는 시간(초). 없으면 API 호출마다 사전 요청이 한 번 더 간다. */
+        private const val CORS_PREFLIGHT_MAX_AGE_SECONDS = 3600L
+    }
+
     @Bean
     fun filterChain(http: HttpSecurity): SecurityFilterChain {
         http {
@@ -68,6 +73,7 @@ class SecurityConfig(
             addAllowedHeader("*")
             addAllowedMethod("*")
             allowCredentials = true
+            maxAge = CORS_PREFLIGHT_MAX_AGE_SECONDS
         }
         return UrlBasedCorsConfigurationSource().apply {
             registerCorsConfiguration("/**", configuration)
