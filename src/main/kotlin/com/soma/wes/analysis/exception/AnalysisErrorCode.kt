@@ -45,6 +45,12 @@ enum class AnalysisErrorCode(
      */
     SCORE_WORKER_CONTROL_FAILED(HttpStatus.BAD_GATEWAY, "PHOTO_502_6", "GPU 워커를 제어하지 못했습니다."),
 
+    /**
+     * 운영 알림(디스코드 웹훅) 전송 자체가 실패한 경우(주소 오류·디스코드 장애·타임아웃). 사용자에게 나가지 않는다 —
+     * 알림을 보내는 쪽이 잡아 로그로 남기고 파이프라인은 계속 간다. 운영 전용이라 프론트가 분기하던 옛 접두사를 따르지 않는다.
+     */
+    OPS_ALERT_SEND_FAILED(HttpStatus.BAD_GATEWAY, "ANALYSIS_502_1", "운영 알림을 보내지 못했습니다."),
+
     /** 잡이 지나는 호출(embedder·categorize, GPU가 없으면 score) 중 실행기가 설정되지 않은 것이 있는 경우. 로컬·테스트에는 Lambda가 없는 것이 정상이다. */
     AI_TASK_NOT_CONFIGURED(HttpStatus.SERVICE_UNAVAILABLE, "PHOTO_503_1", "AI 분석 실행이 설정되지 않았습니다."),
 }

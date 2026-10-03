@@ -307,6 +307,27 @@ class PhotoPipelineRepository(
         .query { rs, _ -> rs.getBoolean(1) }
         .single()
 
+    /**
+     * 갤러리에서 [since] 이후에 실패로 표시된 사진 수를 사유(`photo_analysis.error`)별로 센다. 전부 세려면 아주 이른 시각을 넘긴다.
+     * 실패를 쓰는 세 주체(이 서버·임베더·score)가 모두 `updated_at`을 그 시각으로 쓴다. 실패한 행은 이후 어느 단계도 다시 쓰지 않으므로
+     * `updated_at`이 곧 실패한 시각이다.
+     */
+    fun countAnalysisFailuresByError(galleryId: Long, since: ZonedDateTime): Map<String, Long> = jdbcClient.sql(
+        """
+        SELECT a.error, count(*) AS photos
+        FROM photos p
+        JOIN photo_analysis a ON a.photo_id = p.id
+        WHERE p.gallery_id = :galleryId AND p.status = 'UPLOADED' AND p.deleted_at IS NULL
+          AND a.error IS NOT NULL AND a.updated_at > :since
+        GROUP BY a.error
+        """.trimIndent(),
+    )
+        .param("galleryId", galleryId)
+        .param("since", Timestamp.from(since.toInstant()))
+        .query { rs, _ -> rs.getString("error") to rs.getLong("photos") }
+        .list()
+        .toMap()
+
     /** 완료 통보도 서버 확인도 아직 없는 PENDING 사진 전체 수. 하트비트가 "올라오다 만 사진이 쌓이고 있나"를 보는 값이다. */
     fun countPending(): Long = jdbcClient.sql(
         "SELECT count(*) FROM photos p WHERE p.status = 'PENDING' AND p.deleted_at IS NULL",
