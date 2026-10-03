@@ -668,8 +668,9 @@ class AdminResourceContextRepository(
                 "name" to rs.getString("name"),
                 "status" to when {
                     rs.getObject("revoked_at") != null -> "REVOKED"
-                    rs.getObject("expires_at") != null &&
-                        (rs.getObject("expires_at") as java.time.OffsetDateTime).isBefore(java.time.OffsetDateTime.now()) -> "EXPIRED"
+                    // 타입 없이 꺼내면 드라이버가 java.sql.Timestamp 를 돌려준다 — OffsetDateTime 으로 강제 변환하면 500 이다(#229).
+                    rs.getObject("expires_at", java.time.OffsetDateTime::class.java)
+                        ?.isBefore(java.time.OffsetDateTime.now()) == true -> "EXPIRED"
                     else -> "ACTIVE"
                 },
                 "token" to "[MASKED]",

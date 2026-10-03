@@ -896,6 +896,38 @@ class AdminResourceServiceTest @Autowired constructor(
             .isZero()
     }
 
+    @Test
+    fun `만료일이 있는 협업 링크가 걸린 갤러리의 컨텍스트도 열리고 링크 상태를 만료 기준으로 보여 준다`() {
+        // given — 만료 전 링크, 만료된 링크, 취소된 링크
+        val actor = adminAccountFixture.관리자("collab-expiry")
+        val galleryId = createGallery(actor.requiredId, "collab-expiry")
+        insertCollabSession(galleryId, "만료 전", expiresAt = "now() + interval '1 day'", revokedAt = "NULL")
+        insertCollabSession(galleryId, "만료됨", expiresAt = "now() - interval '1 day'", revokedAt = "NULL")
+        insertCollabSession(galleryId, "취소됨", expiresAt = "now() + interval '1 day'", revokedAt = "now()")
+
+        // when
+        val links = contextService.get(AdminResourceType.GALLERY, galleryId).sections.getValue("collaborationLinks")
+
+        // then
+        assertThat(links.associate { it["name"] to it["status"] })
+            .containsEntry("만료 전", "ACTIVE")
+            .containsEntry("만료됨", "EXPIRED")
+            .containsEntry("취소됨", "REVOKED")
+    }
+
+    private fun insertCollabSession(galleryId: Long, name: String, expiresAt: String, revokedAt: String) {
+        jdbcClient.sql(
+            """
+            INSERT INTO collab_sessions (gallery_id, name, collab_token, expires_at, revoked_at, version, created_at, updated_at)
+            VALUES (:galleryId, :name, :token, $expiresAt, $revokedAt, 0, now(), now())
+            """.trimIndent(),
+        )
+            .param("galleryId", galleryId)
+            .param("name", name)
+            .param("token", "collab-expiry-$name-${System.nanoTime()}")
+            .update()
+    }
+
     private fun createGallery(actorAdminId: Long, slug: String): Long {
         val user = createUser(actorAdminId, "$slug-user")
         val studio = service.create(
