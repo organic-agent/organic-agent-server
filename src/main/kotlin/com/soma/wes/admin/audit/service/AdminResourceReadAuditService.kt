@@ -81,6 +81,21 @@ class AdminResourceReadAuditService(
         )
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun recordAnalysisFailures(
+        actor: AdminLoginUser,
+        sourceAddress: String?,
+        galleryId: Long,
+    ) {
+        record(
+            actor = actor,
+            sourceAddress = sourceAddress,
+            targetType = AdminResourceType.GALLERY.auditTargetType,
+            targetId = galleryId.toString(),
+            metadata = listOf("route=GALLERY_ANALYSIS_FAILURES"),
+        )
+    }
+
     /**
      * 리소스 전용 controller 감사 밖의 관리자 GET과 모든 조회 실패를 기록한다.
      * requestUri 원문이나 query string을 저장하지 않고, 정해진 route와 안전한 숫자/enum ID만 남긴다.
@@ -161,7 +176,11 @@ class AdminResourceReadAuditService(
         if (type == null || id == null) {
             return ReadTarget("RESOURCE_READ", AdminAuditTargetType.ADMIN_OPERATION, "RESOURCE_READ")
         }
-        val route = if (segments.getOrNull(3) == "context") "RESOURCE_CONTEXT" else "RESOURCE_DETAIL"
+        val route = when (segments.getOrNull(3)) {
+            "context" -> "RESOURCE_CONTEXT"
+            "analysis-failures" -> "GALLERY_ANALYSIS_FAILURES"
+            else -> "RESOURCE_DETAIL"
+        }
         return ReadTarget(route, type.auditTargetType, id.toString())
     }
 

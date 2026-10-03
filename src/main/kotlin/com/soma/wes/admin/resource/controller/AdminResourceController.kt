@@ -3,6 +3,7 @@ package com.soma.wes.admin.resource.controller
 import com.soma.wes.admin.audit.service.AdminResourceReadAuditService
 import com.soma.wes.admin.domain.AdminLoginUser
 import com.soma.wes.admin.resource.domain.AdminResourceType
+import com.soma.wes.admin.resource.dto.AdminAnalysisFailuresResponse
 import com.soma.wes.admin.resource.dto.AdminReprocessRequest
 import com.soma.wes.admin.resource.dto.AdminReprocessResponse
 import com.soma.wes.admin.resource.dto.AdminReasonRequest
@@ -260,6 +261,17 @@ class AdminResourceController(
     ): ResponseEntity<AdminReprocessResponse> = ResponseEntity.accepted().body(
         reprocessService.reprocess(loginUser.id, type, id, request, servletRequest.remoteAddr),
     )
+
+    @GetMapping("/resources/GALLERY/{id}/analysis-failures")
+    fun getAnalysisFailures(
+        @AuthenticationPrincipal loginUser: AdminLoginUser,
+        @PathVariable id: Long,
+        servletRequest: HttpServletRequest,
+    ): ResponseEntity<AdminAnalysisFailuresResponse> {
+        val response = reprocessService.getAnalysisFailures(id)
+        resourceReadAuditService.recordAnalysisFailures(loginUser, servletRequest.remoteAddr, id)
+        return ResponseEntity.ok(response)
+    }
 
     @PostMapping("/resources/{type}/{id}/workflows")
     fun executeWorkflow(

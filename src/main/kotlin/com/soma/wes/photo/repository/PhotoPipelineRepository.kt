@@ -1,5 +1,6 @@
 package com.soma.wes.photo.repository
 
+import com.soma.wes.photo.dto.AnalysisFailureDto
 import com.soma.wes.photo.dto.PendingPhotoDto
 import com.soma.wes.photo.repository.projection.GalleryAnalysisProgress
 import java.sql.Timestamp
@@ -17,7 +18,7 @@ import org.springframework.stereotype.Repository
  * 만들므로 LEFT JOIN 해 없는 행을 "아직"으로 읽는다.
  *
  * 네 묶음이 있다 — 진행 카운트([progressOf]), PENDING 보정([findPendingToCheck]·[markUploaded]·[touchPending]·[moveToTrash]),
- * 임베더 배정과 리셋([claimForEmbedding]·[releaseStaleDispatches]·[markEmbedAttemptsExceeded]·[resetAnalysis]),
+ * 임베더 배정과 리셋([claimForEmbedding]·[releaseStaleDispatches]·[markEmbedAttemptsExceeded]·[resetAnalysis]·[resetFailedAnalysis]),
  * 잡의 대기 끝내기([markAnalysisStalled]·[isCategorizedAsOf]),
  * GPU 제어·score 폴백([countScoreBacklog]·[findGalleryIdsWithUnscoredPhotos]·[findUnscoredPhotoIds]).
  * 하트비트는 이 중 대기량([countPending]·[countInFlightEmbedBatches]·[countScoreBacklog])을 1분마다 읽는다.
@@ -390,6 +391,54 @@ class PhotoPipelineRepository(
             .update()
         return deleted
     }
+
+    /**
+     * [resetAnalysis]의 좁은 판 — 결정적으로 실패한 사진(`photo_analysis.error`)의 분석 행만 지우고 그 사진의 배정 추적만 초기화한다.
+     * 정상 사진의 벡터·점수는 그대로라 다음 스윕이 다시 배정하는 것은 실패한 장뿐이다. 되돌린 사진 id를 돌려준다.
+     * 다시 실패하면 같은 상한([markEmbedAttemptsExceeded])에 걸려 다시 `error`로 남는다 — 스스로 반복하지 않는다.
+     */
+    fun resetFailedAnalysis(galleryId: Long): List<Long> {
+        val photoIds = jdbcClient.sql(
+            """
+            DELETE FROM photo_analysis a
+            USING photos p
+            WHERE p.id = a.photo_id AND p.gallery_id = :galleryId AND p.status = 'UPLOADED' AND p.deleted_at IS NULL
+              AND a.error IS NOT NULL
+            RETURNING a.photo_id
+            """.trimIndent(),
+        )
+            .param("galleryId", galleryId)
+            .query { rs, _ -> rs.getLong(1) }
+            .list()
+            .sorted()
+        if (photoIds.isEmpty()) return photoIds
+        jdbcClient.sql("UPDATE photos SET dispatched_at = NULL, embed_attempts = 0 WHERE id IN (:photoIds)")
+            .param("photoIds", photoIds)
+            .update()
+        return photoIds
+    }
+
+    /** 갤러리에서 분석이 결정적으로 실패한 사진과 그 사유. 실패로 표시된 시각(분석 행의 `updated_at`) 순이다. */
+    fun findAnalysisFailures(galleryId: Long): List<AnalysisFailureDto> = jdbcClient.sql(
+        """
+        SELECT p.id, p.original_file_name, a.error, a.updated_at
+        FROM photos p
+        JOIN photo_analysis a ON a.photo_id = p.id
+        WHERE p.gallery_id = :galleryId AND p.status = 'UPLOADED' AND p.deleted_at IS NULL
+          AND a.error IS NOT NULL
+        ORDER BY a.updated_at, p.id
+        """.trimIndent(),
+    )
+        .param("galleryId", galleryId)
+        .query { rs, _ ->
+            AnalysisFailureDto(
+                photoId = rs.getLong("id"),
+                originalFileName = rs.getString("original_file_name"),
+                error = rs.getString("error"),
+                failedAt = rs.getObject("updated_at", OffsetDateTime::class.java).toZonedDateTime(),
+            )
+        }
+        .list()
 
     companion object {
         /** 이 서버가 쓰는 `photo_analysis.error` 값 — 임베더 배정 상한. 임베더·score의 값(디코드 실패 등)과 같은 컬럼을 나눠 쓴다. */
