@@ -308,22 +308,24 @@ class PhotoPipelineRepository(
         .single()
 
     /**
-     * 갤러리에서 [since] 이후에 실패로 표시된 사진 수를 사유(`photo_analysis.error`)별로 센다. 전부 세려면 아주 이른 시각을 넘긴다.
+     * 갤러리에서 ([since], [until]] 구간에 실패로 표시된 사진 수를 사유(`photo_analysis.error`)별로 센다. 전부 세려면 [since]에 아주 이른 시각을 넘긴다.
+     * 구간의 양 끝을 잡 종료 시각으로 맞추면 잇따른 두 잡의 집계가 겹치지도 비지도 않는다.
      * 실패를 쓰는 세 주체(이 서버·임베더·score)가 모두 `updated_at`을 그 시각으로 쓴다. 실패한 행은 이후 어느 단계도 다시 쓰지 않으므로
      * `updated_at`이 곧 실패한 시각이다.
      */
-    fun countAnalysisFailuresByError(galleryId: Long, since: ZonedDateTime): Map<String, Long> = jdbcClient.sql(
+    fun countAnalysisFailuresByError(galleryId: Long, since: ZonedDateTime, until: ZonedDateTime): Map<String, Long> = jdbcClient.sql(
         """
         SELECT a.error, count(*) AS photos
         FROM photos p
         JOIN photo_analysis a ON a.photo_id = p.id
         WHERE p.gallery_id = :galleryId AND p.status = 'UPLOADED' AND p.deleted_at IS NULL
-          AND a.error IS NOT NULL AND a.updated_at > :since
+          AND a.error IS NOT NULL AND a.updated_at > :since AND a.updated_at <= :until
         GROUP BY a.error
         """.trimIndent(),
     )
         .param("galleryId", galleryId)
         .param("since", Timestamp.from(since.toInstant()))
+        .param("until", Timestamp.from(until.toInstant()))
         .query { rs, _ -> rs.getString("error") to rs.getLong("photos") }
         .list()
         .toMap()

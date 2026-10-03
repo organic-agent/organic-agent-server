@@ -63,7 +63,7 @@ class AnalysisJobCloser(
                     secondsSince(job.dispatchedAt, now), secondsSince(job.createdAt, now),
                 )
                 recordDone(job, now, folders = outcome.folders, details = outcome.details, assigned = outcome.assigned)
-                failedPhotoAlerter.alertIfMany(job)
+                failedPhotoAlerter.alertIfAny(job, finishedAt = now)
             }
             MaterializeOutcomeDto.NothingNew -> {
                 log.info(
@@ -71,7 +71,7 @@ class AnalysisJobCloser(
                     job.requiredId, job.galleryId, secondsSince(job.dispatchedAt, now), secondsSince(job.createdAt, now),
                 )
                 recordDone(job, now, folders = 0, details = 0, assigned = 0)
-                failedPhotoAlerter.alertIfMany(job)
+                failedPhotoAlerter.alertIfAny(job, finishedAt = now)
             }
             is MaterializeOutcomeDto.Failed -> {
                 log.warn(

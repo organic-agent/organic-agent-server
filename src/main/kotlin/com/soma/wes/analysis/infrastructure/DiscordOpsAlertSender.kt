@@ -37,7 +37,8 @@ class DiscordOpsAlertSender(
                 .retrieve()
                 .toBodilessEntity()
         } catch (e: RestClientException) {
-            log.warn("디스코드 웹훅 전송 실패: {}", e.message)
+            // 예외 메시지에는 웹훅 주소 경로(비밀 토큰)가 들어갈 수 있어 종류만 남긴다.
+            log.warn("디스코드 웹훅 전송 실패: {}", e.javaClass.simpleName)
             throw AnalysisException(AnalysisErrorCode.OPS_ALERT_SEND_FAILED)
         }
     }

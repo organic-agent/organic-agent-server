@@ -23,8 +23,8 @@ interface AnalysisJobRepository : JpaRepository<AnalysisJob, Long> {
 
     fun existsByGalleryIdAndStatusIn(galleryId: Long, statuses: Collection<AnalysisStatus>): Boolean
 
-    /** 이 잡([id])보다 앞서 끝난 같은 갤러리의 잡 중 가장 최근 것. 실패 알림이 "이번 잡의 몫"을 세는 기준 시각을 준다. */
-    fun findFirstByGalleryIdAndIdLessThanAndFinishedAtIsNotNullOrderByIdDesc(galleryId: Long, id: Long): AnalysisJob?
+    /** 이 잡([id])보다 앞선 같은 갤러리의 [status] 잡 중 가장 최근 것. 실패 알림이 "이번 잡의 몫"을 세는 기준 시각(직전 DONE)을 준다. */
+    fun findFirstByGalleryIdAndIdLessThanAndStatusOrderByIdDesc(galleryId: Long, id: Long, status: AnalysisStatus): AnalysisJob?
 
     /** 지금 돌고 있는 잡 수. 하트비트가 찍는 값이다. */
     fun countByStatusIn(statuses: Collection<AnalysisStatus>): Long

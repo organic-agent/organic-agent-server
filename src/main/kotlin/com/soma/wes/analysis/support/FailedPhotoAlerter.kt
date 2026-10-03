@@ -2,6 +2,7 @@ package com.soma.wes.analysis.support
 
 import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.domain.AnalysisJob
+import com.soma.wes.analysis.domain.AnalysisStatus
 import com.soma.wes.analysis.dto.OpsAlertDto
 import com.soma.wes.analysis.repository.AnalysisJobRepository
 import com.soma.wes.analysis.service.port.OpsAlertSender
@@ -19,8 +20,10 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * 잡이 DONE 으로 닫힐 때 그 잡의 몫인 분석 실패 사진을 세고, 한 장이라도 있으면 운영 채널에 알린다. 알림에는 백오피스의 그 갤러리 링크가 있어
  * 관리자가 바로 실패한 사진만 다시 분석할 수 있다. 실패 사진은 미분류로 남을 뿐 화면에서 따로 드러나지 않아, 알리지 않으면 아무도 모른다.
  *
- * "그 잡의 몫"은 같은 갤러리의 직전 잡이 끝난 뒤에 실패로 표시된 사진이다. 잡 생성 시각으로 자르지 않는다 — 임베딩은 잡과 무관하게
- * 새 사진을 따라가서 잡이 생기기 전에 실패한 사진도 있다. 직전 잡 뒤로 자르면 나눠 올릴 때마다 같은 실패로 다시 알리지도 않는다.
+ * "그 잡의 몫"은 같은 갤러리의 직전 DONE 잡이 끝난 뒤부터 이 잡이 끝날 때까지 실패로 표시된 사진이다. 잡 생성 시각으로 자르지 않는다 —
+ * 임베딩은 잡과 무관하게 새 사진을 따라가서 잡이 생기기 전에 실패한 사진도 있다. 기준을 DONE 잡으로 두는 것은 알림이 DONE 에서만
+ * 나가기 때문이다 — FAILED 잡을 기준으로 삼으면 그 잡 동안의 실패를 아무도 알리지 않는다. 끝을 이 잡의 종료 시각으로 자르면
+ * 닫힌 뒤 집계 전에 생긴 실패를 이번과 다음 알림이 두 번 세지 않는다.
  *
  * 알림은 운영 확인용이라 실패가 잡 닫기를 되돌리면 안 된다. 그래서 [AnalysisJobEventRecorder]처럼 호출자의 트랜잭션이 커밋된 뒤에 세고 보내며,
  * 어떤 실패도 삼키고 로그만 남긴다. 알림에는 갤러리 제목 같은 고객 정보를 싣지 않는다 — 운영 채널은 외부 서비스다.
@@ -41,25 +44,26 @@ class FailedPhotoAlerter(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    fun alertIfMany(job: AnalysisJob) {
+    /** @param finishedAt 이 잡을 DONE 으로 닫은 시각 — 닫은 쪽이 쓴 값 그대로다. 커밋 뒤에 잡을 다시 읽으면 영속성 컨텍스트의 옛 값이 나올 수 있다. */
+    fun alertIfAny(job: AnalysisJob, finishedAt: ZonedDateTime) {
         val jobId = job.requiredId
         val galleryId = job.galleryId
         if (TransactionSynchronizationManager.isActualTransactionActive() && TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(
                 object : TransactionSynchronization {
-                    override fun afterCommit() = check(jobId, galleryId)
+                    override fun afterCommit() = check(jobId, galleryId, finishedAt)
                 },
             )
         } else {
-            check(jobId, galleryId)
+            check(jobId, galleryId, finishedAt)
         }
     }
 
-    private fun check(jobId: Long, galleryId: Long) {
+    private fun check(jobId: Long, galleryId: Long, until: ZonedDateTime) {
         try {
-            val since = analysisJobRepository.findFirstByGalleryIdAndIdLessThanAndFinishedAtIsNotNullOrderByIdDesc(galleryId, jobId)
+            val since = analysisJobRepository.findFirstByGalleryIdAndIdLessThanAndStatusOrderByIdDesc(galleryId, jobId, AnalysisStatus.DONE)
                 ?.finishedAt ?: BEGINNING
-            val failedByError = photoPipelineRepository.countAnalysisFailuresByError(galleryId, since)
+            val failedByError = photoPipelineRepository.countAnalysisFailuresByError(galleryId, since, until)
             val failed = failedByError.values.sum()
             if (failed == 0L) return
 
