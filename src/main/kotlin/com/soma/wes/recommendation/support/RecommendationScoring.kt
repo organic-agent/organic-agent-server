@@ -16,6 +16,14 @@ object RecommendationScoring {
     const val W_AESTHETIC = 0.5
     const val W_BALANCE = 0.5
     const val W_PREF = 0.5
+
+    /**
+     * 신랑·신부 균형 가산점의 상한(z 단위). 담은 사진이 한쪽으로만 쏠리면 적은 쪽 단독 컷에 이만큼까지 더한다.
+     * 피사체 판정(`subjects`)이 틀릴 수 있어 순서를 흔드는 정도로만 둔다.
+     */
+    const val W_SPOUSE_BALANCE = 0.5
+    const val BRIDE = "bride"
+    const val GROOM = "groom"
     private const val EPS = 1e-12
 
     data class TypeStat(
@@ -75,6 +83,28 @@ object RecommendationScoring {
         val az = if (std(lift) > EPS) z(lift) else zeros
         val score = DoubleArray(pz.size) { pz[it] + W_BALANCE * bz[it] + W_PREF * az[it] }
         return Combined(score, pz, bz, az)
+    }
+
+    /**
+     * 신랑·신부 단독 컷의 균형 가산점. 담은 사진 중 신랑 단독·신부 단독 수만 본다(부부·단체·미상은 세지 않는다).
+     *
+     *     쏠림 = (담은 신랑 − 담은 신부) / (담은 신랑 + 담은 신부)   ∈ [−1, 1]
+     *     신부 단독 컷 += W·max(0, 쏠림),  신랑 단독 컷 += W·max(0, −쏠림)
+     *
+     * 둘 다 하나도 안 담았으면 0이다.
+     */
+    fun spouseBalance(types: List<String>, selected: Collection<Int>): DoubleArray {
+        val bride = selected.count { types[it] == BRIDE }
+        val groom = selected.count { types[it] == GROOM }
+        if (bride + groom == 0) return DoubleArray(types.size)
+        val tilt = (groom - bride).toDouble() / (bride + groom)
+        return DoubleArray(types.size) {
+            when (types[it]) {
+                BRIDE -> W_SPOUSE_BALANCE * maxOf(0.0, tilt)
+                GROOM -> W_SPOUSE_BALANCE * maxOf(0.0, -tilt)
+                else -> 0.0
+            }
+        }
     }
 
     private fun std(values: DoubleArray): Double {

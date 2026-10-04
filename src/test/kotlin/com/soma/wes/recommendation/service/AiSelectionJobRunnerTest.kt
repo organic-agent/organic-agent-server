@@ -330,15 +330,15 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             // when
             runner.run(requestFolderJob(w.beachFolderId))
 
-            // then — 해변은 새 라운드(2)로 3장, 정원·미분류 행은 id까지 그대로
+            // then — 해변은 새 라운드(2)로 1장(6장 폴더의 10% 올림), 정원·미분류 행은 id까지 그대로
             val after = aiRecommendationRepository.findAllBySelectionId(selectionId)
             val listed = aiRecommendationService.list(fixture.galleryId, fixture.member.id!!, folderId = null)
             assertSoftly { softly ->
                 softly.assertThat(after.filter { it.folderId == w.beachFolderId }.map { it.round }).containsOnly(2)
-                softly.assertThat(after.filter { it.folderId == w.beachFolderId }).hasSize(3)
+                softly.assertThat(after.filter { it.folderId == w.beachFolderId }).hasSize(1)
                 softly.assertThat(after.filter { it.folderId == w.gardenFolderId }.map { it.requiredId }).containsExactlyElementsOf(gardenBefore)
                 softly.assertThat(after.filter { it.folderId == null }.map { it.requiredId }).containsExactlyElementsOf(unfiledBefore)
-                softly.assertThat(listed.photos.map { it.photo.photoId }).hasSize(5)
+                softly.assertThat(listed.photos.map { it.photo.photoId }).hasSize(3)
                 softly.assertThat(aiSelectionJobRepository.findAll().maxBy { it.requiredId }.result).containsEntry("unfiled", 1)
             }
         }
@@ -368,6 +368,86 @@ class AiSelectionJobRunnerTest @Autowired constructor(
                 softly.assertThat(after.filter { it.photoId == moved }.map { it.round }).doesNotContain(1)
                 softly.assertThat(gardenNow.map { it.round }).isNotEmpty().containsOnly(2)
                 softly.assertThat(after.filter { it.folderId == w.beachFolderId }.map { it.round }).isNotEmpty().containsOnly(1)
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("폴더 하나를 연사 기준으로 추천할 때")
+    inner class Coverage {
+
+        /**
+         * 배경: 한 폴더 30장 = 연사 10개 × 3장(연사마다 다른 방향의 임베딩, 점수는 앞 사진일수록 높다). 연사 0은 단체 사진.
+         * 계약 장수 4장이라 상한은 min(4, ceil(30 × 10%)) = 3장이다.
+         */
+        private fun bigFolder(): Pair<List<List<Long>>, Long> {
+            val photos = photoFixture.업로드된_사진(fixture.galleryId, 30)
+            photos.forEachIndexed { i, photoId ->
+                val burst = i / 3
+                photoFixture.벡터_적재(photoId, FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also { it[10 + burst] = 1f })
+                recommendationFixture.분석_결과(
+                    photoId,
+                    embedGroupId = 1,
+                    subjects = if (burst == 0) "group" else "couple",
+                    burstId = burst,
+                    burstRank = i % 3,
+                    technicalPct = 90.0 - i,
+                    aestheticPct = 80.0 - i,
+                )
+            }
+            val analysisJobId = recommendationFixture.분석_잡(fixture.galleryId)
+            recommendationFixture.컨셉_배정(analysisJobId, fixture.galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
+            val folderId = aiFolderMaterializer.materialize(fixture.galleryId).flatMap { it.details }.single().id
+            return photos.chunked(3) to folderId
+        }
+
+        private fun requestFolderJob(detailFolderId: Long) =
+            aiRecommendationService.request(fixture.galleryId, fixture.member.id!!, AiRecommendationRequest(detailFolderId = detailFolderId))
+
+        @Test
+        fun `단체 사진과 담은 사진이 든 연사는 빼고 연사마다 점수 최고 컷 한 장씩 상한까지 낸다`() {
+            // given — 연사 1의 마지막 컷을 담았다
+            val (bursts, folderId) = bigFolder()
+            photoSelectionService.select(fixture.galleryId, fixture.member.id!!, SelectPhotosRequest(photoIds = listOf(bursts[1][2])))
+
+            // when
+            val response = requestFolderJob(folderId)
+            runner.run(response.jobId)
+
+            // then
+            val job = aiSelectionJobRepository.findById(response.jobId).orElseThrow()
+            val picked = aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1).map { it.photoId }
+            val burstOf = bursts.flatMapIndexed { burst, photos -> photos.map { it to burst } }.toMap()
+            assertSoftly { softly ->
+                softly.assertThat(job.status).isEqualTo(AiJobStatus.DONE)
+                softly.assertThat(picked).hasSize(3)
+                softly.assertThat(picked.map { burstOf.getValue(it) }).doesNotHaveDuplicates().doesNotContain(0, 1)
+                softly.assertThat(picked).isSubsetOf(bursts.map { it.first() })
+                softly.assertThat((job.result!!["coverage"] as Map<*, *>).mapValues { (_, v) -> (v as Number).toInt() })
+                    .isEqualTo(mapOf("pieces" to 10, "skippedPieces" to 1, "nearDuplicates" to 0, "cap" to 3, "groupExcluded" to 3))
+            }
+        }
+
+        @Test
+        fun `같은 폴더를 다시 받으면 같은 사진이 같은 순서로 나온다`() {
+            // given
+            val (_, folderId) = bigFolder()
+            val first = requestFolderJob(folderId)
+            runner.run(first.jobId)
+            // 다음 라운드가 같은 폴더의 이번 행을 지우고 다시 쓰므로 먼저 읽어 둔다.
+            val round1 = aiRecommendationRepository.findAllBySelectionIdAndRound(first.selectionId, 1)
+                .sortedBy { it.rank }.map { it.photoId }
+
+            // when
+            val second = requestFolderJob(folderId)
+            runner.run(second.jobId)
+
+            // then
+            val round2 = aiRecommendationRepository.findAllBySelectionIdAndRound(second.selectionId, 2)
+                .sortedBy { it.rank }.map { it.photoId }
+            assertSoftly { softly ->
+                softly.assertThat(round1).hasSize(3)
+                softly.assertThat(round2).isEqualTo(round1)
             }
         }
     }
