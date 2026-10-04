@@ -24,7 +24,7 @@ interface AiRecommendationControllerDocs {
             셀렉의 추천 한 라운드를 큐에 넣는다. AI 워커가 최신(또는 본문이 집은) AI 폴더 세트의
             세부 폴더마다 목표 장수에 비례한 n장(폴더당 최소 1장, 폴더의 절반 이하)을 점수순으로
             고르고, 연사에서는 연사 대표 1장만 낸다. 목표 장수는 갤러리의 계약 장수
-            (maxSelectablePhotoCount)에서 온다. 이는 prompt와 targetCount를 생략한 기존 호출의 동작이다.
+            (maxSelectablePhotoCount)에서 온다. 이는 targetCount를 생략한 호출의 동작이다.
 
             targetCount(1~500)를 주면 이번 잡에서 새로 추천할 장수로 사용한다. 폴더 절반 상한과
             폴더별 최소 1장 대신 실제 후보 수에 비례 배분하므로 합계가 지정 장수를 초과하지 않는다.
@@ -32,17 +32,7 @@ interface AiRecommendationControllerDocs {
             가능한 사진만 반환하며 job.recommendedCount와 shortfallCount로 실제 수와 부족 수를 알린다.
             이 값은 계약 장수를 바꾸지 않으며, 실제 선택에 담을 때의 정원 검증은 그대로다.
 
-            prompt(1~1000자)는 '가든 사진 중에 10장만 골라줘'처럼 현재 AI 컨셉/세부폴더의 범위와
-            장수를 지정한다. 자연어는 Bedrock 구조화 출력으로 해석하고 허용된 폴더 ID인지 검증한다.
-            명시한 targetCount가 문장의 숫자보다 우선하며 detailFolderId를 함께 주면 그 폴더 안으로
-            범위를 제한한다. 알 수 없거나 모호한 폴더, 얼굴 표정처럼 폴더명으로 표현되지 않은 시각 조건은
-            조용히 무시하지 않고 잡을 FAILED로 끝내며 error에 이유를 남긴다. AI 비활성·해석 실패도
-            일반 추천으로 대체하지 않는다. prompt 없이 폴더와 장수를 지정하는 호출에는 AI 해석이 필요 없다.
-
-            비동기다. 즉시 202로 돌아오고, 추천은 GET으로 폴링한다. 이유 문장은 2단계라 추천 표시가
-            먼저 생기고(reasonReady=false) 문장이 뒤이어 채워진다.
-            해석 완료 시 queryResolved, resolvedDetailFolderIds, resolvedTargetCount에 조건이 실린다.
-            같은 잡의 복구·재시도에서는 저장한 해석을 다시 사용한다.
+            비동기다. 즉시 202로 돌아오고, 추천은 GET으로 폴링한다. 잡이 DONE이 되면 그 라운드의 추천이 모두 보인다.
 
             부부 전용이다 — 추천은 부부의 선택을 돕는 초안이고 최종 결정은 사람이 한다. 셀렉 행이
             없으면 여기서 만든다. AI 폴더 세트가 없으면 409_5(폴더 생성이 먼저), 진행 중인 추천 잡이
@@ -54,7 +44,7 @@ interface AiRecommendationControllerDocs {
     )
     @ApiResponses(
         ApiResponse(responseCode = "202", description = "추천 요청 접수"),
-        ApiResponse(responseCode = "400", description = "빈 문장, 1000자 초과 문장 또는 1~500 범위 밖 장수", content = []),
+        ApiResponse(responseCode = "400", description = "1~500 범위 밖 장수", content = []),
         ApiResponse(
             responseCode = "403",
             description = "이 갤러리의 부부가 아니거나, 마감·미공개 갤러리",
@@ -87,7 +77,6 @@ interface AiRecommendationControllerDocs {
             표시하려면 photos[].round == job.round인 항목을 사용한다. folderId를 주면 그 세부 폴더의 추천만 온다 — 폴더 그리드가
             AI 배지를 그리는 경로다. 세트에 안 들어간 사진(미분류)의 추천은 folderId가 null이다.
 
-            이유 문장은 reasonReady=false면 아직 준비 전이다("이유 준비 중"을 그리고 폴링).
             응답의 job으로 진행 상태(PENDING/RUNNING/DONE/FAILED)와 기준 세트(folderSetJobId)를
             함께 본다 — 현재 보는 세트와 다르면 "추천을 다시 받으세요"를 띄운다.
 

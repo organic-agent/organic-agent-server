@@ -32,14 +32,11 @@ enum class RecommendationErrorCode(
     FOLDER_SET_NOT_FOUND(HttpStatus.NOT_FOUND, "RECOMMENDATION_404_2", "요청한 AI 폴더 세트를 찾을 수 없습니다."),
     DETAIL_FOLDER_NOT_FOUND(HttpStatus.NOT_FOUND, "RECOMMENDATION_404_4", "추천할 세부폴더를 찾을 수 없습니다."),
 
-    INVALID_QUERY(HttpStatus.BAD_REQUEST, "RECOMMENDATION_400_2", "추천 문장은 1~1000자, 장수는 1~500이어야 합니다."),
-    QUERY_NOT_UNDERSTOOD(HttpStatus.UNPROCESSABLE_ENTITY, "RECOMMENDATION_422_1", "추천할 폴더와 장수를 명확히 지정해 주세요. 폴더 범위와 장수 조건만 지원합니다."),
-    QUERY_AI_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "RECOMMENDATION_503_1", "자연어 추천을 사용할 수 없습니다. 폴더와 장수를 직접 지정해 주세요."),
+    INVALID_QUERY(HttpStatus.BAD_REQUEST, "RECOMMENDATION_400_2", "추천 장수는 1~500이어야 합니다."),
 
     /**
      * LLM 호출이 문장을 돌려주지 못한 경우(타임아웃, 스로틀링, 거부, 잘림, JSON 아님, 설정 꺼짐).
      *
-     * 추천 이유 문장에서는 사용자에게 나가지 않는다 — 그 사진만 폴백(템플릿) 문장으로 흡수한다.
      * 어댑터가 벤더 예외를 이 하나로 번역하므로 호출자는 실패의 종류를 가리지 않는다.
      */
     LLM_CALL_FAILED(HttpStatus.BAD_GATEWAY, "RECOMMENDATION_502_1", "AI 호출에 실패했습니다."),

@@ -71,21 +71,19 @@ class AiRecommendationServiceTest @Autowired constructor(
     inner class Request {
 
         @Test
-        fun `문장과 장수를 원본 잡에 저장한다`() {
+        fun `장수를 원본 잡에 저장한다`() {
             aiFolderSet()
             val response = aiRecommendationService.request(fixture.galleryId, fixture.member.id!!,
-                AiRecommendationRequest(prompt = "해변에서 10장 골라줘", targetCount = 3))
-            assertThat(response.prompt).isEqualTo("해변에서 10장 골라줘")
+                AiRecommendationRequest(targetCount = 3))
             assertThat(response.targetCount).isEqualTo(3)
             assertThat(jdbcTemplate.queryForObject("SELECT requested_target_count FROM ai_selection_jobs WHERE id = ?", Int::class.java, response.jobId))
                 .isEqualTo(3)
         }
 
         @Test
-        fun `비어 있는 문장과 범위 밖 장수는 잡을 만들지 않는다`() {
+        fun `범위 밖 장수는 잡을 만들지 않는다`() {
             aiFolderSet()
-            listOf(AiRecommendationRequest(prompt = "  "), AiRecommendationRequest(prompt = "가".repeat(1001)),
-                AiRecommendationRequest(targetCount = 0), AiRecommendationRequest(targetCount = 501)).forEach { request ->
+            listOf(AiRecommendationRequest(targetCount = 0), AiRecommendationRequest(targetCount = 501)).forEach { request ->
                 assertThatThrownBy { aiRecommendationService.request(fixture.galleryId, fixture.member.id!!, request) }
                     .extracting("errorCode").isEqualTo(RecommendationErrorCode.INVALID_QUERY)
             }
@@ -330,29 +328,6 @@ class AiRecommendationServiceTest @Autowired constructor(
 
             // then
             assertThat(response.photos.map { it.photo.photoId }).containsExactly(set.photoIds[0])
-        }
-
-        @Test
-        fun `이유가 채워지면 reasonReady가 뒤집힌다`() {
-            // 2단계 적재 — 추천 표시가 먼저 생기고 LLM 문장이 뒤이어 UPDATE 된다.
-            // given
-            val set = aiFolderSet()
-            val selectionId = selectionFixture.셀렉(fixture.galleryId)
-            recommendationFixture.추천(selectionId, set.photoIds[0], folderId = set.folderId)
-
-            val before = aiRecommendationService.list(fixture.galleryId, fixture.member.id!!, folderId = null)
-            recommendationFixture.추천_이유(selectionId, set.photoIds[0], round = 1, reason = "폴더 1위의 선명한 컷이에요.")
-
-            // when
-            val after = aiRecommendationService.list(fixture.galleryId, fixture.member.id!!, folderId = null)
-
-            // then
-            assertSoftly { softly ->
-                softly.assertThat(before.photos.single().reasonReady).isFalse()
-                softly.assertThat(before.photos.single().reason).isNull()
-                softly.assertThat(after.photos.single().reasonReady).isTrue()
-                softly.assertThat(after.photos.single().reason).contains("선명한")
-            }
         }
 
         @Test

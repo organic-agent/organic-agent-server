@@ -73,9 +73,9 @@ class AiRecommendationService(
     fun request(galleryId: Long, userId: Long, request: AiRecommendationRequest): AiSelectionJobResponse {
         galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
-        if (request.prompt?.let { it.isBlank() || it.length > 1000 } == true ||
-            request.targetCount?.let { it !in 1..500 } == true
-        ) throw RecommendationException(RecommendationErrorCode.INVALID_QUERY)
+        if (request.targetCount?.let { it !in 1..500 } == true) {
+            throw RecommendationException(RecommendationErrorCode.INVALID_QUERY)
+        }
 
         val detailFolderId = request.detailFolderId?.also { detailFolderId ->
             aiFolderSetReader.detailFolder(galleryId, detailFolderId)
@@ -103,7 +103,6 @@ class AiRecommendationService(
                     mode = mode,
                     analysisJobId = analysisJobId,
                     detailFolderId = detailFolderId,
-                    prompt = request.prompt?.trim(),
                     targetCount = request.targetCount,
                 ),
             )
@@ -164,7 +163,6 @@ class AiRecommendationService(
 
         val job = aiSelectionJobRepository.findFirstBySelectionIdOrderByIdDesc(selectionId)
             ?.let { AiSelectionJobResponse.from(it) }
-            ?.let { if (studioViewer) it.copy(prompt = null) else it }
         val latestRound = aiRecommendationRepository.findFirstBySelectionIdOrderByRoundDesc(selectionId)?.round
             ?: return AiRecommendationListResponse(
                 round = null,
