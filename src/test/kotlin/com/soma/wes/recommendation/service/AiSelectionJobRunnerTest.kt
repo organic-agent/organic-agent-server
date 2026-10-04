@@ -8,7 +8,6 @@ import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.recommendation.domain.AiJobStatus
 import com.soma.wes.recommendation.domain.AiSelectionJob
 import com.soma.wes.recommendation.domain.AiSelectionMode
-import com.soma.wes.recommendation.dto.LlmPartDto
 import com.soma.wes.recommendation.dto.request.AiRecommendationRequest
 import com.soma.wes.recommendation.exception.RecommendationErrorCode
 import com.soma.wes.recommendation.exception.RecommendationException
@@ -31,7 +30,6 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.jdbc.core.JdbcTemplate
-import java.time.Duration
 
 @IntegrationTest
 class AiSelectionJobRunnerTest @Autowired constructor(
@@ -105,15 +103,12 @@ class AiSelectionJobRunnerTest @Autowired constructor(
     private fun requestJob(): Long =
         aiRecommendationService.request(fixture.galleryId, fixture.member.id!!, AiRecommendationRequest()).jobId
 
-    private fun reasonsJson(photoIds: Collection<Long>, text: (Long) -> String = { "사진 $it 이유" }): String =
-        photoIds.joinToString(",", prefix = """{"reasons":[""", postfix = "]}") { """{"photo_id":"$it","reason":"${text(it)}"}""" }
-
     @Nested
-    inner class NaturalLanguageAndCount {
+    @DisplayName("장수를 지정할 때")
+    inner class TargetCount {
         @Test
         fun `폴더에서 지정한 장수를 뽑고 이미 선택한 사진은 뺀다`() {
             val w = world()
-            llm.isEnabled = false
             val selectionId = selectionFixture.셀렉(fixture.galleryId)
             selectionFixture.담긴_사진(selectionId, listOf(w.garden.first()))
             val response = aiRecommendationService.request(fixture.galleryId, fixture.member.id!!,
@@ -131,45 +126,11 @@ class AiSelectionJobRunnerTest @Autowired constructor(
         @Test
         fun `전체 갤러리의 명시한 장수는 폴더별 반올림으로 초과하지 않는다`() {
             world()
-            llm.isEnabled = false
             val response = aiRecommendationService.request(fixture.galleryId, fixture.member.id!!,
                 AiRecommendationRequest(targetCount = 2))
             runner.run(response.jobId)
             assertThat(aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1)).hasSize(2)
             assertThat(aiSelectionJobRepository.findById(response.jobId).orElseThrow().status).isEqualTo(AiJobStatus.DONE)
-        }
-
-        @Test
-        fun `문장의 범위와 장수를 저장하고 복구 시 다시 해석하지 않는다`() {
-            val w = world()
-            llm.respondWith("""{"status":"RESOLVED","scope":"FOLDERS","detailFolderIds":["${w.gardenFolderId}"],"targetCount":2}""")
-            val response = aiRecommendationService.request(fixture.galleryId, fixture.member.id!!,
-                AiRecommendationRequest(prompt = "정원 사진에서 2장 골라줘"))
-            runner.run(response.jobId)
-            val first = aiSelectionJobRepository.findById(response.jobId).orElseThrow()
-            assertThat(first.status).isEqualTo(AiJobStatus.DONE)
-            assertThat(first.resolvedQuery?.detailFolderIds).containsExactly(w.gardenFolderId)
-            assertThat(first.resolvedQuery?.targetCount).isEqualTo(2)
-            assertThat(aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1).map { it.photoId })
-                .containsExactlyInAnyOrderElementsOf(w.garden)
-            val calls = llm.calls
-            jdbcTemplate.update("UPDATE ai_selection_jobs SET status = 'PENDING' WHERE id = ?", response.jobId)
-            llm.isEnabled = false
-            runner.run(response.jobId)
-            assertThat(aiSelectionJobRepository.findById(response.jobId).orElseThrow().status).isEqualTo(AiJobStatus.DONE)
-            assertThat(llm.calls).isEqualTo(calls)
-            assertThat(aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1)).hasSize(2)
-        }
-
-        @Test
-        fun `AI가 다른 갤러리 폴더를 반환하면 추천을 만들지 않고 실패한다`() {
-            world()
-            llm.respondWith("""{"status":"RESOLVED","scope":"FOLDERS","detailFolderIds":["99999999"],"targetCount":2}""")
-            val response = aiRecommendationService.request(fixture.galleryId, fixture.member.id!!,
-                AiRecommendationRequest(prompt = "정원에서 2장 골라줘"))
-            runner.run(response.jobId)
-            assertThat(aiSelectionJobRepository.findById(response.jobId).orElseThrow().status).isEqualTo(AiJobStatus.FAILED)
-            assertThat(aiRecommendationRepository.findAllBySelectionId(response.selectionId)).isEmpty()
         }
     }
 
@@ -182,7 +143,6 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             // given — 목표 4: 해변 6장 → round(4·6/9)=3 ≤ 3, 정원 2장 → 1, 미분류 1장 → 1
             val w = world()
             val jobId = requestJob()
-            llm.respondWith(reasonsJson(w.beach + w.garden + w.unfiled))
 
             // when
             runner.run(jobId)
@@ -198,9 +158,28 @@ class AiSelectionJobRunnerTest @Autowired constructor(
                 softly.assertThat(beachPicks.map { it.rank }).containsExactlyInAnyOrder(1, 2, 3)
                 softly.assertThat(recs.filter { it.folderId == w.gardenFolderId }).hasSize(1)
                 softly.assertThat(recs.filter { it.folderId == null }.map { it.photoId }).containsExactly(w.unfiled)
-                softly.assertThat(recs.map { it.reason }).doesNotContainNull()
-                softly.assertThat(recs.first().scoreBreakdown).containsKeys("pipeline", "folder_rank", "primary_reason", "facts")
+                softly.assertThat(recs.first().scoreBreakdown).containsKeys("pipeline", "score", "folder_rank")
                 softly.assertThat(job.result).containsEntry("k", 5).containsEntry("unfiled", 1).containsKey("perFolder")
+            }
+        }
+
+        @Test
+        fun `추천을 저장하면 LLM·미리보기 없이 바로 끝나고 result에 단계별 소요를 남긴다`() {
+            // given
+            world()
+            val jobId = requestJob()
+
+            // when
+            runner.run(jobId)
+
+            // then
+            val job = aiSelectionJobRepository.findById(jobId).orElseThrow()
+            val stages = (job.result!!["timing"] as Map<*, *>)["stagesSeconds"] as Map<*, *>
+            assertSoftly { softly ->
+                softly.assertThat(job.status).isEqualTo(AiJobStatus.DONE)
+                softly.assertThat(llm.calls).isZero()
+                softly.assertThat(stages.keys).containsExactly("load", "plan", "persist")
+                softly.assertThat(job.result).containsKey("elapsedSeconds")
             }
         }
 
@@ -211,9 +190,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             val scoredOnly = photoFixture.업로드된_사진(fixture.galleryId, 1).single()
             photoFixture.벡터_적재(scoredOnly, FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also { it[99] = 1f })
             recommendationFixture.점수만(scoredOnly)
-            recommendationFixture.미리보기(scoredOnly)
             val jobId = requestJob()
-            llm.respondWith(reasonsJson(w.beach + w.garden + w.unfiled))
 
             // when
             runner.run(jobId)
@@ -225,97 +202,6 @@ class AiSelectionJobRunnerTest @Autowired constructor(
                 softly.assertThat(job.status).isEqualTo(AiJobStatus.DONE)
                 softly.assertThat(recs.map { it.photoId }).doesNotContain(scoredOnly)
                 softly.assertThat(recs.filter { it.folderId == null }.map { it.photoId }).containsExactly(w.unfiled)
-            }
-        }
-
-        @Test
-        fun `이유는 2단계로 채우고 사진·형제를 함께 보낸다`() {
-            // given
-            val w = world()
-            val jobId = requestJob()
-            llm.respondWith(reasonsJson(w.beach + w.garden + w.unfiled))
-
-            // when
-            runner.run(jobId)
-
-            // then — 요청마다 이 컷 이미지가 있고, 연사가 있는 컷은 형제 이미지가 붙는다
-            val parts = llm.requests.flatMap { it.parts }
-            val texts = parts.filterIsInstance<LlmPartDto.Text>().map { it.text }
-            assertSoftly { softly ->
-                softly.assertThat(llm.calls).isGreaterThanOrEqualTo(1)
-                softly.assertThat(texts).anyMatch { it.startsWith("### photo_id:") }
-                softly.assertThat(texts).anyMatch { it.startsWith("같은 순간의 다른 컷") }
-                softly.assertThat(parts.filterIsInstance<LlmPartDto.Image>()).isNotEmpty()
-                softly.assertThat(llm.requests.first().maxRetries).isEqualTo(2)
-            }
-        }
-
-        @Test
-        fun `이유 배치는 설정한 크기로 잘라 배치마다 예산을 걸고, result에 단계별 소요를 남긴다`() {
-            // given — 목표 4 → 추천 5장, 배치 2 → 요청 3번(2·2·1)
-            val w = world()
-            val jobId = requestJob()
-            llm.respondWith(reasonsJson(w.beach + w.garden + w.unfiled))
-
-            // when
-            runner.run(jobId)
-
-            // then
-            val job = aiSelectionJobRepository.findById(jobId).orElseThrow()
-            val photosPerRequest = llm.requests.map { request ->
-                request.parts.filterIsInstance<LlmPartDto.Text>().count { it.text.startsWith("### photo_id:") }
-            }
-            val timing = job.result!!["timing"] as Map<*, *>
-            val stages = timing["stagesSeconds"] as Map<*, *>
-            val batches = timing["reasonBatches"] as List<*>
-            assertSoftly { softly ->
-                softly.assertThat(photosPerRequest).containsExactly(2, 2, 1)
-                softly.assertThat(llm.requests.map { it.timeout }).containsOnly(Duration.ofMinutes(3))
-                softly.assertThat(stages.keys).containsExactly("load", "plan", "persist", "reasons")
-                softly.assertThat(batches.map { (it as Map<*, *>)["size"] }).containsExactly(2, 2, 1)
-                softly.assertThat(batches.map { (it as Map<*, *>)["llm"] }).containsExactly(2, 2, 1)
-                softly.assertThat(job.result).containsKey("elapsedSeconds")
-            }
-        }
-
-        @Test
-        fun `LLM 실패·상한 초과·누락은 템플릿 문장으로 채운다`() {
-            // given — 해변 첫 장만 1000자로 답하고 나머지는 빠뜨린다
-            val w = world()
-            val jobId = requestJob()
-            llm.respondWith(reasonsJson(listOf(w.beach[0])) { "가".repeat(1000) })
-
-            // when
-            runner.run(jobId)
-
-            // then
-            val job = aiSelectionJobRepository.findById(jobId).orElseThrow()
-            val recs = aiRecommendationRepository.findAllBySelectionIdAndRound(job.selectionId, 1)
-            assertSoftly { softly ->
-                softly.assertThat(job.status).isEqualTo(AiJobStatus.DONE)
-                softly.assertThat(recs.map { it.reason }).doesNotContainNull()
-                softly.assertThat(recs.map { it.reason!! }).allMatch { it.length <= 200 }
-            }
-        }
-
-        @Test
-        fun `LLM이 꺼져 있으면 부르지 않고 템플릿으로만 채운다`() {
-            // given
-            world()
-            llm.isEnabled = false
-            val jobId = requestJob()
-
-            // when
-            runner.run(jobId)
-
-            // then
-            val job = aiSelectionJobRepository.findById(jobId).orElseThrow()
-            val recs = aiRecommendationRepository.findAllBySelectionIdAndRound(job.selectionId, 1)
-            assertSoftly { softly ->
-                softly.assertThat(job.status).isEqualTo(AiJobStatus.DONE)
-                softly.assertThat(llm.calls).isZero()
-                softly.assertThat(recs.map { it.reason }).doesNotContainNull()
-                softly.assertThat(job.result).containsEntry("llm", false)
             }
         }
     }
@@ -351,7 +237,6 @@ class AiSelectionJobRunnerTest @Autowired constructor(
         fun `옮겨 들어온 사진은 점수가 가장 높아도 그 폴더의 추천에서 빠지고 result에 남는다`() {
             // given
             val (garden, beach) = misfitWorld()
-            llm.isEnabled = false
             val jobId = requestJob()
 
             // when
@@ -378,7 +263,6 @@ class AiSelectionJobRunnerTest @Autowired constructor(
         fun `목표를 채워도 폴더마다 1장은 남기고 담은 사진은 뺀다`() {
             // given — 목표 4장을 이미 담았다
             val w = world()
-            llm.isEnabled = false
             val first = requestJob()
             runner.run(first)
             val selectionId = selectionFixture.셀렉(fixture.galleryId)
@@ -403,7 +287,6 @@ class AiSelectionJobRunnerTest @Autowired constructor(
         fun `거절한 사진은 빠지고 거절하지 않은 이전 노출은 다시 나올 수 있다`() {
             // given
             val w = world()
-            llm.isEnabled = false
             val first = requestJob()
             runner.run(first)
             val selectionId = selectionFixture.셀렉(fixture.galleryId)
@@ -438,7 +321,6 @@ class AiSelectionJobRunnerTest @Autowired constructor(
         fun `그 폴더의 추천만 지우고 다시 쓰며 다른 폴더의 추천은 남는다`() {
             // given — 전체 라운드 뒤 해변 폴더만 다시 받는다
             val w = world()
-            llm.isEnabled = false
             runner.run(requestJob())
             val selectionId = selectionFixture.셀렉(fixture.galleryId)
             val before = aiRecommendationRepository.findAllBySelectionId(selectionId)
@@ -465,7 +347,6 @@ class AiSelectionJobRunnerTest @Autowired constructor(
         fun `옮겨 나간 사진의 추천은 남고 옮겨 온 사진은 새 폴더에서 다시 계산된다`() {
             // given — 전체 라운드 뒤, 해변 1위 사진을 정원으로 옮긴다
             val w = world()
-            llm.isEnabled = false
             runner.run(requestJob())
             val selectionId = selectionFixture.셀렉(fixture.galleryId)
             val moved = aiRecommendationRepository.findAllBySelectionId(selectionId)
@@ -496,16 +377,13 @@ class AiSelectionJobRunnerTest @Autowired constructor(
     inner class Lifecycle {
 
         @Test
-        fun `추천 적재 뒤 사진을 담아도 복구는 저장한 장수와 누락된 이유를 유지한다`() {
-            // given — 1단계 적재와 일부 이유만 커밋된 시점의 상태를 재현한다.
+        fun `추천 적재 뒤 사진을 담아도 복구는 저장한 추천과 장수를 그대로 두고 닫는다`() {
+            // given — 추천을 저장하고 잡을 닫기 전에 죽은 상태를 재현한다.
             val w = world()
-            llm.isEnabled = false
             val response = aiRecommendationService.request(fixture.galleryId, fixture.member.id!!,
                 AiRecommendationRequest(detailFolderId = w.gardenFolderId, targetCount = 2))
             executor.runAll()
             val before = aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1)
-            val reasons = before.associate { it.photoId to it.reason }
-            jdbcTemplate.update("UPDATE ai_recommendations SET reason = NULL WHERE photo_id = ?", w.garden.last())
             jdbcTemplate.update("UPDATE ai_selection_jobs SET status = 'RUNNING', finished_at = NULL, result = NULL WHERE id = ?",
                 response.jobId)
             photoSelectionService.select(fixture.galleryId, fixture.member.id!!, SelectPhotosRequest(photoIds = w.garden))
@@ -514,16 +392,15 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             recovery.recoverOnStartup()
             executor.runAll()
 
-            // then — 새 후보는 없지만 이미 제시한 2장의 이유를 마저 채운다.
+            // then — 새 후보는 없지만 이미 제시한 2장은 그대로 남는다.
             val after = aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1)
             val view = aiRecommendationService.list(fixture.galleryId, fixture.member.id!!, null)
             assertSoftly { softly ->
                 softly.assertThat(after.map { it.requiredId }).containsExactlyInAnyOrderElementsOf(before.map { it.requiredId })
-                softly.assertThat(after.associate { it.photoId to it.reason }).isEqualTo(reasons)
                 softly.assertThat(view.job!!.status).isEqualTo(AiJobStatus.DONE)
                 softly.assertThat(view.job!!.recommendedCount).isEqualTo(2)
                 softly.assertThat(view.job!!.shortfallCount).isZero()
-                softly.assertThat(view.photos).hasSize(2).allMatch { it.selected && it.reasonReady }
+                softly.assertThat(view.photos).hasSize(2).allMatch { it.selected }
             }
         }
 
@@ -531,7 +408,6 @@ class AiSelectionJobRunnerTest @Autowired constructor(
         fun `0장 라운드가 확정된 뒤 후보가 늘어도 복구에서 새로 추천하지 않는다`() {
             // given
             val w = world()
-            llm.isEnabled = false
             photoSelectionService.select(fixture.galleryId, fixture.member.id!!, SelectPhotosRequest(photoIds = w.garden))
             val response = aiRecommendationService.request(fixture.galleryId, fixture.member.id!!,
                 AiRecommendationRequest(detailFolderId = w.gardenFolderId, targetCount = 2))
@@ -557,18 +433,13 @@ class AiSelectionJobRunnerTest @Autowired constructor(
         }
 
         @Test
-        fun `이전 버전 추천은 분석과 폴더가 사라져도 저장된 사실로 이유를 복구하고 요약을 보존한다`() {
-            // given — 템플릿을 저장하지 않던 버전의 행과 이미 저장된 운영 요약.
+        fun `분석과 폴더가 사라져도 복구는 저장된 라운드로 닫고 요약을 보존한다`() {
+            // given — 추천과 운영 요약이 저장된 뒤 분석·폴더가 지워진 상태.
             val w = world()
-            llm.isEnabled = false
             val response = aiRecommendationService.request(fixture.galleryId, fixture.member.id!!,
                 AiRecommendationRequest(detailFolderId = w.gardenFolderId, targetCount = 2))
             executor.runAll()
             val before = aiSelectionJobRepository.findById(response.jobId).orElseThrow().result!!
-            val facts = aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1)
-                .associate { it.photoId to (it.scoreBreakdown["facts"] as List<*>).joinToString(" ") }
-            jdbcTemplate.update("UPDATE ai_recommendations SET reason = NULL, score_breakdown = score_breakdown - 'reason_fallback' WHERE selection_id = ?",
-                response.selectionId)
             jdbcTemplate.update("UPDATE ai_selection_jobs SET status = 'RUNNING', finished_at = NULL WHERE id = ?", response.jobId)
             jdbcTemplate.update("DELETE FROM detail_folders WHERE id = ?", w.gardenFolderId)
             jdbcTemplate.update("DELETE FROM photo_analysis WHERE photo_id IN (SELECT id FROM photos WHERE gallery_id = ?)", fixture.galleryId)
@@ -579,30 +450,26 @@ class AiSelectionJobRunnerTest @Autowired constructor(
 
             // then
             val after = aiSelectionJobRepository.findById(response.jobId).orElseThrow()
-            val recommendations = aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1)
             assertSoftly { softly ->
                 softly.assertThat(after.status).isEqualTo(AiJobStatus.DONE)
-                softly.assertThat(recommendations.associate { it.photoId to it.reason }).isEqualTo(facts)
                 softly.assertThat(after.result!!["selected"]).isEqualTo(before["selected"])
                 softly.assertThat(after.result!!["target"]).isEqualTo(before["target"])
                 softly.assertThat(after.result!!["misfitPhotoIds"]).isEqualTo(before["misfitPhotoIds"])
                 softly.assertThat((after.result!!["k"] as Number).toInt()).isEqualTo(2)
-                softly.assertThat((after.result!!["reasonReady"] as Number).toInt()).isEqualTo(2)
+                softly.assertThat(after.result).containsEntry("recovered", true)
             }
         }
 
         @Test
-        fun `복구는 거절하거나 휴지통에 넣은 추천을 장수와 이유 생성에서 제외한다`() {
+        fun `복구는 거절하거나 휴지통에 넣은 추천을 장수에서 제외한다`() {
             // given
             world()
-            llm.isEnabled = false
             val response = aiRecommendationService.request(fixture.galleryId, fixture.member.id!!,
                 AiRecommendationRequest(targetCount = 3))
             executor.runAll()
             val original = aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1)
                 .sortedBy { it.photoId }
             assertThat(original).hasSize(3)
-            jdbcTemplate.update("UPDATE ai_recommendations SET reason = NULL WHERE selection_id = ?", response.selectionId)
             jdbcTemplate.update("UPDATE ai_recommendations SET rejected_at = now() WHERE id = ?", original[0].requiredId)
             jdbcTemplate.update("UPDATE photos SET deleted_at = now() WHERE id = ?", original[1].photoId)
             jdbcTemplate.update("UPDATE ai_selection_jobs SET status = 'RUNNING', finished_at = NULL WHERE id = ?", response.jobId)
@@ -613,15 +480,11 @@ class AiSelectionJobRunnerTest @Autowired constructor(
 
             // then
             val view = aiRecommendationService.list(fixture.galleryId, fixture.member.id!!, null)
-            val after = aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1).associateBy { it.requiredId }
             assertSoftly { softly ->
                 softly.assertThat(view.job!!.status).isEqualTo(AiJobStatus.DONE)
                 softly.assertThat(view.job!!.recommendedCount).isEqualTo(1)
                 softly.assertThat(view.job!!.shortfallCount).isEqualTo(2)
                 softly.assertThat(view.photos.map { it.photo.photoId }).containsExactly(original[2].photoId)
-                softly.assertThat(after.getValue(original[0].requiredId).reason).isNull()
-                softly.assertThat(after.getValue(original[1].requiredId).reason).isNull()
-                softly.assertThat(after.getValue(original[2].requiredId).reason).isNotBlank()
             }
         }
 
@@ -629,7 +492,6 @@ class AiSelectionJobRunnerTest @Autowired constructor(
         fun `요청은 커밋 뒤 실행기에 넘기고 실행기가 돌면 DONE이 된다`() {
             // given
             world()
-            llm.isEnabled = false
 
             // when
             val jobId = requestJob()
@@ -645,7 +507,6 @@ class AiSelectionJobRunnerTest @Autowired constructor(
         fun `이미 집힌 잡은 다시 돌지 않는다`() {
             // given
             world()
-            llm.isEnabled = false
             val jobId = requestJob()
             runner.run(jobId)
             val finishedAt = aiSelectionJobRepository.findById(jobId).orElseThrow().finishedAt

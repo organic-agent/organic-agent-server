@@ -13,8 +13,7 @@ import org.hibernate.annotations.JdbcTypeCode
 import org.hibernate.type.SqlTypes
 
 /**
- * AI가 한 셀렉에 제시한 사진 한 장. 실행기가 폴더마다 점수 상위 n장을 INSERT하고(이때 [reason]은 null),
- * LLM 이유 문장을 뒤이어 [fillReason]으로 채운다(2단계).
+ * AI가 한 셀렉에 제시한 사진 한 장. 실행기가 폴더마다 점수 상위 n장을 INSERT한다.
  *
  * 추천은 **사진에 붙는다**. 화면은 사진마다 가장 최근 라운드의 행을 읽으므로(라운드 전체 교체가 아니다),
  * 사진을 다른 폴더로 옮겨도 표시는 따라간다. 잡이 돌면 그 잡의 범위(폴더 하나 또는 전체)에 든 사진의
@@ -56,7 +55,7 @@ class AiRecommendation(
     @Column(name = "folder_id", updatable = false)
     val folderId: Long? = null,
 
-    /** 점수·순위·형제·주 사유 등 이 추천이 만들어진 근거. 키는 AI repo v3 `score_breakdown`과 같다. */
+    /** 점수·순위·폴더 몫 등 이 추천이 만들어진 근거. 키는 AI repo v3 `score_breakdown`과 같다. */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "score_breakdown", nullable = false, columnDefinition = "jsonb")
     val scoreBreakdown: Map<String, Any?> = emptyMap(),
@@ -67,19 +66,10 @@ class AiRecommendation(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null
 
-    /** 이유 문장. 2단계라 처음에는 null이고, 프론트는 null이면 "이유 준비 중"을 그린다. */
-    @Column(name = "reason")
-    var reason: String? = null
-        protected set
-
     /** 부부가 이 추천을 거절한 시각. 다음 라운드는 거절된 사진을 후보에서 뺀다. */
     @Column(name = "rejected_at")
     val rejectedAt: ZonedDateTime? = null
 
     val requiredId: Long
         get() = id ?: error("아직 저장되지 않은 AiRecommendation 이다")
-
-    fun fillReason(text: String) {
-        reason = text
-    }
 }

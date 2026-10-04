@@ -19,7 +19,7 @@ import org.hibernate.type.SqlTypes
  * ([com.soma.wes.recommendation.service.AiSelectionJobRunner])가 집어([claim]) 계산한 뒤 닫는다([finish]·[fail]).
  * 셀렉당 살아 있는 잡 하나는 DB의 부분 유니크(`uk_ai_selection_jobs_active`)가 최종적으로 지킨다.
  *
- * 잡 행은 큐이자 프론트 폴링용 상태다 — 추천 표시(1단계)는 DONE 전에 먼저 생기고 이유 문장(2단계)이 뒤따른다.
+ * 잡 행은 큐이자 프론트 폴링용 상태다.
  */
 @Entity
 @Table(name = "ai_selection_jobs")
@@ -48,23 +48,10 @@ class AiSelectionJob(
     @Column(name = "detail_folder_id", updatable = false)
     val detailFolderId: Long? = null,
 
-    @Column(name = "request_prompt", updatable = false, length = 1000)
-    val prompt: String? = null,
-
     @Column(name = "requested_target_count", updatable = false)
     val targetCount: Int? = null,
 
 ) : BaseEntity() {
-
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "resolved_query", columnDefinition = "jsonb")
-    var resolvedQuery: ResolvedRecommendationQuery? = null
-        protected set
-
-    fun resolveQuery(query: ResolvedRecommendationQuery) {
-        check(resolvedQuery == null) { "이미 해석한 추천 조건은 변경할 수 없습니다." }
-        resolvedQuery = query
-    }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -92,7 +79,7 @@ class AiSelectionJob(
     var error: String? = null
         protected set
 
-    /** 끝난 잡의 요약(라운드·장수·폴더별 추천 수·이유 분포·소요). 운영 확인용이고 화면은 읽지 않는다. */
+    /** 끝난 잡의 요약(라운드·장수·폴더별 추천 수·소요). 운영 확인용이고 화면은 읽지 않는다. */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "result", columnDefinition = "jsonb")
     var result: Map<String, Any?>? = null
@@ -101,7 +88,7 @@ class AiSelectionJob(
     val requiredId: Long
         get() = id ?: kotlin.error("아직 저장되지 않은 AiSelectionJob 이다")
 
-    /** 1단계에서 라운드가 정해진 잡. 실행 중 죽었다가 다시 집으면 추천은 두지 않고 이유만 다시 채운다. */
+    /** 추천을 저장하며 라운드가 정해진 잡. 실행 중 죽었다가 다시 집으면 추천은 다시 계산하지 않고 잡만 닫는다. */
     fun assignRound(round: Int) {
         this.round = round
     }

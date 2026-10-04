@@ -4,24 +4,17 @@ import com.soma.wes.folder.dto.FolderSetDetailDto
 import com.soma.wes.folder.support.AiFolderSetReader
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.photo.domain.Photo
-import com.soma.wes.photo.domain.SubScoreKey
 import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
-import com.soma.wes.photo.service.port.PreviewImageReader
-import com.soma.wes.recommendation.config.LlmProperties
 import com.soma.wes.recommendation.domain.AiRecommendation
 import com.soma.wes.recommendation.domain.AiSelectionMode
-import com.soma.wes.recommendation.dto.ReasonInputDto
 import com.soma.wes.recommendation.dto.RecommendablePhotoDto
-import com.soma.wes.recommendation.dto.SiblingImageDto
 import com.soma.wes.recommendation.repository.AiRecommendationRepository
 import com.soma.wes.recommendation.repository.AiSelectionJobRepository
-import com.soma.wes.recommendation.service.port.StructuredLlmClient
 import com.soma.wes.recommendation.support.ExactRecommendationQuota
 import com.soma.wes.recommendation.support.FolderFitRule
 import com.soma.wes.recommendation.support.FolderQuota
 import com.soma.wes.recommendation.support.MmrSelector
-import com.soma.wes.recommendation.support.ReasonMaterial
 import com.soma.wes.recommendation.support.RecommendationScoring
 import com.soma.wes.selection.repository.PhotoSelectionItemRepository
 import com.soma.wes.selection.repository.PhotoSelectionRepository
@@ -42,10 +35,9 @@ import org.springframework.transaction.support.TransactionTemplate
  *                  n_f = max(1, round(remaining·|f|/Σ|f'|)),  n_f ≤ ceil(|f|·0.5)
  *                  연사당 1장 → MMR → n_f장, 폴더 안 점수 순위가 rank
  *     미분류(세트에 없는 사진)는 가상 폴더로 같은 규칙.
- *     1단계: reason NULL로 INSERT + 라운드 확정 → 2단계: 큰 폴더부터 이유 문장 UPDATE → DONE.
+ *     추천 INSERT + 라운드 확정 → DONE.
  *
- * 품질로 사진을 제거하는 단계는 없다 — 점수 하한은 근거 문장에서 품질 표현을 빼는 게이트일 뿐이다.
- * 트랜잭션은 단계마다 짧게 끊는다 — LLM 호출(분 단위)이 커넥션을 물면 안 된다. 실패는 잡에 FAILED로 남는다.
+ * 품질로 사진을 제거하는 단계는 없다. 트랜잭션은 읽기·적재·닫기 단계마다 짧게 끊는다. 실패는 잡에 FAILED로 남는다.
  */
 @Service
 class AiSelectionJobRunner(
@@ -57,13 +49,8 @@ class AiSelectionJobRunner(
     private val photoRepository: PhotoRepository,
     private val photoAnalysisRepository: PhotoAnalysisRepository,
     private val folderSetReader: AiFolderSetReader,
-    private val previewImageReader: PreviewImageReader,
-    private val reasonGenerator: ReasonGenerator,
-    private val llm: StructuredLlmClient,
-    private val properties: LlmProperties,
     private val transactionTemplate: TransactionTemplate,
     private val clock: Clock,
-    private val queryInterpreter: RecommendationQueryInterpreter,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -81,16 +68,12 @@ class AiSelectionJobRunner(
                 finishSavedRound(saved, timing)
                 return
             }
-            resolveQuery(jobId, timing)
             val world = timing.measure("load") { transactionTemplate.execute { load(jobId) }!! }
             val draft = timing.measure("plan") { plan(world) }
             val roundNo = timing.measure("persist") { transactionTemplate.execute { persistRound(world, draft) }!! }
-            val reasonReady = timing.measure("reasons") {
-                fillReasons(world.selectionId, world.previewKeys, draft.picks, roundNo, timing)
-            }
             transactionTemplate.execute {
                 val job = aiSelectionJobRepository.findById(jobId).orElseThrow()
-                job.finish(summary(world, draft, roundNo, reasonReady, timing), ZonedDateTime.now(clock))
+                job.finish(summary(world, draft, roundNo, timing), ZonedDateTime.now(clock))
             }
             log.info("AI 추천 잡 완료: jobId={}, round={}, k={}", jobId, roundNo, draft.picks.size)
         } catch (e: Exception) {
@@ -104,94 +87,46 @@ class AiSelectionJobRunner(
 
     // ── 읽기 ──
 
-    /** 라운드가 확정된 뒤의 복구는 당시 근거를 사용한다. 선택·분류 변경이 이미 제시한 추천을 바꾸면 안 된다. */
+    /**
+     * 추천을 저장한 뒤 닫기 전에 죽은 잡의 복구. 이미 제시한 추천은 다시 계산하지 않는다 — 그사이 선택·분류가
+     * 바뀌었어도 저장된 라운드를 그대로 두고 요약만 남겨 닫는다. 거절했거나 휴지통에 들어간 사진은 장수에서 뺀다.
+     */
     private fun loadSavedRound(jobId: Long): SavedRound? {
         val job = aiSelectionJobRepository.findById(jobId).orElseThrow()
         val round = job.round ?: return null
         val selection = photoSelectionRepository.findById(job.selectionId).orElseThrow()
-        val recommendations = aiRecommendationRepository.findAllBySelectionIdAndRound(job.selectionId, round)
+        val notRejected = aiRecommendationRepository.findAllBySelectionIdAndRound(job.selectionId, round)
             .filter { it.rejectedAt == null }
-        val picks = recommendations.map { recommendation ->
-            val breakdown = recommendation.scoreBreakdown
-            val facts = (breakdown["facts"] as? List<*>)?.filterIsInstance<String>().orEmpty()
-            val siblings = (breakdown["alternatives"] as? List<*>)?.mapNotNull { alternative ->
-                val value = alternative as? Map<*, *> ?: return@mapNotNull null
-                val id = (value["photo_id"] as? Number)?.toLong() ?: return@mapNotNull null
-                val whyNot = value["why_not"] as? String ?: return@mapNotNull null
-                id to whyNot
-            }.orEmpty()
-            PlannedPick(
-                photoId = recommendation.photoId,
-                folderId = recommendation.folderId,
-                rank = recommendation.rank,
-                breakdown = breakdown,
-                primary = breakdown["primary_reason"] as? String ?: "score",
-                facts = facts,
-                fallback = (breakdown["reason_fallback"] as? String)?.takeIf { it.isNotBlank() }
-                    ?: facts.joinToString(" ").ifBlank { LEGACY_RECOVERY_REASON },
-                siblingIds = siblings,
-            )
-        }
-        val photoIds = picks.flatMap { pick -> listOf(pick.photoId) + pick.siblingIds.map { it.first } }.toSet()
-        val previewKeys = photoRepository.findAllByGalleryIdAndIdIn(selection.galleryId, photoIds)
-            .associate { it.requiredId to it.previewKey }
-        val visiblePicks = picks.filter { it.photoId in previewKeys }
+        val livePhotoIds = photoRepository.findAllByGalleryIdAndIdIn(selection.galleryId, notRejected.map { it.photoId })
+            .mapTo(mutableSetOf()) { it.requiredId }
+        val recommendations = notRejected.filter { it.photoId in livePhotoIds }
         return SavedRound(
             jobId = jobId,
-            selectionId = job.selectionId,
             galleryId = selection.galleryId,
             round = round,
-            requestedCount = job.resolvedQuery?.targetCount ?: job.targetCount,
-            scopeFolderIds = job.resolvedQuery?.detailFolderIds ?: job.detailFolderId?.let(::listOf),
-            picks = visiblePicks,
-            previewKeys = previewKeys,
-            reasonReady = recommendations.count { it.reason != null && it.photoId in previewKeys },
+            requestedCount = job.targetCount,
+            scopeFolderIds = job.detailFolderId?.let(::listOf),
+            folderOfPicks = recommendations.map { it.scoreBreakdown["folder"] as? String ?: UNFILED },
             summary = job.result.orEmpty(),
         )
     }
 
     private fun finishSavedRound(saved: SavedRound, timing: StageTiming) {
-        val filled = timing.measure("reasons") {
-            fillReasons(saved.selectionId, saved.previewKeys, saved.picks, saved.round, timing)
-        }
+        val k = saved.folderOfPicks.size
         val summary = saved.summary + mapOf(
             "gallery" to saved.galleryId, "pipeline" to "v3", "round" to saved.round,
-            "k" to saved.picks.size,
+            "k" to k,
             "scopeFolderId" to saved.scopeFolderIds?.singleOrNull(),
             "scopeDetailFolderIds" to saved.scopeFolderIds,
             "requestedCount" to saved.requestedCount,
-            "shortfallCount" to saved.requestedCount?.let { (it - saved.picks.size).coerceAtLeast(0) },
-            "perFolder" to saved.picks.groupingBy { it.breakdown["folder"] as? String ?: UNFILED }.eachCount(),
-            "reasonDistribution" to saved.picks.groupingBy { it.primary }.eachCount(),
-            "llm" to llm.isEnabled, "reasonReady" to saved.reasonReady + filled,
+            "shortfallCount" to saved.requestedCount?.let { (it - k).coerceAtLeast(0) },
+            "perFolder" to saved.folderOfPicks.groupingBy { it }.eachCount(),
             "elapsedSeconds" to timing.elapsedSeconds(), "timing" to timing.toMap(), "recovered" to true,
         )
         transactionTemplate.execute {
             aiSelectionJobRepository.findById(saved.jobId).orElseThrow().finish(summary, ZonedDateTime.now(clock))
         }
-        log.info("AI 추천 잡 복구 완료: jobId={}, round={}, k={}", saved.jobId, saved.round, saved.picks.size)
-    }
-
-    /** 외부 AI 호출 중에는 트랜잭션을 잡지 않는다. 저장한 해석 결과는 복구 시 다시 해석하지 않는다. */
-    private fun resolveQuery(jobId: Long, timing: StageTiming) {
-        val context = transactionTemplate.execute {
-            val job = aiSelectionJobRepository.findById(jobId).orElseThrow()
-            if (job.resolvedQuery != null || (job.prompt == null && job.targetCount == null)) return@execute null
-            val selection = photoSelectionRepository.findById(job.selectionId).orElseThrow()
-            val folders = job.analysisJobId?.let { folderSetReader.setFolders(selection.galleryId, it) }.orEmpty().toMutableList()
-            job.detailFolderId?.let { id ->
-                val folder = folderSetReader.detailFolder(selection.galleryId, id)
-                    ?: throw IllegalStateException("추천할 세부폴더가 없습니다.")
-                if (folders.none { it.detailFolderId == id }) folders += folder
-            }
-            QueryContext(job.prompt, job.targetCount, job.detailFolderId, folders)
-        } ?: return
-        val resolved = timing.measure("query") {
-            queryInterpreter.interpret(context.prompt, context.targetCount, context.detailFolderId, context.folders)
-        }
-        transactionTemplate.execute {
-            aiSelectionJobRepository.findById(jobId).orElseThrow().resolveQuery(resolved)
-        }
+        log.info("AI 추천 잡 복구 완료: jobId={}, round={}, k={}", saved.jobId, saved.round, k)
     }
 
     private fun load(jobId: Long): World {
@@ -200,20 +135,15 @@ class AiSelectionJobRunner(
         val galleryId = selection.galleryId
         val gallery = galleryRepository.findById(galleryId).orElseThrow()
 
-        // 갤러리 전체는 벡터 없는 요약으로 읽는다 — 점수 정규화·피사체 통계·형제 목록이 전체 행을 보지만 벡터는 안 본다.
+        // 갤러리 전체는 벡터 없는 요약으로 읽는다 — 점수 정규화·피사체 통계가 전체 행을 보지만 벡터는 안 본다.
         val summaryById = photoAnalysisRepository.findAllAnalyzedSummaryByGalleryId(galleryId).associateBy { it.photoId }
-        val rows = mutableListOf<RecommendablePhotoDto>()
-        val previewKeys = mutableMapOf<Long, String?>()
-        photoRepository.findAllByGalleryIdOrderByDisplayOrderAsc(galleryId).sortedWith(Photo.DISPLAY_ORDER).forEach { photo ->
-            val summary = summaryById[photo.requiredId] ?: return@forEach
-            rows += RecommendablePhotoDto.from(summary)
-            previewKeys[photo.requiredId] = photo.previewKey
-        }
+        val rows = photoRepository.findAllByGalleryIdOrderByDisplayOrderAsc(galleryId).sortedWith(Photo.DISPLAY_ORDER)
+            .mapNotNull { photo -> summaryById[photo.requiredId]?.let(RecommendablePhotoDto::from) }
         if (rows.isEmpty()) throw IllegalStateException("분석 결과가 없다: gallery=$galleryId")
 
         // 범위. 폴더 하나면 그 폴더만 대상이되, 쿼터(폴더별 n장)는 전체 라운드였을 때와 같은 몫으로 정한다 —
         // 그래야 폴더 하나만 다시 받아도 장수가 널뛰지 않는다. 세트 폴더는 그 몫의 재료로만 읽는다.
-        val scopeFolderIds = job.resolvedQuery?.detailFolderIds ?: job.detailFolderId?.let(::listOf)
+        val scopeFolderIds = job.detailFolderId?.let(::listOf)
         val setFolders = job.analysisJobId?.let { folderSetReader.setFolders(galleryId, it) }.orEmpty()
         val folders = when (scopeFolderIds) {
             null -> setFolders.ifEmpty {
@@ -239,12 +169,11 @@ class AiSelectionJobRunner(
             folders = folders,
             quotaFolders = if (scopeFolderIds == null) folders else setFolders.ifEmpty { folders },
             scopeFolderIds = scopeFolderIds,
-            requestedCount = job.resolvedQuery?.targetCount,
+            requestedCount = job.targetCount,
             selected = selected,
             rejected = rejected,
             target = gallery.maxSelectablePhotoCount ?: DEFAULT_TARGET,
             previousRound = previousRound,
-            previewKeys = previewKeys,
         )
     }
 
@@ -317,7 +246,6 @@ class AiSelectionJobRunner(
             .filter { it.photoIds.isNotEmpty() }
             .associate { it.folderId to it.photoIds.size }
         val burstIds = IntArray(n) { rows[it].burstId }
-        val byBurst = rows.indices.filter { it !in exclude }.groupBy { rows[it].burstId }
 
         val picks = mutableListOf<PlannedPick>()
         val perFolder = linkedMapOf<String, Int>()
@@ -343,37 +271,6 @@ class AiSelectionJobRunner(
             folderPicks.forEach { pick ->
                 val i = pick.index
                 val row = rows[i]
-                val material = linkedMapOf<String, Any?>(
-                    "prior_z" to combined.priorZ[i],
-                    "folder" to mapOf(
-                        "parent" to folder.conceptName, "name" to folder.name,
-                        "size" to folder.photoIds.size, "rank" to pick.folderRank, "quota" to pick.quota,
-                    ),
-                )
-                val siblings = byBurst[row.burstId].orEmpty().map { rows[it] }.filter { it.photoId != row.photoId }
-                    .sortedBy { it.burstRank }
-                val alternatives = siblings.map { mapOf("photo_id" to it.photoId, "why_not" to ReasonMaterial.whyNot(row, it)) }
-                if (alternatives.isNotEmpty()) {
-                    val whyCounts = linkedMapOf<String, Int>()
-                    alternatives.forEach { a -> whyCounts.merge(a["why_not"] as String, 1, Int::plus) }
-                    val sharpest = alternatives.all { it["why_not"] == "덜 선명함" } ||
-                        (row.subScore(SubScoreKey.SHARPNESS) ?: 0.0) >= siblings.maxOf { it.subScore(SubScoreKey.SHARPNESS) ?: 0.0 }
-                    material["sibling"] = mapOf("n" to alternatives.size + 1, "why_counts" to whyCounts, "sharpest" to sharpest)
-                }
-                ReasonMaterial.qualityMaterial(row)?.let { material["quality"] = it }
-                if (prefOn && stats != null) {
-                    val stat = stats[row.subjects]
-                    if (stat != null && stat.deficit > 0) {
-                        material["balance"] = mapOf(
-                            "label" to (ReasonMaterial.SUBJECT_KO[row.subjects] ?: row.subjects),
-                            "sel" to stat.selCount, "total_sel" to nSelected,
-                            "expected" to round(stat.poolShare * nSelected).toInt(),
-                        )
-                    }
-                }
-                val (primary, facts) = ReasonMaterial.factsOf(material)
-
-                val fallback = ReasonMaterial.template(primary, material)
                 val breakdown = linkedMapOf<String, Any?>(
                     "pipeline" to "v3", "score" to round4(score[i]),
                     "prior_z" to round3(combined.priorZ[i]),
@@ -382,8 +279,6 @@ class AiSelectionJobRunner(
                     "burst_id" to row.burstId,   // [GLOSSARY-2 2026-09-27] 근거 키 cluster_id → burst_id (V23이 기존 행도 옮긴다)
                     "folder" to "${folder.conceptName}›${folder.name}", "folder_size" to folder.photoIds.size,
                     "folder_rank" to pick.folderRank, "folder_quota" to pick.quota,
-                    "alternatives" to alternatives, "primary_reason" to primary, "facts" to facts,
-                    "reason_fallback" to fallback,
                 )
                 if (prefOn) breakdown["subjects"] = row.subjects
 
@@ -392,10 +287,6 @@ class AiSelectionJobRunner(
                     folderId = folder.folderId,
                     rank = pick.folderRank,
                     breakdown = breakdown,
-                    primary = primary,
-                    facts = facts,
-                    fallback = fallback,
-                    siblingIds = alternatives.map { it["photo_id"] as Long to it["why_not"] as String },
                 )
             }
         }
@@ -412,7 +303,7 @@ class AiSelectionJobRunner(
         )
     }
 
-    // ── 1단계: 추천 적재 ──
+    // ── 적재 ──
 
     private fun persistRound(world: World, draft: Draft): Int {
         val job = aiSelectionJobRepository.findById(world.job.id).orElseThrow()
@@ -444,72 +335,16 @@ class AiSelectionJobRunner(
         return roundNo
     }
 
-    // ── 2단계: 이유 문장 ──
-
-    private fun fillReasons(
-        selectionId: Long,
-        previewKeys: Map<Long, String?>,
-        plannedPicks: List<PlannedPick>,
-        roundNo: Int,
-        timing: StageTiming,
-    ): Int {
-        val pending = transactionTemplate.execute {
-            aiRecommendationRepository.findAllBySelectionIdAndRound(selectionId, roundNo)
-                .filter { it.reason == null }.mapTo(mutableSetOf()) { it.photoId }
-        }!!
-        val picks = plannedPicks.filter { it.photoId in pending }
-        if (picks.isEmpty()) return 0
-
-        // 배치 단위로 미리보기를 읽고 UPDATE — 한 배치가 끝날 때마다 화면의 reasonReady가 뒤집힌다.
-        // 미리보기도 배치마다 읽어야 첫 배치가 라운드 전체의 S3 읽기를 기다리지 않는다.
-        picks.chunked(properties.reasonsBatch).forEach { chunk ->
-            val batchStarted = System.nanoTime()
-            val inputs = chunk.map { pick ->
-                val image = if (llm.isEnabled && properties.reasonsVision) readPreview(previewKeys, pick.photoId) else null
-                val siblings = if (image != null) {
-                    pick.siblingIds.take(properties.reasonsSiblingImages).mapNotNull { (id, whyNot) ->
-                        readPreview(previewKeys, id)?.let { SiblingImageDto(id, whyNot, it) }
-                    }
-                } else {
-                    emptyList()
-                }
-                ReasonInputDto(pick.photoId, pick.primary, pick.facts, pick.fallback, image, siblings)
-            }
-            val texts = reasonGenerator.generate(inputs)
-            transactionTemplate.execute {
-                aiRecommendationRepository.findAllBySelectionIdAndRound(selectionId, roundNo)
-                    .filter { it.photoId in texts }
-                    .forEach { it.fillReason(texts.getValue(it.photoId)) }
-            }
-            val fromLlm = inputs.count { texts[it.photoId] != it.fallback }
-            timing.batch(size = inputs.size, fromLlm = fromLlm, startedNanos = batchStarted)
-        }
-        return picks.size
-    }
-
-    private fun readPreview(previewKeys: Map<Long, String?>, photoId: Long): ByteArray? {
-        val key = previewKeys[photoId] ?: return null
-        return try {
-            previewImageReader.readJpeg(key, properties.imageLongEdge)
-        } catch (e: Exception) {
-            // 사진 하나 못 읽었다고 라운드를 죽이지 않는다 — 그 컷은 텍스트 재료만 간다.
-            log.warn("미리보기 읽기 실패 photo={}: {}", photoId, e.message)
-            null
-        }
-    }
-
-    private fun summary(world: World, draft: Draft, roundNo: Int, reasonReady: Int, timing: StageTiming): Map<String, Any?> {
-        val reasonDistribution = linkedMapOf<String, Int>()
-        draft.picks.forEach { reasonDistribution.merge(it.primary, 1, Int::plus) }
+    private fun summary(world: World, draft: Draft, roundNo: Int, timing: StageTiming): Map<String, Any?> {
         return linkedMapOf(
             "gallery" to world.galleryId, "pipeline" to "v3", "round" to roundNo, "done" to false, "k" to draft.picks.size,
             "selected" to draft.selected, "target" to world.target, "remaining" to draft.remaining,
             "folders" to draft.folders, "unfiled" to draft.unfiled, "scopeFolderId" to world.scopeFolderIds?.singleOrNull(),
             "scopeDetailFolderIds" to world.scopeFolderIds, "requestedCount" to world.requestedCount,
             "shortfallCount" to world.requestedCount?.let { (it - draft.picks.size).coerceAtLeast(0) },
-            "perFolder" to draft.perFolder, "reasonDistribution" to reasonDistribution,
+            "perFolder" to draft.perFolder,
             "misfit" to draft.misfitPhotoIds.size, "misfitPhotoIds" to draft.misfitPhotoIds,
-            "preferenceOn" to draft.preferenceOn, "llm" to llm.isEnabled, "reasonReady" to reasonReady,
+            "preferenceOn" to draft.preferenceOn,
             "elapsedSeconds" to timing.elapsedSeconds(),
             "timing" to timing.toMap(),
         )
@@ -531,32 +366,22 @@ class AiSelectionJobRunner(
 
     private data class SavedRound(
         val jobId: Long,
-        val selectionId: Long,
         val galleryId: Long,
         val round: Int,
         val requestedCount: Int?,
         val scopeFolderIds: List<Long>?,
-        val picks: List<PlannedPick>,
-        val previewKeys: Map<Long, String?>,
-        val reasonReady: Int,
+        /** 거절되지 않은 추천마다 추천 당시 폴더 이름. 잡 요약의 장수·폴더별 수를 다시 센다. */
+        val folderOfPicks: List<String>,
         val summary: Map<String, Any?>,
-    )
-
-    private data class QueryContext(
-        val prompt: String?,
-        val targetCount: Int?,
-        val detailFolderId: Long?,
-        val folders: List<FolderSetDetailDto>,
     )
 
     /**
      * 단계별 소요를 잡 result에 남기기 위한 초시계. 운영에서 "어디가 느린가"를 로그 시각을 맞춰 보지 않고
-     * result 하나로 읽게 한다 — 읽기(load)·계산(plan)·적재(persist)·이유(reasons) + 이유 배치마다 크기·LLM 성공 수·초.
+     * result 하나로 읽게 한다 — 읽기(load)·계산(plan)·적재(persist).
      */
     private class StageTiming {
         private val startedNanos = System.nanoTime()
         private val stages = linkedMapOf<String, Double>()
-        private val batches = mutableListOf<Map<String, Any>>()
 
         fun <T> measure(stage: String, block: () -> T): T {
             val started = System.nanoTime()
@@ -567,18 +392,14 @@ class AiSelectionJobRunner(
             }
         }
 
-        fun batch(size: Int, fromLlm: Int, startedNanos: Long) {
-            batches += linkedMapOf("size" to size, "llm" to fromLlm, "seconds" to seconds(startedNanos))
-        }
-
         fun elapsedSeconds() = seconds(startedNanos)
 
-        fun toMap(): Map<String, Any?> = linkedMapOf<String, Any?>("stagesSeconds" to stages.toMap(), "reasonBatches" to batches.toList())
+        fun toMap(): Map<String, Any?> = linkedMapOf<String, Any?>("stagesSeconds" to stages.toMap())
 
         private fun seconds(sinceNanos: Long) = round(Duration.ofNanos(System.nanoTime() - sinceNanos).toMillis() / 10.0) / 100
     }
 
-    // [GLOSSARY-1 2026-09-27] parentName → conceptName (용어집: 1층 이름은 concept_name, 층 뜻의 parent는 금지어). 추천 사유 재료의 키 "parent"는 LLM 입력이라 용어 3단계에서 바꾼다.
+    // [GLOSSARY-1 2026-09-27] parentName → conceptName (용어집: 1층 이름은 concept_name, 층 뜻의 parent는 금지어).
     private class VirtualFolder(val folderId: Long?, val conceptName: String, val name: String, val photoIds: List<Long>)
 
     private class World(
@@ -597,7 +418,6 @@ class AiSelectionJobRunner(
         val rejected: Set<Long>,
         val target: Int,
         val previousRound: Int,
-        val previewKeys: Map<Long, String?>,
     )
 
     private class PlannedPick(
@@ -605,10 +425,6 @@ class AiSelectionJobRunner(
         val folderId: Long?,
         val rank: Int,
         val breakdown: Map<String, Any?>,
-        val primary: String,
-        val facts: List<String>,
-        val fallback: String,
-        val siblingIds: List<Pair<Long, String>>,
     )
 
     private class Draft(
@@ -630,9 +446,6 @@ class AiSelectionJobRunner(
         private const val PREF_MIN_SELECTED = 5
         private const val UNFILED = "미분류"
         private const val UNKNOWN = "unknown"
-
-        /** 템플릿·사실 재료를 남기지 않은 이전 버전 추천도 새 분석 없이 이유를 마무리한다. */
-        private const val LEGACY_RECOVERY_REASON = "추천 당시의 사진 점수와 폴더 구성을 기준으로 고른 컷이에요"
 
         /** 범위 밖 행의 벡터 자리. 조회 조건이 벡터 있는 행만 고르므로 범위 안 사진에는 오지 않는다. */
         private val NO_EMBEDDING = FloatArray(0)

@@ -17,8 +17,7 @@ data class AiSelectionJobResponse(
     val mode: AiSelectionMode,
 
     @field:Schema(
-        description = "PENDING(대기) → RUNNING → DONE 또는 FAILED. 추천 표시는 DONE 전에 먼저 생길 수 " +
-            "있다 — 이유 문장 채우기가 같은 잡에서 이어 돌기 때문이다(reasonReady로 판별).",
+        description = "PENDING(대기) → RUNNING → DONE 또는 FAILED.",
         example = "PENDING",
     )
     val status: AiJobStatus,
@@ -41,12 +40,8 @@ data class AiSelectionJobResponse(
 
     val createdAt: ZonedDateTime?,
 
-    val prompt: String? = null,
+    @field:Schema(description = "요청한 추천 장수. null이면 계약 장수 기반 폴더 쿼터를 썼다.")
     val targetCount: Int? = null,
-    @field:Schema(description = "해석을 마친 범위. null이면 전체 갤러리이며, 해석 여부는 queryResolved로 구분한다.")
-    val resolvedDetailFolderIds: List<Long>? = null,
-    val resolvedTargetCount: Int? = null,
-    val queryResolved: Boolean = false,
     @field:Schema(description = "완료된 이번 잡의 추천 수. targetCount보다 후보가 적을 수 있다.")
     val recommendedCount: Int? = null,
     val shortfallCount: Int? = null,
@@ -66,11 +61,7 @@ data class AiSelectionJobResponse(
             finishedAt = job.finishedAt,
             error = job.error,
             createdAt = job.createdAt,
-            prompt = job.prompt,
             targetCount = job.targetCount,
-            resolvedDetailFolderIds = job.resolvedQuery?.detailFolderIds,
-            resolvedTargetCount = job.resolvedQuery?.targetCount,
-            queryResolved = job.resolvedQuery != null,
             recommendedCount = (job.result?.get("k") as? Number)?.toInt(),
             shortfallCount = (job.result?.get("shortfallCount") as? Number)?.toInt(),
         )

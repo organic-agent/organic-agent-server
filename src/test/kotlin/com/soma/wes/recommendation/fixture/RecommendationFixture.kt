@@ -66,33 +66,24 @@ class RecommendationFixture(
             galleryId, status, status,
         )!!
 
-    /** AI 워커가 적재하는 추천 행. reason은 2단계라 기본 null이다. */
+    /** 추천 실행기가 적재하는 추천 행. */
     fun 추천(
         selectionId: Long,
         photoId: Long,
         round: Int = 1,
         rank: Int = 1,
         folderId: Long? = null,
-        reason: String? = null,
     ): Long =
         jdbcTemplate.queryForObject(
             """
             INSERT INTO ai_recommendations
-                (selection_id, photo_id, round, rank, folder_id, reason, presented_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, now(), now(), now())
+                (selection_id, photo_id, round, rank, folder_id, presented_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, now(), now(), now())
             RETURNING id
             """.trimIndent(),
             Long::class.java,
-            selectionId, photoId, round, rank, folderId, reason,
+            selectionId, photoId, round, rank, folderId,
         )!!
-
-    /** 워커의 이유 2단계 UPDATE. `reasonReady`가 뒤집히는 경로다. */
-    fun 추천_이유(selectionId: Long, photoId: Long, round: Int, reason: String) {
-        jdbcTemplate.update(
-            "UPDATE ai_recommendations SET reason = ?, updated_at = now() WHERE selection_id = ? AND round = ? AND photo_id = ?",
-            reason, selectionId, round, photoId,
-        )
-    }
 
     /** 워커의 상태 전이 흉내 — 추천 잡을 닫는다. 살아 있는 잡 하나 규칙(부분 유니크)을 풀 때 쓴다. */
     fun 추천_잡_완료(jobId: Long, round: Int = 1) {
