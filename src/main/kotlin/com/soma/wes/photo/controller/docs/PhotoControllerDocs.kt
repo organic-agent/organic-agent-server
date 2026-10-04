@@ -3,12 +3,10 @@ package com.soma.wes.photo.controller.docs
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.global.exception.ErrorResponse
 import com.soma.wes.photo.domain.PhotoStatus
-import com.soma.wes.photo.dto.request.CheckUploadsRequest
 import com.soma.wes.photo.dto.request.CompleteUploadRequest
 import com.soma.wes.photo.dto.request.DeletePhotosRequest
 import com.soma.wes.photo.dto.request.IssueUploadUrlsRequest
 import com.soma.wes.photo.dto.request.ReissueUploadUrlsRequest
-import com.soma.wes.photo.dto.response.CheckUploadsResponse
 import com.soma.wes.photo.dto.response.IssueUploadUrlsResponse
 import com.soma.wes.photo.dto.response.PhotoCountResponse
 import com.soma.wes.photo.dto.response.PhotoDetailResponse
@@ -32,67 +30,6 @@ import org.springframework.http.ResponseEntity
 interface PhotoControllerDocs {
 
     @Operation(
-        summary = "올릴 원본 미리 확인",
-        description = """
-            올리기 전에 원본들이 이 갤러리에 이미 있는지 묻는다. 담당 작가 전용이다.
-            원본마다 지문(`{원본 바이트 크기}-{원본 앞 64KB 의 CRC32C 를 소문자 hex 8자로}`)을 계산해 보내면 지문마다 상태를 답한다.
-            리사이즈보다 먼저 부른다 — 이미 올라온 사진을 리사이즈하지 않기 위해서다.
-
-            - NEW: 이 갤러리에 없다. 올린다.
-            - PENDING: 올리다 만 사진이다. 발급(POST /upload-urls)에 같은 지문을 실어 부르면 같은 사진으로 이어 올라간다.
-            - UPLOADED: 이미 올라왔다. 건너뛴다.
-            - TRASHED: 같은 원본이 휴지통에 있다. 기본은 건너뛰고, 사용자가 원하면 올린다(새 사진이 되고 휴지통 사진은 남는다).
-
-            같은 폴더를 통째로 다시 던지는 것이 곧 끊긴 업로드의 복구다. 답은 조회 시점의 것이라 발급이 다시 판정한다.
-            한 번에 지문 1000개까지다.
-        """,
-    )
-    @ApiResponses(
-        ApiResponse(responseCode = "200", description = "조회 성공"),
-        ApiResponse(
-            responseCode = "400",
-            description = "지문이 너무 많거나 형식이 틀림",
-            content = [
-                Content(
-                    mediaType = MediaType.APPLICATION_JSON_VALUE,
-                    schema = Schema(implementation = ErrorResponse::class),
-                    examples = [
-                        ExampleObject(
-                            name = "지문 형식 오류",
-                            value = """{"code": "PHOTO_400_9", "message": "사진 지문 형식이 올바르지 않습니다."}""",
-                        ),
-                        ExampleObject(
-                            name = "한 번에 물을 수 있는 수 초과",
-                            value = """{"code": "PHOTO_400_1", "message": "한 번에 처리할 수 있는 사진 수를 넘었습니다."}""",
-                        ),
-                    ],
-                ),
-            ],
-        ),
-        ApiResponse(
-            responseCode = "403",
-            description = "담당 작가가 아님",
-            content = [
-                Content(
-                    mediaType = MediaType.APPLICATION_JSON_VALUE,
-                    schema = Schema(implementation = ErrorResponse::class),
-                    examples = [
-                        ExampleObject(
-                            name = "권한 없음",
-                            value = """{"code": "GALLERY_403_1", "message": "갤러리에 접근할 권한이 없습니다."}""",
-                        ),
-                    ],
-                ),
-            ],
-        ),
-    )
-    fun checkUploads(
-        loginUser: LoginUser,
-        galleryId: Long,
-        request: CheckUploadsRequest,
-    ): ResponseEntity<CheckUploadsResponse>
-
-    @Operation(
         summary = "업로드 URL 일괄 발급",
         description = """
             업로드 1단계. 파일 목록마다 사진 행을 PENDING으로 만들고 S3 PUT용 서명 URL을 돌려준다.
@@ -103,11 +40,6 @@ interface PhotoControllerDocs {
             포함되어 있어서 하나라도 빠지거나 다르면 S3가 403(SignatureDoesNotMatch)으로 거절하고, 체크섬이 실제 바이트와
             다르면 400(BadDigest)으로 거절한다. 다른 x-amz-* 헤더는 서명에 없으니 붙이지 않는다.
             크기 상한을 넘거나 체크섬 형식이 틀린 파일은 발급 단계에서 400이다.
-
-            파일에 지문(sourceHash)을 실으면 발급이 멱등해진다. 이 갤러리에 같은 지문의 사진이 살아 있으면 행을 새로 만들지 않는다 —
-            올리는 중이면 같은 photoId 로 URL 만 새로 주고(state PENDING), 이미 올라왔으면 URL 없이 그 사진을 가리킨다(state UPLOADED).
-            그래서 발급을 재시도하거나 같은 폴더를 다시 던져도 사진이 두 번 생기지 않는다. 지문이 없는 파일은 전처럼 파일마다 새 사진이다.
-            응답의 uploads 는 요청의 files 와 같은 순서다. 장수 한도에는 새로 생기는 사진만 든다.
 
             업로드가 끝나면 완료 통보(POST /complete)를 보낸다. 통보가 없어도 서버가 발급 1분 뒤부터 S3를 직접
             확인해 올라온 사진을 UPLOADED로 옮기지만, 통보가 빠르다. 24시간이 지나도 올라오지 않은 사진은 휴지통으로 간다.
@@ -138,10 +70,6 @@ interface PhotoControllerDocs {
                         ExampleObject(
                             name = "체크섬 형식 오류",
                             value = """{"code": "PHOTO_400_8", "message": "업로드할 사진의 CRC32C 체크섬 형식이 올바르지 않습니다."}""",
-                        ),
-                        ExampleObject(
-                            name = "지문 형식 오류",
-                            value = """{"code": "PHOTO_400_9", "message": "사진 지문 형식이 올바르지 않습니다."}""",
                         ),
                     ],
                 ),

@@ -3,12 +3,10 @@ package com.soma.wes.photo.controller
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.photo.controller.docs.PhotoControllerDocs
 import com.soma.wes.photo.domain.PhotoStatus
-import com.soma.wes.photo.dto.request.CheckUploadsRequest
 import com.soma.wes.photo.dto.request.CompleteUploadRequest
 import com.soma.wes.photo.dto.request.DeletePhotosRequest
 import com.soma.wes.photo.dto.request.IssueUploadUrlsRequest
 import com.soma.wes.photo.dto.request.ReissueUploadUrlsRequest
-import com.soma.wes.photo.dto.response.CheckUploadsResponse
 import com.soma.wes.photo.dto.response.IssueUploadUrlsResponse
 import com.soma.wes.photo.dto.response.PhotoCountResponse
 import com.soma.wes.photo.dto.response.PhotoDetailResponse
@@ -33,17 +31,6 @@ import org.springframework.web.bind.annotation.RestController
 class PhotoController(
     private val photoService: PhotoService,
 ) : PhotoControllerDocs {
-
-    @PostMapping("/upload-check")
-    override fun checkUploads(
-        @AuthenticationPrincipal loginUser: LoginUser,
-        @PathVariable galleryId: Long,
-        @Valid @RequestBody request: CheckUploadsRequest,
-    ): ResponseEntity<CheckUploadsResponse> {
-        val result = photoService.checkUploads(galleryId, loginUser.id, request)
-
-        return ResponseEntity.ok(result)
-    }
 
     @PostMapping("/upload-urls")
     override fun issueUploadUrls(
