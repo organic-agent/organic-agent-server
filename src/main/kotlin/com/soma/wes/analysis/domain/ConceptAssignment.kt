@@ -35,20 +35,9 @@ class ConceptAssignment(
     /** vlm(상위 K그룹, VLM이 직접) 또는 nearest(K 밖 소그룹, 임베딩 최근접 상속). */
     @Column(name = "assigned_by", nullable = false, updatable = false, length = 10)
     val assignedBy: String,
-
-    @Column(name = "needs_review", nullable = false, updatable = false)
-    val needsReview: Boolean = false,
 ) : BaseEntity() {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null
-
-    /** [conceptName]이 '기타'일 때 VLM이 제안한 컨셉 이름. 고정 목록 확장의 근거로만 쓴다. */
-    @Column(name = "proposed_concept_name", updatable = false, length = 100)
-    val proposedConceptName: String? = null
-
-    /** CLIP zero-shot 다수결이 판정한 컨셉 이름. [conceptName]과 다르면 [needsReview]의 근거다. */
-    @Column(name = "clip_concept_name", updatable = false, length = 100)
-    val clipConceptName: String? = null
 }

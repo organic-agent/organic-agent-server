@@ -105,11 +105,13 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
             """
             EXPLAIN INSERT INTO concept_assignments (
                 job_id, gallery_id, embed_group_id, concept_name, detail_name,
-                confidence, assigned_by, needs_review, created_at, updated_at
+                confidence, assigned_by, created_at, updated_at
             )
-            VALUES (-1, -1, 1, '웨딩', '본식', 0.9, 'vlm', false, now(), now())
+            VALUES (-1, -1, 1, '웨딩', '본식', 0.9, 'vlm', now(), now())
             ON CONFLICT (job_id, embed_group_id) DO UPDATE
-            SET concept_name = EXCLUDED.concept_name, detail_name = EXCLUDED.detail_name, updated_at = now()
+            SET concept_name = EXCLUDED.concept_name, detail_name = EXCLUDED.detail_name,
+                confidence = EXCLUDED.confidence, assigned_by = EXCLUDED.assigned_by,
+                updated_at = now(), version = concept_assignments.version + 1
             """.trimIndent(),
         )
         val statementsUsedByWorker = listOf(

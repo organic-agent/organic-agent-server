@@ -190,7 +190,6 @@ class AiFolderMaterializer(
                 name = plan.name,
                 sortOrder = sortOrder,
                 createdSource = FolderSource.AI,
-                needsReview = plan.needsReview,
             ),
         )
         assignmentBulkRepository.insertAiAssignments(galleryId, detail.requiredId, plan.photoIds, assignedAt, analysisJobId)

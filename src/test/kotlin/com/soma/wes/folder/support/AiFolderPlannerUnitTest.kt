@@ -23,8 +23,8 @@ class AiFolderPlannerUnitTest {
     private fun photo(photoId: Long, embedGroupId: Int?) =
         PhotoAnalysisGroupingDto(photoId = photoId, embedGroupId = embedGroupId, subjects = null, burstId = null)
 
-    private fun assignment(embedGroupId: Int, conceptName: String, detailName: String, needsReview: Boolean = false) =
-        ConceptAssignmentDto(embedGroupId = embedGroupId, conceptName = conceptName, detailName = detailName, needsReview = needsReview)
+    private fun assignment(embedGroupId: Int, conceptName: String, detailName: String) =
+        ConceptAssignmentDto(embedGroupId = embedGroupId, conceptName = conceptName, detailName = detailName)
 
     private fun plan(
         assignments: List<ConceptAssignmentDto>,
@@ -222,7 +222,7 @@ class AiFolderPlannerUnitTest {
         fun `폴더에 든 사진이 없으면 최소 장수 없이 전부 새 폴더로 만든다`() {
             // given — 1장짜리 그룹도 있다
             val photos = listOf(photo(100, 1), photo(101, 1), photo(102, 2), photo(103, null))
-            val assignments = listOf(assignment(1, "야외 공원", "산책로"), assignment(2, "실내", "거울 앞", needsReview = true))
+            val assignments = listOf(assignment(1, "야외 공원", "산책로"), assignment(2, "실내", "거울 앞"))
 
             // when — 기존 폴더가 없다
             val plan = planner.plan(assignments = assignments, photos = photos, minNewDetailPhotos = 5)
@@ -232,7 +232,6 @@ class AiFolderPlannerUnitTest {
                 softly.assertThat(plan.newConcepts.map { it.name }).containsExactly("야외 공원", "실내", AiFolderPlanner.ETC_NAME)
                 softly.assertThat(plan.newConcepts.map { concept -> concept.details.flatMap { it.photoIds } })
                     .containsExactly(listOf(100L, 101L), listOf(102L), listOf(103L))
-                softly.assertThat(plan.newConcepts[1].details.single().needsReview).isTrue()
                 softly.assertThat(plan.merges).isEmpty()
                 softly.assertThat(plan.leftUnclassified).isEmpty()
             }

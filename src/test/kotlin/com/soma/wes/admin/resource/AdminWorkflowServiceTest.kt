@@ -1886,9 +1886,9 @@ private fun createGraph(actorAdminId: Long, suffix: String, withPhoto: Boolean =
             """
             INSERT INTO concept_assignments (
                 job_id, gallery_id, embed_group_id, concept_name, detail_name,
-                confidence, assigned_by, needs_review, created_at, updated_at
+                confidence, assigned_by, created_at, updated_at
             )
-            VALUES (:jobId, :galleryId, 1, '웨딩', '본식', 0.9, 'vlm', false,
+            VALUES (:jobId, :galleryId, 1, '웨딩', '본식', 0.9, 'vlm',
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """.trimIndent(),
         ).param("jobId", jobId).param("galleryId", galleryId).update()

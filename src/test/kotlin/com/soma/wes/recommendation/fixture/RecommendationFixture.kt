@@ -100,17 +100,16 @@ class RecommendationFixture(
         embedGroupId: Int,
         conceptName: String,
         detailName: String,
-        needsReview: Boolean = false,
     ): Long =
         jdbcTemplate.queryForObject(
             """
             INSERT INTO concept_assignments
                 (job_id, gallery_id, embed_group_id, concept_name, detail_name, confidence, assigned_by,
-                 needs_review, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 0.9, 'vlm', ?, now(), now())
+                 created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 0.9, 'vlm', now(), now())
             RETURNING id
             """.trimIndent(),
             Long::class.java,
-            jobId, galleryId, embedGroupId, conceptName, detailName, needsReview,
+            jobId, galleryId, embedGroupId, conceptName, detailName,
         )!!
 }

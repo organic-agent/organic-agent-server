@@ -35,9 +35,6 @@ class DetailFolder(
     @Enumerated(EnumType.STRING)
     @Column(name = "created_source", nullable = false, updatable = false, length = 20)
     val createdSource: FolderSource,
-
-    @Column(name = "needs_review", nullable = false)
-    var needsReview: Boolean = false,
 ) : BaseEntity() {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

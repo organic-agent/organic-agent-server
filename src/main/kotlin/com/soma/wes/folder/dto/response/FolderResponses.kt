@@ -11,7 +11,6 @@ data class DetailFolderResponse(
     val name: String,
     val sortOrder: Int,
     val createdSource: FolderSource,
-    val needsReview: Boolean,
     val photoIds: List<Long>,
 ) {
     // [REFACTOR-A 2026-09-27] 신규. FolderService·AiFolderService의 private detailResponse(...) 두 벌을 대체한다.
@@ -23,7 +22,6 @@ data class DetailFolderResponse(
             name = detail.name,
             sortOrder = detail.sortOrder,
             createdSource = detail.createdSource,
-            needsReview = detail.needsReview,
             photoIds = photoIds,
         )
     }
