@@ -30,7 +30,6 @@ class ConceptAssignmentLoader(
                     embedGroupId = it.embedGroupId,
                     conceptName = it.conceptName,
                     detailName = it.detailName,
-                    needsReview = it.needsReview,
                 )
             },
         )

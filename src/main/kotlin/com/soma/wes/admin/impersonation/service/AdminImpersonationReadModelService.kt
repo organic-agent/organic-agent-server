@@ -111,7 +111,6 @@ class AdminImpersonationReadModelService(
                         linkedMapOf(
                             "detailFolderId" to detail.id,
                             "name" to sanitizer.sanitizeText(detail.name),
-                            "needsReview" to detail.needsReview,
                             "photoCount" to detail.photoIds.size,
                         )
                     },

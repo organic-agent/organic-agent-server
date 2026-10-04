@@ -36,7 +36,7 @@ class ConceptAssignmentLoaderTest @Autowired constructor(
         assertSoftly { softly ->
             softly.assertThat(latest?.analysisJobId).isEqualTo(newJobId)
             softly.assertThat(latest?.assignments).containsExactly(
-                ConceptAssignmentDto(embedGroupId = 1, conceptName = "야외 정원·건물", detailName = "정원", needsReview = false),
+                ConceptAssignmentDto(embedGroupId = 1, conceptName = "야외 정원·건물", detailName = "정원"),
             )
         }
     }

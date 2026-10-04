@@ -107,7 +107,6 @@ class AiFolderPlanner {
             val sorted = detailPhotos.sortedWith(PHOTO_ORDER)
             return DetailFolderPlanDto(
                 name = detailName,
-                needsReview = sorted.any { assignmentOf(it.embedGroupId)?.needsReview ?: false },
                 photoIds = sorted.map { it.photoId },
             )
         }
