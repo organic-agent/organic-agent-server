@@ -105,7 +105,4 @@ interface PhotoRepository : JpaRepository<Photo, Long> {
         """,
     )
     fun countAgainstQuota(@Param("galleryId") galleryId: Long, @Param("now") now: Instant): Long
-
-    /** 이 갤러리에서 같은 지문으로 살아 있는 사진. 지문마다 많아야 한 장이다(`uk_photos_gallery_source_hash`). */
-    fun findAllByGalleryIdAndSourceHashIn(galleryId: Long, sourceHashes: Collection<String>): List<Photo>
 }

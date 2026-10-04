@@ -12,13 +12,10 @@ import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoRating
 import com.soma.wes.photo.domain.PhotoStatus
-import com.soma.wes.photo.domain.UploadState
-import com.soma.wes.photo.dto.request.CheckUploadsRequest
 import com.soma.wes.photo.dto.request.CompleteUploadRequest
 import com.soma.wes.photo.dto.request.DeletePhotosRequest
 import com.soma.wes.photo.dto.request.IssueUploadUrlsRequest
 import com.soma.wes.photo.dto.request.ReissueUploadUrlsRequest
-import com.soma.wes.photo.dto.response.CheckUploadsResponse
 import com.soma.wes.photo.dto.response.IssueUploadUrlsResponse
 import com.soma.wes.photo.dto.response.IssuedUploadResponse
 import com.soma.wes.photo.dto.response.PhotoCountResponse
@@ -29,7 +26,6 @@ import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.photo.repository.PhotoRepository
-import com.soma.wes.photo.repository.PhotoSourceHashRepository
 import com.soma.wes.photo.service.port.PhotoStorage
 import com.soma.wes.photo.support.PhotoViewAssembler
 import java.time.Clock
@@ -48,7 +44,6 @@ import org.springframework.transaction.annotation.Transactional
 class PhotoService(
     private val photoRepository: PhotoRepository,
     private val photoPipelineRepository: PhotoPipelineRepository,
-    private val photoSourceHashRepository: PhotoSourceHashRepository,
     private val galleryAccessPolicy: GalleryAccessPolicy,
     private val galleryPhotoQuota: GalleryPhotoQuota,
     private val photoStorage: PhotoStorage,
@@ -71,68 +66,11 @@ class PhotoService(
         )
 
         private val CRC32C_BASE64 = Regex(Photo.CRC32C_BASE64_PATTERN)
-
-        private val SOURCE_HASH = Regex(Photo.SOURCE_HASH_PATTERN)
-
-        /** 지문 없는 파일을 "서로 다른 것"으로 세기 위한 키의 머리말. 지문 형식([Photo.SOURCE_HASH_PATTERN])과 겹칠 수 없는 글자다. */
-        private const val NO_SOURCE_HASH_KEY = "#"
     }
-
-    /**
-     * 올리기 전에 원본들이 이 갤러리에 이미 있는지 답한다. web 이 폴더를 통째로 다시 던졌을 때 올릴 것만 추리는 데 쓴다 —
-     * 그래서 "같은 폴더를 다시 던지는 것"이 곧 끊긴 업로드의 복구가 된다.
-     *
-     * 살아 있는 사진이 휴지통 사진보다 먼저다: 같은 원본이 휴지통에도 있고 다시 올라와 있기도 하면 올라온 쪽으로 답한다.
-     * 읽기만 하므로 답과 발급 사이에 상태가 바뀔 수 있다 — 최종 판정은 발급([issueUploadUrls])이 갤러리를 잠그고 다시 한다.
-     */
-    @Transactional(readOnly = true)
-    fun checkUploads(galleryId: Long, userId: Long, request: CheckUploadsRequest): CheckUploadsResponse {
-        galleryAccessPolicy.requireUploader(galleryId, userId)
-
-        val sourceHashes = request.sourceHashes.distinct()
-        if (sourceHashes.size > CheckUploadsRequest.MAX_SOURCE_HASHES) {
-            throw PhotoException(PhotoErrorCode.TOO_MANY_PHOTOS)
-        }
-        sourceHashes.forEach { validateSourceHash(it) }
-
-        val liveByHash = photoRepository.findAllByGalleryIdAndSourceHashIn(galleryId, sourceHashes).associateBy { it.sourceHash }
-        val trashed = photoSourceHashRepository.findTrashed(galleryId, sourceHashes.filterNot { it in liveByHash })
-        val results = sourceHashes.map { sourceHash ->
-            val live = liveByHash[sourceHash]
-            CheckUploadsResponse.Result(
-                sourceHash = sourceHash,
-                state = when {
-                    live != null -> uploadStateOf(live)
-                    sourceHash in trashed -> UploadState.TRASHED
-                    else -> UploadState.NEW
-                },
-                photoId = live?.requiredId,
-            )
-        }
-
-        val countByState = results.groupingBy { it.state }.eachCount()
-        log.info(
-            "event=upload.check gallery={} user={} asked={} new={} pending={} uploaded={} trashed={}",
-            galleryId, userId, results.size,
-            countByState[UploadState.NEW] ?: 0, countByState[UploadState.PENDING] ?: 0,
-            countByState[UploadState.UPLOADED] ?: 0, countByState[UploadState.TRASHED] ?: 0,
-        )
-        return CheckUploadsResponse(results)
-    }
-
-    private fun uploadStateOf(photo: Photo): UploadState =
-        if (photo.status == PhotoStatus.UPLOADED) UploadState.UPLOADED else UploadState.PENDING
 
     /**
      * 업로드 1단계. 파일 목록을 받아 사진 행을 [PENDING][PhotoStatus.PENDING]으로 만들고
      * S3 PUT용 서명 URL을 돌려준다.
-     *
-     * 지문([Photo.sourceHash])이 있는 파일은 멱등하다. 같은 지문의 사진이 이 갤러리에 살아 있으면 행을 새로 만들지 않는다 —
-     * 올리는 중이면 그 행의 URL 을 다시 주고, 이미 올라왔으면 URL 없이 그 사진을 가리킨다. 그래서 발급 호출을 재시도하거나
-     * 같은 폴더를 다시 던져도 사진이 두 번 생기지 않는다. 지문이 없는 파일(옛 web)은 전처럼 파일마다 새 행이다.
-     *
-     * 같은 사진을 두 번 만들지 않는 근거는 갤러리 잠금이다: 잠근 뒤에 지문을 찾으므로 동시 요청 둘 중 뒤의 것은
-     * 앞의 것이 만든 행을 본다. 유니크 인덱스는 이 순서가 깨졌을 때의 마지막 안전망이다.
      */
     @Transactional
     fun issueUploadUrls(
@@ -142,52 +80,34 @@ class PhotoService(
     ): IssueUploadUrlsResponse {
         galleryAccessPolicy.requireUploader(galleryId, userId)
 
-        val existingByHash = loggingRejection(galleryId, photoCount = request.files.size) {
+        loggingRejection(galleryId, photoCount = request.files.size) {
             validateIssueRequest(request)
-            loadIssuable(galleryId, request)
+            lockIssuable(galleryId, request)
         }
-
-        // 새 행이 필요한 파일 — 지문이 없거나, 이 갤러리에 그 지문이 없다. 한 요청 안의 같은 지문은 처음 것만 행을 만든다.
-        val newFiles = request.files.withIndex()
-            .filter { (_, file) -> file.sourceHash == null || file.sourceHash !in existingByHash }
-            .distinctBy { (index, file) -> file.sourceHash ?: "$NO_SOURCE_HASH_KEY$index" }
-        photoSourceHashRepository.releaseTrashed(galleryId, newFiles.mapNotNull { (_, file) -> file.sourceHash })
 
         // 이미 있는 사진 뒤에 이어 붙인다. 같은 갤러리에 두 배치를 동시에 발급하면 순서가
         // 겹칠 수 있지만, 목록이 id로 한 번 더 정렬하므로 뒤섞이지는 않는다.
         val orderBase = photoRepository.nextDisplayOrder(galleryId)
-        val created = photoRepository.saveAll(
-            newFiles.mapIndexed { order, (_, file) ->
-                Photo(
-                    galleryId = galleryId,
-                    storageKey = photoStorage.buildKey(galleryId, file.fileName),
-                    originalFileName = file.fileName,
-                    contentType = file.contentType.lowercase(),
-                    displayOrder = orderBase + order,
-                    sourceHash = file.sourceHash,
-                )
-            },
-        )
-        val createdByFileIndex = newFiles.map { (index, _) -> index }.zip(created).toMap()
-        val createdByHash = created.filter { it.sourceHash != null }.associateBy { it.sourceHash }
 
-        val uploads = request.files.mapIndexed { index, file ->
-            val createdPhoto = createdByFileIndex[index]
-            if (createdPhoto != null) {
-                issue(createdPhoto, contentLength = file.contentLength, crc32c = file.crc32c, state = UploadState.NEW)
-            } else {
-                val photo = existingByHash[file.sourceHash] ?: createdByHash[file.sourceHash]
-                    ?: error("새 행을 만들지 않은 파일은 같은 지문의 사진이 있어야 한다")
-                reuse(photo, file)
-            }
+        val photos = request.files.mapIndexed { index, file ->
+            Photo(
+                galleryId = galleryId,
+                storageKey = photoStorage.buildKey(galleryId, file.fileName),
+                originalFileName = file.fileName,
+                contentType = file.contentType.lowercase(),
+                displayOrder = orderBase + index,
+            )
         }
 
-        val resumed = uploads.count { it.state == UploadState.PENDING }
-        val duplicate = uploads.count { it.state == UploadState.UPLOADED }
-        if (created.isNotEmpty() || resumed > 0) activityRecorder.recordGallery(galleryId)
+        val uploads = photoRepository.saveAll(photos).mapIndexed { index, photo ->
+            val file = request.files[index]
+            issue(photo, contentLength = file.contentLength, crc32c = file.crc32c)
+        }
+
+        if (photos.isNotEmpty()) activityRecorder.recordGallery(galleryId)
         log.info(
-            "event=upload.issue gallery={} user={} photos={} new={} resumed={} duplicate={} bytes={}",
-            galleryId, userId, uploads.size, created.size, resumed, duplicate, request.files.sumOf { it.contentLength },
+            "event=upload.issue gallery={} user={} photos={} bytes={}",
+            galleryId, userId, photos.size, request.files.sumOf { it.contentLength },
         )
         return IssueUploadUrlsResponse(
             uploads = uploads,
@@ -206,41 +126,15 @@ class PhotoService(
             }
             validateContentLength(it.contentLength)
             validateCrc32c(it.crc32c)
-            if (it.sourceHash != null) validateSourceHash(it.sourceHash)
         }
     }
 
-    /**
-     * 갤러리를 잠그고, 요청의 지문으로 이미 있는 사진을 찾고, 마감과 한도를 본다. 사진 행을 만들기 전에 전부 끝낸다 —
-     * 거절될 요청이 PENDING 행을 남기지 않는다.
-     *
-     * 한도에 더할 장수는 새로 만들 행과, URL 이 죽어 한도에서 빠져 있다가 이번에 URL 을 다시 받는 행이다.
-     * 이미 올라왔거나 URL 이 살아 있는 행은 벌써 세어져 있다.
-     */
-    private fun loadIssuable(galleryId: Long, request: IssueUploadUrlsRequest): Map<String?, Photo> {
+    /** 갤러리를 잠그고 마감과 한도를 본다. 사진 행을 만들기 전에 끝낸다 — 거절될 요청이 PENDING 행을 남기지 않는다. */
+    private fun lockIssuable(galleryId: Long, request: IssueUploadUrlsRequest) {
         val gallery = galleryPhotoQuota.lock(galleryId)
         gallery.requireWritable(ZonedDateTime.now(clock))
-
-        val sourceHashes = request.files.mapNotNull { it.sourceHash }.distinct()
-        val existingByHash = photoRepository.findAllByGalleryIdAndSourceHashIn(galleryId, sourceHashes).associateBy { it.sourceHash }
-        val newCount = request.files.count { it.sourceHash == null } + sourceHashes.count { it !in existingByHash }
-        val revivedCount = existingByHash.values.count { it.isUploadExpired(clock.instant()) }
-        galleryPhotoQuota.requireCapacity(gallery, additionalPhotoCount = newCount + revivedCount)
-        return existingByHash
+        galleryPhotoQuota.requireCapacity(gallery, additionalPhotoCount = request.files.size)
     }
-
-    /** 같은 지문의 사진이 이미 있을 때. 올리는 중이면 그 행으로 URL 을 다시 주고, 올라왔으면 올릴 것이 없다고 답한다. */
-    private fun reuse(photo: Photo, file: IssueUploadUrlsRequest.FileRequest): IssuedUploadResponse =
-        if (photo.status == PhotoStatus.UPLOADED) {
-            IssuedUploadResponse(
-                photoId = photo.requiredId,
-                storageKey = photo.storageKey,
-                uploadUrl = null,
-                state = UploadState.UPLOADED,
-            )
-        } else {
-            issue(photo, contentLength = file.contentLength, crc32c = file.crc32c, state = UploadState.PENDING)
-        }
 
     /** 크기는 서명에 들어가므로 여기서 상한만 보면 된다 — 다른 크기의 객체는 S3가 거절한다. */
     private fun validateContentLength(contentLength: Long) {
@@ -256,14 +150,7 @@ class PhotoService(
         }
     }
 
-    /** 지문은 중복 판정의 키다. 형식이 다른 값을 받아 두면 같은 원본이 다른 사진으로 갈린다. */
-    private fun validateSourceHash(sourceHash: String) {
-        if (!SOURCE_HASH.matches(sourceHash)) {
-            throw PhotoException(PhotoErrorCode.INVALID_SOURCE_HASH)
-        }
-    }
-
-    private fun issue(photo: Photo, contentLength: Long, crc32c: String, state: UploadState): IssuedUploadResponse {
+    private fun issue(photo: Photo, contentLength: Long, crc32c: String): IssuedUploadResponse {
         val presigned = photoStorage.presignUpload(
             key = photo.storageKey,
             contentType = photo.contentType,
@@ -275,7 +162,6 @@ class PhotoService(
             photoId = photo.requiredId,
             storageKey = photo.storageKey,
             uploadUrl = presigned.url,
-            state = state,
         )
     }
 
@@ -292,7 +178,7 @@ class PhotoService(
         val requestById = request.photos.associateBy { it.photoId }
         val uploads = photos.map { photo ->
             val photoRequest = requestById.getValue(photo.requiredId)
-            issue(photo, contentLength = photoRequest.contentLength, crc32c = photoRequest.crc32c, state = UploadState.PENDING)
+            issue(photo, contentLength = photoRequest.contentLength, crc32c = photoRequest.crc32c)
         }
 
         if (photos.isNotEmpty()) activityRecorder.recordGallery(galleryId)

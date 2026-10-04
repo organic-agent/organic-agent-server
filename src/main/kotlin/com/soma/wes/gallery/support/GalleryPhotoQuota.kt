@@ -33,8 +33,8 @@ class GalleryPhotoQuota(
     }
 
     /**
-     * 갤러리를 잠그기만 한다. 늘어날 장수를 잠근 뒤에야 알 수 있는 호출자(업로드 발급 — 같은 지문의 사진이 이미 있는지 봐야
-     * 새로 만들 장수가 나온다)가 먼저 부르고, 센 뒤 [requireCapacity]로 넘긴다. 잠금 없이 세면 동시 요청 둘이 같은 사진을 두 번 만든다.
+     * 갤러리를 잠그기만 한다. 잠근 뒤에 할 일이 있는 호출자(업로드 발급은 마감을, URL 재발급은 URL 이 죽어 한도에서 빠져 있던
+     * 사진 수를 본다)가 먼저 부르고, 센 뒤 [requireCapacity]로 넘긴다. 잠금 없이 세면 동시 요청 둘이 함께 한도를 넘긴다.
      */
     @Transactional(propagation = Propagation.MANDATORY)
     fun lock(galleryId: Long): Gallery = galleryRepository.requireWithLockById(galleryId)

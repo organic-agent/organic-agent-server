@@ -55,17 +55,6 @@ class Photo(
     @Column(name = "display_order", nullable = false)
     var displayOrder: Int = 0,
 
-    /**
-     * 원본 파일의 지문([SOURCE_HASH_PATTERN]). web 이 리사이즈 전의 원본에서 계산해 보내고, 한 갤러리에서 살아 있는 사진끼리는
-     * 겹치지 않는다(`uk_photos_gallery_source_hash`). 같은 원본을 다시 올리는 요청이 새 행을 만들지 않고 이 행을 찾게 하는 키다.
-     * null 은 지문 없이 올라온 사진(옛 web, Mock 갤러리 복제)이고 중복 검사에서 빠진다.
-     *
-     * 휴지통에 든 뒤 같은 원본이 새로 올라오면 네이티브 UPDATE 가 이 값을 비운다
-     * ([com.soma.wes.photo.repository.PhotoSourceHashRepository.releaseTrashed]) — 복원이 유니크에 걸리지 않게 하려는 것이다.
-     */
-    @Column(name = "source_hash", updatable = false, length = 40)
-    val sourceHash: String? = null,
-
 ) : BaseEntity() {
 
     @Id
@@ -171,13 +160,6 @@ class Photo(
         const val CRC32C_BASE64_PATTERN = "^[A-Za-z0-9+/]{6}==$"
 
         /**
-         * 지문의 형식 — `{원본 바이트 크기}-{원본 앞 64KB 의 CRC32C 를 소문자 hex 8자로}` (예: `18432000-c1d44383`).
-         * 파일 전체를 읽지 않아 수천 장도 수 초에 계산되고, JPEG 앞부분에는 촬영 시각·카메라 일련번호가 있어 사실상 겹치지 않는다.
-         * 이름·수정 시각·경로를 쓰지 않으므로 파일 선택·폴더·zip 어느 길로 와도 같은 원본은 같은 값이다. 계산은 web 이 한다.
-         */
-        const val SOURCE_HASH_PATTERN = "^[0-9]{1,15}-[0-9a-f]{8}$"
-
-        /**
          * 화면 순서는 갤러리에서 정한 노출 순서를 따른다. 같으면 id로 한 번 더 갈라, 같은
          * 배치로 발급돼 displayOrder가 겹치는 사진들이 화면마다 자리를 바꾸지 않게 한다.
          * 메모리에서 사진을 정렬하는 모든 화면(폴더·선택 앨범)이 이 하나를 쓴다.
@@ -193,7 +175,6 @@ class Photo(
          * 촬영 정보는 값을 새로 떠서 담는다. detached 원본과 인스턴스를 나눠 가지면 한쪽 상태
          * 변경이 다른 엔티티에 새어 들어간다. 벡터는 [PhotoAnalysis]에 있으므로 호출자가 따로
          * 복제한다 — 여기서는 원본이 있다는 표시([markUploaded])만 한다.
-         * 지문은 복제하지 않는다 — 템플릿의 원본을 사용자가 가진 것이 아니라 다시 올릴 일이 없다.
          */
         fun copyOf(
             source: Photo,

@@ -19,13 +19,9 @@ import com.soma.wes.global.page.PageRequests
 import com.soma.wes.photo.domain.PhotoAnalysis
 import com.soma.wes.photo.domain.PhotoMetadata
 import com.soma.wes.photo.domain.PhotoStatus
-import com.soma.wes.photo.domain.UploadState
-import com.soma.wes.photo.dto.request.CheckUploadsRequest
 import com.soma.wes.photo.dto.request.CompleteUploadRequest
 import com.soma.wes.photo.dto.request.IssueUploadUrlsRequest
 import com.soma.wes.photo.dto.request.ReissueUploadUrlsRequest
-import com.soma.wes.photo.dto.response.CheckUploadsResponse
-import com.soma.wes.photo.dto.response.IssuedUploadResponse
 import com.soma.wes.photo.dto.response.PhotoPageResponse
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
@@ -394,7 +390,7 @@ class PhotoServiceTest @Autowired constructor(
             // then
             val who = "gallery=${fixture.galleryId} user=${fixture.photographer.id}"
             assertThat(events).containsExactly(
-                "event=upload.issue $who photos=2 new=2 resumed=0 duplicate=0 bytes=2048",
+                "event=upload.issue $who photos=2 bytes=2048",
                 "event=upload.reissue $who photos=1",
                 "event=upload.complete $who photos=2",
             )
@@ -877,233 +873,6 @@ class PhotoServiceTest @Autowired constructor(
     }
 
     @Nested
-    @DisplayName("지문을 실어 발급할 때")
-    inner class IssueBySourceHash {
-
-        @Test
-        fun `같은 지문으로 다시 발급하면 사진을 새로 만들지 않고 같은 사진의 URL 을 다시 준다`() {
-            // given
-            val first = issueWithHashes(HASH_A).single()
-
-            // when — 발급 호출의 재시도, 또는 같은 폴더를 다시 던진 경우
-            val second = issueWithHashes(HASH_A).single()
-
-            // then
-            assertSoftly { softly ->
-                softly.assertThat(first.state).isEqualTo(UploadState.NEW)
-                softly.assertThat(second.state).isEqualTo(UploadState.PENDING)
-                softly.assertThat(second.photoId).isEqualTo(first.photoId)
-                softly.assertThat(second.storageKey).isEqualTo(first.storageKey)
-                softly.assertThat(second.uploadUrl).contains("X-Amz-Signature")
-                softly.assertThat(photoRepository.countByGalleryId(fixture.galleryId)).isEqualTo(1L)
-            }
-        }
-
-        @Test
-        fun `이미 올라온 사진의 지문은 URL 없이 그 사진을 가리킨다`() {
-            // given
-            val uploaded = issueWithHashes(HASH_A).single()
-            photoService.completeUpload(fixture.galleryId, fixture.photographer.id!!, CompleteUploadRequest(listOf(uploaded.photoId)))
-
-            // when — 새 사진 하나와 섞어 보낸다
-            val result = issueWithHashes(HASH_A, HASH_B)
-
-            // then — 응답은 요청 순서 그대로다
-            assertSoftly { softly ->
-                softly.assertThat(result.map { it.state }).containsExactly(UploadState.UPLOADED, UploadState.NEW)
-                softly.assertThat(result[0].photoId).isEqualTo(uploaded.photoId)
-                softly.assertThat(result[0].uploadUrl).isNull()
-                softly.assertThat(result[1].uploadUrl).isNotNull()
-                softly.assertThat(photoRepository.countByGalleryId(fixture.galleryId)).isEqualTo(2L)
-            }
-        }
-
-        @Test
-        fun `한 요청에 같은 지문이 두 번 있어도 사진은 하나다`() {
-            // when
-            val result = issueWithHashes(HASH_A, HASH_A)
-
-            // then
-            assertSoftly { softly ->
-                softly.assertThat(result.map { it.photoId }.distinct()).hasSize(1)
-                softly.assertThat(result.map { it.state }).containsExactly(UploadState.NEW, UploadState.PENDING)
-                softly.assertThat(photoRepository.countByGalleryId(fixture.galleryId)).isEqualTo(1L)
-            }
-        }
-
-        @Test
-        fun `같은 지문을 동시에 발급해도 사진은 하나이고 둘 다 성공한다`() {
-            // given
-            val start = CountDownLatch(1)
-
-            // when
-            val results = Executors.newFixedThreadPool(2).use { executor ->
-                val futures = (1..2).map { executor.submit<Result<Long>> {
-                    start.await()
-                    runCatching { issueWithHashes(HASH_A).single().photoId }
-                } }
-                start.countDown()
-                futures.map { it.get(10, TimeUnit.SECONDS) }
-            }
-
-            // then
-            assertSoftly { softly ->
-                softly.assertThat(results).allSatisfy { assertThat(it.isSuccess).isTrue() }
-                softly.assertThat(results.map { it.getOrNull() }.distinct()).hasSize(1)
-                softly.assertThat(photoRepository.countByGalleryId(fixture.galleryId)).isEqualTo(1L)
-            }
-        }
-
-        @Test
-        fun `지문이 없는 요청은 전처럼 파일마다 새 사진이다`() {
-            // when — 옛 web. 같은 파일을 두 번 발급한다
-            val first = photoService.issueUploadUrls(fixture.galleryId, fixture.photographer.id!!, singlePhotoRequest()).uploads.single()
-            val second = photoService.issueUploadUrls(fixture.galleryId, fixture.photographer.id!!, singlePhotoRequest()).uploads.single()
-
-            // then
-            assertSoftly { softly ->
-                softly.assertThat(listOf(first.state, second.state)).containsOnly(UploadState.NEW)
-                softly.assertThat(second.photoId).isNotEqualTo(first.photoId)
-                softly.assertThat(photoRepository.countByGalleryId(fixture.galleryId)).isEqualTo(2L)
-            }
-        }
-
-        @Test
-        fun `휴지통 사진과 같은 지문은 새 사진으로 올라가고 휴지통 사진도 복원할 수 있다`() {
-            // given — 올렸다가 지운 사진
-            val trashed = issueWithHashes(HASH_A).single().photoId
-            photoService.moveToTrash(fixture.galleryId, fixture.photographer.id!!, DeletePhotosRequest(listOf(trashed)))
-
-            // when — 사용자가 "그래도 올리기"를 고른 경우
-            val reuploaded = issueWithHashes(HASH_A).single()
-            trashService.restorePhotos(fixture.galleryId, fixture.photographer.id!!, RestorePhotosRequest(listOf(trashed)))
-
-            // then — 복원이 지문 유니크에 걸리지 않는다. 같은 사진이 두 장인 것은 지운 사진을 알고도 다시 올린 선택이다
-            assertSoftly { softly ->
-                softly.assertThat(reuploaded.state).isEqualTo(UploadState.NEW)
-                softly.assertThat(reuploaded.photoId).isNotEqualTo(trashed)
-                softly.assertThat(photoRepository.countByGalleryId(fixture.galleryId)).isEqualTo(2L)
-                softly.assertThat(photoRepository.findById(reuploaded.photoId).orElseThrow().sourceHash).isEqualTo(HASH_A)
-                softly.assertThat(photoRepository.findById(trashed).orElseThrow().sourceHash).isNull()
-            }
-        }
-
-        @Test
-        fun `지문 형식이 틀리면 발급 단계에서 막는다`() {
-            // when & then — 형식이 다른 값을 받아 두면 같은 원본이 다른 사진으로 갈린다
-            assertThatThrownBy { issueWithHashes("C1D44383") }
-                .isInstanceOf(PhotoException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(PhotoErrorCode.INVALID_SOURCE_HASH)
-            assertThat(photoRepository.countByGalleryId(fixture.galleryId)).isZero()
-        }
-
-        @Test
-        fun `발급 줄에 새로 만든 수와 이어 올리는 수와 이미 올라온 수가 남는다`() {
-            // given
-            val uploaded = issueWithHashes(HASH_A).single().photoId
-            photoService.completeUpload(fixture.galleryId, fixture.photographer.id!!, CompleteUploadRequest(listOf(uploaded)))
-            issueWithHashes(HASH_B)
-
-            // when
-            val issue = CapturedLogs(PhotoService::class).use { logs ->
-                issueWithHashes(HASH_A, HASH_B, HASH_C)
-                logs.eventsOf("upload.issue").single().formattedMessage
-            }
-
-            // then
-            assertThat(issue).isEqualTo(
-                "event=upload.issue gallery=${fixture.galleryId} user=${fixture.photographer.id} photos=3 new=1 resumed=1 duplicate=1 bytes=3072",
-            )
-        }
-    }
-
-    @Nested
-    @DisplayName("올릴 원본을 미리 확인할 때")
-    inner class CheckUploads {
-
-        @Test
-        fun `지문마다 새 원본인지 올리는 중인지 올라왔는지 휴지통에 있는지 답한다`() {
-            // given
-            val pending = issueWithHashes(HASH_A).single().photoId
-            val uploaded = issueWithHashes(HASH_B).single().photoId
-            photoService.completeUpload(fixture.galleryId, fixture.photographer.id!!, CompleteUploadRequest(listOf(uploaded)))
-            val trashed = issueWithHashes(HASH_C).single().photoId
-            photoService.moveToTrash(fixture.galleryId, fixture.photographer.id!!, DeletePhotosRequest(listOf(trashed)))
-
-            // when — 같은 지문이 두 번 있어도 답은 하나다
-            val results = photoService.checkUploads(
-                fixture.galleryId,
-                fixture.photographer.id!!,
-                CheckUploadsRequest(listOf(HASH_A, HASH_B, HASH_C, HASH_D, HASH_A)),
-            ).results
-
-            // then
-            assertThat(results).containsExactly(
-                CheckUploadsResponse.Result(sourceHash = HASH_A, state = UploadState.PENDING, photoId = pending),
-                CheckUploadsResponse.Result(sourceHash = HASH_B, state = UploadState.UPLOADED, photoId = uploaded),
-                CheckUploadsResponse.Result(sourceHash = HASH_C, state = UploadState.TRASHED, photoId = null),
-                CheckUploadsResponse.Result(sourceHash = HASH_D, state = UploadState.NEW, photoId = null),
-            )
-        }
-
-        @Test
-        fun `같은 원본이 휴지통에도 있고 다시 올라와 있기도 하면 올라온 쪽으로 답한다`() {
-            // given
-            val trashed = issueWithHashes(HASH_A).single().photoId
-            photoService.moveToTrash(fixture.galleryId, fixture.photographer.id!!, DeletePhotosRequest(listOf(trashed)))
-            val live = issueWithHashes(HASH_A).single().photoId
-
-            // when
-            val result = photoService.checkUploads(fixture.galleryId, fixture.photographer.id!!, CheckUploadsRequest(listOf(HASH_A))).results.single()
-
-            // then
-            assertThat(result).isEqualTo(CheckUploadsResponse.Result(sourceHash = HASH_A, state = UploadState.PENDING, photoId = live))
-        }
-
-        @Test
-        fun `다른 갤러리의 사진은 보이지 않는다`() {
-            // given — 같은 원본을 다른 갤러리에 올렸다
-            val other = galleryFixture.멤버와_열린_갤러리()
-            photoService.issueUploadUrls(other.galleryId, other.photographer.id!!, requestWithHashes(HASH_A))
-
-            // when
-            val result = photoService.checkUploads(fixture.galleryId, fixture.photographer.id!!, CheckUploadsRequest(listOf(HASH_A))).results.single()
-
-            // then
-            assertThat(result.state).isEqualTo(UploadState.NEW)
-        }
-
-        @Test
-        fun `한 번에 물을 수 있는 수를 넘거나 형식이 틀리면 거절한다`() {
-            // given
-            val tooMany = (0..CheckUploadsRequest.MAX_SOURCE_HASHES).map { "$it-c1d44383" }
-
-            // when & then
-            assertThatThrownBy { photoService.checkUploads(fixture.galleryId, fixture.photographer.id!!, CheckUploadsRequest(tooMany)) }
-                .isInstanceOf(PhotoException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(PhotoErrorCode.TOO_MANY_PHOTOS)
-            assertThatThrownBy { photoService.checkUploads(fixture.galleryId, fixture.photographer.id!!, CheckUploadsRequest(listOf("not-a-hash"))) }
-                .isInstanceOf(PhotoException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(PhotoErrorCode.INVALID_SOURCE_HASH)
-        }
-
-        @Test
-        fun `남의 갤러리는 확인할 수 없다`() {
-            // given
-            val stranger = studioFixture.작가()
-
-            // when & then
-            assertThatThrownBy { photoService.checkUploads(fixture.galleryId, stranger.requiredId, CheckUploadsRequest(listOf(HASH_A))) }
-                .isInstanceOf(GalleryException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
-        }
-    }
-
-    @Nested
     @DisplayName("올라온 시각을 남길 때")
     inner class UploadedAt {
 
@@ -1136,13 +905,13 @@ class PhotoServiceTest @Autowired constructor(
             // given — 한도 2장: 올라온 1장 + 올리다 실패해 URL 이 죽은 1장
             limitPhotosTo(2)
             photoFixture.업로드된_사진(fixture.galleryId, count = 1)
-            expireUploadUrl(issueWithHashes(HASH_A).single().photoId)
+            expireUploadUrl(issueUploadUrls(count = 1).single())
 
             // when — 다른 사진을 올린다
-            val result = issueWithHashes(HASH_B).single()
+            val result = issueUploadUrls(count = 1)
 
             // then
-            assertThat(result.state).isEqualTo(UploadState.NEW)
+            assertThat(result).hasSize(1)
         }
 
         @Test
@@ -1150,22 +919,22 @@ class PhotoServiceTest @Autowired constructor(
             // given
             limitPhotosTo(2)
             photoFixture.업로드된_사진(fixture.galleryId, count = 1)
-            issueWithHashes(HASH_A)
+            issueUploadUrls(count = 1)
 
             // when & then
-            assertThatThrownBy { issueWithHashes(HASH_B) }
+            assertThatThrownBy { issueUploadUrls(count = 1) }
                 .isInstanceOf(GalleryException::class.java)
                 .extracting("errorCode").isEqualTo(GalleryErrorCode.PHOTO_PLAN_LIMIT_EXCEEDED)
         }
 
         @Test
-        fun `한도가 찬 뒤에는 만료된 사진을 재발급으로도 지문 발급으로도 되살릴 수 없다`() {
+        fun `한도가 찬 뒤에는 만료된 사진을 재발급으로 되살릴 수 없다`() {
             // given — 만료된 사진의 자리를 다른 사진이 채웠다
             limitPhotosTo(2)
             photoFixture.업로드된_사진(fixture.galleryId, count = 1)
-            val expired = issueWithHashes(HASH_A).single().photoId
+            val expired = issueUploadUrls(count = 1).single()
             expireUploadUrl(expired)
-            issueWithHashes(HASH_B)
+            issueUploadUrls(count = 1)
 
             // when & then
             assertThatThrownBy {
@@ -1177,26 +946,6 @@ class PhotoServiceTest @Autowired constructor(
             }
                 .isInstanceOf(GalleryException::class.java)
                 .extracting("errorCode").isEqualTo(GalleryErrorCode.PHOTO_PLAN_LIMIT_EXCEEDED)
-            assertThatThrownBy { issueWithHashes(HASH_A) }
-                .isInstanceOf(GalleryException::class.java)
-                .extracting("errorCode").isEqualTo(GalleryErrorCode.PHOTO_PLAN_LIMIT_EXCEEDED)
-        }
-
-        @Test
-        fun `한도가 찼어도 이미 세어진 사진은 같은 지문으로 다시 발급받을 수 있다`() {
-            // given — 한도 2장이 올라온 1장과 올리는 중인 1장으로 찼다
-            limitPhotosTo(2)
-            photoFixture.업로드된_사진(fixture.galleryId, count = 1)
-            val pending = issueWithHashes(HASH_A).single().photoId
-
-            // when — 발급 재시도
-            val result = issueWithHashes(HASH_A).single()
-
-            // then
-            assertSoftly { softly ->
-                softly.assertThat(result.state).isEqualTo(UploadState.PENDING)
-                softly.assertThat(result.photoId).isEqualTo(pending)
-            }
         }
 
         private fun limitPhotosTo(count: Int) {
@@ -1209,21 +958,6 @@ class PhotoServiceTest @Autowired constructor(
             jdbcTemplate.update("UPDATE photos SET upload_url_expires_at = now() - interval '1 minute' WHERE id = ?", photoId)
         }
     }
-
-    private fun requestWithHashes(vararg sourceHashes: String): IssueUploadUrlsRequest = IssueUploadUrlsRequest(
-        sourceHashes.mapIndexed { index, sourceHash ->
-            IssueUploadUrlsRequest.FileRequest(
-                fileName = "hash-$index.jpg",
-                contentType = "image/jpeg",
-                contentLength = 1024,
-                crc32c = "wdRDgw==",
-                sourceHash = sourceHash,
-            )
-        },
-    )
-
-    private fun issueWithHashes(vararg sourceHashes: String): List<IssuedUploadResponse> =
-        photoService.issueUploadUrls(fixture.galleryId, fixture.photographer.id!!, requestWithHashes(*sourceHashes)).uploads
 
     private fun singlePhotoRequest(): IssueUploadUrlsRequest = IssueUploadUrlsRequest(listOf(
         IssueUploadUrlsRequest.FileRequest(fileName = "quota.jpg", contentType = "image/jpeg", contentLength = 1024, crc32c = "wdRDgw=="),
@@ -1268,12 +1002,5 @@ class PhotoServiceTest @Autowired constructor(
         return photoService.issueUploadUrls(
             fixture.galleryId, fixture.photographer.id!!, IssueUploadUrlsRequest(files),
         ).uploads.map { it.photoId }
-    }
-
-    companion object {
-        private const val HASH_A = "18432000-c1d44383"
-        private const val HASH_B = "18432001-0000abcd"
-        private const val HASH_C = "2048-ffffffff"
-        private const val HASH_D = "1-00000000"
     }
 }
