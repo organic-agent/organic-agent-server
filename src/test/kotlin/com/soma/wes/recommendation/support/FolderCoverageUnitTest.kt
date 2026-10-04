@@ -118,6 +118,23 @@ class FolderCoverageUnitTest {
         }
 
         @Test
+        fun `상한이 0이면 후보가 있어도 아무것도 내지 않는다`() {
+            // given — 골라야 하는 장수가 0인 갤러리(상한 0)
+            val rows = (0 until 3).map { row(photoId = 30L + it, burstId = it) }
+            val score = doubleArrayOf(0.9, 0.5, 0.1)
+
+            // when
+            val result = select(rows, score, n = 0)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(FolderCoverage.cap(folderSize = 300, selectable = 0)).isZero()
+                softly.assertThat(result.picks).isEmpty()
+                softly.assertThat(result.pieces).isEqualTo(3)
+            }
+        }
+
+        @Test
         fun `다른 연사라도 같은 컷으로 보이는 후보는 점수 높은 하나만 남긴다`() {
             // given — 연사 1·2의 대표가 같은 방향(거리 0)
             val rows = listOf(row(1, burstId = 1), row(2, burstId = 2), row(3, burstId = 3))

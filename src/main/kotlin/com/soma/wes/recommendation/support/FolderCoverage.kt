@@ -60,6 +60,8 @@ object FolderCoverage {
             .sortedWith(better)
         val distinct = withoutNearDuplicates(reps, emb)
         val picks = when {
+            // 골라야 하는 장수가 0인 갤러리면 상한도 0이다. 묶음 계산은 n ≥ 1을 전제한다.
+            n <= 0 -> emptyList()
             distinct.size <= n -> distinct
             // 벡터가 빠진 후보가 있으면 거리를 믿을 수 없어 묶지 않고 점수순으로 자른다.
             distinct.any { emb[it].isEmpty() } -> distinct.take(n)
@@ -110,7 +112,8 @@ object FolderCoverage {
 
     /**
      * 후보를 임베딩 평균 연결 계층 클러스터로 [n]묶음. 가장 가까운 두 묶음부터 합치고(동점은 앞 번호),
-     * 합친 묶음과의 거리는 크기 가중 평균이다(Lance-Williams).
+     * 합친 묶음과의 거리는 크기 가중 평균이다(Lance-Williams). [n]은 1 이상이어야 한다 — 0이면 마지막 합치기에서
+     * 짝이 없다.
      */
     private fun scenes(reps: List<Int>, emb: Array<FloatArray>, n: Int): List<List<Int>> {
         val m = reps.size
