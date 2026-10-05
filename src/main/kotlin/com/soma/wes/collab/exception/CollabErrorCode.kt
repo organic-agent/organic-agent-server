@@ -57,7 +57,6 @@ enum class CollabErrorCode(
 
     /** 남이 쓴 댓글을 지우려는 경우. 부부와 담당 작가는 인증된 경로로 지운다. */
     COMMENT_NOT_OWNED(HttpStatus.FORBIDDEN, "COLLAB_403_3", "직접 남긴 댓글만 지울 수 있습니다."),
-    PARTICIPANT_READ_ONLY(HttpStatus.FORBIDDEN, "COLLAB_403_4", "이 계정은 협업 내용을 볼 수 있지만 댓글과 좋아요를 남길 수 없습니다."),
 
     /** 발급한 적 없는 협업 토큰이거나, 그 세션이 이 갤러리의 것이 아닌 경우. */
     SESSION_NOT_FOUND(HttpStatus.NOT_FOUND, "COLLAB_404_1", "존재하지 않는 협업 링크입니다."),

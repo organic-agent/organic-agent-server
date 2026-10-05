@@ -21,6 +21,7 @@ import com.soma.wes.photo.dto.request.RatePhotoRequest
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.service.PhotoRatingService
 import com.soma.wes.support.IntegrationTest
+import com.soma.wes.user.fixture.UserFixture
 import java.time.Clock
 import java.time.LocalDateTime
 import java.time.ZonedDateTime
@@ -44,6 +45,7 @@ class CollabGuestWorkflowTest @Autowired constructor(
     private val photos: PhotoRepository,
     private val ratings: PhotoRatingService,
     private val categories: FolderService,
+    private val users: UserFixture,
     private val clock: Clock,
 ) {
     @Test
@@ -62,6 +64,21 @@ class CollabGuestWorkflowTest @Autowired constructor(
         sessionService.rename(shared.galleryId, shared.session.sessionId, shared.gallery.member.requiredId,
             RenameCollabSessionRequest(name = "이름만 변경"))
         assertThat(guestQuery.getLanding(shared.token).coverAuthor).isEqualTo("예비 부부")
+    }
+
+    @Test
+    fun `참여자가 아닌 계정으로 로그인한 하객도 게스트 토큰으로 반응하고 내 반응을 본다`() {
+        val shared = fixtures.사진이_있는_세션()
+        val guestToken = guestService.enter(shared.token, EnterCollabRequest("작가 계정 하객")).guestToken
+        val outsider = users.사용자().requiredId
+
+        guestService.like(shared.token, shared.photoId, outsider, guestToken)
+        guestService.writeComment(shared.token, shared.photoId, outsider, guestToken, WriteCollabCommentRequest("잘 나왔어요"))
+
+        assertThat(guestQuery.listPhotos(shared.token, outsider, guestToken, 0, 20).contents.single().liked).isTrue()
+        val comment = guestQuery.listComments(shared.token, shared.photoId, outsider, guestToken, 0, 20).contents.single()
+        assertThat(comment.nickname).isEqualTo("작가 계정 하객")
+        assertThat(comment.mine).isTrue()
     }
 
     @Test
