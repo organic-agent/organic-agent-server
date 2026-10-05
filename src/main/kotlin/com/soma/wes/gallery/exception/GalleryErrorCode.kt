@@ -25,6 +25,14 @@ enum class GalleryErrorCode(
     INVALID_SELECTION_DEADLINE(HttpStatus.BAD_REQUEST, "GALLERY_400_2", "사진 선택 마감 기한은 현재 시각보다 뒤여야 합니다."),
 
     /**
+     * 개인 갤러리 목표일을 이용 기간이 끝나는 날보다 뒤로 정한 경우.
+     *
+     * [INVALID_SELECTION_DEADLINE]과 나눠 둔다. 둘 다 날짜가 잘못됐다는 400이지만 고칠 방향이 반대다.
+     * 한 메시지로 묶으면 이미 미래인 날짜를 "현재 시각보다 뒤여야" 한다는 안내를 받는다.
+     */
+    SELECTION_DEADLINE_AFTER_PLAN_EXPIRY(HttpStatus.BAD_REQUEST, "GALLERY_400_9", "목표일은 이용 기간 안으로 정해 주세요."),
+
+    /**
      * 계약 장수로 0이나 음수가 들어온 경우.
      *
      * 한 장도 고를 수 없는 갤러리가 만들어지면, 막히는 것은 값을 넣은 작가가 아니라

@@ -110,6 +110,55 @@ class PersonalGalleryServiceTest @Autowired constructor(
     }
 
     @Nested
+    @DisplayName("갤러리 정보를 고칠 때")
+    inner class Update {
+        @Test
+        fun `이용 기간 마지막 날은 그날 밤까지 목표일로 정할 수 있다`() {
+            // given
+            val owner = userFixture.사용자()
+            val gallery = target.create(owner.requiredId, CreatePersonalGalleryRequest(title = "마지막 날"))
+            val lastDayNight = checkNotNull(gallery.planExpiresAt).withZoneSameInstant(clock.zone)
+                .toLocalDate().atTime(23, 59, 59).atZone(clock.zone)
+
+            // when
+            val result = target.update(gallery.id, owner.requiredId, UpdatePersonalGalleryRequest(
+                title = "마지막 날", selectionDeadline = lastDayNight,
+            ))
+
+            // then
+            assertThat(result.selectionDeadline).isEqualTo(lastDayNight)
+        }
+
+        @Test
+        fun `이용 기간 다음 날을 목표일로 정하면 이용 기간 안으로 정하라고 거절한다`() {
+            // given
+            val owner = userFixture.사용자()
+            val gallery = target.create(owner.requiredId, CreatePersonalGalleryRequest(title = "다음 날"))
+            val nextDay = checkNotNull(gallery.planExpiresAt).withZoneSameInstant(clock.zone)
+                .toLocalDate().plusDays(1).atStartOfDay(clock.zone)
+
+            // when & then
+            assertThatThrownBy { target.update(gallery.id, owner.requiredId, UpdatePersonalGalleryRequest(
+                title = "다음 날", selectionDeadline = nextDay,
+            )) }.isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode").isEqualTo(GalleryErrorCode.SELECTION_DEADLINE_AFTER_PLAN_EXPIRY)
+        }
+
+        @Test
+        fun `지난 날짜를 목표일로 정하면 현재보다 뒤여야 한다고 거절한다`() {
+            // given
+            val owner = userFixture.사용자()
+            val gallery = target.create(owner.requiredId, CreatePersonalGalleryRequest(title = "지난 날"))
+
+            // when & then
+            assertThatThrownBy { target.update(gallery.id, owner.requiredId, UpdatePersonalGalleryRequest(
+                title = "지난 날", selectionDeadline = ZonedDateTime.now(clock).minusDays(1),
+            )) }.isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode").isEqualTo(GalleryErrorCode.INVALID_SELECTION_DEADLINE)
+        }
+    }
+
+    @Nested
     @DisplayName("무료 갤러리를 만들 때")
     inner class FreePlan {
         @Test
@@ -158,7 +207,7 @@ class PersonalGalleryServiceTest @Autowired constructor(
             assertThatThrownBy { target.create(user.requiredId, CreatePersonalGalleryRequest(
                 title = "잘못된 마감", selectionDeadline = ZonedDateTime.now(clock).plusYears(1),
             )) }.isInstanceOf(GalleryException::class.java)
-                .extracting("errorCode").isEqualTo(GalleryErrorCode.INVALID_SELECTION_DEADLINE)
+                .extracting("errorCode").isEqualTo(GalleryErrorCode.SELECTION_DEADLINE_AFTER_PLAN_EXPIRY)
             assertThat(freeClaims.count()).isZero()
             assertThat(benefits.getMyBenefits(user.requiredId).freePlanAvailable).isTrue()
             assertThat(target.create(user.requiredId, CreatePersonalGalleryRequest(title = "정상 무료")).planId).isEqualTo("free")
@@ -252,7 +301,7 @@ class PersonalGalleryServiceTest @Autowired constructor(
                 title = "실패하는 프로", planId = "pro", couponId = coupon.requiredId,
                 selectionDeadline = ZonedDateTime.now(clock).plusYears(2),
             )) }.isInstanceOf(GalleryException::class.java)
-                .extracting("errorCode").isEqualTo(GalleryErrorCode.INVALID_SELECTION_DEADLINE)
+                .extracting("errorCode").isEqualTo(GalleryErrorCode.SELECTION_DEADLINE_AFTER_PLAN_EXPIRY)
             assertThat(benefits.getMyBenefits(user.requiredId).coupons.single().status).isEqualTo("AVAILABLE")
             assertThat(target.create(user.requiredId, CreatePersonalGalleryRequest(
                 title = "정상 프로", planId = "pro", couponId = coupon.requiredId,
