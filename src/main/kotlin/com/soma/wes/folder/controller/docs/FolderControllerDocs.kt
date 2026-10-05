@@ -3,6 +3,7 @@ package com.soma.wes.folder.controller.docs
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
 import com.soma.wes.folder.dto.request.CreateDetailFolderRequest
+import com.soma.wes.folder.dto.request.MergeDetailFolderRequest
 import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
 import com.soma.wes.folder.dto.response.ConceptFolderResponse
 import com.soma.wes.folder.dto.response.DetailFolderResponse
@@ -252,6 +253,97 @@ interface FolderControllerDocs {
         ),
     )
     fun movePhotos(loginUser: LoginUser, galleryId: Long, request: MoveFolderPhotosRequest): ResponseEntity<Unit>
+
+    @Operation(
+        summary = "Detail 카테고리 합치기",
+        description = """
+            detailId 폴더의 사진을 모두 targetDetailFolderId 폴더로 옮기고, 비게 된 detailId 폴더를 지운다.
+            잘게 나뉜 AI 폴더나 겹치는 폴더를 끌어다 놓아 한 번에 정리하는 용도다. 권한 규칙은 Concept 생성과 같다.
+
+            대상은 이 갤러리의 Detail이면 다른 Concept 아래여도 된다. 다른 Concept로 합치면 사진이 원래 Concept에서 남긴
+            협업 반응이 지워지고, 같은 Concept 안에서 합치면 남는다(사진 이동과 같은 규칙).
+            합쳐진 사진은 사용자 배정이 되어 AI 폴더를 다시 만들어도 원래 폴더로 돌아가지 않는다.
+            응답은 합친 뒤의 대상 Detail이다. 같은 폴더끼리 합치려 하면 400_3이다.
+        """,
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "합치기 성공 — 합친 뒤의 대상 Detail"),
+        ApiResponse(
+            responseCode = "400",
+            description = "원본과 대상이 같은 폴더",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "같은 폴더",
+                            value = """{"code": "CATEGORY_400_3", "message": "같은 세부폴더끼리는 합칠 수 없습니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(
+            responseCode = "403",
+            description = "권한 없음, 선택 기간이 아님",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "권한 없음",
+                            value = """{"code": "GALLERY_403_1", "message": "갤러리에 접근할 권한이 없습니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(
+            responseCode = "404",
+            description = "Concept·그 아래 원본 Detail이 아니거나, 대상이 이 갤러리의 Detail이 아님",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "Concept 없음",
+                            value = """{"code": "CATEGORY_404_1", "message": "컨셉폴더를 찾을 수 없습니다."}""",
+                        ),
+                        ExampleObject(
+                            name = "Detail 없음",
+                            value = """{"code": "CATEGORY_404_2", "message": "세부폴더를 찾을 수 없습니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(
+            responseCode = "409",
+            description = "부부가 선택 앨범을 이미 제출함",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "제출 완료",
+                            value = """{"code": "SELECTION_409_1", "message": "이미 제출한 선택 앨범입니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    )
+    fun mergeDetail(
+        loginUser: LoginUser,
+        galleryId: Long,
+        conceptId: Long,
+        detailId: Long,
+        request: MergeDetailFolderRequest,
+    ): ResponseEntity<DetailFolderResponse>
 
     @Operation(
         summary = "Detail 카테고리 삭제",

@@ -2,6 +2,7 @@ package com.soma.wes.folder.support
 
 import com.soma.wes.folder.domain.FolderSource
 import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
+import com.soma.wes.folder.dto.request.MergeDetailFolderRequest
 import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
 import com.soma.wes.folder.exception.FolderErrorCode
 import com.soma.wes.folder.exception.FolderException
@@ -155,6 +156,39 @@ class AiFolderMaterializerTest @Autowired constructor(
             // then
             val gardenDetail = folderService.list(fixture.galleryId, userId)[1].details.single()
             assertThat(gardenDetail.photoIds).contains(moreBeach)
+        }
+
+        @Test
+        fun `합친 폴더는 다시 물질화해도 되살아나지 않고 새 사진은 합친 폴더를 따라간다`() {
+            // given — 사용자가 해변 폴더를 정원 폴더에 합쳤다
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val userId = fixture.photographer.requiredId
+            val beach = analyzed(fixture.galleryId, count = 3, embedGroupId = 1)
+            val garden = analyzed(fixture.galleryId, count = 2, embedGroupId = 2)
+            firstJob(fixture.galleryId)
+            materializer.materialize(fixture.galleryId)
+            val (nature, gardenConcept) = folderService.list(fixture.galleryId, userId)
+            val gardenDetailId = gardenConcept.details.single().id
+            folderService.mergeDetail(
+                fixture.galleryId, nature.id, nature.details.single().id, userId, MergeDetailFolderRequest(gardenDetailId),
+            )
+
+            // when — 같은 잡을 다시 물질화하고, 해변 사진이 더 올라와 새 잡으로 물질화한다
+            materializer.materialize(fixture.galleryId)
+            val moreBeach = analyzed(fixture.galleryId, count = 1, embedGroupId = 1).single()
+            secondJobWithSameNames(fixture.galleryId)
+            materializer.materialize(fixture.galleryId)
+
+            // then
+            val after = folderService.list(fixture.galleryId, userId)
+            assertSoftly { softly ->
+                softly.assertThat(after.map { it.name }).containsExactly("야외 자연", "야외 정원·건물")
+                softly.assertThat(after[0].details).isEmpty()
+                softly.assertThat(after[1].details.single().photoIds)
+                    .containsExactlyInAnyOrderElementsOf(beach + garden + moreBeach)
+                softly.assertThat(assignmentRepository.findAllByPhotoIdIn(beach).map { it.assignedSource })
+                    .containsOnly(FolderSource.USER)
+            }
         }
 
         @Test

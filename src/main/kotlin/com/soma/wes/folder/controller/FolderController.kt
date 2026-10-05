@@ -4,6 +4,7 @@ import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.folder.controller.docs.FolderControllerDocs
 import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
 import com.soma.wes.folder.dto.request.CreateDetailFolderRequest
+import com.soma.wes.folder.dto.request.MergeDetailFolderRequest
 import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
 import com.soma.wes.folder.dto.response.ConceptFolderResponse
 import com.soma.wes.folder.dto.response.DetailFolderResponse
@@ -72,6 +73,17 @@ class FolderController(
     ): ResponseEntity<Unit> {
         folderService.movePhotos(galleryId, loginUser.id, request)
         return ResponseEntity.noContent().build()
+    }
+
+    @PostMapping("/concept-folders/{conceptId}/detail-folders/{detailId}/merge")
+    override fun mergeDetail(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @PathVariable conceptId: Long,
+        @PathVariable detailId: Long,
+        @Valid @RequestBody request: MergeDetailFolderRequest,
+    ): ResponseEntity<DetailFolderResponse> {
+        return ResponseEntity.ok(folderService.mergeDetail(galleryId, conceptId, detailId, loginUser.id, request))
     }
 
     @DeleteMapping("/concept-folders/{conceptId}/detail-folders/{detailId}")

@@ -2,6 +2,7 @@ package com.soma.wes.folder.service
 
 import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
 import com.soma.wes.folder.dto.request.CreateDetailFolderRequest
+import com.soma.wes.folder.dto.request.MergeDetailFolderRequest
 import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
 import com.soma.wes.folder.repository.DetailFolderAssignmentRepository
 import com.soma.wes.collab.dto.request.EnterCollabRequest
@@ -140,5 +141,43 @@ class FolderCollabIntegrationTest @Autowired constructor(
         assertThat(likeRepository.count()).isZero()
         assertThat(commentRepository.count()).isZero()
         assertThat(assignmentRepository.findById(photoId).orElseThrow().detailFolderId).isEqualTo(otherDetail.id)
+    }
+
+    @Test
+    fun `같은 컨셉 안에서 합치면 반응을 보존하고 다른 컨셉으로 합치면 삭제한다`() {
+        // given
+        val fixture = galleryFixture.멤버와_열린_갤러리()
+        val userId = fixture.photographer.requiredId
+        val photoId = photoFixture.업로드된_사진(fixture.galleryId, 1).single()
+        val ceremony = folderService.createConcept(fixture.galleryId, userId, CreateConceptFolderRequest("본식"))
+        val entrance1 = folderService.createDetail(fixture.galleryId, ceremony.id, userId, CreateDetailFolderRequest("입장 1"))
+        val entrance2 = folderService.createDetail(fixture.galleryId, ceremony.id, userId, CreateDetailFolderRequest("입장 2"))
+        val reception = folderService.createConcept(fixture.galleryId, userId, CreateConceptFolderRequest("피로연"))
+        val receptionDetail = folderService.createDetail(fixture.galleryId, reception.id, userId, CreateDetailFolderRequest("메인"))
+        folderService.movePhotos(fixture.galleryId, userId, MoveFolderPhotosRequest(listOf(photoId), entrance1.id))
+        val session = collabSessionService.open(
+            fixture.galleryId,
+            fixture.member.requiredId,
+            OpenCollabSessionRequest(ceremony.id, "본식 의견"),
+        )
+        val token = session.collabUrl.substringAfterLast('/')
+        val guest = collabGuestService.enter(token, EnterCollabRequest("친구"))
+        collabGuestService.like(token, photoId, guest.guestToken)
+        collabGuestService.writeComment(token, photoId, guest.guestToken, WriteCollabCommentRequest("좋아요"))
+
+        // when
+        folderService.mergeDetail(fixture.galleryId, ceremony.id, entrance1.id, userId, MergeDetailFolderRequest(entrance2.id))
+
+        // then
+        assertThat(likeRepository.count()).isEqualTo(1)
+        assertThat(commentRepository.count()).isEqualTo(1)
+
+        // when
+        folderService.mergeDetail(fixture.galleryId, ceremony.id, entrance2.id, userId, MergeDetailFolderRequest(receptionDetail.id))
+
+        // then
+        assertThat(likeRepository.count()).isZero()
+        assertThat(commentRepository.count()).isZero()
+        assertThat(assignmentRepository.findById(photoId).orElseThrow().detailFolderId).isEqualTo(receptionDetail.id)
     }
 }
