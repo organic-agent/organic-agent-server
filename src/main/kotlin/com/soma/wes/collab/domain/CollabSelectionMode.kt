@@ -1,4 +1,7 @@
 package com.soma.wes.collab.domain
 
-/** 기존 카테고리 연동 링크는 명시적으로 전환하기 전까지 동적 구성을 유지한다. */
-enum class CollabSelectionMode { MANUAL, CONCEPT_FOLDER }
+/**
+ * 공유폴더가 사진을 담는 방식. 공유폴더는 컨셉·세부 폴더와 따로 살아서 V36부터 [MANUAL] 하나뿐이다.
+ * 웹이 아직 응답의 이 값을 읽어 이름표를 붙이므로 필드를 지울 때까지 남긴다.
+ */
+enum class CollabSelectionMode { MANUAL }

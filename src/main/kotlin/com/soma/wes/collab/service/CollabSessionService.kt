@@ -4,15 +4,15 @@ import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.folder.exception.FolderErrorCode
 import com.soma.wes.folder.exception.FolderException
 import com.soma.wes.folder.repository.ConceptFolderRepository
+import com.soma.wes.folder.repository.DetailFolderRepository
 import com.soma.wes.collab.domain.CollabSession
-import com.soma.wes.collab.domain.CollabSessionPhoto
 import com.soma.wes.collab.dto.request.CollabPhotoIdsRequest
 import com.soma.wes.collab.repository.CollabParticipantRepository
 import com.soma.wes.collab.repository.CollabSessionPhotoRepository
 import com.soma.wes.collab.repository.CollabPhotoLikeRepository
 import com.soma.wes.collab.support.CollabPhotoMembership
-import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
+import com.soma.wes.collab.dto.request.OpenCollabSessionRequest.PhotoScope.Type as PhotoScopeType
 import com.soma.wes.collab.dto.request.RenameCollabSessionRequest
 import com.soma.wes.collab.dto.response.CollabSessionResponse
 import com.soma.wes.collab.exception.CollabErrorCode
@@ -32,6 +32,7 @@ import org.springframework.transaction.annotation.Transactional
 class CollabSessionService(
     private val galleryAccessPolicy: GalleryAccessPolicy,
     private val conceptRepository: ConceptFolderRepository,
+    private val detailRepository: DetailFolderRepository,
     private val sessionRepository: CollabSessionRepository,
     private val commentRepository: CollabPhotoCommentRepository,
     private val productChildTrashService: ProductChildTrashService,
@@ -47,33 +48,25 @@ class CollabSessionService(
     @Transactional
     fun open(galleryId: Long, userId: Long, request: OpenCollabSessionRequest): CollabSessionResponse {
         galleryAccessPolicy.requireCollabManager(galleryId, userId, writable = true)
-        if (request.conceptFolderId != null && request.photoIds.isNotEmpty()) {
+        val sources = listOf(request.conceptFolderId != null, request.photoIds.isNotEmpty(), request.scope != null)
+        if (sources.count { it } > 1) {
             throw CollabException(CollabErrorCode.INVALID_SELECTION_SOURCE)
         }
-        val photoIds = validatePhotoIds(galleryId, request.photoIds, allowEmpty = true)
-        val concept = request.conceptFolderId?.let { conceptId ->
-            conceptRepository.findByIdAndGalleryId(conceptId, galleryId)
-                ?: throw FolderException(FolderErrorCode.CONCEPT_NOT_FOUND)
+        // conceptFolderId는 옛 요청 모양이다. 컨셉 하나를 범위로 보낸 것과 같다.
+        val scope = request.scope ?: request.conceptFolderId?.let {
+            OpenCollabSessionRequest.PhotoScope(PhotoScopeType.CONCEPT_FOLDERS, conceptFolderIds = listOf(it))
         }
+        val photoIds = scope?.let { resolveScope(galleryId, it) }
+            ?: validatePhotoIds(galleryId, request.photoIds, allowEmpty = true)
         val name = CollabSession.requireValidName(request.name)
         val now = ZonedDateTime.now(clock)
-        val existing = concept?.let { sessionRepository.findByConceptFolderId(it.requiredId) }
-        if (existing != null) {
-            val session = lockSession(galleryId, existing.requiredId)
-            if (session.isRevoked || session.isExpiredAt(now)) session.republish(tokenGenerator.generate(), now.plusDays(LINK_TTL_DAYS))
-            session.rename(name)
-            session.updateCover(request.coverTitle, request.coverAuthor)
-            request.includeAllAlbums?.let { session.includeAllAlbums = it }
-            activityRecorder.recordGallery(galleryId)
-            return toResponse(session)
-        }
-        val session = CollabSession.of(galleryId, concept?.requiredId, name, tokenGenerator.generate()).apply {
+        val session = CollabSession.of(galleryId, name, tokenGenerator.generate()).apply {
             expiresAt = now.plusDays(LINK_TTL_DAYS)
             updateCover(request.coverTitle, request.coverAuthor)
             request.includeAllAlbums?.let { includeAllAlbums = it }
         }
         sessionRepository.saveAndFlush(session)
-        saveMemberships(session, photoIds)
+        saveMemberships(session, photoIds, now)
         activityRecorder.recordGallery(galleryId)
         return toResponse(session)
     }
@@ -84,12 +77,9 @@ class CollabSessionService(
         galleryAccessPolicy.requireCollabManager(galleryId, userId, writable = true)
         val ids = validatePhotoIds(galleryId, request.photoIds)
         val session = lockSession(galleryId, sessionId)
-        requireManual(session)
-        val existing = memberships.findAllByCollabSessionIdAndPhotoIdIn(sessionId, ids).map { it.photoId }.toSet()
-        val added = ids.filterNot { it in existing }
-        if (added.isNotEmpty()) {
-            saveMemberships(session, added)
-            session.photosChanged(ZonedDateTime.now(clock))
+        val now = ZonedDateTime.now(clock)
+        if (saveMemberships(session, ids, now) > 0) {
+            session.photosChanged(now)
             activityRecorder.recordGallery(galleryId)
         }
         return toResponse(session)
@@ -101,7 +91,6 @@ class CollabSessionService(
         galleryAccessPolicy.requireCollabManager(galleryId, userId, writable = true)
         val ids = validatePhotoIds(galleryId, request.photoIds)
         val session = lockSession(galleryId, sessionId)
-        requireManual(session)
         val removed = memberships.findAllByCollabSessionIdAndPhotoIdIn(sessionId, ids).map { it.photoId }
         if (removed.isNotEmpty()) {
             likes.deleteAllByCollabSessionIdAndPhotoIdIn(sessionId, removed)
@@ -113,54 +102,68 @@ class CollabSessionService(
         return toResponse(session)
     }
 
-    /** 현재 동적 구성을 고정하되 링크·참여자·반응·만료일은 유지한다. 재요청은 현재 수동 폴더를 반환한다. */
-    @Transactional
-    fun convertToManual(galleryId: Long, sessionId: Long, userId: Long): CollabSessionResponse {
-        galleryAccessPolicy.requireCollabManager(galleryId, userId, writable = true)
-        if (!sessionRepository.existsByIdAndGalleryId(sessionId, galleryId)) {
-            throw CollabException(CollabErrorCode.SESSION_NOT_FOUND)
-        }
-        val snapshotIds = memberships.findSharedPhotos(listOf(sessionId)).map { it.photoId }
-        val ids = if (snapshotIds.isEmpty()) emptyList() else {
-            memberships.findWithLockByGalleryIdAndIdIn(galleryId, snapshotIds)
-                .filter { it.status != PhotoStatus.PENDING }.map { it.requiredId }
-        }
-        val session = lockSession(galleryId, sessionId)
-        if (session.conceptFolderId != null) {
-            saveMemberships(session, ids)
-            session.convertToManual(ZonedDateTime.now(clock))
-            activityRecorder.recordGallery(galleryId)
-            sessionRepository.flush()
-        }
-        return toResponse(session)
-    }
-
     private fun lockSession(galleryId: Long, sessionId: Long): CollabSession =
         sessionRepository.findWithLockByIdAndGalleryId(sessionId, galleryId)
             ?: throw CollabException(CollabErrorCode.SESSION_NOT_FOUND)
-
-    private fun requireManual(session: CollabSession) {
-        if (session.conceptFolderId != null) throw CollabException(CollabErrorCode.MANUAL_CONVERSION_REQUIRED)
-    }
 
     private fun validatePhotoIds(galleryId: Long, requested: List<Long>, allowEmpty: Boolean = false): List<Long> {
         if ((!allowEmpty && requested.isEmpty()) || requested.size > CollabPhotoIdsRequest.MAX_BATCH_SIZE || requested.any { it <= 0 }) {
             throw CollabException(CollabErrorCode.INVALID_PHOTO_IDS)
         }
         val ids = requested.distinct()
-        if (ids.isEmpty()) return ids
-        val found = memberships.findWithLockByGalleryIdAndIdIn(galleryId, ids)
-        if (found.size != ids.size || found.any { it.status == PhotoStatus.PENDING }) {
+        if (lockShareable(galleryId, ids).size != ids.size) {
             throw CollabException(CollabErrorCode.COLLAB_PHOTO_NOT_FOUND)
         }
         return ids
     }
 
-    private fun saveMemberships(session: CollabSession, ids: List<Long>) {
-        memberships.saveAllAndFlush(ids.map { photoId ->
-            CollabSessionPhoto(collabSessionId = session.requiredId, galleryId = session.galleryId, photoId = photoId)
-        })
+    /**
+     * 범위를 만드는 순간의 사진 id로 푼다. 공유폴더는 원본 폴더와 따로 살아서, 이후 그 폴더가 바뀌어도 따라가지 않는다.
+     * 직접 지정과 달리 휴지통·업로드 미완료 사진은 거절하지 않고 뺀다 — 부부가 고른 것은 사진 하나하나가 아니라 "이 폴더 전부"다.
+     */
+    private fun resolveScope(galleryId: Long, scope: OpenCollabSessionRequest.PhotoScope): List<Long> {
+        val lists = mapOf(
+            PhotoScopeType.CONCEPT_FOLDERS to scope.conceptFolderIds,
+            PhotoScopeType.DETAIL_FOLDERS to scope.detailFolderIds,
+            PhotoScopeType.SESSIONS to scope.sessionIds,
+        )
+        // 범위 종류에 맞는 목록 하나만 차 있어야 한다. ALL은 어떤 목록도 받지 않는다.
+        val listed = lists.all { (type, ids) -> ids.isNotEmpty() == (type == scope.type) }
+        if (!listed || lists.values.sumOf { it.size } > OpenCollabSessionRequest.PhotoScope.MAX_FOLDER_COUNT) {
+            throw CollabException(CollabErrorCode.INVALID_PHOTO_SCOPE)
+        }
+        val candidates = when (scope.type) {
+            PhotoScopeType.ALL -> memberships.findGalleryPhotoIds(galleryId)
+            PhotoScopeType.CONCEPT_FOLDERS -> {
+                val conceptIds = scope.conceptFolderIds.distinct()
+                if (conceptRepository.countByGalleryIdAndIdIn(galleryId, conceptIds) != conceptIds.size.toLong()) {
+                    throw FolderException(FolderErrorCode.CONCEPT_NOT_FOUND)
+                }
+                memberships.findConceptPhotoIds(galleryId, conceptIds)
+            }
+            PhotoScopeType.DETAIL_FOLDERS -> {
+                val detailIds = scope.detailFolderIds.distinct()
+                if (detailRepository.countByGalleryIdAndIdIn(galleryId, detailIds) != detailIds.size.toLong()) {
+                    throw FolderException(FolderErrorCode.DETAIL_NOT_FOUND)
+                }
+                memberships.findDetailPhotoIds(galleryId, detailIds)
+            }
+            PhotoScopeType.SESSIONS -> {
+                val sessionIds = scope.sessionIds.distinct()
+                val sessions = sessionRepository.findAllByGalleryIdAndIdIn(galleryId, sessionIds)
+                if (sessions.size != sessionIds.size) throw CollabException(CollabErrorCode.SESSION_NOT_FOUND)
+                photoMembership.photoIds(sessions).values.flatten()
+            }
+        }
+        return lockShareable(galleryId, candidates.distinct())
     }
+
+    private fun lockShareable(galleryId: Long, ids: List<Long>): List<Long> =
+        if (ids.isEmpty()) emptyList() else memberships.lockShareablePhotoIds(galleryId, ids)
+
+    /** 새로 담긴 사진 수를 돌려준다. */
+    private fun saveMemberships(session: CollabSession, ids: List<Long>, now: ZonedDateTime): Int =
+        if (ids.isEmpty()) 0 else memberships.insertMemberships(session.requiredId, session.galleryId, ids, now)
 
     @Transactional
     fun rename(

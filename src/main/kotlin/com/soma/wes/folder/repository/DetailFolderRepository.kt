@@ -12,6 +12,7 @@ interface DetailFolderRepository : JpaRepository<DetailFolder, Long> {
     fun findAllByConceptFolderIdIn(conceptFolderIds: Collection<Long>): List<DetailFolder>
     fun findByIdAndConceptFolderId(id: Long, conceptFolderId: Long): DetailFolder?
     fun findByIdAndGalleryId(id: Long, galleryId: Long): DetailFolder?
+    fun countByGalleryIdAndIdIn(galleryId: Long, ids: Collection<Long>): Long
 
     /**
      * 다른 폴더에 합쳐져 숨은 세부 폴더. `@SQLRestriction`이 숨은 행을 거르므로 native로 읽는다.

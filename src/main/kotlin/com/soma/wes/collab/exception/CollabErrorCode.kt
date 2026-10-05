@@ -9,10 +9,12 @@ enum class CollabErrorCode(
     override val message: String,
 ) : ErrorCode {
 
-    INVALID_PHOTO_IDS(HttpStatus.BAD_REQUEST, "COLLAB_400_10", "사진 id는 1~200개의 양수로 지정해 주세요."),
-    INVALID_SELECTION_SOURCE(HttpStatus.BAD_REQUEST, "COLLAB_400_11", "컨셉 폴더 연결과 사진 직접 추가를 함께 지정할 수 없습니다."),
+    INVALID_PHOTO_IDS(HttpStatus.BAD_REQUEST, "COLLAB_400_10", "사진 id는 1~10,000개의 양수로 지정해 주세요."),
+    INVALID_SELECTION_SOURCE(HttpStatus.BAD_REQUEST, "COLLAB_400_11", "컨셉 폴더 연결, 사진 직접 지정, 사진 범위 중 하나만 지정해 주세요."),
+
+    /** 범위 종류와 함께 보낸 폴더 목록이 맞지 않는 경우. CONCEPT_FOLDERS에 컨셉 id가 없거나 ALL에 목록이 붙은 식이다. */
+    INVALID_PHOTO_SCOPE(HttpStatus.BAD_REQUEST, "COLLAB_400_12", "공유할 사진 범위를 다시 확인해 주세요."),
     /** 기존 링크를 암묵적으로 고정하지 않고 명시적인 전환을 요구한다. */
-    MANUAL_CONVERSION_REQUIRED(HttpStatus.CONFLICT, "COLLAB_409_1", "사진을 직접 편집하려면 수동 공유폴더로 먼저 전환해 주세요."),
 
     /** 닉네임이 비었거나 50자를 넘긴 경우. */
     INVALID_NICKNAME(HttpStatus.BAD_REQUEST, "COLLAB_400_1", "닉네임은 1자 이상 50자 이하여야 합니다."),

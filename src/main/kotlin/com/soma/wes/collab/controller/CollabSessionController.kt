@@ -100,15 +100,6 @@ class CollabSessionController(
         return ResponseEntity.ok(service.removePhotos(galleryId, sessionId, loginUser.id, request))
     }
 
-    @PostMapping("/{sessionId}/convert-to-manual")
-    override fun convertToManual(
-        @AuthenticationPrincipal loginUser: LoginUser,
-        @PathVariable galleryId: Long,
-        @PathVariable sessionId: Long,
-    ): ResponseEntity<CollabSessionResponse> {
-        return ResponseEntity.ok(service.convertToManual(galleryId, sessionId, loginUser.id))
-    }
-
     @GetMapping("/{sessionId}/participants")
     override fun listParticipants(
         @AuthenticationPrincipal loginUser: LoginUser,

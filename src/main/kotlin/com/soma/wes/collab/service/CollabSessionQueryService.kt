@@ -1,6 +1,5 @@
 package com.soma.wes.collab.service
 
-import com.soma.wes.folder.repository.ConceptFolderRepository
 import com.soma.wes.collab.dto.response.CollabCommentResponse
 import com.soma.wes.collab.dto.response.CollabParticipantResponse
 import com.soma.wes.collab.dto.response.CollabPhotoPageResponse
@@ -33,7 +32,6 @@ class CollabSessionQueryService(
     private val photoViewAssembler: CollabPhotoViewAssembler,
     private val urlResolver: CollabLinkResolver,
     private val membership: CollabPhotoMembership,
-    private val conceptRepository: ConceptFolderRepository,
 ) {
     @Transactional(readOnly = true)
     fun list(galleryId: Long, userId: Long): List<CollabSessionResponse> {
@@ -86,10 +84,6 @@ class CollabSessionQueryService(
         galleryAccessPolicy.requireParticipantViewer(galleryId, userId)
 
         val session = sessionRepository.requireByIdAndGalleryId(sessionId, galleryId)
-        session.conceptFolderId?.let { conceptId ->
-            conceptRepository.findByIdAndGalleryId(conceptId, galleryId)
-                ?: throw CollabException(CollabErrorCode.SESSION_NOT_FOUND)
-        }
         photoRepository.findByIdAndGalleryId(photoId, galleryId)
             ?: throw CollabException(CollabErrorCode.COLLAB_PHOTO_NOT_FOUND)
         if (!photoViewAssembler.contains(session, photoId)) {

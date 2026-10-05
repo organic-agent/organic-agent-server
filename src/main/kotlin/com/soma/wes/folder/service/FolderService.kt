@@ -21,7 +21,6 @@ import com.soma.wes.folder.repository.ConceptFolderRepository
 import com.soma.wes.folder.repository.DetailFolderRepository
 import com.soma.wes.folder.repository.DetailFolderAssignmentRepository
 import com.soma.wes.folder.repository.DetailFolderMergeRepository
-import com.soma.wes.folder.service.port.FolderReactionCleaner
 import com.soma.wes.folder.support.AiFolderMaterializer
 import com.soma.wes.folder.support.FolderViewAssembler
 import com.soma.wes.gallery.support.GalleryAccessPolicy
@@ -40,7 +39,6 @@ class FolderService(
     private val assignmentRepository: DetailFolderAssignmentRepository,
     private val mergeRepository: DetailFolderMergeRepository,
     private val photoRepository: PhotoRepository,
-    private val reactionCleaner: FolderReactionCleaner,
     private val viewAssembler: FolderViewAssembler,
     private val aiFolderMaterializer: AiFolderMaterializer,
     private val folderProperties: FolderProperties,
@@ -95,8 +93,6 @@ class FolderService(
         requireConcept(galleryId, conceptId)
         val detail = detailRepository.findByIdAndConceptFolderId(detailId, conceptId)
             ?: throw FolderException(FolderErrorCode.DETAIL_NOT_FOUND)
-        val photoIds = assignmentRepository.findAllByDetailFolderId(detailId).map { it.photoId }
-        reactionCleaner.deleteForConceptExit(conceptId, photoIds)
         assignmentRepository.deleteAllByDetailFolderId(detailId)
         detailRepository.delete(detail)
         activityRecorder.recordGallery(galleryId)
@@ -104,8 +100,7 @@ class FolderService(
 
     /**
      * 세부 폴더를 다른 세부 폴더에 합친다 — 원본의 사진을 모두 대상으로 옮기고 빈 원본을 숨긴다.
-     * 옮긴 사진은 [movePhotos]처럼 USER 배정이 되어 AI 폴더를 다시 만들어도 원래 폴더로 돌아가지 않고,
-     * 다른 컨셉으로 합치면 원본 컨셉에 남긴 협업 반응을 지운다.
+     * 옮긴 사진은 [movePhotos]처럼 USER 배정이 되어 AI 폴더를 다시 만들어도 원래 폴더로 돌아가지 않는다.
      *
      * 원본을 지우지 않고 숨기며 옮기기 전 배정을 기록해 두어, [undoMerge]로 되돌릴 수 있다. 응답의 `mergeId`가 그 열쇠다.
      */
@@ -137,7 +132,6 @@ class FolderService(
                 movedPhotos = movingAssignments.map { it.snapshot() },
             ),
         )
-        deleteReactionsOnConceptExit(movingAssignments, target)
         for (assignment in movingAssignments) assignment.moveTo(target.requiredId, userId, now)
         source.hide(now)
 
@@ -151,7 +145,6 @@ class FolderService(
      * 웹의 "실행 취소"용이라 [FolderProperties.mergeUndoWindow] 안에서 한 번만 된다.
      *
      * 그 사이 옮긴 사진이 한 장이라도 다른 곳으로 옮겨졌거나 원본의 컨셉 · 대상 폴더가 사라졌으면 거절한다 — 되돌리면 그 변경을 덮어쓰기 때문이다.
-     * 다른 컨셉으로 합칠 때 지운 협업 반응은 돌아오지 않는다. 반대로 대상 컨셉을 떠나는 사진의 반응은 [movePhotos]처럼 지운다.
      */
     @Transactional
     fun undoMerge(galleryId: Long, mergeId: Long, userId: Long): UndoDetailFolderMergeResponse {
@@ -173,7 +166,6 @@ class FolderService(
             throw FolderException(FolderErrorCode.MERGE_UNDO_CONFLICT)
         }
 
-        deleteReactionsOnConceptExit(movedAssignments, source)
         source.unhide()
         for (assignment in movedAssignments) assignment.restore(source.requiredId, snapshotByPhotoId.getValue(assignment.photoId))
         merge.markUndone(now)
@@ -195,7 +187,6 @@ class FolderService(
         galleryAccessPolicy.requireFolderEditor(galleryId, userId)
         val concept = requireConcept(galleryId, conceptId)
         val details = detailRepository.findAllByConceptFolderIdOrderBySortOrderAscIdAsc(conceptId)
-        reactionCleaner.deleteForConcept(conceptId)
         assignmentRepository.deleteAllByDetailFolderIdIn(details.map { it.requiredId })
         detailRepository.deleteAll(details)
         conceptRepository.delete(concept)
@@ -208,7 +199,7 @@ class FolderService(
 
     /**
      * 사진을 세부 폴더로 옮기거나, 목적지가 null이면 미분류(배정 행 없음)로 뺀다.
-     * 하나라도 잘못된 사진이 섞이면 전체를 거절하고, 컨셉을 벗어나는 사진은 그 컨셉 협업 링크의 반응을 지운다.
+     * 하나라도 잘못된 사진이 섞이면 전체를 거절한다. 공유폴더는 컨셉·세부 폴더와 따로 살아서 사진을 옮겨도 영향이 없다.
      */
     @Transactional
     fun movePhotos(galleryId: Long, userId: Long, request: MoveFolderPhotosRequest) {
@@ -219,7 +210,6 @@ class FolderService(
 
         val assignmentByPhotoId = assignmentRepository.findAllByGalleryIdAndPhotoIdIn(galleryId, photoIds)
             .associateBy { it.photoId }
-        deleteReactionsOnConceptExit(assignmentByPhotoId.values, targetDetail)
         if (targetDetail == null) {
             assignmentRepository.deleteAll(assignmentByPhotoId.values)
         } else {
@@ -242,23 +232,6 @@ class FolderService(
     private fun requireDetail(galleryId: Long, detailId: Long): DetailFolder =
         detailRepository.findByIdAndGalleryId(detailId, galleryId)
             ?: throw FolderException(FolderErrorCode.DETAIL_NOT_FOUND)
-
-    /**
-     * 컨셉 폴더 협업 링크는 컨셉의 현재 배정을 읽어 보여주므로, 컨셉을 떠나는 사진(다른 컨셉·미분류)의 반응은
-     * 아무도 볼 수 없는 고아가 된다. 같은 컨셉 안에서 세부 폴더만 바뀌면 같은 화면에 남으니 유지한다.
-     */
-    private fun deleteReactionsOnConceptExit(
-        currentAssignments: Collection<DetailFolderAssignment>,
-        targetDetail: DetailFolder?,
-    ) {
-        val conceptIdByDetailId = detailRepository.findAllById(currentAssignments.map { it.detailFolderId })
-            .associate { it.requiredId to it.conceptFolderId }
-        val assignmentsBySourceConcept = currentAssignments.groupBy { conceptIdByDetailId[it.detailFolderId] }
-        for ((sourceConceptId, leavingAssignments) in assignmentsBySourceConcept) {
-            if (sourceConceptId == null || sourceConceptId == targetDetail?.conceptFolderId) continue
-            reactionCleaner.deleteForConceptExit(sourceConceptId, leavingAssignments.map { it.photoId })
-        }
-    }
 
     /** 사람이 옮긴 배정은 USER가 되어, 이후 AI 폴더 물질화가 이 사진을 다시 배치하지 않는다. */
     private fun assignTo(

@@ -10,6 +10,7 @@ interface ConceptFolderRepository : JpaRepository<ConceptFolder, Long> {
     fun findFirstByGalleryIdAndAnalysisJobIdIsNotNullOrderByAnalysisJobIdDesc(galleryId: Long): ConceptFolder?
     fun existsByGalleryIdAndAnalysisJobId(galleryId: Long, analysisJobId: Long): Boolean
     fun findByIdAndGalleryId(id: Long, galleryId: Long): ConceptFolder?
+    fun countByGalleryIdAndIdIn(galleryId: Long, ids: Collection<Long>): Long
     fun countByGalleryId(galleryId: Long): Long
     fun findAllByGalleryIdAndAnalysisJobIdOrderBySortOrderAscIdAsc(
         galleryId: Long,

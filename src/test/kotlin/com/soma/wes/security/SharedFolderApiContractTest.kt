@@ -82,7 +82,7 @@ class SharedFolderApiContractTest @Autowired constructor(
     }
 
     @Test
-    fun `기존 카테고리 링크는 명시적 전환 경로에서 같은 링크의 수동 폴더가 된다`() {
+    fun `컨셉으로 만든 공유폴더도 전환 없이 바로 사진을 담는다`() {
         // given
         val fixture = collab.사진이_있는_세션()
         val token = tokens.generateAccessToken(fixture.gallery.member).value
@@ -92,12 +92,6 @@ class SharedFolderApiContractTest @Autowired constructor(
             header("Authorization", "Bearer $token")
             contentType = MediaType.APPLICATION_JSON
             content = """{"photoIds":[${fixture.photoId}]}"""
-        }.andExpect {
-            status { isConflict() }
-            jsonPath("$.code") { value("COLLAB_409_1") }
-        }
-        mvc.post("$base/convert-to-manual") {
-            header("Authorization", "Bearer $token")
         }.andExpect {
             status { isOk() }
             jsonPath("$.selectionMode") { value("MANUAL") }

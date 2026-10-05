@@ -32,8 +32,12 @@ class CollabSession(
     @Column(name = "gallery_id", nullable = false, updatable = false)
     val galleryId: Long,
 
-    @Column(name = "concept_folder_id", nullable = true)
-    var conceptFolderId: Long?,
+    /**
+     * 옛 컨셉 연결 공유폴더의 흔적. 공유폴더는 컨셉·세부 폴더와 따로 살기로 해 V36부터 항상 `null`이다.
+     * 관리자 화면·휴지통 SQL이 아직 이 컬럼을 읽어서 컬럼을 지울 때까지 남긴다.
+     */
+    @Column(name = "concept_folder_id", nullable = true, updatable = false)
+    val conceptFolderId: Long? = null,
 
     /** 부부가 링크를 구분하려고 붙인 이름. 하객에게도 첫 화면에 보인다. */
     @Column(nullable = false, length = MAX_NAME_LENGTH)
@@ -56,17 +60,9 @@ class CollabSession(
 
 ) : BaseEntity() {
 
-    val selectionMode: CollabSelectionMode
-        get() = if (conceptFolderId == null) CollabSelectionMode.MANUAL else CollabSelectionMode.CONCEPT_FOLDER
-
     /** 사진 변경도 세션 버전에 반영해 관리자 편집이 오래된 상태를 덮어쓰지 않게 한다. */
     fun photosChanged(at: ZonedDateTime) {
         updatedAt = at
-    }
-
-    fun convertToManual(at: ZonedDateTime) {
-        conceptFolderId = null
-        photosChanged(at)
     }
 
     @Column(name = "include_all_albums", nullable = false)
@@ -97,9 +93,8 @@ class CollabSession(
             return trimmed
         }
 
-        fun of(galleryId: Long, conceptFolderId: Long?, name: String, collabToken: String) = CollabSession(
+        fun of(galleryId: Long, name: String, collabToken: String) = CollabSession(
             galleryId = galleryId,
-            conceptFolderId = conceptFolderId,
             name = requireValidName(name),
             collabToken = collabToken,
         )

@@ -1,12 +1,19 @@
 package com.soma.wes.collab.service
 
+import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
+import com.soma.wes.folder.dto.request.CreateDetailFolderRequest
+import com.soma.wes.folder.dto.request.MergeDetailFolderRequest
 import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
+import com.soma.wes.folder.exception.FolderErrorCode
+import com.soma.wes.folder.exception.FolderException
 import com.soma.wes.folder.service.FolderService
 import com.soma.wes.collab.domain.CollabSelectionMode
 import com.soma.wes.collab.dto.request.CollabPhotoIdsRequest
 import com.soma.wes.collab.dto.request.EnterCollabRequest
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
+import com.soma.wes.collab.dto.request.OpenCollabSessionRequest.PhotoScope.Type as PhotoScopeType
 import com.soma.wes.collab.dto.request.WriteCollabCommentRequest
+import com.soma.wes.collab.dto.response.CollabSessionResponse
 import com.soma.wes.collab.exception.CollabErrorCode
 import com.soma.wes.collab.exception.CollabException
 import com.soma.wes.collab.fixture.CollabFixture
@@ -30,6 +37,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.core.io.ClassPathResource
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.transaction.support.TransactionTemplate
@@ -94,10 +102,11 @@ class CollabManualFolderServiceTest @Autowired constructor(
                 MoveFolderPhotosRequest(photoIds = listOf(shared.photoId), targetDetailFolderId = null))
             // then
             assertThat(added.photoCount).isEqualTo(2L)
-            assertThat(memberships.count()).isEqualTo(2L)
+            assertThat(memberships.findAllByCollabSessionIdAndPhotoIdIn(manual.sessionId, listOf(shared.photoId, anotherPhoto))).hasSize(2)
             assertThat(query.listPhotos(shared.galleryId, manual.sessionId, userId, 0, 20).contents.map { it.photoId })
                 .containsExactlyInAnyOrder(shared.photoId, anotherPhoto)
-            assertThat(query.get(shared.galleryId, shared.session.sessionId, userId).photoCount).isZero()
+            // 컨셉으로 만든 공유폴더도 미분류로 빠진 사진을 그대로 담고 있다.
+            assertThat(query.get(shared.galleryId, shared.session.sessionId, userId).photoCount).isEqualTo(1L)
         }
 
         @Test
@@ -124,7 +133,7 @@ class CollabManualFolderServiceTest @Autowired constructor(
                 }
             }
             assertThat(query.get(fixture.galleryId, manual.sessionId, userId).photoCount).isEqualTo(1L)
-            for (ids in listOf(emptyList(), listOf(-1L), List(201) { photoId })) {
+            for (ids in listOf(emptyList(), listOf(-1L), List(CollabPhotoIdsRequest.MAX_BATCH_SIZE + 1) { photoId })) {
                 assertCode(CollabErrorCode.INVALID_PHOTO_IDS) {
                     service.addPhotos(fixture.galleryId, manual.sessionId, userId, CollabPhotoIdsRequest(ids))
                 }
@@ -182,53 +191,110 @@ class CollabManualFolderServiceTest @Autowired constructor(
     }
 
     @Nested
-    @DisplayName("기존 동적 공유 호환")
-    inner class Compatibility {
+    @DisplayName("폴더와 따로 사는 공유폴더")
+    inner class Independent {
         @Test
-        fun `현재 사진을 수동으로 전환하면 링크 반응 참여자를 보존하고 이후 분류는 따르지 않는다`() {
+        fun `컨셉으로 만든 공유폴더는 사진을 옮기고 폴더를 합치고 지워도 사진과 반응이 그대로다`() {
             // given
             val shared = fixtures.사진이_있는_세션()
             val userId = shared.gallery.member.requiredId
+            val photographer = shared.gallery.photographer.requiredId
             val viewer = guest.enter(shared.token, EnterCollabRequest("가족"))
             guest.like(shared.token, shared.photoId, null, viewer.guestToken)
             guest.writeComment(shared.token, shared.photoId, null, viewer.guestToken, WriteCollabCommentRequest("좋아요"))
-            val extra = photoFixture.업로드된_사진(shared.galleryId, 1).single()
-            assertCode(CollabErrorCode.MANUAL_CONVERSION_REQUIRED) {
-                service.addPhotos(shared.galleryId, shared.session.sessionId, userId, CollabPhotoIdsRequest(listOf(extra)))
-            }
-            assertCode(CollabErrorCode.MANUAL_CONVERSION_REQUIRED) {
-                service.removePhotos(shared.galleryId, shared.session.sessionId, userId, CollabPhotoIdsRequest(listOf(shared.photoId)))
-            }
-            // JVM 시계는 나노초를 제공할 수 있으므로 DB에 저장된 전환 직전 만료 시각을 기준으로 비교한다.
-            val persistedExpiresAt = query.get(shared.galleryId, shared.session.sessionId, userId).expiresAt
+            val later = photoFixture.업로드된_사진(shared.galleryId, 1).single()
+            val otherConcept = categories.createConcept(shared.galleryId, photographer, CreateConceptFolderRequest("야외")).id
+            val otherDetail = categories.createDetail(shared.galleryId, otherConcept, photographer, CreateDetailFolderRequest("숲")).id
+
             // when
-            val converted = service.convertToManual(shared.galleryId, shared.session.sessionId, userId)
-            service.convertToManual(shared.galleryId, shared.session.sessionId, userId)
-            categories.movePhotos(shared.galleryId, shared.gallery.photographer.requiredId,
-                MoveFolderPhotosRequest(photoIds = listOf(extra), targetDetailFolderId = shared.detailId))
-            categories.movePhotos(shared.galleryId, shared.gallery.photographer.requiredId,
+            // 나중에 원본 컨셉에 들어온 사진은 따라 들어오지 않고, 원본 사진이 다른 컨셉으로 나가도 빠지지 않는다.
+            categories.movePhotos(shared.galleryId, photographer,
+                MoveFolderPhotosRequest(photoIds = listOf(later), targetDetailFolderId = shared.detailId))
+            categories.mergeDetail(shared.galleryId, shared.conceptId, shared.detailId, photographer,
+                MergeDetailFolderRequest(targetDetailFolderId = otherDetail))
+            categories.movePhotos(shared.galleryId, photographer,
                 MoveFolderPhotosRequest(photoIds = listOf(shared.photoId), targetDetailFolderId = null))
+            categories.deleteConcept(shared.galleryId, shared.conceptId, photographer)
+            categories.deleteConcept(shared.galleryId, otherConcept, photographer)
+
             // then
-            assertThat(converted.selectionMode).isEqualTo(CollabSelectionMode.MANUAL)
-            assertThat(converted.conceptFolderId).isNull()
-            assertThat(converted.collabUrl).isEqualTo(shared.session.collabUrl)
-            assertThat(converted.expiresAt).isEqualTo(persistedExpiresAt)
+            val session = query.get(shared.galleryId, shared.session.sessionId, userId)
+            assertThat(session.selectionMode).isEqualTo(CollabSelectionMode.MANUAL)
+            assertThat(session.conceptFolderId).isNull()
             val contents = guestQuery.listPhotos(shared.token, null, viewer.guestToken, 0, 20).contents
             assertThat(contents.map { it.photoId }).containsExactly(shared.photoId)
             assertThat(contents.single().liked).isTrue()
             assertThat(guestQuery.listComments(shared.token, shared.photoId, null, viewer.guestToken, 0, 20).contents.single().mine).isTrue()
+            // 따로 사는 폴더라 직접 담고 뺄 수 있다.
+            assertThat(service.addPhotos(shared.galleryId, shared.session.sessionId, userId, CollabPhotoIdsRequest(listOf(later))).photoCount)
+                .isEqualTo(2L)
         }
 
         @Test
-        fun `분류 연결과 사진 목록을 함께 보내면 기존 링크도 변경하지 않는다`() {
+        fun `같은 컨셉으로 다시 만들면 새 공유폴더가 생긴다`() {
             // given
             val shared = fixtures.사진이_있는_세션()
+            val userId = shared.gallery.member.requiredId
+
+            // when
+            val again = service.open(shared.galleryId, userId, OpenCollabSessionRequest(conceptFolderId = shared.conceptId, name = "다시"))
+
+            // then
+            assertThat(again.sessionId).isNotEqualTo(shared.session.sessionId)
+            assertThat(again.collabUrl).isNotEqualTo(shared.session.collabUrl)
+            assertThat(again.photoCount).isEqualTo(1L)
+            assertThat(query.get(shared.galleryId, shared.session.sessionId, userId).name).isEqualTo(shared.session.name)
+        }
+
+        @Test
+        fun `컨셉 연결과 사진 목록을 함께 보내면 공유폴더를 만들지 않는다`() {
+            // given
+            val shared = fixtures.사진이_있는_세션()
+            val before = sessions.count()
             // when & then
             assertCode(CollabErrorCode.INVALID_SELECTION_SOURCE) {
                 service.open(shared.galleryId, shared.gallery.member.requiredId,
-                    OpenCollabSessionRequest(conceptFolderId = shared.session.conceptFolderId, name = "변경", photoIds = listOf(shared.photoId)))
+                    OpenCollabSessionRequest(conceptFolderId = shared.conceptId, name = "변경", photoIds = listOf(shared.photoId)))
             }
-            assertThat(query.get(shared.galleryId, shared.session.sessionId, shared.gallery.member.requiredId).name).isEqualTo(shared.session.name)
+            assertThat(sessions.count()).isEqualTo(before)
+        }
+
+        @Test
+        fun `V36은 컨셉을 따라가던 공유폴더를 지금 보이는 사진으로 고정하고 연결을 끊는다`() {
+            // given
+            val shared = fixtures.사진이_있는_세션()
+            val userId = shared.gallery.member.requiredId
+            val photographer = shared.gallery.photographer.requiredId
+            val trashedDetailPhoto = photoFixture.업로드된_사진(shared.galleryId, 1).single()
+            val trashedPhoto = photoFixture.업로드된_사진(shared.galleryId, 1).single()
+            val trashedDetail = categories.createDetail(shared.galleryId, shared.conceptId, photographer, CreateDetailFolderRequest("숨김")).id
+            categories.movePhotos(shared.galleryId, photographer,
+                MoveFolderPhotosRequest(photoIds = listOf(trashedDetailPhoto), targetDetailFolderId = trashedDetail))
+            categories.movePhotos(shared.galleryId, photographer,
+                MoveFolderPhotosRequest(photoIds = listOf(trashedPhoto), targetDetailFolderId = shared.detailId))
+            jdbc.update("UPDATE detail_folders SET deleted_at = now() WHERE id = ?", trashedDetail)
+            photos.saveAndFlush(photos.findById(trashedPhoto).orElseThrow().also { it.moveToTrash(java.time.ZonedDateTime.now()) })
+            // 옛 컨셉 연결 공유폴더를 그대로 만든다 — 사진 목록 없이 컨셉만 가리킨다.
+            jdbc.update("DELETE FROM collab_session_photos WHERE collab_session_id = ?", shared.session.sessionId)
+            jdbc.update("UPDATE collab_sessions SET concept_folder_id = ? WHERE id = ?", shared.conceptId, shared.session.sessionId)
+            val versionBefore = jdbc.queryForObject("SELECT version FROM collab_sessions WHERE id = ?", Long::class.java, shared.session.sessionId)
+
+            // when
+            ClassPathResource("db/migration/V36__freeze_concept_linked_shared_folders.sql").inputStream.use { sql ->
+                jdbc.execute(String(sql.readAllBytes()))
+            }
+
+            // then
+            assertThat(jdbc.queryForObject("SELECT concept_folder_id FROM collab_sessions WHERE id = ?", Long::class.java, shared.session.sessionId))
+                .isNull()
+            assertThat(jdbc.queryForObject("SELECT version FROM collab_sessions WHERE id = ?", Long::class.java, shared.session.sessionId))
+                .isEqualTo(versionBefore!! + 1)
+            // 휴지통 사진은 담아 두고 숨긴다(복원하면 보인다). 휴지통 세부 폴더의 사진은 지금 보이지 않으므로 담지 않는다.
+            assertThat(jdbc.queryForList(
+                "SELECT photo_id FROM collab_session_photos WHERE collab_session_id = ?", Long::class.java, shared.session.sessionId,
+            )).containsExactlyInAnyOrder(shared.photoId, trashedPhoto)
+            assertThat(query.listPhotos(shared.galleryId, shared.session.sessionId, userId, 0, 20).contents.map { it.photoId })
+                .containsExactly(shared.photoId)
         }
     }
 
@@ -249,7 +315,6 @@ class CollabManualFolderServiceTest @Autowired constructor(
             for (call in listOf<() -> Any>(
                 { service.addPhotos(fixture.galleryId, session.sessionId, fixture.member.requiredId, CollabPhotoIdsRequest(listOf(photoId))) },
                 { service.removePhotos(fixture.galleryId, session.sessionId, fixture.member.requiredId, CollabPhotoIdsRequest(listOf(photoId))) },
-                { service.convertToManual(fixture.galleryId, session.sessionId, fixture.member.requiredId) },
             )) {
                 assertThatThrownBy { call() }.isInstanceOf(GalleryException::class.java)
                     .extracting("errorCode").isEqualTo(GalleryErrorCode.GALLERY_ARCHIVED)
@@ -320,12 +385,8 @@ class CollabManualFolderServiceTest @Autowired constructor(
                 whilePhotoCleanup(manual.sessionId) {
                     guest.writeComment(token, linked.photoId, visitor.guestToken, WriteCollabCommentRequest("좋아요"))
                 }
-                whilePhotoCleanup(linked.session.sessionId) {
-                    service.convertToManual(linked.galleryId, linked.session.sessionId, userId)
-                }
             } finally { executor.shutdownNow() }
             // then
-            assertThat(query.get(linked.galleryId, linked.session.sessionId, userId).selectionMode).isEqualTo(CollabSelectionMode.MANUAL)
             assertThat(guestQuery.listComments(token, linked.photoId, visitor.guestToken, 0, 20).contents).hasSize(1)
         }
 
@@ -340,7 +401,183 @@ class CollabManualFolderServiceTest @Autowired constructor(
                 jdbc.update("INSERT INTO collab_session_photos(collab_session_id, gallery_id, photo_id) VALUES (?, ?, ?)",
                     session.sessionId, fixture.galleryId, other.photoId)
             }.isInstanceOf(DataIntegrityViolationException::class.java)
-            assertThat(memberships.count()).isZero()
+            assertThat(query.get(fixture.galleryId, session.sessionId, fixture.member.requiredId).photoCount).isZero()
+        }
+    }
+
+    @Nested
+    @DisplayName("범위로 만드는 공유폴더")
+    inner class Scoped {
+        private fun scope(
+            type: PhotoScopeType,
+            conceptFolderIds: List<Long> = emptyList(),
+            detailFolderIds: List<Long> = emptyList(),
+            sessionIds: List<Long> = emptyList(),
+        ) = OpenCollabSessionRequest.PhotoScope(type, conceptFolderIds, detailFolderIds, sessionIds)
+
+        private fun galleryPhotoIds(galleryId: Long): List<Long> =
+            jdbc.queryForList("SELECT id FROM photos WHERE gallery_id = ? ORDER BY id", Long::class.java, galleryId).filterNotNull()
+
+        private fun timed(label: String, call: () -> CollabSessionResponse): CollabSessionResponse {
+            val start = System.nanoTime()
+            return call().also { println("[collab-scope] $label: ${(System.nanoTime() - start) / 1_000_000}ms") }
+        }
+
+        @Test
+        fun `모든 사진 범위는 갤러리 최대 사진 수를 요청 한 번에 담고 휴지통과 업로드 미완료는 뺀다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            photoFixture.대량_업로드된_사진(fixture.galleryId, CollabPhotoIdsRequest.MAX_BATCH_SIZE)
+            photoFixture.대기중_사진(fixture.galleryId, 1)
+            val trashed = photoFixture.업로드된_사진(fixture.galleryId, 1).single()
+            photos.saveAndFlush(photos.findById(trashed).orElseThrow().also { it.moveToTrash(java.time.ZonedDateTime.now()) })
+
+            // when
+            val session = timed("ALL ${CollabPhotoIdsRequest.MAX_BATCH_SIZE}") {
+                service.open(fixture.galleryId, fixture.member.requiredId,
+                    OpenCollabSessionRequest(name = "모든 사진", scope = scope(PhotoScopeType.ALL)))
+            }
+
+            // then
+            assertThat(session.photoCount).isEqualTo(CollabPhotoIdsRequest.MAX_BATCH_SIZE.toLong())
+            assertThat(session.selectionMode).isEqualTo(CollabSelectionMode.MANUAL)
+            assertThat(memberships.count()).isEqualTo(CollabPhotoIdsRequest.MAX_BATCH_SIZE.toLong())
+        }
+
+        @Test
+        fun `사진 id도 갤러리 최대 사진 수까지 요청 한 번에 담는다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            photoFixture.대량_업로드된_사진(fixture.galleryId, CollabPhotoIdsRequest.MAX_BATCH_SIZE)
+            val ids = galleryPhotoIds(fixture.galleryId)
+            val userId = fixture.member.requiredId
+
+            // when
+            val session = timed("photoIds ${ids.size}") {
+                service.open(fixture.galleryId, userId, OpenCollabSessionRequest(name = "직접", photoIds = ids))
+            }
+            val again = timed("addPhotos ${ids.size} (이미 담김)") {
+                service.addPhotos(fixture.galleryId, session.sessionId, userId, CollabPhotoIdsRequest(ids))
+            }
+
+            // then
+            assertThat(session.photoCount).isEqualTo(ids.size.toLong())
+            assertThat(again.photoCount).isEqualTo(ids.size.toLong())
+            assertThat(memberships.count()).isEqualTo(ids.size.toLong())
+        }
+
+        @Test
+        fun `컨셉 폴더 범위는 여러 컨셉의 살아 있는 세부 폴더 사진만 담는다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val (kept, inTrashedDetail, inOtherConcept, unassigned) = photoFixture.업로드된_사진(fixture.galleryId, 4)
+            val photographer = fixture.photographer.requiredId
+            fun detailWith(conceptId: Long, photoId: Long): Long {
+                val detail = categories.createDetail(fixture.galleryId, conceptId, photographer, CreateDetailFolderRequest("세부"))
+                categories.movePhotos(fixture.galleryId, photographer,
+                    MoveFolderPhotosRequest(photoIds = listOf(photoId), targetDetailFolderId = detail.id))
+                return detail.id
+            }
+            val first = categories.createConcept(fixture.galleryId, photographer, CreateConceptFolderRequest("본식")).id
+            val second = categories.createConcept(fixture.galleryId, photographer, CreateConceptFolderRequest("야외")).id
+            detailWith(first, kept)
+            val trashedDetail = detailWith(first, inTrashedDetail)
+            jdbc.update("UPDATE detail_folders SET deleted_at = now() WHERE id = ?", trashedDetail)
+            detailWith(second, inOtherConcept)
+            val other = fixtures.사진이_있는_세션()
+
+            // when
+            val session = service.open(fixture.galleryId, fixture.member.requiredId,
+                OpenCollabSessionRequest(name = "컨셉", scope = scope(PhotoScopeType.CONCEPT_FOLDERS, listOf(first, second, first))))
+
+            // then
+            assertThat(query.listPhotos(fixture.galleryId, session.sessionId, fixture.member.requiredId, 0, 20).contents.map { it.photoId })
+                .containsExactlyInAnyOrder(kept, inOtherConcept)
+                .doesNotContain(inTrashedDetail, unassigned)
+            assertThatThrownBy {
+                service.open(fixture.galleryId, fixture.member.requiredId, OpenCollabSessionRequest(name = "남의 컨셉",
+                    scope = scope(PhotoScopeType.CONCEPT_FOLDERS, listOf(first, other.conceptId))))
+            }.isInstanceOf(FolderException::class.java).extracting("errorCode").isEqualTo(FolderErrorCode.CONCEPT_NOT_FOUND)
+        }
+
+        @Test
+        fun `세부 폴더 범위는 고른 세부 폴더의 사진만 담는다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val (first, skipped, third) = photoFixture.업로드된_사진(fixture.galleryId, 3)
+            val photographer = fixture.photographer.requiredId
+            val concept = categories.createConcept(fixture.galleryId, photographer, CreateConceptFolderRequest("본식")).id
+            val details = listOf(first, skipped, third).map { photoId ->
+                categories.createDetail(fixture.galleryId, concept, photographer, CreateDetailFolderRequest("세부")).id.also { detail ->
+                    categories.movePhotos(fixture.galleryId, photographer,
+                        MoveFolderPhotosRequest(photoIds = listOf(photoId), targetDetailFolderId = detail))
+                }
+            }
+            val other = fixtures.사진이_있는_세션()
+
+            // when
+            val session = service.open(fixture.galleryId, fixture.member.requiredId, OpenCollabSessionRequest(name = "세부",
+                scope = scope(PhotoScopeType.DETAIL_FOLDERS, detailFolderIds = listOf(details[0], details[2]))))
+
+            // then
+            assertThat(query.listPhotos(fixture.galleryId, session.sessionId, fixture.member.requiredId, 0, 20).contents.map { it.photoId })
+                .containsExactlyInAnyOrder(first, third)
+                .doesNotContain(skipped)
+            assertThatThrownBy {
+                service.open(fixture.galleryId, fixture.member.requiredId, OpenCollabSessionRequest(name = "남의 세부",
+                    scope = scope(PhotoScopeType.DETAIL_FOLDERS, detailFolderIds = listOf(details[0], other.detailId))))
+            }.isInstanceOf(FolderException::class.java).extracting("errorCode").isEqualTo(FolderErrorCode.DETAIL_NOT_FOUND)
+        }
+
+        @Test
+        fun `공유폴더 범위는 수동 폴더와 컨셉 연결 폴더의 사진을 합친다`() {
+            // given
+            val linked = fixtures.사진이_있는_세션()
+            val userId = linked.gallery.member.requiredId
+            val manualPhoto = photoFixture.업로드된_사진(linked.galleryId, 1).single()
+            val manual = service.open(linked.galleryId, userId,
+                OpenCollabSessionRequest(name = "직접", photoIds = listOf(manualPhoto, linked.photoId)))
+            val otherGallery = fixtures.사진이_있는_세션()
+
+            // when
+            val merged = service.open(linked.galleryId, userId, OpenCollabSessionRequest(name = "합친 폴더",
+                scope = scope(PhotoScopeType.SESSIONS, sessionIds = listOf(linked.session.sessionId, manual.sessionId))))
+
+            // then
+            assertThat(query.listPhotos(linked.galleryId, merged.sessionId, userId, 0, 20).contents.map { it.photoId })
+                .containsExactlyInAnyOrder(linked.photoId, manualPhoto)
+            assertCode(CollabErrorCode.SESSION_NOT_FOUND) {
+                service.open(linked.galleryId, userId, OpenCollabSessionRequest(name = "남의 폴더",
+                    scope = scope(PhotoScopeType.SESSIONS, sessionIds = listOf(manual.sessionId, otherGallery.session.sessionId))))
+            }
+        }
+
+        @Test
+        fun `사진 지정 방식이 겹치거나 범위와 목록이 맞지 않으면 공유폴더를 만들지 않는다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val photoId = photoFixture.업로드된_사진(fixture.galleryId, 1).single()
+            val userId = fixture.member.requiredId
+            val before = sessions.count()
+
+            // when & then
+            assertCode(CollabErrorCode.INVALID_SELECTION_SOURCE) {
+                service.open(fixture.galleryId, userId,
+                    OpenCollabSessionRequest(name = "겹침", photoIds = listOf(photoId), scope = scope(PhotoScopeType.ALL)))
+            }
+            for (invalid in listOf(
+                scope(PhotoScopeType.ALL, conceptFolderIds = listOf(1L)),
+                scope(PhotoScopeType.ALL, sessionIds = listOf(1L)),
+                scope(PhotoScopeType.CONCEPT_FOLDERS),
+                scope(PhotoScopeType.DETAIL_FOLDERS, conceptFolderIds = listOf(1L)),
+                scope(PhotoScopeType.SESSIONS, conceptFolderIds = listOf(1L), sessionIds = listOf(1L)),
+                scope(PhotoScopeType.SESSIONS, sessionIds = List(OpenCollabSessionRequest.PhotoScope.MAX_FOLDER_COUNT + 1) { it + 1L }),
+            )) {
+                assertCode(CollabErrorCode.INVALID_PHOTO_SCOPE) {
+                    service.open(fixture.galleryId, userId, OpenCollabSessionRequest(name = "잘못된 범위", scope = invalid))
+                }
+            }
+            assertThat(sessions.count()).isEqualTo(before)
         }
     }
 }

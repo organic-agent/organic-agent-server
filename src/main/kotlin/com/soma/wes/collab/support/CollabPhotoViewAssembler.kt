@@ -11,7 +11,7 @@ import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.support.PhotoViewAssembler
 import org.springframework.stereotype.Component
 
-/** 현재 세션의 공유 사진만 조립한다. 수동 구성과 기존 동적 카테고리 공유가 같은 경계를 지난다. */
+/** 현재 세션의 공유 사진만 조립한다. 하객 화면과 부부 관리 화면이 같은 경계를 지난다. */
 @Component
 class CollabPhotoViewAssembler(
     private val membership: CollabPhotoMembership,

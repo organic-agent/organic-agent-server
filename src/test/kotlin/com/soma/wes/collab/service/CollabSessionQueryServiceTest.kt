@@ -186,7 +186,7 @@ class CollabSessionQueryServiceTest @Autowired constructor(
         }
 
         @Test
-        fun `같은 갤러리의 다른 컨셉과 미분류 사진도 읽을 수 없다`() {
+        fun `같은 갤러리라도 공유폴더에 담기지 않은 사진은 읽을 수 없다`() {
             // given
             val other = collabFixture.사진이_있는_세션(shared.gallery)
             val unassigned = photoFixture.업로드된_사진(shared.galleryId, 1).single()
@@ -204,7 +204,7 @@ class CollabSessionQueryServiceTest @Autowired constructor(
 
         @ParameterizedTest
         @EnumSource(TrashedResource::class)
-        fun `휴지통의 부모나 사진은 조회할 수 없다`(resource: TrashedResource) {
+        fun `휴지통의 갤러리·공유폴더·사진은 조회할 수 없다`(resource: TrashedResource) {
             // given
             val now = ZonedDateTime.now()
             when (resource) {
@@ -213,12 +213,6 @@ class CollabSessionQueryServiceTest @Autowired constructor(
                 )
                 TrashedResource.SESSION -> sessionRepository.saveAndFlush(
                     sessionRepository.findById(shared.session.sessionId).orElseThrow().also { it.deletedAt = now },
-                )
-                TrashedResource.CONCEPT -> conceptRepository.saveAndFlush(
-                    conceptRepository.findById(checkNotNull(shared.session.conceptFolderId)).orElseThrow().also { it.deletedAt = now },
-                )
-                TrashedResource.DETAIL -> detailRepository.saveAndFlush(
-                    detailRepository.findById(shared.detailId).orElseThrow().also { it.deletedAt = now },
                 )
                 TrashedResource.PHOTO -> photoRepository.saveAndFlush(
                     photoRepository.findById(shared.photoId).orElseThrow().also { it.moveToTrash(now) },
@@ -234,9 +228,9 @@ class CollabSessionQueryServiceTest @Autowired constructor(
             when (resource) {
                 TrashedResource.GALLERY -> failure.isInstanceOf(GalleryException::class.java)
                     .extracting("errorCode").isEqualTo(GalleryErrorCode.GALLERY_NOT_FOUND)
-                TrashedResource.SESSION, TrashedResource.CONCEPT -> failure.isInstanceOf(CollabException::class.java)
+                TrashedResource.SESSION -> failure.isInstanceOf(CollabException::class.java)
                     .extracting("errorCode").isEqualTo(CollabErrorCode.SESSION_NOT_FOUND)
-                TrashedResource.DETAIL, TrashedResource.PHOTO -> failure.isInstanceOf(CollabException::class.java)
+                TrashedResource.PHOTO -> failure.isInstanceOf(CollabException::class.java)
                     .extracting("errorCode").isEqualTo(CollabErrorCode.COLLAB_PHOTO_NOT_FOUND)
             }
         }
@@ -290,5 +284,23 @@ class CollabSessionQueryServiceTest @Autowired constructor(
         }
     }
 
-    enum class TrashedResource { GALLERY, SESSION, CONCEPT, DETAIL, PHOTO }
+    enum class TrashedResource { GALLERY, SESSION, PHOTO }
+
+    @Test
+    fun `원본 컨셉과 세부 폴더가 휴지통에 가도 공유폴더 댓글은 읽힌다`() {
+        // given
+        val now = ZonedDateTime.now()
+        val guest = guestService.enter(shared.token, EnterCollabRequest(nickname = "친구"))
+        guestService.writeComment(shared.token, shared.photoId, null, guest.guestToken, WriteCollabCommentRequest(content = "좋아요"))
+        detailRepository.saveAndFlush(detailRepository.findById(shared.detailId).orElseThrow().also { it.deletedAt = now })
+        conceptRepository.saveAndFlush(conceptRepository.findById(shared.conceptId).orElseThrow().also { it.deletedAt = now })
+
+        // when
+        val comments = queryService.listPhotoComments(
+            shared.galleryId, shared.session.sessionId, shared.photoId, shared.gallery.member.requiredId, 0, 50,
+        )
+
+        // then
+        assertThat(comments.contents.map { it.content }).containsExactly("좋아요")
+    }
 }

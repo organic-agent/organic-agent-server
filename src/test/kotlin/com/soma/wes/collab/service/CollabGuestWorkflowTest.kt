@@ -82,15 +82,14 @@ class CollabGuestWorkflowTest @Autowired constructor(
     }
 
     @Test
-    fun `만료된 링크를 다시 열면 새 토큰을 주고 이전 토큰은 더이상 열리지 않는다`() {
+    fun `만료된 링크를 재발행하면 새 토큰을 주고 이전 토큰은 더이상 열리지 않는다`() {
         val shared = fixtures.사진이_있는_세션()
         sessions.saveAndFlush(sessions.findById(shared.session.sessionId).orElseThrow().apply {
             expiresAt = ZonedDateTime.now(clock).minusSeconds(1)
         })
         assertThatThrownBy { guestQuery.getLanding(shared.token) }
             .isInstanceOf(CollabException::class.java).extracting("errorCode").isEqualTo(CollabErrorCode.SESSION_EXPIRED)
-        val renewed = sessionService.open(shared.galleryId, shared.gallery.member.requiredId,
-            OpenCollabSessionRequest(shared.session.conceptFolderId, "다시 공유"))
+        val renewed = sessionService.republish(shared.galleryId, shared.session.sessionId, shared.gallery.member.requiredId)
         assertThat(renewed.sessionId).isEqualTo(shared.session.sessionId)
         assertThat(renewed.collabUrl).isNotEqualTo(shared.session.collabUrl)
         assertThat(renewed.expiresAt).isAfter(ZonedDateTime.now(clock).plusDays(6))
@@ -191,8 +190,6 @@ class CollabGuestWorkflowTest @Autowired constructor(
         val revoked = fixtures.사진이_있는_세션(shared.gallery)
         val expired = fixtures.사진이_있는_세션(shared.gallery)
         val otherGallery = fixtures.사진이_있는_세션()
-        val unshared = categories.createConcept(shared.galleryId, shared.gallery.member.requiredId,
-            CreateConceptFolderRequest("공유하지 않은 폴더"))
         sessionService.revoke(shared.galleryId, revoked.session.sessionId, shared.gallery.member.requiredId)
         sessions.saveAndFlush(sessions.findById(expired.session.sessionId).orElseThrow().apply {
             expiresAt = ZonedDateTime.now(clock).minusSeconds(1)
@@ -200,10 +197,9 @@ class CollabGuestWorkflowTest @Autowired constructor(
         sessionService.rename(shared.galleryId, shared.session.sessionId, shared.gallery.member.requiredId,
             RenameCollabSessionRequest(name = "공유 앨범 전체", includeAllAlbums = true))
         val albums = guestQuery.getLanding(shared.token).albums
-        assertThat(albums.map { it.conceptFolderId })
-            .containsExactlyInAnyOrder(shared.session.conceptFolderId, active.session.conceptFolderId)
-            .doesNotContain(revoked.session.conceptFolderId, expired.session.conceptFolderId,
-                otherGallery.session.conceptFolderId, unshared.id)
+        assertThat(albums.map { it.sessionId })
+            .containsExactlyInAnyOrder(shared.session.sessionId, active.session.sessionId)
+            .doesNotContain(revoked.session.sessionId, expired.session.sessionId, otherGallery.session.sessionId)
         assertThat(albums.map { it.collabToken }).containsExactlyInAnyOrder(shared.token, active.token)
         assertThat(guestQuery.listPhotos(active.token, null, null, 0, 20).contents.map { it.photoId })
             .containsExactly(active.photoId)

@@ -42,13 +42,15 @@ class CollabFixture(
             gallery.member.requiredId,
             OpenCollabSessionRequest(conceptFolderId = concept.id, name = "본식 의견"),
         )
-        return SharedCollab(gallery = gallery, session = session, detailId = detail.id, photoId = photoId)
+        return SharedCollab(gallery = gallery, session = session, conceptId = concept.id, detailId = detail.id, photoId = photoId)
     }
 }
 
 data class SharedCollab(
     val gallery: OpenGallery,
     val session: CollabSessionResponse,
+    /** 공유폴더를 만들 때 범위로 쓴 컨셉. 공유폴더는 이 컨셉과 연결되지 않는다 — 만든 순간의 사진만 담았다. */
+    val conceptId: Long,
     val detailId: Long,
     val photoId: Long,
 ) {
