@@ -150,7 +150,7 @@ class FolderService(
      * 합치기를 되돌린다 — 숨긴 원본 폴더가 원래 id · 순서 · 출처로 돌아오고, 옮긴 사진이 옮기기 전 배정 정보 그대로 원본으로 돌아간다.
      * 웹의 "실행 취소"용이라 [FolderProperties.mergeUndoWindow] 안에서 한 번만 된다.
      *
-     * 그 사이 옮긴 사진이 한 장이라도 다른 곳으로 옮겨졌거나 원본의 컨셉이 사라졌으면 거절한다 — 되돌리면 그 변경을 덮어쓰기 때문이다.
+     * 그 사이 옮긴 사진이 한 장이라도 다른 곳으로 옮겨졌거나 원본의 컨셉 · 대상 폴더가 사라졌으면 거절한다 — 되돌리면 그 변경을 덮어쓰기 때문이다.
      * 다른 컨셉으로 합칠 때 지운 협업 반응은 돌아오지 않는다. 반대로 대상 컨셉을 떠나는 사진의 반응은 [movePhotos]처럼 지운다.
      */
     @Transactional
@@ -165,7 +165,7 @@ class FolderService(
         val source = detailRepository.findHiddenByIdAndGalleryId(merge.sourceDetailFolderId, galleryId)
             ?.takeIf { conceptRepository.findByIdAndGalleryId(it.conceptFolderId, galleryId) != null }
             ?: throw FolderException(FolderErrorCode.MERGE_UNDO_CONFLICT)
-        val target = detailRepository.findByIdAndGalleryId(merge.targetDetailFolderId, galleryId)
+        val target = merge.targetDetailFolderId?.let { detailRepository.findByIdAndGalleryId(it, galleryId) }
             ?: throw FolderException(FolderErrorCode.MERGE_UNDO_CONFLICT)
         val snapshotByPhotoId = merge.movedPhotos.associateBy { it.photoId }
         val movedAssignments = assignmentRepository.findAllByGalleryIdAndPhotoIdIn(galleryId, snapshotByPhotoId.keys)

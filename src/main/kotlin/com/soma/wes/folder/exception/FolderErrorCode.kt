@@ -10,7 +10,7 @@ enum class FolderErrorCode(
 ) : ErrorCode {
     CONCEPT_NOT_FOUND(HttpStatus.NOT_FOUND, "CATEGORY_404_1", "컨셉폴더를 찾을 수 없습니다."),
     DETAIL_NOT_FOUND(HttpStatus.NOT_FOUND, "CATEGORY_404_2", "세부폴더를 찾을 수 없습니다."),
-    /** 없는 합치기이거나, 원본 · 대상 폴더가 지워져 기록도 함께 지워졌다. */
+    /** 없는 합치기이거나, 원본 폴더가 지워졌거나(컨셉 삭제 포함), 되돌릴 시간이 지나 정리 작업이 기록을 지웠다. */
     MERGE_NOT_FOUND(HttpStatus.NOT_FOUND, "CATEGORY_404_3", "합치기 기록을 찾을 수 없습니다."),
     PHOTO_NOT_FOUND(HttpStatus.BAD_REQUEST, "CATEGORY_400_1", "갤러리에 없는 사진이 포함되어 있습니다."),
     EMPTY_PHOTO_IDS(HttpStatus.BAD_REQUEST, "CATEGORY_400_2", "이동할 사진이 없습니다."),
@@ -21,6 +21,6 @@ enum class FolderErrorCode(
     MERGE_ALREADY_UNDONE(HttpStatus.CONFLICT, "CATEGORY_409_4", "이미 되돌린 합치기입니다."),
     /** 합친 뒤 `app.folder.merge-undo-window`(3분)가 지났다. 웹은 알림이 떠 있는 몇 초 동안만 되돌린다. */
     MERGE_UNDO_EXPIRED(HttpStatus.CONFLICT, "CATEGORY_409_5", "되돌릴 수 있는 시간이 지났습니다."),
-    /** 합친 뒤 옮긴 사진이 다른 곳으로 다시 옮겨졌거나, 원본 폴더의 컨셉이 사라졌다 — 되돌리면 그 사이의 변경을 덮어쓴다. */
+    /** 합친 뒤 옮긴 사진이 다른 곳으로 다시 옮겨졌거나, 원본의 컨셉 · 대상 폴더가 사라졌다 — 되돌리면 그 사이의 변경을 덮어쓴다. */
     MERGE_UNDO_CONFLICT(HttpStatus.CONFLICT, "CATEGORY_409_6", "합친 뒤 폴더나 사진이 바뀌어 되돌릴 수 없습니다."),
 }

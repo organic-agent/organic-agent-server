@@ -1,7 +1,9 @@
 package com.soma.wes.folder.repository
 
 import com.soma.wes.folder.domain.DetailFolder
+import java.time.ZonedDateTime
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 
@@ -31,4 +33,22 @@ interface DetailFolderRepository : JpaRepository<DetailFolder, Long> {
         nativeQuery = true,
     )
     fun findNextSortOrderByConceptFolderId(@Param("conceptFolderId") conceptFolderId: Long): Int
+
+    /**
+     * 되돌릴 시간이 지났고 되돌리지 않은 합치기의 숨은 원본 폴더를 지운다. 합치기 기록은 FK CASCADE로 함께 지워진다.
+     * 숨긴 시각이 합친 시각과 같은 행만 고른다 — 같은 `deleted_at`을 쓰는 관리자 휴지통의 폴더를 건드리지 않는다.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(
+        value = """
+            DELETE FROM detail_folders d
+            USING detail_folder_merges m
+            WHERE m.source_detail_folder_id = d.id
+              AND m.undone_at IS NULL
+              AND m.merged_at < :cutoff
+              AND d.deleted_at = m.merged_at
+        """,
+        nativeQuery = true,
+    )
+    fun deleteHiddenByMergesBefore(@Param("cutoff") cutoff: ZonedDateTime): Int
 }

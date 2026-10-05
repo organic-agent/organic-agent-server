@@ -28,8 +28,9 @@ class DetailFolderMerge(
     @Column(name = "source_detail_folder_id", nullable = false, updatable = false)
     val sourceDetailFolderId: Long,
 
-    @Column(name = "target_detail_folder_id", nullable = false, updatable = false)
-    val targetDetailFolderId: Long,
+    /** 대상 폴더가 지워지면 null이 된다(FK SET NULL). 기록은 남아 정리 작업이 숨은 원본을 찾게 한다. */
+    @Column(name = "target_detail_folder_id", updatable = false)
+    val targetDetailFolderId: Long?,
 
     @Column(name = "merged_by_user_id", updatable = false)
     val mergedByUserId: Long?,

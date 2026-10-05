@@ -262,7 +262,7 @@ class FolderServiceTest @Autowired constructor(
         }
 
         @Test
-        fun `대상 폴더나 다른 갤러리의 합치기는 찾을 수 없다`() {
+        fun `다른 갤러리의 합치기는 찾을 수 없고 대상 폴더가 지워졌으면 거절한다`() {
             // given
             val (galleryId, userId, mergeId) = 합친_폴더()
             val other = galleryFixture.멤버와_열린_갤러리()
@@ -275,12 +275,12 @@ class FolderServiceTest @Autowired constructor(
                 .extracting("errorCode")
                 .isEqualTo(FolderErrorCode.MERGE_NOT_FOUND)
 
-            // when & then — 대상 폴더를 지우면 합치기 기록도 사라진다
+            // when & then — 대상 폴더를 지워도 기록은 남지만(정리 작업이 숨은 원본을 찾아야 한다) 되돌릴 곳이 없다
             folderService.deleteDetail(galleryId, conceptId, targetId, userId)
             assertThatThrownBy { folderService.undoMerge(galleryId, mergeId, userId) }
                 .isInstanceOf(FolderException::class.java)
                 .extracting("errorCode")
-                .isEqualTo(FolderErrorCode.MERGE_NOT_FOUND)
+                .isEqualTo(FolderErrorCode.MERGE_UNDO_CONFLICT)
         }
 
         /** 한 컨셉 안에서 사진 2장이 든 "입장 1"을 "입장 2"(사진 1장)에 합친 갤러리. */

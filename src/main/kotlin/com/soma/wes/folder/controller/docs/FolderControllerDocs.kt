@@ -358,8 +358,9 @@ interface FolderControllerDocs {
             응답은 되살아난 원본(source)과 사진이 빠진 대상(target)이다.
 
             합친 뒤 3분 안에 한 번만 된다. 이미 되돌렸으면 409_4, 3분이 지났으면 409_5다.
-            그 사이 옮긴 사진이 한 장이라도 다른 곳으로 옮겨졌거나 원본의 Concept가 지워졌으면 409_6이다 — 되돌리면 그 변경을 덮어쓰기 때문이다.
-            원본이나 대상 Detail이 지워졌으면 합치기 기록도 함께 지워져 404_3이다.
+            그 사이 옮긴 사진이 한 장이라도 다른 곳으로 옮겨졌거나 원본의 Concept · 대상 Detail이 지워졌으면 409_6이다 — 되돌리면 그 변경을 덮어쓰기 때문이다.
+            원본 Detail이 지워졌으면(Concept 삭제 포함) 합치기 기록도 함께 지워져 404_3이다.
+            3분이 지난 합치기는 매시 정리 작업이 기록까지 지우므로, 그 뒤에는 409_5 대신 404_3이 온다.
 
             다른 Concept로 합칠 때 지워진 협업 반응은 돌아오지 않는다. 대상 Concept에서 그 사이 남긴 반응은 사진이 떠나며 지워진다.
         """,
@@ -384,7 +385,7 @@ interface FolderControllerDocs {
         ),
         ApiResponse(
             responseCode = "404",
-            description = "이 갤러리의 합치기가 아니거나, 원본 · 대상 Detail이 지워짐",
+            description = "이 갤러리의 합치기가 아니거나, 원본 Detail이 지워짐, 3분이 지나 정리됨",
             content = [
                 Content(
                     mediaType = MediaType.APPLICATION_JSON_VALUE,
