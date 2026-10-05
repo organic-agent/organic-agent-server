@@ -29,9 +29,10 @@ import com.soma.wes.workspace.repository.WorkspaceMemberRepository
  * 저쪽은 `userId`로 역할(작가·부부)을 묻고, 이쪽에는 계정 자체가 없어 **토큰이 곧 자격**이다.
  * 한 파일에 섞으면 "메서드 이름이 역할이다"라는 그쪽 규칙이 첫 줄부터 깨진다.
  *
- * 문이 셋이다:
+ * 문이 넷이다:
  * - [requireReadable] — 보는 것. 갤러리 마감 뒤에도 열리지만 링크 자체의 만료는 지킨다.
- * - [requireWritable] — 남기는 것. 부부가 고르는 동안에만 열린다.
+ * - [requireLikable] — 좋아요. 갤러리가 보관되기 전까지 열린다.
+ * - [requireWritable] — 댓글. 부부가 고르는 동안에만 열린다.
  * - [requireGuest] — 남기는 사람이 누구인지. 하객 토큰을 확인한다. 보기만 할 때는 [findGuest]로
  *   묻는다 — 같은 토큰을 같은 방식으로 풀되, 없다고 막지는 않는다.
  */
@@ -79,7 +80,7 @@ class CollabSessionAccess(
     }
 
     /**
-     * 링크로 의견을 남길 수 있는지. 댓글과 반응이 여기를 지난다.
+     * 링크로 댓글을 남길 수 있는지. 댓글 쓰기·지우기가 여기를 지난다.
      *
      * 부부가 고를 수 있는 동안에만 열린다 —
      * [com.soma.wes.gallery.support.GalleryAccessPolicy.requireSelectionEditor]과 같은 기준이다.
@@ -87,6 +88,30 @@ class CollabSessionAccess(
      */
     @Transactional
     fun requireWritable(collabToken: String, photoId: Long? = null): CollabAccessDto {
+        val access = lockForFeedback(collabToken, photoId)
+        if (!isWritable(access)) {
+            throw CollabException(CollabErrorCode.FEEDBACK_CLOSED)
+        }
+        return access
+    }
+
+    /**
+     * 링크로 좋아요를 누르거나 거둘 수 있는지.
+     *
+     * 댓글과 달리 선택 마감을 보지 않는다. 좋아요는 부부에게 고를 일을 남기는 의견이 아니라 사진을
+     * 함께 보는 반응이라, 고르기가 끝난 뒤 링크를 받은 하객도 누를 수 있어야 한다.
+     * 갤러리가 보관되거나 이용 기간이 끝나면 닫는다 — 그때는 부부도 갤러리를 고칠 수 없다.
+     */
+    @Transactional
+    fun requireLikable(collabToken: String, photoId: Long): CollabAccessDto {
+        val access = lockForFeedback(collabToken, photoId)
+        if (!isLikable(access)) {
+            throw CollabException(CollabErrorCode.FEEDBACK_CLOSED)
+        }
+        return access
+    }
+
+    private fun lockForFeedback(collabToken: String, photoId: Long?): CollabAccessDto {
         if (photoId != null) {
             val galleryId = collabSessionRepository.findGalleryIdByCollabToken(collabToken)
                 ?: throw CollabException(CollabErrorCode.SESSION_NOT_FOUND)
@@ -97,12 +122,7 @@ class CollabSessionAccess(
         }
         val session = collabSessionRepository.findWithLockByCollabToken(collabToken)
             ?: throw CollabException(CollabErrorCode.SESSION_NOT_FOUND)
-        val access = requireReadable(session)
-
-        if (!isWritable(access)) {
-            throw CollabException(CollabErrorCode.FEEDBACK_CLOSED)
-        }
-        return access
+        return requireReadable(session)
     }
 
     /**
@@ -113,11 +133,14 @@ class CollabSessionAccess(
      *
      * 개인 갤러리의 `selectionDeadline`은 목표일일 뿐이라 보지 않는다 — 부부의 고르기와 같은 기준이다.
      */
-    fun isWritable(access: CollabAccessDto): Boolean {
+    fun isWritable(access: CollabAccessDto): Boolean =
+        isLikable(access) && (isPersonal(access) || !access.gallery.isDeadlinePassed(ZonedDateTime.now(clock)))
+
+    /** [requireLikable]과 같은 판단을 예외 없이 돌려준다. 첫 화면이 좋아요 버튼을 띄울지 정할 때 쓴다. */
+    fun isLikable(access: CollabAccessDto): Boolean {
         val gallery = access.gallery
         val now = ZonedDateTime.now(clock)
         return gallery.status == GalleryStatus.OPEN &&
-            (isPersonal(access) || !gallery.isDeadlinePassed(now)) &&
             gallery.stage != com.soma.wes.gallery.domain.GalleryStage.ARCHIVED &&
             gallery.planExpiresAt?.let { it.isAfter(now) } != false
     }

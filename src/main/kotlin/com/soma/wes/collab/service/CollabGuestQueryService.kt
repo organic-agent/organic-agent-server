@@ -32,9 +32,10 @@ class CollabGuestQueryService(
             else listOf(access.session)).filter { !it.isRevoked && !it.isExpiredAt(java.time.ZonedDateTime.now(clock)) }
         val photosBySession = membership.photoIds(sessions)
         return CollabLandingResponse(
-            access.gallery.title,
-            photosBySession[access.sessionId].orEmpty().size.toLong(),
-            sessionAccess.isWritable(access),
+            galleryTitle = access.gallery.title,
+            photoCount = photosBySession[access.sessionId].orEmpty().size.toLong(),
+            writable = sessionAccess.isWritable(access),
+            likable = sessionAccess.isLikable(access),
             coverTitle = access.session.coverTitle ?: access.session.name,
             coverAuthor = access.session.coverAuthor,
             expiresAt = access.session.expiresAt,
