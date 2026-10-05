@@ -5,6 +5,7 @@ import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.domain.GalleryStage
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.fixture.GalleryFixture
+import com.soma.wes.gallery.fixture.PersonalGalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.repository.PhotoRepository
@@ -42,6 +43,7 @@ import org.springframework.beans.factory.annotation.Autowired
 class PhotoSelectionServiceTest @Autowired constructor(
     private val photoSelectionService: PhotoSelectionService,
     private val galleryFixture: GalleryFixture,
+    private val personalGalleryFixture: PersonalGalleryFixture,
     private val photoFixture: PhotoFixture,
     private val retouchFixture: RetouchFixture,
     private val photoRepository: PhotoRepository,
@@ -390,6 +392,21 @@ class PhotoSelectionServiceTest @Autowired constructor(
 
             val result = photoSelectionService.get(fixture.galleryId, fixture.photographer.id!!)
             assertThat(result.selectedCount).isEqualTo(0)
+        }
+
+        @Test
+        fun `개인 갤러리는 목표일이 지나도 담고 뺄 수 있다`() {
+            // given
+            val personal = personalGalleryFixture.파트너와_개인_갤러리(target = 3)
+            val photoIds = photoFixture.업로드된_사진(personal.galleryId, count = 2)
+            galleryFixture.마감_지남(personal.galleryId)
+
+            // when
+            photoSelectionService.select(personal.galleryId, personal.partnerId, SelectPhotosRequest(photoIds))
+            photoSelectionService.deselectPhoto(personal.galleryId, photoIds.first(), personal.ownerId)
+
+            // then
+            assertThat(photoSelectionService.get(personal.galleryId, personal.ownerId).selectedCount).isEqualTo(1)
         }
 
         @Test

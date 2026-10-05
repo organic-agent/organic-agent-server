@@ -64,10 +64,19 @@ class GalleryLifecycleService(
         gallery.selectionDeadline?.takeIf {
             gallery.stage == GalleryStage.SELECTION_IN_PROGRESS && it.isAfter(now) && !it.isAfter(now.plusDays(REMINDER_DAYS))
         }?.let { deadline ->
-            publishOnce(
-                gallery, recipients, UserNotificationType.DEADLINE_REMINDER,
-                "선택 마감이 다가옵니다", "사진 선택이 ${deadline.format(DISPLAY_TIME)}에 마감됩니다.",
-            )
+            if (!personal) {
+                publishOnce(
+                    gallery, recipients, UserNotificationType.DEADLINE_REMINDER,
+                    "선택 마감이 다가옵니다", "사진 선택이 ${deadline.format(DISPLAY_TIME)}에 마감됩니다.",
+                )
+            } else if (expiry == null || deadline.isBefore(expiry)) {
+                // 개인 갤러리의 목표일은 고르기를 막지 않는다. 목표일을 비우면 이용 기간 만료일이 들어가므로,
+                // 그때는 아래 이용 기간 알림 하나만 보낸다.
+                publishOnce(
+                    gallery, recipients, UserNotificationType.DEADLINE_REMINDER,
+                    "목표일이 다가옵니다", "정해 둔 목표일은 ${deadline.format(DISPLAY_TIME)}입니다. 목표일이 지나도 사진은 계속 고를 수 있어요.",
+                )
+            }
         }
         if (personal) expiry?.takeIf { it.isAfter(now) && !it.isAfter(now.plusDays(REMINDER_DAYS)) }?.let { deadline ->
             publishOnce(
@@ -98,7 +107,7 @@ class GalleryLifecycleService(
     }
 
     companion object {
-        /** 선택 마감과 개인 플랜 만료를 3일 전에 안내한다. */
+        /** 선택 마감(개인 갤러리는 목표일)과 개인 플랜 만료를 3일 전에 안내한다. */
         const val REMINDER_DAYS = 3L
         private val DISPLAY_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
     }

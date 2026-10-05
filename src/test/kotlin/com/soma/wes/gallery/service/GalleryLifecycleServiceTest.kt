@@ -56,13 +56,13 @@ class GalleryLifecycleServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `마감과 플랜 만료 알림은 기한별로 한 번씩 보내고 기한 변경은 새 알림을 보낸다`() {
+    fun `목표일과 플랜 만료 알림은 기한별로 한 번씩 보내고 기한 변경은 새 알림을 보낸다`() {
         val owner = users.사용자()
         val workspace = workspaces.findByPersonalOwnerUserId(owner.requiredId)!!
         val now = ZonedDateTime.now(clock)
         val gallery = galleries.save(Gallery(workspace.requiredId, owner.requiredId, "마감 임박", status = GalleryStatus.OPEN).apply {
             stage = GalleryStage.SELECTION_IN_PROGRESS
-            selectionDeadline = now.plusDays(2)
+            selectionDeadline = now.plusDays(1)
             planExpiresAt = now.plusDays(2)
         })
         lifecycle.process(gallery.requiredId)
@@ -70,11 +70,62 @@ class GalleryLifecycleServiceTest @Autowired constructor(
         assertThat(notifications.list(owner.requiredId, null, null).map { it.type })
             .containsExactlyInAnyOrder(UserNotificationType.DEADLINE_REMINDER, UserNotificationType.PLAN_EXPIRY_REMINDER)
         val changed = galleries.findById(gallery.requiredId).orElseThrow()
-        changed.selectionDeadline = now.plusDays(1)
+        changed.selectionDeadline = now.plusHours(12)
         galleries.save(changed)
         lifecycle.process(gallery.requiredId)
         assertThat(notifications.list(owner.requiredId, null, null).filter { it.type == UserNotificationType.DEADLINE_REMINDER })
             .hasSize(2)
+    }
+
+    @Test
+    fun `개인 갤러리 목표일 알림은 마감이 아니라 목표일로 안내한다`() {
+        val owner = users.사용자()
+        val workspace = workspaces.findByPersonalOwnerUserId(owner.requiredId)!!
+        val now = ZonedDateTime.now(clock)
+        val gallery = galleries.save(Gallery(workspace.requiredId, owner.requiredId, "목표일 임박", status = GalleryStatus.OPEN).apply {
+            stage = GalleryStage.SELECTION_IN_PROGRESS
+            selectionDeadline = now.plusDays(1)
+            planExpiresAt = now.plusDays(30)
+        })
+
+        lifecycle.process(gallery.requiredId)
+
+        val reminder = notifications.list(owner.requiredId, null, null).single()
+        assertThat(reminder.type).isEqualTo(UserNotificationType.DEADLINE_REMINDER)
+        assertThat(reminder.title).isEqualTo("목표일이 다가옵니다")
+        assertThat(reminder.message).doesNotContain("마감")
+    }
+
+    @Test
+    fun `개인 갤러리 목표일이 이용 기간 만료와 같으면 이용 기간 알림만 보낸다`() {
+        val owner = users.사용자()
+        val workspace = workspaces.findByPersonalOwnerUserId(owner.requiredId)!!
+        val expiry = ZonedDateTime.now(clock).plusDays(2)
+        val gallery = galleries.save(Gallery(workspace.requiredId, owner.requiredId, "목표일 미지정", status = GalleryStatus.OPEN).apply {
+            stage = GalleryStage.SELECTION_IN_PROGRESS
+            selectionDeadline = expiry
+            planExpiresAt = expiry
+        })
+
+        lifecycle.process(gallery.requiredId)
+
+        assertThat(notifications.list(owner.requiredId, null, null).map { it.type })
+            .containsExactly(UserNotificationType.PLAN_EXPIRY_REMINDER)
+    }
+
+    @Test
+    fun `스튜디오 갤러리는 선택 마감으로 안내한다`() {
+        val owner = users.사용자()
+        val workspace = workspaces.save(Workspace.studio("스튜디오"))
+        members.save(WorkspaceMember(workspace.requiredId, owner.requiredId, WorkspaceRole.OWNER))
+        val gallery = galleries.save(Gallery(workspace.requiredId, owner.requiredId, "스튜디오 마감 임박", status = GalleryStatus.OPEN).apply {
+            stage = GalleryStage.SELECTION_IN_PROGRESS
+            selectionDeadline = ZonedDateTime.now(clock).plusDays(1)
+        })
+
+        lifecycle.process(gallery.requiredId)
+
+        assertThat(notifications.list(owner.requiredId, null, null).single().title).isEqualTo("선택 마감이 다가옵니다")
     }
 
     @Test

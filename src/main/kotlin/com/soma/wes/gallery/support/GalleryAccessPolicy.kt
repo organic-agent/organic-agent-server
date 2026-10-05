@@ -11,6 +11,7 @@ import com.soma.wes.gallery.repository.requireById
 import com.soma.wes.gallery.repository.requireWithLockById
 import com.soma.wes.selection.repository.PhotoSelectionRepository
 import com.soma.wes.studio.repository.StudioRepository
+import com.soma.wes.workspace.domain.Workspace
 import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.domain.WorkspaceType
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
@@ -58,7 +59,7 @@ class GalleryAccessPolicy(
         }
 
         findMember(galleryId, userId)
-        requireSelectable(gallery)
+        requireSelectable(gallery, personal = false)
         photoSelectionRepository.findByGalleryId(galleryId)?.requireEditable()
         return gallery
     }
@@ -147,7 +148,7 @@ class GalleryAccessPolicy(
             throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
         }
 
-        requireSelectable(gallery)
+        requireSelectable(gallery, personal = workspace.type == WorkspaceType.PERSONAL)
         return gallery
     }
 
@@ -163,12 +164,13 @@ class GalleryAccessPolicy(
     @Transactional
     fun requireParticipantWriter(galleryId: Long, userId: Long): Gallery {
         val gallery = galleryRepository.requireWithLockById(galleryId)
-        requireParticipant(gallery, userId)
-        requireSelectable(gallery)
+        val workspace = requireParticipant(gallery, userId)
+        requireSelectable(gallery, personal = workspace.type == WorkspaceType.PERSONAL)
         return gallery
     }
 
-    private fun requireParticipant(gallery: Gallery, userId: Long) {
+    /** 부부(초대 고객·개인 갤러리 참여자)인지 확인하고, 판단에 쓴 작업공간을 돌려준다. */
+    private fun requireParticipant(gallery: Gallery, userId: Long): Workspace {
         val workspace = workspaceRepository.findById(gallery.workspaceId).orElse(null)
             ?: throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
         val membership = workspaceMemberRepository.findByWorkspaceIdAndUserId(gallery.workspaceId, userId)
@@ -181,6 +183,7 @@ class GalleryAccessPolicy(
         if (studioManager || (!personalParticipant && !invited) || !gallery.isVisibleToMember) {
             throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
         }
+        return workspace
     }
 
     /** 게스트 의견과 링크는 클라이언트의 사적 협업 정보다. 작가에게는 공개하지 않는다. */
@@ -246,9 +249,13 @@ class GalleryAccessPolicy(
         galleryMemberRepository.findByGalleryIdAndUserId(galleryId, userId)
             ?: throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
 
-    private fun requireSelectable(gallery: Gallery) {
+    /**
+     * 개인 갤러리의 `selectionDeadline`은 부부가 스스로 정한 목표일이라 D-day를 셀 뿐 고르기를 막지 않는다.
+     * 개인 갤러리가 닫히는 때는 이용 기간 만료와 갤러리 마무리(보관)뿐이고, 둘 다 [Gallery.requireWritable]이 본다.
+     */
+    private fun requireSelectable(gallery: Gallery, personal: Boolean) {
         gallery.requireWritable(ZonedDateTime.now(clock))
-        if (gallery.isDeadlinePassed(ZonedDateTime.now(clock))) {
+        if (!personal && gallery.isDeadlinePassed(ZonedDateTime.now(clock))) {
             throw GalleryException(GalleryErrorCode.SELECTION_DEADLINE_PASSED)
         }
         if (gallery.status != GalleryStatus.OPEN) {

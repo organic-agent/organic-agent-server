@@ -5,6 +5,7 @@ import com.soma.wes.gallery.domain.GalleryStatus
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.fixture.GalleryFixture
+import com.soma.wes.gallery.fixture.PersonalGalleryFixture
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.studio.fixture.StudioFixture
 import com.soma.wes.studio.repository.StudioRepository
@@ -24,6 +25,7 @@ import org.springframework.beans.factory.annotation.Autowired
 class GalleryAccessPolicyTest @Autowired constructor(
     private val policy: GalleryAccessPolicy,
     private val galleryFixture: GalleryFixture,
+    private val personalGalleryFixture: PersonalGalleryFixture,
     private val studioFixture: StudioFixture,
     private val userFixture: UserFixture,
     private val galleryRepository: GalleryRepository,
@@ -71,6 +73,45 @@ class GalleryAccessPolicyTest @Autowired constructor(
         assertThat(policy.requireManager(gallery.requiredId, owner.requiredId).requiredId).isEqualTo(gallery.requiredId)
         assertThat(policy.requireSelectionEditor(gallery.requiredId, owner.requiredId).requiredId)
             .isEqualTo(gallery.requiredId)
+    }
+
+    @Test
+    fun `PERSONAL 갤러리는 목표일이 지나도 두 참여자가 계속 고르고 댓글을 쓴다`() {
+        val personal = personalGalleryFixture.파트너와_개인_갤러리()
+        galleryFixture.마감_지남(personal.galleryId)
+
+        for (userId in listOf(personal.ownerId, personal.partnerId)) {
+            assertThat(policy.requireSelectionEditor(personal.galleryId, userId).requiredId).isEqualTo(personal.galleryId)
+            assertThat(policy.requireParticipantWriter(personal.galleryId, userId).requiredId).isEqualTo(personal.galleryId)
+        }
+    }
+
+    @Test
+    fun `PERSONAL 갤러리도 이용 기간이 끝나면 고를 수 없다`() {
+        val personal = personalGalleryFixture.파트너와_개인_갤러리()
+        val gallery = galleryRepository.findById(personal.galleryId).orElseThrow()
+        gallery.planExpiresAt = ZonedDateTime.now().minusMinutes(1)
+        galleryRepository.saveAndFlush(gallery)
+
+        assertThatThrownBy { policy.requireSelectionEditor(personal.galleryId, personal.partnerId) }
+            .isInstanceOf(GalleryException::class.java)
+            .extracting("errorCode")
+            .isEqualTo(GalleryErrorCode.GALLERY_ARCHIVED)
+    }
+
+    @Test
+    fun `STUDIO 갤러리는 선택 마감이 지나면 초대 멤버가 고를 수 없다`() {
+        val fixture = galleryFixture.멤버와_열린_갤러리()
+        galleryFixture.마감_지남(fixture.galleryId)
+
+        assertThatThrownBy { policy.requireSelectionEditor(fixture.galleryId, fixture.member.requiredId) }
+            .isInstanceOf(GalleryException::class.java)
+            .extracting("errorCode")
+            .isEqualTo(GalleryErrorCode.SELECTION_DEADLINE_PASSED)
+        assertThatThrownBy { policy.requireParticipantWriter(fixture.galleryId, fixture.member.requiredId) }
+            .isInstanceOf(GalleryException::class.java)
+            .extracting("errorCode")
+            .isEqualTo(GalleryErrorCode.SELECTION_DEADLINE_PASSED)
     }
 
     @Test

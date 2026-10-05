@@ -4,6 +4,7 @@ import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
+import com.soma.wes.gallery.fixture.PersonalGalleryFixture
 import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.dto.request.RatePhotoRequest
 import com.soma.wes.photo.exception.PhotoErrorCode
@@ -37,6 +38,7 @@ class PhotoRatingServiceTest @Autowired constructor(
     private val photoRatingService: PhotoRatingService,
     private val photoService: PhotoService,
     private val galleryFixture: GalleryFixture,
+    private val personalGalleryFixture: PersonalGalleryFixture,
     private val photoFixture: PhotoFixture,
     private val userFixture: UserFixture,
     private val photoRatingRepository: PhotoRatingRepository,
@@ -181,6 +183,22 @@ class PhotoRatingServiceTest @Autowired constructor(
                 .extracting("errorCode")
                 .isEqualTo(GalleryErrorCode.SELECTION_DEADLINE_PASSED)
 
+            assertThat(photoRatingRepository.count()).isZero()
+        }
+
+        @Test
+        fun `개인 갤러리는 목표일이 지나도 매기고 지울 수 있다`() {
+            // given
+            val personal = personalGalleryFixture.파트너와_개인_갤러리()
+            val photoId = photoFixture.업로드된_사진(personal.galleryId, count = 1).first()
+            galleryFixture.마감_지남(personal.galleryId)
+
+            // when
+            val result = photoRatingService.rate(personal.galleryId, photoId, personal.partnerId, RatePhotoRequest(score = 5))
+            photoRatingService.clear(personal.galleryId, photoId, personal.ownerId)
+
+            // then
+            assertThat(result.score).isEqualTo(5)
             assertThat(photoRatingRepository.count()).isZero()
         }
     }
