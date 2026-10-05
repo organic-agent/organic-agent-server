@@ -5,6 +5,7 @@ import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
 import com.soma.wes.folder.dto.request.CreateDetailFolderRequest
 import com.soma.wes.folder.dto.request.MergeDetailFolderRequest
 import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
+import com.soma.wes.folder.dto.request.RenameFolderRequest
 import com.soma.wes.folder.exception.FolderErrorCode
 import com.soma.wes.folder.exception.FolderException
 import com.soma.wes.folder.repository.DetailFolderAssignmentRepository
@@ -219,6 +220,8 @@ class FolderGuestEditingTest @Autowired constructor(
             { folderService.mergeDetail(galleryId, -1L, -1L, userId, MergeDetailFolderRequest(-2L)) },
             { folderService.undoMerge(galleryId, -1L, userId) },
             { folderService.deleteConcept(galleryId, -1L, userId) },
+            { folderService.renameConcept(galleryId, -1L, userId, RenameFolderRequest("금지")) },
+            { folderService.renameDetail(galleryId, -1L, -1L, userId, RenameFolderRequest("금지")) },
         )
         mutations.forEach { mutation ->
             assertThatThrownBy { mutation() }.isInstanceOf(type).extracting("errorCode").isEqualTo(errorCode)
