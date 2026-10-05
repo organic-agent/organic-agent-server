@@ -100,11 +100,21 @@ class GalleryInviteService(
         return toResponse(invite, now)
     }
 
+    /**
+     * 작가뿐 아니라 부부도 본다. 부부가 들어온 링크로 파트너도 들어오므로, 작가에게 다시 받지 않고 직접 건넬 수 있어야 한다.
+     * 직원 초대(STUDIO_MEMBER)는 작업공간 멤버만 본다 — 부부가 그 링크를 받으면 스튜디오 직원으로 들어온다.
+     * 부부에게는 링크가 없는 것과 같으므로 403이 아니라 404다.
+     */
     @Transactional(readOnly = true)
     fun getCurrent(galleryId: Long, userId: Long): GalleryInviteResponse {
-        galleryAccessPolicy.requireManager(galleryId, userId)
+        galleryAccessPolicy.requireViewer(galleryId, userId)
+
         val invite = galleryInviteRepository.findByGalleryIdAndRevokedAtIsNull(galleryId)
             ?: throw GalleryException(GalleryErrorCode.INVITE_NOT_FOUND)
+        if (invite.kind == GalleryInviteKind.STUDIO_MEMBER && !galleryAccessPolicy.isStudioManager(galleryId, userId)) {
+            throw GalleryException(GalleryErrorCode.INVITE_NOT_FOUND)
+        }
+
         return toResponse(invite, ZonedDateTime.now(clock))
     }
 

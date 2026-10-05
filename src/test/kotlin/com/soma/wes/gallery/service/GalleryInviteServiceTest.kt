@@ -466,7 +466,45 @@ class GalleryInviteServiceTest @Autowired constructor(
         }
 
         @Test
-        fun `담당 작가가 아니면 현재 링크를 볼 수 없다`() {
+        fun `부부도 자기가 들어온 링크를 다시 볼 수 있다`() {
+            // given
+            val gallery = saveGallery()
+            val invite = galleryInviteService.issue(galleryId(gallery), photographerId)
+            galleryInviteService.accept(tokenOf(invite), groomId)
+
+            // when
+            val current = galleryInviteService.getCurrent(galleryId(gallery), groomId)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(current.id).isEqualTo(invite.id)
+                softly.assertThat(current.inviteUrl).isEqualTo(invite.inviteUrl)
+                softly.assertThat(current.usedCount).isEqualTo(1)
+            }
+        }
+
+        @Test
+        fun `직원 초대 링크는 부부에게 보이지 않는다`() {
+            // given
+            val gallery = saveGallery()
+            val coupleInvite = galleryInviteService.issue(galleryId(gallery), photographerId)
+            galleryInviteService.accept(tokenOf(coupleInvite), groomId)
+            val staffInvite = galleryInviteService.issue(
+                galleryId(gallery),
+                photographerId,
+                IssueGalleryInviteRequest(kind = GalleryInviteKind.STUDIO_MEMBER, maxUses = 1),
+            )
+
+            // when & then
+            assertThat(galleryInviteService.getCurrent(galleryId(gallery), photographerId).id).isEqualTo(staffInvite.id)
+            assertThatThrownBy { galleryInviteService.getCurrent(galleryId(gallery), groomId) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.INVITE_NOT_FOUND)
+        }
+
+        @Test
+        fun `담당 작가도 갤러리 참여자도 아니면 현재 링크를 볼 수 없다`() {
             // given
             val gallery = saveGallery()
 

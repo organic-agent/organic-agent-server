@@ -95,7 +95,7 @@ class PersonalGalleryServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `파트너는 업로드와 선택은 하지만 설정을 수정하지 못한다`() {
+    fun `파트너는 업로드와 선택과 보정 처리를 함께 한다`() {
         // given
         val owner = userFixture.사용자()
         val partner = userFixture.사용자()
@@ -105,8 +105,90 @@ class PersonalGalleryServiceTest @Autowired constructor(
         assertThat(policy.requireUploader(gallery.id, partner.requiredId).requiredId).isEqualTo(gallery.id)
         assertThat(policy.requireSelectionEditor(gallery.id, partner.requiredId).requiredId).isEqualTo(gallery.id)
         assertThat(policy.requireRetouchProcessor(gallery.id, partner.requiredId).requiredId).isEqualTo(gallery.id)
-        assertThatThrownBy { target.update(gallery.id, partner.requiredId, UpdatePersonalGalleryRequest("바꾼 이름")) }
-            .isInstanceOf(GalleryException::class.java).extracting("errorCode").isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+    }
+
+    @Nested
+    @DisplayName("갤러리 정보를 고칠 때")
+    inner class Update {
+        @Test
+        fun `파트너도 이름과 목표일과 고를 장수를 고친다`() {
+            // given
+            val owner = userFixture.사용자()
+            val partner = userFixture.사용자()
+            val gallery = target.create(owner.requiredId, CreatePersonalGalleryRequest(title = "함께 고르기"))
+            members.save(WorkspaceMember(workspaceId = gallery.workspaceId, userId = partner.requiredId, role = WorkspaceRole.MEMBER))
+            val deadline = ZonedDateTime.now(clock).plusDays(7)
+
+            // when
+            val result = target.update(gallery.id, partner.requiredId, UpdatePersonalGalleryRequest(
+                title = "파트너가 바꾼 이름", selectionDeadline = deadline, maxSelectablePhotoCount = 30,
+            ))
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(result.title).isEqualTo("파트너가 바꾼 이름")
+                softly.assertThat(result.selectionDeadline).isEqualTo(deadline)
+                softly.assertThat(result.maxSelectablePhotoCount).isEqualTo(30)
+            }
+        }
+
+        @Test
+        fun `갤러리 참여자가 아니면 고칠 수 없다`() {
+            // given
+            val owner = userFixture.사용자()
+            val stranger = userFixture.사용자()
+            val gallery = target.create(owner.requiredId, CreatePersonalGalleryRequest(title = "우리 갤러리"))
+
+            // when & then
+            assertThatThrownBy { target.update(gallery.id, stranger.requiredId, UpdatePersonalGalleryRequest("남이 바꾼 이름")) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode").isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        }
+
+        @Test
+        fun `이용 기간 마지막 날은 그날 밤까지 목표일로 정할 수 있다`() {
+            // given
+            val owner = userFixture.사용자()
+            val gallery = target.create(owner.requiredId, CreatePersonalGalleryRequest(title = "마지막 날"))
+            val lastDayNight = checkNotNull(gallery.planExpiresAt).withZoneSameInstant(clock.zone)
+                .toLocalDate().atTime(23, 59, 59).atZone(clock.zone)
+
+            // when
+            val result = target.update(gallery.id, owner.requiredId, UpdatePersonalGalleryRequest(
+                title = "마지막 날", selectionDeadline = lastDayNight,
+            ))
+
+            // then
+            assertThat(result.selectionDeadline).isEqualTo(lastDayNight)
+        }
+
+        @Test
+        fun `이용 기간 다음 날을 목표일로 정하면 이용 기간 안으로 정하라고 거절한다`() {
+            // given
+            val owner = userFixture.사용자()
+            val gallery = target.create(owner.requiredId, CreatePersonalGalleryRequest(title = "다음 날"))
+            val nextDay = checkNotNull(gallery.planExpiresAt).withZoneSameInstant(clock.zone)
+                .toLocalDate().plusDays(1).atStartOfDay(clock.zone)
+
+            // when & then
+            assertThatThrownBy { target.update(gallery.id, owner.requiredId, UpdatePersonalGalleryRequest(
+                title = "다음 날", selectionDeadline = nextDay,
+            )) }.isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode").isEqualTo(GalleryErrorCode.SELECTION_DEADLINE_AFTER_PLAN_EXPIRY)
+        }
+
+        @Test
+        fun `지난 날짜를 목표일로 정하면 현재보다 뒤여야 한다고 거절한다`() {
+            // given
+            val owner = userFixture.사용자()
+            val gallery = target.create(owner.requiredId, CreatePersonalGalleryRequest(title = "지난 날"))
+
+            // when & then
+            assertThatThrownBy { target.update(gallery.id, owner.requiredId, UpdatePersonalGalleryRequest(
+                title = "지난 날", selectionDeadline = ZonedDateTime.now(clock).minusDays(1),
+            )) }.isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode").isEqualTo(GalleryErrorCode.INVALID_SELECTION_DEADLINE)
+        }
     }
 
     @Nested
@@ -158,7 +240,7 @@ class PersonalGalleryServiceTest @Autowired constructor(
             assertThatThrownBy { target.create(user.requiredId, CreatePersonalGalleryRequest(
                 title = "잘못된 마감", selectionDeadline = ZonedDateTime.now(clock).plusYears(1),
             )) }.isInstanceOf(GalleryException::class.java)
-                .extracting("errorCode").isEqualTo(GalleryErrorCode.INVALID_SELECTION_DEADLINE)
+                .extracting("errorCode").isEqualTo(GalleryErrorCode.SELECTION_DEADLINE_AFTER_PLAN_EXPIRY)
             assertThat(freeClaims.count()).isZero()
             assertThat(benefits.getMyBenefits(user.requiredId).freePlanAvailable).isTrue()
             assertThat(target.create(user.requiredId, CreatePersonalGalleryRequest(title = "정상 무료")).planId).isEqualTo("free")
@@ -252,7 +334,7 @@ class PersonalGalleryServiceTest @Autowired constructor(
                 title = "실패하는 프로", planId = "pro", couponId = coupon.requiredId,
                 selectionDeadline = ZonedDateTime.now(clock).plusYears(2),
             )) }.isInstanceOf(GalleryException::class.java)
-                .extracting("errorCode").isEqualTo(GalleryErrorCode.INVALID_SELECTION_DEADLINE)
+                .extracting("errorCode").isEqualTo(GalleryErrorCode.SELECTION_DEADLINE_AFTER_PLAN_EXPIRY)
             assertThat(benefits.getMyBenefits(user.requiredId).coupons.single().status).isEqualTo("AVAILABLE")
             assertThat(target.create(user.requiredId, CreatePersonalGalleryRequest(
                 title = "정상 프로", planId = "pro", couponId = coupon.requiredId,

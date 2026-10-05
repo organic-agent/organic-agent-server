@@ -43,7 +43,7 @@ class PersonalGalleryService(
             checkoutId = request.checkoutId, at = now,
         )
         val deadline = request.selectionDeadline ?: pass.expiresAt
-        if (deadline.isAfter(pass.expiresAt)) throw GalleryException(GalleryErrorCode.INVALID_SELECTION_DEADLINE)
+        validateWithinPlan(deadline, pass.expiresAt)
         val workspace = workspaceService.ensurePersonalWorkspace(user)
         val gallery = Gallery.create(
             workspaceId = workspace.requiredId, createdByUserId = userId, title = request.title,
@@ -60,19 +60,35 @@ class PersonalGalleryService(
         return GalleryResponse.from(gallery)
     }
 
+    /** 이름·목표일·고를 장수는 두 사람이 함께 쓰는 갤러리 정보라 파트너도 고친다. 이용권은 여기서 바뀌지 않는다. */
     @Transactional
     fun update(galleryId: Long, userId: Long, request: UpdatePersonalGalleryRequest): GalleryResponse {
-        accessPolicy.requireManager(galleryId, userId)
-        if (!accessPolicy.isPersonalGallery(galleryId)) throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        accessPolicy.requirePersonalParticipant(galleryId, userId)
         val gallery = galleryRepository.requireWithLockById(galleryId)
         val now = ZonedDateTime.now(clock)
         gallery.requireWritable(now)
-        if (request.selectionDeadline != null && gallery.planExpiresAt?.let { request.selectionDeadline.isAfter(it) } == true) {
-            throw GalleryException(GalleryErrorCode.INVALID_SELECTION_DEADLINE)
+
+        val planExpiresAt = gallery.planExpiresAt
+        if (request.selectionDeadline != null && planExpiresAt != null) {
+            validateWithinPlan(request.selectionDeadline, planExpiresAt)
         }
+
         gallery.rename(request.title)
         gallery.changeSelectionDeadline(request.selectionDeadline, now)
         gallery.changeMaxSelectablePhotoCount(request.maxSelectablePhotoCount)
         return GalleryResponse.from(gallery)
+    }
+
+    /**
+     * 날짜 단위로 비교한다. 웹은 고른 날의 23:59:59를 보내고 이용 기간은 개설 시각 + 기간이라,
+     * 시각으로 비교하면 화면에 안내한 만료일 당일을 골라도 거절된다. 목표일은 D-day 기준일 뿐
+     * 고르기를 막지 않으므로 만료일 당일 몇 시간을 넘겨도 열리는 것이 없다.
+     */
+    private fun validateWithinPlan(deadline: ZonedDateTime, planExpiresAt: ZonedDateTime) {
+        val deadlineDate = deadline.withZoneSameInstant(clock.zone).toLocalDate()
+        val expiryDate = planExpiresAt.withZoneSameInstant(clock.zone).toLocalDate()
+        if (deadlineDate.isAfter(expiryDate)) {
+            throw GalleryException(GalleryErrorCode.SELECTION_DEADLINE_AFTER_PLAN_EXPIRY)
+        }
     }
 }

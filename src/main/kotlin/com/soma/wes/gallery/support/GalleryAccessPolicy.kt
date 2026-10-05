@@ -75,6 +75,19 @@ class GalleryAccessPolicy(
         return gallery
     }
 
+    /**
+     * 개인 갤러리 정보(이름·목표일·고를 장수) 수정. 소유자와 파트너 모두 연다.
+     * 초대 갤러리는 작가가 계약으로 정하는 값이라 여기를 지나지 않는다.
+     */
+    @Transactional(readOnly = true)
+    fun requirePersonalParticipant(galleryId: Long, userId: Long): Gallery {
+        val gallery = galleryRepository.requireById(galleryId)
+        if (!isPersonalParticipant(gallery, userId)) {
+            throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        }
+        return gallery
+    }
+
     @Transactional(readOnly = true)
     fun requireRetouchProcessor(galleryId: Long, userId: Long): Gallery {
         val gallery = galleryRepository.requireById(galleryId)

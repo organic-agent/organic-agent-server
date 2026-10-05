@@ -69,7 +69,8 @@ interface GalleryInviteControllerDocs {
 
     @Operation(
         summary = "현재 초대 링크 조회",
-        description = "담당 작가만 조회할 수 있다. 갤러리에 살아 있는 링크 하나가 온다. " +
+        description = "담당 작가와 갤러리 참여자(부부·개인 갤러리 파트너)가 조회할 수 있다. 갤러리에 살아 있는 링크 하나가 온다. " +
+            "부부는 이 링크를 파트너에게 직접 건넨다. 직원 초대(STUDIO_MEMBER) 링크는 작가에게만 보이고 부부에게는 404다. " +
             "만료된 링크도 폐기 전까지는 함께 오며 status(ACTIVE·EXPIRED)로 구분한다 — " +
             "다시 발급해야 하는 상황인지 화면에서 알 수 있어야 하기 때문이다. " +
             "아직 한 번도 발급하지 않았거나 폐기만 해둔 상태면 404다.",
@@ -78,7 +79,7 @@ interface GalleryInviteControllerDocs {
         ApiResponse(responseCode = "200", description = "조회 성공"),
         ApiResponse(
             responseCode = "403",
-            description = "담당 작가가 아님",
+            description = "담당 작가도 갤러리 참여자도 아님",
             content = [
                 Content(
                     mediaType = MediaType.APPLICATION_JSON_VALUE,
