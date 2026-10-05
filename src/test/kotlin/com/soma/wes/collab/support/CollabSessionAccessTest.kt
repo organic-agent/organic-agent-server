@@ -13,6 +13,8 @@ import com.soma.wes.collab.repository.CollabSessionRepository
 import com.soma.wes.gallery.domain.GalleryStatus
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
+import com.soma.wes.gallery.fixture.PersonalGalleryFixture
+import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.user.fixture.UserFixture
@@ -44,6 +46,8 @@ class CollabSessionAccessTest @Autowired constructor(
     private val collabSessionService: CollabSessionService,
     private val collabGuestService: CollabGuestService,
     private val galleryFixture: GalleryFixture,
+    private val personalGalleryFixture: PersonalGalleryFixture,
+    private val photoFixture: PhotoFixture,
     private val galleryRepository: GalleryRepository,
     private val collabSessionRepository: CollabSessionRepository,
     private val workspaceMemberRepository: WorkspaceMemberRepository,
@@ -193,6 +197,26 @@ class CollabSessionAccessTest @Autowired constructor(
             // 하객이 자기가 남긴 말과 사진을 다시 열어보는 것까지 막을 이유가 없다.
             val access = collabSessionAccess.requireReadable(session.collabToken)
             assertThat(collabSessionAccess.isWritable(access)).isFalse()
+        }
+
+        @Test
+        fun `개인 갤러리는 목표일이 지나도 하객이 좋아요를 남긴다`() {
+            // given
+            val personal = personalGalleryFixture.파트너와_개인_갤러리()
+            val photoId = photoFixture.업로드된_사진(personal.galleryId, count = 1).first()
+            val session = collabSessionService.open(
+                personal.galleryId, personal.ownerId, OpenCollabSessionRequest(name = "하객에게", photoIds = listOf(photoId)),
+            )
+            val guestToken = enter(session.collabToken, "친구")
+            galleryFixture.마감_지남(personal.galleryId)
+
+            // when
+            collabGuestService.like(session.collabToken, photoId, guestToken)
+
+            // then
+            // 목표일은 D-day를 세는 기준일 뿐이다 — 첫 화면의 댓글창도 열려 있어야 한다.
+            val access = collabSessionAccess.requireReadable(session.collabToken)
+            assertThat(collabSessionAccess.isWritable(access)).isTrue()
         }
 
         @Test

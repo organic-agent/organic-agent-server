@@ -110,12 +110,16 @@ class CollabSessionAccess(
      *
      * 화면이 이 조건을 자기 쪽에서 다시 계산하면(마감 시각을 받아 비교하는 식으로) 서버가 막는
      * 기준과 어긋나는 날이 오고, 그때 하객은 열려 있는 입력창에 쓴 글을 403으로 돌려받는다.
+     *
+     * 개인 갤러리의 `selectionDeadline`은 목표일일 뿐이라 보지 않는다 — 부부의 고르기와 같은 기준이다.
      */
     fun isWritable(access: CollabAccessDto): Boolean {
         val gallery = access.gallery
-        return gallery.status == GalleryStatus.OPEN && !gallery.isDeadlinePassed(ZonedDateTime.now(clock)) &&
+        val now = ZonedDateTime.now(clock)
+        return gallery.status == GalleryStatus.OPEN &&
+            (isPersonal(access) || !gallery.isDeadlinePassed(now)) &&
             gallery.stage != com.soma.wes.gallery.domain.GalleryStage.ARCHIVED &&
-            gallery.planExpiresAt?.let { it.isAfter(ZonedDateTime.now(clock)) } != false
+            gallery.planExpiresAt?.let { it.isAfter(now) } != false
     }
 
     /**
@@ -169,11 +173,15 @@ class CollabSessionAccess(
         if (galleryMemberRepository.findByGalleryIdAndUserId(access.gallery.requiredId, userId) != null) {
             return true
         }
-        if (workspaceRepository.findById(access.gallery.workspaceId).orElse(null)?.type != com.soma.wes.workspace.domain.WorkspaceType.PERSONAL) return false
+        if (!isPersonal(access)) return false
         return workspaceMemberRepository.existsByWorkspaceIdAndUserIdAndRoleIn(
             access.gallery.workspaceId,
             userId,
             WorkspaceRole.entries,
         )
     }
+
+    private fun isPersonal(access: CollabAccessDto): Boolean =
+        workspaceRepository.findById(access.gallery.workspaceId).orElse(null)?.type ==
+            com.soma.wes.workspace.domain.WorkspaceType.PERSONAL
 }
