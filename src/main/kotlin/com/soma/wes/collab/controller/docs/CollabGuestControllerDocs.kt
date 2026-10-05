@@ -43,11 +43,11 @@ interface CollabGuestControllerDocs {
     @SecurityRequirements
     fun deleteComment(collabToken: String, commentId: Long, loginUser: LoginUser?, guestToken: String?): ResponseEntity<Unit>
 
-    @Operation(summary = "사진 좋아요", description = "이름을 가진 참여자당 한 표로 멱등 저장한다.")
+    @Operation(summary = "사진 좋아요", description = "이름을 가진 참여자당 한 표로 멱등 저장한다. 댓글과 달리 선택 마감이 지나도 누를 수 있고, 갤러리가 보관되거나 이용 기간이 끝나면 403 COLLAB_403_2다.")
     @SecurityRequirements
     fun like(collabToken: String, photoId: Long, loginUser: LoginUser?, guestToken: String?): ResponseEntity<Unit>
 
-    @Operation(summary = "사진 좋아요 취소")
+    @Operation(summary = "사진 좋아요 취소", description = "좋아요와 같은 기준으로 열린다. 선택 마감이 지나도 취소할 수 있다.")
     @SecurityRequirements
     fun cancelLike(collabToken: String, photoId: Long, loginUser: LoginUser?, guestToken: String?): ResponseEntity<Unit>
 }

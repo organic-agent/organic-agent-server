@@ -115,7 +115,7 @@ class CollabGuestService(
     }
 
     private fun likeInternal(collabToken: String, photoId: Long, userId: Long?, guestToken: String?) {
-        val access = sessionAccess.requireWritable(collabToken, photoId)
+        val access = sessionAccess.requireLikable(collabToken, photoId)
         val participant = sessionAccess.requireParticipant(access, userId, guestToken)
         requireSharedPhoto(access.session, photoId)
         if (likeRepository.existsByCollabSessionIdAndPhotoIdAndParticipantId(
@@ -138,7 +138,7 @@ class CollabGuestService(
     }
 
     private fun cancelLikeInternal(collabToken: String, photoId: Long, userId: Long?, guestToken: String?) {
-        val access = sessionAccess.requireWritable(collabToken, photoId)
+        val access = sessionAccess.requireLikable(collabToken, photoId)
         val participant = sessionAccess.requireParticipant(access, userId, guestToken)
         requireSharedPhoto(access.session, photoId)
         if (productChildTrashService.cancelParticipantLike(access.sessionId, photoId, participant.requiredId)) {

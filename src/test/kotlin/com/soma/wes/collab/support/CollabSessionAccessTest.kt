@@ -4,9 +4,12 @@ import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
 import com.soma.wes.folder.service.FolderService
 import com.soma.wes.collab.dto.request.EnterCollabRequest
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
+import com.soma.wes.collab.dto.request.WriteCollabCommentRequest
 import com.soma.wes.collab.dto.response.CollabSessionResponse
 import com.soma.wes.collab.exception.CollabErrorCode
 import com.soma.wes.collab.exception.CollabException
+import com.soma.wes.collab.repository.CollabPhotoLikeRepository
+import com.soma.wes.collab.service.CollabGuestQueryService
 import com.soma.wes.collab.service.CollabGuestService
 import com.soma.wes.collab.service.CollabSessionService
 import com.soma.wes.collab.repository.CollabSessionRepository
@@ -35,9 +38,9 @@ import java.time.ZonedDateTime
 /**
  * 사용자와 게스트가 같은 협업 링크에서 참여자 신원으로 합쳐지는 규칙을 확인한다.
  *
- * 보는 것은 셋이다. **보는 문이 딱 그만큼만 열려 있는가**(없는 토큰·폐기·DRAFT가 각각 다른
- * 답으로 막히는지), **남기는 문이 부부의 선택 기한과 같이 움직이는가**, 그리고 **글쓴이 확인이
- * 세션 단위로 갈라지는가**(남의 세션 토큰은 없는 토큰과 같다).
+ * 보는 것은 넷이다. **보는 문이 딱 그만큼만 열려 있는가**(없는 토큰·폐기·DRAFT가 각각 다른
+ * 답으로 막히는지), **댓글 문이 부부의 선택 기한과 같이 움직이는가**, **좋아요 문은 기한이 아니라
+ * 보관과 같이 움직이는가**, 그리고 **글쓴이 확인이 세션 단위로 갈라지는가**(남의 세션 토큰은 없는 토큰과 같다).
  */
 @IntegrationTest
 class CollabSessionAccessTest @Autowired constructor(
@@ -45,6 +48,8 @@ class CollabSessionAccessTest @Autowired constructor(
     private val folderService: FolderService,
     private val collabSessionService: CollabSessionService,
     private val collabGuestService: CollabGuestService,
+    private val collabGuestQueryService: CollabGuestQueryService,
+    private val likeRepository: CollabPhotoLikeRepository,
     private val galleryFixture: GalleryFixture,
     private val personalGalleryFixture: PersonalGalleryFixture,
     private val photoFixture: PhotoFixture,
@@ -217,6 +222,56 @@ class CollabSessionAccessTest @Autowired constructor(
             // 목표일은 D-day를 세는 기준일 뿐이다 — 첫 화면의 댓글창도 열려 있어야 한다.
             val access = collabSessionAccess.requireReadable(session.collabToken)
             assertThat(collabSessionAccess.isWritable(access)).isTrue()
+        }
+
+        @Test
+        fun `선택 마감이 지나도 하객은 좋아요를 누르고 거두지만 댓글은 남기지 못한다`() {
+            // given
+            val photoId = photoFixture.업로드된_사진(fixture.galleryId, count = 1).first()
+            val session = collabSessionService.open(
+                fixture.galleryId, fixture.member.requiredId, OpenCollabSessionRequest(name = "하객에게", photoIds = listOf(photoId)),
+            )
+            val guestToken = enter(session.collabToken, "친구")
+            galleryFixture.마감_지남(fixture.galleryId)
+
+            // when
+            collabGuestService.like(session.collabToken, photoId, guestToken)
+            val liked = likeRepository.count()
+            collabGuestService.cancelLike(session.collabToken, photoId, guestToken)
+
+            // then
+            val landing = collabGuestQueryService.getLanding(session.collabToken)
+            assertSoftly { softly ->
+                softly.assertThat(liked).isEqualTo(1L)
+                softly.assertThat(likeRepository.count()).isZero()
+                softly.assertThat(landing.likable).isTrue()
+                softly.assertThat(landing.writable).isFalse()
+            }
+            assertThatThrownBy {
+                collabGuestService.writeComment(session.collabToken, photoId, guestToken, WriteCollabCommentRequest("예뻐요"))
+            }.isInstanceOf(CollabException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(CollabErrorCode.FEEDBACK_CLOSED)
+        }
+
+        @Test
+        fun `갤러리가 보관되면 좋아요도 누를 수 없다`() {
+            // given
+            val photoId = photoFixture.업로드된_사진(fixture.galleryId, count = 1).first()
+            val session = collabSessionService.open(
+                fixture.galleryId, fixture.member.requiredId, OpenCollabSessionRequest(name = "하객에게", photoIds = listOf(photoId)),
+            )
+            val guestToken = enter(session.collabToken, "친구")
+            val gallery = galleryRepository.findById(fixture.galleryId).orElseThrow()
+            gallery.close()
+            galleryRepository.saveAndFlush(gallery)
+
+            // when & then
+            assertThatThrownBy { collabGuestService.like(session.collabToken, photoId, guestToken) }
+                .isInstanceOf(CollabException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(CollabErrorCode.FEEDBACK_CLOSED)
+            assertThat(collabGuestQueryService.getLanding(session.collabToken).likable).isFalse()
         }
 
         @Test

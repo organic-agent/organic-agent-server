@@ -18,10 +18,16 @@ data class CollabLandingResponse(
     val photoCount: Long,
 
     @field:Schema(
-        description = "지금 의견을 남길 수 있는지. false면 부부가 이미 고르기를 끝낸 것이라 " +
-            "보기만 된다 — 화면은 댓글창과 반응 버튼을 감추면 된다.",
+        description = "지금 댓글을 남길 수 있는지. false면 선택 마감이 지났거나 갤러리가 보관된 것이다 — " +
+            "화면은 댓글창을 감추면 된다. 좋아요는 likable을 본다.",
     )
     val writable: Boolean,
+
+    @field:Schema(
+        description = "지금 좋아요를 누를 수 있는지. 선택 마감이 지나도 true이고, 갤러리가 보관되거나 " +
+            "이용 기간이 끝나면 false다 — 화면은 좋아요 버튼을 감추면 된다.",
+    )
+    val likable: Boolean,
     val coverTitle: String? = null,
     val coverAuthor: String? = null,
     val expiresAt: java.time.ZonedDateTime? = null,
