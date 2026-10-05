@@ -31,7 +31,7 @@ interface CollabSessionControllerDocs {
             "새 링크는 7일간 유효하고 보관된 갤러리는 변경할 수 없다.",
     )
     @ApiResponses(
-        ApiResponse(responseCode = "201", description = "세션 생성 또는 기존 컨셉 세션 재사용 성공"),
+        ApiResponse(responseCode = "201", description = "새 공유폴더 생성 성공. 같은 컨셉으로 다시 불러도 새 공유폴더를 만든다"),
         ApiResponse(responseCode = "403", description = "갤러리 참여 권한 없음 또는 갤러리 보관 상태"),
         ApiResponse(responseCode = "400", description = "사진 지정 방식을 둘 이상 보냄, 범위와 폴더 목록이 맞지 않음, 사진 id 수 초과"),
         ApiResponse(responseCode = "404", description = "이 갤러리의 컨셉폴더·공유폴더·사진이 아님"),
