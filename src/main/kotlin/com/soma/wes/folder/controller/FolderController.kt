@@ -8,6 +8,8 @@ import com.soma.wes.folder.dto.request.MergeDetailFolderRequest
 import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
 import com.soma.wes.folder.dto.response.ConceptFolderResponse
 import com.soma.wes.folder.dto.response.DetailFolderResponse
+import com.soma.wes.folder.dto.response.MergeDetailFolderResponse
+import com.soma.wes.folder.dto.response.UndoDetailFolderMergeResponse
 import com.soma.wes.folder.service.FolderService
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
@@ -82,8 +84,17 @@ class FolderController(
         @PathVariable conceptId: Long,
         @PathVariable detailId: Long,
         @Valid @RequestBody request: MergeDetailFolderRequest,
-    ): ResponseEntity<DetailFolderResponse> {
+    ): ResponseEntity<MergeDetailFolderResponse> {
         return ResponseEntity.ok(folderService.mergeDetail(galleryId, conceptId, detailId, loginUser.id, request))
+    }
+
+    @PostMapping("/detail-folder-merges/{mergeId}/undo")
+    override fun undoMerge(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @PathVariable mergeId: Long,
+    ): ResponseEntity<UndoDetailFolderMergeResponse> {
+        return ResponseEntity.ok(folderService.undoMerge(galleryId, mergeId, loginUser.id))
     }
 
     @DeleteMapping("/concept-folders/{conceptId}/detail-folders/{detailId}")

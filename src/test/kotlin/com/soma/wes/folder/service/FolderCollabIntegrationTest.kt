@@ -180,4 +180,36 @@ class FolderCollabIntegrationTest @Autowired constructor(
         assertThat(commentRepository.count()).isZero()
         assertThat(assignmentRepository.findById(photoId).orElseThrow().detailFolderId).isEqualTo(receptionDetail.id)
     }
+
+    @Test
+    fun `다른 컨셉으로 합친 것을 되돌려도 지워진 반응은 돌아오지 않는다`() {
+        // given
+        val fixture = galleryFixture.멤버와_열린_갤러리()
+        val userId = fixture.photographer.requiredId
+        val photoId = photoFixture.업로드된_사진(fixture.galleryId, 1).single()
+        val ceremony = folderService.createConcept(fixture.galleryId, userId, CreateConceptFolderRequest("본식"))
+        val entrance = folderService.createDetail(fixture.galleryId, ceremony.id, userId, CreateDetailFolderRequest("입장"))
+        val reception = folderService.createConcept(fixture.galleryId, userId, CreateConceptFolderRequest("피로연"))
+        val receptionDetail = folderService.createDetail(fixture.galleryId, reception.id, userId, CreateDetailFolderRequest("메인"))
+        folderService.movePhotos(fixture.galleryId, userId, MoveFolderPhotosRequest(listOf(photoId), entrance.id))
+        val session = collabSessionService.open(
+            fixture.galleryId,
+            fixture.member.requiredId,
+            OpenCollabSessionRequest(ceremony.id, "본식 의견"),
+        )
+        val token = session.collabUrl.substringAfterLast('/')
+        val guest = collabGuestService.enter(token, EnterCollabRequest("친구"))
+        collabGuestService.like(token, photoId, guest.guestToken)
+        val merged = folderService.mergeDetail(
+            fixture.galleryId, ceremony.id, entrance.id, userId, MergeDetailFolderRequest(receptionDetail.id),
+        )
+
+        // when
+        folderService.undoMerge(fixture.galleryId, merged.mergeId, userId)
+
+        // then
+        assertThat(assignmentRepository.findById(photoId).orElseThrow().detailFolderId).isEqualTo(entrance.id)
+        assertThat(likeRepository.count()).isZero()
+        assertThat(collabGuestQueryService.listPhotos(token, null, 0, 20).totalCount).isEqualTo(1)
+    }
 }

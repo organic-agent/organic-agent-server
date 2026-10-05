@@ -45,4 +45,13 @@ class DetailFolder(
 
     val requiredId: Long
         get() = checkNotNull(id) { "저장되지 않은 세부폴더입니다." }
+
+    /** 다른 폴더에 합쳐져 숨는다. 행이 남아 있어야 되돌릴 때 id · 순서 · 출처가 그대로 돌아온다([DetailFolderMerge]). */
+    fun hide(at: ZonedDateTime) {
+        deletedAt = at
+    }
+
+    fun unhide() {
+        deletedAt = null
+    }
 }

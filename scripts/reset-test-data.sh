@@ -117,7 +117,7 @@ fi
 TABLES="collab_session_photos, collab_photo_likes, collab_photo_comments, collab_participants, collab_sessions"
 TABLES="$TABLES, admin_photo_replacement_uploads, admin_photo_revisions, admin_retouch_artifact_uploads, admin_ai_selection_jobs"
 TABLES="$TABLES, ai_recommendations, ai_selection_jobs, concept_assignments, analysis_job_events, analysis_jobs, photo_analysis"
-TABLES="$TABLES, detail_folder_assignments, detail_folders, concept_folders"
+TABLES="$TABLES, detail_folder_merge_photos, detail_folder_merges, detail_folder_assignments, detail_folders, concept_folders"
 TABLES="$TABLES, admin_selection_revisions, photo_selection_items, photo_selections, photo_ratings, photo_comments"
 TABLES="$TABLES, retouch_photos, retouch_rounds"
 TABLES="$TABLES, photos"
