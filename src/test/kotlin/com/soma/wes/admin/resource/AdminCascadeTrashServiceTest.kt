@@ -148,7 +148,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         assertThat(deletedAt("photos", photo.id)).isNull()
         service.restoreBatch(actor.requiredId, batch.id, AdminReasonRequest("공유 복원"), "127.0.0.1")
         val restored = contextService.get(AdminResourceType.COLLABORATION, collaboration.id)
-        assertThat(restored.resource.fields).containsEntry("conceptFolderId", null)
+        assertThat(restored.resource.fields).doesNotContainKey("conceptFolderId")
         assertThat(restored.sections.getValue("sharedPhotos").map { it["photoId"] }).containsExactly(photo.id)
         assertThat(restored.resource.deleted).isFalse()
 
@@ -195,7 +195,6 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         val selection = create(actor.requiredId, AdminResourceType.SELECTION, mapOf("galleryId" to gallery.id))
         val collaboration = create(actor.requiredId, AdminResourceType.COLLABORATION, mapOf(
             "galleryId" to gallery.id,
-            "conceptFolderId" to createConceptFolder(gallery.id),
             "name" to "가족 의견",
         ))
         val retouch = create(actor.requiredId, AdminResourceType.RETOUCH_REQUEST, mapOf(
@@ -966,33 +965,14 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             resourceService.create(actorId, type, CreateAdminResourceRequest("테스트 데이터 생성", fields), "127.0.0.1")
         }
 
-    private fun createConceptFolder(galleryId: Long): Long = jdbcClient.sql(
-        """
-        INSERT INTO concept_folders
-            (gallery_id, name, sort_order, created_source, version, created_at, updated_at)
-        VALUES (:galleryId, '연쇄 삭제 컨셉', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        RETURNING id
-        """.trimIndent(),
-    ).param("galleryId", galleryId).query { rs, _ -> rs.getLong("id") }.single()
-
     private fun assignPhotoToSession(sessionId: Long, photoId: Long) {
-        val detailId = jdbcClient.sql(
-            """
-            INSERT INTO detail_folders
-                (gallery_id, concept_folder_id, name, sort_order, created_source, version, created_at, updated_at)
-            SELECT gallery_id, concept_folder_id, '연쇄 삭제 상세', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-            FROM collab_sessions WHERE id = :sessionId
-            RETURNING id
-            """.trimIndent(),
-        ).param("sessionId", sessionId).query { rs, _ -> rs.getLong("id") }.single()
         jdbcClient.sql(
             """
-            INSERT INTO detail_folder_assignments
-                (gallery_id, photo_id, detail_folder_id, assigned_source, assigned_at, version, created_at, updated_at)
-            SELECT gallery_id, id, :detailId, 'USER', CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-            FROM photos WHERE id = :photoId
+            INSERT INTO collab_session_photos (collab_session_id, gallery_id, photo_id, version, created_at, updated_at)
+            SELECT id, gallery_id, :photoId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            FROM collab_sessions WHERE id = :sessionId
             """.trimIndent(),
-        ).param("photoId", photoId).param("detailId", detailId).update()
+        ).param("sessionId", sessionId).param("photoId", photoId).update()
     }
 
     private fun createPhoto(actorId: Long, galleryId: Long, name: String) = create(

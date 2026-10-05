@@ -469,7 +469,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
                 "협업 링크 생성",
                 mapOf(
                     "galleryId" to graph.gallery.id,
-                    "conceptFolderId" to createConceptFolder(graph.gallery.id, "가족 협업"),
                     "name" to "가족 협업",
                 ),
             ),
@@ -849,7 +848,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
         )
 
         val context = contextService.get(AdminResourceType.COLLABORATION, session.id)
-        assertThat(context.resource.fields).containsEntry("conceptFolderId", null)
+        assertThat(context.resource.fields).doesNotContainKey("conceptFolderId")
         assertThat(context.resource.version).isEqualTo(2)
         assertThat(context.facts).containsEntry("photos", 1L).containsEntry("comments", 1L).containsEntry("likes", 1L)
         assertThat(context.relations.filter { it.type == AdminResourceType.PHOTO }.map { it.id }).containsExactly(photoId)
@@ -868,7 +867,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
                 "좋아요 충돌 협업",
                 mapOf(
                     "galleryId" to graph.gallery.id,
-                    "conceptFolderId" to createConceptFolder(graph.gallery.id, "좋아요 충돌"),
                     "name" to "가족",
                 ),
             ),
@@ -1894,37 +1892,14 @@ private fun createGraph(actorAdminId: Long, suffix: String, withPhoto: Boolean =
         ).param("jobId", jobId).param("galleryId", galleryId).update()
     }
 
-private fun createConceptFolder(galleryId: Long, name: String): Long = jdbcClient.sql(
-        """
-        INSERT INTO concept_folders
-            (gallery_id, name, sort_order, created_source, version, created_at, updated_at)
-        VALUES (:galleryId, :name, 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        RETURNING id
-        """.trimIndent(),
-    ).param("galleryId", galleryId).param("name", name)
-        .query { rs, _ -> rs.getLong("id") }.single()
-
     private fun assignPhotoToSession(sessionId: Long, photoId: Long) {
-        val detailId = jdbcClient.sql(
-            """
-            INSERT INTO detail_folders
-                (gallery_id, concept_folder_id, name, sort_order, created_source, version, created_at, updated_at)
-            SELECT gallery_id, concept_folder_id, '관리자 워크플로 상세', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-            FROM collab_sessions WHERE id = :sessionId
-            RETURNING id
-            """.trimIndent(),
-        ).param("sessionId", sessionId).query { rs, _ -> rs.getLong("id") }.single()
         jdbcClient.sql(
             """
-            INSERT INTO detail_folder_assignments
-                (gallery_id, photo_id, detail_folder_id, assigned_source, assigned_at, version, created_at, updated_at)
-            SELECT gallery_id, id, :detailId, 'USER', CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-            FROM photos WHERE id = :photoId
-            ON CONFLICT (photo_id) DO UPDATE SET detail_folder_id = EXCLUDED.detail_folder_id,
-                gallery_id = EXCLUDED.gallery_id, assigned_source = 'USER',
-                assigned_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            INSERT INTO collab_session_photos (collab_session_id, gallery_id, photo_id, version, created_at, updated_at)
+            SELECT id, gallery_id, :photoId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            FROM collab_sessions WHERE id = :sessionId
             """.trimIndent(),
-        ).param("photoId", photoId).param("detailId", detailId).update()
+        ).param("sessionId", sessionId).param("photoId", photoId).update()
     }
 
     private fun userRevisionCount(userId: Long): Long = jdbcClient.sql(

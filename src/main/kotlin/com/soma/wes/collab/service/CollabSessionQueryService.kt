@@ -1,7 +1,7 @@
 package com.soma.wes.collab.service
 
-import com.soma.wes.folder.repository.ConceptFolderRepository
 import com.soma.wes.collab.dto.response.CollabCommentResponse
+import com.soma.wes.collab.dto.response.CollabParticipantResponse
 import com.soma.wes.collab.dto.response.CollabPhotoPageResponse
 import com.soma.wes.collab.dto.response.CollabSessionResponse
 import com.soma.wes.collab.dto.response.CollabViewerCommentResponse
@@ -32,15 +32,20 @@ class CollabSessionQueryService(
     private val photoViewAssembler: CollabPhotoViewAssembler,
     private val urlResolver: CollabLinkResolver,
     private val membership: CollabPhotoMembership,
-    private val conceptRepository: ConceptFolderRepository,
 ) {
     @Transactional(readOnly = true)
     fun list(galleryId: Long, userId: Long): List<CollabSessionResponse> {
         galleryAccessPolicy.requireParticipantViewer(galleryId, userId)
         val sessions = sessionRepository.findAllByGalleryIdOrderByCreatedAtDesc(galleryId)
         val ids = membership.photoIds(sessions)
+        val participants = if (sessions.isEmpty()) emptyMap() else {
+            participantRepository.countBySessionIds(sessions.map { it.requiredId }).associate { it.sessionId to it.count }
+        }
         return sessions.map { session -> CollabSessionResponse.of(
-            session, urlResolver.resolve(session.collabToken), ids[session.requiredId].orEmpty().size.toLong(),
+            session,
+            urlResolver.resolve(session.collabToken),
+            ids[session.requiredId].orEmpty().size.toLong(),
+            participants[session.requiredId] ?: 0,
         ) }
     }
 
@@ -48,6 +53,15 @@ class CollabSessionQueryService(
     fun get(galleryId: Long, sessionId: Long, userId: Long): CollabSessionResponse {
         galleryAccessPolicy.requireParticipantViewer(galleryId, userId)
         return toResponse(sessionRepository.requireByIdAndGalleryId(sessionId, galleryId))
+    }
+
+    /** 폐기·만료된 링크로 들어왔던 사람도 그대로 보여 준다. 누가 다녀갔는지는 링크를 거둔 뒤에도 궁금하다. */
+    @Transactional(readOnly = true)
+    fun listParticipants(galleryId: Long, sessionId: Long, userId: Long): List<CollabParticipantResponse> {
+        galleryAccessPolicy.requireParticipantViewer(galleryId, userId)
+        val session = sessionRepository.requireByIdAndGalleryId(sessionId, galleryId)
+        return participantRepository.findAllByCollabSessionIdOrderByIdAsc(session.requiredId)
+            .map(CollabParticipantResponse::from)
     }
 
     @Transactional(readOnly = true)
@@ -70,10 +84,6 @@ class CollabSessionQueryService(
         galleryAccessPolicy.requireParticipantViewer(galleryId, userId)
 
         val session = sessionRepository.requireByIdAndGalleryId(sessionId, galleryId)
-        session.conceptFolderId?.let { conceptId ->
-            conceptRepository.findByIdAndGalleryId(conceptId, galleryId)
-                ?: throw CollabException(CollabErrorCode.SESSION_NOT_FOUND)
-        }
         photoRepository.findByIdAndGalleryId(photoId, galleryId)
             ?: throw CollabException(CollabErrorCode.COLLAB_PHOTO_NOT_FOUND)
         if (!photoViewAssembler.contains(session, photoId)) {
@@ -128,6 +138,7 @@ class CollabSessionQueryService(
         session,
         urlResolver.resolve(session.collabToken),
         photoViewAssembler.count(session),
+        participantRepository.countByCollabSessionId(session.requiredId),
     )
 
     companion object {

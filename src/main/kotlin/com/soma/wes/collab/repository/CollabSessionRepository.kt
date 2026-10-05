@@ -14,9 +14,10 @@ interface CollabSessionRepository : JpaRepository<CollabSession, Long> {
 
     fun findByIdAndGalleryId(id: Long, galleryId: Long): CollabSession?
 
+    fun findAllByGalleryIdAndIdIn(galleryId: Long, ids: Collection<Long>): List<CollabSession>
+
     fun existsByIdAndGalleryId(id: Long, galleryId: Long): Boolean
 
-    fun findByConceptFolderId(conceptFolderId: Long): CollabSession?
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     fun findWithLockByIdAndGalleryId(id: Long, galleryId: Long): CollabSession?

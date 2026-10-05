@@ -123,16 +123,17 @@ class CollabSessionAccess(
     }
 
     /**
-     * 글을 남기는 사람이 누구인지. 닉네임을 적고 받아간 토큰으로 확인한다.
+     * 글을 남기는 사람이 누구인지. 갤러리 참여자(부부)는 계정으로, 그 밖의 사람은 닉네임을 적고
+     * 받아간 토큰으로 확인한다.
+     *
+     * 참여자가 아닌 계정으로 로그인한 하객도 게스트로 본다. 계정을 이유로 막아도 로그아웃하면 같은
+     * 사람이 게스트로 남길 수 있어 지켜지는 것이 없다.
      *
      * 토큰이 없는 것과 틀린 것을 구분하지 않는다. 화면이 할 일은 어느 쪽이든 같다 —
      * 닉네임을 다시 받아 새로 입장시키면 된다.
      */
     fun requireParticipant(access: CollabAccessDto, userId: Long?, guestToken: String?): CollabParticipant {
-        if (userId != null) {
-            if (!canUserReact(access, userId)) {
-                throw CollabException(CollabErrorCode.PARTICIPANT_READ_ONLY)
-            }
+        if (userId != null && canUserReact(access, userId)) {
             return participantRepository.findByCollabSessionIdAndUserId(access.sessionId, userId)
                 ?: participantRepository.save(
                     CollabParticipant.user(access.sessionId, userId, userRepository.requireById(userId).nickname),
@@ -142,18 +143,14 @@ class CollabSessionAccess(
     }
 
     /**
-     * 보고 있는 사람이 누구인지. 조회 경로가 쓴다.
+     * 보고 있는 사람이 누구인지. 조회 경로가 쓴다. [requireParticipant]와 같은 순서로 찾는다.
      *
      * 토큰이 없거나 이 세션의 것이 아니면 그냥 익명으로 본다 — 보는 것을 막을 이유가 없고,
      * 화면에서는 "내가 누른 반응"과 "내가 쓴 댓글" 표시만 비어 보인다.
      */
     fun findParticipant(access: CollabAccessDto, userId: Long?, guestToken: String?): CollabParticipant? {
-        if (userId != null) {
-            return if (canUserReact(access, userId)) {
-                participantRepository.findByCollabSessionIdAndUserId(access.sessionId, userId)
-            } else {
-                null
-            }
+        if (userId != null && canUserReact(access, userId)) {
+            return participantRepository.findByCollabSessionIdAndUserId(access.sessionId, userId)
         }
         return findGuest(access, guestToken)
     }

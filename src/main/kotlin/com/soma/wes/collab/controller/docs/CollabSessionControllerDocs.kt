@@ -5,6 +5,7 @@ import com.soma.wes.collab.dto.request.CollabPhotoIdsRequest
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
 import com.soma.wes.collab.dto.request.RenameCollabSessionRequest
 import com.soma.wes.collab.dto.response.CollabCommentResponse
+import com.soma.wes.collab.dto.response.CollabParticipantResponse
 import com.soma.wes.collab.dto.response.CollabPhotoPageResponse
 import com.soma.wes.collab.dto.response.CollabSessionResponse
 import com.soma.wes.global.page.PageResponse
@@ -23,13 +24,17 @@ interface CollabSessionControllerDocs {
     @Operation(
         summary = "공유폴더 만들기",
         description = "초대받은 갤러리 참여자 또는 개인 공간의 소유자·파트너가 이름만으로 빈 공유폴더를 만든다. " +
-            "photoIds로 초기 사진을 담을 수 있다. conceptFolderId를 지정하는 기존 요청은 해당 컨셉의 동적 공유를 " +
-            "유지하며 같은 컨셉 세션을 재사용한다. 새 링크는 7일간 유효하고 보관된 갤러리는 변경할 수 없다.",
+            "photoIds로 초기 사진을 담거나, scope로 모든 사진·컨셉 폴더들·세부 폴더들·다른 공유폴더들의 사진을 한 번에 담을 수 있다. " +
+            "사진은 한 트랜잭션에서 담겨, 실패하면 공유폴더도 만들어지지 않는다. " +
+            "공유폴더는 컨셉·세부 폴더와 따로 살아서, 만든 뒤 원본 폴더의 사진이 옮겨지거나 폴더가 지워져도 바뀌지 않는다. " +
+            "conceptFolderId는 옛 요청 모양으로, 그 컨셉을 범위로 보낸 것과 같다. 부를 때마다 새 공유폴더를 만든다. " +
+            "새 링크는 7일간 유효하고 보관된 갤러리는 변경할 수 없다.",
     )
     @ApiResponses(
-        ApiResponse(responseCode = "201", description = "세션 생성 또는 기존 컨셉 세션 재사용 성공"),
+        ApiResponse(responseCode = "201", description = "새 공유폴더 생성 성공. 같은 컨셉으로 다시 불러도 새 공유폴더를 만든다"),
         ApiResponse(responseCode = "403", description = "갤러리 참여 권한 없음 또는 갤러리 보관 상태"),
-        ApiResponse(responseCode = "404", description = "이 갤러리의 컨셉폴더가 아님"),
+        ApiResponse(responseCode = "400", description = "사진 지정 방식을 둘 이상 보냄, 범위와 폴더 목록이 맞지 않음, 사진 id 수 초과"),
+        ApiResponse(responseCode = "404", description = "이 갤러리의 컨셉폴더·공유폴더·사진이 아님"),
     )
     fun open(
         loginUser: LoginUser,
@@ -74,22 +79,35 @@ interface CollabSessionControllerDocs {
     @ApiResponses(ApiResponse(responseCode = "200", description = "재발행 성공"))
     fun republish(loginUser: LoginUser, galleryId: Long, sessionId: Long): ResponseEntity<CollabSessionResponse>
 
-    @Operation(summary = "공유폴더에 사진 추가", description = "수동 공유폴더에 같은 갤러리 사진을 최대 200장씩 추가한다. 이미 담긴 사진은 한 번만 유지한다. 카테고리 연동 폴더는 먼저 수동으로 전환해야 한다.")
-    @ApiResponses(ApiResponse(responseCode = "200", description = "전체 추가 성공"), ApiResponse(responseCode = "409", description = "수동 전환 필요"))
+    @Operation(summary = "공유폴더에 사진 추가", description = "수동 공유폴더에 같은 갤러리 사진을 한 번에 최대 10,000장까지 추가한다. 이미 담긴 사진은 한 번만 유지한다.")
+    @ApiResponses(ApiResponse(responseCode = "200", description = "전체 추가 성공"))
     fun addPhotos(loginUser: LoginUser, galleryId: Long, sessionId: Long, request: CollabPhotoIdsRequest): ResponseEntity<CollabSessionResponse>
 
     @Operation(summary = "공유폴더에서 사진 제거", description = "JSON photoIds의 사진을 원자적으로 제거하고 이 폴더에 남긴 반응만 정리한다. 사진 원본·분류·다른 폴더는 유지한다. 이미 빠진 사진은 무시한다.")
-    @ApiResponses(ApiResponse(responseCode = "200", description = "전체 제거 성공"), ApiResponse(responseCode = "409", description = "수동 전환 필요"))
+    @ApiResponses(ApiResponse(responseCode = "200", description = "전체 제거 성공"))
     fun removePhotos(loginUser: LoginUser, galleryId: Long, sessionId: Long, request: CollabPhotoIdsRequest): ResponseEntity<CollabSessionResponse>
 
-    @Operation(summary = "카테고리 공유를 수동 공유폴더로 전환", description = "현재 보이는 사진 구성을 복사해 카테고리 연결을 해제한다. 링크·참여자·반응·만료일을 보존하며 이후 분류 변경은 반영되지 않는다. 이미 수동이면 그대로 반환한다.")
-    @ApiResponses(ApiResponse(responseCode = "200", description = "전환 성공"))
-    fun convertToManual(loginUser: LoginUser, galleryId: Long, sessionId: Long): ResponseEntity<CollabSessionResponse>
+    @Operation(
+        summary = "공유폴더에 들어온 사람 조회",
+        description = "닉네임을 적고 들어온 하객과 반응을 남긴 참여자 계정을 들어온 순서로 돌려준다. " +
+            "보기만 하고 닉네임을 적지 않은 사람은 기록이 없어 나오지 않는다. 폐기·만료된 링크도 조회할 수 있다. " +
+            "작가에게는 공개하지 않는다.",
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "조회 성공"),
+        ApiResponse(responseCode = "403", description = "갤러리 참여자가 아님"),
+        ApiResponse(responseCode = "404", description = "이 갤러리의 세션이 아님"),
+    )
+    fun listParticipants(
+        loginUser: LoginUser,
+        galleryId: Long,
+        sessionId: Long,
+    ): ResponseEntity<List<CollabParticipantResponse>>
 
     @Operation(
         summary = "공유폴더의 현재 사진과 반응 결과 조회",
-        description = "수동 폴더는 직접 담긴 사진, 기존 컨셉 공유는 현재 배정된 사진을 조회한다. 같은 컨셉 안에서 " +
-            "상세폴더를 옮기면 반응은 유지되고, 컨셉 밖으로 옮기면 해당 반응은 제거된다.",
+        description = "공유폴더에 담긴 사진을 조회한다. 컨셉·세부 폴더에서 사진을 옮겨도 공유폴더와 반응은 바뀌지 않는다. " +
+            "휴지통에 있는 사진은 숨기고, 복원하면 다시 보인다.",
     )
     @ApiResponses(ApiResponse(responseCode = "200", description = "조회 성공"))
     fun listPhotos(

@@ -39,7 +39,7 @@ class CollabGuestQueryService(
             coverAuthor = access.session.coverAuthor,
             expiresAt = access.session.expiresAt,
             albums = sessions.map { session -> CollabLandingResponse.Album(
-                conceptFolderId = session.conceptFolderId, name = session.name,
+                name = session.name,
                 photoCount = photosBySession[session.requiredId].orEmpty().size.toLong(),
                 collabToken = session.collabToken, sessionId = session.requiredId,
             ) },

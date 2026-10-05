@@ -28,7 +28,6 @@ data class CollabLandingResponse(
     val albums: List<Album> = emptyList(),
 ) {
     data class Album(
-        val conceptFolderId: Long?,
         val name: String,
         val photoCount: Long,
         val collabToken: String,

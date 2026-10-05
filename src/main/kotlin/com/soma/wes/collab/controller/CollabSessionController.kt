@@ -7,6 +7,7 @@ import jakarta.validation.Valid
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
 import com.soma.wes.collab.dto.request.RenameCollabSessionRequest
 import com.soma.wes.collab.dto.response.CollabCommentResponse
+import com.soma.wes.collab.dto.response.CollabParticipantResponse
 import com.soma.wes.collab.dto.response.CollabPhotoPageResponse
 import com.soma.wes.collab.dto.response.CollabSessionResponse
 import com.soma.wes.collab.service.CollabSessionQueryService
@@ -99,14 +100,13 @@ class CollabSessionController(
         return ResponseEntity.ok(service.removePhotos(galleryId, sessionId, loginUser.id, request))
     }
 
-    @PostMapping("/{sessionId}/convert-to-manual")
-    override fun convertToManual(
+    @GetMapping("/{sessionId}/participants")
+    override fun listParticipants(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
         @PathVariable sessionId: Long,
-    ): ResponseEntity<CollabSessionResponse> {
-        return ResponseEntity.ok(service.convertToManual(galleryId, sessionId, loginUser.id))
-    }
+    ): ResponseEntity<List<CollabParticipantResponse>> =
+        ResponseEntity.ok(queryService.listParticipants(galleryId, sessionId, loginUser.id))
 
     @GetMapping("/{sessionId}/photos")
     override fun listPhotos(

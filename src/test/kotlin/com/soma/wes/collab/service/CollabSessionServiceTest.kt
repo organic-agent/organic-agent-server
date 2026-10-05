@@ -48,7 +48,7 @@ class CollabSessionServiceTest @Autowired constructor(
     @DisplayName("초대 부부가 협업 링크를 관리할 때")
     inner class Management {
         @Test
-        fun `부부가 컨셉 링크를 열고 서로 같은 세션을 재사용한다`() {
+        fun `부부가 같은 컨셉으로 열 때마다 따로 사는 공유폴더가 생긴다`() {
             // given
             val partner = galleryFixture.멤버(shared.galleryId)
             val concept = folderService.createConcept(
@@ -60,17 +60,17 @@ class CollabSessionServiceTest @Autowired constructor(
                 shared.galleryId, shared.gallery.member.requiredId,
                 OpenCollabSessionRequest(conceptFolderId = concept.id, name = "부모님 의견"),
             )
-            val reused = service.open(
+            val second = service.open(
                 shared.galleryId, partner.requiredId,
                 OpenCollabSessionRequest(conceptFolderId = concept.id, name = "가족 의견"),
             )
 
             // then
             assertSoftly { softly ->
-                softly.assertThat(reused.sessionId).isEqualTo(opened.sessionId)
-                softly.assertThat(reused.collabUrl).isEqualTo(opened.collabUrl)
-                softly.assertThat(reused.name).isEqualTo("가족 의견")
-                softly.assertThat(reused.conceptFolderId).isEqualTo(concept.id)
+                softly.assertThat(second.sessionId).isNotEqualTo(opened.sessionId)
+                softly.assertThat(second.collabUrl).isNotEqualTo(opened.collabUrl)
+                softly.assertThat(opened.name).isEqualTo("부모님 의견")
+                softly.assertThat(second.name).isEqualTo("가족 의견")
             }
         }
 
@@ -208,7 +208,7 @@ class CollabSessionServiceTest @Autowired constructor(
             {
                 service.open(
                     shared.galleryId, userId,
-                    OpenCollabSessionRequest(conceptFolderId = shared.session.conceptFolderId, name = "발행"),
+                    OpenCollabSessionRequest(conceptFolderId = shared.conceptId, name = "발행"),
                 )
             },
             { service.republish(shared.galleryId, shared.session.sessionId, userId) },

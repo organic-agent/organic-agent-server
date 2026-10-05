@@ -100,7 +100,7 @@ class AdminRevisionRestorePolicy(
             AdminResourceType.CONCEPT_FOLDER to setOf("galleryId"),
             AdminResourceType.DETAIL_FOLDER to setOf("conceptFolderId"),
             AdminResourceType.PHOTO_RATING to setOf("photoId"),
-            AdminResourceType.COLLABORATION to setOf("galleryId", "conceptFolderId"),
+            AdminResourceType.COLLABORATION to setOf("galleryId"),
         )
         private val MUTABLE_FIELDS = mapOf(
             AdminResourceType.USER to setOf("nickname", "email"),

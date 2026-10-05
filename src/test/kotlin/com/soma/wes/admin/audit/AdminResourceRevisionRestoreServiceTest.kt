@@ -58,7 +58,6 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
         ))
         val collaboration = create(actor.requiredId, AdminResourceType.COLLABORATION, mapOf(
             "galleryId" to gallery.id,
-            "conceptFolderId" to createConceptFolder(gallery.id),
             "name" to "원본 협업",
         ))
         val cases = listOf(
@@ -304,17 +303,6 @@ class AdminResourceRevisionRestoreServiceTest @Autowired constructor(
         } else {
             resourceService.create(actorId, type, CreateAdminResourceRequest("리비전 테스트 생성", fields), "127.0.0.1")
         }
-
-    private fun createConceptFolder(galleryId: Long): Long = jdbcTemplate.queryForObject(
-        """
-        INSERT INTO concept_folders
-            (gallery_id, name, sort_order, created_source, version, created_at, updated_at)
-        VALUES (?, '리비전 복원 컨셉', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        RETURNING id
-        """.trimIndent(),
-        Long::class.java,
-        galleryId,
-    )!!
 
     private data class RestoreCase(
         val type: AdminResourceType,

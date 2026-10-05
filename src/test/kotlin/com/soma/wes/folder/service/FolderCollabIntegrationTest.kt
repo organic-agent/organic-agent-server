@@ -21,6 +21,10 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 
+/**
+ * 공유폴더는 컨셉·세부 폴더와 따로 산다. 폴더에서 공유폴더를 만드는 것은 사진을 하나하나 고르기 귀찮아서일 뿐이고,
+ * 만든 뒤 폴더에서 일어나는 일(이동·합치기·되돌리기·삭제)은 공유폴더의 사진과 하객 반응에 닿지 않는다.
+ */
 @IntegrationTest
 class FolderCollabIntegrationTest @Autowired constructor(
     private val folderService: FolderService,
@@ -35,7 +39,7 @@ class FolderCollabIntegrationTest @Autowired constructor(
     private val likeRepository: CollabPhotoLikeRepository,
 ) {
     @Test
-    fun `한 컨셉은 한 링크를 재사용하고 현재 배정을 동적으로 보여준다`() {
+    fun `컨셉으로 만든 공유폴더는 만든 순간의 사진을 담고 이후 배정을 따라가지 않는다`() {
         val fixture = galleryFixture.멤버와_열린_갤러리()
         val photoIds = photoFixture.업로드된_사진(fixture.galleryId, 2)
         val concept = folderService.createConcept(
@@ -73,78 +77,15 @@ class FolderCollabIntegrationTest @Autowired constructor(
         )
 
         assertThat(first.photoCount).isEqualTo(2)
-        assertThat(afterUnassign.totalCount).isEqualTo(1)
-        assertThat(reopened.sessionId).isEqualTo(first.sessionId)
-        assertThat(sessionRepository.count()).isEqualTo(1)
+        assertThat(afterUnassign.totalCount).isEqualTo(2)
+        // 다시 만들면 그때의 사진으로 새 공유폴더가 생긴다.
+        assertThat(reopened.sessionId).isNotEqualTo(first.sessionId)
+        assertThat(reopened.photoCount).isEqualTo(1)
+        assertThat(sessionRepository.count()).isEqualTo(2)
     }
 
     @Test
-    fun `같은 컨셉 안의 이동은 반응을 보존하고 컨셉을 벗어나면 삭제한다`() {
-        val fixture = galleryFixture.멤버와_열린_갤러리()
-        val photoId = photoFixture.업로드된_사진(fixture.galleryId, 1).single()
-        val firstConcept = folderService.createConcept(
-            fixture.galleryId,
-            fixture.photographer.requiredId,
-            CreateConceptFolderRequest("본식"),
-        )
-        val firstDetail = folderService.createDetail(
-            fixture.galleryId,
-            firstConcept.id,
-            fixture.photographer.requiredId,
-            CreateDetailFolderRequest("원본"),
-        )
-        val secondDetail = folderService.createDetail(
-            fixture.galleryId,
-            firstConcept.id,
-            fixture.photographer.requiredId,
-            CreateDetailFolderRequest("후보"),
-        )
-        val otherConcept = folderService.createConcept(
-            fixture.galleryId,
-            fixture.photographer.requiredId,
-            CreateConceptFolderRequest("피로연"),
-        )
-        val otherDetail = folderService.createDetail(
-            fixture.galleryId,
-            otherConcept.id,
-            fixture.photographer.requiredId,
-            CreateDetailFolderRequest("메인"),
-        )
-        folderService.movePhotos(
-            fixture.galleryId,
-            fixture.photographer.requiredId,
-            MoveFolderPhotosRequest(listOf(photoId), firstDetail.id),
-        )
-        val session = collabSessionService.open(
-            fixture.galleryId,
-            fixture.member.requiredId,
-            OpenCollabSessionRequest(firstConcept.id, "본식 의견"),
-        )
-        val token = session.collabUrl.substringAfterLast('/')
-        val guest = collabGuestService.enter(token, EnterCollabRequest("친구"))
-        collabGuestService.like(token, photoId, guest.guestToken)
-        collabGuestService.writeComment(token, photoId, guest.guestToken, WriteCollabCommentRequest("좋아요"))
-
-        folderService.movePhotos(
-            fixture.galleryId,
-            fixture.photographer.requiredId,
-            MoveFolderPhotosRequest(listOf(photoId), secondDetail.id),
-        )
-        assertThat(likeRepository.count()).isEqualTo(1)
-        assertThat(commentRepository.count()).isEqualTo(1)
-
-        folderService.movePhotos(
-            fixture.galleryId,
-            fixture.photographer.requiredId,
-            MoveFolderPhotosRequest(listOf(photoId), otherDetail.id),
-        )
-        assertThat(likeRepository.count()).isZero()
-        assertThat(commentRepository.count()).isZero()
-        assertThat(assignmentRepository.findById(photoId).orElseThrow().detailFolderId).isEqualTo(otherDetail.id)
-    }
-
-    @Test
-    fun `같은 컨셉 안에서 합치면 반응을 보존하고 다른 컨셉으로 합치면 삭제한다`() {
+    fun `사진을 다른 컨셉으로 옮기거나 합치고 되돌려도 하객 반응이 남는다`() {
         // given
         val fixture = galleryFixture.멤버와_열린_갤러리()
         val userId = fixture.photographer.requiredId
@@ -166,50 +107,19 @@ class FolderCollabIntegrationTest @Autowired constructor(
         collabGuestService.writeComment(token, photoId, guest.guestToken, WriteCollabCommentRequest("좋아요"))
 
         // when
+        folderService.movePhotos(fixture.galleryId, userId, MoveFolderPhotosRequest(listOf(photoId), receptionDetail.id))
+        folderService.movePhotos(fixture.galleryId, userId, MoveFolderPhotosRequest(listOf(photoId), entrance1.id))
         folderService.mergeDetail(fixture.galleryId, ceremony.id, entrance1.id, userId, MergeDetailFolderRequest(entrance2.id))
+        val merged = folderService.mergeDetail(
+            fixture.galleryId, ceremony.id, entrance2.id, userId, MergeDetailFolderRequest(receptionDetail.id),
+        )
+        folderService.undoMerge(fixture.galleryId, merged.mergeId, userId)
+        folderService.movePhotos(fixture.galleryId, userId, MoveFolderPhotosRequest(listOf(photoId), null))
 
         // then
+        assertThat(assignmentRepository.findById(photoId)).isEmpty()
         assertThat(likeRepository.count()).isEqualTo(1)
         assertThat(commentRepository.count()).isEqualTo(1)
-
-        // when
-        folderService.mergeDetail(fixture.galleryId, ceremony.id, entrance2.id, userId, MergeDetailFolderRequest(receptionDetail.id))
-
-        // then
-        assertThat(likeRepository.count()).isZero()
-        assertThat(commentRepository.count()).isZero()
-        assertThat(assignmentRepository.findById(photoId).orElseThrow().detailFolderId).isEqualTo(receptionDetail.id)
-    }
-
-    @Test
-    fun `다른 컨셉으로 합친 것을 되돌려도 지워진 반응은 돌아오지 않는다`() {
-        // given
-        val fixture = galleryFixture.멤버와_열린_갤러리()
-        val userId = fixture.photographer.requiredId
-        val photoId = photoFixture.업로드된_사진(fixture.galleryId, 1).single()
-        val ceremony = folderService.createConcept(fixture.galleryId, userId, CreateConceptFolderRequest("본식"))
-        val entrance = folderService.createDetail(fixture.galleryId, ceremony.id, userId, CreateDetailFolderRequest("입장"))
-        val reception = folderService.createConcept(fixture.galleryId, userId, CreateConceptFolderRequest("피로연"))
-        val receptionDetail = folderService.createDetail(fixture.galleryId, reception.id, userId, CreateDetailFolderRequest("메인"))
-        folderService.movePhotos(fixture.galleryId, userId, MoveFolderPhotosRequest(listOf(photoId), entrance.id))
-        val session = collabSessionService.open(
-            fixture.galleryId,
-            fixture.member.requiredId,
-            OpenCollabSessionRequest(ceremony.id, "본식 의견"),
-        )
-        val token = session.collabUrl.substringAfterLast('/')
-        val guest = collabGuestService.enter(token, EnterCollabRequest("친구"))
-        collabGuestService.like(token, photoId, guest.guestToken)
-        val merged = folderService.mergeDetail(
-            fixture.galleryId, ceremony.id, entrance.id, userId, MergeDetailFolderRequest(receptionDetail.id),
-        )
-
-        // when
-        folderService.undoMerge(fixture.galleryId, merged.mergeId, userId)
-
-        // then
-        assertThat(assignmentRepository.findById(photoId).orElseThrow().detailFolderId).isEqualTo(entrance.id)
-        assertThat(likeRepository.count()).isZero()
-        assertThat(collabGuestQueryService.listPhotos(token, null, 0, 20).totalCount).isEqualTo(1)
+        assertThat(collabGuestQueryService.listPhotos(token, guest.guestToken, 0, 20).contents.single().liked).isTrue()
     }
 }

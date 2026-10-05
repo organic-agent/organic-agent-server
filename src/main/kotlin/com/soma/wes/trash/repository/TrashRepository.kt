@@ -342,15 +342,9 @@ class TrashRepository(
                     SELECT 1 FROM collab_photo_likes l
                     WHERE l.collab_session_id = s.id AND l.photo_id IN (:photoIds)
                 ) OR EXISTS (
-                    SELECT 1
-                    FROM detail_folders d
-                    JOIN detail_folder_assignments a ON a.detail_folder_id = d.id
-                    WHERE d.concept_folder_id = s.concept_folder_id
-                      AND a.photo_id IN (:photoIds)
-                ) OR (s.concept_folder_id IS NULL AND EXISTS (
                     SELECT 1 FROM collab_session_photos membership
                     WHERE membership.collab_session_id = s.id AND membership.photo_id IN (:photoIds)
-                ))
+                )
                 ORDER BY s.id FOR UPDATE OF s
             """.trimIndent(),
             "SELECT id FROM collab_session_photos WHERE photo_id IN (:photoIds) ORDER BY id FOR UPDATE",
@@ -785,18 +779,8 @@ class TrashRepository(
                       AND EXISTS (
                           SELECT 1
                           FROM collab_sessions session
-                          WHERE session.id = e.resource_id AND (
-                              EXISTS (
-                                  SELECT 1 FROM detail_folders detail
-                                  JOIN detail_folder_assignments assignment ON assignment.detail_folder_id = detail.id
-                                  WHERE detail.concept_folder_id = session.concept_folder_id
-                                    AND assignment.photo_id = $photoIdExpression
-                              ) OR (session.concept_folder_id IS NULL AND EXISTS (
-                                  SELECT 1 FROM collab_session_photos membership
-                                  WHERE membership.collab_session_id = session.id
-                                    AND membership.photo_id = $photoIdExpression
-                              ))
-                          )
+                          JOIN collab_session_photos membership ON membership.collab_session_id = session.id
+                          WHERE session.id = e.resource_id AND membership.photo_id = $photoIdExpression
                       )
                   )
                   OR (

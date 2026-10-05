@@ -324,7 +324,8 @@ class CollabSessionAccessTest @Autowired constructor(
         }
 
         @Test
-        fun `스튜디오 MEMBER는 협업을 볼 수 있지만 반응 작성 참여자가 될 수 없다`() {
+        fun `참여자가 아닌 계정은 게스트 토큰이 없으면 게스트로 인정하지 않는다`() {
+            // 스튜디오 직원도 부부가 아니다. 계정 참여자 행을 만들지 않고 닉네임을 다시 받게 한다.
             val session = openSession()
             val access = collabSessionAccess.requireReadable(session.collabToken)
             val studioMember = userFixture.사용자()
@@ -332,19 +333,31 @@ class CollabSessionAccessTest @Autowired constructor(
                 WorkspaceMember(access.gallery.workspaceId, studioMember.requiredId, WorkspaceRole.MEMBER),
             )
 
-            assertThatThrownBy {
-                collabSessionAccess.requireParticipant(access, studioMember.requiredId, null)
-            }.isInstanceOf(CollabException::class.java)
-                .extracting("errorCode")
-                .isEqualTo(CollabErrorCode.PARTICIPANT_READ_ONLY)
+            for (userId in listOf(studioMember.requiredId, fixture.photographer.requiredId)) {
+                assertThatThrownBy { collabSessionAccess.requireParticipant(access, userId, null) }
+                    .isInstanceOf(CollabException::class.java)
+                    .extracting("errorCode").isEqualTo(CollabErrorCode.GUEST_NOT_IDENTIFIED)
+                assertThat(collabSessionAccess.findParticipant(access, userId, null)).isNull()
+            }
         }
 
         @Test
-        fun `스튜디오 OWNER도 클라이언트의 로그인 참여자가 될 수 없다`() {
-            val access = collabSessionAccess.requireReadable(openSession().collabToken)
-            assertThatThrownBy { collabSessionAccess.requireParticipant(access, fixture.photographer.requiredId, null) }
-                .isInstanceOf(CollabException::class.java)
-                .extracting("errorCode").isEqualTo(CollabErrorCode.PARTICIPANT_READ_ONLY)
+        fun `참여자가 아닌 계정으로 로그인한 하객은 게스트 토큰으로 확인한다`() {
+            val session = openSession()
+            val guestToken = enter(session.collabToken, "로그인한 하객")
+            val access = collabSessionAccess.requireReadable(session.collabToken)
+            val outsider = userFixture.사용자()
+
+            for (userId in listOf(outsider.requiredId, fixture.photographer.requiredId)) {
+                val writer = collabSessionAccess.requireParticipant(access, userId, guestToken)
+                val viewer = collabSessionAccess.findParticipant(access, userId, guestToken)
+
+                assertSoftly { softly ->
+                    softly.assertThat(writer.nickname).isEqualTo("로그인한 하객")
+                    softly.assertThat(writer.userId).isNull()
+                    softly.assertThat(viewer?.requiredId).isEqualTo(writer.requiredId)
+                }
+            }
         }
 
     }

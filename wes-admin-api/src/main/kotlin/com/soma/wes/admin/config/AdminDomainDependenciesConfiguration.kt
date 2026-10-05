@@ -7,7 +7,6 @@ import com.soma.wes.gallery.support.GalleryPhotoQuota
 import com.soma.wes.admin.resource.config.AdminWorkflowExecutorProperties
 import com.soma.wes.collab.config.CollabProperties
 import com.soma.wes.collab.service.CollabSessionQueryService
-import com.soma.wes.collab.support.CollabFolderReactionCleaner
 import com.soma.wes.collab.support.CollabLinkResolver
 import com.soma.wes.collab.support.CollabPhotoMembership
 import com.soma.wes.collab.support.CollabPhotoViewAssembler
@@ -99,7 +98,6 @@ import org.springframework.context.annotation.Import
     PhotoSelectionService::class,
     CollabSessionQueryService::class,
     FolderService::class,
-    CollabFolderReactionCleaner::class,
     RetouchService::class,
     PhotoViewAssembler::class,
     CollabPhotoViewAssembler::class,
