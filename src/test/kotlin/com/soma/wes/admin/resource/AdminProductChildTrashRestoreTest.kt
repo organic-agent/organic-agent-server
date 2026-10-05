@@ -69,7 +69,6 @@ class AdminProductChildTrashRestoreTest @Autowired constructor(
             AdminResourceType.COLLABORATION,
             mapOf(
                 "galleryId" to gallery.id,
-                "conceptFolderId" to if (manual) null else insertConceptFolder(gallery.id),
                 "name" to "제품 휴지통 복원",
             ),
         )
@@ -142,36 +141,15 @@ class AdminProductChildTrashRestoreTest @Autowired constructor(
     }
 
     private fun assignPhotoToSessionConcept(sessionId: Long, photoId: Long): Long {
-        val conceptId = jdbcClient.sql("SELECT concept_folder_id FROM collab_sessions WHERE id = :sessionId")
-            .param("sessionId", sessionId).query { rs, _ -> rs.getLong(1) }.single()
-        val detailId = jdbcClient.sql(
-            """
-            INSERT INTO detail_folders
-                (gallery_id, concept_folder_id, name, sort_order, created_source, version, created_at, updated_at)
-            SELECT gallery_id, id, '복원 상세', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-            FROM concept_folders WHERE id = :conceptId
-            RETURNING id
-            """.trimIndent(),
-        ).param("conceptId", conceptId).query { rs, _ -> rs.getLong("id") }.single()
         jdbcClient.sql(
             """
-            INSERT INTO detail_folder_assignments
-                (gallery_id, photo_id, detail_folder_id, assigned_source, assigned_at, version, created_at, updated_at)
-            SELECT gallery_id, id, :detailId, 'USER', CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-            FROM photos WHERE id = :photoId
+            INSERT INTO collab_session_photos (collab_session_id, gallery_id, photo_id, version, created_at, updated_at)
+            SELECT id, gallery_id, :photoId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            FROM collab_sessions WHERE id = :sessionId
             """.trimIndent(),
-        ).param("photoId", photoId).param("detailId", detailId).update()
+        ).param("sessionId", sessionId).param("photoId", photoId).update()
         return photoId
     }
-
-    private fun insertConceptFolder(galleryId: Long): Long = jdbcClient.sql(
-        """
-        INSERT INTO concept_folders
-            (gallery_id, name, sort_order, created_source, version, created_at, updated_at)
-        VALUES (:galleryId, '제품 휴지통 컨셉', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        RETURNING id
-        """.trimIndent(),
-    ).param("galleryId", galleryId).query { rs, _ -> rs.getLong("id") }.single()
 
     private fun insertGuest(sessionId: Long): Long = jdbcClient.sql(
         """

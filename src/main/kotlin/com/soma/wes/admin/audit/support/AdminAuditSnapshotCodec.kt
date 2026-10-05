@@ -272,7 +272,7 @@ class AdminAuditSnapshotCodec(
                 "type", "id", "version", "deleted", "galleryId", "status", "submittedAt",
             ),
             AdminAuditTargetType.COLLABORATION to setOf(
-                "type", "id", "version", "deleted", "galleryId", "conceptFolderId", "name", "revoked", "expiresAt",
+                "type", "id", "version", "deleted", "galleryId", "name", "revoked", "expiresAt",
             ),
             AdminAuditTargetType.RETOUCH_REQUEST to setOf(
                 "type", "id", "version", "deleted", "galleryId", "status", "requestedAt", "completedAt",

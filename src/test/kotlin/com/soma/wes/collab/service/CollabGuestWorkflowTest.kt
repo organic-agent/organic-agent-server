@@ -179,8 +179,8 @@ class CollabGuestWorkflowTest @Autowired constructor(
     fun `기본 공유 링크는 같은 갤러리에 다른 공유 앨범이 있어도 자기 앨범만 보여준다`() {
         val shared = fixtures.사진이_있는_세션()
         fixtures.사진이_있는_세션(shared.gallery)
-        assertThat(guestQuery.getLanding(shared.token).albums.map { it.conceptFolderId })
-            .containsExactly(shared.session.conceptFolderId)
+        assertThat(guestQuery.getLanding(shared.token).albums.map { it.sessionId })
+            .containsExactly(shared.session.sessionId)
     }
 
     @Test

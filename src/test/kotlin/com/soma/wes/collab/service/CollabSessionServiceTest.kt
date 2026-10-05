@@ -71,7 +71,6 @@ class CollabSessionServiceTest @Autowired constructor(
                 softly.assertThat(second.collabUrl).isNotEqualTo(opened.collabUrl)
                 softly.assertThat(opened.name).isEqualTo("부모님 의견")
                 softly.assertThat(second.name).isEqualTo("가족 의견")
-                softly.assertThat(second.conceptFolderId).isNull()
             }
         }
 
@@ -209,7 +208,7 @@ class CollabSessionServiceTest @Autowired constructor(
             {
                 service.open(
                     shared.galleryId, userId,
-                    OpenCollabSessionRequest(conceptFolderId = shared.session.conceptFolderId, name = "발행"),
+                    OpenCollabSessionRequest(conceptFolderId = shared.conceptId, name = "발행"),
                 )
             },
             { service.republish(shared.galleryId, shared.session.sessionId, userId) },

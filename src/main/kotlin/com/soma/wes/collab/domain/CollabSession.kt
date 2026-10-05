@@ -21,7 +21,6 @@ import org.hibernate.annotations.SQLRestriction
     name = "collab_sessions",
     uniqueConstraints = [
         UniqueConstraint(name = "uk_collab_sessions_collab_token", columnNames = ["collab_token"]),
-        UniqueConstraint(name = "uk_collab_sessions_concept_folder", columnNames = ["concept_folder_id"]),
     ],
     indexes = [
         Index(name = "idx_collab_sessions_gallery_id", columnList = "gallery_id"),
@@ -31,13 +30,6 @@ class CollabSession(
 
     @Column(name = "gallery_id", nullable = false, updatable = false)
     val galleryId: Long,
-
-    /**
-     * 옛 컨셉 연결 공유폴더의 흔적. 공유폴더는 컨셉·세부 폴더와 따로 살기로 해 V36부터 항상 `null`이다.
-     * 관리자 화면·휴지통 SQL이 아직 이 컬럼을 읽어서 컬럼을 지울 때까지 남긴다.
-     */
-    @Column(name = "concept_folder_id", nullable = true, updatable = false)
-    val conceptFolderId: Long? = null,
 
     /** 부부가 링크를 구분하려고 붙인 이름. 하객에게도 첫 화면에 보인다. */
     @Column(nullable = false, length = MAX_NAME_LENGTH)

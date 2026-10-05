@@ -677,11 +677,7 @@ class AdminChildTrashServiceTest @Autowired constructor(
     }
 
     private fun create(actorId: Long, type: AdminResourceType, fields: Map<String, Any?>): com.soma.wes.admin.resource.dto.AdminResourceResponse {
-        val normalized = if (type == AdminResourceType.COLLABORATION && "conceptFolderId" !in fields) {
-            fields + ("conceptFolderId" to createConceptFolder((fields.getValue("galleryId") as Number).toLong()))
-        } else {
-            fields
-        }
+        val normalized = fields
         return resourceService.create(
             actorId,
             type,
@@ -690,38 +686,14 @@ class AdminChildTrashServiceTest @Autowired constructor(
         )
     }
 
-    private fun createConceptFolder(galleryId: Long): Long = jdbcClient.sql(
-        """
-        INSERT INTO concept_folders
-            (gallery_id, name, sort_order, created_source, version, created_at, updated_at)
-        VALUES (:galleryId, '관리자 테스트 컨셉', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        RETURNING id
-        """.trimIndent(),
-    ).param("galleryId", galleryId).query { rs, _ -> rs.getLong("id") }.single()
-
     private fun assignPhotoToSession(sessionId: Long, photoId: Long) {
-        val conceptId = jdbcClient.sql("SELECT concept_folder_id FROM collab_sessions WHERE id = :sessionId")
-            .param("sessionId", sessionId).query { rs, _ -> rs.getLong(1) }.single()
-        val detailId = jdbcClient.sql(
-            """
-            INSERT INTO detail_folders
-                (gallery_id, concept_folder_id, name, sort_order, created_source, version, created_at, updated_at)
-            SELECT gallery_id, id, '관리자 테스트 상세', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-            FROM concept_folders WHERE id = :conceptId
-            RETURNING id
-            """.trimIndent(),
-        ).param("conceptId", conceptId).query { rs, _ -> rs.getLong("id") }.single()
         jdbcClient.sql(
             """
-            INSERT INTO detail_folder_assignments
-                (gallery_id, photo_id, detail_folder_id, assigned_source, assigned_at, version, created_at, updated_at)
-            SELECT gallery_id, id, :detailId, 'USER', CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-            FROM photos WHERE id = :photoId
-            ON CONFLICT (photo_id) DO UPDATE SET detail_folder_id = EXCLUDED.detail_folder_id,
-                gallery_id = EXCLUDED.gallery_id, assigned_source = 'USER',
-                assigned_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            INSERT INTO collab_session_photos (collab_session_id, gallery_id, photo_id, version, created_at, updated_at)
+            SELECT id, gallery_id, :photoId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            FROM collab_sessions WHERE id = :sessionId
             """.trimIndent(),
-        ).param("photoId", photoId).param("detailId", detailId).update()
+        ).param("sessionId", sessionId).param("photoId", photoId).update()
     }
 
     private fun childTrashStatus(id: Long): String = jdbcClient.sql(

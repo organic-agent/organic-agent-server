@@ -110,16 +110,10 @@ class AdminCascadeTrashRepository(
             AdminResourceType.SELECTION -> relatedPhotoIds("photo_selection_items", "selection_id", rootId)
             AdminResourceType.COLLABORATION -> jdbcClient.sql(
                 """
-                SELECT a.photo_id AS id
-                FROM collab_sessions s
-                JOIN detail_folders d ON d.concept_folder_id = s.concept_folder_id AND d.deleted_at IS NULL
-                JOIN detail_folder_assignments a ON a.detail_folder_id = d.id
-                WHERE s.id = :rootId
-                UNION ALL
                 SELECT membership.photo_id AS id
                 FROM collab_sessions s
                 JOIN collab_session_photos membership ON membership.collab_session_id = s.id
-                WHERE s.id = :rootId AND s.concept_folder_id IS NULL
+                WHERE s.id = :rootId
                 ORDER BY id
                 """.trimIndent(),
             )
@@ -335,16 +329,8 @@ class AdminCascadeTrashRepository(
                           OR (e.resource_type = 'COLLABORATION' AND EXISTS (
                               SELECT 1
                               FROM collab_sessions s
-                              WHERE s.id = e.resource_id AND (
-                                  EXISTS (
-                                      SELECT 1 FROM detail_folders d
-                                      JOIN detail_folder_assignments a ON a.detail_folder_id = d.id
-                                      WHERE d.concept_folder_id = s.concept_folder_id AND a.photo_id = claim.resource_id
-                                  ) OR (s.concept_folder_id IS NULL AND EXISTS (
-                                      SELECT 1 FROM collab_session_photos membership
-                                      WHERE membership.collab_session_id = s.id AND membership.photo_id = claim.resource_id
-                                  ))
-                              )
+                              JOIN collab_session_photos membership ON membership.collab_session_id = s.id
+                              WHERE s.id = e.resource_id AND membership.photo_id = claim.resource_id
                           ))
                           OR (e.resource_type = 'COLLAB_COMMENT' AND EXISTS (
                               SELECT 1
@@ -1073,8 +1059,6 @@ class AdminCascadeTrashRepository(
         AdminResourceType.CONCEPT_FOLDER -> when (target) {
             "CONCEPT_FOLDER" -> "r.id = :rootId"
             "DETAIL_FOLDER" -> "r.concept_folder_id = :rootId"
-            "COLLABORATION" -> "r.concept_folder_id = :rootId"
-            "COLLAB_COMMENT" -> "r.collab_session_id IN (SELECT s.id FROM collab_sessions s WHERE s.concept_folder_id = :rootId)"
             else -> null
         }
         AdminResourceType.DETAIL_FOLDER -> if (target == "DETAIL_FOLDER") "r.id = :rootId" else null

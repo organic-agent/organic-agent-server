@@ -482,20 +482,12 @@ class TrashEraserTest @Autowired constructor(
     private fun insertCollabSession(galleryId: Long, suffix: String): Long = checkNotNull(
         jdbcTemplate.queryForObject(
             """
-            WITH concept AS (
-                INSERT INTO concept_folders
-                    (gallery_id, name, sort_order, created_source, version, created_at, updated_at)
-                VALUES (?, ?, 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                RETURNING id
-            )
             INSERT INTO collab_sessions
-                (gallery_id, concept_folder_id, name, collab_token, version, created_at, updated_at)
-            SELECT ?, concept.id, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP FROM concept
+                (gallery_id, name, collab_token, version, created_at, updated_at)
+            VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
             """.trimIndent(),
             Long::class.java,
-            galleryId,
-            "concept-$suffix",
             galleryId,
             suffix,
             "token-$suffix-${sequence.incrementAndGet()}",

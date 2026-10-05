@@ -36,19 +36,9 @@ class ProductChildTrashRepository(
         """
         SELECT p.id
         FROM collab_sessions s
-        JOIN photos p ON p.gallery_id = s.gallery_id AND p.deleted_at IS NULL
+        JOIN collab_session_photos membership ON membership.collab_session_id = s.id
+        JOIN photos p ON p.id = membership.photo_id AND p.gallery_id = s.gallery_id AND p.deleted_at IS NULL
         WHERE s.id = :sessionId AND s.deleted_at IS NULL AND p.id = :photoId
-          AND (
-              EXISTS (
-                  SELECT 1 FROM detail_folders d
-                  JOIN detail_folder_assignments a ON a.detail_folder_id = d.id
-                  WHERE d.concept_folder_id = s.concept_folder_id AND d.deleted_at IS NULL
-                    AND a.photo_id = p.id
-              ) OR (s.concept_folder_id IS NULL AND EXISTS (
-                  SELECT 1 FROM collab_session_photos membership
-                  WHERE membership.collab_session_id = s.id AND membership.photo_id = p.id
-              ))
-          )
         FOR UPDATE OF p
         """.trimIndent(),
     )

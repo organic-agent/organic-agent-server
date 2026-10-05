@@ -44,7 +44,6 @@ class AdminResourceContextRepository(
         AdminResourceType.CONCEPT_FOLDER -> linkedSetOf<ResourceReference>().apply {
             addAll(references(AdminResourceType.GALLERY, "SELECT gallery_id AS id FROM concept_folders WHERE id = :id", id))
             addAll(references(AdminResourceType.DETAIL_FOLDER, "SELECT id FROM detail_folders WHERE concept_folder_id = :id", id))
-            addAll(references(AdminResourceType.COLLABORATION, "SELECT id FROM collab_sessions WHERE concept_folder_id = :id", id))
         }
         AdminResourceType.DETAIL_FOLDER -> linkedSetOf<ResourceReference>().apply {
             addAll(references(AdminResourceType.CONCEPT_FOLDER, "SELECT concept_folder_id AS id FROM detail_folders WHERE id = :id", id))
@@ -201,13 +200,11 @@ class AdminResourceContextRepository(
             """
                 SELECT
                     (SELECT COUNT(*) FROM detail_folders WHERE concept_folder_id = :id AND deleted_at IS NULL) AS detail_folders,
-                    (SELECT COUNT(*) FROM detail_folder_assignments a JOIN detail_folders d ON d.id = a.detail_folder_id WHERE d.concept_folder_id = :id) AS assigned_photos,
-                    (SELECT COUNT(*) FROM collab_sessions WHERE concept_folder_id = :id AND deleted_at IS NULL) AS collaboration_sessions
+                    (SELECT COUNT(*) FROM detail_folder_assignments a JOIN detail_folders d ON d.id = a.detail_folder_id WHERE d.concept_folder_id = :id) AS assigned_photos
             """.trimIndent(), id,
         ) { rs -> linkedMapOf(
             "detailFolders" to rs.getLong("detail_folders"),
             "assignedPhotos" to rs.getLong("assigned_photos"),
-            "collaborationSessions" to rs.getLong("collaboration_sessions"),
         ) }
         AdminResourceType.DETAIL_FOLDER -> singleFacts(
             "SELECT COUNT(*) AS assigned_photos FROM detail_folder_assignments WHERE detail_folder_id = :id",
@@ -570,8 +567,7 @@ class AdminResourceContextRepository(
                 """
                     SELECT c.id, c.name, c.sort_order, c.created_source, c.version, c.deleted_at,
                            (SELECT COUNT(*) FROM detail_folders d WHERE d.concept_folder_id = c.id AND d.deleted_at IS NULL) AS detail_count,
-                           (SELECT COUNT(*) FROM detail_folder_assignments a JOIN detail_folders d ON d.id = a.detail_folder_id WHERE d.concept_folder_id = c.id) AS photo_count,
-                           (SELECT id FROM collab_sessions s WHERE s.concept_folder_id = c.id AND s.deleted_at IS NULL) AS collaboration_id
+                           (SELECT COUNT(*) FROM detail_folder_assignments a JOIN detail_folders d ON d.id = a.detail_folder_id WHERE d.concept_folder_id = c.id) AS photo_count
                     FROM concept_folders c WHERE c.gallery_id = :id
                     ORDER BY c.sort_order, c.id LIMIT 100
                 """.trimIndent(),
@@ -585,7 +581,6 @@ class AdminResourceContextRepository(
                 "deleted" to (rs.getObject("deleted_at") != null),
                 "detailCount" to rs.getLong("detail_count"),
                 "photoCount" to rs.getLong("photo_count"),
-                "collaborationId" to rs.getObject("collaboration_id"),
             ) },
             "detailFolders" to rows(
                 """
@@ -861,22 +856,6 @@ class AdminResourceContextRepository(
                 "deleted" to (rs.getObject("deleted_at") != null),
                 "photoCount" to rs.getLong("photo_count"),
             ) },
-            "collaboration" to rows(
-                """
-                    SELECT id, gallery_id, name, revoked_at, expires_at, version, deleted_at, created_at
-                    FROM collab_sessions WHERE concept_folder_id = :id
-                """.trimIndent(),
-                id,
-            ) { rs -> linkedMapOf(
-                "id" to rs.getLong("id"),
-                "galleryId" to rs.getLong("gallery_id"),
-                "name" to rs.getString("name"),
-                "revokedAt" to rs.getObject("revoked_at"),
-                "expiresAt" to rs.getObject("expires_at"),
-                "version" to rs.getLong("version"),
-                "deleted" to (rs.getObject("deleted_at") != null),
-                "createdAt" to rs.getObject("created_at"),
-            ) },
             "categoryAssignments" to categoryAssignmentRows(
                 "WHERE d.concept_folder_id = :id ORDER BY a.assigned_at DESC, a.photo_id LIMIT 100",
                 id,
@@ -1105,18 +1084,12 @@ class AdminResourceContextRepository(
         "version" to rs.getLong("version"),
     ) }
 
-    /** 관리자 진단에서는 휴지통 사진까지 관계를 보존하고 공유 방식에 맞는 소속만 조회한다. */
+    /** 관리자 진단에서는 휴지통 사진까지 관계를 보존해 공유폴더에 담긴 사진을 조회한다. */
     private fun sharedPhotosSql(): String = """
-        SELECT a.photo_id, a.assigned_at AS created_at
-        FROM collab_sessions s
-        JOIN detail_folders d ON d.concept_folder_id = s.concept_folder_id AND d.deleted_at IS NULL
-        JOIN detail_folder_assignments a ON a.detail_folder_id = d.id
-        WHERE s.id = :id
-        UNION ALL
         SELECT membership.photo_id, membership.created_at
         FROM collab_sessions s
         JOIN collab_session_photos membership ON membership.collab_session_id = s.id
-        WHERE s.id = :id AND s.concept_folder_id IS NULL
+        WHERE s.id = :id
     """.trimIndent()
 
     private fun references(type: AdminResourceType, sql: String, id: Long): List<ResourceReference> =

@@ -39,7 +39,7 @@ class SharedFolderApiContractTest @Autowired constructor(
             content = """{"name":"직접 공유"}"""
         }.andExpect {
             status { isCreated() }
-            jsonPath("$.selectionMode") { value("MANUAL") }
+            jsonPath("$.selectionMode") { doesNotExist() }
             jsonPath("$.conceptFolderId") { doesNotExist() }
             jsonPath("$.photoCount") { value(0) }
             jsonPath("$.includeAllAlbums") { value(false) }
@@ -94,7 +94,7 @@ class SharedFolderApiContractTest @Autowired constructor(
             content = """{"photoIds":[${fixture.photoId}]}"""
         }.andExpect {
             status { isOk() }
-            jsonPath("$.selectionMode") { value("MANUAL") }
+            jsonPath("$.selectionMode") { doesNotExist() }
             jsonPath("$.conceptFolderId") { doesNotExist() }
             jsonPath("$.collabUrl") { value(fixture.session.collabUrl) }
             jsonPath("$.photoCount") { value(1) }

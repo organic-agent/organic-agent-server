@@ -194,14 +194,13 @@ class AdminResourceServiceTest @Autowired constructor(
             CreateAdminResourceRequest("협업 갤러리", mapOf("workspaceId" to studio.id, "title" to "협업 갤러리")),
             "127.0.0.1",
         )
-        val conceptFolderId = createConceptFolder(gallery.id, "가족")
 
         val collaboration = service.create(
             actor.requiredId,
             AdminResourceType.COLLABORATION,
             CreateAdminResourceRequest(
                 "지원용 링크 생성",
-                mapOf("galleryId" to gallery.id, "conceptFolderId" to conceptFolderId, "name" to "가족 의견"),
+                mapOf("galleryId" to gallery.id, "name" to "가족 의견"),
             ),
             "127.0.0.1",
         )
@@ -249,13 +248,12 @@ class AdminResourceServiceTest @Autowired constructor(
         val selectionId = jdbcClient.sql("SELECT id FROM photo_selections WHERE gallery_id = :galleryId")
             .param("galleryId", gallery.id).query { rs, _ -> rs.getLong(1) }.single()
         val selection = service.get(AdminResourceType.SELECTION, selectionId)
-        val conceptFolderId = createConceptFolder(gallery.id, "전체 리소스")
         val collaboration = service.create(
             actor.requiredId,
             AdminResourceType.COLLABORATION,
             CreateAdminResourceRequest(
                 "협업 복구",
-                mapOf("galleryId" to gallery.id, "conceptFolderId" to conceptFolderId, "name" to "전체 리소스 협업"),
+                mapOf("galleryId" to gallery.id, "name" to "전체 리소스 협업"),
             ),
             "127.0.0.1",
         )
@@ -957,19 +955,6 @@ class AdminResourceServiceTest @Autowired constructor(
             ),
             "127.0.0.1",
         )
-
-    private fun createConceptFolder(galleryId: Long, name: String): Long = jdbcClient.sql(
-        """
-        INSERT INTO concept_folders
-            (gallery_id, name, sort_order, created_source, version, created_at, updated_at)
-        VALUES (:galleryId, :name, 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        RETURNING id
-        """.trimIndent(),
-    )
-        .param("galleryId", galleryId)
-        .param("name", name)
-        .query { rs, _ -> rs.getLong("id") }
-        .single()
 
     private fun userRevisionCount(userId: Long): Long = jdbcClient.sql(
         "SELECT COUNT(*) FROM admin_entity_revisions WHERE target_type = 'USER' AND target_id = :targetId",

@@ -605,7 +605,6 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
                 "[TEST_OPERATION] 협업 준비",
                 mapOf(
                     "galleryId" to gallery.id,
-                    "conceptFolderId" to conceptFolderId,
                     "name" to "가족 의견",
                 ),
             ),
@@ -1120,23 +1119,13 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
     ).param("galleryId", galleryId).query { rs, _ -> rs.getLong("id") }.single()
 
     private fun assignPhotoToSession(sessionId: Long, photoId: Long) {
-        val detailId = jdbcClient.sql(
-            """
-            INSERT INTO detail_folders
-                (gallery_id, concept_folder_id, name, sort_order, created_source, version, created_at, updated_at)
-            SELECT gallery_id, concept_folder_id, '대리보기 상세', 0, 'USER', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-            FROM collab_sessions WHERE id = :sessionId
-            RETURNING id
-            """.trimIndent(),
-        ).param("sessionId", sessionId).query { rs, _ -> rs.getLong("id") }.single()
         jdbcClient.sql(
             """
-            INSERT INTO detail_folder_assignments
-                (gallery_id, photo_id, detail_folder_id, assigned_source, assigned_at, version, created_at, updated_at)
-            SELECT gallery_id, id, :detailId, 'USER', CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-            FROM photos WHERE id = :photoId
+            INSERT INTO collab_session_photos (collab_session_id, gallery_id, photo_id, version, created_at, updated_at)
+            SELECT id, gallery_id, :photoId, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            FROM collab_sessions WHERE id = :sessionId
             """.trimIndent(),
-        ).param("photoId", photoId).param("detailId", detailId).update()
+        ).param("sessionId", sessionId).param("photoId", photoId).update()
     }
 
     companion object {

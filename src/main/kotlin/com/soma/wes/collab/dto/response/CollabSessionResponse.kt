@@ -8,8 +8,6 @@ import java.time.ZonedDateTime
 data class CollabSessionResponse(
     val sessionId: Long,
     val galleryId: Long,
-    @field:Schema(description = "더 쓰지 않는다. 공유폴더는 컨셉 폴더를 따라가지 않아 항상 null이다.", deprecated = true)
-    val conceptFolderId: Long?,
 
     @field:Schema(description = "부부가 붙인 이름. 갤러리에 링크가 여러 개라 이것으로 구분한다.", example = "본식 후보")
     val name: String,
@@ -33,15 +31,12 @@ data class CollabSessionResponse(
     val coverTitle: String? = null,
     val coverAuthor: String? = null,
     val includeAllAlbums: Boolean = false,
-    @field:Schema(description = "더 쓰지 않는다. 항상 MANUAL이다.", deprecated = true)
-    val selectionMode: com.soma.wes.collab.domain.CollabSelectionMode = com.soma.wes.collab.domain.CollabSelectionMode.MANUAL,
 ) {
 
     companion object {
         fun of(session: CollabSession, collabUrl: String, photoCount: Long, participantCount: Long) = CollabSessionResponse(
             sessionId = session.requiredId,
             galleryId = session.galleryId,
-            conceptFolderId = session.conceptFolderId,
             name = session.name,
             collabUrl = collabUrl,
             revoked = session.isRevoked,

@@ -7,7 +7,6 @@ import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
 import com.soma.wes.folder.exception.FolderErrorCode
 import com.soma.wes.folder.exception.FolderException
 import com.soma.wes.folder.service.FolderService
-import com.soma.wes.collab.domain.CollabSelectionMode
 import com.soma.wes.collab.dto.request.CollabPhotoIdsRequest
 import com.soma.wes.collab.dto.request.EnterCollabRequest
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
@@ -76,15 +75,12 @@ class CollabManualFolderServiceTest @Autowired constructor(
             val second = service.open(fixture.galleryId, fixture.ownerId, OpenCollabSessionRequest(name = "가족 의견"))
             // then
             assertThat(first.name).isEqualTo("가족 의견")
-            assertThat(first.selectionMode).isEqualTo(CollabSelectionMode.MANUAL)
-            assertThat(first.conceptFolderId).isNull()
             assertThat(first.photoCount).isZero()
             assertThat(first.includeAllAlbums).isFalse()
             assertThat(second.sessionId).isNotEqualTo(first.sessionId)
             assertThat(query.list(fixture.galleryId, fixture.partnerId)).hasSize(2)
             val landing = guestQuery.getLanding(first.collabUrl.substringAfterLast('/'))
             assertThat(landing.albums.map { it.sessionId }).containsExactly(first.sessionId)
-            assertThat(landing.albums.single().conceptFolderId).isNull()
         }
 
         @Test
@@ -218,9 +214,6 @@ class CollabManualFolderServiceTest @Autowired constructor(
             categories.deleteConcept(shared.galleryId, otherConcept, photographer)
 
             // then
-            val session = query.get(shared.galleryId, shared.session.sessionId, userId)
-            assertThat(session.selectionMode).isEqualTo(CollabSelectionMode.MANUAL)
-            assertThat(session.conceptFolderId).isNull()
             val contents = guestQuery.listPhotos(shared.token, null, viewer.guestToken, 0, 20).contents
             assertThat(contents.map { it.photoId }).containsExactly(shared.photoId)
             assertThat(contents.single().liked).isTrue()
@@ -274,28 +267,36 @@ class CollabManualFolderServiceTest @Autowired constructor(
                 MoveFolderPhotosRequest(photoIds = listOf(trashedPhoto), targetDetailFolderId = shared.detailId))
             jdbc.update("UPDATE detail_folders SET deleted_at = now() WHERE id = ?", trashedDetail)
             photos.saveAndFlush(photos.findById(trashedPhoto).orElseThrow().also { it.moveToTrash(java.time.ZonedDateTime.now()) })
-            // 옛 컨셉 연결 공유폴더를 그대로 만든다 — 사진 목록 없이 컨셉만 가리킨다.
-            jdbc.update("DELETE FROM collab_session_photos WHERE collab_session_id = ?", shared.session.sessionId)
-            jdbc.update("UPDATE collab_sessions SET concept_folder_id = ? WHERE id = ?", shared.conceptId, shared.session.sessionId)
-            val versionBefore = jdbc.queryForObject("SELECT version FROM collab_sessions WHERE id = ?", Long::class.java, shared.session.sessionId)
+            // 옛 컨셉 연결 공유폴더를 그대로 만든다 — V37이 지운 컬럼을 잠시 되살려 사진 목록 없이 컨셉만 가리키게 한다.
+            jdbc.execute("ALTER TABLE collab_sessions ADD COLUMN concept_folder_id bigint")
+            try {
+                jdbc.update("DELETE FROM collab_session_photos WHERE collab_session_id = ?", shared.session.sessionId)
+                jdbc.update("UPDATE collab_sessions SET concept_folder_id = ? WHERE id = ?", shared.conceptId, shared.session.sessionId)
+                val versionBefore = checkNotNull(
+                    jdbc.queryForObject("SELECT version FROM collab_sessions WHERE id = ?", Long::class.java, shared.session.sessionId),
+                )
 
-            // when
-            ClassPathResource("db/migration/V36__freeze_concept_linked_shared_folders.sql").inputStream.use { sql ->
-                jdbc.execute(String(sql.readAllBytes()))
+                // when
+                ClassPathResource("db/migration/V36__freeze_concept_linked_shared_folders.sql").inputStream.use { sql ->
+                    jdbc.execute(String(sql.readAllBytes()))
+                }
+
+                // then
+                assertThat(jdbc.queryForObject(
+                    "SELECT concept_folder_id FROM collab_sessions WHERE id = ?", Long::class.java, shared.session.sessionId,
+                )).isNull()
+                assertThat(jdbc.queryForObject("SELECT version FROM collab_sessions WHERE id = ?", Long::class.java, shared.session.sessionId))
+                    .isEqualTo(versionBefore + 1)
+            } finally {
+                jdbc.execute("ALTER TABLE collab_sessions DROP COLUMN concept_folder_id")
             }
-
-            // then
-            assertThat(jdbc.queryForObject("SELECT concept_folder_id FROM collab_sessions WHERE id = ?", Long::class.java, shared.session.sessionId))
-                .isNull()
-            assertThat(jdbc.queryForObject("SELECT version FROM collab_sessions WHERE id = ?", Long::class.java, shared.session.sessionId))
-                .isEqualTo(versionBefore!! + 1)
             // 휴지통 사진은 담아 두고 숨긴다(복원하면 보인다). 휴지통 세부 폴더의 사진은 지금 보이지 않으므로 담지 않는다.
             assertThat(jdbc.queryForList(
                 "SELECT photo_id FROM collab_session_photos WHERE collab_session_id = ?", Long::class.java, shared.session.sessionId,
             )).containsExactlyInAnyOrder(shared.photoId, trashedPhoto)
             assertThat(query.listPhotos(shared.galleryId, shared.session.sessionId, userId, 0, 20).contents.map { it.photoId })
                 .containsExactly(shared.photoId)
-        }
+    }
     }
 
     @Nested
@@ -440,7 +441,6 @@ class CollabManualFolderServiceTest @Autowired constructor(
 
             // then
             assertThat(session.photoCount).isEqualTo(CollabPhotoIdsRequest.MAX_BATCH_SIZE.toLong())
-            assertThat(session.selectionMode).isEqualTo(CollabSelectionMode.MANUAL)
             assertThat(memberships.count()).isEqualTo(CollabPhotoIdsRequest.MAX_BATCH_SIZE.toLong())
         }
 
