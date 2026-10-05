@@ -52,4 +52,21 @@ class DetailFolderAssignment(
         this.confidence = null
         this.assignedAt = at
     }
+
+    fun snapshot() = MergedPhotoSnapshot(
+        photoId = photoId,
+        assignedByUserId = assignedByUserId,
+        assignedSource = assignedSource,
+        confidence = confidence,
+        assignedAt = assignedAt,
+    )
+
+    /** 합치기를 되돌린다 — 옮기기 전 폴더와 배정 정보로 돌아간다. */
+    fun restore(detailFolderId: Long, snapshot: MergedPhotoSnapshot) {
+        this.detailFolderId = detailFolderId
+        this.assignedByUserId = snapshot.assignedByUserId
+        this.assignedSource = snapshot.assignedSource
+        this.confidence = snapshot.confidence
+        this.assignedAt = snapshot.assignedAt
+    }
 }

@@ -106,6 +106,8 @@ app:
     min-new-detail-photos: 5
     # 새 사진뿐인 그룹을 같은 세부 이름의 옛 사진이 든 폴더로 합치는 조건 — 그 세부 이름의 사진 중 옛 사진 비율이 이 값 이상.
     min-old-share-for-detail-merge: 0.1
+    # 세부 폴더 합치기를 되돌릴 수 있는 시간. 웹의 "실행 취소"는 알림이 떠 있는 몇 초만 쓴다.
+    merge-undo-window: 3m
 
   analysis:
     # 분석 파이프라인 — 임베더 배정(스윕) · 잡(ANALYZING → CATEGORIZING → DONE) · Lambda 함수 이름.

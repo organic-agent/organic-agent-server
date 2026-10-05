@@ -1,8 +1,10 @@
 package com.soma.wes.folder.service
 
 import com.soma.wes.activity.service.ActivityRecorder
+import com.soma.wes.folder.config.FolderProperties
 import com.soma.wes.folder.domain.ConceptFolder
 import com.soma.wes.folder.domain.DetailFolder
+import com.soma.wes.folder.domain.DetailFolderMerge
 import com.soma.wes.folder.domain.FolderSource
 import com.soma.wes.folder.domain.DetailFolderAssignment
 import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
@@ -11,11 +13,14 @@ import com.soma.wes.folder.dto.request.MergeDetailFolderRequest
 import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
 import com.soma.wes.folder.dto.response.ConceptFolderResponse
 import com.soma.wes.folder.dto.response.DetailFolderResponse
+import com.soma.wes.folder.dto.response.MergeDetailFolderResponse
+import com.soma.wes.folder.dto.response.UndoDetailFolderMergeResponse
 import com.soma.wes.folder.exception.FolderErrorCode
 import com.soma.wes.folder.exception.FolderException
 import com.soma.wes.folder.repository.ConceptFolderRepository
 import com.soma.wes.folder.repository.DetailFolderRepository
 import com.soma.wes.folder.repository.DetailFolderAssignmentRepository
+import com.soma.wes.folder.repository.DetailFolderMergeRepository
 import com.soma.wes.folder.service.port.FolderReactionCleaner
 import com.soma.wes.folder.support.AiFolderMaterializer
 import com.soma.wes.folder.support.FolderViewAssembler
@@ -23,6 +28,7 @@ import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.repository.PhotoRepository
 import java.time.Clock
 import java.time.ZonedDateTime
+import java.time.temporal.ChronoUnit
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -32,10 +38,12 @@ class FolderService(
     private val conceptRepository: ConceptFolderRepository,
     private val detailRepository: DetailFolderRepository,
     private val assignmentRepository: DetailFolderAssignmentRepository,
+    private val mergeRepository: DetailFolderMergeRepository,
     private val photoRepository: PhotoRepository,
     private val reactionCleaner: FolderReactionCleaner,
     private val viewAssembler: FolderViewAssembler,
     private val aiFolderMaterializer: AiFolderMaterializer,
+    private val folderProperties: FolderProperties,
     private val clock: Clock,
     private val activityRecorder: ActivityRecorder,
 ) {
@@ -95,9 +103,11 @@ class FolderService(
     }
 
     /**
-     * 세부 폴더를 다른 세부 폴더에 합친다 — 원본의 사진을 모두 대상으로 옮기고 빈 원본을 지운다.
+     * 세부 폴더를 다른 세부 폴더에 합친다 — 원본의 사진을 모두 대상으로 옮기고 빈 원본을 숨긴다.
      * 옮긴 사진은 [movePhotos]처럼 USER 배정이 되어 AI 폴더를 다시 만들어도 원래 폴더로 돌아가지 않고,
-     * 다른 컨셉으로 합치면 원본 컨셉에 남긴 협업 반응을 지운다. 응답은 합친 뒤 대상 폴더다.
+     * 다른 컨셉으로 합치면 원본 컨셉에 남긴 협업 반응을 지운다.
+     *
+     * 원본을 지우지 않고 숨기며 옮기기 전 배정을 기록해 두어, [undoMerge]로 되돌릴 수 있다. 응답의 `mergeId`가 그 열쇠다.
      */
     @Transactional
     fun mergeDetail(
@@ -106,7 +116,7 @@ class FolderService(
         detailId: Long,
         userId: Long,
         request: MergeDetailFolderRequest,
-    ): DetailFolderResponse {
+    ): MergeDetailFolderResponse {
         galleryAccessPolicy.requireFolderEditor(galleryId, userId)
         if (detailId == request.targetDetailFolderId) throw FolderException(FolderErrorCode.MERGE_INTO_SELF)
         requireConcept(galleryId, conceptId)
@@ -114,16 +124,71 @@ class FolderService(
             ?: throw FolderException(FolderErrorCode.DETAIL_NOT_FOUND)
         val target = requireDetail(galleryId, request.targetDetailFolderId)
 
+        // DB는 마이크로초까지 담는다. 되돌릴 때 배정 시각을 이 값과 비교하므로 처음부터 같은 정밀도로 맞춘다.
+        val now = ZonedDateTime.now(clock).truncatedTo(ChronoUnit.MICROS)
         val movingAssignments = assignmentRepository.findAllByDetailFolderId(detailId)
+        val merge = mergeRepository.save(
+            DetailFolderMerge(
+                galleryId = galleryId,
+                sourceDetailFolderId = source.requiredId,
+                targetDetailFolderId = target.requiredId,
+                mergedByUserId = userId,
+                mergedAt = now,
+                movedPhotos = movingAssignments.map { it.snapshot() },
+            ),
+        )
         deleteReactionsOnConceptExit(movingAssignments, target)
-        val now = ZonedDateTime.now(clock)
         for (assignment in movingAssignments) assignment.moveTo(target.requiredId, userId, now)
-        detailRepository.delete(source)
+        source.hide(now)
 
         activityRecorder.recordGallery(galleryId)
         val photoIds = assignmentRepository.findAllByDetailFolderId(target.requiredId).map { it.photoId }
-        return DetailFolderResponse.of(target, photoIds)
+        return MergeDetailFolderResponse(mergeId = merge.requiredId, target = DetailFolderResponse.of(target, photoIds))
     }
+
+    /**
+     * 합치기를 되돌린다 — 숨긴 원본 폴더가 원래 id · 순서 · 출처로 돌아오고, 옮긴 사진이 옮기기 전 배정 정보 그대로 원본으로 돌아간다.
+     * 웹의 "실행 취소"용이라 [FolderProperties.mergeUndoWindow] 안에서 한 번만 된다.
+     *
+     * 그 사이 옮긴 사진이 한 장이라도 다른 곳으로 옮겨졌거나 원본의 컨셉이 사라졌으면 거절한다 — 되돌리면 그 변경을 덮어쓰기 때문이다.
+     * 다른 컨셉으로 합칠 때 지운 협업 반응은 돌아오지 않는다. 반대로 대상 컨셉을 떠나는 사진의 반응은 [movePhotos]처럼 지운다.
+     */
+    @Transactional
+    fun undoMerge(galleryId: Long, mergeId: Long, userId: Long): UndoDetailFolderMergeResponse {
+        galleryAccessPolicy.requireFolderEditor(galleryId, userId)
+        val merge = mergeRepository.findWithLockByIdAndGalleryId(mergeId, galleryId)
+            ?: throw FolderException(FolderErrorCode.MERGE_NOT_FOUND)
+
+        val now = ZonedDateTime.now(clock)
+        if (merge.isUndone) throw FolderException(FolderErrorCode.MERGE_ALREADY_UNDONE)
+        if (merge.isUndoExpired(now, folderProperties.mergeUndoWindow)) throw FolderException(FolderErrorCode.MERGE_UNDO_EXPIRED)
+        val source = detailRepository.findHiddenByIdAndGalleryId(merge.sourceDetailFolderId, galleryId)
+            ?.takeIf { conceptRepository.findByIdAndGalleryId(it.conceptFolderId, galleryId) != null }
+            ?: throw FolderException(FolderErrorCode.MERGE_UNDO_CONFLICT)
+        val target = detailRepository.findByIdAndGalleryId(merge.targetDetailFolderId, galleryId)
+            ?: throw FolderException(FolderErrorCode.MERGE_UNDO_CONFLICT)
+        val snapshotByPhotoId = merge.movedPhotos.associateBy { it.photoId }
+        val movedAssignments = assignmentRepository.findAllByGalleryIdAndPhotoIdIn(galleryId, snapshotByPhotoId.keys)
+        if (movedAssignments.size != snapshotByPhotoId.size || movedAssignments.any { !it.isStillMergedBy(merge) }) {
+            throw FolderException(FolderErrorCode.MERGE_UNDO_CONFLICT)
+        }
+
+        deleteReactionsOnConceptExit(movedAssignments, source)
+        source.unhide()
+        for (assignment in movedAssignments) assignment.restore(source.requiredId, snapshotByPhotoId.getValue(assignment.photoId))
+        merge.markUndone(now)
+
+        activityRecorder.recordGallery(galleryId)
+        val targetPhotoIds = assignmentRepository.findAllByDetailFolderId(target.requiredId).map { it.photoId }
+        return UndoDetailFolderMergeResponse(
+            source = DetailFolderResponse.of(source, movedAssignments.map { it.photoId }),
+            target = DetailFolderResponse.of(target, targetPhotoIds),
+        )
+    }
+
+    /** 합친 그대로인가 — 대상 폴더에 있고, 배정 시각이 합친 시각이다. 그 뒤 누가 옮겼다 되돌려 놓았어도 시각이 바뀐다. */
+    private fun DetailFolderAssignment.isStillMergedBy(merge: DetailFolderMerge): Boolean =
+        detailFolderId == merge.targetDetailFolderId && assignedAt.toInstant() == merge.mergedAt.toInstant()
 
     @Transactional
     fun deleteConcept(galleryId: Long, conceptId: Long, userId: Long) {

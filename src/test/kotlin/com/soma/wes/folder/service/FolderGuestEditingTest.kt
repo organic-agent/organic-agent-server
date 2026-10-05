@@ -217,6 +217,7 @@ class FolderGuestEditingTest @Autowired constructor(
             { folderService.movePhotos(galleryId, userId, MoveFolderPhotosRequest(listOf(-1L), null)) },
             { folderService.deleteDetail(galleryId, -1L, -1L, userId) },
             { folderService.mergeDetail(galleryId, -1L, -1L, userId, MergeDetailFolderRequest(-2L)) },
+            { folderService.undoMerge(galleryId, -1L, userId) },
             { folderService.deleteConcept(galleryId, -1L, userId) },
         )
         mutations.forEach { mutation ->

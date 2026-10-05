@@ -192,6 +192,34 @@ class AiFolderMaterializerTest @Autowired constructor(
         }
 
         @Test
+        fun `합친 AI 폴더를 되돌리면 AI 폴더와 AI 배정이 그대로 돌아온다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val userId = fixture.photographer.requiredId
+            val beach = analyzed(fixture.galleryId, count = 3, embedGroupId = 1)
+            analyzed(fixture.galleryId, count = 2, embedGroupId = 2)
+            firstJob(fixture.galleryId)
+            materializer.materialize(fixture.galleryId)
+            val before = folderService.list(fixture.galleryId, userId)
+            val (nature, gardenConcept) = before
+            val merged = folderService.mergeDetail(
+                fixture.galleryId, nature.id, nature.details.single().id, userId,
+                MergeDetailFolderRequest(gardenConcept.details.single().id),
+            )
+
+            // when
+            folderService.undoMerge(fixture.galleryId, merged.mergeId, userId)
+
+            // then
+            val beachAssignments = assignmentRepository.findAllByPhotoIdIn(beach)
+            assertSoftly { softly ->
+                softly.assertThat(folderService.list(fixture.galleryId, userId)).isEqualTo(before)
+                softly.assertThat(beachAssignments.map { it.assignedSource }).containsOnly(FolderSource.AI)
+                softly.assertThat(beachAssignments.map { it.assignedByUserId }).containsOnlyNulls()
+            }
+        }
+
+        @Test
         fun `기존 폴더에 맞지 않는 사진은 최소 장수가 모일 때까지 미분류로 남는다`() {
             // given
             val fixture = galleryFixture.멤버와_열린_갤러리()

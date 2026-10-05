@@ -7,6 +7,8 @@ import com.soma.wes.folder.dto.request.MergeDetailFolderRequest
 import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
 import com.soma.wes.folder.dto.response.ConceptFolderResponse
 import com.soma.wes.folder.dto.response.DetailFolderResponse
+import com.soma.wes.folder.dto.response.MergeDetailFolderResponse
+import com.soma.wes.folder.dto.response.UndoDetailFolderMergeResponse
 import com.soma.wes.global.exception.ErrorResponse
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.media.Content
@@ -257,17 +259,19 @@ interface FolderControllerDocs {
     @Operation(
         summary = "Detail 카테고리 합치기",
         description = """
-            detailId 폴더의 사진을 모두 targetDetailFolderId 폴더로 옮기고, 비게 된 detailId 폴더를 지운다.
+            detailId 폴더의 사진을 모두 targetDetailFolderId 폴더로 옮기고, 비게 된 detailId 폴더를 목록에서 뺀다.
             잘게 나뉜 AI 폴더나 겹치는 폴더를 끌어다 놓아 한 번에 정리하는 용도다. 권한 규칙은 Concept 생성과 같다.
 
             대상은 이 갤러리의 Detail이면 다른 Concept 아래여도 된다. 다른 Concept로 합치면 사진이 원래 Concept에서 남긴
             협업 반응이 지워지고, 같은 Concept 안에서 합치면 남는다(사진 이동과 같은 규칙).
             합쳐진 사진은 사용자 배정이 되어 AI 폴더를 다시 만들어도 원래 폴더로 돌아가지 않는다.
-            응답은 합친 뒤의 대상 Detail이다. 같은 폴더끼리 합치려 하면 400_3이다.
+
+            응답은 되돌리기용 mergeId와 합친 뒤의 대상 Detail(target)이다. mergeId로 3분 안에 "합치기 되돌리기"를 부를 수 있다.
+            같은 폴더끼리 합치려 하면 400_3이다.
         """,
     )
     @ApiResponses(
-        ApiResponse(responseCode = "200", description = "합치기 성공 — 합친 뒤의 대상 Detail"),
+        ApiResponse(responseCode = "200", description = "합치기 성공 — mergeId와 합친 뒤의 대상 Detail"),
         ApiResponse(
             responseCode = "400",
             description = "원본과 대상이 같은 폴더",
@@ -343,7 +347,87 @@ interface FolderControllerDocs {
         conceptId: Long,
         detailId: Long,
         request: MergeDetailFolderRequest,
-    ): ResponseEntity<DetailFolderResponse>
+    ): ResponseEntity<MergeDetailFolderResponse>
+
+    @Operation(
+        summary = "Detail 카테고리 합치기 되돌리기",
+        description = """
+            합치기 응답의 mergeId로 합치기를 되돌린다. 웹의 "실행 취소"용이다. 권한 규칙은 Concept 생성과 같다.
+
+            사라졌던 원본 Detail이 원래 id · 순서 · 출처(AI/USER)로 돌아오고, 옮겼던 사진이 옮기기 전 배정 그대로 원본으로 돌아간다.
+            응답은 되살아난 원본(source)과 사진이 빠진 대상(target)이다.
+
+            합친 뒤 3분 안에 한 번만 된다. 이미 되돌렸으면 409_4, 3분이 지났으면 409_5다.
+            그 사이 옮긴 사진이 한 장이라도 다른 곳으로 옮겨졌거나 원본의 Concept가 지워졌으면 409_6이다 — 되돌리면 그 변경을 덮어쓰기 때문이다.
+            원본이나 대상 Detail이 지워졌으면 합치기 기록도 함께 지워져 404_3이다.
+
+            다른 Concept로 합칠 때 지워진 협업 반응은 돌아오지 않는다. 대상 Concept에서 그 사이 남긴 반응은 사진이 떠나며 지워진다.
+        """,
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "되돌리기 성공 — 되살아난 원본과 대상 Detail"),
+        ApiResponse(
+            responseCode = "403",
+            description = "권한 없음, 선택 기간이 아님",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "권한 없음",
+                            value = """{"code": "GALLERY_403_1", "message": "갤러리에 접근할 권한이 없습니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(
+            responseCode = "404",
+            description = "이 갤러리의 합치기가 아니거나, 원본 · 대상 Detail이 지워짐",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "합치기 없음",
+                            value = """{"code": "CATEGORY_404_3", "message": "합치기 기록을 찾을 수 없습니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        ApiResponse(
+            responseCode = "409",
+            description = "이미 되돌림, 3분 지남, 그 사이 사진이나 폴더가 바뀜, 부부가 선택 앨범을 이미 제출함",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "이미 되돌림",
+                            value = """{"code": "CATEGORY_409_4", "message": "이미 되돌린 합치기입니다."}""",
+                        ),
+                        ExampleObject(
+                            name = "시간 지남",
+                            value = """{"code": "CATEGORY_409_5", "message": "되돌릴 수 있는 시간이 지났습니다."}""",
+                        ),
+                        ExampleObject(
+                            name = "그 사이 바뀜",
+                            value = """{"code": "CATEGORY_409_6", "message": "합친 뒤 폴더나 사진이 바뀌어 되돌릴 수 없습니다."}""",
+                        ),
+                        ExampleObject(
+                            name = "제출 완료",
+                            value = """{"code": "SELECTION_409_1", "message": "이미 제출한 선택 앨범입니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    )
+    fun undoMerge(loginUser: LoginUser, galleryId: Long, mergeId: Long): ResponseEntity<UndoDetailFolderMergeResponse>
 
     @Operation(
         summary = "Detail 카테고리 삭제",

@@ -48,3 +48,17 @@ data class ConceptFolderResponse(
         )
     }
 }
+
+data class MergeDetailFolderResponse(
+    /** 되돌릴 때 쓰는 합치기 기록 id. */
+    val mergeId: Long,
+    /** 합친 뒤의 대상 세부 폴더. */
+    val target: DetailFolderResponse,
+)
+
+data class UndoDetailFolderMergeResponse(
+    /** 되살아난 원본 세부 폴더 — 원래 id · 순서 · 출처, 돌아온 사진. */
+    val source: DetailFolderResponse,
+    /** 사진이 빠진 대상 세부 폴더. */
+    val target: DetailFolderResponse,
+)

@@ -1,8 +1,9 @@
 package com.soma.wes.folder.config
 
+import java.time.Duration
 import org.springframework.boot.context.properties.ConfigurationProperties
 
-/** AI 폴더 물질화의 정책 값. */
+/** 폴더 정책 값 — AI 폴더 물질화와 합치기 되돌리기. */
 @ConfigurationProperties(prefix = "app.folder")
 data class FolderProperties(
     /**
@@ -16,4 +17,6 @@ data class FolderProperties(
      * 옛 사진 몇 장이 새 사진 수백 장을 끌고 가지 않게 한다.
      */
     val minOldShareForDetailMerge: Double = 0.1,
+    /** 세부 폴더 합치기를 되돌릴 수 있는 시간. 웹은 알림이 떠 있는 몇 초만 쓰니 넉넉히 둔다. */
+    val mergeUndoWindow: Duration = Duration.ofMinutes(3),
 )
