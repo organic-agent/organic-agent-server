@@ -7,6 +7,7 @@ import com.soma.wes.folder.domain.FolderSource
 import com.soma.wes.folder.domain.DetailFolderAssignment
 import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
 import com.soma.wes.folder.dto.request.CreateDetailFolderRequest
+import com.soma.wes.folder.dto.request.MergeDetailFolderRequest
 import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
 import com.soma.wes.folder.dto.response.ConceptFolderResponse
 import com.soma.wes.folder.dto.response.DetailFolderResponse
@@ -91,6 +92,37 @@ class FolderService(
         assignmentRepository.deleteAllByDetailFolderId(detailId)
         detailRepository.delete(detail)
         activityRecorder.recordGallery(galleryId)
+    }
+
+    /**
+     * 세부 폴더를 다른 세부 폴더에 합친다 — 원본의 사진을 모두 대상으로 옮기고 빈 원본을 지운다.
+     * 옮긴 사진은 [movePhotos]처럼 USER 배정이 되어 AI 폴더를 다시 만들어도 원래 폴더로 돌아가지 않고,
+     * 다른 컨셉으로 합치면 원본 컨셉에 남긴 협업 반응을 지운다. 응답은 합친 뒤 대상 폴더다.
+     */
+    @Transactional
+    fun mergeDetail(
+        galleryId: Long,
+        conceptId: Long,
+        detailId: Long,
+        userId: Long,
+        request: MergeDetailFolderRequest,
+    ): DetailFolderResponse {
+        galleryAccessPolicy.requireFolderEditor(galleryId, userId)
+        if (detailId == request.targetDetailFolderId) throw FolderException(FolderErrorCode.MERGE_INTO_SELF)
+        requireConcept(galleryId, conceptId)
+        val source = detailRepository.findByIdAndConceptFolderId(detailId, conceptId)
+            ?: throw FolderException(FolderErrorCode.DETAIL_NOT_FOUND)
+        val target = requireDetail(galleryId, request.targetDetailFolderId)
+
+        val movingAssignments = assignmentRepository.findAllByDetailFolderId(detailId)
+        deleteReactionsOnConceptExit(movingAssignments, target)
+        val now = ZonedDateTime.now(clock)
+        for (assignment in movingAssignments) assignment.moveTo(target.requiredId, userId, now)
+        detailRepository.delete(source)
+
+        activityRecorder.recordGallery(galleryId)
+        val photoIds = assignmentRepository.findAllByDetailFolderId(target.requiredId).map { it.photoId }
+        return DetailFolderResponse.of(target, photoIds)
     }
 
     @Transactional

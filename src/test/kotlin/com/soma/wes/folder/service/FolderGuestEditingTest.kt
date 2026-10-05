@@ -3,6 +3,7 @@ package com.soma.wes.folder.service
 import com.soma.wes.folder.domain.FolderSource
 import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
 import com.soma.wes.folder.dto.request.CreateDetailFolderRequest
+import com.soma.wes.folder.dto.request.MergeDetailFolderRequest
 import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
 import com.soma.wes.folder.exception.FolderErrorCode
 import com.soma.wes.folder.exception.FolderException
@@ -215,6 +216,7 @@ class FolderGuestEditingTest @Autowired constructor(
             { folderService.createDetail(galleryId, -1L, userId, CreateDetailFolderRequest("금지")) },
             { folderService.movePhotos(galleryId, userId, MoveFolderPhotosRequest(listOf(-1L), null)) },
             { folderService.deleteDetail(galleryId, -1L, -1L, userId) },
+            { folderService.mergeDetail(galleryId, -1L, -1L, userId, MergeDetailFolderRequest(-2L)) },
             { folderService.deleteConcept(galleryId, -1L, userId) },
         )
         mutations.forEach { mutation ->
