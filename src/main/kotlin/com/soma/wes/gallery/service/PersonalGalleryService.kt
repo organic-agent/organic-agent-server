@@ -60,10 +60,10 @@ class PersonalGalleryService(
         return GalleryResponse.from(gallery)
     }
 
+    /** 이름·목표일·고를 장수는 두 사람이 함께 쓰는 갤러리 정보라 파트너도 고친다. 이용권은 여기서 바뀌지 않는다. */
     @Transactional
     fun update(galleryId: Long, userId: Long, request: UpdatePersonalGalleryRequest): GalleryResponse {
-        accessPolicy.requireManager(galleryId, userId)
-        if (!accessPolicy.isPersonalGallery(galleryId)) throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        accessPolicy.requirePersonalParticipant(galleryId, userId)
         val gallery = galleryRepository.requireWithLockById(galleryId)
         val now = ZonedDateTime.now(clock)
         gallery.requireWritable(now)

@@ -95,7 +95,7 @@ class PersonalGalleryServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `파트너는 업로드와 선택은 하지만 설정을 수정하지 못한다`() {
+    fun `파트너는 업로드와 선택과 보정 처리를 함께 한다`() {
         // given
         val owner = userFixture.사용자()
         val partner = userFixture.사용자()
@@ -105,13 +105,46 @@ class PersonalGalleryServiceTest @Autowired constructor(
         assertThat(policy.requireUploader(gallery.id, partner.requiredId).requiredId).isEqualTo(gallery.id)
         assertThat(policy.requireSelectionEditor(gallery.id, partner.requiredId).requiredId).isEqualTo(gallery.id)
         assertThat(policy.requireRetouchProcessor(gallery.id, partner.requiredId).requiredId).isEqualTo(gallery.id)
-        assertThatThrownBy { target.update(gallery.id, partner.requiredId, UpdatePersonalGalleryRequest("바꾼 이름")) }
-            .isInstanceOf(GalleryException::class.java).extracting("errorCode").isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
     }
 
     @Nested
     @DisplayName("갤러리 정보를 고칠 때")
     inner class Update {
+        @Test
+        fun `파트너도 이름과 목표일과 고를 장수를 고친다`() {
+            // given
+            val owner = userFixture.사용자()
+            val partner = userFixture.사용자()
+            val gallery = target.create(owner.requiredId, CreatePersonalGalleryRequest(title = "함께 고르기"))
+            members.save(WorkspaceMember(workspaceId = gallery.workspaceId, userId = partner.requiredId, role = WorkspaceRole.MEMBER))
+            val deadline = ZonedDateTime.now(clock).plusDays(7)
+
+            // when
+            val result = target.update(gallery.id, partner.requiredId, UpdatePersonalGalleryRequest(
+                title = "파트너가 바꾼 이름", selectionDeadline = deadline, maxSelectablePhotoCount = 30,
+            ))
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(result.title).isEqualTo("파트너가 바꾼 이름")
+                softly.assertThat(result.selectionDeadline).isEqualTo(deadline)
+                softly.assertThat(result.maxSelectablePhotoCount).isEqualTo(30)
+            }
+        }
+
+        @Test
+        fun `갤러리 참여자가 아니면 고칠 수 없다`() {
+            // given
+            val owner = userFixture.사용자()
+            val stranger = userFixture.사용자()
+            val gallery = target.create(owner.requiredId, CreatePersonalGalleryRequest(title = "우리 갤러리"))
+
+            // when & then
+            assertThatThrownBy { target.update(gallery.id, stranger.requiredId, UpdatePersonalGalleryRequest("남이 바꾼 이름")) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode").isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        }
+
         @Test
         fun `이용 기간 마지막 날은 그날 밤까지 목표일로 정할 수 있다`() {
             // given
