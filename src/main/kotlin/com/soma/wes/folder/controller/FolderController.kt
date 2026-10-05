@@ -6,6 +6,7 @@ import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
 import com.soma.wes.folder.dto.request.CreateDetailFolderRequest
 import com.soma.wes.folder.dto.request.MergeDetailFolderRequest
 import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
+import com.soma.wes.folder.dto.request.RenameFolderRequest
 import com.soma.wes.folder.dto.response.ConceptFolderResponse
 import com.soma.wes.folder.dto.response.DetailFolderResponse
 import com.soma.wes.folder.dto.response.MergeDetailFolderResponse
@@ -17,6 +18,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -65,6 +67,27 @@ class FolderController(
     ): ResponseEntity<DetailFolderResponse> {
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(folderService.createDetail(galleryId, conceptId, loginUser.id, request))
+    }
+
+    @PatchMapping("/concept-folders/{conceptId}")
+    override fun renameConcept(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @PathVariable conceptId: Long,
+        @Valid @RequestBody request: RenameFolderRequest,
+    ): ResponseEntity<ConceptFolderResponse> {
+        return ResponseEntity.ok(folderService.renameConcept(galleryId, conceptId, loginUser.id, request))
+    }
+
+    @PatchMapping("/concept-folders/{conceptId}/detail-folders/{detailId}")
+    override fun renameDetail(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @PathVariable conceptId: Long,
+        @PathVariable detailId: Long,
+        @Valid @RequestBody request: RenameFolderRequest,
+    ): ResponseEntity<DetailFolderResponse> {
+        return ResponseEntity.ok(folderService.renameDetail(galleryId, conceptId, detailId, loginUser.id, request))
     }
 
     @PostMapping("/category-assignments/move")

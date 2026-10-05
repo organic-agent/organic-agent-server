@@ -1,14 +1,20 @@
 package com.soma.wes.folder.service
 
+import com.soma.wes.folder.domain.FolderName
 import com.soma.wes.folder.domain.FolderSource
 import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
 import com.soma.wes.folder.dto.request.CreateDetailFolderRequest
 import com.soma.wes.folder.dto.request.MergeDetailFolderRequest
 import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
+import com.soma.wes.folder.dto.request.RenameFolderRequest
 import com.soma.wes.folder.exception.FolderErrorCode
 import com.soma.wes.folder.exception.FolderException
 import com.soma.wes.folder.repository.DetailFolderAssignmentRepository
+import com.soma.wes.gallery.exception.GalleryErrorCode
+import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.fixture.GalleryFixture
+import com.soma.wes.gallery.fixture.PersonalGalleryFixture
+import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.support.IntegrationTest
 import org.assertj.core.api.Assertions.assertThat
@@ -24,6 +30,8 @@ import org.springframework.jdbc.core.JdbcTemplate
 class FolderServiceTest @Autowired constructor(
     private val folderService: FolderService,
     private val galleryFixture: GalleryFixture,
+    private val personalGalleryFixture: PersonalGalleryFixture,
+    private val galleryRepository: GalleryRepository,
     private val photoFixture: PhotoFixture,
     private val assignmentRepository: DetailFolderAssignmentRepository,
     private val jdbcTemplate: JdbcTemplate,
@@ -71,6 +79,96 @@ class FolderServiceTest @Autowired constructor(
             // then
             assertThat(folderService.list(fixture.galleryId, userId).single().details.map { it.name })
                 .containsExactly(third.name, fourth.name, "E")
+        }
+    }
+
+    @Nested
+    @DisplayName("폴더 이름을 바꿀 때")
+    inner class Rename {
+
+        @Test
+        fun `컨셉과 세부 폴더 이름만 바뀌고 사진 배정과 출처는 그대로다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val userId = fixture.photographer.requiredId
+            val photoIds = photoFixture.업로드된_사진(fixture.galleryId, 2)
+            val concept = folderService.createConcept(fixture.galleryId, userId, CreateConceptFolderRequest("본식"))
+            val detail = folderService.createDetail(fixture.galleryId, concept.id, userId, CreateDetailFolderRequest("입장"))
+            folderService.movePhotos(fixture.galleryId, userId, MoveFolderPhotosRequest(photoIds, detail.id))
+
+            // when
+            val renamedConcept = folderService.renameConcept(fixture.galleryId, concept.id, userId, RenameFolderRequest("  예식  "))
+            val renamedDetail = folderService.renameDetail(
+                fixture.galleryId, concept.id, detail.id, fixture.member.requiredId, RenameFolderRequest("신부 입장"),
+            )
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(renamedConcept.name).isEqualTo("예식")
+                softly.assertThat(renamedConcept.details.single().photoIds).containsExactlyInAnyOrderElementsOf(photoIds)
+                softly.assertThat(renamedDetail.name).isEqualTo("신부 입장")
+                softly.assertThat(renamedDetail.photoIds).containsExactlyInAnyOrderElementsOf(photoIds)
+                softly.assertThat(folderService.list(fixture.galleryId, userId).single().details.single().name).isEqualTo("신부 입장")
+                softly.assertThat(renamedConcept.createdSource).isEqualTo(FolderSource.USER)
+            }
+        }
+
+        @Test
+        fun `빈 이름과 100자를 넘는 이름은 거절한다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val userId = fixture.photographer.requiredId
+            val concept = folderService.createConcept(fixture.galleryId, userId, CreateConceptFolderRequest("본식"))
+            val detail = folderService.createDetail(fixture.galleryId, concept.id, userId, CreateDetailFolderRequest("입장"))
+
+            // when & then
+            for (name in listOf("   ", "가".repeat(FolderName.MAX_LENGTH + 1))) {
+                assertThatThrownBy { folderService.renameConcept(fixture.galleryId, concept.id, userId, RenameFolderRequest(name)) }
+                    .isInstanceOf(FolderException::class.java)
+                    .extracting("errorCode").isEqualTo(FolderErrorCode.INVALID_FOLDER_NAME)
+                assertThatThrownBy { folderService.renameDetail(fixture.galleryId, concept.id, detail.id, userId, RenameFolderRequest(name)) }
+                    .isInstanceOf(FolderException::class.java)
+                    .extracting("errorCode").isEqualTo(FolderErrorCode.INVALID_FOLDER_NAME)
+            }
+            assertThat(folderService.list(fixture.galleryId, userId).single().name).isEqualTo("본식")
+        }
+
+        @Test
+        fun `다른 갤러리의 컨셉과 다른 컨셉의 세부 폴더는 찾을 수 없다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val other = galleryFixture.멤버와_열린_갤러리()
+            val userId = fixture.photographer.requiredId
+            val first = folderService.createConcept(fixture.galleryId, userId, CreateConceptFolderRequest("본식"))
+            val second = folderService.createConcept(fixture.galleryId, userId, CreateConceptFolderRequest("야외"))
+            val detail = folderService.createDetail(fixture.galleryId, first.id, userId, CreateDetailFolderRequest("입장"))
+            val otherConcept = folderService.createConcept(other.galleryId, other.photographer.requiredId, CreateConceptFolderRequest("남의 컨셉"))
+
+            // when & then
+            assertThatThrownBy { folderService.renameConcept(fixture.galleryId, otherConcept.id, userId, RenameFolderRequest("변경")) }
+                .isInstanceOf(FolderException::class.java)
+                .extracting("errorCode").isEqualTo(FolderErrorCode.CONCEPT_NOT_FOUND)
+            assertThatThrownBy { folderService.renameDetail(fixture.galleryId, second.id, detail.id, userId, RenameFolderRequest("변경")) }
+                .isInstanceOf(FolderException::class.java)
+                .extracting("errorCode").isEqualTo(FolderErrorCode.DETAIL_NOT_FOUND)
+        }
+
+        @Test
+        fun `개인 갤러리 부부는 폴더를 확정한 뒤에도 바꾸고 마무리한 갤러리는 바꿀 수 없다`() {
+            // given
+            val personal = personalGalleryFixture.파트너와_개인_갤러리()
+            val concept = folderService.createConcept(personal.galleryId, personal.ownerId, CreateConceptFolderRequest("본식"))
+            jdbcTemplate.update("UPDATE galleries SET stage = 'SELECTION_IN_PROGRESS' WHERE id = ?", personal.galleryId)
+
+            // when
+            val renamed = folderService.renameConcept(personal.galleryId, concept.id, personal.partnerId, RenameFolderRequest("예식"))
+            galleryRepository.saveAndFlush(galleryRepository.findById(personal.galleryId).orElseThrow().apply { close() })
+
+            // then
+            assertThat(renamed.name).isEqualTo("예식")
+            assertThatThrownBy { folderService.renameConcept(personal.galleryId, concept.id, personal.ownerId, RenameFolderRequest("변경")) }
+                .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode").isEqualTo(GalleryErrorCode.GALLERY_ARCHIVED)
         }
     }
 

@@ -5,12 +5,14 @@ import com.soma.wes.folder.config.FolderProperties
 import com.soma.wes.folder.domain.ConceptFolder
 import com.soma.wes.folder.domain.DetailFolder
 import com.soma.wes.folder.domain.DetailFolderMerge
+import com.soma.wes.folder.domain.FolderName
 import com.soma.wes.folder.domain.FolderSource
 import com.soma.wes.folder.domain.DetailFolderAssignment
 import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
 import com.soma.wes.folder.dto.request.CreateDetailFolderRequest
 import com.soma.wes.folder.dto.request.MergeDetailFolderRequest
 import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
+import com.soma.wes.folder.dto.request.RenameFolderRequest
 import com.soma.wes.folder.dto.response.ConceptFolderResponse
 import com.soma.wes.folder.dto.response.DetailFolderResponse
 import com.soma.wes.folder.dto.response.MergeDetailFolderResponse
@@ -50,7 +52,7 @@ class FolderService(
         galleryAccessPolicy.requireFolderEditor(galleryId, userId)
         val sortOrder = conceptRepository.findNextSortOrderByGalleryId(galleryId)
         val concept = conceptRepository.save(
-            ConceptFolder(galleryId, request.name.trim(), sortOrder, FolderSource.USER),
+            ConceptFolder(galleryId, FolderName.requireValid(request.name), sortOrder, FolderSource.USER),
         )
         activityRecorder.recordGallery(galleryId)
         return ConceptFolderResponse.of(concept, emptyList())
@@ -67,10 +69,43 @@ class FolderService(
         val concept = requireConcept(galleryId, conceptId)
         val sortOrder = detailRepository.findNextSortOrderByConceptFolderId(conceptId)
         val detail = detailRepository.save(
-            DetailFolder(galleryId, concept.requiredId, request.name.trim(), sortOrder, FolderSource.USER),
+            DetailFolder(galleryId, concept.requiredId, FolderName.requireValid(request.name), sortOrder, FolderSource.USER),
         )
         activityRecorder.recordGallery(galleryId)
         return DetailFolderResponse.of(detail, emptyList())
+    }
+
+    /**
+     * 컨셉 폴더 이름을 바꾼다. 권한은 사진 이동과 같다 — 개인 갤러리 부부와 작가는 보관 전까지, 초대받은 부부는 셀렉 제출 전까지.
+     *
+     * 같은 이름의 컨셉이 있어도 막지 않는다(만들 때와 같다). AI 폴더 만들기는 기존 컨셉을 이름으로 찾아 새 사진을 합치므로,
+     * 이름을 바꾼 컨셉에는 옛 이름으로 분류된 새 사진이 들어오지 않고 새 컨셉이 생긴다. 바꾼 이름이 덮이지는 않는다.
+     */
+    @Transactional
+    fun renameConcept(galleryId: Long, conceptId: Long, userId: Long, request: RenameFolderRequest): ConceptFolderResponse {
+        galleryAccessPolicy.requireFolderEditor(galleryId, userId)
+        val concept = requireConcept(galleryId, conceptId)
+        concept.rename(request.name)
+        activityRecorder.recordGallery(galleryId)
+        return viewAssembler.toResponses(listOf(concept)).single()
+    }
+
+    /** 세부 폴더 이름을 바꾼다. 권한과 이름 규칙은 [renameConcept]과 같다. */
+    @Transactional
+    fun renameDetail(
+        galleryId: Long,
+        conceptId: Long,
+        detailId: Long,
+        userId: Long,
+        request: RenameFolderRequest,
+    ): DetailFolderResponse {
+        galleryAccessPolicy.requireFolderEditor(galleryId, userId)
+        requireConcept(galleryId, conceptId)
+        val detail = detailRepository.findByIdAndConceptFolderId(detailId, conceptId)
+            ?: throw FolderException(FolderErrorCode.DETAIL_NOT_FOUND)
+        detail.rename(request.name)
+        activityRecorder.recordGallery(galleryId)
+        return DetailFolderResponse.of(detail, assignmentRepository.findAllByDetailFolderId(detailId).map { it.photoId })
     }
 
     /** 작가의 "AI로 폴더 만들기" 버튼. 인가만 여기서 하고 물질화는 [AiFolderMaterializer]가 같은 트랜잭션에서 한다. */

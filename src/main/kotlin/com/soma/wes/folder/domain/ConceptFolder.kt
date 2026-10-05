@@ -23,7 +23,7 @@ class ConceptFolder(
     @Column(name = "gallery_id", nullable = false, updatable = false)
     val galleryId: Long,
 
-    @Column(nullable = false, length = 100)
+    @Column(nullable = false, length = FolderName.MAX_LENGTH)
     var name: String,
 
     @Column(name = "sort_order", nullable = false)
@@ -46,4 +46,9 @@ class ConceptFolder(
 
     val requiredId: Long
         get() = checkNotNull(id) { "저장되지 않은 컨셉폴더입니다." }
+
+    /** 이름만 바꾼다. 사진 배정과 AI가 만든 출처(`createdSource` · `analysisJobId`)는 그대로다. */
+    fun rename(name: String) {
+        this.name = FolderName.requireValid(name)
+    }
 }
