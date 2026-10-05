@@ -5,6 +5,7 @@ import com.soma.wes.collab.dto.request.CollabPhotoIdsRequest
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
 import com.soma.wes.collab.dto.request.RenameCollabSessionRequest
 import com.soma.wes.collab.dto.response.CollabCommentResponse
+import com.soma.wes.collab.dto.response.CollabParticipantResponse
 import com.soma.wes.collab.dto.response.CollabPhotoPageResponse
 import com.soma.wes.collab.dto.response.CollabSessionResponse
 import com.soma.wes.global.page.PageResponse
@@ -85,6 +86,23 @@ interface CollabSessionControllerDocs {
     @Operation(summary = "카테고리 공유를 수동 공유폴더로 전환", description = "현재 보이는 사진 구성을 복사해 카테고리 연결을 해제한다. 링크·참여자·반응·만료일을 보존하며 이후 분류 변경은 반영되지 않는다. 이미 수동이면 그대로 반환한다.")
     @ApiResponses(ApiResponse(responseCode = "200", description = "전환 성공"))
     fun convertToManual(loginUser: LoginUser, galleryId: Long, sessionId: Long): ResponseEntity<CollabSessionResponse>
+
+    @Operation(
+        summary = "공유폴더에 들어온 사람 조회",
+        description = "닉네임을 적고 들어온 하객과 반응을 남긴 참여자 계정을 들어온 순서로 돌려준다. " +
+            "보기만 하고 닉네임을 적지 않은 사람은 기록이 없어 나오지 않는다. 폐기·만료된 링크도 조회할 수 있다. " +
+            "작가에게는 공개하지 않는다.",
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "조회 성공"),
+        ApiResponse(responseCode = "403", description = "갤러리 참여자가 아님"),
+        ApiResponse(responseCode = "404", description = "이 갤러리의 세션이 아님"),
+    )
+    fun listParticipants(
+        loginUser: LoginUser,
+        galleryId: Long,
+        sessionId: Long,
+    ): ResponseEntity<List<CollabParticipantResponse>>
 
     @Operation(
         summary = "공유폴더의 현재 사진과 반응 결과 조회",

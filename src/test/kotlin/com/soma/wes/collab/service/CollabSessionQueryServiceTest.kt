@@ -2,7 +2,9 @@ package com.soma.wes.collab.service
 
 import com.soma.wes.folder.repository.ConceptFolderRepository
 import com.soma.wes.folder.repository.DetailFolderRepository
+import com.soma.wes.collab.domain.CollabParticipantType
 import com.soma.wes.collab.dto.request.EnterCollabRequest
+import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
 import com.soma.wes.collab.dto.request.WriteCollabCommentRequest
 import com.soma.wes.collab.exception.CollabErrorCode
 import com.soma.wes.collab.exception.CollabException
@@ -237,6 +239,54 @@ class CollabSessionQueryServiceTest @Autowired constructor(
                 TrashedResource.DETAIL, TrashedResource.PHOTO -> failure.isInstanceOf(CollabException::class.java)
                     .extracting("errorCode").isEqualTo(CollabErrorCode.COLLAB_PHOTO_NOT_FOUND)
             }
+        }
+    }
+
+    @Nested
+    @DisplayName("공유폴더에 들어온 사람을 볼 때")
+    inner class Participants {
+        @Test
+        fun `세션별로 들어온 사람 수와 닉네임을 들어온 순서로 돌려준다`() {
+            // given
+            val other = sessionService.open(
+                shared.galleryId, shared.gallery.member.requiredId, OpenCollabSessionRequest(name = "빈 폴더"),
+            )
+            guestService.enter(shared.token, EnterCollabRequest(nickname = "신부 친구"))
+            guestService.enter(shared.token, EnterCollabRequest(nickname = "신랑 동생"))
+            val memberId = shared.gallery.member.requiredId
+
+            // when
+            val sessions = queryService.list(shared.galleryId, memberId).associateBy { it.sessionId }
+            val participants = queryService.listParticipants(shared.galleryId, shared.session.sessionId, memberId)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(sessions.getValue(shared.session.sessionId).participantCount).isEqualTo(2)
+                softly.assertThat(sessions.getValue(other.sessionId).participantCount).isZero()
+                softly.assertThat(queryService.get(shared.galleryId, shared.session.sessionId, memberId).participantCount)
+                    .isEqualTo(2)
+                softly.assertThat(participants.map { it.nickname }).containsExactly("신부 친구", "신랑 동생")
+                softly.assertThat(participants.map { it.participantType }).containsOnly(CollabParticipantType.GUEST)
+                softly.assertThat(participants.map { it.enteredAt }).doesNotContainNull()
+                softly.assertThat(queryService.listParticipants(shared.galleryId, other.sessionId, memberId)).isEmpty()
+            }
+        }
+
+        @Test
+        fun `작가와 다른 갤러리 세션으로는 볼 수 없다`() {
+            // given
+            guestService.enter(shared.token, EnterCollabRequest(nickname = "친구"))
+            val otherGallery = collabFixture.사진이_있는_세션()
+
+            // when & then
+            assertThatThrownBy {
+                queryService.listParticipants(shared.galleryId, shared.session.sessionId, shared.gallery.photographer.requiredId)
+            }.isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode").isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+            assertThatThrownBy {
+                queryService.listParticipants(shared.galleryId, otherGallery.session.sessionId, shared.gallery.member.requiredId)
+            }.isInstanceOf(CollabException::class.java)
+                .extracting("errorCode").isEqualTo(CollabErrorCode.SESSION_NOT_FOUND)
         }
     }
 

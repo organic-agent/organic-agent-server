@@ -7,6 +7,7 @@ import com.soma.wes.folder.repository.ConceptFolderRepository
 import com.soma.wes.collab.domain.CollabSession
 import com.soma.wes.collab.domain.CollabSessionPhoto
 import com.soma.wes.collab.dto.request.CollabPhotoIdsRequest
+import com.soma.wes.collab.repository.CollabParticipantRepository
 import com.soma.wes.collab.repository.CollabSessionPhotoRepository
 import com.soma.wes.collab.repository.CollabPhotoLikeRepository
 import com.soma.wes.collab.support.CollabPhotoMembership
@@ -41,6 +42,7 @@ class CollabSessionService(
     private val likes: CollabPhotoLikeRepository,
     private val photoMembership: CollabPhotoMembership,
     private val activityRecorder: ActivityRecorder,
+    private val participants: CollabParticipantRepository,
 ) {
     @Transactional
     fun open(galleryId: Long, userId: Long, request: OpenCollabSessionRequest): CollabSessionResponse {
@@ -208,6 +210,7 @@ class CollabSessionService(
         session,
         urlResolver.resolve(session.collabToken),
         photoMembership.count(session),
+        participants.countByCollabSessionId(session.requiredId),
     )
     companion object {
         /** 와이어프레임의 게스트 링크 유효기간. */

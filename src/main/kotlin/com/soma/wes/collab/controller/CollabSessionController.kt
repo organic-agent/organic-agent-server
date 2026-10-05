@@ -7,6 +7,7 @@ import jakarta.validation.Valid
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
 import com.soma.wes.collab.dto.request.RenameCollabSessionRequest
 import com.soma.wes.collab.dto.response.CollabCommentResponse
+import com.soma.wes.collab.dto.response.CollabParticipantResponse
 import com.soma.wes.collab.dto.response.CollabPhotoPageResponse
 import com.soma.wes.collab.dto.response.CollabSessionResponse
 import com.soma.wes.collab.service.CollabSessionQueryService
@@ -107,6 +108,14 @@ class CollabSessionController(
     ): ResponseEntity<CollabSessionResponse> {
         return ResponseEntity.ok(service.convertToManual(galleryId, sessionId, loginUser.id))
     }
+
+    @GetMapping("/{sessionId}/participants")
+    override fun listParticipants(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @PathVariable sessionId: Long,
+    ): ResponseEntity<List<CollabParticipantResponse>> =
+        ResponseEntity.ok(queryService.listParticipants(galleryId, sessionId, loginUser.id))
 
     @GetMapping("/{sessionId}/photos")
     override fun listPhotos(

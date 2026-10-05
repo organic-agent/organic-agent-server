@@ -24,6 +24,9 @@ data class CollabSessionResponse(
     @field:Schema(description = "하객에게 보여주고 있는 사진 수.")
     val photoCount: Long,
 
+    @field:Schema(description = "닉네임을 적고 들어온 하객과 반응을 남긴 참여자 계정 수. 보기만 한 사람은 세지 않는다.")
+    val participantCount: Long,
+
     val createdAt: ZonedDateTime?,
     val expiresAt: ZonedDateTime? = null,
     val coverTitle: String? = null,
@@ -33,7 +36,7 @@ data class CollabSessionResponse(
 ) {
 
     companion object {
-        fun of(session: CollabSession, collabUrl: String, photoCount: Long) = CollabSessionResponse(
+        fun of(session: CollabSession, collabUrl: String, photoCount: Long, participantCount: Long) = CollabSessionResponse(
             sessionId = session.requiredId,
             galleryId = session.galleryId,
             conceptFolderId = session.conceptFolderId,
@@ -42,6 +45,7 @@ data class CollabSessionResponse(
             revoked = session.isRevoked,
             revokedAt = session.revokedAt,
             photoCount = photoCount,
+            participantCount = participantCount,
             createdAt = session.createdAt,
             expiresAt = session.expiresAt,
             coverTitle = session.coverTitle,
