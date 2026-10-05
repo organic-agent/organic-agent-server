@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.fixture.GalleryFixture
+import com.soma.wes.gallery.fixture.PersonalGalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.global.page.PageRequests
@@ -68,6 +69,7 @@ class PhotoServiceTest @Autowired constructor(
     private val photoAnalysisRepository: PhotoAnalysisRepository,
     private val galleryRepository: GalleryRepository,
     private val personalGalleryService: PersonalGalleryService,
+    private val personalGalleryFixture: PersonalGalleryFixture,
     private val billing: BillingFixture,
     private val trashService: TrashService,
     private val clock: Clock,
@@ -767,6 +769,27 @@ class PhotoServiceTest @Autowired constructor(
         }
     }
 
+
+    @Nested
+    @DisplayName("개인 갤러리가 셀렉 중일 때")
+    inner class PersonalSelecting {
+        /** 웹은 폴더 확정 뒤 업로드 · 삭제 버튼을 숨겼지만 서버는 처음부터 막지 않았다. 셀렉 중에도 열기로 정해(10/5) 이 동작을 고정한다. */
+        @Test
+        fun `폴더를 확정한 뒤에도 소유자와 파트너가 사진을 올리고 지운다`() {
+            // given
+            val personal = personalGalleryFixture.파트너와_개인_갤러리()
+            val existing = photoFixture.업로드된_사진(personal.galleryId, count = 1).single()
+            jdbcTemplate.update("UPDATE galleries SET stage = 'SELECTION_IN_PROGRESS' WHERE id = ?", personal.galleryId)
+
+            // when
+            val issued = photoService.issueUploadUrls(personal.galleryId, personal.partnerId, singlePhotoRequest())
+            val trashed = photoService.moveToTrash(personal.galleryId, personal.ownerId, DeletePhotosRequest(listOf(existing)))
+
+            // then
+            assertThat(issued.uploads).hasSize(1)
+            assertThat(trashed.count).isEqualTo(1)
+        }
+    }
 
     @Nested
     @DisplayName("요금제 사진 한도를 적용할 때")
