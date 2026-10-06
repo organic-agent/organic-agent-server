@@ -17,16 +17,24 @@ data class RetouchRoundResponse(
 
     val completedAt: ZonedDateTime?,
 
+    @field:Schema(
+        description = "회차의 모든 사진에 적용되는 보정 요청. 적지 않았으면 null이다. " +
+            "작가에게는 제출 전(DRAFTING) 초안이라 null이다.",
+        example = "전체적으로 톤을 밝게 맞춰주세요",
+    )
+    val requestText: String?,
+
     @field:Schema(description = "회차에 담긴 보정 요청. 갤러리에서 정한 노출 순서를 따른다")
     val photos: List<RetouchPhotoResponse>,
 ) {
 
     companion object {
-        fun of(round: RetouchRound, photos: List<RetouchPhotoResponse>) = RetouchRoundResponse(
+        fun of(round: RetouchRound, photos: List<RetouchPhotoResponse>, hideDraft: Boolean) = RetouchRoundResponse(
             roundNo = round.roundNo,
             status = round.status,
             requestedAt = round.requestedAt,
             completedAt = round.completedAt,
+            requestText = round.requestText.takeUnless { hideDraft && round.isDrafting },
             photos = photos,
         )
     }

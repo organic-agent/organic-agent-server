@@ -8,6 +8,7 @@ import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.exception.PhotoException
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.retouch.domain.RetouchPoint
+import com.soma.wes.retouch.dto.request.UpdateRetouchRoundRequest
 import com.soma.wes.retouch.exception.RetouchErrorCode
 import com.soma.wes.retouch.exception.RetouchException
 import com.soma.wes.retouch.fixture.RetouchFixture
@@ -32,6 +33,7 @@ import javax.imageio.ImageIO
 @IntegrationTest
 class RetouchPdfServiceTest @Autowired constructor(
     private val service: RetouchPdfService,
+    private val retouchService: RetouchService,
     private val loader: RetouchPdfSnapshotLoader,
     private val galleries: GalleryFixture,
     private val personalGalleries: PersonalGalleryFixture,
@@ -123,6 +125,20 @@ class RetouchPdfServiceTest @Autowired constructor(
             assertThatThrownBy { loader.load(gallery.galleryId, 1, gallery.photographer.requiredId, "noResult") }
                 .isInstanceOf(RetouchException::class.java).extracting("errorCode").isEqualTo(RetouchErrorCode.EMPTY_PDF)
             assertThat(loader.load(gallery.galleryId, 1, gallery.member.requiredId, "noResult").photos).hasSize(1)
+        }
+
+        @Test
+        fun `메모 있는 사진이 없어도 회차 전체 요청이 있으면 요청서가 된다`() {
+            // given
+            val gallery = personalGalleries.파트너와_개인_갤러리()
+            val photo = photos.미리보기_있는_사진(gallery.galleryId)
+            rounds.초안_회차(gallery.galleryId, photoIds = listOf(photo.requiredId))
+            retouchService.updateRoundRequest(gallery.galleryId, 1, gallery.ownerId, UpdateRetouchRoundRequest("전체 톤 밝게"))
+            // when
+            val snapshot = loader.load(gallery.galleryId, 1, gallery.ownerId, "memo")
+            // then
+            assertThat(snapshot.roundRequestText).isEqualTo("전체 톤 밝게")
+            assertThat(snapshot.photos).isEmpty()
         }
 
         @Test

@@ -21,6 +21,7 @@ import com.soma.wes.retouch.dto.request.AddRetouchPhotosRequest
 import com.soma.wes.retouch.dto.request.CompleteResultsRequest
 import com.soma.wes.retouch.dto.request.IssueResultUploadUrlsRequest
 import com.soma.wes.retouch.dto.request.UpdateRetouchPhotoRequest
+import com.soma.wes.retouch.dto.request.UpdateRetouchRoundRequest
 import com.soma.wes.retouch.dto.request.MatchRetouchResultsRequest
 import com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest
 import com.soma.wes.retouch.dto.response.IssueResultUploadUrlsResponse
@@ -187,6 +188,30 @@ class RetouchService(
     }
 
     /**
+     * 회차의 모든 사진에 적용되는 요청을 적는다. 사진 단위 요청([updatePhoto])과 같이 DRAFTING 동안에만
+     * 덮어쓰기로 동작한다 — 제출 뒤에는 작가가 보고 있는 요청서가 도중에 바뀌지 않게 409다.
+     */
+    @Transactional
+    fun updateRoundRequest(
+        galleryId: Long,
+        roundNo: Int,
+        userId: Long,
+        request: UpdateRetouchRoundRequest,
+    ): RetouchOverviewResponse {
+        galleryAccessPolicy.requireRetouchRequester(galleryId, userId)
+
+        // 제출과 겹치면 잠긴 회차에 요청이 적히므로 사진 단위 요청과 같이 갤러리 행을 잠근다.
+        val gallery = galleryRepository.requireWithLockById(galleryId)
+        val round = retouchRoundRepository.findByGalleryIdAndRoundNo(galleryId, roundNo)
+            ?: throw RetouchException(RetouchErrorCode.ROUND_NOT_FOUND)
+
+        round.writeRequestText(request.requestText)
+        activityRecorder.recordGallery(galleryId)
+
+        return overviewOf(gallery, userId)
+    }
+
+    /**
      * 회차 상세를 연다. 항목마다 원본과 결과 URL을 나란히 줘 전/후 비교가 된다.
      * 부부는 마감 뒤에도 결과를 봐야 하므로 조회는 Viewer 문이다.
      */
@@ -208,6 +233,7 @@ class RetouchService(
                     galleryAccessPolicy.canInspectRetouchDrafts(galleryId, userId),
             ).map { if (hideRating) it.copy(photo = it.photo.copy(score = null)) else it },
             viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
+            hideDraft = hideRating,
         )
     }
 
@@ -300,6 +326,7 @@ class RetouchService(
                     galleryId, retouchPhotoRepository.findAllByRoundId(lockedRound.requiredId),
                 ).map { if (hideRating) it.copy(photo = it.photo.copy(score = null)) else it },
                 viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
+                hideDraft = hideRating,
             )
         } ?: throw RetouchException(RetouchErrorCode.INVALID_ROUND_STATUS)
     }
@@ -505,12 +532,16 @@ class RetouchService(
             submittedRoundCount = rounds.count { it.status != RetouchRoundStatus.DRAFTING },
             rounds = rounds.map { RetouchRoundSummaryResponse.of(it, photoCounts[it.requiredId] ?: 0L) },
             currentRound = currentRound?.let {
-                RetouchRoundResponse.of(it, retouchViewAssembler.toResponses(galleryId, currentItems).map { photo ->
-                    photo.copy(
-                        hasResult = photo.hasResult && (it.status == RetouchRoundStatus.COMPLETED || inspectDrafts),
-                        photo = if (hideRating) photo.photo.copy(score = null) else photo.photo,
-                    )
-                })
+                RetouchRoundResponse.of(
+                    round = it,
+                    photos = retouchViewAssembler.toResponses(galleryId, currentItems).map { photo ->
+                        photo.copy(
+                            hasResult = photo.hasResult && (it.status == RetouchRoundStatus.COMPLETED || inspectDrafts),
+                            photo = if (hideRating) photo.photo.copy(score = null) else photo.photo,
+                        )
+                    },
+                    hideDraft = hideRating,
+                )
             },
             viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
         )

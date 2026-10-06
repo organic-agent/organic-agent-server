@@ -62,11 +62,28 @@ class RetouchRound(
     @Column(name = "completed_at")
     var completedAt: ZonedDateTime? = null
 
+    /**
+     * 회차의 모든 사진에 적용되는 요청("전체 톤 밝게"). 사진 단위 요청([RetouchPhoto.requestText])과 별개로
+     * 요청서 맨 앞에 실린다. 적지 않았으면 null이다.
+     */
+    @Column(name = "request_text")
+    var requestText: String? = null
+
     val requiredId: Long
         get() = id ?: error("아직 저장되지 않은 RetouchRound 다")
 
     val isDrafting: Boolean
         get() = status == RetouchRoundStatus.DRAFTING
+
+    /** 회차 전체 요청을 적는다. 제출 전에만 덮어쓰고, 공백뿐인 값은 지운 것으로 본다. */
+    fun writeRequestText(text: String?) {
+        if (!isDrafting) throw RetouchException(RetouchErrorCode.INVALID_ROUND_STATUS)
+        if (text != null && text.length > RetouchPhoto.MAX_REQUEST_TEXT_LENGTH) {
+            throw RetouchException(RetouchErrorCode.REQUEST_TEXT_TOO_LONG)
+        }
+
+        requestText = text?.takeIf { it.isNotBlank() }
+    }
 
     /** 부부가 요청을 일괄 제출한다. 이때부터 작가의 차례라 요청 목록은 잠긴다. */
     fun submit(at: ZonedDateTime) {

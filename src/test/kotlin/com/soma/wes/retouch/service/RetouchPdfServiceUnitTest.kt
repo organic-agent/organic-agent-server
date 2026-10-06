@@ -22,7 +22,7 @@ class RetouchPdfServiceUnitTest {
         // given
         val loader = mock<RetouchPdfSnapshotLoader>()
         val renderer = mock<RetouchPdfRenderer>()
-        val snapshot = RetouchPdfSnapshotDto(galleryTitle = "샘플", photos = emptyList())
+        val snapshot = RetouchPdfSnapshotDto(galleryTitle = "샘플", roundRequestText = null, photos = emptyList())
         whenever(loader.load(any(), any(), any(), any())).thenReturn(snapshot)
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)

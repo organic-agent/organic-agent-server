@@ -10,6 +10,7 @@ import com.soma.wes.retouch.dto.request.AddRetouchPhotosRequest
 import com.soma.wes.retouch.dto.request.CompleteResultsRequest
 import com.soma.wes.retouch.dto.request.IssueResultUploadUrlsRequest
 import com.soma.wes.retouch.dto.request.UpdateRetouchPhotoRequest
+import com.soma.wes.retouch.dto.request.UpdateRetouchRoundRequest
 import com.soma.wes.retouch.dto.response.IssueResultUploadUrlsResponse
 import com.soma.wes.retouch.dto.response.RetouchOverviewResponse
 import com.soma.wes.retouch.dto.response.RetouchPhotoResponse
@@ -77,6 +78,24 @@ interface RetouchControllerDocs {
         photoId: Long,
         request: UpdateRetouchPhotoRequest,
     ): ResponseEntity<RetouchPhotoResponse>
+
+    @Operation(
+        summary = "회차 전체 보정 요청 작성",
+        description = """
+            회차의 모든 사진에 적용되는 요청("전체 톤 밝게")을 덮어쓴다. 사진마다 같은 말을 적지 않게 하는 칸이고,
+            요청서 PDF 맨 앞 "전체 요청" 단락으로 실린다. null이나 공백뿐인 값은 지운다.
+
+            사진 단위 요청과 같이 초안(DRAFTING) 회차에만 쓴다 — 제출된 회차에는 409다. 회차가 없으면 404다.
+            개인 갤러리는 첫 담기 때 초안 회차가 생기므로 담은 뒤부터 적을 수 있다. 요청문은 2000자까지다.
+            AI 다듬기(refine)는 이 칸에 적용하지 않는다.
+        """,
+    )
+    fun updateRoundRequest(
+        loginUser: LoginUser,
+        galleryId: Long,
+        roundNo: Int,
+        request: UpdateRetouchRoundRequest,
+    ): ResponseEntity<RetouchOverviewResponse>
 
     @Operation(
         summary = "보정 회차 상세 조회",
