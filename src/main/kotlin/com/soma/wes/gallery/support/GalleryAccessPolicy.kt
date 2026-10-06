@@ -17,6 +17,7 @@ import com.soma.wes.workspace.domain.WorkspaceType
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository
 import org.springframework.stereotype.Service
+import org.springframework.data.repository.findByIdOrNull
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.ZonedDateTime
@@ -130,9 +131,22 @@ class GalleryAccessPolicy(
     @Transactional(readOnly = true)
     fun requireMetadataViewer(galleryId: Long, userId: Long): Gallery {
         val gallery = galleryRepository.requireById(galleryId)
-        if (!isManager(gallery, userId) && !isPersonalParticipant(gallery, userId)) findMember(galleryId, userId)
+        if (!isMetadataViewer(gallery, userId)) {
+            throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        }
         return gallery
     }
+
+    /** 쿠폰 링크는 갤러리 상세와 같은 권한으로 연결하고, 삭제·권한 없음은 등록 화면으로 돌린다. */
+    @Transactional(readOnly = true)
+    fun canViewMetadata(galleryId: Long, userId: Long): Boolean {
+        val gallery = galleryRepository.findByIdOrNull(galleryId) ?: return false
+        return isMetadataViewer(gallery, userId)
+    }
+
+    private fun isMetadataViewer(gallery: Gallery, userId: Long): Boolean =
+        isManager(gallery, userId) || isPersonalParticipant(gallery, userId) ||
+            galleryMemberRepository.findByGalleryIdAndUserId(gallery.requiredId, userId) != null
 
     /**
      * 초대 수락.
