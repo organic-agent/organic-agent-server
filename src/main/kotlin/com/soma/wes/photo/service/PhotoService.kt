@@ -293,7 +293,10 @@ class PhotoService(
         val found = findPage(galleryId, status, minScore, pageableOf(page, size))
 
         return PhotoPageResponse.of(
-            page = PageResponse.of(found, photoViewAssembler.toResponses(found.content).map { if (studioViewer) it.copy(score = null) else it }),
+            page = PageResponse.of(
+                found,
+                photoViewAssembler.toResponses(found.content).map { if (studioViewer) it.copy(score = null, memo = null) else it },
+            ),
             viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
         )
     }
@@ -335,6 +338,7 @@ class PhotoService(
 
         val photo = photoRepository.findByIdAndGalleryId(photoId, galleryId)
             ?: throw PhotoException(PhotoErrorCode.PHOTO_NOT_FOUND)
+        val studioViewer = galleryAccessPolicy.isStudioManager(galleryId, userId)
 
         return PhotoDetailResponse.of(
             photo = photo,
@@ -342,7 +346,8 @@ class PhotoService(
             originalUrl = photoViewAssembler.originalUrlOf(photo),
             viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
             originalUrlTtlSeconds = properties.originalUrlTtl.seconds,
-            score = if (galleryAccessPolicy.isStudioManager(galleryId, userId)) null else photoViewAssembler.scoreOf(photo),
+            score = if (studioViewer) null else photoViewAssembler.scoreOf(photo),
+            memo = if (studioViewer) null else photoViewAssembler.memoOf(photo),
         )
     }
 

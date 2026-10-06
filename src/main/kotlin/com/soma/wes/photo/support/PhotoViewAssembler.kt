@@ -2,7 +2,9 @@ package com.soma.wes.photo.support
 
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoStatus
+import com.soma.wes.photo.dto.response.PhotoMemoResponse
 import com.soma.wes.photo.dto.response.PhotoResponse
+import com.soma.wes.photo.repository.PhotoMemoRepository
 import com.soma.wes.photo.repository.PhotoRatingRepository
 import com.soma.wes.photo.service.port.PhotoStorage
 import org.springframework.stereotype.Component
@@ -14,23 +16,26 @@ import org.springframework.stereotype.Component
 class PhotoViewAssembler(
     private val photoStorage: PhotoStorage,
     private val photoRatingRepository: PhotoRatingRepository,
+    private val photoMemoRepository: PhotoMemoRepository,
 ) {
 
     fun toResponse(photo: Photo): PhotoResponse = PhotoResponse.of(
         photo = photo,
         viewUrl = viewUrlOf(photo),
         score = scoreOf(photo),
+        memo = memoOf(photo),
     )
 
     /**
-     * 여러 장을 한 번에. 별점을 사진 수만큼 따로 읽지 않는다.
+     * 여러 장을 한 번에. 별점과 메모를 사진 수만큼 따로 읽지 않는다.
      * 한 페이지가 200장이면 [toResponse]를 반복하는 것만으로 질의가 200번 늘어난다.
      */
     fun toResponses(photos: List<Photo>): List<PhotoResponse> {
         val scores = scoresOf(photos)
+        val memos = memosOf(photos)
 
         return photos.map {
-            PhotoResponse.of(photo = it, viewUrl = viewUrlOf(it), score = scores[it.requiredId])
+            PhotoResponse.of(photo = it, viewUrl = viewUrlOf(it), score = scores[it.requiredId], memo = memos[it.requiredId])
         }
     }
 
@@ -44,8 +49,18 @@ class PhotoViewAssembler(
             .associate { it.photoId to it.score }
     }
 
+    /** [toResponses]가 쓴다. [scoresOf]와 같이 빈 IN 절을 내보내지 않는다. */
+    private fun memosOf(photos: List<Photo>): Map<Long, PhotoMemoResponse> {
+        if (photos.isEmpty()) {
+            return emptyMap()
+        }
+
+        return photoMemoRepository.findAllByPhotoIdIn(photos.map { it.requiredId })
+            .associate { it.photoId to PhotoMemoResponse.from(it) }
+    }
+
     /**
-     * 협업 링크로 여는 화면이 쓴다. 별점을 아예 붙이지 않는다.
+     * 협업 링크로 여는 화면이 쓴다. 별점과 메모를 아예 붙이지 않는다.
      */
     fun toAnonymousResponses(photos: List<Photo>): List<PhotoResponse> =
         photos.map { PhotoResponse.of(photo = it, viewUrl = viewUrlOf(it), score = null) }
@@ -54,6 +69,12 @@ class PhotoViewAssembler(
      * 이 사진에 매겨진 점수. 아무도 매기지 않았으면 null이다.
      */
     fun scoreOf(photo: Photo): Int? = photoRatingRepository.findByPhotoId(photo.requiredId)?.score
+
+    /**
+     * 이 사진의 메모. 아무도 적지 않았으면 null이다.
+     */
+    fun memoOf(photo: Photo): PhotoMemoResponse? =
+        photoMemoRepository.findByPhotoId(photo.requiredId)?.let { PhotoMemoResponse.from(it) }
 
     /**
      * 화면에 그릴 URL. 파생본이 있으면 그쪽이고, 없으면 원본이다.

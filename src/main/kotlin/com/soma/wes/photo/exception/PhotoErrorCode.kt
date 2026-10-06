@@ -54,6 +54,8 @@ enum class PhotoErrorCode(
     COMMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "PHOTO_404_2", "존재하지 않는 사진 댓글입니다."),
     COMMENT_DELETE_DENIED(HttpStatus.FORBIDDEN, "PHOTO_403_1", "본인이 작성한 댓글만 삭제할 수 있습니다."),
 
+    /** 사진 메모(`PhotoMemo`)가 비었거나 상한을 넘은 경우. 지우기는 DELETE다. */
+    INVALID_MEMO(HttpStatus.BAD_REQUEST, "PHOTO_400_9", "메모는 비어 있을 수 없고 2000자 이하여야 합니다."),
 
     /** 운영자 승인 삭제에서 S3 원본 또는 미리보기를 모두 지우지 못한 경우. */
     STORAGE_DELETE_FAILED(HttpStatus.BAD_GATEWAY, "PHOTO_502_2", "사진 원본 또는 미리보기 삭제를 완료하지 못했습니다."),

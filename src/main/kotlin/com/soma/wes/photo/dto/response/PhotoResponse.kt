@@ -34,10 +34,16 @@ data class PhotoResponse(
             "클라이언트 두 명이 공유하며 작가 응답에는 null이다.",
     )
     val score: Int?,
+
+    @field:Schema(
+        description = "이 사진의 메모. 아무도 적지 않았으면 null이다. " +
+            "개인 갤러리 소유자와 파트너가 공유하며 작가·게스트 응답에는 null이다.",
+    )
+    val memo: PhotoMemoResponse? = null,
 ) {
 
     companion object {
-        fun of(photo: Photo, viewUrl: String?, score: Int?) = PhotoResponse(
+        fun of(photo: Photo, viewUrl: String?, score: Int?, memo: PhotoMemoResponse? = null) = PhotoResponse(
             photoId = photo.requiredId,
             storageKey = photo.storageKey,
             originalFileName = photo.originalFileName,
@@ -48,6 +54,7 @@ data class PhotoResponse(
             viewUrl = viewUrl,
             previewReady = photo.previewKey != null,
             score = score,
+            memo = memo,
         )
     }
 }
