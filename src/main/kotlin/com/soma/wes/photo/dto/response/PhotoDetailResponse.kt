@@ -52,6 +52,12 @@ data class PhotoDetailResponse(
             "클라이언트 두 명이 공유하며 작가 응답에는 null이다.",
     )
     val score: Int?,
+
+    @field:Schema(
+        description = "이 사진의 메모. 아무도 적지 않았으면 null이다. " +
+            "개인 갤러리 소유자와 파트너가 공유하며 작가·게스트 응답에는 null이다.",
+    )
+    val memo: PhotoMemoResponse? = null,
 ) {
 
     companion object {
@@ -62,6 +68,7 @@ data class PhotoDetailResponse(
             viewUrlTtlSeconds: Long,
             originalUrlTtlSeconds: Long,
             score: Int?,
+            memo: PhotoMemoResponse?,
         ) = PhotoDetailResponse(
             photoId = photo.requiredId,
             storageKey = photo.storageKey,
@@ -77,6 +84,7 @@ data class PhotoDetailResponse(
             originalUrlTtlSeconds = originalUrlTtlSeconds,
             metadata = PhotoMetadataResponse.from(photo.metadata),
             score = score,
+            memo = memo,
         )
     }
 }
