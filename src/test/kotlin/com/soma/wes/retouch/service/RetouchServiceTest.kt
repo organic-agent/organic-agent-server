@@ -6,15 +6,18 @@ import com.soma.wes.gallery.domain.GalleryStage
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
+import com.soma.wes.gallery.fixture.PersonalGalleryFixture
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.service.PhotoRatingService
 import com.soma.wes.photo.dto.request.RatePhotoRequest
+import com.soma.wes.retouch.domain.RetouchPhoto
 import com.soma.wes.retouch.domain.RetouchPoint
 import com.soma.wes.retouch.domain.RetouchRoundStatus
 import com.soma.wes.retouch.dto.request.AddRetouchPhotosRequest
 import com.soma.wes.retouch.dto.request.CompleteResultsRequest
 import com.soma.wes.retouch.dto.request.RetouchRequestItem
 import com.soma.wes.retouch.dto.request.UpdateRetouchPhotoRequest
+import com.soma.wes.retouch.dto.request.UpdateRetouchRoundRequest
 import com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest
 import com.soma.wes.retouch.dto.request.IssueResultUploadUrlsRequest
 import com.soma.wes.retouch.exception.RetouchErrorCode
@@ -50,6 +53,7 @@ class RetouchServiceTest @Autowired constructor(
     private val retouchService: RetouchService,
     private val selectionService: PhotoSelectionService,
     private val galleryFixture: GalleryFixture,
+    private val personalGalleryFixture: PersonalGalleryFixture,
     private val photoFixture: PhotoFixture,
     private val retouchFixture: RetouchFixture,
     private val retouchRoundRepository: RetouchRoundRepository,
@@ -312,6 +316,104 @@ class RetouchServiceTest @Autowired constructor(
                 .isEqualTo(RetouchErrorCode.PHOTO_NOT_IN_ROUND)
         }
     }
+
+    @Nested
+    @DisplayName("회차 전체 요청을 적을 때")
+    inner class RoundRequest {
+
+        @Test
+        fun `개인 갤러리 소유자와 파트너가 초안 회차에 덮어쓴다`() {
+            // given
+            val gallery = personalGalleryFixture.파트너와_개인_갤러리()
+            retouchFixture.초안_회차(gallery.galleryId, photoIds = photoFixture.업로드된_사진(gallery.galleryId, count = 1))
+
+            // when
+            retouchService.updateRoundRequest(gallery.galleryId, 1, gallery.ownerId, UpdateRetouchRoundRequest("톤 밝게"))
+            val result = retouchService.updateRoundRequest(
+                gallery.galleryId, 1, gallery.partnerId, UpdateRetouchRoundRequest("전체 톤 밝게"),
+            )
+
+            // then
+            assertThat(result.currentRound!!.requestText).isEqualTo("전체 톤 밝게")
+            assertThat(retouchService.getRound(gallery.galleryId, 1, gallery.ownerId).requestText).isEqualTo("전체 톤 밝게")
+        }
+
+        @Test
+        fun `공백뿐인 값은 지운 것으로 본다`() {
+            // given
+            val gallery = personalGalleryFixture.파트너와_개인_갤러리()
+            retouchFixture.초안_회차(gallery.galleryId)
+            retouchService.updateRoundRequest(gallery.galleryId, 1, gallery.ownerId, UpdateRetouchRoundRequest("톤 밝게"))
+
+            // when
+            val result = retouchService.updateRoundRequest(gallery.galleryId, 1, gallery.ownerId, UpdateRetouchRoundRequest("  "))
+
+            // then
+            assertThat(result.currentRound!!.requestText).isNull()
+        }
+
+        @Test
+        fun `상한을 넘는 요청은 거절된다`() {
+            // given
+            val gallery = personalGalleryFixture.파트너와_개인_갤러리()
+            retouchFixture.초안_회차(gallery.galleryId)
+            val tooLong = "가".repeat(RetouchPhoto.MAX_REQUEST_TEXT_LENGTH + 1)
+
+            // when & then
+            assertThatThrownBy {
+                retouchService.updateRoundRequest(gallery.galleryId, 1, gallery.ownerId, UpdateRetouchRoundRequest(tooLong))
+            }
+                .isInstanceOf(RetouchException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(RetouchErrorCode.REQUEST_TEXT_TOO_LONG)
+        }
+
+        @Test
+        fun `제출된 회차에는 적을 수 없다`() {
+            // given
+            val gallery = personalGalleryFixture.파트너와_개인_갤러리()
+            retouchFixture.제출된_회차(gallery.galleryId)
+
+            // when & then
+            assertThatThrownBy {
+                retouchService.updateRoundRequest(gallery.galleryId, 1, gallery.ownerId, UpdateRetouchRoundRequest("톤 밝게"))
+            }
+                .isInstanceOf(RetouchException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(RetouchErrorCode.INVALID_ROUND_STATUS)
+        }
+
+        @Test
+        fun `없는 회차면 404다`() {
+            // given
+            val gallery = personalGalleryFixture.파트너와_개인_갤러리()
+
+            // when & then
+            assertThatThrownBy {
+                retouchService.updateRoundRequest(gallery.galleryId, 1, gallery.ownerId, UpdateRetouchRoundRequest("톤 밝게"))
+            }
+                .isInstanceOf(RetouchException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(RetouchErrorCode.ROUND_NOT_FOUND)
+        }
+
+        @Test
+        fun `작가는 제출 전 전체 요청을 볼 수 없다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            add(fixture, photoFixture.업로드된_사진(fixture.galleryId, count = 1))
+            retouchService.updateRoundRequest(fixture.galleryId, 1, fixture.member.requiredId, UpdateRetouchRoundRequest("톤 밝게"))
+
+            // when
+            val overview = retouchService.get(fixture.galleryId, fixture.photographer.requiredId)
+            val detail = retouchService.getRound(fixture.galleryId, 1, fixture.photographer.requiredId)
+
+            // then
+            assertThat(overview.currentRound!!.requestText).isNull()
+            assertThat(detail.requestText).isNull()
+        }
+    }
+
 
     @Nested
     @DisplayName("요청을 일괄 제출할 때")

@@ -82,6 +82,43 @@ class RetouchPdfRendererUnitTest {
     }
 
     @Test
+    fun `회차 전체 요청은 사진 페이지 앞에 따로 싣는다`() {
+        // given
+        val snapshot = snapshot(listOf(RetouchPoint(x = .5, y = .5, text = "왼쪽 볼 잡티")), roundRequestText = "전체적으로 톤을 밝게 맞춰주세요")
+        // when
+        val bytes = RetouchPdfRenderer(reader, RetouchPdfProperties()).render(snapshot)
+        // then
+        Loader.loadPDF(bytes).use { document ->
+            assertThat(document.numberOfPages).isEqualTo(2)
+            val first = PDFTextStripper().apply { startPage = 1; endPage = 1 }.getText(document)
+            assertThat(first).contains("전체 요청", "전체적으로 톤을 밝게 맞춰주세요").doesNotContain("왼쪽 볼 잡티", "SAMPLE.jpg")
+            assertThat(document.getPage(0).resources.xObjectNames.toList()).isEmpty()
+            val second = PDFTextStripper().apply { startPage = 2; endPage = 2 }.getText(document)
+            assertThat(second).contains("SAMPLE.jpg", "왼쪽 볼 잡티")
+        }
+    }
+
+    @Test
+    fun `긴 전체 요청은 다음 페이지로 이어 쓴다`() {
+        // given
+        val long = "전체 사진의 피부 톤을 자연스럽게 맞춰 주세요. ".repeat(80)
+        // when
+        val bytes = RetouchPdfRenderer(reader, RetouchPdfProperties()).render(snapshot(emptyList(), roundRequestText = long))
+        // then
+        Loader.loadPDF(bytes).use { document ->
+            assertThat(document.numberOfPages).isGreaterThan(2)
+            assertThat(PDFTextStripper().getText(document)).contains("이어짐")
+            val body = document.pages.joinToString("") { page ->
+                val extractor = PDFTextStripperByArea()
+                extractor.addRegion("body", Rectangle(30, 140, 780, 395))
+                extractor.extractRegions(page)
+                extractor.getTextForRegion("body")
+            }.replace(Regex("\\s"), "")
+            assertThat(Regex("자연스럽게맞춰주세요\\.").findAll(body).count()).isEqualTo(80)
+        }
+    }
+
+    @Test
     fun `페이지와 바이트 상한은 일부 파일을 반환하는 대신 거절한다`() {
         // given
         val snapshot = snapshot(List(100) { RetouchPoint(x = .5, y = .5, text = "보정 요청") })
@@ -93,8 +130,9 @@ class RetouchPdfRendererUnitTest {
         }
     }
 
-    private fun snapshot(points: List<RetouchPoint>) = RetouchPdfSnapshotDto(
+    private fun snapshot(points: List<RetouchPoint>, roundRequestText: String? = null) = RetouchPdfSnapshotDto(
         galleryTitle = "샘플 웨딩 갤러리",
+        roundRequestText = roundRequestText,
         photos = listOf(RetouchPdfPhotoDto(
             photoId = 55L, originalFileName = "SAMPLE.jpg", previewKey = "previews/sample.jpg",
             requestText = "사진 전체 밝기 요청", points = points,

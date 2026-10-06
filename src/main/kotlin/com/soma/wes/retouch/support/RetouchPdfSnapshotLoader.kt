@@ -45,7 +45,9 @@ class RetouchPdfSnapshotLoader(
                 RetouchPdfScopeDto.ALL -> true
             }
         }
-        if (targets.isEmpty()) throw RetouchException(RetouchErrorCode.EMPTY_PDF)
+        val roundRequestText = round.requestText?.takeIf { it.isNotBlank() }
+        // 범위에 드는 사진이 없어도 전체 요청이 있으면 그 한 페이지만으로 요청서가 된다.
+        if (targets.isEmpty() && roundRequestText == null) throw RetouchException(RetouchErrorCode.EMPTY_PDF)
         if (targets.size > properties.maxPhotos) throw RetouchException(RetouchErrorCode.PDF_LIMIT_EXCEEDED)
         val byPhotoId = targets.associateBy { it.photoId }
         val ordered = photos.findAllByGalleryIdAndIdIn(galleryId, byPhotoId.keys).sortedWith(Photo.DISPLAY_ORDER)
@@ -64,13 +66,13 @@ class RetouchPdfSnapshotLoader(
                 points = item.points.toList(),
             )
         }
-        val characters = snapshot.sumOf { photo ->
+        val characters = (roundRequestText?.length ?: 0).toLong() + snapshot.sumOf { photo ->
             (photo.requestText?.length ?: 0).toLong() + photo.points.sumOf { point ->
                 (if (point.useRefinedText) point.refinedText.orEmpty() else point.text).length.toLong()
             }
         }
         if (characters > properties.maxTextCharacters) throw RetouchException(RetouchErrorCode.PDF_LIMIT_EXCEEDED)
-        return RetouchPdfSnapshotDto(galleryTitle = gallery.title, photos = snapshot)
+        return RetouchPdfSnapshotDto(galleryTitle = gallery.title, roundRequestText = roundRequestText, photos = snapshot)
     }
 
 }

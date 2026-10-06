@@ -33,6 +33,7 @@ class RetouchPdfRenderer(
             val regular = loadFont(document, "NanumGothic-Regular.ttf")
             val bold = loadFont(document, "NanumGothic-Bold.ttf")
             document.documentInformation.title = "${round.galleryTitle} 요청서"
+            drawRoundRequest(document = document, round = round, regular = regular, bold = bold, started = started)
             var imageBytes = 0L
             for ((photoIndex, item) in items.withIndex()) {
                 checkBudget(document.numberOfPages, started)
@@ -95,6 +96,29 @@ class RetouchPdfRenderer(
         }
     }
 
+    /** 회차 전체 요청은 사진 페이지 앞에 따로 둔다 — 사진 페이지의 요청 칸은 사진 한 장의 것이라 섞으면 어느 사진의 말인지 흐려진다. */
+    private fun drawRoundRequest(document: PDDocument, round: RetouchPdfSnapshotDto, regular: PDType0Font, bold: PDType0Font, started: Long) {
+        val text = round.roundRequestText?.takeIf { it.isNotBlank() } ?: return
+        val pending = ArrayDeque(wrap(text, regular, ROUND_REQUEST_WIDTH))
+        var continuation = 0
+        while (pending.isNotEmpty()) {
+            checkBudget(document.numberOfPages, started)
+            val page = PDPage(PAGE_SIZE)
+            document.addPage(page)
+            PDPageContentStream(document, page).use { stream ->
+                drawHeader(stream = stream, round = round, regular = regular, bold = bold)
+                drawText(stream = stream, value = "전체 요청 · 모든 사진에 적용${if (continuation > 0) " · 이어짐" else ""}", x = MARGIN_X, y = CAPTION_Y, font = bold, size = CAPTION_SIZE, color = INK)
+                var cursorY = REQUEST_TOP
+                while (pending.isNotEmpty() && cursorY >= BODY_BOTTOM) {
+                    drawText(stream = stream, value = pending.removeFirst(), x = MARGIN_X, y = cursorY, font = regular, size = BODY_SIZE, color = INK)
+                    cursorY -= LEADING
+                }
+                drawText(stream = stream, value = "${document.numberOfPages} 페이지", x = FOOTER_X, y = FOOTER_Y, font = regular, size = FOOTER_SIZE, color = MUTED)
+            }
+            continuation++
+        }
+    }
+
     private fun loadFont(document: PDDocument, filename: String): PDType0Font =
         ClassPathResource("fonts/retouch/$filename").inputStream.use { PDType0Font.load(document, it) }
 
@@ -117,14 +141,14 @@ class RetouchPdfRenderer(
         if (isEmpty()) add(RetouchPdfBlockDto(number = null, lines = listOf("이 사진에는 별도 보정 요청이 없습니다.")))
     }
 
-    private fun wrap(value: String, font: PDType0Font): List<String> {
+    private fun wrap(value: String, font: PDType0Font, width: Float = REQUEST_WIDTH): List<String> {
         val normalized = displayable(value.replace("\r\n", "\n").replace('\r', '\n'), font)
         val lines = mutableListOf<String>()
         for (paragraph in normalized.split('\n')) {
             var line = ""
             for (character in paragraph) {
                 val next = line + character
-                if (font.getStringWidth(next) * BODY_SIZE / FONT_UNITS > REQUEST_WIDTH && line.isNotEmpty()) {
+                if (font.getStringWidth(next) * BODY_SIZE / FONT_UNITS > width && line.isNotEmpty()) {
                     lines.add(line)
                     line = character.toString()
                 } else line = next
@@ -139,11 +163,8 @@ class RetouchPdfRenderer(
         photoIndex: Int, photoCount: Int, continuation: Int, pageNo: Int,
         image: PDImageXObject, rect: RetouchPdfImageRectDto, regular: PDType0Font, bold: PDType0Font,
     ) {
-        drawText(stream = stream, value = "보정 요청서", x = MARGIN_X, y = HEADER_Y, font = bold, size = BLOCK_TITLE_SPACE, color = INK)
-        drawText(stream = stream, value = round.galleryTitle, x = SUBTITLE_X, y = SUBTITLE_Y, font = regular, size = PIN_RADIUS, color = MUTED, maxWidth = SUBTITLE_WIDTH)
+        drawHeader(stream = stream, round = round, regular = regular, bold = bold)
         drawText(stream = stream, value = "${photoIndex + 1} / $photoCount", x = COUNTER_X, y = COUNTER_Y, font = bold, size = COUNTER_SIZE, color = ACCENT)
-        stream.setStrokingColor(BORDER)
-        stream.moveTo(MARGIN_X, HEADER_LINE_Y); stream.lineTo(CONTENT_RIGHT, HEADER_LINE_Y); stream.stroke()
         drawText(stream = stream, value = item.originalFileName, x = MARGIN_X, y = CAPTION_Y, font = bold, size = LABEL_SIZE, color = INK, maxWidth = FILENAME_WIDTH)
         drawText(stream = stream, value = "요청 사항 · 핀 ${item.points.size}개${if (continuation > 0) " · 이어짐" else ""}", x = REQUEST_X, y = CAPTION_Y, font = bold, size = CAPTION_SIZE, color = INK)
         stream.setNonStrokingColor(PANEL)
@@ -154,6 +175,13 @@ class RetouchPdfRenderer(
             drawPin(stream = stream, number = index + 1, x = x, y = y, radius = PIN_RADIUS, font = bold)
         }
         drawText(stream = stream, value = "사진 ID ${item.photoId} · $pageNo 페이지", x = FOOTER_X, y = FOOTER_Y, font = regular, size = FOOTER_SIZE, color = MUTED)
+    }
+
+    private fun drawHeader(stream: PDPageContentStream, round: RetouchPdfSnapshotDto, regular: PDType0Font, bold: PDType0Font) {
+        drawText(stream = stream, value = "보정 요청서", x = MARGIN_X, y = HEADER_Y, font = bold, size = BLOCK_TITLE_SPACE, color = INK)
+        drawText(stream = stream, value = round.galleryTitle, x = SUBTITLE_X, y = SUBTITLE_Y, font = regular, size = PIN_RADIUS, color = MUTED, maxWidth = SUBTITLE_WIDTH)
+        stream.setStrokingColor(BORDER)
+        stream.moveTo(MARGIN_X, HEADER_LINE_Y); stream.lineTo(CONTENT_RIGHT, HEADER_LINE_Y); stream.stroke()
     }
 
     private fun drawPin(stream: PDPageContentStream, number: Int, x: Float, y: Float, radius: Float, font: PDType0Font) {
@@ -218,6 +246,8 @@ class RetouchPdfRenderer(
         private const val BLOCK_BOTTOM_SPACE = 15f
         private const val SEPARATOR_GAP = 18f
         private const val REQUEST_WIDTH = 306f
+        /** 전체 요청 페이지는 사진이 없어 본문이 좌우 여백 사이를 다 쓴다(CONTENT_RIGHT - MARGIN_X). */
+        private const val ROUND_REQUEST_WIDTH = 770f
         private const val IMAGE_BOX_WIDTH = 396f
         private const val IMAGE_BOX_HEIGHT = 404f
         private const val IMAGE_BOX_X = 50f

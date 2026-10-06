@@ -9,6 +9,7 @@ import com.soma.wes.retouch.dto.request.AddRetouchPhotosRequest
 import com.soma.wes.retouch.dto.request.CompleteResultsRequest
 import com.soma.wes.retouch.dto.request.IssueResultUploadUrlsRequest
 import com.soma.wes.retouch.dto.request.UpdateRetouchPhotoRequest
+import com.soma.wes.retouch.dto.request.UpdateRetouchRoundRequest
 import com.soma.wes.retouch.dto.response.IssueResultUploadUrlsResponse
 import com.soma.wes.retouch.dto.response.RetouchOverviewResponse
 import com.soma.wes.retouch.dto.response.RetouchPhotoResponse
@@ -66,6 +67,18 @@ class RetouchController(
         @Valid @RequestBody request: UpdateRetouchPhotoRequest,
     ): ResponseEntity<RetouchPhotoResponse> {
         val result = retouchService.updatePhoto(galleryId, photoId, loginUser.id, request)
+
+        return ResponseEntity.ok(result)
+    }
+
+    @PutMapping("/rounds/{roundNo}/request")
+    override fun updateRoundRequest(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @PathVariable roundNo: Int,
+        @Valid @RequestBody request: UpdateRetouchRoundRequest,
+    ): ResponseEntity<RetouchOverviewResponse> {
+        val result = retouchService.updateRoundRequest(galleryId, roundNo, loginUser.id, request)
 
         return ResponseEntity.ok(result)
     }
