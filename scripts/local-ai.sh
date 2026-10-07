@@ -8,7 +8,7 @@
 #
 #   scripts/local-ai.sh <galleryId> [--skip-embed] [--skip-analyze]
 #
-# 전제: docker(pg), python3(3.12), AWS 자격증명(dev 버킷 + /wes/local/ 읽기 + Bedrock — categorize 의 naming).
+# 전제: docker(pg), python3(3.12), AWS 자격증명(로컬 버킷 + /wes/local/ 읽기 + Bedrock — categorize 의 naming).
 set -euo pipefail
 WES_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LAMBDA="$WES_ROOT/scripts/lambda"

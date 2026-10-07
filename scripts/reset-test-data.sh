@@ -6,7 +6,7 @@
 #   scripts/reset-test-data.sh remote             SSM 터널 너머의 RDS를 같은 방식으로 지운다
 #   scripts/reset-test-data.sh remote --all       계정(users·studios·토큰)까지 지운다
 #   scripts/reset-test-data.sh remote --with-s3   S3의 원본과 파생본도 함께 지운다
-#   scripts/reset-test-data.sh local --with-s3    dev 버킷의 원본과 파생본도 함께 지운다
+#   scripts/reset-test-data.sh local --with-s3    로컬 버킷의 원본과 파생본도 함께 지운다
 #   scripts/reset-test-data.sh remote --yes       확인 프롬프트를 건너뛴다
 #
 # **계정을 기본으로 남기는 이유**: users를 지우면 발급받은 액세스 토큰이 무효가 되어
@@ -41,7 +41,7 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
-# 환경은 버킷으로 갈린다(local은 dev 버킷, remote는 운영 버킷 — 아래 BUCKET_PARAM). 키 구조는
+# 환경은 버킷으로 갈린다(local은 로컬 버킷, remote는 운영 버킷 — 아래 BUCKET_PARAM). 키 구조는
 # 같으므로 원본(galleries/)과 임베더가 만드는 파생본(previews/galleries/)만 지운다.
 S3_PREFIXES=(galleries/ previews/galleries/)
 
@@ -85,7 +85,7 @@ else
 fi
 # 확인을 받기 전에 S3 쪽도 규모를 보여준다. "몇 개가 지워지는지" 모르고 yes를 치게 하지 않는다.
 if [ "$WITH_S3" = "true" ]; then
-  # local은 dev 버킷(/wes/local), remote는 운영 버킷(/wes/prod). 로컬 pg를 비우면서 운영 객체를
+  # local은 로컬 버킷(/wes/local), remote는 운영 버킷(/wes/prod). 로컬 pg를 비우면서 운영 객체를
   # 지우면 안 되므로 대상과 버킷을 같은 축으로 묶는다.
   if [ "$TARGET" = "local" ]; then BUCKET_PARAM=/wes/local/app.storage.bucket; else BUCKET_PARAM=/wes/prod/app.storage.bucket; fi
   BUCKET=$(aws ssm get-parameter --region "$REGION" --name "$BUCKET_PARAM" \
