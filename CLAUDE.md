@@ -55,10 +55,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   + 로컬 개발용 로컬 버킷, 임베딩 Lambda; dev 서버는 `environments/dev` 스택). `EMBEDDING_DIMENSION`은 이 repo 두 곳과 인프라 repo까지 세 곳이 일치해야
   한다 (`.claude/rules/migration.md`).
 - 설정은 `src/main/resources/application.yml`이 `config/application-{cloud,db,variable}.yml`을
-  import한다. 시크릿과 인프라 파생 값은 시작 시 AWS Parameter Store(`/wes/{local,prod}/`)에서
+  import한다. 시크릿과 인프라 파생 값은 시작 시 AWS Parameter Store(`/wes/{local,dev,prod}/`)에서
   온다.
 - 운영 스크립트는 `scripts/`에 (추적됨):
-  - `db-tunnel.sh [port]` — private RDS로 SSM 포트포워딩 (기본 15432). 자격증명은 실행 시
+  - `db-tunnel.sh [prod|dev] [port]` — private RDS로 SSM 포트포워딩 (기본 prod 15432, dev 15433). 자격증명은 실행 시
     Parameter Store에서 읽는다.
   - `reset-test-data.sh [local|remote] [--all] [--with-s3]` — 수동 테스트 데이터 초기화.
     계정은 기본 보존(토큰 유지). TRUNCATE 목록 규칙은 `.claude/rules/migration.md` 참조.

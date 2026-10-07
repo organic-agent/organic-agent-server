@@ -3,19 +3,33 @@
 # RDS는 비공개 DB 서브넷에 있어 로컬에서 직접 붙지 못한다. IntelliJ 등 GUI 클라이언트는
 # 이 스크립트를 띄워둔 채 localhost:15432 로 접속한다 (sslmode=require, verify-full 금지).
 #
-# 사용법: scripts/db-tunnel.sh [로컬포트]   — 종료는 Ctrl+C
+# 사용법: scripts/db-tunnel.sh [prod|dev] [로컬포트]   — 종료는 Ctrl+C
+#   환경을 생략하면 prod(기존 사용법 `db-tunnel.sh 15432` 그대로). 기본 포트는 prod 15432, dev 15433 —
+#   둘을 동시에 띄워 권한을 비교할 수 있게 포트를 나눈다.
 #
 # 주소를 terraform output이 아니라 AWS API로 조회한다. 이 스크립트를 어느 디렉토리에
 # 두고 실행하든(다른 저장소로 복사하더라도) 동작하게 하기 위해서다.
 set -euo pipefail
 
+TARGET_ENV="prod"
+case "${1:-}" in
+  prod|dev) TARGET_ENV="$1"; shift ;;
+esac
+
 REGION="ap-northeast-2"
-INSTANCE_TAG="wes-app"
-DB_IDENTIFIER="wes-db"
 DB_USER="wes_admin"
 DB_NAME="wes_db"
-PASSWORD_PARAM="/wes/prod/spring.datasource.password"
-LOCAL_PORT="${1:-15432}"
+if [ "$TARGET_ENV" = "dev" ]; then
+  INSTANCE_TAG="wes-dev-app"
+  DB_IDENTIFIER="wes-dev-db"
+  PASSWORD_PARAM="/wes/dev/spring.datasource.password"
+  LOCAL_PORT="${1:-15433}"
+else
+  INSTANCE_TAG="wes-app"
+  DB_IDENTIFIER="wes-db"
+  PASSWORD_PARAM="/wes/prod/spring.datasource.password"
+  LOCAL_PORT="${1:-15432}"
+fi
 
 INSTANCE_ID=$(aws ec2 describe-instances --region "$REGION" \
   --filters "Name=tag:Name,Values=$INSTANCE_TAG" 'Name=instance-state-name,Values=running' \
