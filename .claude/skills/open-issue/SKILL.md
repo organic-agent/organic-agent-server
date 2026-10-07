@@ -76,18 +76,18 @@ effort: xhigh
 1. 브랜치 컨벤션(`.claude/spec/git-convention.md`)을 따른다:
    `{종류}/{이슈번호}-{slug}` - 종류는 Phase 1에서 정한 타입, slug은 영문 kebab-case 간단 설명.
    - 예: fix 이슈 #420 "로그인 리다이렉트 오류" → `fix/420-login-redirect`
-2. 작업 브랜치는 `main`에서 직접 분기한다 (컨벤션: `feature → main`, `.claude/spec/git-convention.md` 참조).
-   최신 main을 받아 브랜치를 만들어라:
+2. 작업 브랜치는 `develop`에서 분기한다 (컨벤션: `feature → develop → main`, `.claude/spec/git-convention.md` 참조).
+   최신 develop을 받아 브랜치를 만들어라:
    ```bash
-   git fetch origin main
-   git checkout -b {종류}/{이슈번호}-{slug} origin/main
+   git fetch origin develop
+   git checkout -b {종류}/{이슈번호}-{slug} origin/develop
    ```
-   - 단, hotfix는 성격상 base가 다를 수 있으니 base 브랜치를 사용자에게 확인하라.
+   - 단, hotfix는 `origin/main`에서 분기한다(머지 뒤 `sync-develop.yml`이 develop에 반영).
 3. 브랜치를 원격에 반영하고 upstream을 정정하라:
    ```bash
    git push -u origin HEAD
    ```
-   - `git checkout -b ... origin/main`은 upstream을 `origin/main`으로 잡아, 이후 `git push`가 브랜치명 불일치로 실패하고 브랜치가 원격에 없다. `-u origin HEAD`로 동일명 원격 브랜치를 만들고 upstream을 그쪽으로 재설정해 재발을 막는다.
+   - `git checkout -b ... origin/develop`은 upstream을 `origin/develop`으로 잡아, 이후 `git push`가 브랜치명 불일치로 실패하고 브랜치가 원격에 없다. `-u origin HEAD`로 동일명 원격 브랜치를 만들고 upstream을 그쪽으로 재설정해 재발을 막는다.
 
 > 다음 Phase 조건: 새 브랜치로 체크아웃되고 원격에 push(-u)되었을 때
 
