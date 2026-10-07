@@ -7,6 +7,9 @@ export OWNER_LOWERCASE="${OWNER_LOWERCASE}"
 export IMAGE_TAG="${IMAGE_TAG}"
 TARGET_IMAGE_TAG="$IMAGE_TAG"
 WORK_DIR=/opt/wes-prod
+# 앱이 읽는 Parameter Store 프리픽스. dev CD(cd-dev.yml)가 /wes/dev 를 넘긴다 — dev 인스턴스 롤은 /wes/prod 를 못 읽는다.
+# 서버의 작업 디렉터리·compose 파일 이름(docker-compose.prod.yml)은 배포 슬롯 이름이라 dev에서도 같다.
+PARAMETER_PREFIX="${PARAMETER_PREFIX:-/wes/prod}"
 ROLLBACK_DIR="$WORK_DIR/.public-rollback"
 CANDIDATE_DIR="$WORK_DIR/.public-candidate"
 PREVIOUS_RELEASE_AVAILABLE=false
@@ -221,11 +224,11 @@ else
 fi
 
 # alloy가 로그를 보낼 Loki 주소. 인프라(모니터링 EC2)가 Parameter Store에 기록한다.
-# 인스턴스 롤은 /wes/prod/* 읽기 권한이 있고 aws-cli는 user_data가 깔아 둔다.
+# 인스턴스 롤은 $PARAMETER_PREFIX/* 읽기 권한이 있고 aws-cli는 user_data가 깔아 둔다.
 # 아직 없으면 alloy는 뜨되 전송만 실패하고, 앱 배포는 그대로 진행된다.
 export LOKI_URL=$(aws ssm get-parameter --region ${AWS_REGION} \
-  --name /wes/prod/app.logging.loki-url --query Parameter.Value --output text 2>/dev/null || true)
-[ -n "$LOKI_URL" ] || echo "경고: /wes/prod/app.logging.loki-url 파라미터가 없어 로그가 Loki로 전송되지 않습니다" >&2
+  --name "$PARAMETER_PREFIX/app.logging.loki-url" --query Parameter.Value --output text 2>/dev/null || true)
+[ -n "$LOKI_URL" ] || echo "경고: $PARAMETER_PREFIX/app.logging.loki-url 파라미터가 없어 로그가 Loki로 전송되지 않습니다" >&2
 
 echo "${COMPOSE_B64}" | base64 -d > "$CANDIDATE_DIR/docker-compose.prod.yml"
 echo "${ALLOY_B64}" | base64 -d > "$CANDIDATE_DIR/config.alloy"

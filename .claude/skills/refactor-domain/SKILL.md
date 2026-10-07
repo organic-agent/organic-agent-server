@@ -24,7 +24,7 @@ effort: xhigh
 
 1. **브랜치**: `main`이면 멈추고 `open-issue` 스킬로 `refactor/{이슈}-{domain}-...` 브랜치를 만들자고 제안한다.
    작업 브랜치라면 `gh pr list --head <branch> --state merged`로 이미 머지된 브랜치가 아닌지 확인하고
-   (squash 머지라 끝난 브랜치도 살아 보인다), `git fetch && git rebase origin/main`으로 main 위에 올린다.
+   (squash 머지라 끝난 브랜치도 살아 보인다), `git fetch && git rebase origin/develop`으로 develop 위에 올린다.
 2. **기준선**: 보고서의 `## QA` 절에서 기준선(커밋·테스트 수)을 읽는다. 없으면
    `./gradlew test --tests "com.soma.wes.{domain}.*"`를 돌려 지금 결과를 기준선으로 기록하고,
    테스트가 얇은 도메인이면(진입점 대비 테스트가 절반 미만) **`/qa-domain {domain}`을 먼저 돌리자고 제안한다.**
@@ -122,7 +122,7 @@ effort: xhigh
 보고서의 `## 리팩토링` 절을 마무리하고 사용자에게 요약한다:
 
 - 적용 / 되돌림 / 보류 항목 수와 목록
-- 변경 파일 수, 삭제된 줄 수 (`git diff --stat origin/main`)
+- 변경 파일 수, 삭제된 줄 수 (`git diff --stat origin/develop`)
 - API 제거처럼 **웹·AI·인프라 쪽 후속 작업**이 필요한 항목
 - 새로 발견해 findings에 추가만 한 항목
 - `kotlin.md`나 계층 규칙에 없어서 판단이 갈렸던 패턴 — 규칙에 추가할지 사용자에게 묻는다

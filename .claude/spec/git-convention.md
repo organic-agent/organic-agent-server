@@ -2,9 +2,18 @@
 
 ## 브랜치 전략
 
-현재는 `dev` 브랜치 없이 작업 브랜치가 `main`에서 직접 분기하여 `main`으로 병합되는
-단순한 흐름(`feature → main`)을 사용한다. 작업 브랜치는 `origin/main`을 base로 생성한다.
-`hotfix`는 성격상 base가 다를 수 있으므로 작업 시작 전 사용자에게 base 브랜치를 확인한다.
+작업 브랜치는 `origin/develop`에서 분기해 `develop`으로 PR을 보낸다(squash 머지). 흐름은 `feature → develop → main`이다.
+
+| 브랜치 | 머지되면 | 무엇이 돈다 |
+|---|---|---|
+| `develop` | dev 서버 배포 (`dev.api.easyselect.kr`, `dev.admin.easyselect.kr`) | `cd-dev.yml` |
+| `main` | 운영 배포 | `cd-prod.yml` |
+
+- **운영 반영**: develop → main PR에 `ready-to-merge` 라벨을 붙이면 `ff-merge.yml`이 체크(CI·dev 배포) 통과를 확인하고
+  develop의 커밋을 머지 커밋 없이 그대로 main에 올린다(fast-forward). 머지 버튼은 쓰지 않는다 — SHA가 갈라져 다음 FF가 막힌다.
+- **hotfix**: `origin/main`에서 분기해 main으로 PR(squash). 머지되면 `sync-develop.yml`이 develop을 main 위로 맞춘다
+  (develop에 배포 전 커밋이 없으면 FF, 있으면 rebase 후 force push). 충돌이면 실패로 남으니 손으로 rebase 한다.
+- develop이 rebase 되면 그 위에서 딴 로컬 작업 브랜치는 `git rebase --onto origin/develop <옛 develop> <브랜치>`로 옮긴다.
 
 ## 커밋 타입 표
 

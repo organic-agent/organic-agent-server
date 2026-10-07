@@ -43,10 +43,17 @@ data class AnalysisProperties(
     val materializeMaxAttempts: Int = 3,
     /** 한 갤러리에 score Lambda 폴백을 이 횟수까지 보낸다. 그 뒤에도 점수가 없으면 진행 감시가 처리한다. */
     val scoreFallbackMax: Int = 3,
-    /** 관리자 백오피스 주소. 실패 사진 알림이 그 갤러리를 여는 링크(`/resources?type=GALLERY&id=`)를 이 위에 만든다. */
+    /**
+     * 관리자 백오피스 주소. 실패 사진 알림이 그 갤러리를 여는 링크(`/resources?type=GALLERY&id=`)를 이 위에 만든다.
+     * 비우면 링크를 싣지 않는다 — dev 처럼 관리자 서버가 없는 환경에서 운영 백오피스를 엉뚱한 id로 열지 않게.
+     */
     val backofficeBaseUrl: String = "https://admin.easyselect.kr",
     val gpu: Gpu = Gpu(),
 ) {
+
+    /** 백오피스에서 그 갤러리를 여는 주소. [backofficeBaseUrl]이 비어 있으면 null 이다. */
+    fun backofficeGalleryUrl(galleryId: Long): String? =
+        backofficeBaseUrl.trimEnd('/').takeIf { it.isNotBlank() }?.let { "$it/resources?type=GALLERY&id=$galleryId" }
 
     /**
      * GPU score 워커. [enabled]면 스윕이 backlog를 보고 EC2 인스턴스(태그 `Name`=[tag])를 켜고, 워커의 유휴 30초 자기 정지가

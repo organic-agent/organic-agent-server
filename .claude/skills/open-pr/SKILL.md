@@ -12,14 +12,14 @@ effort: xhigh
 
 # PR 생성
 
-대상 브랜치: $ARGUMENTS (비어있으면 `main`)
+대상 브랜치: $ARGUMENTS (비어있으면 `develop`, hotfix 브랜치면 `main`)
 
-이 저장소는 `dev` 없이 작업 브랜치가 `main`에서 분기해 `main`으로 병합된다
-(`.claude/spec/git-convention.md`). 그래서 base 기본값은 `main`이다.
+이 저장소는 작업 브랜치가 `develop`에서 분기해 `develop`으로 병합되고(dev 서버 배포), 운영 반영은 develop → main FF다
+(`.claude/spec/git-convention.md`). 그래서 base 기본값은 `develop`이다. hotfix만 `main`으로 간다.
 
 ## Phase 1: 현재 브랜치 및 변경 사항 파악
 
-1. `git branch --show-current`로 현재 브랜치명을 확인하라. `main`이면 PR을 열 수 없으니 중단하라.
+1. `git branch --show-current`로 현재 브랜치명을 확인하라. `main`·`develop`이면 PR을 열 수 없으니 중단하라.
 2. 브랜치명에서 이슈 번호를 추출하라 (형식: `{type}/{이슈번호}-{slug}`)
    - 예: `feat/123-bookmark` → 이슈 번호 `123`
    - 이슈 번호가 없으면 사용자에게 물어보라.
@@ -65,7 +65,7 @@ effort: xhigh
 
 ## Phase 3: PR 생성
 
-1. 대상 브랜치를 결정하라: $ARGUMENTS가 있으면 해당 브랜치, 없으면 `main`.
+1. 대상 브랜치를 결정하라: $ARGUMENTS가 있으면 해당 브랜치, 없으면 `develop`(브랜치가 `hotfix/`면 `main`).
 2. 현재 브랜치가 원격에 push되어 있는지, 로컬에 안 올라간 커밋이 없는지 확인하라:
    ```bash
    git rev-parse HEAD

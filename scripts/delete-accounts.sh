@@ -5,7 +5,7 @@
 # 사용법:
 #   scripts/delete-accounts.sh remote --email a@x.com [--email b@y.com ...]            DB만
 #   scripts/delete-accounts.sh remote --email a@x.com --with-s3                         S3 원본·파생본까지
-#   scripts/delete-accounts.sh local  --email a@x.com --with-s3                         로컬 pg + dev 버킷
+#   scripts/delete-accounts.sh local  --email a@x.com --with-s3                         로컬 pg + 로컬 버킷
 #   scripts/delete-accounts.sh remote --email a@x.com --yes                             확인 프롬프트 생략
 #
 # 같은 이메일이 여러 provider(KAKAO·NAVER·GOOGLE)로 있으면 전부 대상이다.

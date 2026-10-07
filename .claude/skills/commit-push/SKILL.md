@@ -19,8 +19,8 @@ effort: xhigh
 
 1. `git branch --show-current`로 현재 브랜치를 확인하라. 브랜치명(`{type}/{이슈번호}-{slug}`)에서 이슈 번호를 추출하라.
    - 번호를 못 뽑으면 사용자에게 물어보라. 끝내 없으면 커밋 메시지의 `(#이슈번호)`는 생략한다.
-2. 현재 브랜치가 `main`이면 "main에는 직접 커밋하지 않는다"를 알리고 중단하라.
-   (이 저장소는 `dev` 없이 `feature → main`으로 간다. `.claude/spec/git-convention.md` 참조.)
+2. 현재 브랜치가 `main`이나 `develop`이면 "직접 커밋하지 않는다"를 알리고 중단하라.
+   (이 저장소는 `feature → develop → main`으로 간다. `.claude/spec/git-convention.md` 참조.)
 3. `git status --short`로 스테이징·미스테이징·untracked 상태를 파악하라.
 4. `git diff`(미스테이징)와 `git diff --staged`로 실제 변경 내용을 직접 확인하라.
    - untracked 파일은 diff에 잡히지 않는다. `git status`에 뜬 새 파일은 Read로 내용을 확인하라.

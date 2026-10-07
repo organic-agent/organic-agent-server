@@ -1,10 +1,12 @@
+# dev 관리자 호스트(wes-dev-admin) compose. docker-compose.admin-api.prod.yml과 같은 규격이고 프로필과 로그 env 라벨만 다르다.
+# cd-dev.yml이 이 파일을 보내고, 배포 스크립트(scripts/deploy-admin-api-ssm.sh)가 서버의 docker-compose.admin-api.prod.yml 자리에 둔다.
 services:
   wes-admin-api:
     image: ghcr.io/${OWNER_LOWERCASE}/wes-admin-api:${IMAGE_TAG:?IMAGE_TAG must be set}
     container_name: wes-admin-api
     restart: always
     environment:
-      - SPRING_PROFILES_ACTIVE=prod
+      - SPRING_PROFILES_ACTIVE=dev
       - SERVER_PORT=8081
       - AWS_REGION=ap-northeast-2
       - TZ=Asia/Seoul
@@ -43,7 +45,7 @@ services:
     environment:
       - LOKI_URL=${LOKI_URL:?LOKI_URL must be set}
       # Loki의 env 라벨(monitoring/config.admin.alloy). dev 관리자 로그도 같은 Loki로 가므로 환경을 갈라 준다.
-      - WES_ENV=prod
+      - WES_ENV=dev
     # A compromised collector cannot use Docker's embedded resolver as a
     # host-network DNS tunnel. Loki itself is pinned in /etc/hosts below.
     dns:

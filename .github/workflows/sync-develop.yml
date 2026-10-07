@@ -1,0 +1,99 @@
+name: "[SYNC] main → develop 동기화"
+
+# main에 직접 들어온 커밋(hotfix PR의 squash 머지)을 develop에 머지 커밋 없이 반영한다. develop은 항상 "main + 아직 배포 안 한 커밋"
+# 한 줄로 유지되고, 그래서 다음 develop → main(ff-merge.yml)이 fast-forward로 된다.
+#   - develop이 main의 조상(배포 전 커밋 없음)이면 develop을 main으로 FF — 두 브랜치 SHA가 같아진다.
+#   - develop에 배포 전 커밋이 있으면 develop을 main 위로 rebase하고 force push — main의 커밋은 SHA 그대로, 배포 전 커밋만
+#     새 SHA가 된다. develop에 같은 hotfix를 cherry-pick 해 뒀다면 rebase가 같은 패치로 보고 건너뛴다.
+#   - rebase가 충돌하면 실패로 끝난다. 손으로 rebase 하고 force push 한다(로그에 명령).
+#
+# ff-merge.yml이 GITHUB_TOKEN으로 main에 미는 push는 이 워크플로를 띄우지 않는다 — 그때는 main == develop이라 할 일도 없다.
+# GITHUB_TOKEN의 push는 CI·dev CD도 띄우지 않으므로, 바뀐 develop은 dev CD(cd-dev.yml)를 직접 띄워 빌드·테스트·dev 배포한다.
+# 그 결과가 develop → main PR head의 체크가 된다.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# ff-merge.yml과 같은 그룹 — 둘이 동시에 main·develop을 움직이지 않게 한다.
+concurrency:
+  group: wes-main-develop-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write # develop push
+  actions: write # cd-dev.yml workflow_dispatch
+  pull-requests: write # ready-to-merge 라벨 제거
+
+jobs:
+  sync-develop:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 체크아웃
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Git 설정
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: develop을 main에 맞추기
+        id: sync
+        run: |
+          MAIN_SHA=$(git rev-parse origin/main)
+          DEVELOP_SHA=$(git rev-parse origin/develop)
+
+          if git merge-base --is-ancestor "$MAIN_SHA" "$DEVELOP_SHA"; then
+            echo "develop이 이미 main을 포함합니다. 할 일 없음."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git merge-base --is-ancestor "$DEVELOP_SHA" "$MAIN_SHA"; then
+            echo "develop에 배포 전 커밋이 없습니다. develop을 main으로 fast-forward 합니다."
+            git merge --ff-only "$MAIN_SHA"
+            git push origin develop
+            echo "mode=ff" >> "$GITHUB_OUTPUT"
+          else
+            echo "develop에 배포 전 커밋이 있습니다. main 위로 rebase 합니다:"
+            git log --oneline "$MAIN_SHA..$DEVELOP_SHA"
+            if ! git rebase "$MAIN_SHA"; then
+              git rebase --abort
+              {
+                echo "rebase 충돌 — 손으로 맞춰 주세요:"
+                echo "  git fetch origin && git switch develop && git reset --hard origin/develop"
+                echo "  git rebase origin/main   # 충돌 해결 후 git rebase --continue"
+                echo "  git push --force-with-lease origin develop"
+              } >&2
+              exit 1
+            fi
+            # 확인한 뒤 누가 develop에 밀었으면 덮지 않는다.
+            git push --force-with-lease="develop:$DEVELOP_SHA" origin HEAD:develop
+            echo "mode=rebase" >> "$GITHUB_OUTPUT"
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      # head가 바뀌었으니 이전 head에 붙인 승인(ready-to-merge)은 무효다. 남겨 두면 새 head의 dev CD가 끝나는 순간
+      # ff-merge.yml이 다시 확인 없이 운영으로 올린다.
+      - name: develop → main PR의 ready-to-merge 라벨 제거
+        if: steps.sync.outputs.mode == 'rebase'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR=$(gh pr list --repo "${{ github.repository }}" --base main --head develop --state open --json number --jq '.[0].number // empty')
+          if [ -n "$PR" ]; then
+            gh pr edit "$PR" --repo "${{ github.repository }}" --remove-label ready-to-merge || true
+            gh pr comment "$PR" --repo "${{ github.repository }}" \
+              --body "main의 커밋을 반영해 develop을 rebase 했습니다($(git rev-parse --short HEAD)). dev 배포 확인 뒤 \`ready-to-merge\`를 다시 붙여 주세요."
+          fi
+
+      - name: dev 빌드·배포 실행
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run cd-dev.yml --ref develop --repo "${{ github.repository }}"

@@ -1,0 +1,366 @@
+name: "[DEV] Build and Deploy"
+
+on:
+  push:
+    # 인프라 dev 배포 롤(wes-dev-*)은 이 브랜치의 토큰만 받는다(infra environments/dev 의 dev_branch).
+    branches: [develop]
+
+  workflow_dispatch:
+
+concurrency:
+  group: wes-server-dev
+  cancel-in-progress: false
+
+env:
+  PUBLIC_IMAGE_BASENAME: wes-api
+  ADMIN_IMAGE_BASENAME: wes-admin-api
+  # EC2 아키텍처와 맞아야 한다. Graviton(t4g·m7g·c7g 등)이면 linux/arm64,
+  # 그 외 t3·m5 등 인텔/AMD 계열이면 linux/amd64.
+  # 어긋나면 컨테이너가 `exec format error`로 즉시 죽는다.
+  # → Graviton(ARM) 인스턴스를 쓰기로 해서 arm64로 빌드한다.
+  #    Dockerfile엔 RUN 스텝이 없어(COPY + ENTRYPOINT뿐) amd64 러너에서 QEMU 없이 빌드된다.
+  PLATFORM: linux/arm64
+
+jobs:
+  # --- Job 1: 빌드 및 이미지 푸시 (쓰기 권한) ---
+  build-and-push:
+    name: 빌드 후 GHCR에 푸쉬
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      owner_lowercase: ${{ steps.image_meta.outputs.owner_lowercase }}
+      public_image_name: ${{ steps.image_meta.outputs.public_image_name }}
+      admin_image_name: ${{ steps.image_meta.outputs.admin_image_name }}
+      deploy_ready: ${{ steps.deploy_gate.outputs.ready }}
+      admin_deploy_ready: ${{ steps.deploy_gate.outputs.admin_ready }}
+
+    steps:
+      - name: 체크아웃
+        uses: actions/checkout@v4
+
+      # dev 인프라(environments/dev)를 apply 하고 시크릿을 등록하기 전에는 배포할 서버도 출입증도 없다.
+      # 그동안은 이미지만 만들고 배포 잡은 건너뛴다 — 실패로 남기지 않는다. 잡 if 에서는 secrets 를 못 읽어 여기서 출력으로 넘긴다.
+      - name: dev 배포 준비 여부 확인
+        id: deploy_gate
+        env:
+          DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEV_DEPLOY_ROLE_ARN }}
+          ADMIN_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEV_ADMIN_API_DEPLOY_ROLE_ARN }}
+        run: |
+          if [ -n "$DEPLOY_ROLE_ARN" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::AWS_DEV_DEPLOY_ROLE_ARN 시크릿이 없어 dev 배포를 건너뜁니다 (이미지 빌드·푸쉬만 수행)"
+          fi
+          # 관리자 호스트(wes-dev-admin)는 dev 환경보다 늦게 붙는다. 시크릿이 없으면 관리자 API 배포만 건너뛴다.
+          if [ -n "$ADMIN_DEPLOY_ROLE_ARN" ]; then
+            echo "admin_ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "admin_ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::AWS_DEV_ADMIN_API_DEPLOY_ROLE_ARN 시크릿이 없어 dev 관리자 API 배포를 건너뜁니다"
+          fi
+
+      - name: JDK 21 설정
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+          cache: gradle
+
+      - name: JAR 빌드
+        run: |
+          chmod +x ./gradlew
+          ./gradlew clean build --no-daemon
+
+      - name: ARM64 에뮬레이션 설정
+        uses: docker/setup-qemu-action@v3
+
+      - name: Docker Buildx 설정
+        uses: docker/setup-buildx-action@v3
+
+      # 등록할 시크릿이 없다. GITHUB_TOKEN은 실행마다 자동으로 발급된다.
+      - name: GHCR 로그인
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 이미지 이름 결정
+        id: image_meta
+        run: |
+          # GHCR 경로는 소문자만 받는다. 조직명에 대문자가 있어도 안전하도록 변환한다.
+          OWNER_LOWERCASE=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+
+          echo "owner_lowercase=${OWNER_LOWERCASE}" >> "$GITHUB_OUTPUT"
+          echo "public_image_name=ghcr.io/${OWNER_LOWERCASE}/${PUBLIC_IMAGE_BASENAME}" >> "$GITHUB_OUTPUT"
+          echo "admin_image_name=ghcr.io/${OWNER_LOWERCASE}/${ADMIN_IMAGE_BASENAME}" >> "$GITHUB_OUTPUT"
+
+      - name: 공개 API 이미지 빌드 및 푸쉬
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.api
+          platforms: ${{ env.PLATFORM }}
+          push: true
+          tags: ${{ steps.image_meta.outputs.public_image_name }}:${{ github.sha }}
+
+      - name: 관리자 API 이미지 빌드 및 푸쉬
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.admin-api
+          platforms: ${{ env.PLATFORM }}
+          push: true
+          tags: ${{ steps.image_meta.outputs.admin_image_name }}:${{ github.sha }}
+
+  # --- Job 2: 배포 (SSM Run Command) ---
+  # SSH 대신 SSM을 쓴다: 보안그룹에 22번 인바운드가 없고(인프라 기본값), EC2 퍼블릭 IP는
+  # stop/start 때마다 바뀌어 HOST 시크릿이 낡는다. SSM은 인스턴스를 Name 태그로 찾고
+  # OIDC로 임시 자격증명을 받으므로 SSH 키·호스트 IP·고정 시크릿이 전부 필요 없다.
+  # 필요한 시크릿은 AWS_DEV_DEPLOY_ROLE_ARN 하나 — WES-Infra의
+  # `terraform -chdir=environments/dev output -raw github_deploy_role_arn` 값이다.
+  # 배포 스크립트는 운영과 같고, compose 파일과 Parameter Store 프리픽스만 dev 것을 넘긴다.
+  deploy-public:
+    name: dev 공개 API 배포와 마이그레이션
+    needs: build-and-push
+    if: needs.build-and-push.outputs.deploy_ready == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      id-token: write # OIDC로 AWS 롤을 assume 하기 위한 토큰 발급 권한
+
+    env:
+      OWNER_LOWERCASE: ${{ needs.build-and-push.outputs.owner_lowercase }}
+      IMAGE_TAG: ${{ github.sha }}
+      AWS_REGION: ap-northeast-2
+      INSTANCE_NAME_TAG: wes-dev-app
+      PARAMETER_PREFIX: /wes/dev
+
+    steps:
+      # 서버로 보낼 설정과 원격 스크립트만 받아 저장소 전체 checkout을 피한다.
+      - name: 설정 파일만 체크아웃
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            docker-compose.dev.yml
+            monitoring/config.alloy
+            scripts/deploy-public-ssm.sh
+          sparse-checkout-cone-mode: false
+
+      - name: AWS 자격증명 설정 (OIDC — 장기 액세스 키 없음)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEV_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 배포 대상 인스턴스 조회
+        id: instance
+        run: |
+          INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=${INSTANCE_NAME_TAG}" 'Name=instance-state-name,Values=running' \
+            --query 'Reservations[0].Instances[0].InstanceId' --output text)
+
+          if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
+            echo "실행 중인 ${INSTANCE_NAME_TAG} 인스턴스가 없습니다 (인프라 destroy 상태인지 확인)" >&2
+            exit 1
+          fi
+          echo "id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: 컨테이너 교체 및 헬스체크 (SSM Run Command)
+        run: |
+          INSTANCE_ID="${{ steps.instance.outputs.id }}"
+
+          # scp가 없으므로 설정 파일과 원격 스크립트를 SSM 명령에 함께 실어 보낸다.
+          COMPOSE_B64=$(base64 -w0 docker-compose.dev.yml)
+          ALLOY_B64=$(base64 -w0 monitoring/config.alloy)
+
+          # GITHUB_TOKEN은 잡 종료와 함께 만료되는 단기 토큰이다. jq의 @sh로 모든
+          # 주입값을 shell-safe하게 인용하고, 원격 스크립트 본문은 checkout 파일을 그대로 읽는다.
+          jq -n \
+            --arg owner_lowercase "$OWNER_LOWERCASE" \
+            --arg image_tag "$IMAGE_TAG" \
+            --arg aws_region "$AWS_REGION" \
+            --arg parameter_prefix "$PARAMETER_PREFIX" \
+            --arg public_image_basename "$PUBLIC_IMAGE_BASENAME" \
+            --arg github_actor "${{ github.actor }}" \
+            --arg github_token "${{ secrets.GITHUB_TOKEN }}" \
+            --arg compose_b64 "$COMPOSE_B64" \
+            --arg alloy_b64 "$ALLOY_B64" \
+            --rawfile script scripts/deploy-public-ssm.sh \
+            '
+              def env_line($name; $value):
+                "export \($name)=\($value | @sh)\n";
+              {
+                commands: [
+                  env_line("OWNER_LOWERCASE"; $owner_lowercase)
+                  + env_line("IMAGE_TAG"; $image_tag)
+                  + env_line("AWS_REGION"; $aws_region)
+                  + env_line("PARAMETER_PREFIX"; $parameter_prefix)
+                  + env_line("PUBLIC_IMAGE_BASENAME"; $public_image_basename)
+                  + env_line("GITHUB_ACTOR"; $github_actor)
+                  + env_line("GITHUB_TOKEN"; $github_token)
+                  + env_line("COMPOSE_B64"; $compose_b64)
+                  + env_line("ALLOY_B64"; $alloy_b64)
+                  + $script
+                ]
+              }
+            ' > params.json
+
+          COMMAND_ID=$(aws ssm send-command \
+            --document-name AWS-RunShellScript \
+            --instance-ids "$INSTANCE_ID" \
+            --comment "wes-api dev deploy ${{ github.sha }}" \
+            --timeout-seconds 1800 \
+            --parameters file://params.json \
+            --query 'Command.CommandId' --output text)
+
+          # 후보 pull, target health, rollback health를 모두 포함해 최대 30분 폴링한다.
+          STATUS=Pending
+          for i in $(seq 1 180); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+              --query Status --output text 2>/dev/null || echo Pending)
+            case "$STATUS" in
+              Success|Failed|Cancelled|TimedOut) break ;;
+            esac
+            sleep 10
+          done
+
+          # 성공이든 실패든 원격 로그를 러너 콘솔에 그대로 남긴다.
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+            --query '{status:Status,stdout:StandardOutputContent,stderr:StandardErrorContent}' \
+            --output json \
+            | jq -r '"--- status: \(.status)\n--- stdout ---\n\(.stdout)\n--- stderr ---\n\(.stderr)"'
+
+          [ "$STATUS" = "Success" ]
+
+  # 공개 API가 Flyway migration을 끝낸 뒤에만 관리자 API를 교체한다. 운영 cd-prod.yml의 deploy-admin과 같은 단계이고,
+  # 대상 인스턴스·롤·compose·관리자 Parameter Store 프리픽스만 dev 것이다.
+  deploy-admin:
+    name: dev 비공개 관리자 API 배포
+    needs: [build-and-push, deploy-public]
+    if: needs.build-and-push.outputs.admin_deploy_ready == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+
+    env:
+      OWNER_LOWERCASE: ${{ needs.build-and-push.outputs.owner_lowercase }}
+      IMAGE_TAG: ${{ github.sha }}
+      AWS_REGION: ap-northeast-2
+      INSTANCE_NAME_TAG: wes-dev-admin
+      ADMIN_PARAMETER_PREFIX: /wes/admin-api/dev
+
+    steps:
+      - name: 관리자 compose 파일 체크아웃
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            docker-compose.admin-api.dev.yml
+            deploy/wes-admin-alloy-egress.service
+            monitoring/config.admin.alloy
+            scripts/configure-admin-alloy-egress.sh
+            scripts/deploy-admin-api-ssm.sh
+          sparse-checkout-cone-mode: false
+
+      # 공개 API 배포 역할을 넓히지 않고 wes-dev-admin에만 명령 가능한 전용 역할을 사용한다(infra environments/dev admin_api_deploy).
+      - name: 관리자 배포 AWS 자격증명 설정
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEV_ADMIN_API_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 관리자 인스턴스 조회
+        id: admin_instance
+        run: |
+          INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=${INSTANCE_NAME_TAG}" 'Name=instance-state-name,Values=running' \
+            --query 'Reservations[0].Instances[0].InstanceId' --output text)
+
+          if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
+            echo "실행 중인 ${INSTANCE_NAME_TAG} 인스턴스가 없습니다" >&2
+            exit 1
+          fi
+          echo "id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: 관리자 API 교체 및 내부 헬스체크
+        run: |
+          INSTANCE_ID="${{ steps.admin_instance.outputs.id }}"
+          COMPOSE_B64=$(base64 -w0 docker-compose.admin-api.dev.yml)
+          ALLOY_B64=$(base64 -w0 monitoring/config.admin.alloy)
+          ALLOY_EGRESS_B64=$(base64 -w0 scripts/configure-admin-alloy-egress.sh)
+          # 부팅 때 Loki 주소를 읽는 유닛의 파라미터 경로를 dev 관리자 프리픽스로 바꿔 보낸다 — dev 호스트 롤은 운영 프리픽스를 못 읽는다.
+          sed "s|^Environment=LOKI_PARAMETER=/wes/admin-api/prod/|Environment=LOKI_PARAMETER=${ADMIN_PARAMETER_PREFIX}/|" \
+            deploy/wes-admin-alloy-egress.service > alloy-egress.dev.service
+          grep -Fxq "Environment=LOKI_PARAMETER=${ADMIN_PARAMETER_PREFIX}/app.logging.loki-url" alloy-egress.dev.service
+          ALLOY_EGRESS_UNIT_B64=$(base64 -w0 alloy-egress.dev.service)
+
+          jq -n \
+            --arg owner_lowercase "$OWNER_LOWERCASE" \
+            --arg image_tag "$IMAGE_TAG" \
+            --arg aws_region "$AWS_REGION" \
+            --arg admin_parameter_prefix "$ADMIN_PARAMETER_PREFIX" \
+            --arg admin_image_basename "$ADMIN_IMAGE_BASENAME" \
+            --arg github_actor "${{ github.actor }}" \
+            --arg github_token "${{ secrets.GITHUB_TOKEN }}" \
+            --arg compose_b64 "$COMPOSE_B64" \
+            --arg alloy_b64 "$ALLOY_B64" \
+            --arg alloy_egress_b64 "$ALLOY_EGRESS_B64" \
+            --arg alloy_egress_unit_b64 "$ALLOY_EGRESS_UNIT_B64" \
+            --rawfile script scripts/deploy-admin-api-ssm.sh \
+            '
+              def env_line($name; $value):
+                "export \($name)=\($value | @sh)\n";
+              {
+                commands: [
+                  env_line("OWNER_LOWERCASE"; $owner_lowercase)
+                  + env_line("IMAGE_TAG"; $image_tag)
+                  + env_line("AWS_REGION"; $aws_region)
+                  + env_line("ADMIN_PARAMETER_PREFIX"; $admin_parameter_prefix)
+                  + env_line("ADMIN_IMAGE_BASENAME"; $admin_image_basename)
+                  + env_line("GITHUB_ACTOR"; $github_actor)
+                  + env_line("GITHUB_TOKEN"; $github_token)
+                  + env_line("COMPOSE_B64"; $compose_b64)
+                  + env_line("ALLOY_B64"; $alloy_b64)
+                  + env_line("ALLOY_EGRESS_B64"; $alloy_egress_b64)
+                  + env_line("ALLOY_EGRESS_UNIT_B64"; $alloy_egress_unit_b64)
+                  + $script
+                ]
+              }
+            ' > admin_params.json
+
+          COMMAND_ID=$(aws ssm send-command \
+            --document-name AWS-RunShellScript \
+            --instance-ids "$INSTANCE_ID" \
+            --comment "wes-admin-api dev deploy ${{ github.sha }}" \
+            --timeout-seconds 1800 \
+            --parameters file://admin_params.json \
+            --query 'Command.CommandId' --output text)
+
+          # Include the lock wait, target health window, and a full rollback health window.
+          STATUS=Pending
+          for i in $(seq 1 180); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+              --query Status --output text 2>/dev/null || echo Pending)
+            case "$STATUS" in
+              Success|Failed|Cancelled|TimedOut) break ;;
+            esac
+            sleep 10
+          done
+
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+            --query '{status:Status,stdout:StandardOutputContent,stderr:StandardErrorContent}' \
+            --output json \
+            | jq -r '"--- status: \(.status)\n--- stdout ---\n\(.stdout)\n--- stderr ---\n\(.stderr)"'
+
+          [ "$STATUS" = "Success" ]

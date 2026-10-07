@@ -37,8 +37,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   사진을 봐야 하는 일은 사진 50장 배치 단위로(`InvocationType.EVENT`) 호출되는 Lambda·GPU 워커의 일이다 —
   사진당 호출은 없다.
 - 객체 키는 `galleries/{galleryId}/…`이고 미리보기는 `previews/` + 원본 키다. 환경은 키가 아니라
-  버킷으로 갈린다 — prod는 운영 버킷, local 프로필은 인프라 `module.storage_dev`의 dev 버킷
-  (`/wes/local/app.storage.bucket`). 키 조립은 `PhotoStorage.galleryPrefix`를 지난다.
+  버킷으로 갈린다 — prod는 운영 버킷, dev 서버는 `wes-dev-photos-*`(`/wes/dev/`), local 프로필은 인프라
+  `module.storage_local`의 로컬 버킷 `wes-local-photos-*`(`/wes/local/app.storage.bucket`). 키 조립은 `PhotoStorage.galleryPrefix`를 지난다.
 - AI 실행기는 셋이다 — `embedder`(미리보기·DINOv3 벡터·EXIF, Lambda) → `score`(CLIP·미학·기술 점수·피사체, GPU 워커 또는
   Lambda 폴백) → `categorize`(백분위·연사·그룹 + Bedrock 이름·배정, Lambda). 코드는 sibling repo `../../organic-agent-ai`의
   최상위 디렉토리 하나 = 함수 하나(AI #35). **사진 한 장의 진행은 `photo_analysis` 행 하나가 말한다**(파이프라인 v2):
@@ -52,7 +52,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   `recommendation`(추천 + LLM)은 완성된 `photo_analysis`·배정 행만 읽는다. 설계는 `docs/plans/2026-09-07/pipeline-v2-wes.md`
   (이전 설계 `docs/plans/2026-09-04/analysis-domain.md`는 §12부터 대체됨), 컬럼 소유는 `.claude/rules/migration.md`.
 - 인프라는 sibling repo `../../organic-agent-infra` (Terraform: VPC/ALB/EC2/RDS, 사진 S3 버킷
-  + 로컬 개발용 dev 버킷, 임베딩 Lambda). `EMBEDDING_DIMENSION`은 이 repo 두 곳과 인프라 repo까지 세 곳이 일치해야
+  + 로컬 개발용 로컬 버킷, 임베딩 Lambda; dev 서버는 `environments/dev` 스택). `EMBEDDING_DIMENSION`은 이 repo 두 곳과 인프라 repo까지 세 곳이 일치해야
   한다 (`.claude/rules/migration.md`).
 - 설정은 `src/main/resources/application.yml`이 `config/application-{cloud,db,variable}.yml`을
   import한다. 시크릿과 인프라 파생 값은 시작 시 AWS Parameter Store(`/wes/{local,prod}/`)에서
@@ -71,7 +71,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - `gpu/score-worker.sh` — **로컬 GPU 워커 대역.** 운영의 EC2 score 워커 한 대에 해당한다(AI repo `score worker --gpu --no-idle-stop`, 큐를 비우고 유휴 30초 뒤 종료).
     로컬 wes 에서 `app.analysis.gpu.enabled=true` 면 `ScoreStep` 이 "켜기" 자리에서 이것을 띄운다(`LocalScoreWorkerPool`).
   - `local-ai.sh <galleryId> [--skip-embed] [--skip-analyze]` — 위 셋을 잡 없이 갤러리 전체로 순서대로 도는 지름길(배정·폴더는
-    저장되지 않음). 로컬 pg + dev 버킷(`/wes/local/app.storage.bucket`)을 쓴다.
+    저장되지 않음). 로컬 pg + 로컬 버킷(`/wes/local/app.storage.bucket`)을 쓴다.
   - `load/clone-gallery-photos.sh [local|remote] --source G --count N [--strip embed|score|categorize]` — 부하 실측용. 원본 갤러리의
     사진·분석 행을 새 갤러리 N개로 복제한다(같은 S3 객체를 가리켜 업로드 없음). `--strip`으로 그 단계부터 파이프라인이 다시 돌게 한다.
   - AI venv는 `scripts/lib/ai-venv.sh`가 `<모듈>/.venv`에 만든다(score venv에 categorize 포함).

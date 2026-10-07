@@ -35,3 +35,12 @@ spring:
     activate:
       on-profile: prod
     import: aws-parameterstore:/wes/prod/
+
+---
+# 운영과 같은 규격의 dev 서버(dev-api.easyselect.kr, 인프라 environments/dev). 설정은 prod 블록을 같이 쓰고
+# 환경 차이(DB·버킷·Lambda·GPU 태그·도메인)는 전부 Parameter Store /wes/dev/ 가 낸다.
+spring:
+  config:
+    activate:
+      on-profile: dev
+    import: aws-parameterstore:/wes/dev/
