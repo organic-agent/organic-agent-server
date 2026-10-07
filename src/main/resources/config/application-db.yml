@@ -42,7 +42,8 @@ spring:
 spring:
   config:
     activate:
-      on-profile: prod
+      # dev 서버는 운영과 같은 규격이라 같은 블록을 쓴다.
+      on-profile: prod, dev
 
   jpa:
     show-sql: false

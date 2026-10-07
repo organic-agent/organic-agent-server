@@ -18,7 +18,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 /**
  * 잡이 DONE 으로 닫힐 때 그 잡의 몫인 분석 실패 사진을 세고, 한 장이라도 있으면 운영 채널에 알린다. 알림에는 백오피스의 그 갤러리 링크가 있어
- * 관리자가 바로 실패한 사진만 다시 분석할 수 있다. 실패 사진은 미분류로 남을 뿐 화면에서 따로 드러나지 않아, 알리지 않으면 아무도 모른다.
+ * 관리자가 바로 실패한 사진만 다시 분석할 수 있다(백오피스가 없는 dev 는 링크를 뺀다). 실패 사진은 미분류로 남을 뿐 화면에서 따로 드러나지 않아, 알리지 않으면 아무도 모른다.
  *
  * "그 잡의 몫"은 같은 갤러리의 직전 DONE 잡이 끝난 뒤부터 이 잡이 끝날 때까지 실패로 표시된 사진이다. 잡 생성 시각으로 자르지 않는다 —
  * 임베딩은 잡과 무관하게 새 사진을 따라가서 잡이 생기기 전에 실패한 사진도 있다. 기준을 DONE 잡으로 두는 것은 알림이 DONE 에서만
@@ -84,18 +84,18 @@ class FailedPhotoAlerter(
             .sortedByDescending { it.value }
             .joinToString(", ") { (error, photos) -> "$error ${photos}장" }
 
+        // 재처리는 백오피스에서 하므로, 백오피스가 없는 환경에서는 링크와 재처리 안내를 함께 뺀다.
+        val backoffice = properties.backofficeGalleryUrl(galleryId)
+            ?.let { listOf("백오피스에서 열기: $it", "다시 분석: 재처리 범위 `FAILED_ONLY`(실패한 사진만)") }
+            .orEmpty()
+
         return OpsAlertDto(
             title = "분석 실패 사진 ${failed}장 · 갤러리 $galleryId",
             lines = listOf(
                 "잡 ${jobId}이 끝났고, 이번 분석에서 실패한 사진이 있어요. 실패한 사진은 미분류에 남아요.",
                 "갤러리 전체: 업로드 ${progress.uploaded}장 중 실패 ${progress.failed}장",
                 "사유: $reasons",
-                "백오피스에서 열기: ${backofficeGalleryUrl(galleryId)}",
-                "다시 분석: 재처리 범위 `FAILED_ONLY`(실패한 사진만)",
-            ),
+            ) + backoffice,
         )
     }
-
-    private fun backofficeGalleryUrl(galleryId: Long): String =
-        "${properties.backofficeBaseUrl.trimEnd('/')}/resources?type=GALLERY&id=$galleryId"
 }

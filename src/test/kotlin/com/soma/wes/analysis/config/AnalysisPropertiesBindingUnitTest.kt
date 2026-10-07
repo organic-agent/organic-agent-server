@@ -51,4 +51,13 @@ class AnalysisPropertiesBindingUnitTest {
                 }
             }
     }
+
+    @Test
+    fun `백오피스 주소가 있으면 갤러리 링크를 만들고 비어 있으면 만들지 않는다`() {
+        assertSoftly { softly ->
+            softly.assertThat(AnalysisProperties(backofficeBaseUrl = "https://admin.easyselect.kr/").backofficeGalleryUrl(7))
+                .isEqualTo("https://admin.easyselect.kr/resources?type=GALLERY&id=7")
+            softly.assertThat(AnalysisProperties(backofficeBaseUrl = "").backofficeGalleryUrl(7)).isNull()
+        }
+    }
 }

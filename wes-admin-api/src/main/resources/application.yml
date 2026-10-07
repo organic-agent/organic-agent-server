@@ -39,3 +39,14 @@ spring:
 
   flyway:
     enabled: false
+
+---
+# dev 관리자 호스트(wes-dev-admin, infra environments/dev). 환경 차이는 전부 /wes/admin-api/dev/ 가 낸다.
+spring:
+  config:
+    activate:
+      on-profile: dev
+    import: aws-parameterstore:/wes/admin-api/dev/
+
+  flyway:
+    enabled: false
