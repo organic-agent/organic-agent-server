@@ -3,8 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 admin_config="$repo_root/wes-admin-api/src/main/resources/application.yml"
-admin_compose="$repo_root/docker-compose.admin-api.prod.yml"
-cd_workflow="$repo_root/.github/workflows/cd.yml"
+cd_workflow="$repo_root/.github/workflows/cd-prod.yml"
 public_deploy_script="$repo_root/scripts/deploy-public-ssm.sh"
 admin_deploy_script="$repo_root/scripts/deploy-admin-api-ssm.sh"
 workflow_run_size_check="$repo_root/scripts/check-workflow-run-size.rb"
@@ -14,6 +13,11 @@ alloy_egress_unit="$repo_root/deploy/wes-admin-alloy-egress.service"
 
 grep -Fq 'aws-parameterstore:/wes/admin-api/prod/' "$admin_config"
 grep -Fq 'aws-parameterstore:/wes/admin-api/local/' "$admin_config"
+grep -Fq 'aws-parameterstore:/wes/admin-api/dev/' "$admin_config"
+if grep -Fq 'aws-parameterstore:/wes/dev/' "$admin_config"; then
+  echo "dev 관리자 API가 dev 공개 API Parameter Store prefix를 읽으면 안 됩니다." >&2
+  exit 1
+fi
 if grep -Fq 'aws-parameterstore:/wes/prod/' "$admin_config"; then
   echo "관리자 API가 공개 API Parameter Store prefix를 읽으면 안 됩니다." >&2
   exit 1
@@ -44,37 +48,45 @@ if grep -Fq '${{' "$public_deploy_script" || grep -Fq '${{' "$admin_deploy_scrip
   exit 1
 fi
 
-rendered_compose_json="$(
-  OWNER_LOWERCASE=boundary-test IMAGE_TAG=deadbeef \
-    LOKI_URL=http://loki.internal.example:3100/loki/api/v1/push \
-    LOKI_HOST=loki.internal.example LOKI_PRIMARY_IP=10.0.0.8 \
-    docker compose -f "$admin_compose" config --format json
-)"
+# 운영·dev compose가 같은 경계를 지킨다. 서버에서는 둘 다 docker-compose.admin-api.prod.yml 자리에 놓인다.
+for admin_compose in "$repo_root/docker-compose.admin-api.prod.yml" "$repo_root/docker-compose.admin-api.dev.yml"; do
+  rendered_compose_json="$(
+    OWNER_LOWERCASE=boundary-test IMAGE_TAG=deadbeef \
+      LOKI_URL=http://loki.internal.example:3100/loki/api/v1/push \
+      LOKI_HOST=loki.internal.example LOKI_PRIMARY_IP=10.0.0.8 \
+      docker compose -f "$admin_compose" config --format json
+  )"
 
-printf '%s\n' "$rendered_compose_json" | jq -e '
-  .networks["wes-admin-internal"].external == true and
-  .networks["wes-admin-runtime"].external == true and
-  .networks["wes-admin-alloy-egress"].external == true and
-  ((.services["wes-admin-api"].networks | keys | sort) == ["wes-admin-internal", "wes-admin-runtime"]) and
-  ((.services["wes-admin-alloy"].networks | keys) == ["wes-admin-alloy-egress"]) and
-  (.services["wes-admin-api"].ports[0].host_ip == "127.0.0.1") and
-  (.services["wes-admin-alloy"].image == "grafana/alloy:v1.18.1@sha256:0f4434c92b3e6cdac38bb129b344e1790c246f7b6e2eaffcc16a5fa363240e33") and
-  (.services["wes-admin-alloy"].platform == "linux/arm64") and
-  (.services["wes-admin-alloy"].user == "473:473") and
-  (.services["wes-admin-alloy"].dns == ["127.0.0.1"]) and
-  (.services["wes-admin-alloy"].extra_hosts == ["loki.internal.example=10.0.0.8"]) and
-  (.services["wes-admin-alloy"].entrypoint == ["/bin/sh", "-ec"]) and
-  (.services["wes-admin-alloy"].read_only == true) and
-  (.services["wes-admin-alloy"].cap_drop == ["ALL"]) and
-  (.services["wes-admin-alloy"].security_opt == ["no-new-privileges:true"]) and
-  (.services["wes-admin-alloy"].deploy.resources.limits.pids == 128) and
-  ((.services["wes-admin-alloy"].command | join(" ")) | contains("--disable-reporting")) and
-  ((.services["wes-admin-alloy"].command | join(" ")) | contains("/run/wes-alloy-egress/ready")) and
-  (any(.services["wes-admin-alloy"].volumes[]; .target == "/var/log/spring" and .read_only == true)) and
-  (any(.services["wes-admin-alloy"].volumes[]; .target == "/run/wes-alloy-egress" and .read_only == true))
-' >/dev/null
+  printf '%s\n' "$rendered_compose_json" | jq -e '
+    .networks["wes-admin-internal"].external == true and
+    .networks["wes-admin-runtime"].external == true and
+    .networks["wes-admin-alloy-egress"].external == true and
+    ((.services["wes-admin-api"].networks | keys | sort) == ["wes-admin-internal", "wes-admin-runtime"]) and
+    ((.services["wes-admin-alloy"].networks | keys) == ["wes-admin-alloy-egress"]) and
+    (.services["wes-admin-api"].ports[0].host_ip == "127.0.0.1") and
+    (.services["wes-admin-alloy"].image == "grafana/alloy:v1.18.1@sha256:0f4434c92b3e6cdac38bb129b344e1790c246f7b6e2eaffcc16a5fa363240e33") and
+    (.services["wes-admin-alloy"].platform == "linux/arm64") and
+    (.services["wes-admin-alloy"].user == "473:473") and
+    (.services["wes-admin-alloy"].dns == ["127.0.0.1"]) and
+    (.services["wes-admin-alloy"].extra_hosts == ["loki.internal.example=10.0.0.8"]) and
+    (.services["wes-admin-alloy"].entrypoint == ["/bin/sh", "-ec"]) and
+    (.services["wes-admin-alloy"].read_only == true) and
+    (.services["wes-admin-alloy"].cap_drop == ["ALL"]) and
+    (.services["wes-admin-alloy"].security_opt == ["no-new-privileges:true"]) and
+    (.services["wes-admin-alloy"].deploy.resources.limits.pids == 128) and
+    ((.services["wes-admin-alloy"].command | join(" ")) | contains("--disable-reporting")) and
+    ((.services["wes-admin-alloy"].command | join(" ")) | contains("/run/wes-alloy-egress/ready")) and
+    (any(.services["wes-admin-alloy"].volumes[]; .target == "/var/log/spring" and .read_only == true)) and
+    (any(.services["wes-admin-alloy"].volumes[]; .target == "/run/wes-alloy-egress" and .read_only == true))
+  ' >/dev/null
+done
+grep -Fq -- '- SPRING_PROFILES_ACTIVE=prod' "$repo_root/docker-compose.admin-api.prod.yml"
+grep -Fq -- '- WES_ENV=prod' "$repo_root/docker-compose.admin-api.prod.yml"
+grep -Fq -- '- SPRING_PROFILES_ACTIVE=dev' "$repo_root/docker-compose.admin-api.dev.yml"
+grep -Fq -- '- WES_ENV=dev' "$repo_root/docker-compose.admin-api.dev.yml"
 grep -Fq 'service = "wes-admin-api"' "$admin_alloy"
-grep -Fq '/wes/admin-api/prod/app.logging.loki-url' "$admin_deploy_script"
+grep -Fq 'ADMIN_PARAMETER_PREFIX="${ADMIN_PARAMETER_PREFIX:-/wes/admin-api/prod}"' "$admin_deploy_script"
+grep -Fq -- '--name "$ADMIN_PARAMETER_PREFIX/app.logging.loki-url"' "$admin_deploy_script"
 grep -Fq 'wes-admin-alloy' "$admin_deploy_script"
 grep -Fq 'docker/setup-qemu-action@v3' "$cd_workflow"
 grep -Fq 'INTERNAL_NETWORK_SUBNET=172.30.0.0/24' "$admin_deploy_script"
@@ -260,5 +272,24 @@ for deploy_script in "$public_deploy_script" "$admin_deploy_script"; do
     exit 1
   fi
 done
+
+# dev CD도 운영과 같은 관리자 배포 단계를 쓰고, 대상·롤·프리픽스만 dev 것이다.
+dev_workflow="$repo_root/.github/workflows/cd-dev.yml"
+ruby "$workflow_run_size_check" "$dev_workflow"
+grep -Fq 'secrets.AWS_DEV_ADMIN_API_DEPLOY_ROLE_ARN' "$dev_workflow"
+grep -Fq 'INSTANCE_NAME_TAG: wes-dev-admin' "$dev_workflow"
+grep -Fq 'ADMIN_PARAMETER_PREFIX: /wes/admin-api/dev' "$dev_workflow"
+grep -Fq 'env_line("ADMIN_PARAMETER_PREFIX"; $admin_parameter_prefix)' "$dev_workflow"
+grep -Fq 'needs: [build-and-push, deploy-public]' "$dev_workflow"
+grep -Fq -- '--rawfile script scripts/deploy-admin-api-ssm.sh' "$dev_workflow"
+grep -Fq 'COMPOSE_B64=$(base64 -w0 docker-compose.admin-api.dev.yml)' "$dev_workflow"
+if grep -Fq 'secrets.AWS_ADMIN_API_DEPLOY_ROLE_ARN' "$dev_workflow" || grep -Eq 'INSTANCE_NAME_TAG: wes-admin$' "$dev_workflow"; then
+  echo "dev CD가 운영 관리자 배포 롤·인스턴스를 쓰면 안 됩니다." >&2
+  exit 1
+fi
+[ "$(grep -Fc -- '--arg github_token "${{ secrets.GITHUB_TOKEN }}"' "$dev_workflow")" -eq 2 ]
+# dev CD는 유닛의 운영 Loki 파라미터 경로를 바꿔 보낸다. 유닛의 그 줄이 바뀌면 sed가 조용히 아무것도 안 하므로 여기서 묶는다.
+grep -Fxq 'Environment=LOKI_PARAMETER=/wes/admin-api/prod/app.logging.loki-url' "$alloy_egress_unit"
+grep -Fq 's|^Environment=LOKI_PARAMETER=/wes/admin-api/prod/|Environment=LOKI_PARAMETER=${ADMIN_PARAMETER_PREFIX}/|' "$dev_workflow"
 
 echo "Admin deployment boundary checks passed"

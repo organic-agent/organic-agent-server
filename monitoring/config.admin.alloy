@@ -25,7 +25,8 @@ loki.process "admin_api" {
 	stage.static_labels {
 		values = {
 			service = "wes-admin-api",
-			env     = "prod",
+			// compose가 넘기는 WES_ENV(prod·dev). 없으면 prod — 이 값을 넘기기 전의 compose로 롤백돼도 라벨이 비지 않게.
+			env     = coalesce(sys.env("WES_ENV"), "prod"),
 		}
 	}
 }

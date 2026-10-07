@@ -1,10 +1,13 @@
+# dev 서버(wes-dev-app) compose. docker-compose.prod.yml과 같은 규격이고 프로필과 로그 env 라벨만 다르다.
+# cd-dev.yml이 이 파일을 보내고, 배포 스크립트(scripts/deploy-public-ssm.sh)가 서버의 docker-compose.prod.yml 자리에 둔다 —
+# 롤백·교체 순서를 운영과 한 스크립트로 지키기 위해 서버 쪽 파일 이름은 바꾸지 않는다.
 services:
   wes-api:
     image: ghcr.io/${OWNER_LOWERCASE}/wes-api:${IMAGE_TAG:?IMAGE_TAG must be set}
     container_name: wes-app
     restart: always
     environment:
-      - SPRING_PROFILES_ACTIVE=prod
+      - SPRING_PROFILES_ACTIVE=dev
       - SERVER_PORT=8080
       - AWS_REGION=ap-northeast-2
       - TZ=Asia/Seoul
@@ -19,7 +22,7 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
     volumes:
-      # logback-spring.xml(prod)의 LOG_PATH. 호스트에 남겨 alloy와 공유하고, 재배포에도 유지된다.
+      # logback-spring.xml(prod | dev)의 LOG_PATH. 호스트에 남겨 alloy와 공유하고, 재배포에도 유지된다.
       - ./logs:/var/log/spring
     deploy:
       resources:
@@ -36,10 +39,10 @@ services:
     container_name: wes-alloy
     restart: always
     environment:
-      # CD의 배포 스크립트가 Parameter Store(/wes/prod/app.logging.loki-url)에서 읽어 넘긴다.
+      # CD의 배포 스크립트가 Parameter Store(/wes/dev/app.logging.loki-url — 운영 값 복사본)에서 읽어 넘긴다.
       - LOKI_URL=${LOKI_URL}
       # Loki의 env 라벨(monitoring/config.alloy). dev 로그도 같은 Loki로 가므로 환경을 갈라 준다.
-      - WES_ENV=prod
+      - WES_ENV=dev
     volumes:
       - ./logs:/var/log/spring:ro
       - ./config.alloy:/etc/alloy/config.alloy:ro

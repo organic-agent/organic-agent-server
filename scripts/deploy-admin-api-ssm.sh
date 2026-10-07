@@ -38,6 +38,9 @@ require_compose_capabilities
 export OWNER_LOWERCASE="${OWNER_LOWERCASE}"
 export IMAGE_TAG="${IMAGE_TAG}"
 TARGET_IMAGE_TAG="$IMAGE_TAG"
+# 관리자 API가 읽는 Parameter Store 프리픽스. dev CD(cd-dev.yml)가 /wes/admin-api/dev 를 넘긴다.
+# 작업 디렉터리·compose 파일 이름(docker-compose.admin-api.prod.yml)은 배포 슬롯 이름이라 dev에서도 같다.
+ADMIN_PARAMETER_PREFIX="${ADMIN_PARAMETER_PREFIX:-/wes/admin-api/prod}"
 WORK_DIR=/opt/wes-admin-api-prod
 ROLLBACK_DIR="$WORK_DIR/.admin-rollback"
 CANDIDATE_DIR="$WORK_DIR/.admin-candidate"
@@ -564,7 +567,7 @@ ensure_network "$RUNTIME_NETWORK_NAME" "$RUNTIME_NETWORK_SUBNET" false
 ensure_network "$ALLOY_EGRESS_NETWORK_NAME" "$ALLOY_EGRESS_NETWORK_SUBNET" false
 
 export LOKI_URL=$(aws ssm get-parameter --region ${AWS_REGION} \
-  --name /wes/admin-api/prod/app.logging.loki-url \
+  --name "$ADMIN_PARAMETER_PREFIX/app.logging.loki-url" \
   --query Parameter.Value --output text)
 [ -n "$LOKI_URL" ] || {
   echo "관리자 Loki 주소가 없습니다" >&2
