@@ -31,6 +31,12 @@ N차 테스트 (회차 ID · 무엇을 · 조건 · 반복)
 - dev AI 이미지는 AI repo CD가 밀지 않는다(손으로 민다). 회차마다 `precheck.sh dev`가 이미지가 AI main보다 오래되지 않았는지 본다.
 - GPU를 끈 회차(R6·R7)는 `precheck.sh dev --gpu off`로 시작 조건을 본다.
 
+## 스크립트 위치
+
+- 여러 측정에 쓰는 공통 도구는 `scripts/load/` 바로 아래(`precheck`·`timeline`·`cost`·`overlap`·`lib/report.sh`).
+- **한 개선(이슈) 전용 도구는 그 계획 이름의 하위 폴더**에 모은다 — 예: `scripts/load/upload-5x-10min/`(#274). 폴더에 README(파일별 하는 일·쓰기 여부·순서)를 둔다.
+- 하위 폴더 스크립트는 공통 라이브러리를 `$(dirname "$0")/../lib/report.sh`로 읽는다. 파이썬 가상환경은 그 폴더의 `.venv`(gitignore).
+
 ## 출력 형식
 
 새 측정 스크립트는 `scripts/load/lib/report.sh`를 지난다 — 캡처한 화면이 회차마다 같은 모양이어야 한다.
