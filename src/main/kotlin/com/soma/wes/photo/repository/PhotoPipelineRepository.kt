@@ -7,6 +7,8 @@ import java.sql.Timestamp
 import java.time.Duration
 import java.time.OffsetDateTime
 import java.time.ZonedDateTime
+import javax.sql.DataSource
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Repository
 
@@ -22,11 +24,18 @@ import org.springframework.stereotype.Repository
  * 잡의 대기 끝내기([markAnalysisStalled]·[isCategorizedAsOf]),
  * GPU 제어·score 폴백([countScoreBacklog]·[findGalleryIdsWithUnscoredPhotos]·[findUnscoredPhotoIds]).
  * 하트비트는 이 중 대기량([countPending]·[countInFlightEmbedBatches]·[countScoreBacklog])을 1분마다 읽는다.
+ *
+ * 문장마다 [QUERY_TIMEOUT_SECONDS] 제한을 건다(#275). 5초 스윕이 부르는 문장은 평소 20ms 이하라, 그보다 오래 걸리면 기다리지 않고
+ * 포기해 다음 회차에 다시 한다 — 스케줄러 스레드를 붙잡지 않게. 공용 `JdbcClient` 빈이 아니라 여기서 만든다: 같은 타입의 빈을 하나
+ * 등록하면 자동 구성 빈이 빠져 다른 저장소까지 이 제한을 받는다. 트랜잭션 안에서 불리면 같은 연결을 쓴다(`DataSourceUtils`).
+ * 제한은 DB에 취소 요청을 보내는 방식이라 DB가 응답을 멈추면 닿지 않는다 — 그때는 연결 안전망(`socketTimeout`, 120초)이 끊는다.
  */
 @Repository
 class PhotoPipelineRepository(
-    private val jdbcClient: JdbcClient,
+    dataSource: DataSource,
 ) {
+
+    private val jdbcClient: JdbcClient = JdbcClient.create(JdbcTemplate(dataSource).apply { queryTimeout = QUERY_TIMEOUT_SECONDS })
 
     /** 갤러리 하나의 진행 카운트. [liveSince] 이후 만들어진 PENDING이 "아직 올라오는 중"이다. */
     fun progressOf(galleryId: Long, liveSince: ZonedDateTime): GalleryAnalysisProgress = jdbcClient.sql(
@@ -469,5 +478,8 @@ class PhotoPipelineRepository(
 
         /** 이 서버가 쓰는 `photo_analysis.error` 값 — 진행이 멈춘 잡에서 떼어 낸 사진. */
         const val ANALYSIS_STALLED = "ANALYSIS_STALLED"
+
+        /** 문장 하나의 실행 제한(초). dev 실측에서 스윕 문장은 20ms 이하·진행 카운트 14ms(7,189장 갤러리) — 그 천 배 이상이다. */
+        private const val QUERY_TIMEOUT_SECONDS = 30
     }
 }

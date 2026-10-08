@@ -2,6 +2,10 @@ spring:
   application:
     name: wes
 
+  # 운영 wes-api와 같은 런타임 한계(쿼리 안전망·스케줄러 스레드)를 쓴다 — SchedulerDatabaseHangTest가 이 값을 검증한다.
+  config:
+    import: classpath:/config/application-api-runtime.yml
+
   # 테스트는 Parameter Store를 쓰지 않는다. 스타터가 켜져 있으면 ParameterStoreAutoConfiguration이
   # 시작 시 SsmClient 빈을 만들며 AWS 리전을 요구해, 리전이 없는 CI에서 컨텍스트 로딩이 실패한다.
   cloud:
