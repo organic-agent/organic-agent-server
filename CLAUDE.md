@@ -91,4 +91,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `.claude/spec/` — 스킬·작업에서 필요할 때만 참조 (자동 로드 아님)
 
 - Git 작업 (커밋, 브랜치, PR) → `git-convention.md`
-- 이슈·PR 본문 쓰는 법 (한 줄 요약, 왜/무엇을/확인, 전→후 표, 자가 점검) → `issue-pr-writing.md`
+- 이슈·PR 본문 쓰는 법 (한 줄 요약, 왜/무엇을/확인/판단, 전→후 표, 자가 점검) → `issue-pr-writing.md`
+
+작업 설계 하네스 — `/design-plan <요구사항>`: 요구사항을 유형(B1~B7·S1·S2)으로 라우팅해 이슈 → 단계별 결정·문서화 → 구현 → PR까지.
+규칙과 강의 용어(아키텍처 드라이버·택틱·패턴·트레이드오프·ADR, W²HO)의 뜻은 `.claude/skills/design-plan/reference/`(`glossary.md`·`types.md`·`stages.md`).

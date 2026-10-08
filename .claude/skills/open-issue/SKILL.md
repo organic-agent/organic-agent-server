@@ -3,7 +3,7 @@ name: open-issue
 description: |
   작업을 대화로 구체화한 뒤 종류에 맞는 GitHub 이슈를 열고, 연결된 작업 브랜치를 생성·체크아웃한다.
   Trigger: "이슈 열어줘", "이거 작업 시작하자", "새 작업 시작하자", "기능/버그/리팩토링 이슈 만들어줘"
-  Do NOT use for: 작업 계획 수립(→ write-plan), 구현(→ implement), 이미 열린 이슈에 브랜치만 파는 경우(직접 git)
+  Do NOT use for: 작업 유형 고르기·단계별 계획·구현(→ design-plan), 이미 열린 이슈에 브랜치만 파는 경우(직접 git)
   Boundary: 이슈 생성과 브랜치 생성·체크아웃까지만 수행한다. 작업 계획과 구현은 이 스킬 범위 밖이다.
 allowed-tools: Read, Grep, Glob, Bash
 model: sonnet
@@ -18,6 +18,13 @@ effort: xhigh
 작업은 기능 구현(feat), 수정(fix), 리펙토링(refactor), 긴급 수정(hotfix), 문서화(docs),
 테스트 관련(test), CI/CD(cicd), 기타(chore)로 분류되며 작업 종류를 먼저 판별한 뒤, 그에 맞는
 템플릿, 라벨, 브랜치 접두사를 사용한다.
+
+## Phase 0: design-plan에서 넘어왔는지 확인
+
+인자에 `작업 유형:` 줄과 종류·제목·설명(Why)·작업 항목·연관 도메인이 모두 있으면 `design-plan` 스킬이 이미 구체화·라우팅을 끝낸 것이다.
+그때는 **Phase 1을 건너뛰고** Phase 2로 간다. 본문 맨 아래에 `작업 유형: …` 줄을 그대로 둔다(유형별로 이슈를 모으는 검색 키).
+
+인자가 그렇지 않은 평소 호출이면 Phase 1부터 한다. 작업 유형을 아직 안 골랐고 일이 커 보이면(새 도메인·스키마·성능·리팩터링 구조) `/design-plan`을 먼저 제안한다.
 
 ## Phase 1: 작업 구체화 (대화)
 
