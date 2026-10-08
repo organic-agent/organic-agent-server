@@ -142,6 +142,9 @@ app:
     categorizing-deadline: PT70M
     materialize-max-attempts: 3
     score-fallback-max: 3
+    # 분석 스윕 한 회차가 이 시간 동안 끝나지 않으면 하트비트가 디스코드로 알린다(멈출 때 한 번, 돌아올 때 한 번).
+    # DB가 멈춰도 연결 안전망(socketTimeout 120초) 안에 회차가 끝나므로 그보다 길게 둔다.
+    sweep-stall-after: PT3M
     # 잡이 끝날 때 그 잡의 몫인 분석 실패 사진(photo_analysis.error)이 한 장이라도 있으면 디스코드로 알린다. 알림의 링크는 백오피스의 그 갤러리다.
     # 웹훅 주소는 비밀값이라 여기 두지 않는다 — prod 는 Parameter Store(app.analysis.discord-webhook-url)가 채우고, 비어 있으면 로그만 남긴다.
     backoffice-base-url: https://admin.easyselect.kr
