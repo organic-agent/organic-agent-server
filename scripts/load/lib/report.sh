@@ -2,14 +2,17 @@
 # 부하 측정 스크립트 공통 — 터미널에서 캡처해 산출물로 쓰도록 같은 모양으로 찍는다.
 #
 #   source "$(dirname "$0")/lib/report.sh"
-#   report_parse_common "$@"; set -- "${REPORT_REST[@]}"     # local|remote · --label · --title 를 뗀다
-#   report_connect                                             # DB 접속 정보 (remote 는 읽기 전용 세션)
+#   report_parse_common "$@"; set -- "${REPORT_REST[@]}"     # local|remote|dev · --label · --title 를 뗀다
+#   report_connect                                             # DB 접속 정보 (remote·dev 는 읽기 전용 세션)
 #   report_begin "타임라인" "갤러리 101, 102"                    # 머리말 + 저장 시작
 #   report_section "1. 단계별 경과"; report_sql -v ids='{1}' < scripts/load/timeline.sql
 #   report_verdict pass "QA-1 단건 ≤ 7분" "6분 20초"
 #   report_end
 #
 # 출력은 화면과 함께 $LOAD_RUNS_DIR/{label}-{시각}.txt 에 색 없이 저장된다(기본 docs/experiments/load-runs, gitignore).
+#
+# 대상: local = 로컬 docker pg · remote = 운영(터널 15432) · dev = dev 스택(터널 15433, `scripts/db-tunnel.sh dev`).
+# 환경마다 다른 이름(SSM 프리픽스·AWS 리소스 접두사·GPU 태그·배포 워크플로)은 report_parse_common 이 아래 변수로 정한다.
 
 REGION="ap-northeast-2"
 REPORT_TARGET="local"; REPORT_LABEL=""; REPORT_TITLE=""; REPORT_REST=()
@@ -27,13 +30,26 @@ report_parse_common() {
   REPORT_CMD="$0 $*"
   while [ $# -gt 0 ]; do
     case "$1" in
-      local|remote) REPORT_TARGET="$1" ;;
+      local|remote|dev) REPORT_TARGET="$1" ;;
       --label) REPORT_LABEL="$2"; shift ;;
       --title) REPORT_TITLE="$2"; shift ;;
       *) REPORT_REST+=("$1") ;;
     esac
     shift
   done
+  report_target_vars
+}
+
+# 환경별 이름. local 은 GPU·Lambda 가 없어 운영 이름을 둔다(쓰지 않는다).
+report_target_vars() {
+  if [ "$REPORT_TARGET" = "dev" ]; then
+    ENV_NAME="dev"; SSM_PREFIX="/wes/dev"; RESOURCE_PREFIX="wes-dev"; TUNNEL_PORT="15433"
+    TUNNEL_CMD="scripts/db-tunnel.sh dev"; DEPLOY_WORKFLOW="[DEV] Build and Deploy"
+  else
+    ENV_NAME="prod"; SSM_PREFIX="/wes/prod"; RESOURCE_PREFIX="wes"; TUNNEL_PORT="15432"
+    TUNNEL_CMD="scripts/db-tunnel.sh"; DEPLOY_WORKFLOW="[PROD] Build and Deploy"
+  fi
+  GPU_TAG_NAME="$RESOURCE_PREFIX-score-gpu"
 }
 
 report_connect() {
@@ -42,15 +58,15 @@ report_connect() {
   if [ "$REPORT_TARGET" = "local" ]; then
     DB_HOST="host.docker.internal"; DB_PORT="5432"; DB_NAME="${LOAD_LOCAL_DB:-wes}"; DB_USER="wes"; DB_PASSWORD="wes"
   else
-    lsof -nP -iTCP:15432 -sTCP:LISTEN >/dev/null 2>&1 \
-      || { echo "15432 터널이 없다. 다른 터미널에서 scripts/db-tunnel.sh 를 먼저 띄울 것." >&2; exit 1; }
-    DB_HOST="host.docker.internal"; DB_PORT="15432"; DB_NAME="wes_db"; DB_USER="wes_admin"
-    DB_PASSWORD=$(aws ssm get-parameter --region "$REGION" --name /wes/prod/spring.datasource.password \
+    lsof -nP -iTCP:"$TUNNEL_PORT" -sTCP:LISTEN >/dev/null 2>&1 \
+      || { echo "$TUNNEL_PORT 터널이 없다. 다른 터미널에서 $TUNNEL_CMD 를 먼저 띄울 것." >&2; exit 1; }
+    DB_HOST="host.docker.internal"; DB_PORT="$TUNNEL_PORT"; DB_NAME="wes_db"; DB_USER="wes_admin"
+    DB_PASSWORD=$(aws ssm get-parameter --region "$REGION" --name "$SSM_PREFIX/spring.datasource.password" \
       --with-decryption --query 'Parameter.Value' --output text)
   fi
 }
 
-# 표 하나. remote 는 세션을 읽기 전용으로 연다 — 측정 쿼리가 실수로 쓰지 못하게.
+# 표 하나. remote·dev 는 세션을 읽기 전용으로 연다 — 측정 쿼리가 실수로 쓰지 못하게.
 report_sql() {
   docker run --rm -i -e PGPASSWORD="$DB_PASSWORD" -e PGCLIENTENCODING=UTF8 -e TZ=Asia/Seoul \
     -e PGOPTIONS="-c default_transaction_read_only=on -c timezone=Asia/Seoul" \
@@ -86,7 +102,7 @@ report_begin() {
   echo "${C_CY}${RULE_HEAVY}${C_0}"
   # 한글은 두 칸이라 printf 폭 대신 공백을 맞춰 둔다.
   echo "  측정 시각  $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M:%S KST')"
-  echo "  환경       $REPORT_TARGET ($DB_NAME$([ "$REPORT_TARGET" = remote ] && echo ', 읽기 전용'))"
+  echo "  환경       $REPORT_TARGET ($DB_NAME$([ "$REPORT_TARGET" != local ] && echo ", $ENV_NAME, 읽기 전용"))"
   echo "  코드 기준  wes $branch @ $commit"
   echo "  측정       $what"
   if [ -n "$target_desc" ]; then echo "  대상       $target_desc"; fi

@@ -2,7 +2,8 @@
 # 부하 측정 비용 — 대상 갤러리의 측정 창(T0 → 마지막 DONE + 꼬리) 동안 쓴 Lambda·GPU·Bedrock·S3 요청을 지표로 세어 단가를 곱한다. 읽기 전용.
 # 계획: docs/plans/2026-10-06/concurrent-upload-load/02-baseline.md 2.4(비용 어림 → 6장 실제 값).
 #
-#   scripts/load/cost.sh remote --label R1-1-cost --ids 101,102 [--tail 5min] [--until now]
+#   scripts/load/cost.sh dev --label R2-cost --ids 101,102 [--tail 5min]       # dev 스택(wes-dev-* 함수·GPU)
+#   scripts/load/cost.sh remote --label R1-1-cost --ids 101,102 [--tail 5min]    # 운영
 #
 #   --ids    대상 갤러리 id (쉼표). 창은 min(T0) → max(DONE) + tail. DONE 없는 갤러리가 있으면 지금까지.
 #   --tail   DONE 뒤에 더 볼 시간(GPU 자기 정지·마지막 Lambda 꼬리). 기본 5min
@@ -10,6 +11,7 @@
 # 주의: CloudWatch 지표는 함수·모델·인스턴스 단위라 같은 창 안의 다른 갤러리 처리도 섞인다(측정 중 실사용이 없어야 정확).
 #       단가는 공시가 기본값이다(pricing API는 SCP로 막힘) — 환경 변수로 덮어쓴다: GPU_HOURLY, LAMBDA_GBS, LAMBDA_REQ,
 #       SONNET_IN, SONNET_OUT (100만 토큰당), S3_PUT, S3_GET (1,000건당).
+#       Bedrock 지표는 모델 단위라 dev 측정에도 같은 창의 운영 categorize 호출이 섞인다.
 set -euo pipefail
 source "$(dirname "$0")/lib/report.sh"
 report_parse_common "$@"; set -- ${REPORT_REST[@]+"${REPORT_REST[@]}"}
@@ -19,13 +21,13 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --ids) IDS="$2"; shift ;;
     --tail) TAIL="$2"; shift ;;
-    -h|--help) sed -n 2,14p "$0"; exit 0 ;;
+    -h|--help) sed -n 2,15p "$0"; exit 0 ;;
     *) echo "알 수 없는 인자: $1" >&2; exit 1 ;;
   esac
   shift
 done
 [ -n "$IDS" ] || { echo "--ids 가 필요하다 (--help)" >&2; exit 1; }
-[ "$REPORT_TARGET" = remote ] || { echo "비용은 운영 지표라 remote 만 의미가 있다." >&2; exit 1; }
+[ "$REPORT_TARGET" != local ] || { echo "비용은 AWS 지표라 remote·dev 만 의미가 있다." >&2; exit 1; }
 report_connect
 
 # 단가(USD) — 서울 리전 공시가. Bedrock 은 categorize 가 쓰는 us-east-1 교차 리전 프로필.
@@ -35,8 +37,8 @@ LAMBDA_REQ="${LAMBDA_REQ:-0.20}"           # 100만 요청
 SONNET_IN="${SONNET_IN:-3.00}"; SONNET_OUT="${SONNET_OUT:-15.00}"
 S3_PUT="${S3_PUT:-0.0045}"; S3_GET="${S3_GET:-0.00035}"
 
-LAMBDA_FNS="${LAMBDA_FNS:-wes-embedder wes-score wes-categorize}"
-GPU_TAG="${GPU_TAG:-wes-score-gpu}"
+LAMBDA_FNS="${LAMBDA_FNS:-$RESOURCE_PREFIX-embedder $RESOURCE_PREFIX-score $RESOURCE_PREFIX-categorize}"
+GPU_TAG="${GPU_TAG:-$GPU_TAG_NAME}"
 BEDROCK_REGION="us-east-1"; BEDROCK_MODEL="${BEDROCK_MODEL:-us.anthropic.claude-sonnet-4-6}"
 
 # 측정 창 — DB 시각을 UTC ISO 로.
@@ -73,7 +75,7 @@ report_note "창: $(kst "$START") → $(kst "$END") KST ($((WIN_SEC / 60))분 $(
 
 # ── Lambda
 report_section "1. Lambda" "Duration 합 × 메모리 = GB-초, 요청 수, 최대 동시 실행, 스로틀"
-printf "    %-16s %8s %10s %6s %10s %8s %10s\n" 함수 요청 "실행(초)" "메모리" "GB-초" 동시최대 "비용(\$)"
+printf "    %-20s %8s %10s %6s %10s %8s %10s\n" 함수 요청 "실행(초)" "메모리" "GB-초" 동시최대 "비용(\$)"
 LAMBDA_TOTAL=0
 for fn in $LAMBDA_FNS; do
   mem=$(aws lambda get-function-configuration --region "$REGION" --function-name "$fn" --query MemorySize --output text)
@@ -84,7 +86,7 @@ for fn in $LAMBDA_FNS; do
   gbs=$(calc "$dur / 1000 * $mem / 1024")
   cost=$(calc "$gbs * $LAMBDA_GBS + $inv / 1000000 * $LAMBDA_REQ")
   LAMBDA_TOTAL=$(calc "$LAMBDA_TOTAL + $cost")
-  printf "    %-16s %8.0f %10.1f %5sM %10.1f %8.0f %10.4f\n" "$fn" "$inv" "$(calc "$dur / 1000")" "$mem" "$gbs" "$conc" "$cost"
+  printf "    %-20s %8.0f %10.1f %5sM %10.1f %8.0f %10.4f\n" "$fn" "$inv" "$(calc "$dur / 1000")" "$mem" "$gbs" "$conc" "$cost"
   awk "BEGIN { exit !($thr > 0) }" && report_verdict info "$fn 스로틀" "$(printf '%.0f' "$thr")건"
 done
 
