@@ -87,6 +87,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 계층별 컨벤션 → `controller.md`, `domain.md`, `dto.md`, `service.md`, `repository.md`,
   `infrastructure.md`, `support.md`
 - 테스트 작성 (통합 테스트 인프라, 픽스처, 단언) → `test.md`
+- 부하 측정 스크립트·회차 진행 (회차는 사용자가 실행, 출력은 `scripts/load/lib/report.sh`) → `load-test.md`
 
 `.claude/spec/` — 스킬·작업에서 필요할 때만 참조 (자동 로드 아님)
 
