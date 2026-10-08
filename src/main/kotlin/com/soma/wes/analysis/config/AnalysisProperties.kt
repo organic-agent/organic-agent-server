@@ -39,6 +39,11 @@ data class AnalysisProperties(
     val stallDetachRatio: Double = 0.05,
     /** CATEGORIZING 에 들어간 뒤 이 시간이 지나면 잡을 닫는다. [categorizeTimeout] × [categorizeMaxAttempts]에 여유를 더한 값이다. */
     val categorizingDeadline: Duration = Duration.ofMinutes(70),
+    /**
+     * 분석 스윕 한 회차가 이 시간 동안 끝나지 않으면 하트비트가 운영 알림을 보낸다(#275). 평소 5초 주기이고, DB가 멈춰도 연결 안전망(120초)
+     * 안에 회차가 끝나므로 그보다 길어야 한다 — 짧으면 DB가 잠깐 느린 것까지 멈춤으로 읽는다.
+     */
+    val sweepStallAfter: Duration = Duration.ofMinutes(3),
     /** 폴더 만들기가 예상 밖 예외로 이 횟수만큼 실패하면 잡을 닫는다. */
     val materializeMaxAttempts: Int = 3,
     /** 한 갤러리에 score Lambda 폴백을 이 횟수까지 보낸다. 그 뒤에도 점수가 없으면 진행 감시가 처리한다. */

@@ -1,0 +1,18 @@
+# 공개 API(wes-api) 전용 런타임 한계 — DB가 응답을 멈춰도 주기 작업이 영구 정지하지 않게 한다(#275).
+# wes-api의 application.yml과 테스트 설정만 import한다. 관리자 앱(wes-admin-api)은 import하지 않는다 —
+# 관리자 연쇄 영구 삭제는 DELETE 한 문장이 120초에 닿을 수 있어, 사진 FK 인덱스를 먼저 넣은 뒤 따로 건다(#276).
+spring:
+  datasource:
+    hikari:
+      data-source-properties:
+        # 모든 쿼리의 안전망(초). DB 답을 이만큼 기다려도 없으면 연결을 버리고 실패한다 — 없으면 끝없이 기다린다.
+        # 정상 최대 쿼리 ≈ 2초(폴더 물질화), 부하 때 관측 최대 46초(업로드 URL 발급)의 두 배 이상. 근거는
+        # docs/plans/2026-10-08/scheduler-db-hang.md §4. 스윕 쿼리의 30초 제한은 PhotoPipelineRepository가 따로 건다.
+        socketTimeout: 120
+
+  task:
+    scheduling:
+      pool:
+        # 주기 작업 스레드. 1개면 한 작업이 막힐 때 하트비트(멈춤 감지)까지 같이 멈춘다. 3개면 분석 스윕과 매시 정리 작업이
+        # 함께 막혀도 하트비트 자리가 남는다. 늘리면 서로 다른 작업이 동시에 돈다 — 같은 작업은 fixedDelay라 겹치지 않는다.
+        size: 3
