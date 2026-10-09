@@ -225,9 +225,10 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     # 갤러리 만들기 (스튜디오 갤러리 — 사진 수 한도 없음)
     runs: list[GalleryRun] = []
+    workspace_ids = [int(w) for w in str(args.workspace_id).split(",")]
     for k in range(args.count):
         _, body = api.post("/api/v1/galleries", {
-            "workspaceId": args.workspace_id,
+            "workspaceId": workspace_ids[k % len(workspace_ids)],
             "title": f"[부하 {args.label}] {k + 1}/{args.count}",
             "shootType": "REHEARSAL",
         })
@@ -235,7 +236,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         if not gid:
             sys.exit(f"갤러리 id를 응답에서 찾지 못했다: {list(body)[:10]}")
         runs.append(GalleryRun(index=k, gallery_id=int(gid), t0=0.0, slots=[Slot(p) for p in photos]))
-        log(f"갤러리 {k + 1}/{args.count} 만듦 → id {gid}")
+        log(f"갤러리 {k + 1}/{args.count} 만듦 → id {gid} (워크스페이스 {workspace_ids[k % len(workspace_ids)]})")
 
     start = time.time() + args.start_delay
     for r in runs:
@@ -360,7 +361,8 @@ def main() -> None:
     r.add_argument("--count", type=int, default=1)
     r.add_argument("--stagger", type=float, default=0.0, help="갤러리 사이 시작 간격(초)")
     r.add_argument("--speed", type=float, default=1.0, help="재생 배속 (2 = 회선 2배)")
-    r.add_argument("--workspace-id", type=int, required=True, help="dev 스튜디오 워크스페이스")
+    r.add_argument("--workspace-id", required=True,
+                   help="dev 스튜디오 워크스페이스 — 쉼표 목록이면 갤러리마다 차례로 (1,6,7 → 1·6·7·1…). 실제 작가 N명은 스튜디오도 N개")
     r.add_argument("--user-id", type=int, required=True, help="그 워크스페이스 멤버인 dev 사용자")
     r.add_argument("--role", default="USER")
     r.add_argument("--provider-id", default="load-replay")

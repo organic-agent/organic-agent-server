@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # 부하 실측용 갤러리 복제 — 원본 갤러리의 사진 행과 분석 행(photo_analysis: 벡터·점수·백분위)을 새 갤러리 N개로 복제한다.
-# 같은 S3 객체(storage_key·preview_key)를 가리키므로 업로드 없이 "이미 임베딩·점수까지 끝난 큰 갤러리"를 여러 개 만들 수 있다.
+# 같은 S3 객체를 가리키므로(preview_key 그대로, storage_key 는 유니크 제약 때문에 뒤에 `#clone-<새 갤러리 id>` 를 붙인다) 업로드 없이 "이미 임베딩·점수까지 끝난 큰 갤러리"를 여러 개 만들 수 있다.
 # 5갤러리 동시 categorize·물질화·스윕 부하(계획서 §8 Phase 4 W11)를 잴 때 쓴다.
 #
-#   scripts/load/clone-gallery-photos.sh [local|remote] --source G --count N [--strip embed|score|categorize] [--yes]
+#   scripts/load/clone-gallery-photos.sh [local|remote|dev] --source G --count N [--strip embed|score|categorize] [--yes]
 #
 #   --source G      복제할 원본 갤러리 id (사진·분석 행이 있어야 한다)
 #   --count N       만들 갤러리 수 (기본 5)
@@ -17,7 +17,7 @@ REGION="ap-northeast-2"
 TARGET="local"; SOURCE=""; COUNT=5; STRIP=""; ASSUME_YES="false"
 while [ $# -gt 0 ]; do
   case "$1" in
-    local|remote) TARGET="$1" ;;
+    local|remote|dev) TARGET="$1" ;;
     --source) SOURCE="$2"; shift ;;
     --count) COUNT="$2"; shift ;;
     --strip) STRIP="$2"; shift ;;
@@ -34,9 +34,11 @@ command -v docker >/dev/null 2>&1 || { echo "docker가 필요하다(psql을 컨�
 if [ "$TARGET" = "local" ]; then
   DB_HOST="host.docker.internal"; DB_PORT="5432"; DB_NAME="wes"; DB_USER="wes"; DB_PASSWORD="wes"
 else
-  lsof -nP -iTCP:15432 -sTCP:LISTEN >/dev/null 2>&1 || { echo "15432 터널이 없다. scripts/db-tunnel.sh 를 먼저." >&2; exit 1; }
-  DB_HOST="host.docker.internal"; DB_PORT="15432"; DB_NAME="wes_db"; DB_USER="wes_admin"
-  DB_PASSWORD=$(aws ssm get-parameter --region "$REGION" --name /wes/prod/spring.datasource.password --with-decryption --query 'Parameter.Value' --output text)
+  # remote = 운영(15432, /wes/prod) · dev = dev 스택(15433, /wes/dev)
+  if [ "$TARGET" = "dev" ]; then PORT="15433"; PREFIX="/wes/dev"; TUNNEL="scripts/db-tunnel.sh dev"; else PORT="15432"; PREFIX="/wes/prod"; TUNNEL="scripts/db-tunnel.sh"; fi
+  lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1 || { echo "$PORT 터널이 없다. $TUNNEL 를 먼저." >&2; exit 1; }
+  DB_HOST="host.docker.internal"; DB_PORT="$PORT"; DB_NAME="wes_db"; DB_USER="wes_admin"
+  DB_PASSWORD=$(aws ssm get-parameter --region "$REGION" --name "$PREFIX/spring.datasource.password" --with-decryption --query 'Parameter.Value' --output text)
 fi
 psql_run() {
   docker run --rm -i -e PGPASSWORD="$DB_PASSWORD" pgvector/pgvector:pg16 \
@@ -90,13 +92,13 @@ WITH src AS (SELECT * FROM galleries WHERE id = $SOURCE),
        INSERT INTO photos (gallery_id, storage_key, original_file_name, display_order, status, content_type, preview_key,
                            taken_at, camera_make, camera_model, exposure_time, f_number, iso, width, height, byte_size,
                            version, created_at, updated_at)
-       SELECT g.id, ph.storage_key, ph.original_file_name, ph.display_order, 'UPLOADED', ph.content_type, ph.preview_key,
+       SELECT g.id, ph.storage_key || '#clone-' || g.id, ph.original_file_name, ph.display_order, 'UPLOADED', ph.content_type, ph.preview_key,
               ph.taken_at, ph.camera_make, ph.camera_model, ph.exposure_time, ph.f_number, ph.iso, ph.width, ph.height, ph.byte_size,
               0, now(), now()
        FROM photos ph, g WHERE ph.gallery_id = $SOURCE AND ph.deleted_at IS NULL AND ph.status = 'UPLOADED'
-       RETURNING id, storage_key
+       RETURNING id, gallery_id, storage_key
      )
-INSERT INTO mapping SELECT ph.id, p.id FROM p JOIN photos ph ON ph.storage_key = p.storage_key AND ph.gallery_id = $SOURCE;
+INSERT INTO mapping SELECT ph.id, p.id FROM p JOIN photos ph ON ph.storage_key || '#clone-' || p.gallery_id = p.storage_key AND ph.gallery_id = $SOURCE;
 $ANALYSIS_SQL
 SELECT (SELECT max(gallery_id) FROM photos WHERE id IN (SELECT new_id FROM mapping)) AS new_gallery, count(*) AS photos FROM mapping;
 COMMIT;

@@ -4,6 +4,7 @@
 #
 #   scripts/load/upload-5x-10min/replay.sh --label B-1 --workspace-id W --user-id U                              # 단건
 #   scripts/load/upload-5x-10min/replay.sh --label B-2-1 --count 5 --workspace-id W --user-id U                  # 5개 동시
+#   scripts/load/upload-5x-10min/replay.sh --label Q-2 --count 5 --workspace-id W1,W2,W3,W4,W5 --user-id U       # 5개 동시, 스튜디오 5개(실제 작가 5명 모양)
 #   scripts/load/upload-5x-10min/replay.sh --label B-3-1 --count 5 --stagger 60 --workspace-id W --user-id U     # 1분 간격
 #   scripts/load/upload-5x-10min/replay.sh --label B-4 --count 5 --speed 2 --workspace-id W --user-id U          # 2배속(빠른 회선)
 #   scripts/load/upload-5x-10min/replay.sh --label smoke --limit 200 --workspace-id W --user-id U                # 앞 200장만 (도구 확인)
