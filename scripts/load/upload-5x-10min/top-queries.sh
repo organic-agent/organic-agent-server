@@ -29,7 +29,7 @@ report_connect
 
 # 쓰기 연결 — report_sql 은 읽기 전용 세션이라 따로 연다.
 write_sql() {
-  docker run --rm -i -e PGPASSWORD="$DB_PASSWORD" -e PGCLIENTENCODING=UTF8 \
+  PGPASSWORD="$DB_PASSWORD" docker run --rm -i -e PGPASSWORD -e PGCLIENTENCODING=UTF8 \
     pgvector/pgvector:pg16 \
     psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -q -X -At "$@"
 }
@@ -60,11 +60,12 @@ report_sql -c "
          (SELECT count(*) FROM pg_stat_statements) AS 쿼리_종류
   FROM pg_stat_statements_info i"
 
-# 공통 열: 사용자, 합·비중(이 DB 전체 실행 시간 대비 %), 호출, 평균·최대, 버퍼, 임시 파일, 쿼리 앞 110자(공백 하나로).
+# 공통 열: 사용자, 합·비중(이 DB의 — 순위 표와 같은 조건의 — 전체 실행 시간 대비 %), 호출, 평균·최대, 버퍼, 임시 파일, 쿼리 앞 110자(공백 하나로).
 COLS="
   r.rolname AS 사용자,
   round((s.total_exec_time / 1000)::numeric, 1) AS 합_초,
-  round((100 * s.total_exec_time / nullif((SELECT sum(total_exec_time) FROM pg_stat_statements), 0))::numeric, 1) AS 비중,
+  round((100 * s.total_exec_time / nullif((SELECT sum(t.total_exec_time) FROM pg_stat_statements t
+      WHERE t.dbid = s.dbid AND t.query NOT ILIKE '%pg_stat_statements%'), 0))::numeric, 1) AS 비중,
   s.calls AS 호출,
   round(s.mean_exec_time::numeric, 1) AS 평균_ms,
   round(s.max_exec_time::numeric) AS 최대_ms,

@@ -67,8 +67,9 @@ report_connect() {
 }
 
 # 표 하나. remote·dev 는 세션을 읽기 전용으로 연다 — 측정 쿼리가 실수로 쓰지 못하게.
+# 비밀번호는 docker 인자(`-e 이름=값`)가 아니라 호출 환경으로 넘긴다 — 인자는 로컬 프로세스 목록(ps)에 보인다.
 report_sql() {
-  docker run --rm -i -e PGPASSWORD="$DB_PASSWORD" -e PGCLIENTENCODING=UTF8 -e TZ=Asia/Seoul \
+  PGPASSWORD="$DB_PASSWORD" docker run --rm -i -e PGPASSWORD -e PGCLIENTENCODING=UTF8 -e TZ=Asia/Seoul \
     -e PGOPTIONS="-c default_transaction_read_only=on -c timezone=Asia/Seoul" \
     pgvector/pgvector:pg16 \
     psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -q -X \
@@ -78,7 +79,7 @@ report_sql() {
 
 # 값 하나(머리말·판정용). 표 장식 없이.
 report_scalar() {
-  docker run --rm -i -e PGPASSWORD="$DB_PASSWORD" -e PGCLIENTENCODING=UTF8 \
+  PGPASSWORD="$DB_PASSWORD" docker run --rm -i -e PGPASSWORD -e PGCLIENTENCODING=UTF8 \
     -e PGOPTIONS="-c default_transaction_read_only=on -c timezone=Asia/Seoul" \
     pgvector/pgvector:pg16 \
     psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -q -X -At "$@"

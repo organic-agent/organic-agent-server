@@ -269,7 +269,10 @@ def cmd_run(args: argparse.Namespace) -> None:
                 s.key_ready.set()
 
     def copy_one(r: GalleryRun, s: Slot) -> None:
-        s.key_ready.wait()
+        # URL 발급이 실패해 키가 영영 안 올 수 있다 — stop 을 보며 기다려야 풀 종료가 끝없이 기다리지 않는다.
+        while not s.key_ready.wait(1.0):
+            if stop.is_set():
+                return
         s.copy_late = time.time() - (r.t0 + s.photo["upload_offset"] / speed)
         try:
             s3.copy_object(CopySource={"Bucket": bucket, "Key": s.photo["seed_key"]}, Bucket=bucket,
@@ -286,6 +289,8 @@ def cmd_run(args: argparse.Namespace) -> None:
     def upload_loop(r: GalleryRun) -> None:
         for s in sorted(r.slots, key=lambda s: s.photo["upload_offset"]):
             sleep_until(r.t0 + s.photo["upload_offset"] / speed)
+            if stop.is_set():
+                return
             copy_pool.submit(copy_one, r, s)
 
     def complete_loop(r: GalleryRun) -> None:
@@ -298,15 +303,29 @@ def cmd_run(args: argparse.Namespace) -> None:
                 api.post(f"/api/v1/galleries/{r.gallery_id}/photos/complete", {"photoIds": ids})
                 r.completed += len(ids)
         r.finished_at = time.time()
+        if stop.is_set():
+            log(f"갤러리 {r.gallery_id} 중단 — 분석 요청을 보내지 않는다 (완료 {r.completed})")
+            return
         body = {"conceptCount": args.concept_count} if args.concept_count else None
         _, r.job = api.post(f"/api/v1/galleries/{r.gallery_id}/ai-analysis", body)
         log(f"갤러리 {r.gallery_id} 업로드 끝 {r.finished_at - r.t0:.0f}초 · 완료 {r.completed} · 복사 실패 {r.copy_errors} · "
             f"잡 {r.job.get('jobId')} 요청")
 
+    def guarded(fn):
+        # 한 루프가 예외로 죽으면 나머지가 그 결과(키·완료)를 끝없이 기다린다 — 전체를 멈추게 알리고 예외는 그대로 남긴다.
+        def run(r: GalleryRun) -> None:
+            try:
+                fn(r)
+            except Exception as e:  # noqa: BLE001
+                stop.set()
+                log(f"{fn.__name__} 실패 갤러리 {r.gallery_id}: {e} — 재생을 멈춘다")
+                raise
+        return run
+
     threads = []
     for r in runs:
         for fn in (issue_loop, upload_loop, complete_loop):
-            t = threading.Thread(target=fn, args=(r,), daemon=True, name=f"{fn.__name__}-{r.gallery_id}")
+            t = threading.Thread(target=guarded(fn), args=(r,), daemon=True, name=f"{fn.__name__}-{r.gallery_id}")
             t.start()
             threads.append(t)
 

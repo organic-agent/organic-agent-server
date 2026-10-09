@@ -26,7 +26,7 @@ done
 [ -f "$PIPELINE" ] || { echo "--pipeline 실험 pipeline.py 경로가 필요하다" >&2; exit 1; }
 report_connect
 write_sql() {
-  docker run --rm -i -e PGPASSWORD="$DB_PASSWORD" pgvector/pgvector:pg16 \
+  PGPASSWORD="$DB_PASSWORD" docker run --rm -i -e PGPASSWORD pgvector/pgvector:pg16 \
     psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -q -X -At "$@"
 }
 INSTANCE=$(aws ec2 describe-instances --region "$REGION" --filters "Name=tag:Name,Values=$GPU_TAG_NAME" \
@@ -47,6 +47,16 @@ ssm_run() {  # ssm_run <timeout초> <명령…> — 끝날 때까지(최대 time
   [ "$st" = "Success" ] || { echo "SSM 명령 ${st:-응답 없음}" >&2; return 1; }
 }
 CLONES=""
+# 군마다 "의도한 복제 갤러리만 점수가 났나"를 본다. 집기가 gallery_id 순이라 앞 갤러리부터 먹는다는 가정에 기대므로
+# (워커 집기 순서가 바뀌면 깨진다) 다음 갤러리에 점수가 새면 측정을 멈춘다.
+check_arm() {  # check_arm <이 군의 갤러리> <다음 갤러리들(쉼표, 없으면 빈 값)>
+  local mine leaked
+  mine=$(report_scalar -c "SELECT count(*) FROM photos p JOIN photo_analysis a ON a.photo_id = p.id WHERE p.gallery_id = $1 AND a.clip_embedding IS NOT NULL")
+  leaked=0
+  [ -n "$2" ] && leaked=$(report_scalar -c "SELECT count(*) FROM photos p JOIN photo_analysis a ON a.photo_id = p.id WHERE p.gallery_id IN ($2) AND a.clip_embedding IS NOT NULL")
+  report_note "갤러리 $1 점수 ${mine}장 · 다음 갤러리로 샌 점수 ${leaked}장"
+  [ "$leaked" -eq 0 ] || { echo "다음 갤러리($2)에 점수 ${leaked}장이 났다 — 군이 섞였다" >&2; exit 1; }
+}
 cleanup() {
   trap - INT TERM EXIT
   if [ -n "$CLONES" ]; then
@@ -61,9 +71,16 @@ trap cleanup INT TERM EXIT
 report_begin "실험 E-SPLIT — 점수 워커 설정별 처리량" "갤러리 $SOURCE 복제 4개 · 군마다 ${BATCHES}배치(×32장) · GPU $INSTANCE"
 
 report_section "1. 사진 준비" "갤러리 $SOURCE 를 점수만 비운 채 4개 복제 (같은 S3 미리보기, 업로드·임베딩 없음) — 할 일이 있어야 워커가 스스로 꺼지지 않는다"
-scripts/load/clone-gallery-photos.sh dev --source "$SOURCE" --count 4 --strip score --yes | sed 's/^/    /'
-CLONES=$(write_sql -c "SELECT string_agg(id::text, ',' ORDER BY id) FROM (SELECT id FROM galleries WHERE title LIKE '%(부하 %' ORDER BY id DESC LIMIT 4) t")
-report_note "복제 갤러리: $CLONES"
+CLONE_AT=$(date +%s)
+CLONE_OUT="${REPORT_FILE%.txt}-clone.txt"
+# 복제 도구가 출력한 CLONED_GALLERY=<id> 만 정리 대상으로 쓴다 — 제목으로 추측하면 다른 갤러리를 지울 수 있고, 중간 실패 때 빠진다.
+clone_rc=0
+scripts/load/clone-gallery-photos.sh dev --source "$SOURCE" --count 4 --strip score --yes > "$CLONE_OUT" 2>&1 || clone_rc=$?
+sed 's/^/    /' "$CLONE_OUT"
+CLONES=$(grep -oE 'CLONED_GALLERY=[0-9]+' "$CLONE_OUT" | cut -d= -f2 | paste -sd, - || true)
+report_note "복제 갤러리: ${CLONES:-없음}"
+[ "$clone_rc" -eq 0 ] && [ "$(tr ',' '\n' <<< "$CLONES" | grep -c .)" -eq 4 ] \
+  || { echo "복제 실패(exit $clone_rc, 만든 갤러리 ${CLONES:-0개}) — 만든 것만 정리하고 멈춘다" >&2; exit 1; }
 IFS=',' read -r -a CLONE_IDS <<< "$CLONES"
 LOG_DIR="${REPORT_FILE%.txt}-logs"; mkdir -p "$LOG_DIR"
 
@@ -84,16 +101,18 @@ report_note "SSM 연결: $ping"
 # mask --runtime 은 안 듣는다(유닛 파일이 /etc 에 있고 /etc 가 /run 보다 우선). /run 드롭인은 병합이라 듣고, 재부팅하면 사라진다.
 ssm_run 60 "mkdir -p /run/systemd/system/wes-score-failsafe.service.d && printf '[Service]\\nExecStart=\\nExecStart=/bin/true\\n' > /run/systemd/system/wes-score-failsafe.service.d/exp.conf && systemctl daemon-reload && systemctl show -p ExecStart wes-score-failsafe.service | cut -c1-120; systemctl is-active wes-score.service || true" | sed 's/^/    /'
 need=$((BATCHES + 3)); n=0
-# 워커 로그는 유닛 이름(-u)으로 안 잡힐 수 있다 — 이번 부팅 journal 전체에서 센다. 6분 안에 못 채우면 중단(복제 사진을 V0이 다 먹지 않게).
+# 워커 로그는 유닛 이름(-u)으로 안 잡힐 수 있다 — 이번 부팅 journal 에서, 복제 이후(--since) 기록만 센다(dev 앱이 GPU 를 먼저 켰을 수 있다). 6분 안에 못 채우면 중단(복제 사진을 V0이 다 먹지 않게).
 v0_deadline=$(( $(date +%s) + 360 ))
 while [ "$(date +%s)" -lt "$v0_deadline" ]; do
-  n=$(ssm_run 30 "journalctl -b --no-pager -o cat | grep -cE '\\[worker\\] 배치 [0-9]+장' || true" 2>/dev/null | tr -dc '0-9'); n=${n:-0}
+  n=$(ssm_run 30 "journalctl -b --since @$CLONE_AT --no-pager -o cat | grep -cE '\\[worker\\] 배치 [0-9]+장' || true" 2>/dev/null | tr -dc '0-9'); n=${n:-0}
   [ "$n" -ge "$need" ] && break; sleep 5
 done
 [ "$n" -ge "$need" ] || { echo "V0 배치를 6분 안에 ${need}개 못 셌다 (센 값 ${n})" >&2; exit 1; }
 report_note "V0 배치 ${n}개 — 기본 워커를 정상 종료한다"
-ssm_run 200 "mkdir -p /tmp/exp; journalctl -b --no-pager -o cat > /tmp/exp/V0.log; systemctl stop wes-score.service; systemctl reset-failed wes-score.service 2>/dev/null; systemctl is-active wes-score.service || true" | sed 's/^/    /'
+# 정상 종료를 확인해야 다음 군이 GPU 를 혼자 쓴다 — inactive·failed(드롭인으로 failsafe 무력화) 말고는 멈춘다.
+ssm_run 200 "mkdir -p /tmp/exp; journalctl -b --since @$CLONE_AT --no-pager -o cat > /tmp/exp/V0.log; systemctl stop wes-score.service; st=\$(systemctl is-active wes-score.service); echo \"wes-score: \$st\"; case \$st in inactive|failed) ;; *) exit 1 ;; esac" | sed 's/^/    /'
 G_V0=${CLONE_IDS[0]}
+check_arm "$G_V0" "$(IFS=,; echo "${CLONE_IDS[*]:1}")"
 write_sql -c "UPDATE photos p SET deleted_at = now() FROM photo_analysis a WHERE a.photo_id = p.id AND p.gallery_id = $G_V0 AND a.clip_embedding IS NULL AND p.deleted_at IS NULL" >/dev/null
 ssm_run 60 "grep -E '배치 [0-9]+장|/장|러너 로드|ERROR|Traceback' /tmp/exp/V0.log" > "$LOG_DIR/V0.log"
 PIPE_B64=$(base64 < "$PIPELINE" | tr -d '\n')
@@ -109,7 +128,8 @@ i=1
 for arm in "${ARMS[@]}"; do
   name=${arm%%|*}; envs=${arm#*|}; gid=${CLONE_IDS[$i]}; i=$((i + 1)); eval "G_$name=$gid"
   report_section "3-$name. 워커 실행" "갤러리 $gid 의 앞 $((BATCHES * 32))장 · ${envs:-기본값}"
-  ssm_run 900 ". /etc/wes-score/image.env; docker run --rm --name exp-$name --gpus all --env-file /run/wes-score.env -e DB_USER=photoselect -e DB_SSLMODE=verify-full -e DB_SSLROOTCERT=/opt/rds-ca/global-bundle.pem -e WORKER_IDLE_STOP_SECONDS=0 -e WORKER_MAX_BATCHES=$BATCHES $envs -v /tmp/exp/pipeline.py:/app/score/service/pipeline.py:ro \$WES_SCORE_IMAGE > /tmp/exp/$name.log 2>&1; echo exit=\$?; grep -E '러너 로드|실험 E-SPLIT' /tmp/exp/$name.log | cut -c1-200; grep -E '배치 [0-9]+장' /tmp/exp/$name.log | tail -2 | cut -c1-160; grep -E '/장' /tmp/exp/$name.log | tail -1 | cut -c1-200" | sed 's/^/    /'
+  ssm_run 900 ". /etc/wes-score/image.env; docker run --rm --name exp-$name --gpus all --env-file /run/wes-score.env -e DB_USER=photoselect -e DB_SSLMODE=verify-full -e DB_SSLROOTCERT=/opt/rds-ca/global-bundle.pem -e WORKER_IDLE_STOP_SECONDS=0 -e WORKER_MAX_BATCHES=$BATCHES $envs -v /tmp/exp/pipeline.py:/app/score/service/pipeline.py:ro \$WES_SCORE_IMAGE > /tmp/exp/$name.log 2>&1; rc=\$?; echo exit=\$rc; grep -E '러너 로드|실험 E-SPLIT' /tmp/exp/$name.log | cut -c1-200; grep -E '배치 [0-9]+장' /tmp/exp/$name.log | tail -2 | cut -c1-160; grep -E '/장' /tmp/exp/$name.log | tail -1 | cut -c1-200; [ \$rc -eq 0 ] || { tail -20 /tmp/exp/$name.log; exit \$rc; }" | sed 's/^/    /'
+  check_arm "$gid" "$(IFS=,; echo "${CLONE_IDS[*]:$i}")"
   # 이 군이 못 먹은 행은 다음 군이 집지 않게 지운다(다음 군은 다음 복제 갤러리의 앞부분 = 같은 원본 사진).
   write_sql -c "UPDATE photos p SET deleted_at = now() FROM photo_analysis a WHERE a.photo_id = p.id AND p.gallery_id = $gid AND a.clip_embedding IS NULL AND p.deleted_at IS NULL" >/dev/null
   ssm_run 60 "grep -E '배치 [0-9]+장|/장|러너 로드|실험 E-SPLIT|ERROR|Traceback' /tmp/exp/$name.log" > "$LOG_DIR/$name.log"

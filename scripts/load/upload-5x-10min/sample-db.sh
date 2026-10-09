@@ -27,10 +27,10 @@ CSV="${REPORT_FILE%.txt}.csv"
 echo "sampled_at,usename,application_name,state,connections" > "$CSV"
 report_note "원자료: $CSV · Ctrl+C 로 끝내면 요약"
 
-MAX_TOTAL=0; MAX_AT=""; SAMPLES=0
+MAX_TOTAL=0; MAX_AT=""; SAMPLES=0; FAILS=0
 summary() {
   trap - INT TERM
-  report_section "요약" "샘플 ${SAMPLES}개"
+  report_section "요약" "샘플 ${SAMPLES}개 · 조회 실패 ${FAILS}번"
   report_note "최대 ${MAX_TOTAL} (${MAX_AT})"
   # 최대였던 순간의 구성
   awk -F, -v at="$MAX_AT" 'NR > 1 && $1 == at { printf "    %-20s %-28s %-22s %s\n", $2, $3, $4, $5 }' "$CSV"
@@ -46,11 +46,17 @@ trap summary INT TERM
 
 report_section "샘플" "시각 · 합계 · 상위 사용자"
 while true; do
-  rows=$(report_scalar -F ',' -c "
-    SELECT to_char(now(), 'HH24:MI:SS'), coalesce(usename, '-'), coalesce(nullif(application_name, ''), '-'),
+  # application_name 에 쉼표가 들어올 수 있어 조회는 탭으로 받고, CSV 에 쓸 때만 쉼표로 바꾼다(이름 속 쉼표는 공백으로).
+  # 터널이 잠깐 끊겨도 샘플러는 계속 돈다 — 대신 실패를 화면과 CSV 옆 로그에 남긴다.
+  if ! rows=$(report_scalar -F $'\t' -c "
+    SELECT to_char(now(), 'HH24:MI:SS'), coalesce(usename, '-'), replace(coalesce(nullif(application_name, ''), '-'), ',', ' '),
            coalesce(state, '-'), count(*)
     FROM pg_stat_activity WHERE backend_type = 'client backend'
-    GROUP BY 2, 3, 4" || true)
+    GROUP BY 2, 3, 4" 2>>"${CSV%.csv}.err"); then
+    echo "    $(date +%H:%M:%S)  ${C_RD}조회 실패${C_0} — 터널·DB 확인 (${CSV%.csv}.err)"
+    FAILS=$((FAILS + 1)); sleep "$INTERVAL"; continue
+  fi
+  rows=$(tr '\t' ',' <<< "$rows")
   if [ -n "$rows" ]; then
     echo "$rows" >> "$CSV"
     at=$(head -1 <<< "$rows" | cut -d, -f1)

@@ -17,7 +17,7 @@ report_begin "측정 환경 스냅샷" "$ENV_NAME 스택 · 리전 $REGION"
 
 cw_avg() {  # namespace metric dimName dimValue minutes → 최근 N분 평균
   aws cloudwatch get-metric-statistics --region "$REGION" --namespace "$1" --metric-name "$2" \
-    --dimensions "Name=$3,Value=$4" --start-time "$(date -u -v-"$5"M +%Y-%m-%dT%H:%M:%SZ)" \
+    --dimensions "Name=$3,Value=$4" --start-time "$(python3 -c 'import datetime,sys; print((datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=int(sys.argv[1]))).strftime("%Y-%m-%dT%H:%M:%SZ"))' "$5")" \
     --end-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --period 300 --statistics Average \
     --query 'Datapoints[-1].Average' --output text 2>/dev/null || echo "?"
 }
