@@ -10,6 +10,8 @@
 | `seed-dev.sh --source 48` | 운영 갤러리 48의 도착 시각표를 뽑고, 사진을 dev 버킷 `load-seed/48/`로 서버 쪽 복사 → `docs/experiments/load-seed/48-timetable.json` | dev 버킷 (운영은 읽기만) |
 | `replay.sh` | 시각표대로 dev 갤러리 N개에 실제 업로드 API 경로로 사진을 도착시키고 분석 요청 (`--count` · `--stagger` · `--speed` · `--limit`) | dev |
 | `sample-db.sh dev` | 측정 중 DB 연결 수 샘플, Ctrl+C로 가드레일(≤ 63) 판정 | 없음 |
+| `exp-score-split.sh --pipeline P` | 실험 E-SPLIT(ADR 0002) — dev GPU에서 점수 워커 설정 V0~V3를 같은 원본 사진에 돌려 처리량·단계 시간·CLIP 품질 비교. 복제 갤러리·GPU는 끝나면 정리 | dev (복제 행, 끝나면 삭제) · GPU 켬/끔 |
+| `top-queries.sh dev` | `pg_stat_statements`로 회차 동안 무거운 쿼리 순위(실행 시간·디스크 읽기·임시 파일·호출) — `--setup` 한 번, `--reset` 회차 직전 | `--setup`·`--reset`만 dev (조회는 읽기 전용) |
 | `replay.py` · `venv.sh` | 재생 본체(boto3)와 가상환경(`.venv`, gitignore) | — |
 
 순서: `dev-ids.sh` → (후보가 없으면 `make-studio.sh`) → `seed-dev.sh`(한 번) → `replay.sh --limit 200`(스모크) → 회차(B-1 단건 · B-2 5개 동시 ×2 · B-3 1분 간격 ×2 · B-4 2배속). 각 회차는 `../precheck.sh dev`로 시작 조건을 보고, 끝나면 `replay.sh`가 출력하는 `../timeline.sh` 명령으로 잰다.
