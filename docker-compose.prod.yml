@@ -8,7 +8,10 @@ services:
       - SERVER_PORT=8080
       - AWS_REGION=ap-northeast-2
       - TZ=Asia/Seoul
-      - JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75
+      # 힙 상한을 서버 메모리 안에 둔다(#274 A-1). t4g.micro 904MB에서 다른 프로세스 ≈ 200MB · JVM 힙 밖 ≈ 180MB를 빼면
+      # 힙 448MB가 들어간다. 예전 MaxRAMPercentage=75(컨테이너 1g → 768MB)는 힙이 스왑으로 밀려 GC 때 앱 전체가 수십 초 멈췄다.
+      # GC 로그는 실제 힙 사용량을 보고 값을 다듬기 위해 남긴다 — alloy는 info·warn·error 폴더만 보내므로 이 파일은 서버에만 있다.
+      - JAVA_TOOL_OPTIONS=-Xmx448m -Xlog:gc:file=/var/log/spring/gc.log:time,uptime,level,tags:filecount=5,filesize=5m
     ports:
       - "8080:8080"
     read_only: true

@@ -12,6 +12,12 @@ spring:
   flyway:
     enabled: false
 
+  # 관리자 트래픽은 백오피스 요청과 스케줄러 스레드 1개의 크론뿐이라 기본 10개 중 대부분이 늘 놀았다.
+  # 연결 하나가 RDS 프로세스 하나(메모리)라, 놀던 7개를 분석 파이프라인 몫으로 돌린다(#274 D-4).
+  datasource:
+    hikari:
+      maximum-pool-size: 3
+
 server:
   port: 8081
 
