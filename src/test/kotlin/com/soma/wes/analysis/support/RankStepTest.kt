@@ -135,6 +135,23 @@ class RankStepTest @Autowired constructor(
         }
 
         @Test
+        fun `실행기가 없으면 시도 횟수를 쓰지 않고 기다린다`() {
+            // given — 실행기를 고친 뒤에도 상한에 막히지 않게
+            val (jobId, photos) = folderedJob(photoCount = 1)
+            photos.forEach { photoFixture.화질점수_적재(it) }
+            aiTaskSender.available = false
+
+            // when
+            step().advance()
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(aiTaskSender.rankTasks).isEmpty()
+                softly.assertThat(job(jobId).rankAttempts).isZero()
+            }
+        }
+
+        @Test
         fun `꺼져 있으면 보내지 않는다`() {
             // given
             val (_, photos) = folderedJob(photoCount = 1)

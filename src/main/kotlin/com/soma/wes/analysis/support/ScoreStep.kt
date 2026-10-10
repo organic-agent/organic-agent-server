@@ -53,6 +53,10 @@ class ScoreStep(
     @Volatile
     private var lastProgressAt: ZonedDateTime? = null
 
+    /** 마지막 스윕에서 본 1단계 대기 수. [lastBacklog]는 화질 점수(2단계) 대기까지 더한 워커의 일 전체다. */
+    @Volatile
+    private var lastScoreBacklog: Long? = null
+
     /** 워커가 "내고 있다"고 마지막으로 믿은 시각 — 점수가 늘었거나 아직 부팅 유예 안이다. null이면 backlog가 없다. */
     @Volatile
     private var deliveringAt: ZonedDateTime? = null
@@ -72,6 +76,7 @@ class ScoreStep(
         val backlog = photoPipelineRepository.countScoreBacklog()
         val workerBacklog = backlog + countQualityBacklog()
         observeProgress(workerBacklog, now)
+        observeDelivery(backlog, now)
 
         if (isWorkerPoolActive) controlWorkers(workerBacklog, now)
         if (backlog == 0L) {
@@ -88,13 +93,21 @@ class ScoreStep(
     private val isWorkerPoolActive: Boolean
         get() = properties.gpu.enabled && scoreWorkerPool.isAvailable
 
-    private fun observeProgress(backlog: Long, now: ZonedDateTime) {
+    /** 워커의 일 전체(1·2단계)가 움직였나 — 안전망 끄기의 기준. */
+    private fun observeProgress(workerBacklog: Long, now: ZonedDateTime) {
         val previous = lastBacklog
-        if (previous == null || backlog != previous) {
-            lastProgressAt = now
-            if (previous != null) deliveringAt = now
-        }
-        lastBacklog = backlog
+        if (previous == null || workerBacklog != previous) lastProgressAt = now
+        lastBacklog = workerBacklog
+    }
+
+    /**
+     * 1단계 대기가 움직였나 — 폴백의 기준. 워커 전체가 아니라 1단계만 본다: 1단계가 멈춘 채 2단계만 채워지면 폴더가 기다리는 사진이
+     * 2단계가 끝날 때까지 폴백을 받지 못한다.
+     */
+    private fun observeDelivery(backlog: Long, now: ZonedDateTime) {
+        val previous = lastScoreBacklog
+        if (previous != null && backlog != previous) deliveringAt = now
+        lastScoreBacklog = backlog
     }
 
     /** 켜진 워커가 없으면 켜고, 일이 없는데 켜져 있으면 안전망으로 끈다. 호출 실패는 다음 스윕에 다시 본다. */

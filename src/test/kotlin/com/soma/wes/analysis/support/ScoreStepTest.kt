@@ -259,6 +259,26 @@ class ScoreStepTest @Autowired constructor(
         }
 
         @Test
+        fun `1단계가 멈춘 채 화질 점수만 채워져도 1단계 사진은 fallbackAfter 뒤에 보낸다`() {
+            // given — 폴더가 기다리는 1단계 사진 둘은 멈췄고, 다른 사진의 화질 점수(2단계)만 4분마다 한 장씩 찬다
+            val stuck = photoFixture.임베딩된_사진(galleryId, count = 2)
+            val qualityPending = photoFixture.임베딩된_사진(galleryId, count = 3).onEach { photoFixture.점수_적재(it) }
+            pool.worker("i-1", ScoreWorkerStateDto.RUNNING, launchedAt = ZonedDateTime.now(clock).minusMinutes(30))
+            val step = step(qualityStage = true)
+            step.advance()
+
+            // when
+            for (photoId in qualityPending) {
+                clock.advance(Duration.ofMinutes(4))
+                photoFixture.화질점수_적재(photoId)
+                step.advance()
+            }
+
+            // then — 2단계 진행이 1단계 폴백 시계를 늦추지 않는다
+            assertThat(aiTaskSender.scoreTasks.single().photoIds).containsExactlyElementsOf(stuck)
+        }
+
+        @Test
         fun `워커가 점수를 내고 있으면 보내지 않는다`() {
             // given
             val photos = photoFixture.임베딩된_사진(galleryId, count = 2)

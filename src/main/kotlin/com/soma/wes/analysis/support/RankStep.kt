@@ -44,7 +44,8 @@ class RankStep(
     private val gaveUpJobIds: MutableSet<Long> = ConcurrentHashMap.newKeySet()
 
     fun advance() {
-        if (!properties.qualityStage.enabled) return
+        // 실행기가 없을 때 선점하면 보내지도 못한 채 시도 횟수만 써서, 실행기를 고친 뒤에도 상한에 막힌다.
+        if (!properties.qualityStage.enabled || !aiTaskSender.isAvailable(AiTaskDto.Rank::class)) return
         for (galleryId in photoPipelineRepository.findGalleryIdsReadyToRank()) {
             try {
                 advance(galleryId)
