@@ -20,6 +20,8 @@ import org.springframework.stereotype.Component
  * 여기서는 "일이 있으면 켜고, 일이 없는데 안 꺼졌으면 끄고, 워커가 못 내면 Lambda로 보낸다"만 한다.
  *
  * - 켜기: backlog(점수 없는 UPLOADED 사진) > 0 ∧ 켜진 워커 0. 벡터가 오기 전에 미리 켜 부팅이 임베딩과 겹치게 한다.
+ *   [AnalysisProperties.QualityStage.enabled]면 화질 점수(2단계) 대기도 워커의 일로 센다 — 워커는 1단계 대기가 비면 2단계를 집으므로,
+ *   1단계만 세면 2단계 도중 안전망이 워커를 끈다. 폴백은 1단계만 본다(폴더가 기다리는 것은 1단계뿐이다).
  * - 끄기: 워커의 유휴 30초 자기 정지(AI repo)가 1차다. 여기는 backlog 0 ∧ 켜진 지 [AnalysisProperties.Gpu.startGrace] 지남 ∧
  *   [AnalysisProperties.Gpu.idleStopAfter] 동안 점수 진행 없음일 때만 끄는 안전망이다.
  * - 폴백: backlog가 있는데 [AnalysisProperties.Gpu.fallbackAfter] 동안 워커가 뜨지 않거나 점수가 늘지 않으면, 벡터는 있는데 점수가
@@ -51,6 +53,10 @@ class ScoreStep(
     @Volatile
     private var lastProgressAt: ZonedDateTime? = null
 
+    /** 마지막 스윕에서 본 1단계 대기 수. [lastBacklog]는 화질 점수(2단계) 대기까지 더한 워커의 일 전체다. */
+    @Volatile
+    private var lastScoreBacklog: Long? = null
+
     /** 워커가 "내고 있다"고 마지막으로 믿은 시각 — 점수가 늘었거나 아직 부팅 유예 안이다. null이면 backlog가 없다. */
     @Volatile
     private var deliveringAt: ZonedDateTime? = null
@@ -68,9 +74,11 @@ class ScoreStep(
     fun advance() {
         val now = ZonedDateTime.now(clock)
         val backlog = photoPipelineRepository.countScoreBacklog()
-        observeProgress(backlog, now)
+        val workerBacklog = backlog + countQualityBacklog()
+        observeProgress(workerBacklog, now)
+        observeDelivery(backlog, now)
 
-        if (isWorkerPoolActive) controlWorkers(backlog, now)
+        if (isWorkerPoolActive) controlWorkers(workerBacklog, now)
         if (backlog == 0L) {
             deliveringAt = null
             fallbackCount.clear()
@@ -79,16 +87,27 @@ class ScoreStep(
         if (isFallbackDue(now)) fallback(now)
     }
 
+    private fun countQualityBacklog(): Long =
+        if (properties.qualityStage.enabled) photoPipelineRepository.countQualityBacklog() else 0L
+
     private val isWorkerPoolActive: Boolean
         get() = properties.gpu.enabled && scoreWorkerPool.isAvailable
 
-    private fun observeProgress(backlog: Long, now: ZonedDateTime) {
+    /** 워커의 일 전체(1·2단계)가 움직였나 — 안전망 끄기의 기준. */
+    private fun observeProgress(workerBacklog: Long, now: ZonedDateTime) {
         val previous = lastBacklog
-        if (previous == null || backlog != previous) {
-            lastProgressAt = now
-            if (previous != null) deliveringAt = now
-        }
-        lastBacklog = backlog
+        if (previous == null || workerBacklog != previous) lastProgressAt = now
+        lastBacklog = workerBacklog
+    }
+
+    /**
+     * 1단계 대기가 움직였나 — 폴백의 기준. 워커 전체가 아니라 1단계만 본다: 1단계가 멈춘 채 2단계만 채워지면 폴더가 기다리는 사진이
+     * 2단계가 끝날 때까지 폴백을 받지 못한다.
+     */
+    private fun observeDelivery(backlog: Long, now: ZonedDateTime) {
+        val previous = lastScoreBacklog
+        if (previous != null && backlog != previous) deliveringAt = now
+        lastScoreBacklog = backlog
     }
 
     /** 켜진 워커가 없으면 켜고, 일이 없는데 켜져 있으면 안전망으로 끈다. 호출 실패는 다음 스윕에 다시 본다. */

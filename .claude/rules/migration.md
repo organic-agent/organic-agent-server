@@ -60,11 +60,13 @@ paths:
 - 잡의 지나간 일(전송·재전송·폴백·떼어내기·물질화·닫힘)은 V31의 `analysis_job_events`에 한 줄씩 남는다 — 로그의 `job.*` 줄과 같은 지점에서
   `AnalysisJobEventRecorder`가 쓴다. 판단에 쓰지 않는 운영 기록이고 기록 실패는 파이프라인을 멈추지 않는다 — 호출자의 트랜잭션에 싣지 않고 커밋 뒤에 새 트랜잭션으로 쓴다. `type`에는 CHECK가 없다.
 - `photo_analysis`는 세 주체가 나눠 쓴다 — 임베더가 `embedding·embedding_model`, score 단계가
-  `subjects·sub_scores·clip_embedding·pipeline_version`, categorize 단계가 `technical_pct·aesthetic_pct·burst_*·
-  embed_group_id`. 두 단계 사이에 `pipeline_version`만 있고 백분위가 없는 창이 있으므로 "분석 완료"는
-  `PhotoAnalysis.isAnalyzed`(백분위까지 채워짐) 하나로만 판단한다. DB 제약도 잡 단위다(V3):
-  `ck_photo_analysis_scored`(pipeline_version ⇒ subjects·analyzed_at), `ck_photo_analysis_categorized`
-  (백분위·연사·그룹은 전부 있거나 전부 없음). 배치가 쓰는 컬럼 묶음을 바꾸면 이 두 제약도 같이 본다.
+  `subjects·sub_scores·clip_embedding·pipeline_version`(1단계)·`quality_scored_at`(2단계 화질 점수, V40), categorize 단계가
+  `embed_group_id·burst_id`(폴더용)와 `technical_pct·aesthetic_pct·burst_rank`(순위 — full 또는 rank 모드). `sub_scores`는 score·categorize가
+  키를 나눠 쓰므로 통째로 덮지 말고 병합(`||`)한다. 진행 표시는 단계마다 하나다: 1단계 `clip_embedding` → 폴더 `embed_group_id` →
+  2단계 `quality_scored_at` → 추천 `technical_pct`. 폴더는 `embed_group_id`까지만 기다리고, "추천 재료 완료"는 `PhotoAnalysis.isAnalyzed`
+  (백분위까지 채워짐)로 판단한다(#274 2물결). DB 제약(V3 → V40): `ck_photo_analysis_scored`(pipeline_version ⇒ subjects·analyzed_at),
+  `ck_photo_analysis_grouped`(그룹·연사 묶음은 함께), `ck_photo_analysis_ranked`(백분위 둘·순위는 함께, 있으면 그룹도). 배치가 쓰는 컬럼 묶음을
+  바꾸면 이 제약들도 같이 본다.
 - `ai_selection_jobs`·`ai_recommendations`는 2026-09-04부터 이 서버가 쓴다(추천 실행기 `AiSelectionJobRunner`).
   AI repo는 더 이상 이 테이블을 쓰지 않는다. 비교샷 테이블 `ai_pair_verdicts`는 기능과 함께 V22에서 지웠다 —
   photoselect GRANT 계약도 V22 블록이 V16 블록을 통째로 대체한다.

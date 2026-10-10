@@ -28,6 +28,14 @@ enum class RecommendationErrorCode(
      */
     SELECTION_JOB_ALREADY_ACTIVE(HttpStatus.CONFLICT, "RECOMMENDATION_409_6", "이미 진행 중인 AI 추천이 있습니다."),
 
+    /**
+     * AI 폴더는 있는데 추천 재료(사진의 화질 백분위·연사 대표 순위)가 아직 다 차지 않은 경우(#274 2물결).
+     *
+     * 폴더는 화질 점수를 기다리지 않고 먼저 만들어지고, 순위는 화질 점수가 갤러리 전부에 찬 뒤 채워진다(업로드 뒤 십여 분).
+     * 그 사이에 돌리면 순위 없는 사진이 재료에서 조용히 빠져 추천이 갤러리 일부로 치우친다. 잠시 뒤 다시 누르면 된다.
+     */
+    RANKING_NOT_READY(HttpStatus.CONFLICT, "RECOMMENDATION_409_8", "AI 추천을 준비하고 있어요. 잠시 뒤 다시 시도해 주세요."),
+
     /** 요청이 콕 집은 AI 폴더 세트(analysisJobId)가 이 갤러리에 없는 경우. 지운 세트도 없는 것이다. */
     FOLDER_SET_NOT_FOUND(HttpStatus.NOT_FOUND, "RECOMMENDATION_404_2", "요청한 AI 폴더 세트를 찾을 수 없습니다."),
     DETAIL_FOLDER_NOT_FOUND(HttpStatus.NOT_FOUND, "RECOMMENDATION_404_4", "추천할 세부폴더를 찾을 수 없습니다."),

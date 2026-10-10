@@ -4,6 +4,7 @@ import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.folder.support.AiFolderSetReader
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.config.StorageProperties
+import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.support.PhotoViewAssembler
 import com.soma.wes.recommendation.domain.AiJobStatus
@@ -47,6 +48,7 @@ class AiRecommendationService(
     private val aiSelectionJobRepository: AiSelectionJobRepository,
     private val aiRecommendationRepository: AiRecommendationRepository,
     private val photoRepository: PhotoRepository,
+    private val photoAnalysisRepository: PhotoAnalysisRepository,
     private val photoViewAssembler: PhotoViewAssembler,
     private val properties: StorageProperties,
     private val jobLauncher: AiSelectionJobLauncher,
@@ -59,7 +61,8 @@ class AiRecommendationService(
      * 추천 한 라운드를 요청한다. 셀렉의 주인인 부부만(`requireSelectionEditor`) — 마감·미공개 갤러리는
      * 거기서 막힌다. 아직 셀렉 행이 없으면 여기서 만든다(담기와 같은 규약).
      *
-     * 추천은 AI 폴더 세트 위에서 돈다 — 세트가 없으면 409로 거절하고 폴백을 두지 않는다.
+     * 추천은 AI 폴더 세트 위에서 돈다 — 세트가 없으면 409로 거절하고 폴백을 두지 않는다. 세트는 있어도 사진의 순위(백분위)가
+     * 아직 다 차지 않았으면(폴더 뒤 화질 점수를 채우는 중) 409로 거절한다 — 덜 찬 재료로 돌면 추천이 갤러리 일부로 치우친다.
      * 제출된 앨범에는 걸지 않으며, 살아 있는 추천 잡이 있으면 거절한다. 두 검사 사이의 경쟁은
      * DB의 부분 유니크가 잡고, 그 위반을 같은 409로 번역한다.
      *
@@ -82,6 +85,9 @@ class AiRecommendationService(
                 ?: throw RecommendationException(RecommendationErrorCode.DETAIL_FOLDER_NOT_FOUND)
         }
         val analysisJobId = resolveAnalysisJobId(galleryId, request.analysisJobId, required = detailFolderId == null)
+        if (photoAnalysisRepository.existsUnrankedByGalleryId(galleryId)) {
+            throw RecommendationException(RecommendationErrorCode.RANKING_NOT_READY)
+        }
 
         val selection = photoSelectionRepository.findByGalleryId(galleryId)
             ?: photoSelectionRepository.save(PhotoSelection(galleryId = galleryId))

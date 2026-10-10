@@ -19,7 +19,7 @@ import org.hibernate.annotations.DynamicUpdate
  * 한 번 부르고, 배정이 오면 폴더를 물질화한 뒤 닫는다. 전이는 엔티티 메서드가 아니라 [com.soma.wes.analysis.repository.AnalysisJobRepository]의
  * 조건부 UPDATE다 — 스윕 둘 중 한쪽만 옮기게 하는 것이 그 문장의 영향 행 수다. 누가 무엇을 쓰는지가 계약이다:
  * - 이 서버: [status]·[dispatchedAt]·[attempts]·[finishedAt]·진행 감시([progressCount]·[progressAt])·[categorizingAt]·
- *   [materializeAttempts], 그리고 잡을 닫을 때의 [error]·[errorCode].
+ *   [materializeAttempts]·순위 전송([rankDispatchedAt]·[rankAttempts]), 그리고 잡을 닫을 때의 [error]·[errorCode].
  * - categorize Lambda: 실패했을 때의 [error] 한 컬럼(photoselect의 `UPDATE (error)` GRANT). 상태는 쓰지 않는다.
  *
  * [DynamicUpdate]인 이유: Lambda가 [error]를 쓰는 동안 이 서버가 다른 컬럼을 갱신할 수 있다. 바뀐 컬럼만 UPDATE해야
@@ -93,6 +93,18 @@ class AnalysisJob(
     /** 폴더 만들기가 예상 밖 예외로 실패한 횟수. 상한에서 잡을 닫는다 — 없으면 5초마다 끝없이 다시 시도한다. */
     @Column(name = "materialize_attempts", nullable = false)
     var materializeAttempts: Int = 0
+        protected set
+
+    /**
+     * DONE 뒤 categorize rank 모드(백분위·연사 대표 순위)를 마지막으로 보낸 시각과 횟수(#274 2물결). 폴더는 이미 있고 추천 재료만 채우는 일이라
+     * 잡 상태는 DONE 그대로 둔다 — 순위가 늦어도 사용자에게 보이는 잡은 끝난 것이다.
+     */
+    @Column(name = "rank_dispatched_at")
+    var rankDispatchedAt: ZonedDateTime? = null
+        protected set
+
+    @Column(name = "rank_attempts", nullable = false)
+    var rankAttempts: Int = 0
         protected set
 
     val requiredId: Long

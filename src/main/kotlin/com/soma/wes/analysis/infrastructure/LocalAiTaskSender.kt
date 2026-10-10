@@ -63,6 +63,7 @@ class LocalAiTaskSender(
                     add("--job-id"); add(task.jobId.toString())
                     task.conceptCount?.let { add("--concept-count"); add(it.toString()) }
                 }
+                is AiTaskDto.Rank -> { add("--mode"); add(task.mode) }
                 is AiTaskDto.ExactPhoto -> error("위에서 거른 작업: $task")
             }
         }
@@ -97,7 +98,7 @@ class LocalAiTaskSender(
     private fun scriptNameOf(task: KClass<out AiTaskDto>): String = when (task) {
         AiTaskDto.Embed::class -> "embedder"
         AiTaskDto.Score::class -> "score"
-        AiTaskDto.Categorize::class -> "categorize"
+        AiTaskDto.Categorize::class, AiTaskDto.Rank::class -> "categorize"
         else -> error("로컬 대역이 없는 AI 작업: $task")
     }
 }

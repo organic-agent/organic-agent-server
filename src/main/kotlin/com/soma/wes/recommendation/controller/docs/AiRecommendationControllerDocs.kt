@@ -36,7 +36,8 @@ interface AiRecommendationControllerDocs {
 
             부부 전용이다 — 추천은 부부의 선택을 돕는 초안이고 최종 결정은 사람이 한다. 셀렉 행이
             없으면 여기서 만든다. AI 폴더 세트가 없으면 409_5(폴더 생성이 먼저), 진행 중인 추천 잡이
-            있으면 409_6, 제출된 앨범이면 409다.
+            있으면 409_6, 폴더는 있는데 사진 순위가 아직 다 차지 않았으면 409_8(업로드 뒤 화질 점수를 채우는 중 —
+            잠시 뒤 다시), 제출된 앨범이면 409다.
 
             첫 요청은 DRAFT, 이후 요청은 REFINE이다 — 담은 사진과 거절을 빼고 최신 라운드를 통째로
             다시 계산한다. 모드는 서버가 이력으로 정하므로 본문에서 받지 않는다.
@@ -62,7 +63,7 @@ interface AiRecommendationControllerDocs {
             ],
         ),
         ApiResponse(responseCode = "404", description = "본문이 집은 AI 폴더 세트가 이 갤러리에 없음", content = []),
-        ApiResponse(responseCode = "409", description = "AI 폴더 세트가 없거나, 진행 중인 추천 잡이 있거나, 제출된 앨범", content = []),
+        ApiResponse(responseCode = "409", description = "AI 폴더 세트가 없거나, 사진 순위가 준비 중이거나, 진행 중인 추천 잡이 있거나, 제출된 앨범", content = []),
     )
     fun request(
         loginUser: LoginUser,

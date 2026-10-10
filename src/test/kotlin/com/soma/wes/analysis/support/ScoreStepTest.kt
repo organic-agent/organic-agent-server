@@ -47,7 +47,7 @@ class ScoreStepTest @Autowired constructor(
         galleryId = galleryFixture.멤버와_열린_갤러리().galleryId
     }
 
-    private fun step(enabled: Boolean = true) = ScoreStep(
+    private fun step(enabled: Boolean = true, qualityStage: Boolean = false) = ScoreStep(
         pool,
         photoPipelineRepository,
         aiTaskSender,
@@ -60,6 +60,7 @@ class ScoreStepTest @Autowired constructor(
                 fallbackAfter = Duration.ofMinutes(10),
                 fallbackInterval = Duration.ofMinutes(10),
             ),
+            qualityStage = AnalysisProperties.QualityStage(enabled = qualityStage),
         ),
         clock,
     )
@@ -133,6 +134,40 @@ class ScoreStepTest @Autowired constructor(
 
             // then — 유예(5분) 안이다
             assertThat(pool.stops).isEmpty()
+        }
+
+        @Test
+        fun `화질 점수 대기가 남았으면 1단계가 끝났어도 켜고 끄지 않는다`() {
+            // given — 1단계(CLIP)는 끝났고 화질 점수(2단계)만 남았다(#274 2물결). 워커는 1단계 대기가 비면 2단계를 집는다
+            photoFixture.임베딩된_사진(galleryId, count = 1).forEach { photoFixture.점수_적재(it) }
+            pool.worker("i-1", ScoreWorkerStateDto.STOPPED)
+            val step = step(qualityStage = true)
+
+            // when
+            step.advance()
+            pool.workers[0] = pool.workers[0].copy(state = ScoreWorkerStateDto.RUNNING, launchedAt = ZonedDateTime.now(clock).minusMinutes(10))
+            clock.advance(Duration.ofMinutes(3))
+            step.advance()
+
+            // then — 켜고, 무진행 시간이 지나도 일이 남아 끄지 않는다. 폴더는 2단계를 기다리지 않으니 Lambda 폴백도 없다
+            assertSoftly { softly ->
+                softly.assertThat(pool.starts).hasSize(1)
+                softly.assertThat(pool.stops).isEmpty()
+                softly.assertThat(aiTaskSender.scoreTasks).isEmpty()
+            }
+        }
+
+        @Test
+        fun `화질 점수 단계가 꺼져 있으면 2단계 대기는 일로 세지 않는다`() {
+            // given — AI score 가 quality_scored_at 을 쓰기 전에는 새 사진이 영원히 대기로 남는다
+            photoFixture.임베딩된_사진(galleryId, count = 1).forEach { photoFixture.점수_적재(it) }
+            pool.worker("i-1", ScoreWorkerStateDto.STOPPED)
+
+            // when
+            step(qualityStage = false).advance()
+
+            // then
+            assertThat(pool.starts).isEmpty()
         }
 
         @Test
@@ -221,6 +256,26 @@ class ScoreStepTest @Autowired constructor(
 
             // then
             assertThat(aiTaskSender.scoreTasks.single().photoIds).containsExactlyElementsOf(photos)
+        }
+
+        @Test
+        fun `1단계가 멈춘 채 화질 점수만 채워져도 1단계 사진은 fallbackAfter 뒤에 보낸다`() {
+            // given — 폴더가 기다리는 1단계 사진 둘은 멈췄고, 다른 사진의 화질 점수(2단계)만 4분마다 한 장씩 찬다
+            val stuck = photoFixture.임베딩된_사진(galleryId, count = 2)
+            val qualityPending = photoFixture.임베딩된_사진(galleryId, count = 3).onEach { photoFixture.점수_적재(it) }
+            pool.worker("i-1", ScoreWorkerStateDto.RUNNING, launchedAt = ZonedDateTime.now(clock).minusMinutes(30))
+            val step = step(qualityStage = true)
+            step.advance()
+
+            // when
+            for (photoId in qualityPending) {
+                clock.advance(Duration.ofMinutes(4))
+                photoFixture.화질점수_적재(photoId)
+                step.advance()
+            }
+
+            // then — 2단계 진행이 1단계 폴백 시계를 늦추지 않는다
+            assertThat(aiTaskSender.scoreTasks.single().photoIds).containsExactlyElementsOf(stuck)
         }
 
         @Test

@@ -161,6 +161,13 @@ app:
       idle-stop-after: PT2M
       fallback-after: PT10M
       fallback-interval: PT10M
+    # score 2단계(화질 점수)와 순위(#274 2물결). 켜면 GPU 를 켜 두는 기준에 화질 점수 대기(quality_scored_at IS NULL)도 세고,
+    # 폴더가 만들어진 뒤 화질 점수가 갤러리 전부에 차면 categorize rank 모드(백분위·연사 대표 순위)를 보낸다.
+    # quality_scored_at 을 쓰는 AI score 가 배포된 뒤에 켠다 — 먼저 켜면 새 사진이 영원히 대기로 남아 GPU 를 계속 켠다.
+    quality-stage:
+      enabled: false
+      rank-timeout: PT10M
+      rank-max-attempts: 3
     # 임베더 배정과 살아 있는 잡을 한 걸음씩 옮기는 스윕 주기.
     sweep-interval: PT5S
 

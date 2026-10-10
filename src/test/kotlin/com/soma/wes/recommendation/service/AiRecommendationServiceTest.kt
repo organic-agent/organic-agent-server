@@ -152,6 +152,24 @@ class AiRecommendationServiceTest @Autowired constructor(
         }
 
         @Test
+        fun `폴더는 있는데 사진 순위가 아직 다 차지 않았으면 준비 중으로 거절한다`() {
+            // given — 폴더 뒤에 화질 점수를 채우는 창(#274 2물결). 한 장은 순위가 있고 한 장은 그룹만 있다
+            val set = aiFolderSet(photoCount = 2)
+            jdbcTemplate.update(
+                "UPDATE photo_analysis SET technical_pct = NULL, aesthetic_pct = NULL, burst_rank = NULL WHERE photo_id = ?",
+                set.photoIds[1],
+            )
+
+            // when & then — 덜 찬 재료로 돌면 순위 없는 사진이 조용히 빠진다
+            assertThatThrownBy {
+                aiRecommendationService.request(fixture.galleryId, fixture.member.id!!, AiRecommendationRequest())
+            }
+                .isInstanceOf(RecommendationException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(RecommendationErrorCode.RANKING_NOT_READY)
+        }
+
+        @Test
         fun `세부폴더를 집으면 그 범위로 잡을 만든다`() {
             // given
             val set = aiFolderSet()
