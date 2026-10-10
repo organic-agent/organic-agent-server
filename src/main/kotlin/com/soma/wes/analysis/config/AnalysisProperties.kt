@@ -54,6 +54,7 @@ data class AnalysisProperties(
      */
     val backofficeBaseUrl: String = "https://admin.easyselect.kr",
     val gpu: Gpu = Gpu(),
+    val qualityStage: QualityStage = QualityStage(),
 ) {
 
     /** 백오피스에서 그 갤러리를 여는 주소. [backofficeBaseUrl]이 비어 있으면 null 이다. */
@@ -77,5 +78,18 @@ data class AnalysisProperties(
         val fallbackAfter: Duration = Duration.ofMinutes(10),
         /** 같은 갤러리에 폴백을 다시 보내는 최소 간격. */
         val fallbackInterval: Duration = Duration.ofMinutes(10),
+    )
+
+    /**
+     * score 2단계(화질 점수)와 순위(#274 2물결, ADR 0002 B). [enabled]면 점수 대기에 2단계 대기(`quality_scored_at IS NULL`)도 세어
+     * GPU를 켜 두고, DONE 잡의 갤러리에 2단계가 다 차면 categorize rank 모드를 보낸다([com.soma.wes.analysis.support.RankStep]).
+     * 꺼 두는 이유: `quality_scored_at`을 쓰는 AI score 가 배포되기 전에 켜면 새 사진이 영원히 2단계 대기로 남아 GPU를 계속 켠다.
+     */
+    data class QualityStage(
+        val enabled: Boolean = false,
+        /** rank 모드를 보낸 뒤 이 시간 안에 백분위가 차지 않으면 다시 보낸다. 7천 장 rank(벡터 없이 점수만)는 수십 초다. */
+        val rankTimeout: Duration = Duration.ofMinutes(10),
+        /** rank 모드를 갤러리 잡 하나에 이 횟수까지 보낸다. 넘으면 오류 로그만 남긴다 — 폴더는 이미 있고 추천만 준비 중으로 남는다. */
+        val rankMaxAttempts: Int = 3,
     )
 }

@@ -37,7 +37,7 @@ interface PhotoAnalysisRepository : JpaRepository<PhotoAnalysis, Long> {
     fun findAllAnalyzedSummaryByGalleryId(@Param("galleryId") galleryId: Long): List<PhotoAnalysisSummary>
 
     /**
-     * 갤러리에서 categorize 까지 끝난(백분위가 있는) 분석 행을 폴더 계획에 필요한 컬럼만으로, 화면 순서([Photo.DISPLAY_ORDER]와 같은
+     * 갤러리에서 categorize 까지 끝난(임베딩 그룹이 있는) 분석 행을 폴더 계획에 필요한 컬럼만으로, 화면 순서([Photo.DISPLAY_ORDER]와 같은
      * display_order → id)로 읽는다. 벡터를 나르지 않고 Photo 엔티티도 따로 읽지 않는다 —
      * 7천 장 갤러리에서 엔티티째 읽기가 2분 가까이 걸렸다(#160).
      *
@@ -48,11 +48,24 @@ interface PhotoAnalysisRepository : JpaRepository<PhotoAnalysis, Long> {
         """
         SELECT a.photoId AS photoId, a.embedGroupId AS embedGroupId, a.subjects AS subjects, a.burstId AS burstId
         FROM PhotoAnalysis a JOIN Photo p ON p.id = a.photoId
-        WHERE p.galleryId = :galleryId AND a.technicalPct IS NOT NULL
+        WHERE p.galleryId = :galleryId AND a.embedGroupId IS NOT NULL
         ORDER BY p.displayOrder ASC, p.id ASC
         """,
     )
     fun findAllGroupingByGalleryIdOrderByDisplay(@Param("galleryId") galleryId: Long): List<PhotoAnalysisGrouping>
+
+    /**
+     * 갤러리에 폴더로는 분류됐지만 순위(백분위)가 아직인 사진이 있는가 — 화질 점수(2단계)가 다 차고 rank 모드가 돌기 전의 창이다.
+     * 그 창에서 추천을 돌리면 순위 없는 사진이 재료에서 조용히 빠진다(#274 2물결).
+     */
+    @Query(
+        """
+        SELECT count(a) > 0
+        FROM PhotoAnalysis a JOIN Photo p ON p.id = a.photoId
+        WHERE p.galleryId = :galleryId AND a.embedGroupId IS NOT NULL AND a.technicalPct IS NULL AND a.error IS NULL
+        """,
+    )
+    fun existsUnrankedByGalleryId(@Param("galleryId") galleryId: Long): Boolean
 
     /** 주어진 사진의 DINOv3 벡터. 벡터가 없는 행은 빠진다. */
     @Query(

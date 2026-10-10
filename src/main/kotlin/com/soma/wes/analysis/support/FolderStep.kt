@@ -25,7 +25,7 @@ import org.springframework.stereotype.Component
 /**
  * 파이프라인 4단계: CATEGORIZING 잡의 categorize 결과를 기다려 AI 폴더로 만들고 잡을 닫는다. 위에서부터 처음 맞는 하나만 한다.
  * 1. categorize Lambda가 `error`를 남겼다 → FAILED
- * 2. 배정 행이 있고 보낸 시각까지 올라온 사진 전부에 백분위가 있다 → 폴더 물질화 → [AnalysisJobCloser]가 닫고 알린다
+ * 2. 배정 행이 있고 보낸 시각까지 올라온 사진 전부에 임베딩 그룹이 있다 → 폴더 물질화 → [AnalysisJobCloser]가 닫고 알린다
  * 3. CATEGORIZING 에 들어간 지 [AnalysisProperties.categorizingDeadline]이 지났다 → FAILED
  * 4. 보낸 지 [AnalysisProperties.categorizeTimeout] 안이다 → 기다린다
  * 5. 시도가 [AnalysisProperties.categorizeMaxAttempts]에 닿았다 → FAILED

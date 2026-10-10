@@ -36,6 +36,21 @@ sealed interface AiTaskDto {
     ) : AiTaskDto
 
     /**
+     * categorize rank 모드 — 갤러리에 화질 점수(score 2단계)가 다 찬 뒤 백분위·연사 대표 순위만 다시 매긴다(#274 2물결). 그룹·이름·배정은
+     * 건드리지 않고 Bedrock 도 부르지 않는다. 잡 상태와 무관해 `jobId` 키가 없다 — categorize 는 `mode` 키로 갈라 탄다.
+     */
+    data class Rank(
+        override val galleryId: Long,
+    ) : AiTaskDto {
+        val mode: String = RANK_MODE
+
+        companion object {
+            /** categorize 페이로드 `mode` 값. AI repo `categorize/controller/handler.py` 와 같은 문자열이어야 한다. */
+            const val RANK_MODE = "rank"
+        }
+    }
+
+    /**
      * embedder — 관리자 사진 교체 뒤 정확히 한 리비전의 한 사진. [Embed]와 같은 함수를 부르지만 `jobId` 키가 있어 임베더가
      * 관리자 사진 교체 이벤트로 해석한다. 로컬 대역 스크립트는 이 호출을 지원하지 않는다.
      */

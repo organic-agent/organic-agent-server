@@ -27,7 +27,7 @@ data class LambdaAiTaskProperties(
     fun functionNameOf(task: KClass<out AiTaskDto>): String = when (task) {
         AiTaskDto.Embed::class, AiTaskDto.ExactPhoto::class -> embedderFunctionName
         AiTaskDto.Score::class -> scoreFunctionName
-        AiTaskDto.Categorize::class -> categorizeFunctionName
+        AiTaskDto.Categorize::class, AiTaskDto.Rank::class -> categorizeFunctionName
         else -> error("모르는 AI 작업: $task")
     }
 }

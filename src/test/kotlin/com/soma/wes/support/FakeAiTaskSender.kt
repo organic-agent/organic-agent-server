@@ -37,6 +37,9 @@ class FakeAiTaskSender : AiTaskSender {
     val categorizeTasks: List<AiTaskDto.Categorize>
         get() = tasks.toList().filterIsInstance<AiTaskDto.Categorize>()
 
+    val rankTasks: List<AiTaskDto.Rank>
+        get() = tasks.toList().filterIsInstance<AiTaskDto.Rank>()
+
     val exactPhotoTasks: List<AiTaskDto.ExactPhoto>
         get() = tasks.toList().filterIsInstance<AiTaskDto.ExactPhoto>()
 

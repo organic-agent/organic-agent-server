@@ -61,6 +61,30 @@ class PhotoFixture(
     }
 
     /**
+     * categorize 가 화질 점수 없이 돈 것을 흉내 낸다(#274 2물결) — 폴더용 그룹·연사 묶음만 있고 백분위·순위는 비어 있다.
+     * 화질 점수가 다 찬 뒤 rank 모드가 [백분위_적재]처럼 나머지를 채운다.
+     */
+    fun 그룹만_적재(photoId: Long, embedGroupId: Int = 1) {
+        jdbcTemplate.update(
+            """
+            UPDATE photo_analysis
+            SET burst_id = 1, embed_group_id = ?, updated_at = now()
+            WHERE photo_id = ? AND clip_embedding IS NOT NULL
+            """.trimIndent(),
+            embedGroupId,
+            photoId,
+        )
+    }
+
+    /** score 2단계(화질 점수)가 끝난 것을 흉내 낸다 — 1단계(CLIP)가 끝난 사진에만. */
+    fun 화질점수_적재(photoId: Long) {
+        jdbcTemplate.update(
+            "UPDATE photo_analysis SET quality_scored_at = now(), updated_at = now() WHERE photo_id = ? AND clip_embedding IS NOT NULL",
+            photoId,
+        )
+    }
+
+    /**
      * 미리보기까지 만들어진 사진. 임베더가 `previews/`를 올리고 키를 적은 상태라 AI 호출 재료가 있다.
      *
      * 미리보기 키를 쓰는 테스트(보정 요청 정제, 비교샷)는 이 사진을 쓴다 — [업로드된_사진]은 아직 키가 없다.

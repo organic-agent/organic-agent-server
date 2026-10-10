@@ -238,7 +238,27 @@ class AnalysisPipelineServiceTest @Autowired constructor(
         }
 
         @Test
-        fun `배정은 왔지만 백분위가 덜 찼으면 기다린다`() {
+        fun `화질 점수와 백분위 없이 그룹만 와도 폴더를 만들고 DONE 으로 닫는다`() {
+            // given — 1단계(CLIP)만 끝난 사진. 화질 점수(2단계)와 순위는 폴더 뒤에 찬다(#274 2물결)
+            val photos = scoredPhotos(2)
+            val jobId = request()
+            pipeline.advance()
+
+            // when — categorize 가 점수 없이 그룹·연사 묶음만 쓴다
+            photos.forEach { photoFixture.그룹만_적재(it, embedGroupId = 1) }
+            recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
+            pipeline.advance()
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(job(jobId).status).isEqualTo(AnalysisStatus.DONE)
+                softly.assertThat(conceptFolderRepository.existsByGalleryIdAndAnalysisJobId(fixture.galleryId, jobId)).isTrue()
+                softly.assertThat(aiTaskSender.rankTasks).isEmpty()
+            }
+        }
+
+        @Test
+        fun `배정은 왔지만 임베딩 그룹이 덜 찼으면 기다린다`() {
             // given
             val photos = scoredPhotos(2)
             val jobId = request()

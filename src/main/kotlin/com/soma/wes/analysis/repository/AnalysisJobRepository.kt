@@ -26,6 +26,9 @@ interface AnalysisJobRepository : JpaRepository<AnalysisJob, Long> {
     /** 이 잡([id])보다 앞선 같은 갤러리의 [status] 잡 중 가장 최근 것. 실패 알림이 "이번 잡의 몫"을 세는 기준 시각(직전 DONE)을 준다. */
     fun findFirstByGalleryIdAndIdLessThanAndStatusOrderByIdDesc(galleryId: Long, id: Long, status: AnalysisStatus): AnalysisJob?
 
+    /** 갤러리의 가장 최근 [status] 잡. 순위(rank 모드)를 매길 잡 — 폴더를 만든 마지막 DONE — 을 찾는다. */
+    fun findFirstByGalleryIdAndStatusOrderByIdDesc(galleryId: Long, status: AnalysisStatus): AnalysisJob?
+
     /** 지금 돌고 있는 잡 수. 하트비트가 찍는 값이다. */
     fun countByStatusIn(statuses: Collection<AnalysisStatus>): Long
 
@@ -162,5 +165,43 @@ interface AnalysisJobRepository : JpaRepository<AnalysisJob, Long> {
         @Param("now") now: ZonedDateTime,
         @Param("active") active: Collection<AnalysisStatus> = AnalysisStatus.ACTIVE,
         @Param("failed") failed: AnalysisStatus = AnalysisStatus.FAILED,
+    ): Int
+
+    /**
+     * DONE 잡의 categorize rank 모드 전송을 선점한다 — 처음이거나, 보낸 지 오래됐고([dispatchedBefore] 이전) 상한 전일 때만 시각·횟수를 옮긴다.
+     * 0이면 다른 스윕이 먼저 보냈거나, 아직 기다릴 때이거나, 상한이다.
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(
+        """
+        UPDATE AnalysisJob j
+        SET j.rankDispatchedAt = :now, j.rankAttempts = j.rankAttempts + 1, j.version = j.version + 1, j.updatedAt = :now
+        WHERE j.id = :id AND j.status = :done AND j.rankAttempts < :maxAttempts
+          AND (j.rankDispatchedAt IS NULL OR j.rankDispatchedAt <= :dispatchedBefore)
+        """,
+    )
+    fun startRanking(
+        @Param("id") id: Long,
+        @Param("now") now: ZonedDateTime,
+        @Param("dispatchedBefore") dispatchedBefore: ZonedDateTime,
+        @Param("maxAttempts") maxAttempts: Int,
+        @Param("done") done: AnalysisStatus = AnalysisStatus.DONE,
+    ): Int
+
+    /** rank 모드 호출 자체가 실패했다 — 전송 시각을 지워 다음 회차가 타임아웃을 기다리지 않고 다시 보내게 한다. 시도 수는 그대로다. */
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(
+        """
+        UPDATE AnalysisJob j
+        SET j.rankDispatchedAt = NULL, j.version = j.version + 1, j.updatedAt = :now
+        WHERE j.id = :id AND j.status = :done
+        """,
+    )
+    fun clearRankDispatchedAt(
+        @Param("id") id: Long,
+        @Param("now") now: ZonedDateTime,
+        @Param("done") done: AnalysisStatus = AnalysisStatus.DONE,
     ): Int
 }

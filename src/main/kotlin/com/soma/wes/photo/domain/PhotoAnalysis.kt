@@ -19,8 +19,9 @@ import org.hibernate.type.SqlTypes
  * 임베딩·피사체·점수·연사·임베딩 그룹은 모델이 바뀔 때마다 갤러리 단위로 통째 다시 적는다. 목록 조회가
  * 768차원 벡터를 읽지 않게 하는 효과도 같다(`PhotoRating`과 같은 이유).
  *
- * 이 행 하나가 사진의 분석 진행을 말한다 — [embedding](임베더) → [clipEmbedding]·[subScores](score) →
- * [technicalPct]·[embedGroupId](categorize), 실패는 [error]. 사진 쪽 상태([Photo.status])는 "S3에 있나"만 답한다.
+ * 이 행 하나가 사진의 분석 진행을 말한다 — [embedding](임베더) → [clipEmbedding](score 1단계) → [embedGroupId](categorize, 폴더용)
+ * → [qualityScoredAt](score 2단계, 화질 점수) → [technicalPct](categorize, 백분위·순위 = 추천용), 실패는 [error].
+ * 폴더는 [embedGroupId]까지만 기다린다(#274 2물결). 사진 쪽 상태([Photo.status])는 "S3에 있나"만 답한다.
  *
  * 행은 임베더가 첫 배치에서 `INSERT … ON CONFLICT`로 만든다 — 이 서버는 미리 빈 행을 만들지 않고, 진행을 셀 때는
  * LEFT JOIN으로 없는 행을 "아직"으로 읽는다. 행을 지우는 것(재분석 리셋)은 이 서버의 일이고, 컬럼 값은 Lambda·GPU 워커
@@ -95,6 +96,13 @@ class PhotoAnalysis(
     val analyzedAt: ZonedDateTime? = null
 
     /**
+     * score 2단계(화질 점수 — ARNIQA·선명도·노출)가 끝난 시각. 계산에 실패해도 찍힌다(점수만 null). [error]에 쓰지 않는 이유는
+     * 화질 점수가 추천에만 쓰여서다 — 실패를 [error]에 남기면 그 사진이 폴더에서도 빠진다. 1단계만 끝난 사진은 null 이다.
+     */
+    @Column(name = "quality_scored_at")
+    val qualityScoredAt: ZonedDateTime? = null
+
+    /**
      * 이 사진의 분석이 결정적으로 실패한 이유. 임베더(디코드 불가)·score(미리보기 없음)·이 서버(재시도 상한)가 쓰고,
      * 채워진 사진은 배정·집기·기대 장수에서 빠진다. 사진 상태에 실패 값을 두지 않는 대신 여기 하나로 드러낸다.
      */
@@ -113,9 +121,10 @@ class PhotoAnalysis(
     fun subScore(key: SubScoreKey): Double? = (subScores[key.key] as? Number)?.toDouble()
 
     /**
-     * 분석 완료 — 폴더·추천이 재료로 써도 되는 행인가. 배치가 score(`pipeline_version`)와 categorize(백분위·그룹)
+     * 분석 완료 — 추천이 재료로 써도 되는 행인가. 배치가 score(`pipeline_version`)와 categorize(백분위·그룹)
      * 두 단계로 갈라져 있어 `pipeline_version`만으로는 부족하다. 그 사이 창의 행은 백분위가 비어 있고, 그런 행을
      * 완료로 보면 추천이 기본값으로 조용히 틀린다. 소비자가 실제로 쓰는 백분위가 채워졌는지를 본다.
+     * 폴더는 이보다 앞선 [embedGroupId]만 본다 — 백분위는 화질 점수(2단계)가 갤러리 전부에 찬 뒤에야 채워진다.
      */
     val isAnalyzed: Boolean
         get() = pipelineVersion != null && technicalPct != null && aestheticPct != null

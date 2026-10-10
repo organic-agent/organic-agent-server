@@ -34,4 +34,10 @@ enum class AnalysisJobEventType {
 
     /** 잡이 실패로 닫혔다. */
     FAILED,
+
+    /** 닫힌(DONE) 잡의 갤러리에 화질 점수가 다 차서 categorize rank 모드를 보냈다 (`rank.sent`). 다시 보낼 때도 같은 종류다. */
+    RANK_SENT,
+
+    /** rank 모드를 보내는 것 자체가 실패했다. 다음 회차가 다시 보낸다. */
+    RANK_SEND_FAILED,
 }

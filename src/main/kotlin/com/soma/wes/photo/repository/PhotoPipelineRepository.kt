@@ -51,7 +51,7 @@ class PhotoPipelineRepository(
                                   AND a.embedding IS NOT NULL AND a.clip_embedding IS NOT NULL) AS scored,
                count(*) FILTER (WHERE p.status = 'UPLOADED' AND a.error IS NULL
                                   AND a.embedding IS NOT NULL AND a.clip_embedding IS NOT NULL
-                                  AND a.technical_pct IS NOT NULL)                            AS categorized
+                                  AND a.embed_group_id IS NOT NULL)                           AS categorized
         FROM photos p
         LEFT JOIN photo_analysis a ON a.photo_id = p.id
         WHERE p.gallery_id = :galleryId AND p.deleted_at IS NULL
@@ -295,7 +295,8 @@ class PhotoPipelineRepository(
         .list()
 
     /**
-     * categorize 를 보낸 시각([dispatchedAt])까지 올라온 대상 사진 전부에 백분위가 있는가. 보낸 뒤에 올라온 사진은 그 categorize 가
+     * categorize 를 보낸 시각([dispatchedAt])까지 올라온 대상 사진 전부에 임베딩 그룹이 있는가. 백분위가 아니라 그룹을 보는 이유:
+     * 화질 점수(2단계)가 늦게 차면 백분위는 폴더 뒤에 채워진다(#274 2물결) — 백분위를 기다리면 폴더가 그만큼 늦는다. 보낸 뒤에 올라온 사진은 그 categorize 가
      * 보지 못했을 수 있어 기다리지 않는다 — 기다리면 분류 중에 사진을 더 올린 잡이 영영 "덜 끝난" 상태로 남는다.
      * 올라온 시각이 비어 있는 사진은 보낸 시각 이전에 올라온 것으로 친다(기다리는 쪽이 안전하다).
      */
@@ -307,7 +308,7 @@ class PhotoPipelineRepository(
             LEFT JOIN photo_analysis a ON a.photo_id = p.id
             WHERE p.gallery_id = :galleryId AND p.status = 'UPLOADED' AND p.deleted_at IS NULL
               AND (p.uploaded_at IS NULL OR p.uploaded_at <= :dispatchedAt)
-              AND a.error IS NULL AND a.technical_pct IS NULL
+              AND a.error IS NULL AND a.embed_group_id IS NULL
         )
         """.trimIndent(),
     )
@@ -374,6 +375,47 @@ class PhotoPipelineRepository(
     )
         .query { rs, _ -> rs.getLong(1) }
         .single()
+
+    /**
+     * score 2단계(화질 점수) 대기 — 1단계(CLIP)는 끝났는데 화질 점수가 아직인 사진 수. GPU 워커는 1단계 대기가 비면 이것을 집으므로
+     * 켜 두는 기준에 함께 센다. 폴더는 이것을 기다리지 않는다. 출발은 부분 인덱스 `idx_photo_analysis_quality_unscored`다.
+     */
+    fun countQualityBacklog(): Long = jdbcClient.sql(
+        """
+        SELECT count(*)
+        FROM photo_analysis a
+        JOIN photos p ON p.id = a.photo_id
+        WHERE a.clip_embedding IS NOT NULL AND a.quality_scored_at IS NULL AND a.error IS NULL
+          AND p.status = 'UPLOADED' AND p.deleted_at IS NULL
+        """.trimIndent(),
+    )
+        .query { rs, _ -> rs.getLong(1) }
+        .single()
+
+    /**
+     * 순위(백분위·연사 대표)를 채울 수 있는 갤러리 — 그룹은 있는데 백분위가 빈 사진이 있고, 화질 점수 대기는 하나도 없는 갤러리를
+     * 오래 기다린 순으로. 대기가 남은 갤러리를 빼는 이유: 백분위는 갤러리 안의 상대 순위라 점수가 덜 찬 채로 매기면 빈 사진이 섞인다.
+     */
+    fun findGalleryIdsReadyToRank(): List<Long> = jdbcClient.sql(
+        """
+        SELECT p.gallery_id
+        FROM photo_analysis a
+        JOIN photos p ON p.id = a.photo_id
+        WHERE a.embed_group_id IS NOT NULL AND a.technical_pct IS NULL AND a.error IS NULL
+          AND p.status = 'UPLOADED' AND p.deleted_at IS NULL
+        GROUP BY p.gallery_id
+        HAVING NOT EXISTS (
+            SELECT 1
+            FROM photos q
+            JOIN photo_analysis b ON b.photo_id = q.id
+            WHERE q.gallery_id = p.gallery_id AND q.status = 'UPLOADED' AND q.deleted_at IS NULL
+              AND b.clip_embedding IS NOT NULL AND b.quality_scored_at IS NULL AND b.error IS NULL
+        )
+        ORDER BY min(p.id)
+        """.trimIndent(),
+    )
+        .query { rs, _ -> rs.getLong("gallery_id") }
+        .list()
 
     /** score 폴백을 보낼 갤러리 — 벡터는 있는데 점수가 없는 사진이 있는 갤러리를 오래 기다린 순으로. */
     fun findGalleryIdsWithUnscoredPhotos(): List<Long> = jdbcClient.sql(
