@@ -121,8 +121,9 @@ app:
     local-script-dir: ""
     # 임베더 배정: EVENT 하나에 담는 사진 수 · 동시에 떠 있는 배치 수 상한(인프라 예약 동시성 ≥ 이 값) ·
     # 벡터 없이 이 시간이 지나면 배정을 되돌려 다시 보냄 · 사진 한 장의 배정 상한(넘으면 photo_analysis.error).
+    # max-in-flight 48(#274 E-1): 임베더가 적재 때만 DB 연결을 잡게 바뀐 뒤(AI #147)라 연결 수가 동시 실행 수만큼 늘지 않는다.
     embed-batch-size: 50
-    embed-max-in-flight: 32
+    embed-max-in-flight: 48
     embed-redispatch-after: PT10M
     embed-max-attempts: 3
     # score Lambda 폴백 EVENT 하나에 담는 사진 수(GPU 워커가 못 낼 때만).
