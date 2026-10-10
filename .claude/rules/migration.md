@@ -60,7 +60,8 @@ paths:
 - 잡의 지나간 일(전송·재전송·폴백·떼어내기·물질화·닫힘)은 V31의 `analysis_job_events`에 한 줄씩 남는다 — 로그의 `job.*` 줄과 같은 지점에서
   `AnalysisJobEventRecorder`가 쓴다. 판단에 쓰지 않는 운영 기록이고 기록 실패는 파이프라인을 멈추지 않는다 — 호출자의 트랜잭션에 싣지 않고 커밋 뒤에 새 트랜잭션으로 쓴다. `type`에는 CHECK가 없다.
 - `photo_analysis`는 세 주체가 나눠 쓴다 — 임베더가 `embedding·embedding_model`, score 단계가
-  `subjects·sub_scores·clip_embedding·pipeline_version`(1단계)·`quality_scored_at`(2단계 화질 점수, V40), categorize 단계가
+  `subjects·sub_scores·clip_embedding·pipeline_version`(1단계)·`quality_scored_at`(2단계 화질 점수, V40)·`quality_claimed_at`(2단계 찜 표시, V41 —
+  계산 중 행 잠금을 쥐지 않으려는 것, 이 서버는 읽지 않음), categorize 단계가
   `embed_group_id·burst_id`(폴더용)와 `technical_pct·aesthetic_pct·burst_rank`(순위 — full 또는 rank 모드). `sub_scores`는 score·categorize가
   키를 나눠 쓰므로 통째로 덮지 말고 병합(`||`)한다. 진행 표시는 단계마다 하나다: 1단계 `clip_embedding` → 폴더 `embed_group_id` →
   2단계 `quality_scored_at` → 추천 `technical_pct`. 폴더는 `embed_group_id`까지만 기다리고, "추천 재료 완료"는 `PhotoAnalysis.isAnalyzed`

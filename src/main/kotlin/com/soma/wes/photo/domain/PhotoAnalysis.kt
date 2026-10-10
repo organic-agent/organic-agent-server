@@ -25,8 +25,8 @@ import org.hibernate.type.SqlTypes
  *
  * 행은 임베더가 첫 배치에서 `INSERT … ON CONFLICT`로 만든다 — 이 서버는 미리 빈 행을 만들지 않고, 진행을 셀 때는
  * LEFT JOIN으로 없는 행을 "아직"으로 읽는다. 행을 지우는 것(재분석 리셋)은 이 서버의 일이고, 컬럼 값은 Lambda·GPU 워커
- * 소유라 읽기 전용 `val`이다. [embeddedBy]는 Mock 갤러리 복제와 테스트가 쓰는 우회로다. `face_boxes`(jsonb)는 이 서버가
- * 읽지 않아 매핑하지 않았다.
+ * 소유라 읽기 전용 `val`이다. [embeddedBy]는 Mock 갤러리 복제와 테스트가 쓰는 우회로다. `face_boxes`(jsonb)와
+ * `quality_claimed_at`(score 2단계의 찜 표시, V41)은 이 서버가 읽지 않아 매핑하지 않았다.
  */
 @Entity
 @Table(name = "photo_analysis")
