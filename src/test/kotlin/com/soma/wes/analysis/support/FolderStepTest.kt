@@ -117,7 +117,11 @@ class FolderStepTest @Autowired constructor(
         )
 
         // when
-        step.advance()
+        try {
+            step.advance()
+        } finally {
+            step.destroy()
+        }
 
         // then — 전에는 다섯째 갤러리가 앞 넷의 물질화(각 1.2초)를 기다렸다(#274 R-2-2)
         assertSoftly { softly ->
@@ -148,9 +152,13 @@ class FolderStepTest @Autowired constructor(
         entered.await(5, TimeUnit.SECONDS)
 
         // when
-        step.advance()
-        release.countDown()
-        running.join()
+        try {
+            step.advance()
+            release.countDown()
+            running.join()
+        } finally {
+            step.destroy()
+        }
 
         // then
         assertSoftly { softly ->
