@@ -37,7 +37,9 @@ import json, re, sys
 for e in json.load(sys.stdin)["events"]:
     m = re.search(r"fault\.injected (\w+) gallery=(\d+) (photoIds|jobId)=([\d,]+|None)", e["message"])
     if m:
-        print(e["timestamp"], m.group(1), m.group(2), m.group(4))' >> "$FAULTS"
+        print(e["timestamp"], m.group(1), m.group(2), m.group(4))
+    else:
+        print("형식이 다른 fault.injected 줄(집계에서 빠짐):", e["message"][:200], file=sys.stderr)' >> "$FAULTS"
 done
 
 # 실패 하나 = 한 줄 VALUES. 임베더는 사진 id 배열, categorize 는 잡 id.

@@ -25,11 +25,17 @@ to_utc() { python3 -c 'import sys,datetime as d; t=d.datetime.strptime(sys.argv[
 
 APP_ID=$(aws ec2 describe-instances --region "$REGION" --filters "Name=tag:Name,Values=$RESOURCE_PREFIX-app" "Name=instance-state-name,Values=running" \
   --query "Reservations[0].Instances[0].InstanceId" --output text)
+# SSM 표준 출력은 약 24,000자에서 잘린다 — 원격에서 "시각 active idle waiting total" 으로 줄여(줄당 ≈ 25자) 받는다.
+REMOTE="docker logs --since $(to_utc "$SINCE") --until $(to_utc "$UNTIL") wes-app 2>&1 | grep 'event=db.pool' | sed -E 's/^[0-9-]+T([0-9:]+)[^ ]* .*active=([0-9]+) idle=([0-9]+) waiting=([0-9]+) total=([0-9]+).*/\\1 \\2 \\3 \\4 \\5/'"
 CID=$(aws ssm send-command --region "$REGION" --instance-ids "$APP_ID" --document-name AWS-RunShellScript \
-  --parameters "commands=[\"docker logs --since $(to_utc "$SINCE") --until $(to_utc "$UNTIL") wes-app 2>&1 | grep 'event=db.pool' | cut -c1-200\"]" \
+  --parameters "$(python3 -c 'import json,sys; print(json.dumps({"commands":[sys.argv[1]]}))' "$REMOTE")" \
   --query Command.CommandId --output text)
-sleep 6
 RAW=$(mktemp -t r3-pool.XXXXXX); trap 'rm -f "$RAW"' EXIT
+while true; do
+  sleep 3
+  STATUS=$(aws ssm get-command-invocation --region "$REGION" --command-id "$CID" --instance-id "$APP_ID" --query Status --output text 2>/dev/null || echo Pending)
+  case "$STATUS" in Success) break ;; Failed|Cancelled|TimedOut) echo "앱 로그 조회 실패: $STATUS" >&2; exit 1 ;; esac
+done
 aws ssm get-command-invocation --region "$REGION" --command-id "$CID" --instance-id "$APP_ID" --query StandardOutputContent --output text > "$RAW"
 
 DB_NAME="DB 안 씀"
@@ -39,7 +45,7 @@ python3 - "$RAW" <<'EOF'
 import re, sys, collections
 rows = collections.defaultdict(list)
 for line in open(sys.argv[1]):
-    m = re.search(r"T(\d\d:\d\d):\d\d.*active=(\d+) idle=(\d+) waiting=(\d+) total=(\d+)", line)
+    m = re.match(r"(\d\d:\d\d):\d\d\S* (\d+) (\d+) (\d+) (\d+)$", line.strip())
     if m:
         rows[m.group(1)].append(tuple(int(x) for x in m.groups()[1:]))
 if not rows:

@@ -34,7 +34,16 @@ class DbPoolSampler(
     }
 
     init {
-        executor.scheduleAtFixedRate({ sample() }, interval.toMillis(), interval.toMillis(), TimeUnit.MILLISECONDS)
+        executor.scheduleAtFixedRate({ sampleSafely() }, interval.toMillis(), interval.toMillis(), TimeUnit.MILLISECONDS)
+    }
+
+    /** `scheduleAtFixedRate`는 작업이 한 번 던지면 이후 주기를 모두 취소한다 — 표본이 조용히 끊기면 "대기 없음"으로 잘못 읽힌다. */
+    private fun sampleSafely() {
+        try {
+            sample()
+        } catch (e: Exception) {
+            log.warn("event=db.pool.failed reason={}", e.toString())
+        }
     }
 
     fun sample() {

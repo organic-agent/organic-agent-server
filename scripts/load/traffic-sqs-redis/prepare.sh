@@ -25,6 +25,7 @@ while [ $# -gt 0 ]; do
 done
 [ "$REPORT_TARGET" = "dev" ] || { echo "dev 전용이다." >&2; exit 1; }
 [ -n "$REPORT_LABEL" ] || { echo "--label 이 필요하다(예: R-3-a)." >&2; exit 1; }
+[[ "$REPORT_LABEL" =~ ^[A-Za-z0-9-]+$ ]] || { echo "--label 은 영문·숫자·하이픈만(제목 LIKE 패턴에 들어간다): $REPORT_LABEL" >&2; exit 1; }
 report_connect
 
 psql_write() {

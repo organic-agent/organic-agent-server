@@ -17,12 +17,16 @@ ACTION="${1:-status}"; shift || true
 RATE="0.02"
 while [ $# -gt 0 ]; do
   case "$1" in
-    --rate) RATE="$2"; shift ;;
+    --rate) [ $# -ge 2 ] || { echo "--rate 에 값이 필요하다." >&2; exit 1; }; RATE="$2"; shift ;;
     -h|--help) sed -n 2,10p "$0"; exit 0 ;;
     *) echo "알 수 없는 인자: $1" >&2; exit 1 ;;
   esac
   shift
 done
+
+case "$ACTION" in on|off|status) ;; *) echo "on · off · status 중 하나: $ACTION" >&2; exit 1 ;; esac
+python3 -c 'import sys; r=float(sys.argv[1]); sys.exit(0 if 0 <= r <= 1 else 1)' "$RATE" 2>/dev/null \
+  || { echo "--rate 는 0~1 사이 숫자: $RATE" >&2; exit 1; }
 
 for FN in "$RESOURCE_PREFIX-embedder" "$RESOURCE_PREFIX-categorize"; do
   CURRENT=$(aws lambda get-function-configuration --region "$REGION" --function-name "$FN" --query 'Environment.Variables' --output json)

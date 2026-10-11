@@ -90,11 +90,13 @@ if [ "$MODE" = "start" ]; then
 fi
 
 if [ "$MODE" = "run" ]; then
+  # 켜다 실패하거나 중간에 끊겨도 발생기가 켜진 채 남지 않게 한다.
+  [ "$KEEP_ON" = "true" ] || trap 'stop_loadgen' EXIT
   ID=$(start_loadgen)
   run_remote "$ID"
   aws s3 cp --only-show-errors --region "$REGION" "$S3_PREFIX/summary.json" "$LOCAL_SUMMARY"
   aws s3 cp --only-show-errors --region "$REGION" "$S3_PREFIX/k6.log" "$RUNS_DIR/$REPORT_LABEL-k6.log"
-  [ "$KEEP_ON" = "true" ] || stop_loadgen
+  if [ "$KEEP_ON" != "true" ]; then stop_loadgen; trap - EXIT; fi
 fi
 
 [ -f "$LOCAL_SUMMARY" ] || { echo "요약이 없다: $LOCAL_SUMMARY" >&2; exit 1; }
