@@ -208,6 +208,12 @@ app:
     # 이쪽은 로그인을 요구하면 안 된다. 로그인하지 않는 하객·부모님을 위해 만든 링크다.
     # prod는 배포 도메인을 따라가므로 Parameter Store(app.collab.base-url)가 덮어쓴다.
     base-url: "http://localhost:3000/collab"
+  observability:
+    # 앱 연결 풀 표본(`event=db.pool`)을 interval마다 남긴다. 부하 측정 때만 켠다(#286 R-3) —
+    # dev는 Parameter Store(/wes/dev/app.observability.db-pool.enabled)로 켜고 앱을 다시 띄운다.
+    db-pool:
+      enabled: false
+      interval: PT5S
 
 ---
 spring:
