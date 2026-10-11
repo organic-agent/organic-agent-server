@@ -121,10 +121,13 @@ app:
     local-script-dir: ""
     # 임베더 배정: EVENT 하나에 담는 사진 수 · 동시에 떠 있는 배치 수 상한(인프라 예약 동시성 ≥ 이 값) ·
     # 벡터 없이 이 시간이 지나면 배정을 되돌려 다시 보냄 · 사진 한 장의 배정 상한(넘으면 photo_analysis.error).
-    # max-in-flight 48(#274 E-1): 임베더가 적재 때만 DB 연결을 잡게 바뀐 뒤(AI #147)라 연결 수가 동시 실행 수만큼 늘지 않는다.
+    # max-in-flight 72(#274 E-1 32 → 48, S-1 48 → 72): 임베더가 적재 때만 DB 연결을 잡게 바뀐 뒤(AI #147)라 연결 수가 동시 실행 수만큼
+    # 늘지 않는다. 48로는 분당 약 95배치라 5명 동시 업로드 속도(약 135배치)를 못 따라갔다(R-2-3).
+    # redispatch-after 3분(#274 E-a): 배치 하나는 약 30초다. 죽은 호출은 Lambda가 약 1분 뒤 한 번 더 돌리고(infra 재시도 1),
+    # 그것도 실패하면 3분 뒤 여기서 다시 보낸다. 10분이면 잃은 배치가 갤러리 완료를 그만큼 늦췄다(R-2-3 갤러리 64).
     embed-batch-size: 50
-    embed-max-in-flight: 48
-    embed-redispatch-after: PT10M
+    embed-max-in-flight: 72
+    embed-redispatch-after: PT3M
     embed-max-attempts: 3
     # score Lambda 폴백 EVENT 하나에 담는 사진 수(GPU 워커가 못 낼 때만).
     score-batch-size: 50
