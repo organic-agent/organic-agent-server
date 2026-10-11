@@ -19,7 +19,8 @@ import org.springframework.stereotype.Component
  * 파이프라인 2단계: GPU score 워커 제어 + score Lambda 폴백. 잡과 무관하게 회차마다 돈다. 점수는 워커가 `photo_analysis`를 직접 집어 내므로
  * 여기서는 "일이 있으면 켜고, 일이 없는데 안 꺼졌으면 끄고, 워커가 못 내면 Lambda로 보낸다"만 한다.
  *
- * - 켜기: backlog(점수 없는 UPLOADED 사진) > 0 ∧ 켜진 워커 0. 벡터가 오기 전에 미리 켜 부팅이 임베딩과 겹치게 한다.
+ * - 켜기: (backlog(점수 없는 UPLOADED 사진) > 0 ∨ [AnalysisProperties.Gpu.startOnUploadWithin] 안에 업로드가 시작됨) ∧ 켜진 워커 0.
+ *   벡터가 오기 전에, 첫 사진이 올라오기 전에 미리 켜 부팅이 업로드·임베딩과 겹치게 한다.
  *   [AnalysisProperties.QualityStage.enabled]면 화질 점수(2단계) 대기도 워커의 일로 센다 — 워커는 1단계 대기가 비면 2단계를 집으므로,
  *   1단계만 세면 2단계 도중 안전망이 워커를 끈다. 폴백은 1단계만 본다(폴더가 기다리는 것은 1단계뿐이다).
  * - 끄기: 워커의 유휴 30초 자기 정지(AI repo)가 1차다. 여기는 backlog 0 ∧ 켜진 지 [AnalysisProperties.Gpu.startGrace] 지남 ∧
@@ -64,6 +65,10 @@ class ScoreStep(
     /** 켜기 호출 시각. Describe가 아직 stopped를 돌려주는 잠깐 동안 두 번 켜지 않게 한다. */
     @Volatile
     private var lastStartAt: ZonedDateTime? = null
+
+    /** 마지막 켜기가 점수 대기 없이 업로드 신호만으로였나 — [isStartDue]의 유예 길이가 달라진다. */
+    @Volatile
+    private var lastStartWasUploadOnly: Boolean = false
 
     /** score 폴백을 갤러리마다 마지막으로 보낸 시각. */
     private val fallbackSentAt = ConcurrentHashMap<Long, ZonedDateTime>()
@@ -121,10 +126,17 @@ class ScoreStep(
         val up = workers.filter { it.isUp }
 
         try {
-            if (backlog > 0 && up.isEmpty() && isStartDue(now)) {
-                scoreWorkerPool.start()
-                lastStartAt = now
-                log.info("event=score.gpu.start backlog={} workers={}", backlog, workers.size)
+            if (up.isEmpty() && isStartDue(now)) {
+                val uploadOnly = backlog == 0L
+                if (!uploadOnly || isUploadStarting(now)) {
+                    scoreWorkerPool.start()
+                    lastStartAt = now
+                    lastStartWasUploadOnly = uploadOnly
+                    log.info(
+                        "event=score.gpu.start backlog={} workers={} reason={}",
+                        backlog, workers.size, if (uploadOnly) "upload" else "backlog",
+                    )
+                }
             }
             if (backlog == 0L) {
                 up.filter { isPastGrace(it, now) && isIdle(it, now) }.forEach { worker ->
@@ -141,9 +153,17 @@ class ScoreStep(
         if (up.any { !isPastGrace(it, now) }) deliveringAt = now
     }
 
+    private fun isUploadStarting(now: ZonedDateTime): Boolean =
+        photoPipelineRepository.hasUploadStartedSince(now.minus(properties.gpu.startOnUploadWithin))
+
+    /**
+     * 켜기 호출 뒤 다시 켜지 않는 동안. 업로드 신호만으로 켰다면 짧게([AnalysisProperties.Gpu.startOnUploadWithin]) — 사진이 늦게 올라와
+     * 워커가 일 없이 30초 만에 꺼졌을 때, 기동 유예(5분)를 다 기다리지 않고 점수 대기를 보고 다시 켜야 한다.
+     */
     private fun isStartDue(now: ZonedDateTime): Boolean {
         val last = lastStartAt ?: return true
-        return last.plus(properties.gpu.startGrace).isBefore(now)
+        val guard = if (lastStartWasUploadOnly) properties.gpu.startOnUploadWithin else properties.gpu.startGrace
+        return last.plus(guard).isBefore(now)
     }
 
     private fun isPastGrace(worker: ScoreWorkerDto, now: ZonedDateTime): Boolean {

@@ -364,6 +364,19 @@ class PhotoPipelineRepository(
      * GPU 워커가 곧 집게 될 일의 양 — 업로드됐고 실패하지 않았는데 점수가 없는 사진 전부(아직 벡터도 없는 사진 포함).
      * 켤지 말지의 기준이다: 벡터가 오기 전에 미리 켜 두면 부팅 시간이 임베딩과 겹친다.
      */
+    /** [since] 뒤에 업로드 URL이 발급되어 아직 올라오는 중인 사진이 있나 — GPU를 업로드와 함께 켜는 신호. `idx_photos_pending`을 탄다. */
+    fun hasUploadStartedSince(since: ZonedDateTime): Boolean = jdbcClient.sql(
+        """
+        SELECT EXISTS (
+            SELECT 1 FROM photos
+            WHERE status = 'PENDING' AND created_at > :since AND deleted_at IS NULL
+        )
+        """.trimIndent(),
+    )
+        .param("since", Timestamp.from(since.toInstant()))
+        .query { rs, _ -> rs.getBoolean(1) }
+        .single()
+
     fun countScoreBacklog(): Long = jdbcClient.sql(
         """
         SELECT count(*)

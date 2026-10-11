@@ -185,6 +185,57 @@ class ScoreStepTest @Autowired constructor(
             // then
             assertThat(pool.starts).hasSize(1)
         }
+
+        @Test
+        fun `업로드 URL이 막 발급됐으면 점수 대기가 없어도 켠다 — 부팅을 업로드와 겹친다`() {
+            // given — 아직 한 장도 올라오지 않았다
+            photoFixture.대기중_사진(galleryId, count = 1)
+            pool.worker("i-1", ScoreWorkerStateDto.STOPPED)
+
+            // when
+            step().advance()
+
+            // then — 전에는 첫 사진이 올라와 임베딩 배정까지 끝난 스윕(업로드 시작 + 8초)에 켰다(#274 R-2-2)
+            assertThat(pool.starts).hasSize(1)
+        }
+
+        @Test
+        fun `오래전에 발급되고 올라오지 않은 사진은 켜는 이유가 되지 않는다`() {
+            // given — 올리다 그만둔 사진
+            photoFixture.대기중_사진(galleryId, count = 1)
+            pool.worker("i-1", ScoreWorkerStateDto.STOPPED)
+            clock.advance(Duration.ofMinutes(2))
+
+            // when
+            step().advance()
+
+            // then
+            assertThat(pool.starts).isEmpty()
+        }
+
+        @Test
+        fun `업로드 신호만으로 켠 워커가 일 없이 꺼졌으면 기동 유예를 다 기다리지 않고 점수 대기를 보고 다시 켠다`() {
+            // given — 업로드 신호로 켰는데 사진이 늦게 올라와 워커가 30초 만에 스스로 꺼졌다
+            photoFixture.대기중_사진(galleryId, count = 1)
+            pool.worker("i-1", ScoreWorkerStateDto.STOPPED)
+            val step = step()
+            step.advance()
+            pool.worker("i-1", ScoreWorkerStateDto.STOPPED)
+            photoFixture.업로드된_사진(galleryId, count = 1)
+
+            // when
+            clock.advance(Duration.ofSeconds(30))
+            step.advance()
+            val startsWithinGuard = pool.starts.size
+            clock.advance(Duration.ofSeconds(31))
+            step.advance()
+
+            // then — 점수 대기로 켠 경우의 유예(5분)였다면 4분 넘게 꺼진 채였다
+            assertSoftly { softly ->
+                softly.assertThat(startsWithinGuard).isEqualTo(1)
+                softly.assertThat(pool.starts).hasSize(2)
+            }
+        }
     }
 
     @Nested

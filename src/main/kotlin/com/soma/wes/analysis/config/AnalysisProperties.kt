@@ -46,6 +46,11 @@ data class AnalysisProperties(
     val sweepStallAfter: Duration = Duration.ofMinutes(3),
     /** 폴더 만들기가 예상 밖 예외로 이 횟수만큼 실패하면 잡을 닫는다. */
     val materializeMaxAttempts: Int = 3,
+    /**
+     * 폴더 단계가 동시에 물질화하는 잡 수. 다섯 갤러리의 categorize 가 같은 순간에 끝나면 한 줄로 1.2초씩 기다렸다(#274 R-2-2, 마지막 갤러리 5.6초).
+     * 물질화 하나가 DB 연결 하나를 1~2초 쥐므로 API 풀(10)의 절반을 넘기지 않는다.
+     */
+    val folderParallelism: Int = 5,
     /** 한 갤러리에 score Lambda 폴백을 이 횟수까지 보낸다. 그 뒤에도 점수가 없으면 진행 감시가 처리한다. */
     val scoreFallbackMax: Int = 3,
     /**
@@ -78,6 +83,12 @@ data class AnalysisProperties(
         val fallbackAfter: Duration = Duration.ofMinutes(10),
         /** 같은 갤러리에 폴백을 다시 보내는 최소 간격. */
         val fallbackInterval: Duration = Duration.ofMinutes(10),
+        /**
+         * 이 시간 안에 업로드 URL이 발급된 사진(PENDING)이 있으면 점수 대기가 0이어도 켠다 — 첫 사진이 올라와 임베딩 배정까지 끝난 스윕을
+         * 기다리지 않고 부팅·모델 로드(≈ 45초)를 업로드와 겹친다(#274 R-2-2: 업로드 시작 → 켜기 8초). 올리다 그만둔 사진은 이 창이
+         * 지나면 켜는 이유가 되지 않고, 켰는데 일이 없으면 워커가 30초 뒤 스스로 꺼진다.
+         */
+        val startOnUploadWithin: Duration = Duration.ofMinutes(1),
     )
 
     /**

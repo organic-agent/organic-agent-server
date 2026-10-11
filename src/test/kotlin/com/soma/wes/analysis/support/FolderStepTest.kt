@@ -17,11 +17,17 @@ import com.soma.wes.recommendation.fixture.RecommendationFixture
 import com.soma.wes.support.FakeAiTaskSender
 import com.soma.wes.support.IntegrationTest
 import java.time.Clock
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.doAnswer
 import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.mock
 import org.springframework.beans.factory.annotation.Autowired
@@ -43,6 +49,7 @@ class FolderStepTest @Autowired constructor(
     private val photoFixture: PhotoFixture,
     private val recommendationFixture: RecommendationFixture,
     private val aiTaskSender: FakeAiTaskSender,
+    private val materializer: AiFolderMaterializer,
     private val clock: Clock,
 ) {
 
@@ -89,14 +96,100 @@ class FolderStepTest @Autowired constructor(
         }
     }
 
+    @Test
+    fun `categorize 결과가 온 잡이 여럿이면 한 줄로 기다리지 않고 동시에 폴더로 만든다`() {
+        // given — 두 갤러리의 결과가 같은 순간에 왔고, 물질화는 둘이 모두 들어와야 끝난다(한 줄이면 첫째가 시간 초과)
+        val other = galleryFixture.멤버와_열린_갤러리()
+        val (first, firstPhotos) = categorizingJob(fixture)
+        val (second, secondPhotos) = categorizingJob(other)
+        categorizeByLambda(first, fixture, firstPhotos)
+        categorizeByLambda(second, other, secondPhotos)
+        val bothInside = CountDownLatch(2)
+        val metEachOther = CopyOnWriteArrayList<Boolean>()
+        val step = stepWith(
+            mock {
+                on { materialize(any()) } doAnswer { call ->
+                    bothInside.countDown()
+                    metEachOther += bothInside.await(2, TimeUnit.SECONDS)
+                    materializer.materialize(call.getArgument(0))
+                }
+            },
+        )
+
+        // when
+        step.advance()
+
+        // then — 전에는 다섯째 갤러리가 앞 넷의 물질화(각 1.2초)를 기다렸다(#274 R-2-2)
+        assertSoftly { softly ->
+            softly.assertThat(metEachOther).containsExactly(true, true)
+            softly.assertThat(job(first).status).isEqualTo(AnalysisStatus.DONE)
+            softly.assertThat(job(second).status).isEqualTo(AnalysisStatus.DONE)
+        }
+    }
+
+    @Test
+    fun `앞 호출이 아직 폴더를 만드는 중이면 겹친 호출은 건너뛴다`() {
+        // given — 1초 주기와 5초 스윕이 같은 잡을 동시에 보는 상황
+        val jobId = categorizedJob()
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val calls = AtomicInteger()
+        val step = stepWith(
+            mock {
+                on { materialize(any()) } doAnswer { call ->
+                    calls.incrementAndGet()
+                    entered.countDown()
+                    release.await(5, TimeUnit.SECONDS)
+                    materializer.materialize(call.getArgument(0))
+                }
+            },
+        )
+        val running = CompletableFuture.runAsync { step.advance() }
+        entered.await(5, TimeUnit.SECONDS)
+
+        // when
+        step.advance()
+        release.countDown()
+        running.join()
+
+        // then
+        assertSoftly { softly ->
+            softly.assertThat(calls.get()).isEqualTo(1)
+            softly.assertThat(job(jobId).status).isEqualTo(AnalysisStatus.DONE)
+        }
+    }
+
+    private fun stepWith(materializer: AiFolderMaterializer) = FolderStep(
+        analysisJobRepository,
+        photoPipelineRepository,
+        conceptAssignmentRepository,
+        aiTaskSender,
+        materializer,
+        jobCloser,
+        eventRecorder,
+        AnalysisProperties(),
+        clock,
+    )
+
     private fun categorizedJob(): Long {
-        val photos = photoFixture.임베딩된_사진(fixture.galleryId, count = 2).onEach { photoFixture.점수_적재(it) }
-        val jobId = analysisService.request(fixture.galleryId, fixture.photographer.requiredId).jobId
-        pipeline.advance()
-        photos.forEach { photoFixture.백분위_적재(it, embedGroupId = 1) }
-        recommendationFixture.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
-        assertThat(job(jobId).status).isEqualTo(AnalysisStatus.CATEGORIZING)
+        val (jobId, photos) = categorizingJob(fixture)
+        categorizeByLambda(jobId, fixture, photos)
         return jobId
+    }
+
+    /** categorize 를 보낸 잡(CATEGORIZING)과 그 사진. 결과는 아직 없다 — 결과가 있으면 다음 회차가 바로 폴더로 만든다. */
+    private fun categorizingJob(gallery: OpenGallery): Pair<Long, List<Long>> {
+        val photos = photoFixture.임베딩된_사진(gallery.galleryId, count = 2).onEach { photoFixture.점수_적재(it) }
+        val jobId = analysisService.request(gallery.galleryId, gallery.photographer.requiredId).jobId
+        pipeline.advance()
+        assertThat(job(jobId).status).isEqualTo(AnalysisStatus.CATEGORIZING)
+        return jobId to photos
+    }
+
+    /** categorize Lambda 역할 — 백분위·그룹을 채우고 잡의 배정을 남긴다. */
+    private fun categorizeByLambda(jobId: Long, gallery: OpenGallery, photos: List<Long>) {
+        photos.forEach { photoFixture.백분위_적재(it, embedGroupId = 1) }
+        recommendationFixture.컨셉_배정(jobId, gallery.galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
     }
 
     private fun job(jobId: Long): AnalysisJob = analysisJobRepository.findById(jobId).orElseThrow()
