@@ -19,7 +19,12 @@ import com.soma.wes.global.logging.LogContext
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import java.time.Clock
 import java.time.ZonedDateTime
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.atomic.AtomicBoolean
 import org.slf4j.LoggerFactory
+import org.slf4j.MDC
+import org.springframework.beans.factory.DisposableBean
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
 import org.springframework.stereotype.Component
 
 /**
@@ -34,6 +39,11 @@ import org.springframework.stereotype.Component
  * 재전송이 여기 있는 이유: "결과가 왔나"를 아는 단계만 "늦었나"를 판단할 수 있다. [CategorizeStep]에 두면 결과가 막 도착한 잡에
  * categorize를 한 번 더 보낼 수 있다. 물질화는 folder 도메인의 자기 트랜잭션(갤러리 락)이고, 두 스윕이 겹치면 두 번째는
  * 이미 있는 세트를 돌려받고 닫기에서 0을 받아 알림을 보내지 않는다.
+ *
+ * 5초 스윕 말고 1초 주기로도 불린다([AnalysisPipelineScheduler.advanceFolders]) — categorize 결과가 온 뒤 다음 스윕까지 기다린
+ * 시간이 폴더 완료에 그대로 더해졌다(#274 R-2-2). 한 인스턴스 안에서 두 호출이 겹치면 늦게 온 쪽은 건너뛴다. 잡끼리는 갤러리가
+ * 달라 서로 막지 않으므로 [AnalysisProperties.folderParallelism]개까지 동시에 민다 — 한 줄로 밀면 다섯째 갤러리가 앞 넷의
+ * 물질화(각 1.2초)를 기다렸다.
  */
 @Component
 class FolderStep(
@@ -46,18 +56,58 @@ class FolderStep(
     private val eventRecorder: AnalysisJobEventRecorder,
     private val properties: AnalysisProperties,
     private val clock: Clock,
-) {
+) : DisposableBean {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
+    private val running = AtomicBoolean(false)
+
+    private val executor = ThreadPoolTaskExecutor().apply {
+        corePoolSize = properties.folderParallelism
+        maxPoolSize = properties.folderParallelism
+        setThreadNamePrefix("folder-step-")
+        setWaitForTasksToCompleteOnShutdown(true)
+        initialize()
+    }
+
     fun advance() {
-        for (job in analysisJobRepository.findAllByStatusOrderByIdAsc(AnalysisStatus.CATEGORIZING)) {
-            try {
-                LogContext.gallery(job.galleryId, job.requiredId) { advance(job) }
-            } catch (e: RuntimeException) {
-                log.error("분석 잡 {} folder 단계 실패 — 다음 회차에 다시 본다", job.requiredId, e)
+        if (!running.compareAndSet(false, true)) return
+        try {
+            val jobs = analysisJobRepository.findAllByStatusOrderByIdAsc(AnalysisStatus.CATEGORIZING)
+            if (jobs.size <= 1) {
+                for (job in jobs) advanceGuarded(job)
+                return
             }
+            val context = MDC.getCopyOfContextMap().orEmpty()
+            val tasks = jobs.map { job ->
+                CompletableFuture.runAsync({ withContext(context) { advanceGuarded(job) } }, executor)
+            }
+            for (task in tasks) task.join()
+        } finally {
+            running.set(false)
         }
+    }
+
+    /** 호출한 스윕의 traceId 를 풀 스레드에도 싣는다 — 한 회차의 물질화·닫기 줄이 같은 traceId 로 묶이게. */
+    private fun withContext(context: Map<String, String>, block: () -> Unit) {
+        MDC.setContextMap(context)
+        try {
+            block()
+        } finally {
+            MDC.clear()
+        }
+    }
+
+    private fun advanceGuarded(job: AnalysisJob) {
+        try {
+            LogContext.gallery(job.galleryId, job.requiredId) { advance(job) }
+        } catch (e: RuntimeException) {
+            log.error("분석 잡 {} folder 단계 실패 — 다음 회차에 다시 본다", job.requiredId, e)
+        }
+    }
+
+    override fun destroy() {
+        executor.shutdown()
     }
 
     private fun advance(job: AnalysisJob) {

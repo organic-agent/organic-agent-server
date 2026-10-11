@@ -143,6 +143,8 @@ app:
     categorizing-deadline: PT70M
     materialize-max-attempts: 3
     score-fallback-max: 3
+    # 폴더 단계가 동시에 물질화하는 잡 수(갤러리가 달라 서로 막지 않음). 하나가 DB 연결 하나를 1~2초 쥔다 — API 풀(10)의 절반 이하.
+    folder-parallelism: 5
     # 분석 스윕 한 회차가 이 시간 동안 끝나지 않으면 하트비트가 디스코드로 알린다(멈출 때 한 번, 돌아올 때 한 번).
     # DB가 멈춰도 연결 안전망(socketTimeout 120초) 안에 회차가 끝나므로 그보다 길게 둔다.
     sweep-stall-after: PT3M
@@ -161,6 +163,9 @@ app:
       idle-stop-after: PT2M
       fallback-after: PT10M
       fallback-interval: PT10M
+      # 이 시간 안에 업로드 URL이 발급된 사진이 있으면 점수 대기가 없어도 켠다 — 부팅을 업로드와 겹친다(#274).
+      # 업로드 신호만으로 켠 뒤에는 이 시간이 지나면 다시 켤 수 있다(워커가 일 없이 30초 만에 꺼졌을 때).
+      start-on-upload-within: PT1M
     # score 2단계(화질 점수)와 순위(#274 2물결). 켜면 GPU 를 켜 두는 기준에 화질 점수 대기(quality_scored_at IS NULL)도 세고,
     # 폴더가 만들어진 뒤 화질 점수가 갤러리 전부에 차면 categorize rank 모드(백분위·연사 대표 순위)를 보낸다.
     # quality_scored_at 을 쓰는 AI score 가 배포된 뒤에 켠다 — 먼저 켜면 새 사진이 영원히 대기로 남아 GPU 를 계속 켠다.
@@ -170,6 +175,8 @@ app:
       rank-max-attempts: 3
     # 임베더 배정과 살아 있는 잡을 한 걸음씩 옮기는 스윕 주기.
     sweep-interval: PT5S
+    # 폴더 단계만 따로 도는 주기 — categorize 결과가 오면 다음 스윕을 기다리지 않는다. 할 일 없으면 잡 조회 한 번.
+    folder-interval: PT1S
 
   llm:
     # Bedrock(Anthropic Messages) 호출. 지금은 보정 요청 다듬기만 쓴다 — 꺼져 있으면 다듬지 못했다고 답한다.

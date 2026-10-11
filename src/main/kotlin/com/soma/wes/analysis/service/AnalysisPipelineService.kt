@@ -37,6 +37,14 @@ class AnalysisPipelineService(
         runStep("rank") { rankStep.advance() }
     }
 
+    /**
+     * 폴더 단계만. categorize 결과가 온 뒤 5초 스윕을 기다리지 않게 짧은 주기로 따로 부른다 — 할 일이 없으면 CATEGORIZING 잡 조회
+     * 한 번이다. 5초 스윕의 폴더 단계와 겹치면 [FolderStep]이 늦게 온 쪽을 건너뛴다.
+     */
+    fun advanceFolders() {
+        runStep("folder") { folderStep.advance() }
+    }
+
     private fun runStep(name: String, step: () -> Unit) {
         try {
             step()
