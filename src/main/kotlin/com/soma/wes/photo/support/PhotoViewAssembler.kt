@@ -2,6 +2,7 @@ package com.soma.wes.photo.support
 
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoStatus
+import com.soma.wes.photo.dto.PhotoViewDataDto
 import com.soma.wes.photo.dto.response.PhotoMemoResponse
 import com.soma.wes.photo.dto.response.PhotoResponse
 import com.soma.wes.photo.repository.PhotoMemoRepository
@@ -30,16 +31,25 @@ class PhotoViewAssembler(
      * 여러 장을 한 번에. 별점과 메모를 사진 수만큼 따로 읽지 않는다.
      * 한 페이지가 200장이면 [toResponse]를 반복하는 것만으로 질의가 200번 늘어난다.
      */
-    fun toResponses(photos: List<Photo>): List<PhotoResponse> {
-        val scores = scoresOf(photos)
-        val memos = memosOf(photos)
+    fun toResponses(photos: List<Photo>): List<PhotoResponse> = toResponses(photos, viewDataOf(photos))
 
-        return photos.map {
-            PhotoResponse.of(photo = it, viewUrl = viewUrlOf(it), score = scores[it.requiredId], memo = memos[it.requiredId])
-        }
+    /**
+     * [viewDataOf]로 미리 읽어 둔 별점·메모에 보기 주소를 서명해 붙인다. DB를 읽지 않으므로 연결을 놓은 뒤 부를 수 있다 —
+     * 갤러리 목록 한 페이지(200장)는 서명하는 동안 연결을 쥐고 있으면 그만큼 다른 요청이 풀 앞에서 기다린다(#286 (b)).
+     */
+    fun toResponses(photos: List<Photo>, viewData: PhotoViewDataDto): List<PhotoResponse> = photos.map {
+        PhotoResponse.of(
+            photo = it,
+            viewUrl = viewUrlOf(it),
+            score = viewData.scores[it.requiredId],
+            memo = viewData.memos[it.requiredId],
+        )
     }
 
-    /** [toResponses]가 쓴다. 사진이 없으면 IN 절이 빈 채로 나가지 않도록 먼저 끊는다. */
+    /** 응답에 붙일 별점·메모를 한 번씩 읽는다. 읽기 트랜잭션 안에서 부른다. */
+    fun viewDataOf(photos: List<Photo>): PhotoViewDataDto = PhotoViewDataDto(scores = scoresOf(photos), memos = memosOf(photos))
+
+    /** [viewDataOf]가 쓴다. 사진이 없으면 IN 절이 빈 채로 나가지 않도록 먼저 끊는다. */
     private fun scoresOf(photos: List<Photo>): Map<Long, Int> {
         if (photos.isEmpty()) {
             return emptyMap()
@@ -49,7 +59,7 @@ class PhotoViewAssembler(
             .associate { it.photoId to it.score }
     }
 
-    /** [toResponses]가 쓴다. [scoresOf]와 같이 빈 IN 절을 내보내지 않는다. */
+    /** [viewDataOf]가 쓴다. [scoresOf]와 같이 빈 IN 절을 내보내지 않는다. */
     private fun memosOf(photos: List<Photo>): Map<Long, PhotoMemoResponse> {
         if (photos.isEmpty()) {
             return emptyMap()
