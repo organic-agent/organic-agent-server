@@ -26,8 +26,12 @@ to_utc() { python3 -c 'import sys,datetime as d; t=d.datetime.strptime(sys.argv[
 
 APP_ID=$(aws ec2 describe-instances --region "$REGION" --filters "Name=tag:Name,Values=$RESOURCE_PREFIX-app" "Name=instance-state-name,Values=running" \
   --query "Reservations[0].Instances[0].InstanceId" --output text)
-# SSM 표준 출력은 약 24,000자에서 잘린다 — 원격에서 "시각 풀 active idle waiting total" 로 줄여(줄당 ≈ 30자) 받는다.
-REMOTE="docker logs --since $(to_utc "$SINCE") --until $(to_utc "$UNTIL") wes-app 2>&1 | grep 'event=db.pool ' | sed -E 's/event=db.pool active=/event=db.pool pool=shared active=/; s/^[0-9-]+T([0-9:]+)[^ ]* .*pool=([^ ]+) active=([0-9]+) idle=([0-9]+) waiting=([0-9]+) total=([0-9]+).*/\\1 \\2 \\3 \\4 \\5 \\6/'"
+# SSM 표준 출력은 앞 24,000자만 돌려준다(GetCommandInvocation). 표본(5초 × 풀 둘)을 그대로 받으면 약 28분 넘는 구간에서 뒤가 잘린다 —
+# 원격에서 풀·분 단위로 미리 집계해 "분 풀 표본 active최대 waiting최대 waiting>0표본" 한 줄씩(줄당 ≈ 35자) 받는다.
+# 옛 로그(pool= 없음, #286 (a) 전)는 shared 로 센다.
+AGG='{k=$1" "$2; n[k]++; if($3>a[k])a[k]=$3; if($5>w[k])w[k]=$5; if($5>0)z[k]++} END{for(k in n) print k, n[k], a[k]+0, w[k]+0, z[k]+0}'
+REMOTE="docker logs --since $(to_utc "$SINCE") --until $(to_utc "$UNTIL") wes-app 2>&1 | grep 'event=db.pool ' | sed -E 's/event=db.pool active=/event=db.pool pool=shared active=/; s/^[0-9-]+T([0-9]{2}:[0-9]{2}):[0-9]{2}[^ ]* .*pool=([^ ]+) active=([0-9]+) idle=([0-9]+) waiting=([0-9]+) total=([0-9]+).*/\\1 \\2 \\3 \\4 \\5 \\6/' | awk '$AGG' | sort"
+OUTPUT_LIMIT=24000
 CID=$(aws ssm send-command --region "$REGION" --instance-ids "$APP_ID" --document-name AWS-RunShellScript \
   --parameters "$(python3 -c 'import json,sys; print(json.dumps({"commands":[sys.argv[1]]}))' "$REMOTE")" \
   --query Command.CommandId --output text)
@@ -38,17 +42,22 @@ while true; do
   case "$STATUS" in Success) break ;; Failed|Cancelled|TimedOut) echo "앱 로그 조회 실패: $STATUS" >&2; exit 1 ;; esac
 done
 aws ssm get-command-invocation --region "$REGION" --command-id "$CID" --instance-id "$APP_ID" --query StandardOutputContent --output text > "$RAW"
+# 한계에 닿았으면 뒤가 잘린 것이다 — 빠진 표본으로 최대·비율을 내면 조용히 틀린다. 보고서를 만들지 않는다.
+if [ "$(wc -c < "$RAW")" -ge $((OUTPUT_LIMIT - 200)) ]; then
+  echo "앱 로그 집계가 SSM 출력 한계(${OUTPUT_LIMIT}자)에 닿아 잘렸을 수 있다 — --since·--until 구간을 나눠 다시 조회할 것." >&2
+  exit 1
+fi
 
 DB_NAME="DB 안 씀"
 report_begin "앱 연결 풀 표본(event=db.pool)" "$APP_ID · $SINCE ~ $UNTIL KST"
 report_section "1. 풀별 분 단위" "active·waiting 의 최대 · waiting > 0 인 표본 비율 (표본 5초) · user=사용자 요청 · analysis=주기 작업·폴더 단계 · shared=나누기 전"
 python3 - "$RAW" <<'EOF'
 import re, sys, collections
-rows = collections.defaultdict(lambda: collections.defaultdict(list))
+rows = collections.defaultdict(dict)
 for line in open(sys.argv[1]):
-    m = re.match(r"(\d\d:\d\d):\d\d\S* (\S+) (\d+) (\d+) (\d+) (\d+)$", line.strip())
+    m = re.match(r"(\d\d:\d\d) (\S+) (\d+) (\d+) (\d+) (\d+)$", line.strip())
     if m:
-        rows[m.group(2)][m.group(1)].append(tuple(int(x) for x in m.groups()[2:]))
+        rows[m.group(2)][m.group(1)] = tuple(int(x) for x in m.groups()[2:])
 if not rows:
     print("    표본 없음 — app.observability.db-pool.enabled 가 켜져 있나?")
     sys.exit()
@@ -56,11 +65,11 @@ for pool in sorted(rows):
     print(f"\n    [{pool}]")
     print("    분      표본  active최대  waiting최대  waiting>0")
     print("    ─────  ────  ──────────  ───────────  ─────────")
-    allw = []
+    total = waited = wmax = 0
     for minute in sorted(rows[pool]):
-        s = rows[pool][minute]
-        w = [x[2] for x in s]; allw += w
-        print(f"    {minute}  {len(s):4d}  {max(x[0] for x in s):10d}  {max(w):11d}  {sum(1 for v in w if v > 0) / len(w) * 100:8.0f}%")
-    print(f"    전체 waiting 최대 {max(allw)} · waiting>0 표본 {sum(1 for v in allw if v > 0)}/{len(allw)}")
+        n, amax, wm, wpos = rows[pool][minute]
+        total += n; waited += wpos; wmax = max(wmax, wm)
+        print(f"    {minute}  {n:4d}  {amax:10d}  {wm:11d}  {wpos / n * 100:8.0f}%")
+    print(f"    전체 waiting 최대 {wmax} · waiting>0 표본 {waited}/{total}")
 EOF
 report_end
