@@ -14,6 +14,7 @@ import com.soma.wes.analysis.service.port.AiTaskSender
 import com.soma.wes.folder.exception.FolderErrorCode
 import com.soma.wes.folder.exception.FolderException
 import com.soma.wes.folder.support.AiFolderMaterializer
+import com.soma.wes.global.config.AnalysisPoolRoute
 import com.soma.wes.global.exception.BusinessException
 import com.soma.wes.global.logging.LogContext
 import com.soma.wes.photo.repository.PhotoPipelineRepository
@@ -56,6 +57,7 @@ class FolderStep(
     private val eventRecorder: AnalysisJobEventRecorder,
     private val properties: AnalysisProperties,
     private val clock: Clock,
+    analysisPoolRoute: AnalysisPoolRoute,
 ) : DisposableBean {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -66,6 +68,7 @@ class FolderStep(
         corePoolSize = properties.folderParallelism
         maxPoolSize = properties.folderParallelism
         setThreadNamePrefix("folder-step-")
+        setTaskDecorator(analysisPoolRoute.taskDecorator)
         setWaitForTasksToCompleteOnShutdown(true)
         initialize()
     }
