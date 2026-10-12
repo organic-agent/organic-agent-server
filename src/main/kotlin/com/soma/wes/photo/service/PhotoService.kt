@@ -12,6 +12,7 @@ import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoRating
 import com.soma.wes.photo.domain.PhotoStatus
+import com.soma.wes.photo.dto.PhotoListReadDto
 import com.soma.wes.photo.dto.request.CompleteUploadRequest
 import com.soma.wes.photo.dto.request.DeletePhotosRequest
 import com.soma.wes.photo.dto.request.IssueUploadUrlsRequest
@@ -35,7 +36,9 @@ import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
+import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 
 /**
  * 원본 사진의 업로드와 조회.
@@ -51,9 +54,13 @@ class PhotoService(
     private val properties: StorageProperties,
     private val clock: Clock,
     private val activityRecorder: ActivityRecorder,
+    transactionManager: PlatformTransactionManager,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
+
+    /** 트랜잭션 안팎을 나눠야 하는 읽기([list])가 쓴다. */
+    private val readTransaction = TransactionTemplate(transactionManager).apply { isReadOnly = true }
 
     companion object {
         /** 받아줄 이미지 형식. */
@@ -275,8 +282,11 @@ class PhotoService(
 
     /**
      * 갤러리의 사진 목록. 작가와 부부가 함께 쓰는 전체 그리드다.
+     *
+     * 7천 장 갤러리를 열면 200장 페이지를 36번 부른다. 페이지마다 보기 주소 200개를 서명하는 동안 연결을 쥐고 있으면 사용자가 몰릴 때
+     * 다른 요청이 풀 앞에서 기다린다(R-3-a: 풀 10/10, 대기 194). 그래서 읽기(인가·사진·별점·메모)만 읽기 트랜잭션 안에서 하고,
+     * 서명은 연결을 놓은 뒤 한다(#286 (b)). 메서드에 `@Transactional`을 붙이지 않는 이유다.
      */
-    @Transactional(readOnly = true)
     fun list(
         galleryId: Long,
         userId: Long,
@@ -285,19 +295,37 @@ class PhotoService(
         page: Int,
         size: Int,
     ): PhotoPageResponse {
+        val read = checkNotNull(
+            readTransaction.execute { readListPage(galleryId, userId, status, minScore, pageableOf(page, size)) },
+        ) { "사진 목록 읽기 트랜잭션이 결과 없이 끝났다" }
+
+        val photos = photoViewAssembler.toResponses(read.page.content, read.viewData)
+            .map { if (read.studioViewer) it.copy(score = null, memo = null) else it }
+        return PhotoPageResponse.of(
+            page = PageResponse.of(read.page, photos),
+            viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
+        )
+    }
+
+    /** [list]의 읽기 트랜잭션 몫. */
+    private fun readListPage(
+        galleryId: Long,
+        userId: Long,
+        status: PhotoStatus?,
+        minScore: Int?,
+        pageable: PageRequest,
+    ): PhotoListReadDto {
         galleryAccessPolicy.requireViewer(galleryId, userId)
         validateMinScore(minScore)
 
         val studioViewer = galleryAccessPolicy.isStudioManager(galleryId, userId)
         if (studioViewer && minScore != null) throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
-        val found = findPage(galleryId, status, minScore, pageableOf(page, size))
+        val found = findPage(galleryId, status, minScore, pageable)
 
-        return PhotoPageResponse.of(
-            page = PageResponse.of(
-                found,
-                photoViewAssembler.toResponses(found.content).map { if (studioViewer) it.copy(score = null, memo = null) else it },
-            ),
-            viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
+        return PhotoListReadDto(
+            page = found,
+            viewData = photoViewAssembler.viewDataOf(found.content),
+            studioViewer = studioViewer,
         )
     }
 
