@@ -21,8 +21,10 @@ import org.springframework.context.annotation.Primary
  *
  * DataSource를 직접 정의하면 Boot의 풀 자동 구성이 물러나면서 접속 정보 빈([JdbcConnectionDetails])도 만들지 않는다. 그래서
  * 접속 정보는 있으면(Testcontainers 서비스 연결) 그것을, 없으면 `spring.datasource.*`를 쓴다. 풀 세부 설정
- * (`spring.datasource.hikari.*`, 예: `socketTimeout`)은 사용자 풀에 묶고, 분석 풀은 접속 정보·시간 제한·연결 속성을 하나씩
- * 옮겨 받는다 — `HikariConfig.copyStateTo`는 연결 속성 객체를 공유하게 만들어, 분석 풀 이름을 넣으면 사용자 풀 이름까지 바뀐다.
+ * (`spring.datasource.hikari.*`, 예: `socketTimeout`)은 사용자 풀에 묶고, 분석 풀은 접속 정보·시간 제한·세션 설정(스키마·
+ * 초기화 SQL·격리 수준 등)·연결 속성을 하나씩 옮겨 받는다. 두 풀은 크기와 이름만 달라야 어느 풀로 가든 쿼리 결과가 같다 —
+ * `HikariConfig`에 설정을 새로 쓰게 되면 여기도 옮긴다. `HikariConfig.copyStateTo`를 쓰지 않는 이유는 연결 속성 객체를 공유하게
+ * 만들어, 분석 풀 이름을 넣으면 사용자 풀 이름까지 바뀌기 때문이다.
  */
 @Configuration
 @ConditionalOnProperty(prefix = "app.datasource.analysis-pool", name = ["enabled"], havingValue = "true")
@@ -56,11 +58,23 @@ class AnalysisPoolDataSourceConfig {
         username = userDataSource.username
         password = userDataSource.password
         driverClassName = userDataSource.driverClassName
+
         connectionTimeout = userDataSource.connectionTimeout
         validationTimeout = userDataSource.validationTimeout
         idleTimeout = userDataSource.idleTimeout
         maxLifetime = userDataSource.maxLifetime
         keepaliveTime = userDataSource.keepaliveTime
+        leakDetectionThreshold = userDataSource.leakDetectionThreshold
+        initializationFailTimeout = userDataSource.initializationFailTimeout
+
+        catalog = userDataSource.catalog
+        schema = userDataSource.schema
+        connectionInitSql = userDataSource.connectionInitSql
+        connectionTestQuery = userDataSource.connectionTestQuery
+        transactionIsolation = userDataSource.transactionIsolation
+        isAutoCommit = userDataSource.isAutoCommit
+        isReadOnly = userDataSource.isReadOnly
+        isIsolateInternalQueries = userDataSource.isIsolateInternalQueries
         for ((key, value) in userDataSource.dataSourceProperties) addDataSourceProperty(key.toString(), value)
 
         poolName = ANALYSIS_POOL
