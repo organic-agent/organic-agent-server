@@ -4,6 +4,7 @@
 #   scripts/load/traffic-sqs-redis/fault.sh dev on [--rate 0.02]
 #   scripts/load/traffic-sqs-redis/fault.sh dev off
 #   scripts/load/traffic-sqs-redis/fault.sh dev status
+#   scripts/load/traffic-sqs-redis/fault.sh dev on --rate 0.5 --only categorize   # 한 함수만(embedder | categorize)
 #
 # 켜면 호출의 rate 비율이 받자마자 프로세스를 끝낸다(fault.injected 로그). Terraform 밖에서 바꾸는 값이라 다음 dev apply 가
 # 지운다 — 회차가 끝나면 off 로 끈다. dev 전용(운영 함수 이름은 받지 않는다).
@@ -15,20 +16,25 @@ report_parse_common "$@"; set -- "${REPORT_REST[@]+"${REPORT_REST[@]}"}"
 
 ACTION="${1:-status}"; shift || true
 RATE="0.02"
+ONLY=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --rate) [ $# -ge 2 ] || { echo "--rate 에 값이 필요하다." >&2; exit 1; }; RATE="$2"; shift ;;
-    -h|--help) sed -n 2,10p "$0"; exit 0 ;;
+    --only) [ $# -ge 2 ] || { echo "--only 에 값이 필요하다." >&2; exit 1; }; ONLY="$2"; shift ;;
+    -h|--help) sed -n 2,11p "$0"; exit 0 ;;
     *) echo "알 수 없는 인자: $1" >&2; exit 1 ;;
   esac
   shift
 done
 
 case "$ACTION" in on|off|status) ;; *) echo "on · off · status 중 하나: $ACTION" >&2; exit 1 ;; esac
+case "$ONLY" in ""|embedder|categorize) ;; *) echo "--only 는 embedder · categorize 중 하나: $ONLY" >&2; exit 1 ;; esac
 python3 -c 'import sys; r=float(sys.argv[1]); sys.exit(0 if 0 <= r <= 1 else 1)' "$RATE" 2>/dev/null \
   || { echo "--rate 는 0~1 사이 숫자: $RATE" >&2; exit 1; }
 
-for FN in "$RESOURCE_PREFIX-embedder" "$RESOURCE_PREFIX-categorize"; do
+MODULES=(embedder categorize); [ -n "$ONLY" ] && MODULES=("$ONLY")
+for MODULE in "${MODULES[@]}"; do
+  FN="$RESOURCE_PREFIX-$MODULE"
   CURRENT=$(aws lambda get-function-configuration --region "$REGION" --function-name "$FN" --query 'Environment.Variables' --output json)
   if [ "$ACTION" = "status" ]; then
     echo "$FN FAULT_EXIT_RATE=$(echo "$CURRENT" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("FAULT_EXIT_RATE","(없음)"))')"
