@@ -64,20 +64,23 @@ if [ "$ASSUME_YES" != "true" ]; then
 fi
 
 # 분석 행 복제 — strip 단계에 따라 컬럼을 비운다. embed 면 행 자체를 넣지 않는다(임베더가 UPSERT 로 만든다).
+# quality_scored_at(V40)도 옮긴다 — 빠지면 GPU 워커가 복제 갤러리마다 화질 점수를 다시 낸다(#286 R-3-a: 71,890장).
 case "$STRIP" in
   embed) ANALYSIS_SQL="" ;;
   score) ANALYSIS_SQL="INSERT INTO photo_analysis (photo_id, embedding, embedding_model, face_boxes, created_at, updated_at)
       SELECT m.new_id, a.embedding, a.embedding_model, a.face_boxes, now(), now()
       FROM photo_analysis a JOIN mapping m ON m.old_id = a.photo_id WHERE a.embedding IS NOT NULL;" ;;
   categorize) ANALYSIS_SQL="INSERT INTO photo_analysis (photo_id, embedding, embedding_model, clip_embedding, subjects, sub_scores, face_boxes,
-        pipeline_version, analyzed_at, created_at, updated_at)
+        pipeline_version, analyzed_at, quality_scored_at, created_at, updated_at)
       SELECT m.new_id, a.embedding, a.embedding_model, a.clip_embedding, a.subjects, a.sub_scores, a.face_boxes,
-             a.pipeline_version, a.analyzed_at, now(), now()
+             a.pipeline_version, a.analyzed_at, a.quality_scored_at, now(), now()
       FROM photo_analysis a JOIN mapping m ON m.old_id = a.photo_id WHERE a.embedding IS NOT NULL;" ;;
   "") ANALYSIS_SQL="INSERT INTO photo_analysis (photo_id, embedding, embedding_model, clip_embedding, subjects, sub_scores, face_boxes,
-        pipeline_version, analyzed_at, technical_pct, aesthetic_pct, burst_id, burst_rank, embed_group_id, error, created_at, updated_at)
+        pipeline_version, analyzed_at, technical_pct, aesthetic_pct, burst_id, burst_rank, embed_group_id, error, quality_scored_at,
+        created_at, updated_at)
       SELECT m.new_id, a.embedding, a.embedding_model, a.clip_embedding, a.subjects, a.sub_scores, a.face_boxes,
-             a.pipeline_version, a.analyzed_at, a.technical_pct, a.aesthetic_pct, a.burst_id, a.burst_rank, a.embed_group_id, a.error, now(), now()
+             a.pipeline_version, a.analyzed_at, a.technical_pct, a.aesthetic_pct, a.burst_id, a.burst_rank, a.embed_group_id, a.error,
+             a.quality_scored_at, now(), now()
       FROM photo_analysis a JOIN mapping m ON m.old_id = a.photo_id;" ;;
 esac
 
