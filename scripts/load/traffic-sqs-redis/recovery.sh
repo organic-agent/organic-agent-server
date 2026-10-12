@@ -50,7 +50,7 @@ for line in open(sys.argv[1]):
     ts, kind, gallery, ref = line.split()
     ids = ref if kind == "embedder" else ""
     job = ref if kind == "categorize" and ref != "None" else "NULL"
-    rows.append(f"(to_timestamp({int(ts)}/1000.0), '{kind}', {gallery}, '{{{ids}}}'::bigint[], {job})")
+    rows.append(f"(to_timestamp({int(ts)}/1000.0), '{kind}', {gallery}, '{{{ids}}}'::bigint[], {job}::bigint)")
 print(",\n".join(rows))
 EOF
 )
