@@ -6,7 +6,6 @@ import java.time.Duration
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
-import javax.sql.DataSource
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.DisposableBean
 import org.springframework.beans.factory.annotation.Value
@@ -14,7 +13,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
 
 /**
- * 앱 연결 풀(Hikari)의 표본을 [interval]마다 한 줄 남긴다 — `event=db.pool active idle waiting total`.
+ * 앱 연결 풀(Hikari)의 표본을 [interval]마다 풀마다 한 줄 남긴다 — `event=db.pool pool active idle waiting total`.
+ * 분석 풀을 켜면 사용자 풀·분석 풀 두 줄이다(#286 (a), `AnalysisPoolDataSourceConfig`).
  * 요청이 풀 앞에서 줄 서는지(waiting > 0) 보려는 부하 측정용이라 기본은 꺼져 있고, 측정 때만 켠다(#286 R-3).
  *
  * 스케줄러 풀(`spring.task.scheduling`)이 아니라 자기 스레드 하나로 돈다. 분석 스윕이 스케줄러 스레드를 다 잡고 있어도
@@ -23,7 +23,7 @@ import org.springframework.stereotype.Component
 @Component
 @ConditionalOnProperty(prefix = "app.observability.db-pool", name = ["enabled"], havingValue = "true")
 class DbPoolSampler(
-    private val dataSource: DataSource,
+    private val dataSources: List<HikariDataSource>,
     @Value("\${app.observability.db-pool.interval:PT5S}") interval: Duration,
 ) : DisposableBean {
 
@@ -47,15 +47,17 @@ class DbPoolSampler(
     }
 
     fun sample() {
-        // 풀은 첫 연결 때 만들어진다 — 그 전에는 표본이 없다.
-        val pool = dataSource.unwrap(HikariDataSource::class.java).hikariPoolMXBean ?: return
-        write(pool)
+        for (dataSource in dataSources) {
+            // 풀은 첫 연결 때 만들어진다 — 그 전에는 표본이 없다.
+            val pool = dataSource.hikariPoolMXBean ?: continue
+            write(dataSource.poolName, pool)
+        }
     }
 
-    fun write(pool: HikariPoolMXBean) {
+    fun write(poolName: String, pool: HikariPoolMXBean) {
         log.info(
-            "event=db.pool active={} idle={} waiting={} total={}",
-            pool.activeConnections, pool.idleConnections, pool.threadsAwaitingConnection, pool.totalConnections,
+            "event=db.pool pool={} active={} idle={} waiting={} total={}",
+            poolName, pool.activeConnections, pool.idleConnections, pool.threadsAwaitingConnection, pool.totalConnections,
         )
     }
 

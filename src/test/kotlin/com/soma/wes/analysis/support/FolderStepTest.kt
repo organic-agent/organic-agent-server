@@ -11,6 +11,7 @@ import com.soma.wes.analysis.service.AnalysisService
 import com.soma.wes.folder.support.AiFolderMaterializer
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
+import com.soma.wes.global.config.AnalysisPoolRoute
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.recommendation.fixture.RecommendationFixture
@@ -51,6 +52,7 @@ class FolderStepTest @Autowired constructor(
     private val aiTaskSender: FakeAiTaskSender,
     private val materializer: AiFolderMaterializer,
     private val clock: Clock,
+    private val analysisPoolRoute: AnalysisPoolRoute,
 ) {
 
     private lateinit var fixture: OpenGallery
@@ -76,6 +78,7 @@ class FolderStepTest @Autowired constructor(
             eventRecorder,
             AnalysisProperties(materializeMaxAttempts = 3),
             clock,
+            analysisPoolRoute,
         )
 
         // when — 두 번까지는 잡을 닫지 않고 다음 회차에 맡긴다
@@ -177,6 +180,7 @@ class FolderStepTest @Autowired constructor(
         eventRecorder,
         AnalysisProperties(),
         clock,
+        analysisPoolRoute,
     )
 
     private fun categorizedJob(): Long {
