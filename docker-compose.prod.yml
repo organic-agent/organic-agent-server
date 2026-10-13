@@ -11,7 +11,9 @@ services:
       # 힙 상한을 서버 메모리 안에 둔다(#274 A-1). t4g.micro 904MB에서 다른 프로세스 ≈ 200MB · JVM 힙 밖 ≈ 180MB를 빼면
       # 힙 448MB가 들어간다. 예전 MaxRAMPercentage=75(컨테이너 1g → 768MB)는 힙이 스왑으로 밀려 GC 때 앱 전체가 수십 초 멈췄다.
       # GC 로그는 실제 힙 사용량을 보고 값을 다듬기 위해 남긴다 — alloy는 info·warn·error 폴더만 보내므로 이 파일은 서버에만 있다.
-      - JAVA_TOOL_OPTIONS=-Xmx448m -Xlog:gc:file=/var/log/spring/gc.log:time,uptime,level,tags:filecount=5,filesize=5m
+      # GC는 G1로 고정한다(#286 (g) ②). 메모리가 1.8GB 아래면 JVM이 Serial(한 스레드로 앱을 멈추고 치움)을 골라 부하 때
+      # Full GC로 최대 15초 멈췄다(R-3-c). G1은 짧게 나눠 치워 응답 꼬리를 줄이고, 자체 메모리는 힙의 수 % 정도다.
+      - JAVA_TOOL_OPTIONS=-XX:+UseG1GC -Xmx448m -Xlog:gc:file=/var/log/spring/gc.log:time,uptime,level,tags:filecount=5,filesize=5m
     ports:
       - "8080:8080"
     read_only: true
