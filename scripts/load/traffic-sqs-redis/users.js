@@ -4,14 +4,14 @@
 //
 // 한 명의 동작은 organic-agent-web(1e56e2b) 부부 화면(`app/(client)/gallery/[galleryId]`)의 실제 호출을 따른다.
 //   열기   갤러리 · 멤버 · 컨셉 폴더 · 사진 목록 전체(200장씩 끝까지) · 셀렉 상태 · AI 추천 · 협업 세션(세션마다 사진 목록) — 세션 시작에 한 번
-//   12분   사진 목록 전체만 다시(보기 주소 갈아 주기, usePhotoUrlRefresh)
-//   5초    사진 상세(크게 보기)
-//   10초   별점(PUT, 덮어쓰기)
-//   15초   셀렉 감시(photo-selection, useSelectionSync) · 담기 → 다음 차례에 같은 사진 빼기(DELETE 본문 photoIds)
-//          여럿이 같은 갤러리라 409·404 는 정상 응답으로 센다
-//   60초   알림
+//   그 뒤  동작마다 운영에서 잰 빈도(활동 1분당, RATES)로 부른다 — 운영 로그 일주일(갤러리 52 부부, 11,664요청, 02 §15):
+//          읽기 87% · 쓰기 13% · 한 사람 분당 ≈ 12.3(1×). 비율만 따르고 강도는 INTENSITY 배(기본 2×, 분당 ≈ 24.6).
+//          실제로 가장 많은 것은 사진 목록(그리드 스크롤)이고 상세는 드물다.
+//          (10-13 전 대본은 상세 5초·별점 10초·담기/빼기 15초마다 — 쓰기 37%로 실제보다 5배 넘게 많았다.)
+//          담기 → 다음 차례에 같은 사진 빼기(DELETE 본문 photoIds). 409·404 는 정상 응답으로 센다.
 // 사진 요약(photos/summary)·최신 분석(ai-analysis)은 부르지 않는다 — 웹은 작가 스튜디오와 부부 개인 갤러리 업로드의
-// 분석 감시에서만 부른다(10-13 대조, 02 §8.1). R-3-a(10-11)는 열기마다 요약을 불러 실제에 없는 부하가 섞였다.
+// 분석 감시에서만 부른다(10-13 대조, 02 §8.1; 운영 표본에서도 개인 갤러리 업로드 동안만 분당 0.54씩). 회차 갤러리는 초대
+// 갤러리라 뺀다. 협업 세션 사진 목록(실제 분당 1.07)은 회차 갤러리에 세션이 없어 사진 목록 빈도에 합쳤다.
 // 요청마다 action(무엇)·stage(그 순간 목표 사용자 수) 태그를 달아, 요약에서 단계별·동작별 p95 를 따로 본다.
 import http from "k6/http";
 import exec from "k6/execution";
@@ -23,7 +23,20 @@ const TARGETS = JSON.parse(open(__ENV.TARGETS)); // [{ userId, galleryId, token 
 const PROFILE = __ENV.PROFILE || "full";
 
 const TICK_SECONDS = 5;
-const RELIST_MS = 12 * 60 * 1000;
+const TICKS_PER_MINUTE = 60 / TICK_SECONDS;
+// 운영 로그의 빈도는 한 부부의 평균(분당 ≈ 12.3)이라 비율로만 쓰고, 강도는 배수로 정한다(작성자 10-13).
+// 기본 2× = 분당 ≈ 24.6 — 같은 로그의 가장 바쁜 1분은 86~167회였다. run-k6.sh --intensity 로 바꾼다.
+const INTENSITY = Number(__ENV.INTENSITY || 2);
+// 활동 1분당 호출 수(1×) — 운영 로그(02 §15). 5초 차례마다 빈도 × 강도 / 12 만큼 쌓아 1이 넘으면 부른다.
+const RATES = {
+  list: 5.6,          // 사진 목록 한 페이지(갤러리 4.5 + 협업 세션 1.07)
+  watch: 2.7,         // 셀렉 상태(photo-selection)
+  notifications: 1.1,
+  retouch: 0.75,      // 보정 회차 목록
+  detail: 0.54,       // 사진 상세
+  rating: 1.5,        // 별점(PUT)
+  selection: 0.13,    // 담기·빼기 번갈아
+};
 const PAGE_SIZE = 200;
 const MAX_PAGES = 50;
 
@@ -33,7 +46,7 @@ const PROFILES = {
   full: [["30s", "2m", 50], ["30s", "2m", 100], ["30s", "2m", 200], ["30s", "2m", 400]],
 };
 const STEPS = PROFILES[PROFILE];
-const ACTIONS = ["open", "list", "detail", "rating", "select", "deselect", "watch", "notifications"];
+const ACTIONS = ["open", "list", "detail", "rating", "select", "deselect", "watch", "notifications", "retouch"];
 const COLLAB_PAGE_SIZE = 200;
 
 function seconds(text) {
@@ -80,9 +93,11 @@ const SELECTION_STATUSES = http.expectedStatuses({ min: 200, max: 299 }, 404, 40
 
 // VU 마다 따로 사는 상태
 let photoIds = null;
-let listedAt = 0;
-let tick = 0;
+let pageCount = 1;
+let nextPage = 0;
 let held = null;
+// 동작마다 쌓인 몫. 시작값을 흩어 같은 순간에 들어온 사람들이 같은 차례에 몰리지 않게 한다.
+const due = Object.fromEntries(Object.keys(RATES).map((action) => [action, Math.random()]));
 
 function call(method, path, action, body, extra) {
   const params = Object.assign(
@@ -127,8 +142,18 @@ function listPhotos(g) {
     for (const photo of body.contents) ids.push(photo.photoId);
     if (!body.hasNext) break;
   }
-  if (ids.length > 0) photoIds = ids;
-  listedAt = Date.now();
+  if (ids.length > 0) {
+    photoIds = ids;
+    pageCount = Math.ceil(ids.length / PAGE_SIZE);
+  }
+}
+
+// 이번 차례에 그 동작을 몇 번 부를지 — 빈도를 쌓아 정수 부분만큼.
+function turns(action) {
+  due[action] += (RATES[action] * INTENSITY) / TICKS_PER_MINUTE;
+  const n = Math.floor(due[action]);
+  due[action] -= n;
+  return n;
 }
 
 function pick() {
@@ -140,14 +165,17 @@ export default function () {
   const g = me().galleryId;
 
   if (photoIds === null) openGallery(g);
-  else if (started - listedAt > RELIST_MS) listPhotos(g);
 
   if (photoIds !== null) {
-    call("GET", `/api/v1/galleries/${g}/photos/${pick()}`, "detail");
-    if (tick % 2 === 0) {
+    for (let i = turns("list"); i > 0; i--) {
+      call("GET", `/api/v1/galleries/${g}/photos?page=${nextPage}&size=${PAGE_SIZE}`, "list");
+      nextPage = (nextPage + 1) % pageCount;
+    }
+    for (let i = turns("detail"); i > 0; i--) call("GET", `/api/v1/galleries/${g}/photos/${pick()}`, "detail");
+    for (let i = turns("rating"); i > 0; i--) {
       call("PUT", `/api/v1/galleries/${g}/photos/${pick()}/rating`, "rating", { score: 1 + Math.floor(Math.random() * 5) });
     }
-    if (tick % 3 === 0) {
+    for (let i = turns("selection"); i > 0; i--) {
       if (held === null) {
         held = pick();
         call("POST", `/api/v1/galleries/${g}/photo-selection/photos`, "select",
@@ -159,10 +187,10 @@ export default function () {
       }
     }
   }
-  if (tick % 3 === 1) call("GET", `/api/v1/galleries/${g}/photo-selection`, "watch");
-  if (tick % 12 === 0) call("GET", "/api/v1/notifications", "notifications");
+  for (let i = turns("watch"); i > 0; i--) call("GET", `/api/v1/galleries/${g}/photo-selection`, "watch");
+  for (let i = turns("retouch"); i > 0; i--) call("GET", `/api/v1/galleries/${g}/retouch/rounds`, "retouch");
+  for (let i = turns("notifications"); i > 0; i--) call("GET", "/api/v1/notifications", "notifications");
 
-  tick++;
   sleep(Math.max(0, TICK_SECONDS - (Date.now() - started) / 1000));
 }
 

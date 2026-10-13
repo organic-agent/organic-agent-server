@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # R-3 사용자 트래픽 실행 — dev 부하 발생기 EC2(Name=wes-dev-loadgen, infra #97)에서 k6 를 돌리고, 요약을 받아 단계별·동작별로 판정한다.
 #
-#   scripts/load/traffic-sqs-redis/run-k6.sh dev --label R-3-a [--profile full|smoke] [--keep-on]
+#   scripts/load/traffic-sqs-redis/run-k6.sh dev --label R-3-a [--profile full|smoke] [--intensity 2] [--keep-on]
+#   --intensity N  한 사람의 동작 횟수 배수(비율은 운영 로그 그대로, users.js RATES × N). 기본 2 = 분당 ≈ 24.6
 #   scripts/load/traffic-sqs-redis/run-k6.sh dev --label R-3-a --start-only     # 발생기만 켜 둔다(재생과 같은 순간에 시작하려고)
 #   scripts/load/traffic-sqs-redis/run-k6.sh dev --label R-3-a --report-only    # 이미 받은 요약으로 판정만 다시
 #
@@ -13,10 +14,11 @@ cd "$(dirname "$0")/../../.."
 source scripts/load/lib/report.sh
 report_parse_common "$@"; set -- "${REPORT_REST[@]+"${REPORT_REST[@]}"}"
 
-PROFILE="full"; KEEP_ON="false"; MODE="run"
+PROFILE="full"; INTENSITY="2"; KEEP_ON="false"; MODE="run"
 while [ $# -gt 0 ]; do
   case "$1" in
     --profile) PROFILE="$2"; shift ;;
+    --intensity) INTENSITY="$2"; shift ;;
     --keep-on) KEEP_ON="true" ;;
     --start-only) MODE="start" ;;
     --report-only) MODE="report" ;;
@@ -70,13 +72,13 @@ run_remote() {
   local script="set -e; ulimit -n 65535; rm -rf /opt/r3 && mkdir -p /opt/r3 && cd /opt/r3
 aws s3 cp --only-show-errors --region $REGION $S3_PREFIX/inputs/targets.json targets.json
 aws s3 cp --only-show-errors --region $REGION $S3_PREFIX/inputs/users.js users.js
-k6 run --quiet -e API=$API -e TARGETS=targets.json -e PROFILE=$PROFILE -e SUMMARY=summary.json users.js > k6.log 2>&1 || echo \"k6 exit \$?\" >> k6.log
+k6 run --quiet -e API=$API -e TARGETS=targets.json -e PROFILE=$PROFILE -e INTENSITY=$INTENSITY -e SUMMARY=summary.json users.js > k6.log 2>&1 || echo \"k6 exit \$?\" >> k6.log
 aws s3 cp --only-show-errors --region $REGION k6.log $S3_PREFIX/k6.log
 aws s3 cp --only-show-errors --region $REGION summary.json $S3_PREFIX/summary.json"
   cid=$(aws ssm send-command --region "$REGION" --instance-ids "$id" --document-name AWS-RunShellScript \
     --timeout-seconds 600 --parameters "$(python3 -c 'import json,sys; print(json.dumps({"commands":[sys.argv[1]],"executionTimeout":["3600"]}))' "$script")" \
     --query Command.CommandId --output text)
-  echo "k6 시작 $(TZ=Asia/Seoul date '+%H:%M:%S') · profile=$PROFILE · 명령 $cid" >&2
+  echo "k6 시작 $(TZ=Asia/Seoul date '+%H:%M:%S') · profile=$PROFILE · 강도 ${INTENSITY}× · 명령 $cid" >&2
   while true; do
     sleep 15
     status=$(aws ssm get-command-invocation --region "$REGION" --command-id "$cid" --instance-id "$id" --query Status --output text 2>/dev/null || echo Pending)
@@ -102,7 +104,7 @@ fi
 [ -f "$LOCAL_SUMMARY" ] || { echo "요약이 없다: $LOCAL_SUMMARY" >&2; exit 1; }
 
 DB_NAME="DB 안 씀"
-report_begin "사용자 트래픽(k6) 단계별·동작별 응답" "가상 사용자 → $API · profile $PROFILE"
+report_begin "사용자 트래픽(k6) 단계별·동작별 응답" "가상 사용자 → $API · profile $PROFILE · 강도 ${INTENSITY}×"
 
 TABLES=$(mktemp -d -t r3-k6.XXXXXX); trap 'rm -rf "$TABLES"' EXIT
 python3 - "$LOCAL_SUMMARY" "$TABLES" > "$TABLES/verdict.env" <<'EOF'
@@ -163,7 +165,7 @@ source "$TABLES/verdict.env"
 
 report_section "1. 단계별 (목표 사용자 수)" "응답 시간 ms · 오류율 = 2xx 아님(담기·빼기의 404·409 는 정상으로 셈)"
 cat "$TABLES/stages.txt"
-report_section "2. 동작별 (전 구간)" "open = 갤러리·멤버·폴더·셀렉·추천·협업 세션(요약 없음, 웹과 같음) · list = 사진 목록 200장 한 페이지"
+report_section "2. 동작별 (전 구간)" "open = 갤러리·멤버·폴더·셀렉·추천·협업 세션(요약 없음, 웹과 같음) · 그 뒤 운영 빈도(02 §15): list 200장 한 페이지 · watch 셀렉 상태 · retouch 보정 회차"
 cat "$TABLES/actions.txt"
 
 report_section "3. 판정 (01 QA-1)"
