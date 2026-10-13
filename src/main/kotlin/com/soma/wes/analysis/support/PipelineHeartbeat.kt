@@ -1,9 +1,12 @@
 package com.soma.wes.analysis.support
 
+import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.domain.AnalysisStatus
 import com.soma.wes.analysis.repository.AnalysisJobRepository
 import com.soma.wes.global.logging.LogContext
 import com.soma.wes.photo.repository.PhotoPipelineRepository
+import java.time.Clock
+import java.time.ZonedDateTime
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
@@ -23,6 +26,8 @@ class PipelineHeartbeat(
     private val sweepWatch: AnalysisSweepWatch,
     private val analysisJobRepository: AnalysisJobRepository,
     private val photoPipelineRepository: PhotoPipelineRepository,
+    private val properties: AnalysisProperties,
+    private val clock: Clock,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -31,12 +36,13 @@ class PipelineHeartbeat(
     fun beat() {
         LogContext.sweep {
             sweepWatch.check()
+            val dispatchedSince = ZonedDateTime.now(clock).minus(properties.embedRedispatchAfter)
             log.info(
                 "event=sweep.heartbeat active_jobs={} embed_inflight={} pending={} unscored={}",
                 analysisJobRepository.countByStatusIn(AnalysisStatus.ACTIVE),
-                photoPipelineRepository.countInFlightEmbedBatches(),
+                photoPipelineRepository.countInFlightEmbedBatches(dispatchedSince),
                 photoPipelineRepository.countPending(),
-                photoPipelineRepository.countScoreBacklog(),
+                photoPipelineRepository.countScoreBacklog(dispatchedSince),
             )
         }
     }
