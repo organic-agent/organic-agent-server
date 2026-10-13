@@ -9,7 +9,7 @@ import java.util.UUID
 
 /**
  * 호출을 기록하는 [PhotoStorage]. `buildKey`는 실제 구현과 같은 규칙을 쓴다 —
- * 지워진 키가 곧 검증 대상이라 임의 문자열로 대체할 수 없다. [TrashEraserTest]·`PendingUploadSweeperTest`도 같이 쓴다.
+ * 지워진 키가 곧 검증 대상이라 임의 문자열로 대체할 수 없다. [TrashEraserTest]·`PendingUploadSweeperTest`·`TrashServiceTest`·`TrashPurgeSchedulerTest`가 같이 쓴다 — 같은 import라 컨텍스트 하나를 나눈다.
  */
 class RecordingTrashPhotoStorage : PhotoStorage {
 

@@ -35,6 +35,11 @@ paths:
 - 전용 컨텍스트가 정말 필요한 테스트(빈 교체 `@Primary` 페이크)는 `@IntegrationTest` 위에
   `@Import`를 덧붙인다(`TrashTest`, `TrashEraserTest`). 커스텀 프로퍼티까지 필요하면 평문
   `@SpringBootTest(properties=...)` 조합에 `@ExtendWith(DatabaseClearExtension::class)`만 얹는다.
+  같은 페이크를 쓰는 테스트끼리는 **같은 설정 클래스**를 import해 그 컨텍스트를 나눈다 — 파일마다 똑같은
+  중첩 `@TestConfiguration`을 두면 내용이 같아도 컨텍스트가 따로 뜬다(`RecordingTrashPhotoStorageConfig`).
+- 컨텍스트가 몇 개로 갈라져도 Postgres 컨테이너는 테스트 JVM에 하나다(`SharedPostgres`). 컨텍스트마다
+  그 안에 데이터베이스를 따로 만들어 붙이므로 격리는 그대로다. 컨테이너를 직접 다뤄야 하면(`docker pause`)
+  빈 주입이 아니라 `SharedPostgres.container`를 쓴다.
 
 ## 데이터 정리는 DatabaseCleaner가 소유한다
 
@@ -107,7 +112,7 @@ paths:
 
 ## 테스트 인프라의 자리
 
-- 테스트 루트 `support/`: `IntegrationTest`, `TestcontainersConfiguration`,
+- 테스트 루트 `support/`: `IntegrationTest`, `TestcontainersConfiguration`, `SharedPostgres`,
   `DatabaseCleaner`, `DatabaseClearExtension`, `TestSequence`.
   프로덕션 `support`가 "유스케이스가 기대는 협력자"이듯, 여기는 테스트가 기대는 인프라다.
   도메인에 속하는 것(픽스처)은 여기가 아니라 `{domain}/fixture`에 산다.

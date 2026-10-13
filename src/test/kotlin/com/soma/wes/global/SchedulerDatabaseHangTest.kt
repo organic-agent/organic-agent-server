@@ -4,6 +4,7 @@ import com.soma.wes.analysis.support.PipelineHeartbeat
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.support.CapturedLogs
 import com.soma.wes.support.IntegrationTest
+import com.soma.wes.support.SharedPostgres
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Assertions.assertTimeoutPreemptively
@@ -11,7 +12,6 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.dao.DataAccessException
 import org.springframework.scheduling.TaskScheduler
-import org.testcontainers.containers.PostgreSQLContainer
 import java.sql.SQLException
 import java.time.Duration
 import java.time.Instant
@@ -33,10 +33,8 @@ import javax.sql.DataSource
 @IntegrationTest
 class SchedulerDatabaseHangTest @Autowired constructor(
     private val dataSource: DataSource,
-    private val postgres: PostgreSQLContainer<*>,
     private val taskScheduler: TaskScheduler,
     private val heartbeat: PipelineHeartbeat,
-    private val photoPipelineRepository: PhotoPipelineRepository,
 ) {
 
     companion object {
@@ -46,8 +44,11 @@ class SchedulerDatabaseHangTest @Autowired constructor(
         /** 일시 정지한 DB에서 포기 동작만 빨리 보려고 이 연결에만 줄여 거는 시간. */
         private const val SHORT_SOCKET_TIMEOUT_MILLIS = 2_000
 
-        /** 스윕 쿼리 30초 제한에 취소가 돌아오기까지의 여유를 더한 상한. */
-        private val SWEEP_QUERY_GIVE_UP: Duration = Duration.ofSeconds(45)
+        /** 포기 동작만 빨리 보려고 테스트 저장소에 거는 스윕 쿼리 제한(초). 운영 값 30초는 따로 확인한다. */
+        private const val SHORT_SWEEP_QUERY_TIMEOUT_SECONDS = 1
+
+        /** 짧은 제한에 취소가 돌아오기까지의 여유를 더한 상한. */
+        private val SWEEP_QUERY_GIVE_UP: Duration = Duration.ofSeconds(10)
 
         /** 막힌 작업들 옆에서 하트비트가 돌기까지 기다리는 시간. */
         private const val HEARTBEAT_WAIT_SECONDS = 10L
@@ -82,7 +83,14 @@ class SchedulerDatabaseHangTest @Autowired constructor(
     }
 
     @Test
-    fun `스윕 쿼리는 30초 안에 끝나지 않으면 포기한다`() {
+    fun `스윕 쿼리 제한은 30초다`() {
+        assertThat(PhotoPipelineRepository.QUERY_TIMEOUT_SECONDS).isEqualTo(30)
+    }
+
+    @Test
+    fun `스윕 쿼리는 제한 시간 안에 끝나지 않으면 포기한다`() {
+        // 운영 빈과 같은 문장을 쓰되 제한만 짧게 건다 — 30초를 실제로 기다리지 않는다
+        val photoPipelineRepository = PhotoPipelineRepository(dataSource, SHORT_SWEEP_QUERY_TIMEOUT_SECONDS)
         dataSource.connection.use { locker ->
             // given — 다른 연결이 사진 표를 통째로 잠가 스윕 쿼리가 끝없이 기다리게 만든다
             locker.autoCommit = false
@@ -121,10 +129,10 @@ class SchedulerDatabaseHangTest @Autowired constructor(
     }
 
     private fun pauseDatabase() {
-        postgres.dockerClient.pauseContainerCmd(postgres.containerId).exec()
+        SharedPostgres.container.dockerClient.pauseContainerCmd(SharedPostgres.container.containerId).exec()
     }
 
     private fun unpauseDatabase() {
-        postgres.dockerClient.unpauseContainerCmd(postgres.containerId).exec()
+        SharedPostgres.container.dockerClient.unpauseContainerCmd(SharedPostgres.container.containerId).exec()
     }
 }

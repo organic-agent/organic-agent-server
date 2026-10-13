@@ -2,11 +2,8 @@ package com.soma.wes.global
 
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import com.soma.wes.support.TestcontainersConfiguration
+import com.soma.wes.support.IntegrationTest
 import org.hamcrest.Matchers
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
-import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
@@ -15,9 +12,7 @@ import org.springframework.test.web.servlet.post
 /**
  * 실패 응답이 어디서 발생하든 `{code, message}` 한 형태로 나가는지 확인한다.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@Import(TestcontainersConfiguration::class)
+@IntegrationTest
 class ErrorContractTest @Autowired constructor(
     private val mockMvc: MockMvc,
 ) {

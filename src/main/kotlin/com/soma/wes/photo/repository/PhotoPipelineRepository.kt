@@ -36,9 +36,11 @@ import org.springframework.stereotype.Repository
 @Repository
 class PhotoPipelineRepository(
     dataSource: DataSource,
+    // 운영은 기본값만 쓴다. 테스트가 포기 동작을 30초 기다리지 않고 보려고 짧은 값을 넘긴다.
+    queryTimeoutSeconds: Int = QUERY_TIMEOUT_SECONDS,
 ) {
 
-    private val jdbcClient: JdbcClient = JdbcClient.create(JdbcTemplate(dataSource).apply { queryTimeout = QUERY_TIMEOUT_SECONDS })
+    private val jdbcClient: JdbcClient = JdbcClient.create(JdbcTemplate(dataSource).apply { queryTimeout = queryTimeoutSeconds })
 
     /** 갤러리 하나의 진행 카운트. [liveSince] 이후 만들어진 PENDING이 "아직 올라오는 중"이다. */
     fun progressOf(galleryId: Long, liveSince: ZonedDateTime): GalleryAnalysisProgress = jdbcClient.sql(
@@ -605,6 +607,6 @@ class PhotoPipelineRepository(
         const val ANALYSIS_STALLED = "ANALYSIS_STALLED"
 
         /** 문장 하나의 실행 제한(초). dev 실측에서 스윕 문장은 20ms 이하·진행 카운트 14ms(7,189장 갤러리) — 그 천 배 이상이다. */
-        private const val QUERY_TIMEOUT_SECONDS = 30
+        const val QUERY_TIMEOUT_SECONDS = 30
     }
 }
