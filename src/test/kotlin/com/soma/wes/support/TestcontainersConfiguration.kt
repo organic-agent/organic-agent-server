@@ -1,21 +1,25 @@
 package com.soma.wes.support
 
 import org.springframework.boot.test.context.TestConfiguration
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.context.annotation.Bean
-import org.testcontainers.containers.PostgreSQLContainer
-import org.testcontainers.utility.DockerImageName
+import org.springframework.test.context.DynamicPropertyRegistrar
 
+/**
+ * 컨텍스트마다 [SharedPostgres] 컨테이너 안에 빈 데이터베이스를 하나 만들어 붙인다.
+ *
+ * 컨테이너는 테스트 JVM에 하나뿐이고, 데이터베이스는 컨텍스트마다 따로다. 캐시에 남아 있는 다른 컨텍스트의
+ * 주기 작업이 지금 도는 테스트의 데이터를 건드리지 않게 하려는 것이다 — 컨테이너를 컨텍스트마다 띄우던 때의 격리를 그대로 둔다.
+ */
 @TestConfiguration(proxyBeanMethods = false)
 class TestcontainersConfiguration {
 
     @Bean
-    @ServiceConnection
-    fun postgresContainer(): PostgreSQLContainer<*> =
-        // 순정 postgres가 아니라 pgvector 확장이 들어 있는 이미지여야 한다. 기준선 마이그레이션의
-        // CREATE EXTENSION vector가 실패하면 컨텍스트 로딩이 통째로 깨진다.
-        // 로컬(docker-compose.local.yml)·운영과 메이저 버전을 맞춘다.
-        PostgreSQLContainer(
-            DockerImageName.parse("pgvector/pgvector:pg16").asCompatibleSubstituteFor("postgres"),
-        )
+    fun postgresDatabase(): DynamicPropertyRegistrar {
+        val url = SharedPostgres.createDatabase()
+        return DynamicPropertyRegistrar { registry ->
+            registry.add("spring.datasource.url") { url }
+            registry.add("spring.datasource.username") { SharedPostgres.container.username }
+            registry.add("spring.datasource.password") { SharedPostgres.container.password }
+        }
+    }
 }

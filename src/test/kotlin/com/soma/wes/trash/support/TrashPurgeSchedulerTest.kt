@@ -8,6 +8,7 @@ import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.trash.RecordingTrashPhotoStorage
+import com.soma.wes.trash.RecordingTrashPhotoStorageConfig
 import com.soma.wes.trash.config.TrashProperties
 import com.soma.wes.trash.repository.TrashRepository
 import com.soma.wes.workspace.domain.Workspace
@@ -16,10 +17,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.TestConfiguration
-import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
-import org.springframework.context.annotation.Primary
 import org.springframework.jdbc.core.JdbcTemplate
 import java.time.ZonedDateTime
 import java.util.concurrent.atomic.AtomicLong
@@ -30,7 +28,7 @@ import java.util.concurrent.atomic.AtomicLong
  * 소유한다. `@Scheduled` 주기는 검증 대상이 아니다.
  */
 @IntegrationTest
-@Import(TrashPurgeSchedulerTest.RecordingStorageConfig::class)
+@Import(RecordingTrashPhotoStorageConfig::class)
 class TrashPurgeSchedulerTest @Autowired constructor(
     private val trashPurgeScheduler: TrashPurgeScheduler,
     private val trashRepository: TrashRepository,
@@ -108,12 +106,4 @@ class TrashPurgeSchedulerTest @Autowired constructor(
 
     private fun expiredAt(): ZonedDateTime =
         ZonedDateTime.now().minus(trashProperties.retention).minusHours(1)
-
-    @TestConfiguration(proxyBeanMethods = false)
-    class RecordingStorageConfig {
-
-        @Bean
-        @Primary
-        fun recordingTrashPhotoStorage(): RecordingTrashPhotoStorage = RecordingTrashPhotoStorage()
-    }
 }

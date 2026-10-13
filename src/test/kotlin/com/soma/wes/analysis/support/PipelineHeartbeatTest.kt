@@ -8,6 +8,7 @@ import com.soma.wes.support.CapturedLogs
 import com.soma.wes.support.FakeAiTaskSender
 import com.soma.wes.support.FakeOpsAlertSender
 import com.soma.wes.support.IntegrationTest
+import com.soma.wes.support.SharedPostgres
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.BeforeEach
@@ -16,7 +17,6 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.jdbc.core.JdbcTemplate
-import org.testcontainers.containers.PostgreSQLContainer
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -35,7 +35,6 @@ class PipelineHeartbeatTest @Autowired constructor(
     private val photoFixture: PhotoFixture,
     private val aiTaskSender: FakeAiTaskSender,
     private val opsAlertSender: FakeOpsAlertSender,
-    private val postgres: PostgreSQLContainer<*>,
     private val jdbcTemplate: JdbcTemplate,
     private val clock: Clock,
 ) {
@@ -208,10 +207,10 @@ class PipelineHeartbeatTest @Autowired constructor(
     private fun minutesAgo(minutes: Long): Instant = clock.instant().minus(Duration.ofMinutes(minutes))
 
     private fun pauseDatabase() {
-        postgres.dockerClient.pauseContainerCmd(postgres.containerId).exec()
+        SharedPostgres.container.dockerClient.pauseContainerCmd(SharedPostgres.container.containerId).exec()
     }
 
     private fun unpauseDatabase() {
-        postgres.dockerClient.unpauseContainerCmd(postgres.containerId).exec()
+        SharedPostgres.container.dockerClient.unpauseContainerCmd(SharedPostgres.container.containerId).exec()
     }
 }
