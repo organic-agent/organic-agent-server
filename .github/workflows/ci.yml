@@ -3,6 +3,9 @@ name: 공통 CI
 on:
   pull_request:
     branches: [main, develop]
+  # develop에 합쳐진 결과를 한 번 더 확인하고, PR·배포가 읽을 Gradle 빌드 캐시를 남긴다. dev 배포(cd-dev.yml)는 이 실행을 기다리지 않는다.
+  push:
+    branches: [develop]
 
 # 테스트 결과를 체크로 남기려면 쓰기 권한이 필요하다.
 permissions:
@@ -26,10 +29,26 @@ jobs:
           distribution: "temurin"
           cache: gradle
 
+      # 컴파일 결과를 실행 사이에 재사용한다(gradle.properties의 org.gradle.caching). 공통 CI가 develop push에서 저장한 캐시를 읽는다.
+      - name: Gradle 빌드 캐시 복원
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.gradle/caches/build-cache-1
+          key: gradle-build-cache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: gradle-build-cache-${{ runner.os }}-
+
       - name: 테스트 실행
         run: |
           chmod +x ./gradlew
           ./gradlew test --no-daemon
+
+      # 캐시는 develop push에서만 저장한다. PR이 저장한 캐시는 그 PR만 읽을 수 있어 자리만 차지한다.
+      - name: Gradle 빌드 캐시 저장
+        if: github.event_name == 'push'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.gradle/caches/build-cache-1
+          key: gradle-build-cache-${{ runner.os }}-${{ github.sha }}
 
       - name: GitHub Actions run 길이 제한 검사
         run: ruby ./scripts/check-workflow-run-size.rb

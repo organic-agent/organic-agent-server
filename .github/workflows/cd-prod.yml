@@ -17,14 +17,15 @@ env:
   # 그 외 t3·m5 등 인텔/AMD 계열이면 linux/amd64.
   # 어긋나면 컨테이너가 `exec format error`로 즉시 죽는다.
   # → Graviton(ARM) 인스턴스를 쓰기로 해서 arm64로 빌드한다.
-  #    Dockerfile엔 RUN 스텝이 없어(COPY + ENTRYPOINT뿐) amd64 러너에서 QEMU 없이 빌드된다.
+  #    Dockerfile에 RUN(apt-get curl)이 있어 amd64 러너에선 QEMU 에뮬레이션으로 이미지마다 40초씩 걸렸다.
+  #    그래서 이미지를 만드는 잡은 ARM 러너(ubuntu-24.04-arm)에서 네이티브로 빌드한다.
   PLATFORM: linux/arm64
 
 jobs:
   # --- Job 1: 빌드 및 이미지 푸시 (쓰기 권한) ---
   build-and-push:
     name: 빌드 후 GHCR에 푸쉬
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
       packages: write
@@ -45,13 +46,19 @@ jobs:
           distribution: "temurin"
           cache: gradle
 
+      # 컴파일 결과를 실행 사이에 재사용한다(gradle.properties의 org.gradle.caching). 공통 CI가 develop push에서 저장한 캐시를 읽는다.
+      - name: Gradle 빌드 캐시 복원
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.gradle/caches/build-cache-1
+          key: gradle-build-cache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: gradle-build-cache-${{ runner.os }}-
+
+      # main은 develop을 그대로 FF한 커밋(테스트는 develop → main PR의 공통 CI가 돌렸다)이거나 hotfix PR의 squash라 테스트를 다시 돌리지 않는다.
       - name: JAR 빌드
         run: |
           chmod +x ./gradlew
-          ./gradlew clean build --no-daemon
-
-      - name: ARM64 에뮬레이션 설정
-        uses: docker/setup-qemu-action@v3
+          ./gradlew :wes-api:bootJar :wes-admin-api:bootJar --no-daemon
 
       - name: Docker Buildx 설정
         uses: docker/setup-buildx-action@v3
@@ -82,6 +89,8 @@ jobs:
           platforms: ${{ env.PLATFORM }}
           push: true
           tags: ${{ steps.image_meta.outputs.public_image_name }}:${{ github.sha }}
+          cache-from: type=gha,scope=wes-api
+          cache-to: type=gha,mode=max,scope=wes-api
 
       - name: 관리자 API 이미지 빌드 및 푸쉬
         uses: docker/build-push-action@v6
@@ -91,6 +100,8 @@ jobs:
           platforms: ${{ env.PLATFORM }}
           push: true
           tags: ${{ steps.image_meta.outputs.admin_image_name }}:${{ github.sha }}
+          cache-from: type=gha,scope=wes-admin-api
+          cache-to: type=gha,mode=max,scope=wes-admin-api
 
   # --- Job 2: 배포 (SSM Run Command) ---
   # SSH 대신 SSM을 쓴다: 보안그룹에 22번 인바운드가 없고(인프라 기본값), EC2 퍼블릭 IP는

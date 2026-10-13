@@ -18,14 +18,15 @@ env:
   # 그 외 t3·m5 등 인텔/AMD 계열이면 linux/amd64.
   # 어긋나면 컨테이너가 `exec format error`로 즉시 죽는다.
   # → Graviton(ARM) 인스턴스를 쓰기로 해서 arm64로 빌드한다.
-  #    Dockerfile엔 RUN 스텝이 없어(COPY + ENTRYPOINT뿐) amd64 러너에서 QEMU 없이 빌드된다.
+  #    Dockerfile에 RUN(apt-get curl)이 있어 amd64 러너에선 QEMU 에뮬레이션으로 이미지마다 40초씩 걸렸다.
+  #    그래서 이미지를 만드는 잡은 ARM 러너(ubuntu-24.04-arm)에서 네이티브로 빌드한다.
   PLATFORM: linux/arm64
 
 jobs:
   # --- Job 1: 빌드 및 이미지 푸시 (쓰기 권한) ---
   build-and-push:
     name: 빌드 후 GHCR에 푸쉬
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
       packages: write
@@ -70,13 +71,24 @@ jobs:
           distribution: "temurin"
           cache: gradle
 
+      # 컴파일 결과를 실행 사이에 재사용한다(gradle.properties의 org.gradle.caching). 공통 CI가 develop push에서 저장한 캐시를 읽는다.
+      - name: Gradle 빌드 캐시 복원
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.gradle/caches/build-cache-1
+          key: gradle-build-cache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: gradle-build-cache-${{ runner.os }}-
+
+      # 테스트는 PR의 공통 CI가 이미 돌렸고, develop에 합쳐진 결과는 공통 CI(push)가 배포와 나란히 다시 돌린다 — 배포는 기다리지 않는다.
+      # 예외: sync-develop.yml이 develop을 main 위로 rebase하고 직접 띄운 실행(workflow_dispatch)은 공통 CI가 돌지 않으므로 여기서 테스트까지 한다.
       - name: JAR 빌드
         run: |
           chmod +x ./gradlew
-          ./gradlew clean build --no-daemon
-
-      - name: ARM64 에뮬레이션 설정
-        uses: docker/setup-qemu-action@v3
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ./gradlew build --no-daemon
+          else
+            ./gradlew :wes-api:bootJar :wes-admin-api:bootJar --no-daemon
+          fi
 
       - name: Docker Buildx 설정
         uses: docker/setup-buildx-action@v3
@@ -107,6 +119,8 @@ jobs:
           platforms: ${{ env.PLATFORM }}
           push: true
           tags: ${{ steps.image_meta.outputs.public_image_name }}:${{ github.sha }}
+          cache-from: type=gha,scope=wes-api
+          cache-to: type=gha,mode=max,scope=wes-api
 
       - name: 관리자 API 이미지 빌드 및 푸쉬
         uses: docker/build-push-action@v6
@@ -116,6 +130,8 @@ jobs:
           platforms: ${{ env.PLATFORM }}
           push: true
           tags: ${{ steps.image_meta.outputs.admin_image_name }}:${{ github.sha }}
+          cache-from: type=gha,scope=wes-admin-api
+          cache-to: type=gha,mode=max,scope=wes-admin-api
 
   # --- Job 2: 배포 (SSM Run Command) ---
   # SSH 대신 SSM을 쓴다: 보안그룹에 22번 인바운드가 없고(인프라 기본값), EC2 퍼블릭 IP는
