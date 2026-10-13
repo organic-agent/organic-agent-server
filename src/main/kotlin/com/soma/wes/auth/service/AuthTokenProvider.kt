@@ -6,9 +6,12 @@ import com.soma.wes.auth.domain.RefreshToken
 import com.soma.wes.user.domain.Role
 import com.soma.wes.auth.domain.Subject
 import com.soma.wes.auth.domain.Token
+import com.soma.wes.auth.dto.AccessCacheKeyDto
+import com.soma.wes.auth.dto.requireActive
 import com.soma.wes.auth.exception.AuthErrorCode
 import com.soma.wes.auth.exception.TokenException
 import com.soma.wes.auth.repository.AuthAccessStatusRepository
+import com.soma.wes.auth.service.port.AccessCache
 import com.soma.wes.auth.token.JwtProvider
 import com.soma.wes.auth.token.TokenStorage
 import com.soma.wes.auth.token.TokenType
@@ -35,6 +38,7 @@ class AuthTokenProvider(
     private val tokenStorage: TokenStorage,
     private val userRepository: UserRepository,
     private val accessStatusRepository: AuthAccessStatusRepository,
+    private val accessCache: AccessCache?,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -97,7 +101,7 @@ class AuthTokenProvider(
      */
     fun getAuthUser(accessToken: AccessToken): Authentication {
         val claims = verifiedClaims(accessToken)
-        accessStatusRepository.requireActive(Subject(claims.subject).toUserId())
+        requireActiveForRequest(Subject(claims.subject).toUserId())
 
         val role = runCatching { Role.valueOf(claims.requireString(ROLE_CLAIM)) }
             .getOrElse { throw TokenException(AuthErrorCode.TOKEN_INVALID) }
@@ -109,6 +113,15 @@ class AuthTokenProvider(
             authorities = authorities,
         )
         return UsernamePasswordAuthenticationToken(loginUser, "", authorities)
+    }
+
+    /**
+     * 요청마다 오는 확인이라 [accessCache]가 있으면 거친다(#286 (k)) — 관리자 정지는 최대 TTL(30초) 뒤에 반영된다.
+     * 토큰 발급·재발급은 이 길을 지나지 않고 늘 DB를 본다.
+     */
+    private fun requireActiveForRequest(userId: Long) {
+        val cache = accessCache ?: return accessStatusRepository.requireActive(userId)
+        cache.get(AccessCacheKeyDto.userStatus(userId)) { accessStatusRepository.findStatus(userId) }.requireActive()
     }
 
     /**
