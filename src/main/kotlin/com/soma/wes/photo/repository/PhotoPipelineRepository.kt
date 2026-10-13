@@ -25,6 +25,9 @@ import org.springframework.stereotype.Repository
  * GPU 제어·score 폴백([countScoreBacklog]·[findGalleryIdsWithUnscoredPhotos]·[findUnscoredPhotoIds]).
  * 하트비트는 이 중 대기량([countPending]·[countInFlightEmbedBatches]·[countScoreBacklog])을 1분마다 읽는다.
  *
+ * 끝난 사진도 `dispatched_at`을 그대로 갖고 있으므로, 배정 시각으로 미완료를 찾는 문장은 시각 범위를 받아 최근 배정만 읽는다
+ * (`idx_photos_dispatched`, #286 (l)) — 범위가 없으면 사진이 쌓일수록 5초마다 읽는 양이 끝없이 는다.
+ *
  * 문장마다 [QUERY_TIMEOUT_SECONDS] 제한을 건다(#275). 5초 스윕이 부르는 문장은 평소 20ms 이하라, 그보다 오래 걸리면 기다리지 않고
  * 포기해 다음 회차에 다시 한다 — 스케줄러 스레드를 붙잡지 않게. 공용 `JdbcClient` 빈이 아니라 여기서 만든다: 같은 타입의 빈을 하나
  * 등록하면 자동 구성 빈이 빠져 다른 저장소까지 이 제한을 받는다. 트랜잭션 안에서 불리면 같은 연결을 쓴다(`DataSourceUtils`).
@@ -225,17 +228,22 @@ class PhotoPipelineRepository(
     /**
      * 배정한 지 오래됐는데 아직 벡터가 없는 사진의 배정을 되돌린다(Lambda가 죽었거나 시간을 넘긴 배치).
      * 시도 수는 그대로다 — 상한은 이 경로로 찬다. 되돌린 사진은 다음 스윕이 다시 집는다.
+     *
+     * [since]가 있으면 배정 시각이 [since] 이후인 것만 본다(`idx_photos_dispatched` 범위). 끝난 사진도 배정 시각을 그대로 갖고 있어서
+     * 범위가 없으면 지금까지 배정한 사진 전부를 분석 행과 맞춰 본다(#286 (l)). 호출자가 지난번 [before]부터 이어 보게 하고, 시작 직후
+     * 한 번은 null로 전부 본다.
      */
-    fun releaseStaleDispatches(before: ZonedDateTime): Int = jdbcClient.sql(
+    fun releaseStaleDispatches(since: ZonedDateTime?, before: ZonedDateTime): Int = jdbcClient.sql(
         """
         UPDATE photos p
         SET dispatched_at = NULL
         WHERE p.status = 'UPLOADED' AND p.deleted_at IS NULL
-          AND p.dispatched_at IS NOT NULL AND p.dispatched_at < :before
+          AND p.dispatched_at IS NOT NULL AND p.dispatched_at < :before ${if (since == null) "" else "AND p.dispatched_at >= :since"}
           AND NOT EXISTS (SELECT 1 FROM photo_analysis a WHERE a.photo_id = p.id AND (a.embedding IS NOT NULL OR a.error IS NOT NULL))
         """.trimIndent(),
     )
         .param("before", Timestamp.from(before.toInstant()))
+        .apply { if (since != null) param("since", Timestamp.from(since.toInstant())) }
         .update()
 
     /**
@@ -347,23 +355,25 @@ class PhotoPipelineRepository(
         .query { rs, _ -> rs.getLong(1) }
         .single()
 
-    /** 지금 떠 있는 임베더 배치 수. 한 배치의 사진은 같은 `dispatched_at`을 받으므로 서로 다른 시각의 수가 곧 배치 수다. */
-    fun countInFlightEmbedBatches(): Int = jdbcClient.sql(
+    /**
+     * 지금 떠 있는 임베더 배치 수. 한 배치의 사진은 같은 `dispatched_at`을 받으므로 서로 다른 시각의 수가 곧 배치 수다.
+     * [dispatchedSince](= 지금 − 재배정 시간) 이후 배정만 센다 — 그보다 오래된 미완료 배정은 같은 회차에서 먼저 도는
+     * [releaseStaleDispatches]가 되돌린다. 범위 덕에 끝난 사진 전체가 아니라 최근 배정만 읽는다(`idx_photos_dispatched`, #286 (l)).
+     */
+    fun countInFlightEmbedBatches(dispatchedSince: ZonedDateTime): Int = jdbcClient.sql(
         """
         SELECT count(DISTINCT p.dispatched_at)
         FROM photos p
         LEFT JOIN photo_analysis a ON a.photo_id = p.id
-        WHERE p.status = 'UPLOADED' AND p.deleted_at IS NULL AND p.dispatched_at IS NOT NULL
+        WHERE p.status = 'UPLOADED' AND p.deleted_at IS NULL
+          AND p.dispatched_at IS NOT NULL AND p.dispatched_at >= :since
           AND a.embedding IS NULL AND a.error IS NULL
         """.trimIndent(),
     )
+        .param("since", Timestamp.from(dispatchedSince.toInstant()))
         .query { rs, _ -> rs.getInt(1) }
         .single()
 
-    /**
-     * GPU 워커가 곧 집게 될 일의 양 — 업로드됐고 실패하지 않았는데 점수가 없는 사진 전부(아직 벡터도 없는 사진 포함).
-     * 켤지 말지의 기준이다: 벡터가 오기 전에 미리 켜 두면 부팅 시간이 임베딩과 겹친다.
-     */
     /** [since] 뒤에 업로드 URL이 발급되어 아직 올라오는 중인 사진이 있나 — GPU를 업로드와 함께 켜는 신호. `idx_photos_pending`을 탄다. */
     fun hasUploadStartedSince(since: ZonedDateTime): Boolean = jdbcClient.sql(
         """
@@ -377,15 +387,33 @@ class PhotoPipelineRepository(
         .query { rs, _ -> rs.getBoolean(1) }
         .single()
 
-    fun countScoreBacklog(): Long = jdbcClient.sql(
+    /**
+     * GPU 워커가 곧 집게 될 일의 양 — 업로드됐고 실패하지 않았는데 점수가 없는 사진 전부(아직 벡터도 없는 사진 포함).
+     * 켤지 말지의 기준이다: 벡터가 오기 전에 미리 켜 두면 부팅 시간이 임베딩과 겹친다.
+     *
+     * 끝난 사진 전체를 훑지 않게 셋으로 나눠 센다(#286 (l)) — 점수 없는 분석 행(`idx_photo_analysis_unscored`) + 분석 행이 아직 없는 사진 중
+     * 배정 전(`idx_photos_embed_queue`)과 [dispatchedSince] 이후 배정(`idx_photos_dispatched`). 그보다 오래 배정된 채 행이 없는 사진은
+     * 세지 않는다: 벡터가 없어 워커가 집을 수 없고, 같은 회차의 [releaseStaleDispatches]가 되돌리면 "배정 전"으로 다시 잡힌다.
+     */
+    fun countScoreBacklog(dispatchedSince: ZonedDateTime): Long = jdbcClient.sql(
         """
-        SELECT count(*)
-        FROM photos p
-        LEFT JOIN photo_analysis a ON a.photo_id = p.id
-        WHERE p.status = 'UPLOADED' AND p.deleted_at IS NULL
-          AND a.clip_embedding IS NULL AND a.error IS NULL
+        SELECT (SELECT count(*)
+                FROM photo_analysis a
+                JOIN photos p ON p.id = a.photo_id
+                WHERE a.clip_embedding IS NULL AND a.error IS NULL
+                  AND p.status = 'UPLOADED' AND p.deleted_at IS NULL)
+             + (SELECT count(*)
+                FROM photos p
+                WHERE p.status = 'UPLOADED' AND p.deleted_at IS NULL AND p.dispatched_at IS NULL
+                  AND NOT EXISTS (SELECT 1 FROM photo_analysis a WHERE a.photo_id = p.id))
+             + (SELECT count(*)
+                FROM photos p
+                WHERE p.status = 'UPLOADED' AND p.deleted_at IS NULL
+                  AND p.dispatched_at IS NOT NULL AND p.dispatched_at >= :since
+                  AND NOT EXISTS (SELECT 1 FROM photo_analysis a WHERE a.photo_id = p.id))
         """.trimIndent(),
     )
+        .param("since", Timestamp.from(dispatchedSince.toInstant()))
         .query { rs, _ -> rs.getLong(1) }
         .single()
 

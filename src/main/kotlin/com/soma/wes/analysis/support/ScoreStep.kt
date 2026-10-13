@@ -78,7 +78,7 @@ class ScoreStep(
 
     fun advance() {
         val now = ZonedDateTime.now(clock)
-        val backlog = photoPipelineRepository.countScoreBacklog()
+        val backlog = photoPipelineRepository.countScoreBacklog(dispatchedSince = now.minus(properties.embedRedispatchAfter))
         val workerBacklog = backlog + countQualityBacklog()
         observeProgress(workerBacklog, now)
         observeDelivery(backlog, now)

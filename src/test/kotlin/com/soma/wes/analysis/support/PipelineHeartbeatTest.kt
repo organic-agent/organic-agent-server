@@ -15,6 +15,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.jdbc.core.JdbcTemplate
 import org.testcontainers.containers.PostgreSQLContainer
 import java.time.Clock
 import java.time.Duration
@@ -35,6 +36,7 @@ class PipelineHeartbeatTest @Autowired constructor(
     private val aiTaskSender: FakeAiTaskSender,
     private val opsAlertSender: FakeOpsAlertSender,
     private val postgres: PostgreSQLContainer<*>,
+    private val jdbcTemplate: JdbcTemplate,
     private val clock: Clock,
 ) {
 
@@ -95,6 +97,36 @@ class PipelineHeartbeatTest @Autowired constructor(
             // then
             assertThat(beat.formattedMessage)
                 .isEqualTo("event=sweep.heartbeat active_jobs=1 embed_inflight=1 pending=1 unscored=2")
+        }
+
+        @Test
+        fun `끝난 사진과 오래 배정된 채 남은 사진은 떠 있는 배치와 점수 대기로 세지 않는다`() {
+            // given — 끝난 사진도 배정 시각을 그대로 갖는다. 세는 문장은 최근 배정만 범위로 읽는다(#286 (l))
+            val galleryId = galleryFixture.멤버와_열린_갤러리().galleryId
+            photoFixture.업로드된_사진(galleryId, count = 1)                                       // 배정 전 — 센다
+            val recent = photoFixture.업로드된_사진(galleryId, count = 1)                         // 방금 배정 — 센다
+            photoFixture.임베딩된_사진(galleryId, count = 1)                                       // 벡터만 있음 — 센다
+            val scored = photoFixture.임베딩된_사진(galleryId, count = 1).onEach { photoFixture.점수_적재(it) }
+            val failed = photoFixture.업로드된_사진(galleryId, count = 1).onEach { photoFixture.분석_실패(it) }
+            val stale = photoFixture.업로드된_사진(galleryId, count = 1)                          // 되돌리기를 기다림 — 세지 않는다
+            dispatch(recent, ago = "0 seconds")
+            dispatch(scored + failed + stale, ago = "1 hour")
+
+            // when
+            val beat = CapturedLogs(PipelineHeartbeat::class).use { logs ->
+                heartbeat.beat()
+                logs.eventsOf("sweep.heartbeat").single()
+            }
+
+            // then
+            assertThat(beat.formattedMessage)
+                .isEqualTo("event=sweep.heartbeat active_jobs=0 embed_inflight=1 pending=0 unscored=3")
+        }
+
+        private fun dispatch(photoIds: Collection<Long>, ago: String) {
+            jdbcTemplate.update(
+                "UPDATE photos SET dispatched_at = now() - interval '$ago' WHERE id IN (${photoIds.joinToString(",")})",
+            )
         }
     }
 
