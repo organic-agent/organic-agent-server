@@ -163,7 +163,7 @@ source "$TABLES/verdict.env"
 
 report_section "1. 단계별 (목표 사용자 수)" "응답 시간 ms · 오류율 = 2xx 아님(담기·빼기의 404·409 는 정상으로 셈)"
 cat "$TABLES/stages.txt"
-report_section "2. 동작별 (전 구간)" "open = 갤러리·요약·셀렉 상태 · list = 사진 목록 200장 한 페이지"
+report_section "2. 동작별 (전 구간)" "open = 갤러리·멤버·폴더·셀렉·추천·협업 세션(요약 없음, 웹과 같음) · list = 사진 목록 200장 한 페이지"
 cat "$TABLES/actions.txt"
 
 report_section "3. 판정 (01 QA-1)"

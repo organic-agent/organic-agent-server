@@ -2,12 +2,16 @@
 //
 //   k6 run -e API=https://dev.api.easyselect.kr -e TARGETS=targets.json -e PROFILE=full -e SUMMARY=summary.json users.js
 //
-// 한 명의 동작은 organic-agent-web 의 실제 호출을 따른다.
-//   열기   갤러리 · 사진 요약 · 셀렉 상태 · 사진 목록 전체(200장씩 끝까지) — 세션 시작과 12분마다(주소 갈아 주기)
-//   5초    사진 상세
-//   10초   별점(PUT, 덮어쓰기) · 셀렉 감시(photo-selection)
-//   15초   담기 → 다음 차례에 같은 사진 빼기(여럿이 같은 갤러리라 409·404 는 정상 응답으로 센다)
+// 한 명의 동작은 organic-agent-web(1e56e2b) 부부 화면(`app/(client)/gallery/[galleryId]`)의 실제 호출을 따른다.
+//   열기   갤러리 · 멤버 · 컨셉 폴더 · 사진 목록 전체(200장씩 끝까지) · 셀렉 상태 · AI 추천 · 협업 세션(세션마다 사진 목록) — 세션 시작에 한 번
+//   12분   사진 목록 전체만 다시(보기 주소 갈아 주기, usePhotoUrlRefresh)
+//   5초    사진 상세(크게 보기)
+//   10초   별점(PUT, 덮어쓰기)
+//   15초   셀렉 감시(photo-selection, useSelectionSync) · 담기 → 다음 차례에 같은 사진 빼기(DELETE 본문 photoIds)
+//          여럿이 같은 갤러리라 409·404 는 정상 응답으로 센다
 //   60초   알림
+// 사진 요약(photos/summary)·최신 분석(ai-analysis)은 부르지 않는다 — 웹은 작가 스튜디오와 부부 개인 갤러리 업로드의
+// 분석 감시에서만 부른다(10-13 대조, 02 §8.1). R-3-a(10-11)는 열기마다 요약을 불러 실제에 없는 부하가 섞였다.
 // 요청마다 action(무엇)·stage(그 순간 목표 사용자 수) 태그를 달아, 요약에서 단계별·동작별 p95 를 따로 본다.
 import http from "k6/http";
 import exec from "k6/execution";
@@ -30,6 +34,7 @@ const PROFILES = {
 };
 const STEPS = PROFILES[PROFILE];
 const ACTIONS = ["open", "list", "detail", "rating", "select", "deselect", "watch", "notifications"];
+const COLLAB_PAGE_SIZE = 200;
 
 function seconds(text) {
   return text.endsWith("m") ? parseInt(text, 10) * 60 : parseInt(text, 10);
@@ -97,8 +102,23 @@ function me() {
 
 function openGallery(g) {
   call("GET", `/api/v1/galleries/${g}`, "open");
-  call("GET", `/api/v1/galleries/${g}/photos/summary`, "open");
+  call("GET", `/api/v1/galleries/${g}/members`, "open");
+  call("GET", `/api/v1/galleries/${g}/concept-folders`, "open");
+  listPhotos(g);
   call("GET", `/api/v1/galleries/${g}/photo-selection`, "open");
+  call("GET", `/api/v1/galleries/${g}/photo-selection/recommendations`, "open");
+  const sessions = call("GET", `/api/v1/galleries/${g}/collab-sessions`, "open");
+  for (const session of sessionsOf(sessions)) {
+    call("GET", `/api/v1/galleries/${g}/collab-sessions/${session}/photos?page=0&size=${COLLAB_PAGE_SIZE}`, "open");
+  }
+}
+
+// 응답은 CollabSessionResponse 배열이다. 회차 갤러리에는 보통 세션이 없어 목록 한 번으로 끝난다.
+function sessionsOf(res) {
+  return res.status === 200 ? res.json().map((session) => session.sessionId) : [];
+}
+
+function listPhotos(g) {
   const ids = [];
   for (let page = 0; page < MAX_PAGES; page++) {
     const res = call("GET", `/api/v1/galleries/${g}/photos?page=${page}&size=${PAGE_SIZE}`, "list");
@@ -119,7 +139,8 @@ export default function () {
   const started = Date.now();
   const g = me().galleryId;
 
-  if (photoIds === null || started - listedAt > RELIST_MS) openGallery(g);
+  if (photoIds === null) openGallery(g);
+  else if (started - listedAt > RELIST_MS) listPhotos(g);
 
   if (photoIds !== null) {
     call("GET", `/api/v1/galleries/${g}/photos/${pick()}`, "detail");
@@ -132,13 +153,13 @@ export default function () {
         call("POST", `/api/v1/galleries/${g}/photo-selection/photos`, "select",
           { photoIds: [held], retouchPhotos: [] }, { responseCallback: SELECTION_STATUSES });
       } else {
-        call("DELETE", `/api/v1/galleries/${g}/photo-selection/photos/${held}`, "deselect",
-          undefined, { responseCallback: SELECTION_STATUSES });
+        call("DELETE", `/api/v1/galleries/${g}/photo-selection/photos`, "deselect",
+          { photoIds: [held] }, { responseCallback: SELECTION_STATUSES });
         held = null;
       }
     }
   }
-  if (tick % 2 === 1) call("GET", `/api/v1/galleries/${g}/photo-selection`, "watch");
+  if (tick % 3 === 1) call("GET", `/api/v1/galleries/${g}/photo-selection`, "watch");
   if (tick % 12 === 0) call("GET", "/api/v1/notifications", "notifications");
 
   tick++;
