@@ -13,6 +13,14 @@ spring:
       - optional:classpath:/config/application-variable.yml
       - classpath:/config/application-api-runtime.yml
 
+app:
+  activity:
+    buffer:
+      # 활동 시각을 요청마다 쓰지 않고 모아 5초마다 쓴다(#286 (f)) — 한 스튜디오의 갤러리 여럿에서 동시에 쓰면 모든 쓰기가
+      # workspace_activity 한 행을 기다렸다(R-3-a4). 공개 API만 켠다: 테스트는 이 파일을 읽지 않아 지금처럼 바로 쓴다.
+      enabled: true
+      flush-interval: PT5S
+
 ---
 spring:
   config:
