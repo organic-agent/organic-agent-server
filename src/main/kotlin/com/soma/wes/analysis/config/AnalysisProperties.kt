@@ -60,6 +60,7 @@ data class AnalysisProperties(
     val backofficeBaseUrl: String = "https://admin.easyselect.kr",
     val gpu: Gpu = Gpu(),
     val qualityStage: QualityStage = QualityStage(),
+    val failureQueue: FailureQueue = FailureQueue(),
 ) {
 
     /** 백오피스에서 그 갤러리를 여는 주소. [backofficeBaseUrl]이 비어 있으면 null 이다. */
@@ -103,4 +104,28 @@ data class AnalysisProperties(
         /** rank 모드를 갤러리 잡 하나에 이 횟수까지 보낸다. 넘으면 오류 로그만 남긴다 — 폴더는 이미 있고 추천만 준비 중으로 남는다. */
         val rankMaxAttempts: Int = 3,
     )
+
+    /**
+     * 분석 Lambda 실패 큐(#286 (c) ②). Lambda 가 끝내 실패한 호출을 OnFailure 로 넣은 SQS 큐를 전용 스레드가 읽어, 그 작업의 재전송 대기를
+     * 앞당기고 실패를 기록한다([com.soma.wes.analysis.support.AiFailureListener]). [queueUrl]이 비어 있으면 읽지 않는다 — 로컬·테스트·큐가 없는
+     * 환경은 지금처럼 시간 기반 재전송(임베더 [embedRedispatchAfter] · categorize [categorizeTimeout] · rank [QualityStage.rankTimeout])만 쓴다.
+     * 큐 주소는 인프라가 Parameter Store(`app.analysis.failure-queue.queue-url`)에 둔다.
+     */
+    data class FailureQueue(
+        val queueUrl: String = "",
+        /** 한 번 읽을 때 메시지를 기다리는 시간(롱 폴링, SQS 상한 20초). 메시지가 오면 바로 돌아온다. */
+        val waitTime: Duration = Duration.ofSeconds(10),
+        /**
+         * N번째 시도가 실패한 뒤 다시 보내기까지 기다리는 시간(N = 1, 2, …). 몇 분짜리 일시 장애(Bedrock 제한 등)에 시도를 한꺼번에
+         * 다 쓰지 않게 점점 늘린다. 목록보다 시도가 많으면 마지막 값을 쓴다. 상한에 닿은 실패는 기다리지 않는다 — 곧바로 실패로 닫히게.
+         */
+        val retryDelays: List<Duration> = listOf(Duration.ZERO, Duration.ofMinutes(1), Duration.ofMinutes(5)),
+    ) {
+
+        val isEnabled: Boolean
+            get() = queueUrl.isNotBlank()
+
+        fun retryDelayAfter(failedAttempt: Int, maxAttempts: Int): Duration =
+            if (failedAttempt >= maxAttempts) Duration.ZERO else retryDelays.getOrElse(failedAttempt - 1) { retryDelays.last() }
+    }
 }

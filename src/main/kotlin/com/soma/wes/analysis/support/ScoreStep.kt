@@ -92,6 +92,18 @@ class ScoreStep(
         if (isFallbackDue(now)) fallback(now)
     }
 
+    /**
+     * score 폴백이 끝내 실패했다(실패 큐, #286 (c)) — 그 갤러리의 폴백 간격([AnalysisProperties.Gpu.fallbackInterval])이 [retryAt]에 차도록
+     * 마지막 전송 시각을 앞당긴다. 다시 보내는 것은 다음 걸음의 [fallback]이고, 갤러리 상한([AnalysisProperties.scoreFallbackMax])은 그대로다.
+     * 인메모리라 이 서버가 보낸 폴백에만 닿는다 — 다른 서버의 폴백이면 그 서버의 간격대로 간다. 지금 몇 번째였는지를 돌려준다(없으면 0).
+     */
+    fun expediteFallback(galleryId: Long, retryAt: (attempt: Int) -> ZonedDateTime): Int {
+        val attempt = fallbackCount[galleryId] ?: return 0
+        val sentAt = retryAt(attempt).minus(properties.gpu.fallbackInterval)
+        fallbackSentAt.computeIfPresent(galleryId) { _, last -> if (sentAt.isBefore(last)) sentAt else last }
+        return attempt
+    }
+
     private fun countQualityBacklog(): Long =
         if (properties.qualityStage.enabled) photoPipelineRepository.countQualityBacklog() else 0L
 

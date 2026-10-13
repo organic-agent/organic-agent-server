@@ -247,6 +247,48 @@ class PhotoPipelineRepository(
         .update()
 
     /**
+     * 임베더가 끝내 실패한 배치(실패 큐, #286 (c))의 배정을 앞당겨 푼다 — 배정 시각을 [dispatchedAtFor]로 옮겨, 재배정 시간이 그만큼 일찍
+     * 차게 한다. 실제로 푸는 것은 스윕의 [releaseStaleDispatches]이고 다시 집는 것도 스윕이라 보내는 길은 하나로 남는다.
+     * [dispatchedAtFor]는 사진의 시도 수를 받아 옮길 배정 시각을 돌려준다(`지금 − 재배정 시간 + 기다릴 시간` — 시도가 늘수록 늦게, 호출자가 정한다).
+     *
+     * 대상: 아직 배정 중이고 벡터·실패가 없으며, 배정이 실패 시각([failedAt]) 이전인 사진. 그 뒤에 다시 배정된 사진은 이 실패의 몫이 아니다.
+     * 배정 시각은 앞으로만 옮긴다(이미 더 일찍 풀릴 예정이면 그대로). 같은 메시지를 두 번 받아도 결과가 같다. 옮긴 사진 수를 돌려준다.
+     */
+    fun expediteEmbedRedispatch(
+        photoIds: Collection<Long>,
+        failedAt: ZonedDateTime,
+        dispatchedAtFor: (attempts: Int) -> ZonedDateTime,
+    ): Int {
+        if (photoIds.isEmpty()) return 0
+        val attemptsById = jdbcClient.sql(
+            """
+            SELECT p.id, p.embed_attempts
+            FROM photos p
+            WHERE p.id IN (:photoIds) AND p.status = 'UPLOADED' AND p.deleted_at IS NULL
+              AND p.dispatched_at IS NOT NULL AND p.dispatched_at <= :failedAt
+              AND NOT EXISTS (SELECT 1 FROM photo_analysis a WHERE a.photo_id = p.id AND (a.embedding IS NOT NULL OR a.error IS NOT NULL))
+            """.trimIndent(),
+        )
+            .param("photoIds", photoIds.toList())
+            .param("failedAt", Timestamp.from(failedAt.toInstant()))
+            .query { rs, _ -> rs.getLong(1) to rs.getInt(2) }
+            .list()
+        return attemptsById.groupBy({ (_, attempts) -> attempts }, { (id, _) -> id }).entries.sumOf { (attempts, ids) ->
+            jdbcClient.sql(
+                """
+                UPDATE photos p
+                SET dispatched_at = :releaseAt
+                WHERE p.id IN (:photoIds) AND p.dispatched_at IS NOT NULL AND p.dispatched_at <= :failedAt AND p.dispatched_at > :releaseAt
+                """.trimIndent(),
+            )
+                .param("photoIds", ids)
+                .param("failedAt", Timestamp.from(failedAt.toInstant()))
+                .param("releaseAt", Timestamp.from(dispatchedAtFor(attempts).toInstant()))
+                .update()
+        }
+    }
+
+    /**
      * 시도 상한에 닿고도 벡터가 없는 사진을 결정적 실패로 표시한다 — `photo_analysis.error`를 UPSERT. 이후 배정·기대 장수·
      * 집기 전부에서 빠지고, 사진 상세·요약에 실패로 드러난다. 되돌리는 길은 재분석 리셋([resetAnalysis])뿐이다.
      *

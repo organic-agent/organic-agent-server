@@ -51,6 +51,12 @@ enum class AnalysisErrorCode(
      */
     OPS_ALERT_SEND_FAILED(HttpStatus.BAD_GATEWAY, "ANALYSIS_502_1", "운영 알림을 보내지 못했습니다."),
 
+    /**
+     * 분석 Lambda 실패 큐(SQS)를 읽거나 지우지 못한 경우(권한·네트워크·큐 없음). 사용자에게 나가지 않는다 — 실패 큐 리스너가 잡아 로그로 남기고
+     * 잠시 뒤 다시 읽는다. 그동안 재전송은 시간 기반 안전망이 맡는다.
+     */
+    FAILURE_QUEUE_UNAVAILABLE(HttpStatus.BAD_GATEWAY, "ANALYSIS_502_2", "AI 분석 실패 큐를 읽지 못했습니다."),
+
     /** 잡이 지나는 호출(embedder·categorize, GPU가 없으면 score) 중 실행기가 설정되지 않은 것이 있는 경우. 로컬·테스트에는 Lambda가 없는 것이 정상이다. */
     AI_TASK_NOT_CONFIGURED(HttpStatus.SERVICE_UNAVAILABLE, "PHOTO_503_1", "AI 분석 실행이 설정되지 않았습니다."),
 }

@@ -40,4 +40,16 @@ enum class AnalysisJobEventType {
 
     /** rank 모드를 보내는 것 자체가 실패했다. 다음 회차가 다시 보낸다. */
     RANK_SEND_FAILED,
+
+    /** 임베더 Lambda 가 끝내 실패해 실패 큐로 왔다(`ai.failed`, #286 (c)). 그 배치의 배정을 앞당겨 풀었다. */
+    EMBED_FAILED,
+
+    /** score Lambda 폴백이 끝내 실패해 실패 큐로 왔다. 그 갤러리의 폴백 간격을 앞당겼다. */
+    SCORE_FAILED,
+
+    /** categorize Lambda 가 끝내 실패해 실패 큐로 왔다. 재전송 대기를 앞당겼다(상한이면 곧바로 FAILED 로 닫힌다). */
+    CATEGORIZE_FAILED,
+
+    /** categorize rank 모드가 끝내 실패해 실패 큐로 왔다. 재전송 대기를 앞당겼다. */
+    RANK_FAILED,
 }
