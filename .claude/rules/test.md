@@ -1,7 +1,8 @@
 ---
 description: 테스트 작성 규칙 — 통합 테스트 인프라, 픽스처, 단언
 paths:
-  - "src/test/**/*.kt"
+  - "wes-*/src/test/**/*.kt"
+  - "wes-domain/src/testFixtures/kotlin/**/*.kt"
 ---
 
 # 테스트 컨벤션
@@ -25,7 +26,7 @@ paths:
 
 ## 통합 테스트는 `@IntegrationTest` 하나로 시작한다
 
-- `src/test/.../support/IntegrationTest.kt`의 합성 애노테이션이
+- `wes-domain/src/testFixtures/kotlin/com/soma/wes/support/IntegrationTest.kt`의 합성 애노테이션이
   `@SpringBootTest` + MockMvc + pgvector Testcontainers + 테스트 간 TRUNCATE 정리를 조립한다.
   개별 테스트에 그 조각들을 다시 나열하지 마라.
 - **모든 통합 테스트가 같은 조합을 써야 Spring 컨텍스트 하나를 공유한다** (전체 스위트가
@@ -107,7 +108,13 @@ paths:
 
 ## 테스트 인프라의 자리
 
-- 테스트 루트 `support/`: `IntegrationTest`, `TestcontainersConfiguration`,
+- 각 API의 `src/test/resources/application.yml`이 공용 `wes-test-common.yml`을 import한다.
+  공용 설정은 `wes-domain/src/testFixtures/resources`에 둔다.
+- 공용 픽스처는 `wes-domain/src/testFixtures/kotlin`에, 관리자 전용 픽스처는
+  `wes-admin-api/src/test/kotlin`에 둔다. 두 API는 `testFixtures(project(":wes-domain"))`으로 공유한다.
+- 관리자 통합 테스트는 `wes-api`의 `migrationResources` 아티팩트에서 SQL을 읽는다.
+  운영 관리자 JAR에는 이 테스트 의존성과 Flyway SQL이 포함되지 않는다.
+- `wes-domain/src/testFixtures/kotlin/com/soma/wes/support/`: `IntegrationTest`, `TestcontainersConfiguration`,
   `DatabaseCleaner`, `DatabaseClearExtension`, `TestSequence`.
   프로덕션 `support`가 "유스케이스가 기대는 협력자"이듯, 여기는 테스트가 기대는 인프라다.
   도메인에 속하는 것(픽스처)은 여기가 아니라 `{domain}/fixture`에 산다.

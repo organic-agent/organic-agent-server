@@ -1,7 +1,7 @@
 ---
 description: Kotlin 소스 코드를 작성하거나 수정할 때 계층과 무관하게 공통으로 적용되는 컨벤션
 paths:
-  - "src/main/kotlin/**/*.kt"
+  - "wes-*/src/main/kotlin/**/*.kt"
 ---
 
 # Common Code Convention

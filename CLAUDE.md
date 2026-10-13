@@ -5,6 +5,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `wes`는 웨딩 사진 셀렉 서비스 백엔드다. 작가가 갤러리를 만들어 원본을 올리고, 초대받은
 부부가 그 안에서 사진을 고른다. `organic-agent-server`의 `wes` 서비스/모듈이다.
 
+소스는 Gradle 모듈별 `src/`에 둔다. 패키지는 기존 `com.soma.wes`를 유지한다.
+
+- `wes-domain`: 공통 엔티티·정책·서비스·인프라. 실행 앱이 아닌 라이브러리다.
+- `wes-api`: 공개 컨트롤러·보안 설정·`WesApplication`, Flyway 마이그레이션의 소유자다.
+- `wes-admin-api`: 관리자 기능·인증 필터·`WesAdminApiApplication`.
+- 공용 테스트 지원 코드·픽스처·설정은 `wes-domain/src/testFixtures`에서 두 API에 제공한다.
+
 ## 기술 스택
 
 - Kotlin 2.3.21 / Spring Boot 4.1.0 (servlet MVC — WebFlux 아님) / Gradle Kotlin DSL, JVM 21
@@ -23,9 +30,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 ./gradlew build      # 빌드
 ./gradlew test       # 전체 테스트 (Docker 필요)
-./gradlew test --tests "com.soma.wes.WesApplicationTests"               # 단일 클래스
-./gradlew test --tests "com.soma.wes.WesApplicationTests.contextLoads"  # 단일 메서드
-./gradlew bootRun    # 로컬 실행
+./gradlew :wes-api:test --tests "com.soma.wes.WesApplicationTests"               # 단일 클래스
+./gradlew :wes-api:test --tests "com.soma.wes.WesApplicationTests.contextLoads"  # 단일 메서드
+./gradlew :wes-api:bootRun        # 공개 API 로컬 실행
+./gradlew :wes-admin-api:bootRun  # 관리자 API 로컬 실행
 ```
 
 ## 임베딩과 인프라
@@ -54,9 +62,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 인프라는 sibling repo `../../organic-agent-infra` (Terraform: VPC/ALB/EC2/RDS, 사진 S3 버킷
   + 로컬 개발용 로컬 버킷, 임베딩 Lambda; dev 서버는 `environments/dev` 스택). `EMBEDDING_DIMENSION`은 이 repo 두 곳과 인프라 repo까지 세 곳이 일치해야
   한다 (`.claude/rules/migration.md`).
-- 설정은 `src/main/resources/application.yml`이 `config/application-{cloud,db,variable}.yml`을
-  import한다. 시크릿과 인프라 파생 값은 시작 시 AWS Parameter Store(`/wes/{local,dev,prod}/`)에서
-  온다.
+- 각 API의 `src/main/resources/application.yml`이 `wes-domain`의
+  `config/application-{cloud,db,variable}.yml`을 import한다. 시크릿과 인프라 파생 값은 시작 시
+  AWS Parameter Store에서 온다(공개 API `/wes/{local,dev,prod}/`, 관리자 API `/wes/admin-api/{local,dev,prod}/`).
 - 운영 스크립트는 `scripts/`에 (추적됨):
   - `db-tunnel.sh [prod|dev] [port]` — private RDS로 SSM 포트포워딩 (기본 prod 15432, dev 15433). 자격증명은 실행 시
     Parameter Store에서 읽는다.

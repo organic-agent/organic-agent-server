@@ -1,15 +1,15 @@
 ---
 description: Flyway 마이그레이션과 스키마 변경 규칙
 paths:
-  - "src/main/resources/db/migration/*.sql"
-  - "src/main/kotlin/**/domain/*.kt"
+  - "wes-api/src/main/resources/db/migration/*.sql"
+  - "wes-*/src/main/kotlin/**/domain/*.kt"
 ---
 
 # 마이그레이션
 
 ## Flyway가 스키마를 소유한다
 
-- `src/main/resources/db/migration`이 스키마의 유일한 출처다. `ddl-auto`는 모든 프로파일에서
+- `wes-api/src/main/resources/db/migration`이 스키마의 유일한 출처다. `ddl-auto`는 모든 프로파일에서
   `validate` — 스타일 취향이 아니다. `photo_analysis.embedding`은 pgvector `vector(768)` 컬럼이고,
   `CREATE EXTENSION vector`가 어떤 테이블보다 먼저 실행돼야 하는데 `ddl-auto`는 그걸 못 한다.
 - **엔티티·컬럼을 추가하면 마이그레이션을 함께 쓴다.** 예외 없다.

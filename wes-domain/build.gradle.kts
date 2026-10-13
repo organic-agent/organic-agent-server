@@ -1,5 +1,6 @@
 plugins {
     `java-library`
+    `java-test-fixtures`
     kotlin("jvm")
     kotlin("plugin.spring")
     kotlin("plugin.jpa")
@@ -51,22 +52,10 @@ dependencies {
     api("tools.jackson.module:jackson-module-kotlin")
     api("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3")
     api("org.springframework.boot:spring-boot-starter-actuator")
-}
 
-sourceSets {
-    named("main") {
-        kotlin.srcDir("../src/main/kotlin")
-        kotlin.exclude(
-            "com/soma/wes/WesApplication.kt",
-            "com/soma/wes/admin/**",
-            "com/soma/wes/**/controller/**",
-            "com/soma/wes/security/config/SecurityConfig.kt",
-            "com/soma/wes/security/filter/Admin*.kt",
-        )
-
-        resources.srcDir("../src/main/resources")
-        resources.include("config/**", "logback-spring.xml", "fonts/retouch/**")
-    }
+    testFixturesApi("org.springframework.boot:spring-boot-starter-webmvc-test")
+    testFixturesApi("org.springframework.boot:spring-boot-testcontainers")
+    testFixturesApi("org.testcontainers:postgresql")
 }
 
 kotlin {

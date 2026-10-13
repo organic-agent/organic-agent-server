@@ -88,9 +88,10 @@ aws ec2 describe-instances --region "$REGION" --filters "Name=tag:Name,Values=$G
 
 # ── 6. 주기 작업
 report_section "6. 주기 작업 (@Scheduled, 코드 기준)" "앱 커넥션 풀(10)을 같이 쓴다 — 짧은 주기일수록 상시 풀을 점유"
-grep -rhoE '@Scheduled\((fixedDelayString|fixedRateString|cron) = "[^"]*"' "$REPO_ROOT/src/main/kotlin" 2>/dev/null \
+source_dirs=("$REPO_ROOT"/wes-*/src/main/kotlin)
+grep -rhoE '@Scheduled\((fixedDelayString|fixedRateString|cron) = "[^"]*"' "${source_dirs[@]}" 2>/dev/null \
   | sed -E 's/@Scheduled\(//' | sort | uniq -c | sed 's/^/    /'
-grep -rlE '@Scheduled' "$REPO_ROOT/src/main/kotlin" | sed "s|$REPO_ROOT/src/main/kotlin/com/soma/wes/|    · |"
+grep -rlE '@Scheduled' "${source_dirs[@]}" | sed "s|$REPO_ROOT/|    · |"
 
 # ── 7. 데이터 규모
 report_section "7. 데이터 규모" "행 수(추정)·테이블+인덱스 크기·인덱스 수 — 갤러리가 쌓일수록 조회 비용이 오른다"

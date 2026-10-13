@@ -1,6 +1,6 @@
 ---
 paths:
-  - "src/main/kotlin/**/*.kt"
+  - "wes-*/src/main/kotlin/**/*.kt"
 ---
 
 # Infrastructure 컨벤션
@@ -31,7 +31,7 @@ paths:
 - **SDK 타입을 import할 수 있는 곳은 `infrastructure`와 `config`뿐이다.** 다음 명령이 항상
   비어 있어야 한다:
   ```
-  grep -rln "software.amazon.awssdk" src/main/kotlin | grep -vE "/(infrastructure|config)/"
+  grep -rln "software.amazon.awssdk" wes-*/src/main/kotlin | grep -vE "/(infrastructure|config)/"
   ```
 - 벤더 예외는 어댑터가 잡아 도메인 예외로 바꾼다
   (`SdkException` → `PhotoException(STORAGE_DELETE_FAILED)`). 서비스는 벤더 예외를 모른다.

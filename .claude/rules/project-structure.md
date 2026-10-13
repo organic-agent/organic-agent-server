@@ -1,13 +1,22 @@
 ---
 description: 패키지 배치 규칙 — 도메인 단위 패키지와 도메인 내부 구조
 paths:
-  - "src/main/kotlin/**/*.kt"
-  - "src/test/kotlin/**/*.kt"
+  - "wes-*/src/main/kotlin/**/*.kt"
+  - "wes-*/src/test/kotlin/**/*.kt"
+  - "wes-domain/src/testFixtures/kotlin/**/*.kt"
 ---
 
 # 프로젝트 구조
 
 기본 패키지는 `com.soma.wes`. 웹 스택은 `spring-boot-starter-webmvc`(서블릿 MVC, WebFlux 아님).
+
+## 모듈 배치
+
+- `wes-domain/src/main`: 공통 엔티티·정책·서비스·인프라와 공통 리소스.
+- `wes-api/src/main`: 공개 컨트롤러(`controller/docs` 포함)·`SecurityConfig`·`WesApplication`, 앱 설정·Flyway SQL.
+- `wes-admin-api/src/main`: `admin` 패키지 전체·`security/filter/Admin*`·`WesAdminApiApplication`, 관리자 앱 설정.
+- API별 테스트는 각 API의 `src/test`에, 공용 테스트 지원 코드·픽스처는 `wes-domain/src/testFixtures`에 둔다.
+- 두 API는 `wes-domain`에 의존한다. 패키지명은 모듈 경계와 무관하게 유지한다.
 
 ## 도메인 단위 패키지
 

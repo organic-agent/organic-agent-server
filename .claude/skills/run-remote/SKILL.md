@@ -22,7 +22,7 @@ bootRun은 기동 시 Flyway를 실행한다. **저장소에 원격 DB보다 새
 그 마이그레이션이 운영 DB에 실제로 실행된다.** 반드시 먼저 대조하라:
 
 ```bash
-ls src/main/resources/db/migration/ | sort -V | tail -3   # 저장소 최신 버전
+ls wes-api/src/main/resources/db/migration/ | sort -V | tail -3   # 저장소 최신 버전
 ```
 
 터널을 먼저 열고(Phase 2) 아래로 DB 쪽 이력을 확인:
@@ -65,7 +65,7 @@ export SPRING_DATASOURCE_USERNAME="wes_admin"
 export SPRING_DATASOURCE_PASSWORD=$(aws ssm get-parameter --region ap-northeast-2 \
   --name /wes/prod/spring.datasource.password --with-decryption \
   --query Parameter.Value --output text)
-./gradlew bootRun --args="--spring.profiles.active=local" 2>&1 | grep -viE "password"
+./gradlew :wes-api:bootRun --args="--spring.profiles.active=local" 2>&1 | grep -viE "password"
 ```
 
 `nc -z localhost 8080`이 열릴 때까지 대기(30초 내외).

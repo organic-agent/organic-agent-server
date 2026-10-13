@@ -16,6 +16,8 @@ effort: xhigh
 
 **인자 형식**: `<클래스명>` (테스트 대상 클래스명, 필수)
 - 예: `PhotoSelectionService`, `CollabSessionAccess`, `GalleryInviteService`
+- 테스트는 해당 API의 `src/test/kotlin`에 둔다. 관리자 클래스는 아래 명령의 `:wes-api:test`를
+  `:wes-admin-api:test`로 바꾸고, 전용 픽스처도 `wes-admin-api/src/test/kotlin`에서 확인한다.
 
 모든 테스트는 통합 테스트(`@IntegrationTest`)로 작성한다. 이 저장소의 기본 테스트가 곧
 통합 테스트이므로 테스트 클래스명은 `{대상}Test`다 — "Integration" 접미사를 붙이지 않는다.
@@ -40,7 +42,7 @@ effort: xhigh
 
 ## Phase 2: Fixture 확인 및 생성
 
-1. `src/test/kotlin/com/soma/wes/{domain}/fixture/` 디렉토리들을 Glob으로 확인하라.
+1. `wes-domain/src/testFixtures/kotlin/com/soma/wes/{domain}/fixture/` 디렉토리들을 Glob으로 확인하라.
    현재 기본 제공: `UserFixture.사용자()`, `StudioFixture.작가()`,
    `GalleryFixture.멤버와_열린_갤러리()·멤버()·열기()·마감_지남()` (반환형 `OpenGallery`),
    `PhotoFixture.업로드된_사진()·대기중_사진()`, `FolderFixture.확정된_폴더()`.
@@ -61,7 +63,7 @@ effort: xhigh
 
 1. `.claude/rules/test.md`를 읽어 테스트 컨벤션 전체를 확인하라.
 2. [template/test-code-template.md](template/test-code-template.md)의 통합 테스트 템플릿을
-   확인하고, 실제 기준 예시 `src/test/kotlin/com/soma/wes/selection/service/PhotoSelectionServiceTest.kt`도
+   확인하고, 실제 기준 예시 `wes-api/src/test/kotlin/com/soma/wes/selection/service/PhotoSelectionServiceTest.kt`도
    읽어라 (인가 정책 클래스라면 `gallery/support/GalleryAccessPolicyTest.kt`가 기준).
 3. 컨벤션과 템플릿에 따라 `{대상 패키지 미러}/{대상}Test.kt`를 작성하라. 기능이 둘 이상이면
    `@Nested @DisplayName("~할 때") inner class`로 묶고, 거의 모든 테스트가 같은 첫 줄로
@@ -98,7 +100,7 @@ effort: xhigh
 
 ## Phase 5: 테스트 실행
 
-1. 작성한 테스트를 실행하라: `./gradlew test --tests "{패키지}.{테스트클래스명}"`
+1. 작성한 테스트를 실행하라: `./gradlew :wes-api:test --tests "{패키지}.{테스트클래스명}"`
    (Testcontainers가 뜨므로 Docker가 필요하다 — 죽어 있으면 `open -a Docker` 후 대기).
 2. 실패한 테스트가 있으면 에러를 분석하고 **테스트 쪽을** 수정하라. 실패 원인이 대상 코드의
    버그로 판명되면 수정하지 말고 사용자에게 보고하라 (Boundary).
