@@ -295,6 +295,9 @@ class PhotoPipelineRepository(
      * 집기 전부에서 빠지고, 사진 상세·요약에 실패로 드러난다. 되돌리는 길은 재분석 리셋([resetAnalysis])뿐이다.
      *
      * 표시한 사진 id를 갤러리별로 돌려준다 — "어느 갤러리의 어느 사진을 포기했나"를 로그에 남기기 위해서다. 없으면 빈 맵이다.
+     *
+     * 같은 문장에서 배정 시각도 찍는다 — 임베더 단계를 떠난 사진은 배정 시각을 갖는다는 규칙(V43). 비워 두면 임베딩 대기열 인덱스에 영영 남아
+     * 5초 스윕이 매번 분석 행과 맞춰 본다(#286 B-1).
      */
     fun markEmbedAttemptsExceeded(maxAttempts: Int, now: ZonedDateTime): Map<Long, List<Long>> = jdbcClient.sql(
         """
@@ -309,11 +312,17 @@ class PhotoPipelineRepository(
             ON CONFLICT (photo_id) DO UPDATE
             SET error = EXCLUDED.error, version = photo_analysis.version + 1, updated_at = EXCLUDED.updated_at
             RETURNING photo_id
+        ),
+        stamped AS (
+            UPDATE photos p
+            SET dispatched_at = :now
+            FROM marked m
+            WHERE p.id = m.photo_id
+            RETURNING p.gallery_id, p.id
         )
-        SELECT p.gallery_id, p.id
-        FROM marked m
-        JOIN photos p ON p.id = m.photo_id
-        ORDER BY p.gallery_id, p.id
+        SELECT gallery_id, id
+        FROM stamped
+        ORDER BY gallery_id, id
         """.trimIndent(),
     )
         .param("error", EMBED_ATTEMPTS_EXCEEDED)
@@ -326,18 +335,29 @@ class PhotoPipelineRepository(
     /**
      * 진행이 멈춘 갤러리에서 뒤처진 사진(점수가 없는 대상 — 분석 행이 없거나 CLIP 벡터가 없다)을 결정적 실패로 표시한다.
      * 이후 기대 장수에서 빠져 잡이 나머지로 계속 간다. 표시한 사진 id를 돌려준다. 되돌리는 길은 재분석 리셋([resetAnalysis])뿐이다.
+     * 배정 시각이 비어 있던 사진(임베더에 가지도 못한 사진)에는 배정 시각을 찍는다 — [markEmbedAttemptsExceeded]와 같은 규칙(V43).
      */
     fun markAnalysisStalled(galleryId: Long, now: ZonedDateTime): List<Long> = jdbcClient.sql(
         """
-        INSERT INTO photo_analysis (photo_id, error, created_at, updated_at)
-        SELECT p.id, :error, :now, :now
-        FROM photos p
-        LEFT JOIN photo_analysis a ON a.photo_id = p.id
-        WHERE p.gallery_id = :galleryId AND p.status = 'UPLOADED' AND p.deleted_at IS NULL
-          AND a.clip_embedding IS NULL AND a.error IS NULL
-        ON CONFLICT (photo_id) DO UPDATE
-        SET error = EXCLUDED.error, version = photo_analysis.version + 1, updated_at = EXCLUDED.updated_at
-        RETURNING photo_id
+        WITH marked AS (
+            INSERT INTO photo_analysis (photo_id, error, created_at, updated_at)
+            SELECT p.id, :error, :now, :now
+            FROM photos p
+            LEFT JOIN photo_analysis a ON a.photo_id = p.id
+            WHERE p.gallery_id = :galleryId AND p.status = 'UPLOADED' AND p.deleted_at IS NULL
+              AND a.clip_embedding IS NULL AND a.error IS NULL
+            ON CONFLICT (photo_id) DO UPDATE
+            SET error = EXCLUDED.error, version = photo_analysis.version + 1, updated_at = EXCLUDED.updated_at
+            RETURNING photo_id
+        ),
+        stamped AS (
+            UPDATE photos p
+            SET dispatched_at = coalesce(p.dispatched_at, :now)
+            FROM marked m
+            WHERE p.id = m.photo_id
+            RETURNING p.id
+        )
+        SELECT id FROM stamped
         """.trimIndent(),
     )
         .param("galleryId", galleryId)

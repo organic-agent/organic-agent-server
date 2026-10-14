@@ -179,10 +179,12 @@ class EmbedStepTest @Autowired constructor(
             dispatchedLongAgo(listOf(photo))
             step.advance()
 
-            // then — 더 보내지 않고 사진 단위 실패로 남아 기대 장수에서 빠진다
+            // then — 더 보내지 않고 사진 단위 실패로 남아 기대 장수에서 빠진다. 배정 시각을 찍어 임베딩 대기열에도 남지 않는다(V43 규칙)
             val progress = photoPipelineRepository.progressOf(galleryId, liveSince = ZonedDateTime.now(clock))
             assertSoftly { softly ->
                 softly.assertThat(aiTaskSender.embedTasks).hasSize(2)
+                softly.assertThat(jdbcTemplate.queryForObject("SELECT dispatched_at IS NOT NULL FROM photos WHERE id = ?", Boolean::class.java, photo)).isTrue()
+                softly.assertThat(photoPipelineRepository.findGalleryIdsWithEmbedBacklog(maxAttempts = 2)).doesNotContain(galleryId)
                 softly.assertThat(photoAnalysisRepository.findById(photo).orElseThrow().error).isEqualTo(PhotoPipelineRepository.EMBED_ATTEMPTS_EXCEEDED)
                 softly.assertThat(progress.failed).isEqualTo(1)
                 softly.assertThat(progress.expected).isZero()

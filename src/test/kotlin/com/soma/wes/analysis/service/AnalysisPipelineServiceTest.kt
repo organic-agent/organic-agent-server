@@ -425,9 +425,10 @@ class AnalysisPipelineServiceTest @Autowired constructor(
             pipeline.advance()
             pipeline.advance()
 
-            // then — 떼어 낸 사진은 실패로 남고, 잡은 나머지 3장으로 categorize 를 보낸다
+            // then — 떼어 낸 사진은 실패로 남고(배정 시각도 찍혀 임베딩 대기열에서 빠진다), 잡은 나머지 3장으로 categorize 를 보낸다
             assertSoftly { softly ->
                 softly.assertThat(analysisErrorOf(lagging)).isEqualTo(PhotoPipelineRepository.ANALYSIS_STALLED)
+                softly.assertThat(jdbcTemplate.queryForObject("SELECT dispatched_at IS NOT NULL FROM photos WHERE id = ?", Boolean::class.java, lagging)).isTrue()
                 softly.assertThat(job(jobId).status).isEqualTo(AnalysisStatus.CATEGORIZING)
                 softly.assertThat(aiTaskSender.categorizeTasks).hasSize(1)
             }
