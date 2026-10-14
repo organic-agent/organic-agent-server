@@ -11,6 +11,7 @@
 | `fault.sh dev on [--rate 0.02] \| off \| status` | dev 임베더·categorize 의 `FAULT_EXIT_RATE` 켜고 끄기 | Lambda 설정만 |
 | `recovery.sh dev --label L --since … --until …` | 주입한 실패마다 다시 처리 끝까지 걸린 시간 · 잃은 것 | 아니오 |
 | `cleanup.sh dev --label L [--users]` | 회차 갤러리 삭제 + VACUUM (사용자는 기본 남김) | 예 |
+| `jfr.sh dev on --label L` · `off` · `status` · `fetch --label L [--since HH:MM --until HH:MM]` | 앱을 JFR 녹화와 함께 다시 띄우고(녹화는 볼륨 `logs/jfr`), 끝나면 원래 설정으로 되돌린 뒤 녹화를 받아 CPU 표본(스레드·라이브러리·기능 입구·우리 코드)·할당·GC 를 요약(`jfr_samples.py`) | 앱 재시작 2번 |
 
 ## 회차 순서 (02 §4)
 
