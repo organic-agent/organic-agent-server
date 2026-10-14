@@ -99,6 +99,10 @@ class EmbedStepTest @Autowired constructor(
                 softly.assertThat(sentAgain).isZero()
                 softly.assertThat(aiTaskSender.embedTasks.map { it.galleryId }).containsExactly(galleryId, other)
                 softly.assertThat(aiTaskSender.embedTasks[0].photoIds).containsExactlyElementsOf(first)
+                // 원본 위치를 같은 순서로 넘긴다 — 임베더가 DB 를 읽지 않는다(#286 (m))
+                softly.assertThat(aiTaskSender.embedTasks[0].storageKeys).containsExactlyElementsOf(
+                    first.map { id -> jdbcTemplate.queryForObject("SELECT storage_key FROM photos WHERE id = ?", String::class.java, id) },
+                )
                 softly.assertThat(aiTaskSender.embedTasks[1].photoIds).containsExactlyElementsOf(second)
                 softly.assertThat(photoPipelineRepository.countInFlightEmbedBatches(ZonedDateTime.now(clock).minusMinutes(10))).isEqualTo(2)
             }

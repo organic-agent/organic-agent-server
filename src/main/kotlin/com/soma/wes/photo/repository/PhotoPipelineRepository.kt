@@ -1,6 +1,7 @@
 package com.soma.wes.photo.repository
 
 import com.soma.wes.photo.dto.AnalysisFailureDto
+import com.soma.wes.photo.dto.EmbedClaimDto
 import com.soma.wes.photo.dto.PendingPhotoDto
 import com.soma.wes.photo.repository.projection.GalleryAnalysisProgress
 import java.sql.Timestamp
@@ -183,9 +184,10 @@ class PhotoPipelineRepository(
      * 갤러리 하나에서 임베더에 보낼 사진을 집는다 — 벡터·실패·배정이 없고 시도가 남은 UPLOADED 사진을 id 순으로 [limit]장.
      * `FOR UPDATE SKIP LOCKED`라 스윕 둘이 같은 갤러리를 봐도 겹치지 않고, 집는 것과 배정 표시가 한 문장이라 사이가 없다.
      * 배정 시각은 문장 시작 시각(`statement_timestamp()`)이다 — 한 배치의 사진은 같은 시각을 받고 배치끼리는 다르므로
-     * 시각의 수가 곧 떠 있는 배치 수다([countInFlightEmbedBatches]). 돌려준 id 목록이 곧 EVENT 페이로드다.
+     * 시각의 수가 곧 떠 있는 배치 수다([countInFlightEmbedBatches]). 돌려준 사진(id 순)과 원본 위치가 곧 EVENT 페이로드다 —
+     * 원본 위치를 함께 넘겨 임베더가 DB 를 읽지 않게 한다(#286 (m)).
      */
-    fun claimForEmbedding(galleryId: Long, limit: Int, maxAttempts: Int): List<Long> = jdbcClient.sql(
+    fun claimForEmbedding(galleryId: Long, limit: Int, maxAttempts: Int): List<EmbedClaimDto> = jdbcClient.sql(
         """
         UPDATE photos
         SET dispatched_at = statement_timestamp(), embed_attempts = embed_attempts + 1
@@ -200,15 +202,15 @@ class PhotoPipelineRepository(
             LIMIT :limit
             FOR UPDATE OF p SKIP LOCKED
         )
-        RETURNING id
+        RETURNING id, storage_key
         """.trimIndent(),
     )
         .param("galleryId", galleryId)
         .param("maxAttempts", maxAttempts)
         .param("limit", limit)
-        .query { rs, _ -> rs.getLong("id") }
+        .query { rs, _ -> EmbedClaimDto(photoId = rs.getLong("id"), storageKey = rs.getString("storage_key")) }
         .list()
-        .sorted()
+        .sortedBy(EmbedClaimDto::photoId)
 
     /**
      * 호출 자체가 실패한 배치의 배정을 통째로 되돌린다. 시도 수도 돌려놓는다 — 권한·스로틀링은 사진의 잘못이 아니라

@@ -68,13 +68,18 @@ class EmbedStep(
             var sentThisRound = 0
             for (galleryId in galleryIds) {
                 if (slots == 0) break
-                val photoIds = photoPipelineRepository.claimForEmbedding(
+                val claimed = photoPipelineRepository.claimForEmbedding(
                     galleryId = galleryId,
                     limit = properties.embedBatchSize,
                     maxAttempts = properties.embedMaxAttempts,
                 )
-                if (photoIds.isEmpty()) continue
-                val delivered = LogContext.gallery(galleryId) { send(AiTaskDto.Embed(galleryId = galleryId, photoIds = photoIds)) }
+                if (claimed.isEmpty()) continue
+                val task = AiTaskDto.Embed(
+                    galleryId = galleryId,
+                    photoIds = claimed.map { it.photoId },
+                    storageKeys = claimed.map { it.storageKey },
+                )
+                val delivered = LogContext.gallery(galleryId) { send(task) }
                 if (!delivered) return sent
                 slots--
                 sent++
