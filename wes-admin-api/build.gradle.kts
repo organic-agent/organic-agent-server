@@ -26,6 +26,7 @@ dependencies {
     implementation(project(":wes-domain"))
     runtimeOnly("org.postgresql:postgresql")
 
+    testImplementation(testFixtures(project(":wes-domain")))
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testImplementation("org.springframework.boot:spring-boot-flyway")
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
@@ -37,30 +38,10 @@ dependencies {
     testImplementation("org.testcontainers:postgresql")
     testRuntimeOnly("org.flywaydb:flyway-database-postgresql")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-}
 
-sourceSets {
-    named("main") {
-        kotlin.srcDir("../src/main/kotlin")
-        kotlin.include(
-            "com/soma/wes/WesAdminApiApplication.kt",
-            "com/soma/wes/admin/**",
-            "com/soma/wes/security/filter/Admin*.kt",
-        )
-    }
-
-    named("test") {
-        kotlin.srcDir("../src/test/kotlin")
-        kotlin.include(
-            "com/soma/wes/admin/**",
-            "com/soma/wes/support/**",
-            "com/soma/wes/**/fixture/**",
-            "com/soma/wes/global/exception/ErrorCodeFormatTest.kt",
-            "com/soma/wes/trash/RecordingTrashPhotoStorage.kt",
-            "com/soma/wes/trash/RecordingTrashPhotoStorageConfig.kt",
-        )
-        resources.srcDir("../src/test/resources")
-    }
+    // 운영 admin artifact에는 Flyway와 migration을 넣지 않되, 통합 테스트는 공개 API와 같은
+    // migration 전체를 깨끗한 PostgreSQL에 적용해 schema 계약을 검증한다.
+    testRuntimeOnly(project(path = ":wes-api", configuration = "migrationResources"))
 }
 
 kotlin {
@@ -77,14 +58,6 @@ allOpen {
 
 tasks.jar {
     enabled = false
-}
-
-// 운영 admin artifact에는 Flyway와 migration을 넣지 않되, 통합 테스트는 공개 API와 같은
-// migration 전체를 깨끗한 PostgreSQL에 적용해 schema 계약을 검증한다.
-tasks.processTestResources {
-    from("../src/main/resources/db/migration") {
-        into("db/migration")
-    }
 }
 
 tasks.withType<Test> {

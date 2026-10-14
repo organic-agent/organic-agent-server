@@ -14,8 +14,10 @@ effort: xhigh
 
 대상: $ARGUMENTS
 
-**인자 형식**: `<domain>` (필수, `src/main/kotlin/com/soma/wes/` 아래 패키지 이름)
+**인자 형식**: `<domain>` (필수, `wes-*/src/main/kotlin/com/soma/wes/` 아래 패키지 이름)
 - 예: `category`, `recommendation`, `analysis`, `retouch`, `auth`, `security`
+- 관리자 도메인은 아래 테스트 명령의 `:wes-api:test`를 `:wes-admin-api:test`로 바꾼다.
+- 공용 픽스처·테스트 지원 코드는 `wes-domain/src/testFixtures/kotlin`에서 확인한다.
 
 이 스킬의 결과물은 **"리팩토링 뒤에도 이 테스트가 초록이면 동작이 보존됐다"**고 말할 수 있는
 테스트 묶음과 보고서다. 좋은 코드인지는 여기서 판단하지 않는다 — 그건 `refactor-domain`의 일이다.
@@ -30,9 +32,9 @@ effort: xhigh
 1. **REST**: `{domain}/controller/*Controller.kt`의 모든 핸들러 — HTTP 메서드, 경로, 부르는 서비스 메서드,
    인가 문(`requirePhotographer`/`requireCouple`/`requireViewer` 등).
 2. **비동기·주기 진입점**: `@Scheduled`, `@EventListener`, `@TransactionalEventListener`, `@Async`,
-   `ApplicationRunner` — `grep -rn "@Scheduled\|EventListener\|@Async\|ApplicationRunner" src/main/kotlin/com/soma/wes/{domain}`.
+   `ApplicationRunner` — `grep -rn "@Scheduled\|EventListener\|@Async\|ApplicationRunner" wes-*/src/main/kotlin/com/soma/wes/{domain}`.
 3. **다른 도메인이 부르는 문**: 이 도메인의 `support`·`service`를 주입받는 바깥 클래스 —
-   `grep -rln "import com.soma.wes.{domain}\." src/main/kotlin | grep -v "/{domain}/"`.
+   `grep -rln "import com.soma.wes.{domain}\." wes-*/src/main/kotlin | grep -v "/{domain}/"`.
 4. **필터·설정** (`security`·`auth`): 필터 체인 순서, 허용 경로(`permitAll`), OAuth 콜백·JWT 발급·재발급 경로.
 5. **외부 계약** (`analysis`·`recommendation`): Lambda·GPU 워커 페이로드, 워커가 직접 쓰는 컬럼
    (`.claude/rules/migration.md`의 컬럼 소유 표). 이것들은 wes 테스트로 다 고정할 수 없으니 목록에만 남긴다.
@@ -44,7 +46,7 @@ effort: xhigh
 
 ## Phase 2: 기존 테스트 매핑
 
-1. `src/test/kotlin/com/soma/wes/{domain}/`와, 이 도메인을 부르는 다른 도메인 테스트를 읽는다.
+1. `wes-*/src/test/kotlin/com/soma/wes/{domain}/`와, 이 도메인을 부르는 다른 도메인 테스트를 읽는다.
 2. Phase 1의 분기마다 커버 여부를 표시한다: ✅ 단언까지 있음 / ⚠️ 지나가지만 결과를 단언하지 않음 / ❌ 없음.
    예외 테스트가 `errorCode`까지 검증하지 않으면 ⚠️다 (타입만 보면 다른 코드로 회귀해도 통과한다).
 3. 보고서의 `## QA` 절에 커버리지 표를 쓴다:
@@ -89,7 +91,7 @@ effort: xhigh
 
 ## Phase 5: 기준선 실행
 
-1. 도메인 테스트: `./gradlew test --tests "com.soma.wes.{domain}.*"` (Docker 필요 — 꺼져 있으면 `open -a Docker` 후 대기).
+1. 도메인 테스트: `./gradlew :wes-api:test --tests "com.soma.wes.{domain}.*"` (Docker 필요 — 꺼져 있으면 `open -a Docker` 후 대기).
 2. 이 도메인을 부르는 다른 도메인 테스트도 돌린다 (Phase 1-3에서 찾은 도메인들).
 3. 실패하면 **테스트 쪽을** 고친다. 원인이 프로덕션 버그면 해당 테스트를 빼고 보고서에 적는다.
 4. 보고서에 기준선을 기록한다: 커밋 해시(`git rev-parse --short HEAD`), 실행한 명령, 테스트 수, 통과 수.

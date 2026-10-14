@@ -26,6 +26,7 @@ dependencies {
     runtimeOnly("org.postgresql:postgresql")
     runtimeOnly("org.flywaydb:flyway-database-postgresql")
 
+    testImplementation(testFixtures(project(":wes-domain")))
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
     testImplementation("org.springframework.boot:spring-boot-data-jpa-test")
@@ -37,30 +38,18 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
-sourceSets {
-    named("main") {
-        kotlin.srcDir("../src/main/kotlin")
-        kotlin.include(
-            "com/soma/wes/WesApplication.kt",
-            "com/soma/wes/**/controller/**",
-            "com/soma/wes/security/config/SecurityConfig.kt",
-        )
-        // controller glob이 admin 하위 controller까지 다시 포함하지 못하게 명시적으로 막는다.
-        kotlin.exclude("com/soma/wes/admin/**")
-
-        resources.srcDir("../src/main/resources")
-        resources.include("application.yml", "db/migration/**")
+// 관리자 통합 테스트가 운영과 같은 SQL을 사용하도록 마이그레이션 원본만 제공한다.
+val migrationResourcesJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("migration-resources")
+    from(layout.projectDirectory.dir("src/main/resources")) {
+        include("db/migration/**")
     }
+}
 
-    named("test") {
-        kotlin.srcDir("../src/test/kotlin")
-        kotlin.exclude(
-            "com/soma/wes/admin/**",
-            // 관리자 enum까지 함께 검사하는 교차 모듈 계약 테스트는 admin 모듈에서 실행한다.
-            "com/soma/wes/global/exception/ErrorCodeFormatTest.kt",
-        )
-        resources.srcDir("../src/test/resources")
-    }
+configurations.create("migrationResources") {
+    isCanBeConsumed = true
+    isCanBeResolved = false
+    outgoing.artifact(migrationResourcesJar)
 }
 
 kotlin {

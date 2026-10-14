@@ -1,7 +1,7 @@
 ---
 description: Kotlin 관용구 — 널 처리, 불변성, 컬렉션, scope function, 타입 설계. 계층 규칙(common.md 등)과 충돌하면 계층 규칙이 이긴다
 paths:
-  - "src/main/kotlin/**/*.kt"
+  - "wes-*/src/main/kotlin/**/*.kt"
 ---
 
 # Kotlin 관용구

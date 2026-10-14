@@ -1,6 +1,6 @@
 ---
 paths:
-  - "src/main/kotlin/**/*.kt"
+  - "wes-*/src/main/kotlin/**/*.kt"
 ---
 
 # Service 컨벤션

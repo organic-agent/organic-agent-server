@@ -1,6 +1,6 @@
 ---
 paths:
-  - "src/main/kotlin/**/*.kt"
+  - "wes-*/src/main/kotlin/**/*.kt"
 ---
 
 # Controller 컨벤션

@@ -2,8 +2,9 @@
 
 ## 통합 테스트
 
-위치는 대상 클래스의 패키지를 미러링한다: `src/test/kotlin/com/soma/wes/{domain}/service/{Target}Test.kt`
+위치는 대상 클래스의 패키지를 미러링한다: `wes-api/src/test/kotlin/com/soma/wes/{domain}/service/{Target}Test.kt`
 (서포트 클래스면 `{domain}/support/{Target}Test.kt`).
+관리자 테스트·전용 픽스처는 `wes-admin-api/src/test/kotlin`에 둔다.
 
 ```kotlin
 package com.soma.wes.{domain}.service
@@ -89,7 +90,7 @@ class {Target}Test @Autowired constructor(
 
 ## Fixture (도메인별 @Component)
 
-위치: `src/test/kotlin/com/soma/wes/{domain}/fixture/{Domain}Fixture.kt`
+위치: `wes-domain/src/testFixtures/kotlin/com/soma/wes/{domain}/fixture/{Domain}Fixture.kt`
 리포지토리를 주입받아 **저장까지 마친 진짜 행**을 돌려준다. 메서드는 만들어지는 것의
 이름을 한국어로 쓴다.
 

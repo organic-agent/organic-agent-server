@@ -17,6 +17,8 @@ effort: xhigh
 **인자 형식**: `<domain> [--diagnose-only]`
 - 예: `category`, `retouch --diagnose-only`
 - `--diagnose-only`: Phase 2까지만 (findings 표만 만들고 코드는 건드리지 않음)
+- 관리자 도메인은 아래 테스트 명령의 `:wes-api:test`를 `:wes-admin-api:test`로 바꾼다.
+- 공용 픽스처·테스트 지원 코드는 `wes-domain/src/testFixtures/kotlin`에서 확인한다.
 
 보고서: `docs/improvements/refactor/{domain}.md`의 `## 리팩토링` 절 (`qa-domain`이 앞의 `## QA` 절을 쓴다).
 
@@ -26,7 +28,7 @@ effort: xhigh
    작업 브랜치라면 `gh pr list --head <branch> --state merged`로 이미 머지된 브랜치가 아닌지 확인하고
    (squash 머지라 끝난 브랜치도 살아 보인다), `git fetch && git rebase origin/develop`으로 develop 위에 올린다.
 2. **기준선**: 보고서의 `## QA` 절에서 기준선(커밋·테스트 수)을 읽는다. 없으면
-   `./gradlew test --tests "com.soma.wes.{domain}.*"`를 돌려 지금 결과를 기준선으로 기록하고,
+   `./gradlew :wes-api:test --tests "com.soma.wes.{domain}.*"`를 돌려 지금 결과를 기준선으로 기록하고,
    테스트가 얇은 도메인이면(진입점 대비 테스트가 절반 미만) **`/qa-domain {domain}`을 먼저 돌리자고 제안한다.**
    사용자가 그대로 진행하길 원하면 진행하되, Phase 3에서 테스트 없는 분기는 건드리지 않는다.
 
@@ -36,7 +38,7 @@ effort: xhigh
 
 1. 규칙을 읽는다: `.claude/rules/kotlin.md`, `common.md`, 그리고 계층 파일 전부
    (`controller`·`service`·`support`·`domain`·`repository`·`dto`·`infrastructure`·`project-structure`).
-2. `src/main/kotlin/com/soma/wes/{domain}/` 전체를 읽고 아래 분류로 findings를 모은다.
+2. `wes-*/src/main/kotlin/com/soma/wes/{domain}/` 전체를 읽고 아래 분류로 findings를 모은다.
    각 finding은 **소스에서 확인한 위치(`파일:줄`)가 있어야 한다** — 추측으로 채우지 마라.
 
 | 분류 | 찾는 것 |
@@ -51,7 +53,7 @@ effort: xhigh
 | `test` | `qa-domain`이 넘긴 테스트 가능성 문제 |
 
 3. **죽은 코드 판정** — 호출부 검색만으로 지우지 마라. 이 서버를 부르는 곳은 여러 저장소에 있다:
-   - wes 내부: `grep -rn "<이름>" src/main/kotlin src/test/kotlin` — 테스트에서만 쓰이면 "테스트 전용"으로 표시.
+   - wes 내부: `grep -rn "<이름>" wes-*/src/main/kotlin wes-*/src/test/kotlin wes-domain/src/testFixtures/kotlin` — 테스트에서만 쓰이면 "테스트 전용"으로 표시.
    - **REST 엔드포인트**: 웹 클라이언트 `../../organic-agent-web/src/lib/api/*.ts`(와 `src/app/**/_lib`)에서 경로를 grep한다.
      관리자 API(`/api/v1/admin/**`)는 웹이 아닌 소비자가 있을 수 있으니 사용자에게 확인한다.
    - **분석 계약** (`analysis`·`recommendation`·`category`): AI repo `../../organic-agent-ai`가 읽고 쓰는 컬럼·페이로드 키,
@@ -103,7 +105,7 @@ effort: xhigh
    - 엔티티 필드·테이블을 없애면 `.claude/rules/migration.md`를 따르고 `scripts/reset-test-data.sh` TRUNCATE 목록을 맞춘다.
    - 엔드포인트를 없애면 `controller/docs`의 `*ControllerDocs`, 요청·응답 DTO, 전용 ErrorCode까지 함께 정리한다.
 2. `./gradlew compileKotlin compileTestKotlin`
-3. `./gradlew test --tests "com.soma.wes.{domain}.*"` — 기준선보다 실패가 늘면 그 항목을 되돌리고 원인을 보고한다.
+3. `./gradlew :wes-api:test --tests "com.soma.wes.{domain}.*"` — 기준선보다 실패가 늘면 그 항목을 되돌리고 원인을 보고한다.
    테스트 수가 줄었다면 삭제된 기능의 테스트인지 확인한다 (그 외의 감소는 실패로 본다).
 4. 보고서 findings 표의 해당 행에 `적용됨`을 표시한다.
 
@@ -112,7 +114,7 @@ effort: xhigh
 ## Phase 4: 전체 검증
 
 1. `./gradlew build` — 전체 컴파일과 전체 테스트. 다른 도메인에서 깨지면 고치거나(호출부) 해당 항목을 되돌린다.
-2. `grep -rn "!!" src/main/kotlin/com/soma/wes/{domain}` 처럼 적용한 `kotlin` 항목이 다시 남아 있지 않은지 확인한다.
+2. `grep -rn "!!" wes-*/src/main/kotlin/com/soma/wes/{domain}` 처럼 적용한 `kotlin` 항목이 다시 남아 있지 않은지 확인한다.
 3. 변경이 크면 사용자에게 `/code-review`와 `/simplify` 실행을 제안한다 (이 스킬이 대신 돌리지 않는다).
 
 > 다음 Phase 조건: `./gradlew build`가 통과했을 때
