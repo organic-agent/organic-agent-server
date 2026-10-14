@@ -25,6 +25,12 @@ app:
     # 관리자 정지는 관리자 앱에서 일어나 이 메모리를 지울 수 없다 — 정지가 반영되기까지 최대 ttl(작성자 결정 30초). 공개 API만 켠다.
     enabled: true
     ttl: PT30S
+  storage:
+    view-url-cache:
+      # 같은 사진의 미리보기 URL을 10분 동안 다시 서명하지 않는다(#286 (p), ADR 0004) — 2-0에서 앱 CPU의 63.7%가 이 서명이었다.
+      # 켜면 서명 수명이 15분 + 10분이 된다(웹은 받은 지 12분에 다시 읽는다). 공개 API만 켠다: 관리자 앱·테스트는 지금처럼 매번 15분으로 서명한다.
+      # 되돌리기: Parameter Store /wes/{env}/app.storage.view-url-cache.enabled=false 뒤 앱 재시작.
+      enabled: true
 
 ---
 spring:
