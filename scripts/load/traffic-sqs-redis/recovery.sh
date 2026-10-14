@@ -2,11 +2,15 @@
 # 재처리 시간(QA-2) — 장애 주입(fault.injected)으로 죽은 호출마다 "실패 → 다시 처리 끝"을 잰다. 읽기 전용.
 #
 #   scripts/load/traffic-sqs-redis/recovery.sh dev --label R-3-b --since "2026-10-12 14:00" --until "2026-10-12 14:30"
+#   scripts/load/traffic-sqs-redis/recovery.sh dev --label S-1 --since "2026-10-14 10:26"          # --until 없으면 지금까지
+#
+# 시각은 "YYYY-MM-DD HH:MM[:SS]"(KST). --until 을 분까지만 주면 그 분의 끝(:59)까지 본다 — 10:28 로 끊으면 10:28:10 의 실패가 빠졌다(S-1).
 #
 # 임베더: 죽은 호출의 사진들(photoIds)에 벡터가 들어온 시각(photo_analysis.created_at 최대) − 실패 시각.
 # categorize: 그 잡의 배정 행이 들어온 시각(concept_assignments.created_at 최대, clock_timestamp) − 실패 시각.
 # "다시 처리 끝"이라 시작보다 배치 한 번(임베더 p50 ≈ 25초, categorize ≈ 25초)만큼 길다 — QA-2(시작 ≤ 60초)는 끝 ≤ 60초 + 배치 한 번으로 읽는다.
-# 아직 안 끝난 것은 "잃음"으로 센다(조회 시각 기준). 시각은 KST.
+# 끝나지 않은 것은 둘로 가른다(조회 시각 기준): "포기" = 상한에 닿아 실패로 확정됨(임베더 사진의 photo_analysis.error · categorize 잡 FAILED),
+# "아직" = 확정도 안 됐다(재시도 중이거나 멈춤). 판정의 "잃음 0"은 둘의 합이다. 시각은 KST.
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 source scripts/load/lib/report.sh
@@ -18,15 +22,25 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --since) SINCE="$2"; shift ;;
     --until) UNTIL="$2"; shift ;;
-    -h|--help) sed -n 2,10p "$0"; exit 0 ;;
+    -h|--help) sed -n 2,12p "$0"; exit 0 ;;
     *) echo "알 수 없는 인자: $1" >&2; exit 1 ;;
   esac
   shift
 done
-[ -n "$SINCE" ] && [ -n "$UNTIL" ] || { echo "--since · --until 이 필요하다(KST)." >&2; exit 1; }
+[ -n "$SINCE" ] || { echo "--since 가 필요하다(KST)." >&2; exit 1; }
+[ -n "$UNTIL" ] || UNTIL=$(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M:%S')
 report_connect
-epoch_ms() { python3 -c 'import sys,datetime as d; t=d.datetime.strptime(sys.argv[1],"%Y-%m-%d %H:%M").replace(tzinfo=d.timezone(d.timedelta(hours=9))); print(int(t.timestamp()*1000))' "$1"; }
-S=$(epoch_ms "$SINCE"); E=$(epoch_ms "$UNTIL")
+# $2 = end 이면 분까지만 준 시각을 그 분의 끝으로 민다.
+epoch_ms() { python3 -c '
+import sys, datetime as d
+s, end = sys.argv[1], sys.argv[2] == "end"
+kst = d.timezone(d.timedelta(hours=9))
+try:
+    t = d.datetime.strptime(s, "%Y-%m-%d %H:%M:%S").replace(tzinfo=kst)
+except ValueError:
+    t = d.datetime.strptime(s, "%Y-%m-%d %H:%M").replace(tzinfo=kst) + d.timedelta(seconds=59.999 if end else 0)
+print(int(t.timestamp() * 1000))' "$1" "$2"; }
+S=$(epoch_ms "$SINCE" start); E=$(epoch_ms "$UNTIL" end)
 
 FAULTS=$(mktemp -t r3-faults.XXXXXX); trap 'rm -f "$FAULTS"' EXIT
 for FN in embedder categorize; do
@@ -69,12 +83,17 @@ r AS (
       WHEN 'embedder' THEN (SELECT CASE WHEN count(a.photo_id) = cardinality(f.photo_ids) THEN max(a.created_at) END
                             FROM photo_analysis a WHERE a.photo_id = ANY(f.photo_ids) AND a.embedding IS NOT NULL)
       ELSE (SELECT max(c.created_at) FROM concept_assignments c WHERE c.job_id = f.job_id)
-    END AS done_at
+    END AS done_at,
+    CASE f.kind
+      WHEN 'embedder' THEN EXISTS (SELECT 1 FROM photo_analysis a WHERE a.photo_id = ANY(f.photo_ids) AND a.error IS NOT NULL)
+      ELSE EXISTS (SELECT 1 FROM analysis_jobs j WHERE j.id = f.job_id AND j.status = 'FAILED')
+    END AS gave_up
   FROM f)
 SELECT to_char(failed_at, 'HH24:MI:SS') AS 실패, kind AS 실행기, gallery_id AS 갤러리,
        coalesce(job_id::text, cardinality(photo_ids) || '장') AS 대상,
-       coalesce(to_char(done_at, 'HH24:MI:SS'), '아직') AS 다시끝,
-       CASE WHEN done_at IS NULL THEN '잃음' ELSE round(extract(epoch FROM done_at - failed_at))::text || '초' END AS 걸린시간
+       coalesce(to_char(done_at, 'HH24:MI:SS'), CASE WHEN gave_up THEN '포기' ELSE '아직' END) AS 다시끝,
+       CASE WHEN done_at IS NOT NULL THEN round(extract(epoch FROM done_at - failed_at))::text || '초'
+            WHEN gave_up THEN '잃음(포기)' ELSE '잃음(아직)' END AS 걸린시간
 FROM r ORDER BY failed_at;
 SQL
 
@@ -86,12 +105,17 @@ r AS (
     extract(epoch FROM (CASE f.kind
       WHEN 'embedder' THEN (SELECT CASE WHEN count(a.photo_id) = cardinality(f.photo_ids) THEN max(a.created_at) END
                             FROM photo_analysis a WHERE a.photo_id = ANY(f.photo_ids) AND a.embedding IS NOT NULL)
-      ELSE (SELECT max(c.created_at) FROM concept_assignments c WHERE c.job_id = f.job_id) END) - f.failed_at) AS secs
+      ELSE (SELECT max(c.created_at) FROM concept_assignments c WHERE c.job_id = f.job_id) END) - f.failed_at) AS secs,
+    CASE f.kind
+      WHEN 'embedder' THEN EXISTS (SELECT 1 FROM photo_analysis a WHERE a.photo_id = ANY(f.photo_ids) AND a.error IS NOT NULL)
+      ELSE EXISTS (SELECT 1 FROM analysis_jobs j WHERE j.id = f.job_id AND j.status = 'FAILED')
+    END AS gave_up
   FROM f)
 SELECT kind AS 실행기, count(*) AS 실패, count(secs) AS 다시처리, count(*) - count(secs) AS 잃음,
+       count(*) FILTER (WHERE secs IS NULL AND gave_up) AS 포기, count(*) FILTER (WHERE secs IS NULL AND NOT gave_up) AS 아직,
        round(percentile_cont(0.5) WITHIN GROUP (ORDER BY secs)) AS p50초,
        round(percentile_cont(0.95) WITHIN GROUP (ORDER BY secs)) AS p95초, round(max(secs)) AS 최대초
 FROM r GROUP BY kind ORDER BY kind;
 SQL
-report_note "QA-2: 시작 ≤ 60초 ⇔ 끝 ≲ 85초(배치 한 번 ≈ 25초 더함) · 잃음 0"
+report_note "QA-2: 시작 ≤ 60초 ⇔ 끝 ≲ 85초(배치 한 번 ≈ 25초 더함) · 잃음 0(포기 + 아직) — 포기는 상한(#304 이후 5번, ≈ 11분)을 다 쓴 것"
 report_end
