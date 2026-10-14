@@ -23,6 +23,7 @@ import com.soma.wes.retouch.fixture.RetouchFixture
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.support.TestSequence
 import com.soma.wes.trash.RecordingTrashPhotoStorage
+import com.soma.wes.trash.RecordingTrashPhotoStorageConfig
 import com.soma.wes.trash.dto.request.EraseTrashedPhotosRequest
 import com.soma.wes.trash.dto.request.RestorePhotosRequest
 import com.soma.wes.trash.exception.TrashErrorCode
@@ -36,10 +37,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.TestConfiguration
-import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
-import org.springframework.context.annotation.Primary
 import org.springframework.jdbc.core.JdbcTemplate
 import java.time.Instant
 
@@ -53,7 +51,7 @@ import java.time.Instant
  * "무슨 키를 지웠는지"가 검증 대상이다.
  */
 @IntegrationTest
-@Import(TrashServiceTest.RecordingStorageConfig::class)
+@Import(RecordingTrashPhotoStorageConfig::class)
 class TrashServiceTest @Autowired constructor(
     private val trashService: TrashService,
     private val folderService: FolderService,
@@ -550,12 +548,4 @@ class TrashServiceTest @Autowired constructor(
 
     private fun countPhotoRows(photoId: Long): Int =
         checkNotNull(jdbcTemplate.queryForObject("SELECT count(*) FROM photos WHERE id = ?", Int::class.java, photoId))
-
-    @TestConfiguration(proxyBeanMethods = false)
-    class RecordingStorageConfig {
-
-        @Bean
-        @Primary
-        fun recordingTrashPhotoStorage(): RecordingTrashPhotoStorage = RecordingTrashPhotoStorage()
-    }
 }

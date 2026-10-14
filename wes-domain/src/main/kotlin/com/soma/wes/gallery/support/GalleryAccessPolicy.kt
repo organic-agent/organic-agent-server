@@ -1,5 +1,7 @@
 package com.soma.wes.gallery.support
 
+import com.soma.wes.auth.dto.AccessCacheKeyDto
+import com.soma.wes.auth.service.port.AccessCache
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryMember
 import com.soma.wes.gallery.domain.GalleryStatus
@@ -11,9 +13,9 @@ import com.soma.wes.gallery.repository.requireById
 import com.soma.wes.gallery.repository.requireWithLockById
 import com.soma.wes.selection.repository.PhotoSelectionRepository
 import com.soma.wes.studio.repository.StudioRepository
-import com.soma.wes.workspace.domain.Workspace
 import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.domain.WorkspaceType
+import com.soma.wes.workspace.dto.WorkspaceAccessDto
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository
 import org.springframework.stereotype.Service
@@ -24,6 +26,10 @@ import java.time.ZonedDateTime
 
 /**
  * 갤러리에서 누가 무엇을 할 수 있는지.
+ *
+ * 작업공간 종류·소유자와 스튜디오 정지 여부는 [accessCache]가 있으면(wes-api) 거쳐 읽는다(#286 (k)) — 요청마다 같은 행을 다시 읽던 것이다.
+ * 관리자의 스튜디오 정지는 최대 TTL(30초) 뒤에 반영된다. 갤러리 행과 멤버십은 캐시하지 않는다: 갤러리는 호출자가 그 행을 쓰고 잠그며
+ * 상태·마감이 자주 바뀌고, 멤버십은 바뀌는 곳이 여럿이라 지울 곳을 하나 빠뜨리면 권한이 남는다.
  */
 @Service
 class GalleryAccessPolicy(
@@ -34,6 +40,7 @@ class GalleryAccessPolicy(
     private val workspaceRepository: WorkspaceRepository,
     private val workspaceMemberRepository: WorkspaceMemberRepository,
     private val clock: Clock,
+    private val accessCache: AccessCache?,
 ) {
 
     /** 갤러리 상태 전이·계약 장수·업로드 URL 발급·임베딩 실행·초대 발급/폐기·제출 철회. */
@@ -117,14 +124,14 @@ class GalleryAccessPolicy(
     @Transactional(readOnly = true)
     fun isStudioManager(galleryId: Long, userId: Long): Boolean {
         val gallery = galleryRepository.requireById(galleryId)
-        return workspaceRepository.findById(gallery.workspaceId).orElse(null)?.type == WorkspaceType.STUDIO &&
+        return findWorkspace(gallery.workspaceId)?.type == WorkspaceType.STUDIO &&
             workspaceMemberRepository.findByWorkspaceIdAndUserId(gallery.workspaceId, userId) != null
     }
 
     @Transactional(readOnly = true)
     fun isPersonalGallery(galleryId: Long): Boolean {
         val gallery = galleryRepository.requireById(galleryId)
-        return workspaceRepository.findById(gallery.workspaceId).orElse(null)?.type == WorkspaceType.PERSONAL
+        return findWorkspace(gallery.workspaceId)?.type == WorkspaceType.PERSONAL
     }
 
     /** 대기 화면에는 메타데이터만 공개하고 사진 조회는 기존 viewer 정책을 유지한다. */
@@ -165,7 +172,7 @@ class GalleryAccessPolicy(
     @Transactional(readOnly = true)
     fun requireSelectionEditor(galleryId: Long, userId: Long): Gallery {
         val gallery = galleryRepository.requireById(galleryId)
-        val workspace = workspaceRepository.findById(gallery.workspaceId).orElse(null)
+        val workspace = findWorkspace(gallery.workspaceId)
             ?: throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
         val studioMember = workspace.type == WorkspaceType.STUDIO &&
             workspaceMemberRepository.findByWorkspaceIdAndUserId(gallery.workspaceId, userId) != null
@@ -197,8 +204,8 @@ class GalleryAccessPolicy(
     }
 
     /** 부부(초대 고객·개인 갤러리 참여자)인지 확인하고, 판단에 쓴 작업공간을 돌려준다. */
-    private fun requireParticipant(gallery: Gallery, userId: Long): Workspace {
-        val workspace = workspaceRepository.findById(gallery.workspaceId).orElse(null)
+    private fun requireParticipant(gallery: Gallery, userId: Long): WorkspaceAccessDto {
+        val workspace = findWorkspace(gallery.workspaceId)
             ?: throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
         val membership = workspaceMemberRepository.findByWorkspaceIdAndUserId(gallery.workspaceId, userId)
         // PERSONAL_PARTNER 초대 수락은 gallery_members가 아니라 작업공간 MEMBER를 만든다.
@@ -253,9 +260,9 @@ class GalleryAccessPolicy(
     }
 
     private fun isManager(gallery: Gallery, userId: Long): Boolean {
-        val workspace = workspaceRepository.findById(gallery.workspaceId).orElse(null) ?: return false
+        val workspace = findWorkspace(gallery.workspaceId) ?: return false
         if (workspace.type == WorkspaceType.STUDIO &&
-            !studioRepository.existsByIdAndSuspendedAtIsNull(gallery.workspaceId)
+            !isStudioActive(gallery.workspaceId)
         ) return false
         if (workspace.type == WorkspaceType.PERSONAL) return workspace.personalOwnerUserId == userId &&
             workspaceMemberRepository.existsByWorkspaceIdAndUserIdAndRoleIn(gallery.workspaceId, userId, listOf(WorkspaceRole.OWNER))
@@ -266,11 +273,24 @@ class GalleryAccessPolicy(
             )
     }
 
+    private fun isStudioActive(workspaceId: Long): Boolean {
+        val cache = accessCache ?: return studioRepository.existsByIdAndSuspendedAtIsNull(workspaceId)
+        return cache.get(AccessCacheKeyDto.studioActive(workspaceId)) { studioRepository.existsByIdAndSuspendedAtIsNull(workspaceId) }
+    }
+
     private fun isPersonalParticipant(gallery: Gallery, userId: Long): Boolean {
-        val workspace = workspaceRepository.findById(gallery.workspaceId).orElse(null) ?: return false
+        val workspace = findWorkspace(gallery.workspaceId) ?: return false
         return workspace.type == WorkspaceType.PERSONAL &&
             workspaceMemberRepository.existsByWorkspaceIdAndUserIdAndRoleIn(gallery.workspaceId, userId, ACTIVE_WORKSPACE_ROLES)
     }
+
+    private fun findWorkspace(workspaceId: Long): WorkspaceAccessDto? {
+        val cache = accessCache ?: return loadWorkspace(workspaceId)
+        return cache.get(AccessCacheKeyDto.workspace(workspaceId)) { loadWorkspace(workspaceId) }
+    }
+
+    private fun loadWorkspace(workspaceId: Long): WorkspaceAccessDto? =
+        workspaceRepository.findByIdOrNull(workspaceId)?.let(WorkspaceAccessDto::from)
 
     private fun findMember(galleryId: Long, userId: Long): GalleryMember =
         galleryMemberRepository.findByGalleryIdAndUserId(galleryId, userId)

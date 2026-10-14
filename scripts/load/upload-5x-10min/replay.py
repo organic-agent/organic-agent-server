@@ -199,11 +199,13 @@ class GalleryRun:
     slots: list[Slot]
     completed: int = 0
     copy_errors: int = 0
+    issue_errors: int = 0
     issue_late_max: float = 0.0
     job: dict | None = None
     finished_at: float | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
     pending_complete: list[int] = field(default_factory=list)
+    issue_done: threading.Event = field(default_factory=threading.Event)    # 발급을 다 돌았다 — 이때도 키가 없으면 발급 실패한 장
 
 
 def cmd_run(args: argparse.Namespace) -> None:
@@ -261,17 +263,26 @@ def cmd_run(args: argparse.Namespace) -> None:
             due = r.t0 + batch[0].photo["issue_offset"] / speed
             sleep_until(due)
             r.issue_late_max = max(r.issue_late_max, time.time() - due)
-            _, body = api.post(f"/api/v1/galleries/{r.gallery_id}/photos/upload-urls", {"files": [{
-                "fileName": s.photo["file_name"], "contentType": s.photo["content_type"],
-                "contentLength": s.photo["size"], "crc32c": s.photo["crc32c"]} for s in batch]})
+            # 웹(useUploadRun.ts)처럼 발급은 다시 요청하지 않고 그 묶음을 실패로 둔다 — 응답만 사라진 재요청은 서버에
+            # 빈 PENDING 행을 남겼다(#286 R-3-a: 100장씩 3번). 남은 행은 서버의 PendingUploadSweeper가 24시간 뒤 휴지통으로 보낸다.
+            try:
+                _, body = api.post(f"/api/v1/galleries/{r.gallery_id}/photos/upload-urls", {"files": [{
+                    "fileName": s.photo["file_name"], "contentType": s.photo["content_type"],
+                    "contentLength": s.photo["size"], "crc32c": s.photo["crc32c"]} for s in batch]}, attempts=1)
+            except RuntimeError as e:
+                with r.lock:
+                    r.issue_errors += len(batch)
+                log(f"URL 발급 실패 갤러리 {r.gallery_id} {len(batch)}장 — 다시 요청하지 않는다: {e}")
+                continue
             for s, up in zip(batch, body["uploads"]):
                 s.photo_id, s.storage_key = up["photoId"], up["storageKey"]
                 s.key_ready.set()
+        r.issue_done.set()
 
     def copy_one(r: GalleryRun, s: Slot) -> None:
         # URL 발급이 실패해 키가 영영 안 올 수 있다 — stop 을 보며 기다려야 풀 종료가 끝없이 기다리지 않는다.
         while not s.key_ready.wait(1.0):
-            if stop.is_set():
+            if stop.is_set() or r.issue_done.is_set():
                 return
         s.copy_late = time.time() - (r.t0 + s.photo["upload_offset"] / speed)
         try:
@@ -295,7 +306,7 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     def complete_loop(r: GalleryRun) -> None:
         total = len(r.slots)
-        while r.completed + r.copy_errors < total and not stop.is_set():
+        while r.completed + r.copy_errors + r.issue_errors < total and not stop.is_set():
             time.sleep(COMPLETE_FLUSH_SECONDS)
             with r.lock:
                 ids, r.pending_complete = r.pending_complete[:COMPLETE_MAX_BATCH], r.pending_complete[COMPLETE_MAX_BATCH:]
@@ -308,7 +319,7 @@ def cmd_run(args: argparse.Namespace) -> None:
             return
         body = {"conceptCount": args.concept_count} if args.concept_count else None
         _, r.job = api.post(f"/api/v1/galleries/{r.gallery_id}/ai-analysis", body)
-        log(f"갤러리 {r.gallery_id} 업로드 끝 {r.finished_at - r.t0:.0f}초 · 완료 {r.completed} · 복사 실패 {r.copy_errors} · "
+        log(f"갤러리 {r.gallery_id} 업로드 끝 {r.finished_at - r.t0:.0f}초 · 완료 {r.completed} · 복사 실패 {r.copy_errors} · 발급 실패 {r.issue_errors} · "
             f"잡 {r.job.get('jobId')} 요청")
 
     def guarded(fn):
@@ -344,11 +355,11 @@ def cmd_run(args: argparse.Namespace) -> None:
     # 재생 정확도 — 복사가 시각표보다 얼마나 늦었나. 크면 노트북·S3 쪽이 병목이라 회차를 믿을 수 없다.
     print()
     print(f"재생 결과 {args.label}")
-    print(f"{'갤러리':>8} {'사진':>6} {'완료':>6} {'실패':>4} {'업로드끝(초)':>12} {'복사지연 p95':>12} {'최대':>8} {'URL지연 최대':>12} {'잡':>6}")
+    print(f"{'갤러리':>8} {'사진':>6} {'완료':>6} {'실패':>4} {'발급실패':>8} {'업로드끝(초)':>12} {'복사지연 p95':>12} {'최대':>8} {'URL지연 최대':>12} {'잡':>6}")
     for r in runs:
         late = sorted(s.copy_late for s in r.slots)
         p95 = late[int(len(late) * 0.95) - 1] if late else 0.0
-        print(f"{r.gallery_id:>8} {len(r.slots):>6} {r.completed:>6} {r.copy_errors:>4} "
+        print(f"{r.gallery_id:>8} {len(r.slots):>6} {r.completed:>6} {r.copy_errors:>4} {r.issue_errors:>8} "
               f"{(r.finished_at or time.time()) - r.t0:>12.0f} {p95:>12.2f} {late[-1] if late else 0:>8.2f} "
               f"{r.issue_late_max:>12.2f} {str((r.job or {}).get('jobId')):>6}")
     print(f"\ntimeline: scripts/load/timeline.sh dev --label {args.label} --ids {','.join(str(r.gallery_id) for r in runs)} "

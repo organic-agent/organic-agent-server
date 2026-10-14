@@ -26,6 +26,12 @@ spring:
   flyway:
     enabled: true
 
+  # @DataJpaTest가 DataSource를 내장 DB로 바꾸지 않게 한다. 접속 정보는 TestcontainersConfiguration이 컨텍스트마다
+  # 공유 컨테이너 안의 새 데이터베이스로 넣는데, Boot는 이 방식을 테스트 DB로 알아보지 못해 내장 DB(없음)로 바꾸려 한다.
+  test:
+    database:
+      replace: none
+
   jpa:
     hibernate:
       ddl-auto: validate

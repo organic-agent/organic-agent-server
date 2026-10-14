@@ -1,6 +1,7 @@
 package com.soma.wes.photo.repository
 
 import com.soma.wes.photo.dto.AnalysisFailureDto
+import com.soma.wes.photo.dto.EmbedClaimDto
 import com.soma.wes.photo.dto.PendingPhotoDto
 import com.soma.wes.photo.repository.projection.GalleryAnalysisProgress
 import java.sql.Timestamp
@@ -25,6 +26,9 @@ import org.springframework.stereotype.Repository
  * GPU 제어·score 폴백([countScoreBacklog]·[findGalleryIdsWithUnscoredPhotos]·[findUnscoredPhotoIds]).
  * 하트비트는 이 중 대기량([countPending]·[countInFlightEmbedBatches]·[countScoreBacklog])을 1분마다 읽는다.
  *
+ * 끝난 사진도 `dispatched_at`을 그대로 갖고 있으므로, 배정 시각으로 미완료를 찾는 문장은 시각 범위를 받아 최근 배정만 읽는다
+ * (`idx_photos_dispatched`, #286 (l)) — 범위가 없으면 사진이 쌓일수록 5초마다 읽는 양이 끝없이 는다.
+ *
  * 문장마다 [QUERY_TIMEOUT_SECONDS] 제한을 건다(#275). 5초 스윕이 부르는 문장은 평소 20ms 이하라, 그보다 오래 걸리면 기다리지 않고
  * 포기해 다음 회차에 다시 한다 — 스케줄러 스레드를 붙잡지 않게. 공용 `JdbcClient` 빈이 아니라 여기서 만든다: 같은 타입의 빈을 하나
  * 등록하면 자동 구성 빈이 빠져 다른 저장소까지 이 제한을 받는다. 트랜잭션 안에서 불리면 같은 연결을 쓴다(`DataSourceUtils`).
@@ -33,9 +37,11 @@ import org.springframework.stereotype.Repository
 @Repository
 class PhotoPipelineRepository(
     dataSource: DataSource,
+    // 운영은 기본값만 쓴다. 테스트가 포기 동작을 30초 기다리지 않고 보려고 짧은 값을 넘긴다.
+    queryTimeoutSeconds: Int = QUERY_TIMEOUT_SECONDS,
 ) {
 
-    private val jdbcClient: JdbcClient = JdbcClient.create(JdbcTemplate(dataSource).apply { queryTimeout = QUERY_TIMEOUT_SECONDS })
+    private val jdbcClient: JdbcClient = JdbcClient.create(JdbcTemplate(dataSource).apply { queryTimeout = queryTimeoutSeconds })
 
     /** 갤러리 하나의 진행 카운트. [liveSince] 이후 만들어진 PENDING이 "아직 올라오는 중"이다. */
     fun progressOf(galleryId: Long, liveSince: ZonedDateTime): GalleryAnalysisProgress = jdbcClient.sql(
@@ -178,9 +184,10 @@ class PhotoPipelineRepository(
      * 갤러리 하나에서 임베더에 보낼 사진을 집는다 — 벡터·실패·배정이 없고 시도가 남은 UPLOADED 사진을 id 순으로 [limit]장.
      * `FOR UPDATE SKIP LOCKED`라 스윕 둘이 같은 갤러리를 봐도 겹치지 않고, 집는 것과 배정 표시가 한 문장이라 사이가 없다.
      * 배정 시각은 문장 시작 시각(`statement_timestamp()`)이다 — 한 배치의 사진은 같은 시각을 받고 배치끼리는 다르므로
-     * 시각의 수가 곧 떠 있는 배치 수다([countInFlightEmbedBatches]). 돌려준 id 목록이 곧 EVENT 페이로드다.
+     * 시각의 수가 곧 떠 있는 배치 수다([countInFlightEmbedBatches]). 돌려준 사진(id 순)과 원본 위치가 곧 EVENT 페이로드다 —
+     * 원본 위치를 함께 넘겨 임베더가 DB 를 읽지 않게 한다(#286 (m)).
      */
-    fun claimForEmbedding(galleryId: Long, limit: Int, maxAttempts: Int): List<Long> = jdbcClient.sql(
+    fun claimForEmbedding(galleryId: Long, limit: Int, maxAttempts: Int): List<EmbedClaimDto> = jdbcClient.sql(
         """
         UPDATE photos
         SET dispatched_at = statement_timestamp(), embed_attempts = embed_attempts + 1
@@ -195,15 +202,15 @@ class PhotoPipelineRepository(
             LIMIT :limit
             FOR UPDATE OF p SKIP LOCKED
         )
-        RETURNING id
+        RETURNING id, storage_key
         """.trimIndent(),
     )
         .param("galleryId", galleryId)
         .param("maxAttempts", maxAttempts)
         .param("limit", limit)
-        .query { rs, _ -> rs.getLong("id") }
+        .query { rs, _ -> EmbedClaimDto(photoId = rs.getLong("id"), storageKey = rs.getString("storage_key")) }
         .list()
-        .sorted()
+        .sortedBy(EmbedClaimDto::photoId)
 
     /**
      * 호출 자체가 실패한 배치의 배정을 통째로 되돌린다. 시도 수도 돌려놓는다 — 권한·스로틀링은 사진의 잘못이 아니라
@@ -225,24 +232,74 @@ class PhotoPipelineRepository(
     /**
      * 배정한 지 오래됐는데 아직 벡터가 없는 사진의 배정을 되돌린다(Lambda가 죽었거나 시간을 넘긴 배치).
      * 시도 수는 그대로다 — 상한은 이 경로로 찬다. 되돌린 사진은 다음 스윕이 다시 집는다.
+     *
+     * [since]가 있으면 배정 시각이 [since] 이후인 것만 본다(`idx_photos_dispatched` 범위). 끝난 사진도 배정 시각을 그대로 갖고 있어서
+     * 범위가 없으면 지금까지 배정한 사진 전부를 분석 행과 맞춰 본다(#286 (l)). 호출자가 지난번 [before]부터 이어 보게 하고, 시작 직후
+     * 한 번은 null로 전부 본다.
      */
-    fun releaseStaleDispatches(before: ZonedDateTime): Int = jdbcClient.sql(
+    fun releaseStaleDispatches(since: ZonedDateTime?, before: ZonedDateTime): Int = jdbcClient.sql(
         """
         UPDATE photos p
         SET dispatched_at = NULL
         WHERE p.status = 'UPLOADED' AND p.deleted_at IS NULL
-          AND p.dispatched_at IS NOT NULL AND p.dispatched_at < :before
+          AND p.dispatched_at IS NOT NULL AND p.dispatched_at < :before ${if (since == null) "" else "AND p.dispatched_at >= :since"}
           AND NOT EXISTS (SELECT 1 FROM photo_analysis a WHERE a.photo_id = p.id AND (a.embedding IS NOT NULL OR a.error IS NOT NULL))
         """.trimIndent(),
     )
         .param("before", Timestamp.from(before.toInstant()))
+        .apply { if (since != null) param("since", Timestamp.from(since.toInstant())) }
         .update()
+
+    /**
+     * 임베더가 끝내 실패한 배치(실패 큐, #286 (c))의 배정을 앞당겨 푼다 — 배정 시각을 [dispatchedAtFor]로 옮겨, 재배정 시간이 그만큼 일찍
+     * 차게 한다. 실제로 푸는 것은 스윕의 [releaseStaleDispatches]이고 다시 집는 것도 스윕이라 보내는 길은 하나로 남는다.
+     * [dispatchedAtFor]는 사진의 시도 수를 받아 옮길 배정 시각을 돌려준다(`지금 − 재배정 시간 + 기다릴 시간` — 시도가 늘수록 늦게, 호출자가 정한다).
+     *
+     * 대상: 아직 배정 중이고 벡터·실패가 없으며, 배정이 실패 시각([failedAt]) 이전인 사진. 그 뒤에 다시 배정된 사진은 이 실패의 몫이 아니다.
+     * 배정 시각은 앞으로만 옮긴다(이미 더 일찍 풀릴 예정이면 그대로). 같은 메시지를 두 번 받아도 결과가 같다. 옮긴 사진 수를 돌려준다.
+     */
+    fun expediteEmbedRedispatch(
+        photoIds: Collection<Long>,
+        failedAt: ZonedDateTime,
+        dispatchedAtFor: (attempts: Int) -> ZonedDateTime,
+    ): Int {
+        if (photoIds.isEmpty()) return 0
+        val attemptsById = jdbcClient.sql(
+            """
+            SELECT p.id, p.embed_attempts
+            FROM photos p
+            WHERE p.id IN (:photoIds) AND p.status = 'UPLOADED' AND p.deleted_at IS NULL
+              AND p.dispatched_at IS NOT NULL AND p.dispatched_at <= :failedAt
+              AND NOT EXISTS (SELECT 1 FROM photo_analysis a WHERE a.photo_id = p.id AND (a.embedding IS NOT NULL OR a.error IS NOT NULL))
+            """.trimIndent(),
+        )
+            .param("photoIds", photoIds.toList())
+            .param("failedAt", Timestamp.from(failedAt.toInstant()))
+            .query { rs, _ -> rs.getLong(1) to rs.getInt(2) }
+            .list()
+        return attemptsById.groupBy({ (_, attempts) -> attempts }, { (id, _) -> id }).entries.sumOf { (attempts, ids) ->
+            jdbcClient.sql(
+                """
+                UPDATE photos p
+                SET dispatched_at = :releaseAt
+                WHERE p.id IN (:photoIds) AND p.dispatched_at IS NOT NULL AND p.dispatched_at <= :failedAt AND p.dispatched_at > :releaseAt
+                """.trimIndent(),
+            )
+                .param("photoIds", ids)
+                .param("failedAt", Timestamp.from(failedAt.toInstant()))
+                .param("releaseAt", Timestamp.from(dispatchedAtFor(attempts).toInstant()))
+                .update()
+        }
+    }
 
     /**
      * 시도 상한에 닿고도 벡터가 없는 사진을 결정적 실패로 표시한다 — `photo_analysis.error`를 UPSERT. 이후 배정·기대 장수·
      * 집기 전부에서 빠지고, 사진 상세·요약에 실패로 드러난다. 되돌리는 길은 재분석 리셋([resetAnalysis])뿐이다.
      *
      * 표시한 사진 id를 갤러리별로 돌려준다 — "어느 갤러리의 어느 사진을 포기했나"를 로그에 남기기 위해서다. 없으면 빈 맵이다.
+     *
+     * 같은 문장에서 배정 시각도 찍는다 — 임베더 단계를 떠난 사진은 배정 시각을 갖는다는 규칙(V43). 비워 두면 임베딩 대기열 인덱스에 영영 남아
+     * 5초 스윕이 매번 분석 행과 맞춰 본다(#286 B-1).
      */
     fun markEmbedAttemptsExceeded(maxAttempts: Int, now: ZonedDateTime): Map<Long, List<Long>> = jdbcClient.sql(
         """
@@ -257,11 +314,17 @@ class PhotoPipelineRepository(
             ON CONFLICT (photo_id) DO UPDATE
             SET error = EXCLUDED.error, version = photo_analysis.version + 1, updated_at = EXCLUDED.updated_at
             RETURNING photo_id
+        ),
+        stamped AS (
+            UPDATE photos p
+            SET dispatched_at = :now
+            FROM marked m
+            WHERE p.id = m.photo_id
+            RETURNING p.gallery_id, p.id
         )
-        SELECT p.gallery_id, p.id
-        FROM marked m
-        JOIN photos p ON p.id = m.photo_id
-        ORDER BY p.gallery_id, p.id
+        SELECT gallery_id, id
+        FROM stamped
+        ORDER BY gallery_id, id
         """.trimIndent(),
     )
         .param("error", EMBED_ATTEMPTS_EXCEEDED)
@@ -274,18 +337,29 @@ class PhotoPipelineRepository(
     /**
      * 진행이 멈춘 갤러리에서 뒤처진 사진(점수가 없는 대상 — 분석 행이 없거나 CLIP 벡터가 없다)을 결정적 실패로 표시한다.
      * 이후 기대 장수에서 빠져 잡이 나머지로 계속 간다. 표시한 사진 id를 돌려준다. 되돌리는 길은 재분석 리셋([resetAnalysis])뿐이다.
+     * 배정 시각이 비어 있던 사진(임베더에 가지도 못한 사진)에는 배정 시각을 찍는다 — [markEmbedAttemptsExceeded]와 같은 규칙(V43).
      */
     fun markAnalysisStalled(galleryId: Long, now: ZonedDateTime): List<Long> = jdbcClient.sql(
         """
-        INSERT INTO photo_analysis (photo_id, error, created_at, updated_at)
-        SELECT p.id, :error, :now, :now
-        FROM photos p
-        LEFT JOIN photo_analysis a ON a.photo_id = p.id
-        WHERE p.gallery_id = :galleryId AND p.status = 'UPLOADED' AND p.deleted_at IS NULL
-          AND a.clip_embedding IS NULL AND a.error IS NULL
-        ON CONFLICT (photo_id) DO UPDATE
-        SET error = EXCLUDED.error, version = photo_analysis.version + 1, updated_at = EXCLUDED.updated_at
-        RETURNING photo_id
+        WITH marked AS (
+            INSERT INTO photo_analysis (photo_id, error, created_at, updated_at)
+            SELECT p.id, :error, :now, :now
+            FROM photos p
+            LEFT JOIN photo_analysis a ON a.photo_id = p.id
+            WHERE p.gallery_id = :galleryId AND p.status = 'UPLOADED' AND p.deleted_at IS NULL
+              AND a.clip_embedding IS NULL AND a.error IS NULL
+            ON CONFLICT (photo_id) DO UPDATE
+            SET error = EXCLUDED.error, version = photo_analysis.version + 1, updated_at = EXCLUDED.updated_at
+            RETURNING photo_id
+        ),
+        stamped AS (
+            UPDATE photos p
+            SET dispatched_at = coalesce(p.dispatched_at, :now)
+            FROM marked m
+            WHERE p.id = m.photo_id
+            RETURNING p.id
+        )
+        SELECT id FROM stamped
         """.trimIndent(),
     )
         .param("galleryId", galleryId)
@@ -347,23 +421,25 @@ class PhotoPipelineRepository(
         .query { rs, _ -> rs.getLong(1) }
         .single()
 
-    /** 지금 떠 있는 임베더 배치 수. 한 배치의 사진은 같은 `dispatched_at`을 받으므로 서로 다른 시각의 수가 곧 배치 수다. */
-    fun countInFlightEmbedBatches(): Int = jdbcClient.sql(
+    /**
+     * 지금 떠 있는 임베더 배치 수. 한 배치의 사진은 같은 `dispatched_at`을 받으므로 서로 다른 시각의 수가 곧 배치 수다.
+     * [dispatchedSince](= 지금 − 재배정 시간) 이후 배정만 센다 — 그보다 오래된 미완료 배정은 같은 회차에서 먼저 도는
+     * [releaseStaleDispatches]가 되돌린다. 범위 덕에 끝난 사진 전체가 아니라 최근 배정만 읽는다(`idx_photos_dispatched`, #286 (l)).
+     */
+    fun countInFlightEmbedBatches(dispatchedSince: ZonedDateTime): Int = jdbcClient.sql(
         """
         SELECT count(DISTINCT p.dispatched_at)
         FROM photos p
         LEFT JOIN photo_analysis a ON a.photo_id = p.id
-        WHERE p.status = 'UPLOADED' AND p.deleted_at IS NULL AND p.dispatched_at IS NOT NULL
+        WHERE p.status = 'UPLOADED' AND p.deleted_at IS NULL
+          AND p.dispatched_at IS NOT NULL AND p.dispatched_at >= :since
           AND a.embedding IS NULL AND a.error IS NULL
         """.trimIndent(),
     )
+        .param("since", Timestamp.from(dispatchedSince.toInstant()))
         .query { rs, _ -> rs.getInt(1) }
         .single()
 
-    /**
-     * GPU 워커가 곧 집게 될 일의 양 — 업로드됐고 실패하지 않았는데 점수가 없는 사진 전부(아직 벡터도 없는 사진 포함).
-     * 켤지 말지의 기준이다: 벡터가 오기 전에 미리 켜 두면 부팅 시간이 임베딩과 겹친다.
-     */
     /** [since] 뒤에 업로드 URL이 발급되어 아직 올라오는 중인 사진이 있나 — GPU를 업로드와 함께 켜는 신호. `idx_photos_pending`을 탄다. */
     fun hasUploadStartedSince(since: ZonedDateTime): Boolean = jdbcClient.sql(
         """
@@ -377,15 +453,33 @@ class PhotoPipelineRepository(
         .query { rs, _ -> rs.getBoolean(1) }
         .single()
 
-    fun countScoreBacklog(): Long = jdbcClient.sql(
+    /**
+     * GPU 워커가 곧 집게 될 일의 양 — 업로드됐고 실패하지 않았는데 점수가 없는 사진 전부(아직 벡터도 없는 사진 포함).
+     * 켤지 말지의 기준이다: 벡터가 오기 전에 미리 켜 두면 부팅 시간이 임베딩과 겹친다.
+     *
+     * 끝난 사진 전체를 훑지 않게 셋으로 나눠 센다(#286 (l)) — 점수 없는 분석 행(`idx_photo_analysis_unscored`) + 분석 행이 아직 없는 사진 중
+     * 배정 전(`idx_photos_embed_queue`)과 [dispatchedSince] 이후 배정(`idx_photos_dispatched`). 그보다 오래 배정된 채 행이 없는 사진은
+     * 세지 않는다: 벡터가 없어 워커가 집을 수 없고, 같은 회차의 [releaseStaleDispatches]가 되돌리면 "배정 전"으로 다시 잡힌다.
+     */
+    fun countScoreBacklog(dispatchedSince: ZonedDateTime): Long = jdbcClient.sql(
         """
-        SELECT count(*)
-        FROM photos p
-        LEFT JOIN photo_analysis a ON a.photo_id = p.id
-        WHERE p.status = 'UPLOADED' AND p.deleted_at IS NULL
-          AND a.clip_embedding IS NULL AND a.error IS NULL
+        SELECT (SELECT count(*)
+                FROM photo_analysis a
+                JOIN photos p ON p.id = a.photo_id
+                WHERE a.clip_embedding IS NULL AND a.error IS NULL
+                  AND p.status = 'UPLOADED' AND p.deleted_at IS NULL)
+             + (SELECT count(*)
+                FROM photos p
+                WHERE p.status = 'UPLOADED' AND p.deleted_at IS NULL AND p.dispatched_at IS NULL
+                  AND NOT EXISTS (SELECT 1 FROM photo_analysis a WHERE a.photo_id = p.id))
+             + (SELECT count(*)
+                FROM photos p
+                WHERE p.status = 'UPLOADED' AND p.deleted_at IS NULL
+                  AND p.dispatched_at IS NOT NULL AND p.dispatched_at >= :since
+                  AND NOT EXISTS (SELECT 1 FROM photo_analysis a WHERE a.photo_id = p.id))
         """.trimIndent(),
     )
+        .param("since", Timestamp.from(dispatchedSince.toInstant()))
         .query { rs, _ -> rs.getLong(1) }
         .single()
 
@@ -535,6 +629,6 @@ class PhotoPipelineRepository(
         const val ANALYSIS_STALLED = "ANALYSIS_STALLED"
 
         /** 문장 하나의 실행 제한(초). dev 실측에서 스윕 문장은 20ms 이하·진행 카운트 14ms(7,189장 갤러리) — 그 천 배 이상이다. */
-        private const val QUERY_TIMEOUT_SECONDS = 30
+        const val QUERY_TIMEOUT_SECONDS = 30
     }
 }

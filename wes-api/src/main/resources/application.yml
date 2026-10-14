@@ -20,6 +20,11 @@ app:
       # workspace_activity 한 행을 기다렸다(R-3-a4). 공개 API만 켠다: 테스트는 이 파일을 읽지 않아 지금처럼 바로 쓴다.
       enabled: true
       flush-interval: PT5S
+  access-cache:
+    # 권한 확인(계정 상태·작업공간 종류·스튜디오 정지)을 요청마다 DB에서 다시 읽지 않고 30초 동안 앱 메모리에서 읽는다(#286 (k)).
+    # 관리자 정지는 관리자 앱에서 일어나 이 메모리를 지울 수 없다 — 정지가 반영되기까지 최대 ttl(작성자 결정 30초). 공개 API만 켠다.
+    enabled: true
+    ttl: PT30S
 
 ---
 spring:

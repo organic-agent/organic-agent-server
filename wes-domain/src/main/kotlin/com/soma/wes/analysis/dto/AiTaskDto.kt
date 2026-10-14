@@ -11,10 +11,15 @@ sealed interface AiTaskDto {
 
     val galleryId: Long
 
-    /** embedder — 배정된 사진 목록만 미리보기·DINOv3 벡터·EXIF. 잡을 모른다. */
+    /**
+     * embedder — 배정된 사진 목록만 미리보기·DINOv3 벡터·EXIF. 잡을 모른다. [storageKeys]는 [photoIds]와 같은 순서의 원본 위치다 — 있으면
+     * 임베더가 DB 를 읽지 않는다(#286 (m) 결과 큐, 임베더는 VPC 밖). 비어 있으면 키를 싣지 않아 옛 계약 `{galleryId, photoIds}` 그대로다.
+     */
     data class Embed(
         override val galleryId: Long,
         val photoIds: List<Long>,
+        @get:JsonInclude(JsonInclude.Include.NON_EMPTY)
+        val storageKeys: List<String> = emptyList(),
     ) : AiTaskDto
 
     /** score Lambda 폴백 — GPU 워커가 없을 때 미점수 사진 목록만 CLIP·점수·피사체. 페이로드가 [Embed]와 같은 모양이다. */

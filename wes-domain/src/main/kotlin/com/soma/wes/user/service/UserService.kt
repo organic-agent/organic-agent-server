@@ -1,7 +1,9 @@
 package com.soma.wes.user.service
 
 import com.soma.wes.activity.repository.ActivityRepository
+import com.soma.wes.auth.dto.AccessCacheKeyDto
 import com.soma.wes.auth.service.AuthTokenProvider
+import com.soma.wes.auth.service.port.AccessCache
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.notification.domain.UserNotificationScope
@@ -20,6 +22,8 @@ import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 
 @Service
 class UserService(
@@ -32,6 +36,7 @@ class UserService(
     private val notificationPublisher: UserNotificationPublisher,
     private val authTokenProvider: AuthTokenProvider,
     private val activityRepository: ActivityRepository,
+    private val accessCache: AccessCache?,
 ) {
 
     @Transactional(readOnly = true)
@@ -174,5 +179,20 @@ class UserService(
         workspaceMemberRepository.deleteAll(memberships)
         workspaceRepository.deleteAll(deletedWorkspaces)
         userRepository.delete(user)
+        evictAccessAfterCommit(id, deletedWorkspaceIds)
+    }
+
+    /**
+     * 탈퇴한 계정과 함께 지운 작업공간을 권한 확인 캐시에서 지운다(#286 (k)) — 남은 access token(최대 30분)이 캐시의 "활성"으로 통과하지 않게.
+     * 커밋 뒤에 지운다: 커밋 전에 지우면 그 사이의 요청이 아직 활성인 행을 다시 담는다.
+     */
+    private fun evictAccessAfterCommit(userId: Long, workspaceIds: Collection<Long>) {
+        val cache = accessCache ?: return
+        val keys = listOf(AccessCacheKeyDto.userStatus(userId)) + workspaceIds.map(AccessCacheKeyDto::workspace)
+        TransactionSynchronizationManager.registerSynchronization(
+            object : TransactionSynchronization {
+                override fun afterCommit() = cache.evict(keys)
+            },
+        )
     }
 }

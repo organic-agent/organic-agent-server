@@ -75,6 +75,30 @@ interface AnalysisJobRepository : JpaRepository<AnalysisJob, Long> {
         @Param("categorizing") categorizing: AnalysisStatus = AnalysisStatus.CATEGORIZING,
     ): Int
 
+    /**
+     * categorize 가 끝내 실패했다(실패 큐, #286 (c)) — 전송 시각을 [dispatchedAt]으로 앞당겨 재전송 대기(`categorize-timeout`)가
+     * 일찍 차게 한다. 다시 보내는 것은 [com.soma.wes.analysis.support.FolderStep]이다(상한이면 거기서 FAILED). 실패 시각([failedAt]) 뒤에 다시 보낸
+     * 전송이면 이 실패의 몫이 아니라 그대로 두고, 앞으로만 옮긴다. 시도 수는 [attempts]일 때만 — 그 사이 다른 서버가 다시 보냈으면 0이다.
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(
+        """
+        UPDATE AnalysisJob j
+        SET j.dispatchedAt = :dispatchedAt, j.version = j.version + 1, j.updatedAt = :now
+        WHERE j.id = :id AND j.status = :categorizing AND j.attempts = :attempts
+          AND j.dispatchedAt IS NOT NULL AND j.dispatchedAt <= :failedAt AND j.dispatchedAt > :dispatchedAt
+        """,
+    )
+    fun expediteCategorize(
+        @Param("id") id: Long,
+        @Param("attempts") attempts: Int,
+        @Param("failedAt") failedAt: ZonedDateTime,
+        @Param("dispatchedAt") dispatchedAt: ZonedDateTime,
+        @Param("now") now: ZonedDateTime,
+        @Param("categorizing") categorizing: AnalysisStatus = AnalysisStatus.CATEGORIZING,
+    ): Int
+
     /** 호출 자체가 실패했다 — 전송 시각을 지워 다음 회차가 타임아웃을 기다리지 않고 다시 보내게 한다. 시도 수는 그대로다. */
     @Transactional
     @Modifying(clearAutomatically = true, flushAutomatically = true)
@@ -186,6 +210,26 @@ interface AnalysisJobRepository : JpaRepository<AnalysisJob, Long> {
         @Param("now") now: ZonedDateTime,
         @Param("dispatchedBefore") dispatchedBefore: ZonedDateTime,
         @Param("maxAttempts") maxAttempts: Int,
+        @Param("done") done: AnalysisStatus = AnalysisStatus.DONE,
+    ): Int
+
+    /** rank 모드가 끝내 실패했다(실패 큐, #286 (c)) — [expediteCategorize]와 같은 규칙으로 rank 전송 시각을 앞당긴다. 다시 보내는 것은 RankStep 이다. */
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(
+        """
+        UPDATE AnalysisJob j
+        SET j.rankDispatchedAt = :dispatchedAt, j.version = j.version + 1, j.updatedAt = :now
+        WHERE j.id = :id AND j.status = :done AND j.rankAttempts = :attempts
+          AND j.rankDispatchedAt IS NOT NULL AND j.rankDispatchedAt <= :failedAt AND j.rankDispatchedAt > :dispatchedAt
+        """,
+    )
+    fun expediteRank(
+        @Param("id") id: Long,
+        @Param("attempts") attempts: Int,
+        @Param("failedAt") failedAt: ZonedDateTime,
+        @Param("dispatchedAt") dispatchedAt: ZonedDateTime,
+        @Param("now") now: ZonedDateTime,
         @Param("done") done: AnalysisStatus = AnalysisStatus.DONE,
     ): Int
 

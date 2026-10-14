@@ -67,9 +67,13 @@ class EmbedStepTest @Autowired constructor(
         photoIds.forEach { photoFixture.벡터_적재(it, FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also { v -> v[0] = 1f }) }
     }
 
-    private fun dispatchedLongAgo(photoIds: Collection<Long>) {
+    /**
+     * 배정이 재배정 시간(10분)을 넘긴 것으로 돌린다. 10분을 갓 넘긴 값이다 — 되돌리기는 지난 걸음의 경계(10분 전)에서 1분 앞까지만
+     * 이어 보므로, 실제로는 생기지 않는 "경계보다 오래된 배정"을 만들지 않는다.
+     */
+    private fun dispatchedLongAgo(photoIds: Collection<Long>, ago: String = "10 minutes 30 seconds") {
         jdbcTemplate.update(
-            "UPDATE photos SET dispatched_at = now() - interval '11 minutes' WHERE id IN (${photoIds.joinToString(",")})",
+            "UPDATE photos SET dispatched_at = now() - interval '$ago' WHERE id IN (${photoIds.joinToString(",")})",
         )
     }
 
@@ -95,8 +99,12 @@ class EmbedStepTest @Autowired constructor(
                 softly.assertThat(sentAgain).isZero()
                 softly.assertThat(aiTaskSender.embedTasks.map { it.galleryId }).containsExactly(galleryId, other)
                 softly.assertThat(aiTaskSender.embedTasks[0].photoIds).containsExactlyElementsOf(first)
+                // 원본 위치를 같은 순서로 넘긴다 — 임베더가 DB 를 읽지 않는다(#286 (m))
+                softly.assertThat(aiTaskSender.embedTasks[0].storageKeys).containsExactlyElementsOf(
+                    first.map { id -> jdbcTemplate.queryForObject("SELECT storage_key FROM photos WHERE id = ?", String::class.java, id) },
+                )
                 softly.assertThat(aiTaskSender.embedTasks[1].photoIds).containsExactlyElementsOf(second)
-                softly.assertThat(photoPipelineRepository.countInFlightEmbedBatches()).isEqualTo(2)
+                softly.assertThat(photoPipelineRepository.countInFlightEmbedBatches(ZonedDateTime.now(clock).minusMinutes(10))).isEqualTo(2)
             }
         }
 
@@ -175,10 +183,12 @@ class EmbedStepTest @Autowired constructor(
             dispatchedLongAgo(listOf(photo))
             step.advance()
 
-            // then — 더 보내지 않고 사진 단위 실패로 남아 기대 장수에서 빠진다
+            // then — 더 보내지 않고 사진 단위 실패로 남아 기대 장수에서 빠진다. 배정 시각을 찍어 임베딩 대기열에도 남지 않는다(V43 규칙)
             val progress = photoPipelineRepository.progressOf(galleryId, liveSince = ZonedDateTime.now(clock))
             assertSoftly { softly ->
                 softly.assertThat(aiTaskSender.embedTasks).hasSize(2)
+                softly.assertThat(jdbcTemplate.queryForObject("SELECT dispatched_at IS NOT NULL FROM photos WHERE id = ?", Boolean::class.java, photo)).isTrue()
+                softly.assertThat(photoPipelineRepository.findGalleryIdsWithEmbedBacklog(maxAttempts = 2)).doesNotContain(galleryId)
                 softly.assertThat(photoAnalysisRepository.findById(photo).orElseThrow().error).isEqualTo(PhotoPipelineRepository.EMBED_ATTEMPTS_EXCEEDED)
                 softly.assertThat(progress.failed).isEqualTo(1)
                 softly.assertThat(progress.expected).isZero()
@@ -210,6 +220,30 @@ class EmbedStepTest @Autowired constructor(
                 softly.assertThat(exceeded.map { it.mdcPropertyMap[LogContext.GALLERY_ID] })
                     .containsExactlyInAnyOrder(galleryId.toString(), other.toString())
             }
+        }
+
+        @Test
+        fun `시작 뒤 첫 걸음은 처음부터 보고 이어지는 걸음은 지난 경계 뒤만 본다`() {
+            // given — 재시작 전에 배정된 채 남은 사진, 시작 직후의 새 단계
+            val photo = photoFixture.업로드된_사진(galleryId, count = 1).single()
+            dispatchedLongAgo(listOf(photo), ago = "2 hours")
+            val step = step()
+
+            // when — 첫 걸음: 범위 없이 되돌려 다시 보낸다
+            step.advance()
+            val firstSent = aiTaskSender.embedTasks.size
+
+            // 경계보다 오래된 배정을 억지로 만든다(실제로는 생기지 않는다) — 이어 보는 걸음이 범위를 지키는지 확인
+            dispatchedLongAgo(listOf(photo), ago = "2 hours")
+            step.advance()
+
+            // then — 두 번째 걸음은 그 배정을 보지 않는다. 새로 시작한 단계는 다시 처음부터 본다
+            assertSoftly { softly ->
+                softly.assertThat(firstSent).isEqualTo(1)
+                softly.assertThat(aiTaskSender.embedTasks).hasSize(1)
+            }
+            step().advance()
+            assertThat(aiTaskSender.embedTasks).hasSize(2)
         }
 
         @Test

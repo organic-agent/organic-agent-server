@@ -107,6 +107,12 @@ WITH src AS (SELECT * FROM galleries WHERE id = $SOURCE),
      )
 INSERT INTO mapping SELECT ph.id, p.id FROM p JOIN photos ph ON ph.storage_key || '#clone-' || p.gallery_id = p.storage_key AND ph.gallery_id = $SOURCE;
 $ANALYSIS_SQL
+-- 임베더 단계를 떠난 사진(벡터 또는 실패가 있는 행)에는 배정 시각을 남긴다 — 운영의 끝난 사진과 같게. 비워 두면 임베딩 대기열 인덱스
+-- (idx_photos_embed_queue)에 남아 5초 스윕이 매번 복제 사진 전부를 분석 행과 맞춰 본다(#286 B-1: 99,800장 · 디스크 5.8GB). strip embed 는 행이
+-- 없어 그대로 비고, 그게 맞다(다시 임베딩할 사진).
+UPDATE photos p SET dispatched_at = p.created_at
+FROM mapping m
+WHERE p.id = m.new_id AND EXISTS (SELECT 1 FROM photo_analysis a WHERE a.photo_id = p.id AND (a.embedding IS NOT NULL OR a.error IS NOT NULL));
 SELECT (SELECT max(gallery_id) FROM photos WHERE id IN (SELECT new_id FROM mapping)) AS new_gallery, count(*) AS photos FROM mapping;
 -- 호출 스크립트가 만든 갤러리를 제목으로 추측하지 않게 기계가 읽을 줄을 남긴다(exp-score-split.sh 가 정리 대상으로 쓴다).
 SELECT 'CLONED_GALLERY=' || (SELECT max(gallery_id) FROM photos WHERE id IN (SELECT new_id FROM mapping)) AS marker;
