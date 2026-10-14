@@ -4,6 +4,7 @@ import com.soma.wes.analysis.config.LambdaAiTaskProperties
 import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.analysis.exception.AnalysisException
+import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.Test
@@ -50,11 +51,44 @@ class LambdaAiTaskSenderUnitTest {
             softly.assertThat(embedPayload.has("jobId")).isFalse()
             softly.assertThat(embedPayload["galleryId"].asLong()).isEqualTo(3)
             softly.assertThat(embedPayload["photoIds"].toString()).isEqualTo("[10,11,12]")
+            // 원본 위치를 넘기지 않으면 키도 없다 — 옛 계약 그대로.
+            softly.assertThat(embedPayload.has("storageKeys")).isFalse()
             softly.assertThat(score.functionName()).isEqualTo("wes-score")
             softly.assertThat(scorePayload["galleryId"].asLong()).isEqualTo(3)
             softly.assertThat(scorePayload["photoIds"].toString()).isEqualTo("[10]")
             softly.assertThat(scorePayload.has("jobId")).isFalse()
         }
+    }
+
+    @Test
+    fun `임베더 배치에 원본 위치가 있으면 같은 순서로 싣는다`() {
+        whenever(lambdaClient.invoke(any<InvokeRequest>())).thenReturn(InvokeResponse.builder().statusCode(202).build())
+
+        sender.send(AiTaskDto.Embed(galleryId = 3, photoIds = listOf(10, 11), storageKeys = listOf("galleries/3/a.jpg", "galleries/3/b.jpg")))
+
+        val request = argumentCaptor<InvokeRequest>()
+        verify(lambdaClient).invoke(request.capture())
+        val payload = objectMapper.readTree(request.firstValue.payload().asUtf8String())
+        assertSoftly { softly ->
+            softly.assertThat(payload["photoIds"].toString()).isEqualTo("[10,11]")
+            softly.assertThat(payload["storageKeys"].toString()).isEqualTo("""["galleries/3/a.jpg","galleries/3/b.jpg"]""")
+        }
+    }
+
+    @Test
+    fun `관리자 사진 교체 함수가 따로 있으면 그 함수로 보낸다`() {
+        whenever(lambdaClient.invoke(any<InvokeRequest>())).thenReturn(InvokeResponse.builder().statusCode(202).build())
+        val split = LambdaAiTaskSender(
+            lambdaClient,
+            LambdaAiTaskProperties(embedderFunctionName = "wes-embedder", exactPhotoFunctionName = "wes-embedder-admin"),
+            objectMapper,
+        )
+
+        split.send(AiTaskDto.ExactPhoto(jobId = 1, attemptCount = 1, jobType = "PHOTO_REPLACE", photoId = 2, galleryId = 3, storageKey = "k", revisionId = 4))
+
+        val request = argumentCaptor<InvokeRequest>()
+        verify(lambdaClient).invoke(request.capture())
+        assertThat(request.firstValue.functionName()).isEqualTo("wes-embedder-admin")
     }
 
     @Test

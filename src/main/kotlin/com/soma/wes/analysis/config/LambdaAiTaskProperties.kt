@@ -13,19 +13,25 @@ import org.springframework.boot.context.properties.ConfigurationProperties
  */
 @ConfigurationProperties(prefix = "app.analysis")
 data class LambdaAiTaskProperties(
-    /** embedder Lambda 함수 이름. 관리자 사진 교체([AiTaskDto.ExactPhoto])도 이 함수로 간다. */
+    /** embedder Lambda 함수 이름. [exactPhotoFunctionName]이 비어 있으면 관리자 사진 교체([AiTaskDto.ExactPhoto])도 이 함수로 간다. */
     val embedderFunctionName: String = "",
     /** score Lambda 함수 이름 — GPU 워커가 없을 때의 폴백. */
     val scoreFunctionName: String = "",
     /** categorize Lambda 함수 이름. */
     val categorizeFunctionName: String = "",
+    /**
+     * 관리자 사진 교체([AiTaskDto.ExactPhoto])를 부를 함수 이름. 배치 임베더가 VPC 밖으로 나가 DB 를 못 쓰게 되면(#286 (m) 결과 큐) 같은 이미지의
+     * VPC 안 함수(`embedder-admin`)가 이 일을 맡는다. 비어 있으면 [embedderFunctionName] — 함수를 나누기 전(운영 I3 전)과 같다.
+     */
+    val exactPhotoFunctionName: String = "",
 ) {
 
     val isEmbedderConfigured: Boolean
         get() = embedderFunctionName.isNotBlank()
 
     fun functionNameOf(task: KClass<out AiTaskDto>): String = when (task) {
-        AiTaskDto.Embed::class, AiTaskDto.ExactPhoto::class -> embedderFunctionName
+        AiTaskDto.Embed::class -> embedderFunctionName
+        AiTaskDto.ExactPhoto::class -> exactPhotoFunctionName.ifBlank { embedderFunctionName }
         AiTaskDto.Score::class -> scoreFunctionName
         AiTaskDto.Categorize::class, AiTaskDto.Rank::class -> categorizeFunctionName
         else -> error("모르는 AI 작업: $task")

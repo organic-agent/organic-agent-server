@@ -91,6 +91,7 @@ class SqsAiFailureQueue(
         if (!payload.isObject || !payload.has("galleryId")) return null
         val type = when (functionName) {
             functions.embedderFunctionName -> if (payload.has("photoIds")) AiTaskDto.Embed::class else AiTaskDto.ExactPhoto::class
+            functions.exactPhotoFunctionName.ifBlank { null } -> AiTaskDto.ExactPhoto::class
             functions.scoreFunctionName -> AiTaskDto.Score::class
             functions.categorizeFunctionName ->
                 if (payload.path("mode").asString("") == AiTaskDto.Rank.RANK_MODE) {
