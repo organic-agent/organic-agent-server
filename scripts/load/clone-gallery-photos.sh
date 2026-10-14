@@ -110,7 +110,9 @@ $ANALYSIS_SQL
 -- 임베더 단계를 떠난 사진(벡터 또는 실패가 있는 행)에는 배정 시각을 남긴다 — 운영의 끝난 사진과 같게. 비워 두면 임베딩 대기열 인덱스
 -- (idx_photos_embed_queue)에 남아 5초 스윕이 매번 복제 사진 전부를 분석 행과 맞춰 본다(#286 B-1: 99,800장 · 디스크 5.8GB). strip embed 는 행이
 -- 없어 그대로 비고, 그게 맞다(다시 임베딩할 사진).
-UPDATE photos p SET dispatched_at = p.created_at
+-- 시각은 하루 전으로 찍는다 — 지금으로 찍으면 스윕의 배정 시각 범위(지금 − embed-redispatch-after, 분 단위)에 복제 사진 전부가 들어가
+-- 측정 첫 몇 분 동안 범위 쿼리가 수만 장을 분석 행과 맞춰 본다(#286 B-1′·B-1″ DB 시간 상위). 운영의 끝난 사진도 배정이 오래전이다.
+UPDATE photos p SET dispatched_at = now() - interval '1 day'
 FROM mapping m
 WHERE p.id = m.new_id AND EXISTS (SELECT 1 FROM photo_analysis a WHERE a.photo_id = p.id AND (a.embedding IS NOT NULL OR a.error IS NOT NULL));
 SELECT (SELECT max(gallery_id) FROM photos WHERE id IN (SELECT new_id FROM mapping)) AS new_gallery, count(*) AS photos FROM mapping;
