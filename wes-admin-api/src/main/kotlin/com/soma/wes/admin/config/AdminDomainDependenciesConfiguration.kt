@@ -31,7 +31,9 @@ import com.soma.wes.global.config.TimeConfig
 import com.soma.wes.global.config.WebMvcConfig
 import com.soma.wes.global.exception.GlobalExceptionHandler
 import com.soma.wes.photo.config.StorageProperties
+import com.soma.wes.photo.config.ViewUrlCacheProperties
 import com.soma.wes.photo.infrastructure.S3PhotoStorage
+import com.soma.wes.photo.infrastructure.ViewUrlCache
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.photo.service.PhotoService
 import com.soma.wes.photo.support.PhotoViewAssembler
@@ -66,6 +68,7 @@ import org.springframework.context.annotation.Import
     AdminObservabilityProperties::class,
     AdminWorkflowExecutorProperties::class,
     StorageProperties::class,
+    ViewUrlCacheProperties::class,
     FolderProperties::class,
     TrashProperties::class,
     LambdaAiTaskProperties::class,
@@ -87,6 +90,7 @@ import org.springframework.context.annotation.Import
     CustomAccessDeniedHandler::class,
     SecureTokenGenerator::class,
     S3PhotoStorage::class,
+    ViewUrlCache::class,
     AwsLambdaConfig::class,
     LambdaAiTaskSender::class,
     GalleryInviteUrlResolver::class,

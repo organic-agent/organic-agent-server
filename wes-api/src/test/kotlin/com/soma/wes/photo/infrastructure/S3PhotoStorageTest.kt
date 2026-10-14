@@ -1,6 +1,7 @@
 package com.soma.wes.photo.infrastructure
 
 import com.soma.wes.photo.config.StorageProperties
+import com.soma.wes.photo.config.ViewUrlCacheProperties
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
 import org.assertj.core.api.Assertions.assertThat
@@ -24,9 +25,11 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.s3.model.S3Error
 import software.amazon.awssdk.services.s3.model.S3Exception
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest
 import java.net.URI
+import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.util.function.Consumer
@@ -39,6 +42,12 @@ class S3PhotoStorageTest {
         s3Client = s3Client,
         s3Presigner = s3Presigner,
         properties = properties(),
+        viewUrlCache = viewUrlCache(enabled = false),
+    )
+
+    private fun viewUrlCache(enabled: Boolean) = ViewUrlCache(
+        properties = ViewUrlCacheProperties(enabled = enabled),
+        clock = Clock.systemUTC(),
     )
 
     private fun properties() = StorageProperties(
@@ -65,6 +74,73 @@ class S3PhotoStorageTest {
             // then
             assertThat(storage.galleryPrefix(7)).isEqualTo("galleries/7/")
             assertThat(key).startsWith("galleries/7/").endsWith(".jpg")
+        }
+    }
+
+    @Nested
+    @DisplayName("미리보기 URL을 서명할 때")
+    inner class PresignView {
+
+        private val offline = OfflinePresigner.create()
+
+        /** 실제 SDK로 서명하되 몇 번 불렸는지 셀 수 있게 목을 거친다. */
+        private fun signingPresigner(): S3Presigner = mock<S3Presigner>().also { presigner ->
+            whenever(presigner.presignGetObject(any<GetObjectPresignRequest>())).thenAnswer { invocation ->
+                offline.presignGetObject(invocation.getArgument<GetObjectPresignRequest>(0))
+            }
+        }
+
+        private fun storageWith(presigner: S3Presigner, cacheEnabled: Boolean) = S3PhotoStorage(
+            s3Client = s3Client,
+            s3Presigner = presigner,
+            properties = properties(),
+            viewUrlCache = viewUrlCache(enabled = cacheEnabled),
+        )
+
+        @Test
+        fun `캐시가 켜져 있으면 같은 사진은 한 번만 서명하고 수명을 창만큼 늘린다`() {
+            // given
+            val presigner = signingPresigner()
+            val cached = storageWith(presigner, cacheEnabled = true)
+
+            // when
+            val first = cached.presignView("previews/galleries/1/a.jpg")
+            val second = cached.presignView("previews/galleries/1/a.jpg")
+
+            // then
+            assertThat(second).isEqualTo(first)
+            assertThat(first).contains("X-Amz-Expires=1500")
+            verify(presigner, times(1)).presignGetObject(any<GetObjectPresignRequest>())
+        }
+
+        @Test
+        fun `캐시가 꺼져 있으면 지금처럼 매번 15분으로 서명한다`() {
+            // given
+            val presigner = signingPresigner()
+            val uncached = storageWith(presigner, cacheEnabled = false)
+
+            // when
+            val first = uncached.presignView("previews/galleries/1/a.jpg")
+            uncached.presignView("previews/galleries/1/a.jpg")
+
+            // then
+            assertThat(first).contains("X-Amz-Expires=900")
+            verify(presigner, times(2)).presignGetObject(any<GetObjectPresignRequest>())
+        }
+
+        @Test
+        fun `원본 서명은 캐시하지 않는다`() {
+            // given
+            val presigner = signingPresigner()
+            val cached = storageWith(presigner, cacheEnabled = true)
+
+            // when
+            val first = cached.presignOriginal("galleries/1/a.jpg")
+            cached.presignOriginal("galleries/1/a.jpg")
+
+            // then
+            assertThat(first).contains("X-Amz-Expires=3600")
+            verify(presigner, times(2)).presignGetObject(any<GetObjectPresignRequest>())
         }
     }
 

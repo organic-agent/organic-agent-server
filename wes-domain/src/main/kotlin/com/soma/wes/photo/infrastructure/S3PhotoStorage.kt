@@ -28,6 +28,7 @@ class S3PhotoStorage(
     private val s3Client: S3Client,
     private val s3Presigner: S3Presigner,
     private val properties: StorageProperties,
+    private val viewUrlCache: ViewUrlCache,
 ) : PhotoStorage {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -74,7 +75,15 @@ class S3PhotoStorage(
         )
     }
 
-    override fun presignView(key: String): String = presignGet(key, properties.viewUrlTtl)
+    /**
+     * 목록·셀렉·보정 화면이 사진마다 부르는 서명이라 가장 많이 불린다. 캐시가 켜져 있으면 같은 사진은 창(10분) 동안 다시 서명하지
+     * 않고, 그 대신 창 끝에 받은 사람도 [StorageProperties.viewUrlTtl]만큼 쓰도록 수명을 창만큼 늘려 서명한다(ADR 0004).
+     */
+    override fun presignView(key: String): String {
+        if (!viewUrlCache.enabled) return presignGet(key, properties.viewUrlTtl)
+
+        return viewUrlCache.get(key) { presignGet(key, properties.viewUrlTtl.plus(viewUrlCache.reuseWindow)) }
+    }
 
     override fun presignOriginal(key: String): String = presignGet(key, properties.originalUrlTtl)
 
