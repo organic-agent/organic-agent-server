@@ -34,17 +34,27 @@ if [ -n "$ASG_NAME" ]; then
   log "ASG $ASG_NAME · min $ORIGINAL_MIN · 대상 그룹 $TARGET_GROUP_ARN"
 fi
 
-restore_min() {
-  [ -n "$ASG_NAME" ] && [ -n "$ORIGINAL_MIN" ] || return 0
-  aws autoscaling update-auto-scaling-group --region "$AWS_REGION" \
-    --auto-scaling-group-name "$ASG_NAME" --min-size "$ORIGINAL_MIN" || echo "ASG min 되돌리기 실패 — 손으로 $ORIGINAL_MIN 으로" >&2
-}
-trap restore_min EXIT
+# 지금 standby 로 뺀 서버. 복귀까지 마치면 비운다.
+IN_STANDBY=""
 
 lifecycle_of() {
   aws autoscaling describe-auto-scaling-instances --region "$AWS_REGION" --instance-ids "$1" \
     --query 'AutoScalingInstances[0].LifecycleState' --output text
 }
+
+# 끝날 때(실패해도) 되돌린다. standby 에 남은 서버가 있으면 먼저 복귀시킨다 — 그 서버가 desired 를 1 줄여 둔 채면 min 을 원래대로
+# 올리는 호출이 desired < min 으로 거절된다(PR #317 리뷰).
+cleanup() {
+  [ -n "$ASG_NAME" ] || return 0
+  if [ -n "$IN_STANDBY" ] && [ "$(lifecycle_of "$IN_STANDBY" 2>/dev/null)" = "Standby" ]; then
+    aws autoscaling exit-standby --region "$AWS_REGION" --auto-scaling-group-name "$ASG_NAME" \
+      --instance-ids "$IN_STANDBY" >/dev/null || echo "$IN_STANDBY standby 복귀 실패 — 손으로 exit-standby" >&2
+  fi
+  [ -n "$ORIGINAL_MIN" ] || return 0
+  aws autoscaling update-auto-scaling-group --region "$AWS_REGION" \
+    --auto-scaling-group-name "$ASG_NAME" --min-size "$ORIGINAL_MIN" || echo "ASG min 되돌리기 실패 — 손으로 $ORIGINAL_MIN 으로" >&2
+}
+trap cleanup EXIT
 
 wait_lifecycle() {
   local id="$1" want="$2"
@@ -137,6 +147,7 @@ fi
 for id in $INSTANCES; do
   if [ -n "$ASG_NAME" ]; then
     log "$id standby — ALB 에서 빼고 진행 중 요청을 마저 끝낸다"
+    IN_STANDBY="$id"
     aws autoscaling enter-standby --region "$AWS_REGION" --auto-scaling-group-name "$ASG_NAME" \
       --instance-ids "$id" --should-decrement-desired-capacity >/dev/null
     wait_lifecycle "$id" Standby
@@ -151,6 +162,7 @@ for id in $INSTANCES; do
     aws autoscaling exit-standby --region "$AWS_REGION" --auto-scaling-group-name "$ASG_NAME" \
       --instance-ids "$id" >/dev/null
     wait_lifecycle "$id" InService
+    IN_STANDBY=""
     wait_target_healthy "$id"
     log "$id healthy — slow start ${SLOW_START_SECONDS}초 기다림"
     sleep "$SLOW_START_SECONDS"
