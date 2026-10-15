@@ -123,7 +123,9 @@ def main(csv_path, env_path, out_dir):
     rows.append(("새 컨테이너 시작", rel(started)))
     rows.append(("컨테이너 healthy", rel(healthy)))
     rows.append(("첫 실패 F", rel(f_sec)))
-    rows.append(("회복 T1", rel(t1) if t1 is not None else "회복 못 함"))
+    # 첫 실패 뒤 부하가 10초도 안 남았으면 회복을 못 잰 것이지 회복 못 한 것이 아니다(자극을 너무 늦게 준 회차).
+    data_short = t1 is None and f_sec is not None and last - f_sec < RECOVER_SECONDS
+    rows.append(("회복 T1", rel(t1) if t1 is not None else ("판정 불가 (F 뒤 데이터 부족)" if data_short else "회복 못 함")))
     rows.append(("끊긴 길이 T1 − F", "—" if f_sec is None or t1 is None else f"{t1 - f_sec}초"))
     rows.append(("자극 구간", f"{kst(w_start)} ~ {kst(w_end)} ({w_end - w_start + 1}초)"))
     rows.append(("자극 구간 요청 · 실패", f"{w_total:,} · {w_fail:,} ({w_fail / w_total * 100 if w_total else 0:.2f}%)"))
@@ -153,6 +155,7 @@ def main(csv_path, env_path, out_dir):
         v.write(f"GAPS_OVER5={over5}\n")
         v.write(f"RECOVER={'' if t1 is None else max(0, t1 - t0s)}\n")
         v.write(f"AFTER_T1={'' if after is None else after}\n")
+        v.write(f"DATA_SHORT={1 if data_short else 0}\n")
 
 
 if __name__ == "__main__":

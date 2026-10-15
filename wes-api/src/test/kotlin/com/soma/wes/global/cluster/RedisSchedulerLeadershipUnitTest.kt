@@ -78,6 +78,24 @@ class RedisSchedulerLeadershipUnitTest {
     }
 
     @Test
+    fun `내려간 뒤에 늦게 온 갱신은 임대를 다시 얻지 않는다`() {
+        // given — 갱신 하나가 반납과 엇갈려 늦게 도착하는 경우(PR #315 리뷰)
+        val leaving = server().apply { tick() }
+        val staying = server()
+
+        // when
+        leaving.stop()
+        leaving.tick()
+        staying.tick()
+
+        // then
+        assertSoftly { softly ->
+            softly.assertThat(leaving.isLeader()).isFalse()
+            softly.assertThat(staying.isLeader()).isTrue()
+        }
+    }
+
+    @Test
     fun `임대가 끝나면 다른 서버가 이어받고 옛 리더는 다음 갱신에서 리더가 아님을 안다`() {
         // given — 리더가 멈춰 갱신하지 못하는 사이 키가 만료됐다
         val stalled = server().apply { tick() }

@@ -47,6 +47,10 @@ class RedisSchedulerLeadership(
 
     private var executor: ScheduledExecutorService? = null
 
+    /** 내려가는 중이다. 이미 돌던 갱신이 반납 뒤에 임대를 다시 얻지 않게 한다. */
+    @Volatile
+    private var stopping = false
+
     companion object {
         /** 내 임대면 늘리고, 빈 키면 얻는다. 남의 임대면 0. 읽고 쓰는 사이에 다른 서버가 끼지 않게 한 스크립트로 한다. */
         private val CLAIM = DefaultRedisScript(
@@ -89,14 +93,23 @@ class RedisSchedulerLeadership(
     override fun isLeader(): Boolean = clock.instant().isBefore(leaderUntil)
 
     override fun start() {
+        stopping = false
         executor = Executors.newSingleThreadScheduledExecutor { task -> Thread(task, THREAD_NAME).apply { isDaemon = true } }.apply {
             scheduleWithFixedDelay(::tick, 0, properties.renewInterval.toMillis(), TimeUnit.MILLISECONDS)
         }
         log.info("event=leader.started token={} ttl={} renew={}", token, properties.ttl, properties.renewInterval)
     }
 
+    /**
+     * 돌던 갱신이 끝나기를 기다린 뒤 반납한다. 기다리지 않으면 갱신 도중에 반납한 빈 키를 그 갱신이 다시 얻어, 내려가는 서버가 ttl 동안 임대를
+     * 쥐고 다음 서버가 이어받지 못한다(PR #315 리뷰).
+     */
     override fun stop() {
-        executor?.shutdownNow()
+        stopping = true
+        executor?.let { running ->
+            running.shutdown()
+            if (!running.awaitTermination(properties.renewInterval.toMillis(), TimeUnit.MILLISECONDS)) running.shutdownNow()
+        }
         executor = null
         release()
     }
@@ -105,6 +118,7 @@ class RedisSchedulerLeadership(
 
     /** 임대를 한 번 얻거나 늘린다. 리더가 되면 [SchedulerLeadershipAcquiredEvent]를 낸다. */
     fun tick() {
+        if (stopping) return
         val attemptedAt = clock.instant()
         val wasLeader = isLeader()
         val held = try {
@@ -121,6 +135,7 @@ class RedisSchedulerLeadership(
             return
         }
 
+        if (stopping) return
         leaderUntil = attemptedAt.plus(properties.ttl).minus(SAFETY_MARGIN)
         if (!wasLeader) {
             log.info("event=leader.acquired token={}", token)

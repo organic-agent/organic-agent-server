@@ -38,7 +38,9 @@ APP_ID=$(aws ec2 describe-instances --region "$REGION" \
   --query 'Reservations[0].Instances[0].InstanceId' --output text)
 [ "$APP_ID" != "None" ] || { echo "실행 중인 $RESOURCE_PREFIX-app 이 없다." >&2; exit 1; }
 
-kst() { TZ=Asia/Seoul date -r "${1%.*}" '+%H:%M:%S'; }
+# epoch → 시각. macOS(BSD) date 는 -r, Linux(GNU) date 는 -d @ 로 읽는다.
+from_epoch() { date -r "$1" "$2" 2>/dev/null || date -d "@$1" "$2"; }
+kst() { TZ=Asia/Seoul from_epoch "${1%.*}" '+%H:%M:%S'; }
 say() { echo "[$(TZ=Asia/Seoul date '+%H:%M:%S')] $*" >&2; }
 
 # 앱 서버에서 명령 하나를 돌리고 표준 출력을 돌려준다.
@@ -48,7 +50,8 @@ on_app() {
     --comment "availability $REPORT_LABEL" \
     --parameters "$(python3 -c 'import json,sys; print(json.dumps({"commands":[sys.argv[1]]}))' "$1")" \
     --query Command.CommandId --output text)
-  for _ in $(seq 1 120); do
+  # CONTAINER_TIMES 가 healthy 를 최대 300초 기다리므로 그보다 길게(360초) 본다 — 짧으면 끝나기 전 출력을 읽어 시각이 빈다.
+  for _ in $(seq 1 180); do
     sleep 2
     status=$(aws ssm get-command-invocation --region "$REGION" --command-id "$cid" --instance-id "$APP_ID" \
       --query Status --output text 2>/dev/null || echo Pending)
@@ -90,7 +93,7 @@ if [ "$KIND" = deploy ]; then
   [ -n "$RUN_ID" ] || { echo "방금 누른 배포 실행을 못 찾았다." >&2; exit 1; }
   say "실행 $RUN_ID — 끝날 때까지 대기"
   gh run watch "$RUN_ID" --interval 10 --exit-status >/dev/null || say "배포 실행이 실패로 끝났다 — 그래도 시각은 남긴다"
-  AFTER=$(date -u -r "$PRESSED_AT" '+%Y-%m-%dT%H:%M:%SZ')
+  AFTER=$(TZ=UTC from_epoch "$PRESSED_AT" '+%Y-%m-%dT%H:%M:%SZ')
   # 결과가 페이지마다 따로 와서 [0] 이 여러 줄이 된다 — 전부 받아 누른 뒤 가장 이른 배포 명령을 고른다.
   T0=$(aws ssm list-commands --region "$REGION" --instance-id "$APP_ID" \
     --filters "key=InvokedAfter,value=$AFTER" "key=DocumentName,value=AWS-RunShellScript" \

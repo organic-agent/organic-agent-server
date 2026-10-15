@@ -53,14 +53,19 @@ if [ "$KIND" = "deploy" ]; then
   awk "BEGIN{exit !($WINDOW_RATE < 0.1)}" && v=pass || v=fail; report_verdict "$v" "QA-1 자극 구간 실패율 < 0.1%" "${WINDOW_RATE}%"
   [ "$GAPS_OVER5" -eq 0 ] && v=pass || v=fail; report_verdict "$v" "QA-1 5초 넘는 공백 0" "${GAPS_OVER5}개 (가장 긴 것 ${LONGEST_GAP}초)"
   report_verdict info "회복 T0 → T1" "${RECOVER:-회복 못 함}${RECOVER:+초}"
-else
+elif [ "$KIND" = "kill" ]; then
   if [ -n "$RECOVER" ]; then
     [ "$RECOVER" -le 30 ] && v=pass || v=fail; report_verdict "$v" "회복 T0 → T1 ≤ 30초 (QA-2 기준을 1대에 대 봄)" "${RECOVER}초"
+  elif [ "${DATA_SHORT:-0}" = "1" ]; then
+    report_verdict info "회복 T0 → T1 ≤ 30초" "판정 불가 — 첫 실패 뒤 부하가 10초 안에 끝남(자극이 너무 늦음)"
   else
     report_verdict fail "회복 T0 → T1 ≤ 30초" "회복 못 함"
   fi
   [ "${AFTER_T1:-1}" = "0" ] && v=pass || v=fail; report_verdict "$v" "T1 뒤 실패 0" "${AFTER_T1:-—}"
   report_verdict info "자극 구간 실패율 · 가장 긴 공백" "${WINDOW_RATE}% · ${LONGEST_GAP}초"
+else
+  # 자극 기록이 깨졌으면 아무 기준으로나 판정하지 않는다.
+  echo "알 수 없는 KIND: '$KIND' — $STIM_PATH 를 확인하라" >&2; exit 1
 fi
 report_note "원본: $CSV_PATH · $STIM_PATH"
 report_end
