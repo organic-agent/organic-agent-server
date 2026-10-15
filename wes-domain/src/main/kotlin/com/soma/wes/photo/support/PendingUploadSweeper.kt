@@ -1,5 +1,6 @@
 package com.soma.wes.photo.support
 
+import com.soma.wes.global.cluster.SchedulerLeadership
 import com.soma.wes.global.logging.LogContext
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.dto.PendingPhotoDto
@@ -26,12 +27,14 @@ class PendingUploadSweeper(
     private val photoStorage: PhotoStorage,
     private val properties: StorageProperties,
     private val clock: Clock,
+    private val leadership: SchedulerLeadership,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
     @Scheduled(fixedDelayString = "\${app.storage.pending-sweep-interval:PT5S}")
     fun sweep() {
+        if (!leadership.isLeader()) return
         LogContext.sweep { sweepOnce() }
     }
 

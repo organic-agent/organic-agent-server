@@ -35,4 +35,23 @@ interface AiSelectionJobRepository : JpaRepository<AiSelectionJob, Long> {
         @Param("running") running: AiJobStatus = AiJobStatus.RUNNING,
         @Param("pending") pending: AiJobStatus = AiJobStatus.PENDING,
     ): Int
+
+    /**
+     * RUNNING → PENDING, [before] 전에 집힌 것만 — 돌리던 서버가 죽었다고 볼 만큼 오래된 잡이다. 서버가 여럿이면 다른 서버가 지금 돌리는
+     * 잡(방금 집힌 것)은 건드리지 않아야 한다(#313). 문장 하나라 다른 서버의 [claim]과 겹쳐도 한쪽만 이긴다.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(
+        """
+        UPDATE AiSelectionJob j
+        SET j.status = :pending, j.startedAt = NULL, j.updatedAt = :now
+        WHERE j.status = :running AND j.startedAt < :before
+        """,
+    )
+    fun requeueStale(
+        @Param("before") before: ZonedDateTime,
+        @Param("now") now: ZonedDateTime,
+        @Param("running") running: AiJobStatus = AiJobStatus.RUNNING,
+        @Param("pending") pending: AiJobStatus = AiJobStatus.PENDING,
+    ): Int
 }

@@ -1,6 +1,7 @@
 package com.soma.wes.analysis.support
 
 import com.soma.wes.analysis.service.AnalysisPipelineService
+import com.soma.wes.global.cluster.SchedulerLeadership
 import com.soma.wes.global.logging.LogContext
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
@@ -15,10 +16,12 @@ import org.springframework.stereotype.Component
 class AnalysisPipelineScheduler(
     private val pipeline: AnalysisPipelineService,
     private val sweepWatch: AnalysisSweepWatch,
+    private val leadership: SchedulerLeadership,
 ) {
 
     @Scheduled(fixedDelayString = "\${app.analysis.sweep-interval:PT5S}")
     fun advance() {
+        if (!leadership.isLeader()) return
         LogContext.sweep { pipeline.advance() }
         sweepWatch.completed()
     }
@@ -26,6 +29,7 @@ class AnalysisPipelineScheduler(
     /** categorize 결과가 오면 다음 스윕(최대 5초)을 기다리지 않고 폴더를 만든다(#274). 멈춤 감시는 5초 스윕이 맡는다. */
     @Scheduled(fixedDelayString = "\${app.analysis.folder-interval:PT1S}")
     fun advanceFolders() {
+        if (!leadership.isLeader()) return
         LogContext.sweep { pipeline.advanceFolders() }
     }
 }

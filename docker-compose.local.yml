@@ -16,3 +16,10 @@ services:
     volumes:
       - ./postgres-data-local:/var/lib/postgresql/data
 
+
+  valkey:
+    # 서버 여러 대가 함께 쓰는 캐시·리더 임대의 로컬 대역(#313, 운영은 ElastiCache Valkey). 앱은 app.cluster.leader.enabled=true 일 때만 붙는다.
+    image: valkey/valkey:8.0-alpine
+    container_name: wes-valkey-local
+    ports:
+      - "6379:6379"

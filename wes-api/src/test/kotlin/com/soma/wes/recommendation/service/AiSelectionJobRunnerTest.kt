@@ -464,7 +464,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
                 AiRecommendationRequest(detailFolderId = w.gardenFolderId, targetCount = 2))
             executor.runAll()
             val before = aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1)
-            jdbcTemplate.update("UPDATE ai_selection_jobs SET status = 'RUNNING', finished_at = NULL, result = NULL WHERE id = ?",
+            jdbcTemplate.update("UPDATE ai_selection_jobs SET status = 'RUNNING', started_at = now() - interval '10 minutes', finished_at = NULL, result = NULL WHERE id = ?",
                 response.jobId)
             photoSelectionService.select(fixture.galleryId, fixture.member.id!!, SelectPhotosRequest(photoIds = w.garden))
 
@@ -493,7 +493,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
                 AiRecommendationRequest(detailFolderId = w.gardenFolderId, targetCount = 2))
             executor.runAll()
             assertThat(aiSelectionJobRepository.findById(response.jobId).orElseThrow().round).isEqualTo(1)
-            jdbcTemplate.update("UPDATE ai_selection_jobs SET status = 'RUNNING', finished_at = NULL, result = NULL WHERE id = ?",
+            jdbcTemplate.update("UPDATE ai_selection_jobs SET status = 'RUNNING', started_at = now() - interval '10 minutes', finished_at = NULL, result = NULL WHERE id = ?",
                 response.jobId)
             photoSelectionService.deselect(fixture.galleryId, fixture.member.id!!, DeselectPhotosRequest(photoIds = w.garden))
 
@@ -520,7 +520,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
                 AiRecommendationRequest(detailFolderId = w.gardenFolderId, targetCount = 2))
             executor.runAll()
             val before = aiSelectionJobRepository.findById(response.jobId).orElseThrow().result!!
-            jdbcTemplate.update("UPDATE ai_selection_jobs SET status = 'RUNNING', finished_at = NULL WHERE id = ?", response.jobId)
+            jdbcTemplate.update("UPDATE ai_selection_jobs SET status = 'RUNNING', started_at = now() - interval '10 minutes', finished_at = NULL WHERE id = ?", response.jobId)
             jdbcTemplate.update("DELETE FROM detail_folders WHERE id = ?", w.gardenFolderId)
             jdbcTemplate.update("DELETE FROM photo_analysis WHERE photo_id IN (SELECT id FROM photos WHERE gallery_id = ?)", fixture.galleryId)
 
@@ -552,7 +552,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             assertThat(original).hasSize(3)
             jdbcTemplate.update("UPDATE ai_recommendations SET rejected_at = now() WHERE id = ?", original[0].requiredId)
             jdbcTemplate.update("UPDATE photos SET deleted_at = now() WHERE id = ?", original[1].photoId)
-            jdbcTemplate.update("UPDATE ai_selection_jobs SET status = 'RUNNING', finished_at = NULL WHERE id = ?", response.jobId)
+            jdbcTemplate.update("UPDATE ai_selection_jobs SET status = 'RUNNING', started_at = now() - interval '10 minutes', finished_at = NULL WHERE id = ?", response.jobId)
 
             // when
             recovery.recoverOnStartup()
@@ -599,14 +599,17 @@ class AiSelectionJobRunnerTest @Autowired constructor(
         }
 
         @Test
-        fun `기동 복구는 RUNNING 고아를 PENDING으로 되돌려 다시 줄에 세운다`() {
+        fun `기동 복구는 오래된 RUNNING 고아를 PENDING으로 되돌려 다시 줄에 세운다`() {
             // given — 이전 프로세스가 집었다가 죽은 잡(이 프로세스의 실행기는 모른다)
             world()
             val selectionId = selectionFixture.셀렉(fixture.galleryId)
             val orphan = aiSelectionJobRepository.saveAndFlush(
                 AiSelectionJob(selectionId = selectionId, mode = AiSelectionMode.DRAFT, analysisJobId = null),
             )
-            jdbcTemplate.update("UPDATE ai_selection_jobs SET status = 'RUNNING', started_at = now() WHERE id = ?", orphan.requiredId)
+            jdbcTemplate.update(
+                "UPDATE ai_selection_jobs SET status = 'RUNNING', started_at = now() - interval '10 minutes' WHERE id = ?",
+                orphan.requiredId,
+            )
             executor.reset()
 
             // when
@@ -615,6 +618,28 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             // then
             assertThat(aiSelectionJobRepository.findById(orphan.requiredId).orElseThrow().status).isEqualTo(AiJobStatus.PENDING)
             assertThat(executor.pendingCount).isEqualTo(1)
+        }
+
+        @Test
+        fun `기동 복구는 방금 집힌 RUNNING 을 건드리지 않는다 — 다른 서버가 돌리는 중이다`() {
+            // given — 서버가 여럿일 때 새로 뜬 서버가 보는 잡: 다른 서버가 1분 전에 집어 아직 돌리고 있다(#313)
+            world()
+            val selectionId = selectionFixture.셀렉(fixture.galleryId)
+            val running = aiSelectionJobRepository.saveAndFlush(
+                AiSelectionJob(selectionId = selectionId, mode = AiSelectionMode.DRAFT, analysisJobId = null),
+            )
+            jdbcTemplate.update(
+                "UPDATE ai_selection_jobs SET status = 'RUNNING', started_at = now() - interval '1 minute' WHERE id = ?",
+                running.requiredId,
+            )
+            executor.reset()
+
+            // when
+            recovery.recoverOnStartup()
+
+            // then
+            assertThat(aiSelectionJobRepository.findById(running.requiredId).orElseThrow().status).isEqualTo(AiJobStatus.RUNNING)
+            assertThat(executor.pendingCount).isZero()
         }
 
         @Test

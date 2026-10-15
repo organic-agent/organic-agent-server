@@ -105,12 +105,6 @@ class AiSelectionJob(
         this.error = error.take(MAX_ERROR_LENGTH)
     }
 
-    /** 실행 중 프로세스가 죽어 RUNNING으로 남은 잡을 다시 줄에 세운다. 기동 복구가 부른다. */
-    fun requeue() {
-        status = AiJobStatus.PENDING
-        startedAt = null
-    }
-
     companion object {
         private const val MAX_ERROR_LENGTH = 4000
     }

@@ -1,5 +1,6 @@
 package com.soma.wes.auth.support
 
+import com.soma.wes.global.cluster.SchedulerLeadership
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Component
 @Component
 class OAuthStateCleaner(
     private val oAuthStateStore: OAuthStateStore,
+    private val leadership: SchedulerLeadership,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -17,6 +19,7 @@ class OAuthStateCleaner(
     /** 매시 정각. 10분짜리 수명에 비하면 넉넉하지만, 이 청소가 급할 이유가 없다. */
     @Scheduled(cron = "0 0 * * * *")
     fun purge() {
+        if (!leadership.isLeader()) return
         val deleted = oAuthStateStore.purgeExpired()
         if (deleted > 0) {
             log.info("만료된 OAuth state {}건을 정리했다", deleted)
