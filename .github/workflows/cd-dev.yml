@@ -156,6 +156,9 @@ jobs:
       AWS_REGION: ap-northeast-2
       INSTANCE_NAME_TAG: wes-dev-app
       PARAMETER_PREFIX: /wes/dev
+      # infra environments/dev 의 module.app_release — ECR wes-dev-api · 버킷 wes-dev-deploy-<계정>.
+      ECR_REPOSITORY_NAME: wes-dev-api
+      BUNDLE_BUCKET_PREFIX: wes-dev-deploy
 
     steps:
       # 서버로 보낼 설정과 원격 스크립트만 받아 저장소 전체 checkout을 피한다.
@@ -166,6 +169,7 @@ jobs:
             docker-compose.dev.yml
             monitoring/config.alloy
             scripts/deploy-public-ssm.sh
+            scripts/rolling-deploy.sh
           sparse-checkout-cone-mode: false
 
       - name: AWS 자격증명 설정 (OIDC — 장기 액세스 키 없음)
@@ -174,87 +178,58 @@ jobs:
           role-to-assume: ${{ secrets.AWS_DEV_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: 배포 대상 인스턴스 조회
-        id: instance
+      # ASG 가 새로 만든 서버는 CD 를 거치지 않고 스스로 뜬다(#313 ADR-0001) — 그 서버가 받을 이미지·배포 묶음·태그를 먼저 둔다.
+      # 이미지는 GHCR(비공개, CD 토큰으로만 받음)에서 ECR(인스턴스 역할로 받음)로 복사한다. 태그는 불변이라 같은 커밋 재배포면 건너뛴다.
+      - name: 이미지를 ECR에 복사하고 배포 묶음·태그 올리기
+        id: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 템플릿 식을 run 에 직접 넣지 않는다 — 셸이 읽기 전에 치환돼 코드로 해석될 수 있다(PR #317 리뷰).
+          GITHUB_ACTOR: ${{ github.actor }}
         run: |
-          INSTANCE_ID=$(aws ec2 describe-instances \
-            --filters "Name=tag:Name,Values=${INSTANCE_NAME_TAG}" 'Name=instance-state-name,Values=running' \
-            --query 'Reservations[0].Instances[0].InstanceId' --output text)
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          IMAGE_REPOSITORY="${ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY_NAME}"
+          BUNDLE="s3://${BUNDLE_BUCKET_PREFIX}-${ACCOUNT}/public"
+          echo "image_repository=${IMAGE_REPOSITORY}" >> "$GITHUB_OUTPUT"
 
-          if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
-            echo "실행 중인 ${INSTANCE_NAME_TAG} 인스턴스가 없습니다 (인프라 destroy 상태인지 확인)" >&2
-            exit 1
+          if aws ecr describe-images --repository-name "$ECR_REPOSITORY_NAME" --image-ids imageTag="$IMAGE_TAG" >/dev/null 2>&1; then
+            echo "ECR 에 이미 ${IMAGE_TAG} 가 있다 — 복사를 건너뛴다"
+          else
+            aws ecr get-login-password | docker login "${IMAGE_REPOSITORY%%/*}" -u AWS --password-stdin
+            echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+            docker buildx imagetools create --tag "${IMAGE_REPOSITORY}:${IMAGE_TAG}" \
+              "ghcr.io/${OWNER_LOWERCASE}/${PUBLIC_IMAGE_BASENAME}:${IMAGE_TAG}"
           fi
-          echo "id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
 
-      - name: 컨테이너 교체 및 헬스체크 (SSM Run Command)
-        run: |
-          INSTANCE_ID="${{ steps.instance.outputs.id }}"
+          # 새 서버의 user_data 가 읽는 묶음. 비밀은 담지 않는다(서버는 Parameter Store 를 직접 읽는다).
+          {
+            echo "OWNER_LOWERCASE=${OWNER_LOWERCASE}"
+            echo "PUBLIC_IMAGE_BASENAME=${PUBLIC_IMAGE_BASENAME}"
+            echo "IMAGE_REPOSITORY=${IMAGE_REPOSITORY}"
+            echo "PARAMETER_PREFIX=${PARAMETER_PREFIX}"
+            echo "AWS_REGION=${AWS_REGION}"
+          } > release.env
+          aws s3 cp --only-show-errors release.env "${BUNDLE}/release.env"
+          aws s3 cp --only-show-errors scripts/deploy-public-ssm.sh "${BUNDLE}/deploy-public-ssm.sh"
+          aws s3 cp --only-show-errors docker-compose.dev.yml "${BUNDLE}/docker-compose.yml"
+          aws s3 cp --only-show-errors monitoring/config.alloy "${BUNDLE}/config.alloy"
 
-          # scp가 없으므로 설정 파일과 원격 스크립트를 SSM 명령에 함께 실어 보낸다.
-          COMPOSE_B64=$(base64 -w0 docker-compose.dev.yml)
-          ALLOY_B64=$(base64 -w0 monitoring/config.alloy)
+          # 서버를 바꾸기 전에 태그를 먼저 올린다 — 배포 도중 늘어난 서버도 새 버전으로 뜬다.
+          aws ssm put-parameter --name "${PARAMETER_PREFIX}/app.deploy.image-tag" --type String \
+            --value "$IMAGE_TAG" --overwrite >/dev/null
 
-          # GITHUB_TOKEN은 잡 종료와 함께 만료되는 단기 토큰이다. jq의 @sh로 모든
-          # 주입값을 shell-safe하게 인용하고, 원격 스크립트 본문은 checkout 파일을 그대로 읽는다.
-          jq -n \
-            --arg owner_lowercase "$OWNER_LOWERCASE" \
-            --arg image_tag "$IMAGE_TAG" \
-            --arg aws_region "$AWS_REGION" \
-            --arg parameter_prefix "$PARAMETER_PREFIX" \
-            --arg public_image_basename "$PUBLIC_IMAGE_BASENAME" \
-            --arg github_actor "${{ github.actor }}" \
-            --arg github_token "${{ secrets.GITHUB_TOKEN }}" \
-            --arg compose_b64 "$COMPOSE_B64" \
-            --arg alloy_b64 "$ALLOY_B64" \
-            --rawfile script scripts/deploy-public-ssm.sh \
-            '
-              def env_line($name; $value):
-                "export \($name)=\($value | @sh)\n";
-              {
-                commands: [
-                  env_line("OWNER_LOWERCASE"; $owner_lowercase)
-                  + env_line("IMAGE_TAG"; $image_tag)
-                  + env_line("AWS_REGION"; $aws_region)
-                  + env_line("PARAMETER_PREFIX"; $parameter_prefix)
-                  + env_line("PUBLIC_IMAGE_BASENAME"; $public_image_basename)
-                  + env_line("GITHUB_ACTOR"; $github_actor)
-                  + env_line("GITHUB_TOKEN"; $github_token)
-                  + env_line("COMPOSE_B64"; $compose_b64)
-                  + env_line("ALLOY_B64"; $alloy_b64)
-                  + $script
-                ]
-              }
-            ' > params.json
-
-          COMMAND_ID=$(aws ssm send-command \
-            --document-name AWS-RunShellScript \
-            --instance-ids "$INSTANCE_ID" \
-            --comment "wes-api dev deploy ${{ github.sha }}" \
-            --timeout-seconds 1800 \
-            --parameters file://params.json \
-            --query 'Command.CommandId' --output text)
-
-          # 후보 pull, target health, rollback health를 모두 포함해 최대 30분 폴링한다.
-          STATUS=Pending
-          for i in $(seq 1 180); do
-            STATUS=$(aws ssm get-command-invocation \
-              --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
-              --query Status --output text 2>/dev/null || echo Pending)
-            case "$STATUS" in
-              Success|Failed|Cancelled|TimedOut) break ;;
-            esac
-            sleep 10
-          done
-
-          # 성공이든 실패든 원격 로그를 러너 콘솔에 그대로 남긴다.
-          aws ssm get-command-invocation \
-            --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
-            --query '{status:Status,stdout:StandardOutputContent,stderr:StandardErrorContent}' \
-            --output json \
-            | jq -r '"--- status: \(.status)\n--- stdout ---\n\(.stdout)\n--- stderr ---\n\(.stderr)"'
-
-          [ "$STATUS" = "Success" ]
+      # 서버마다 한 대씩: (ASG 면) standby 로 ALB 에서 빼고 → deploy-public-ssm.sh → 복귀 → healthy → slow start 대기.
+      # 한 대라도 실패하면 멈춘다(그 서버는 스크립트가 직전 릴리스로 되돌림). ASG 가 아닌 단일 서버면 그 자리에서 바꾼다.
+      - name: 서버마다 한 대씩 교체 (SSM Run Command)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          IMAGE_REPOSITORY: ${{ steps.release.outputs.image_repository }}
+          COMPOSE_FILE: docker-compose.dev.yml
+          ALLOY_FILE: monitoring/config.alloy
+          DEPLOY_SCRIPT: scripts/deploy-public-ssm.sh
+          COMMENT_PREFIX: wes-api dev deploy
+        run: bash scripts/rolling-deploy.sh
 
   # 공개 API가 Flyway migration을 끝낸 뒤에만 관리자 API를 교체한다. 운영 cd-prod.yml의 deploy-admin과 같은 단계이고,
   # 대상 인스턴스·롤·compose·관리자 Parameter Store 프리픽스만 dev 것이다.

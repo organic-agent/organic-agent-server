@@ -6,6 +6,10 @@ set -eu
 export OWNER_LOWERCASE="${OWNER_LOWERCASE}"
 export IMAGE_TAG="${IMAGE_TAG}"
 TARGET_IMAGE_TAG="$IMAGE_TAG"
+# 이미지 저장소. 운영은 GHCR(기본), dev 는 ECR(#313 — ASG 가 새로 만든 서버가 인스턴스 역할로 받는다). compose 의 image 가 이 값을 쓴다.
+GHCR_REPOSITORY="ghcr.io/${OWNER_LOWERCASE}/${PUBLIC_IMAGE_BASENAME}"
+export IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-$GHCR_REPOSITORY}"
+REGISTRY_HOST="${IMAGE_REPOSITORY%%/*}"
 WORK_DIR=/opt/wes-prod
 # 앱이 읽는 Parameter Store 프리픽스. dev CD(cd-dev.yml)가 /wes/dev 를 넘긴다 — dev 인스턴스 롤은 /wes/prod 를 못 읽는다.
 # 서버의 작업 디렉터리·compose 파일 이름(docker-compose.prod.yml)은 배포 슬롯 이름이라 dev에서도 같다.
@@ -100,6 +104,8 @@ rollback_public_release() (
   docker image inspect "$PREVIOUS_IMAGE_ID" >/dev/null
   docker image tag "$PREVIOUS_IMAGE_ID" "$PREVIOUS_IMAGE"
   export IMAGE_TAG="$PREVIOUS_IMAGE_TAG"
+  # 직전 릴리스가 다른 저장소(GHCR ↔ ECR 옮겨 가는 첫 배포)였어도 그 이미지 그대로 되살린다.
+  export IMAGE_REPOSITORY="${PREVIOUS_IMAGE%:*}"
   handoff_public_service "$PREVIOUS_SERVICE"
 
   cd "$WORK_DIR"
@@ -149,7 +155,7 @@ on_public_deploy_exit() {
   fi
 
   if [ "$REGISTRY_LOGGED_IN" = "true" ]; then
-    docker logout ghcr.io >/dev/null 2>&1 || true
+    docker logout "$REGISTRY_HOST" >/dev/null 2>&1 || true
   fi
   exit "$ORIGINAL_STATUS"
 }
@@ -171,11 +177,10 @@ if docker inspect wes-app >/dev/null 2>&1; then
   PREVIOUS_IMAGE_ID=$(docker inspect --format '{{.Image}}' wes-app)
   PREVIOUS_SERVICE=$(docker inspect \
     --format '{{ index .Config.Labels "com.docker.compose.service" }}' wes-app)
-  PREVIOUS_IMAGE_PREFIX="ghcr.io/${OWNER_LOWERCASE}/${PUBLIC_IMAGE_BASENAME}:"
   PREVIOUS_LEGACY_IMAGE="ghcr.io/${OWNER_LOWERCASE}/wes-server:latest"
   case "$PREVIOUS_IMAGE" in
-    "$PREVIOUS_IMAGE_PREFIX"*)
-      PREVIOUS_IMAGE_TAG=${PREVIOUS_IMAGE#"$PREVIOUS_IMAGE_PREFIX"}
+    "$IMAGE_REPOSITORY:"*|"$GHCR_REPOSITORY:"*)
+      PREVIOUS_IMAGE_TAG=${PREVIOUS_IMAGE##*:}
       EXPECTED_PREVIOUS_SERVICE=wes-api
       ;;
     "$PREVIOUS_LEGACY_IMAGE")
@@ -239,13 +244,22 @@ docker compose --project-directory "$WORK_DIR" \
   -f "$CANDIDATE_DIR/docker-compose.prod.yml" config --quiet
 
 # 롤백은 지금 도는 이미지 하나만 쓴다. 그 밖의 옛 태그를 받기 전에 지워 자리를 만든다.
-TARGET_IMAGE="ghcr.io/${OWNER_LOWERCASE}/${PUBLIC_IMAGE_BASENAME}:$TARGET_IMAGE_TAG"
-remove_stale_images "ghcr.io/${OWNER_LOWERCASE}/${PUBLIC_IMAGE_BASENAME}" \
-  "$TARGET_IMAGE" "$PREVIOUS_IMAGE"
+TARGET_IMAGE="$IMAGE_REPOSITORY:$TARGET_IMAGE_TAG"
+remove_stale_images "$IMAGE_REPOSITORY" "$TARGET_IMAGE" "$PREVIOUS_IMAGE"
+[ "$IMAGE_REPOSITORY" = "$GHCR_REPOSITORY" ] || remove_stale_images "$GHCR_REPOSITORY" "$PREVIOUS_IMAGE"
 require_free_disk
 
-echo "$GITHUB_TOKEN" \
-  | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+case "$REGISTRY_HOST" in
+  *.dkr.ecr.*.amazonaws.com)
+    # 인스턴스 역할로 받는다 — CD 없이 뜨는 새 서버(ASG)도 같은 길이다.
+    aws ecr get-login-password --region "$AWS_REGION" \
+      | docker login "$REGISTRY_HOST" -u AWS --password-stdin
+    ;;
+  *)
+    echo "$GITHUB_TOKEN" \
+      | docker login "$REGISTRY_HOST" -u "$GITHUB_ACTOR" --password-stdin
+    ;;
+esac
 REGISTRY_LOGGED_IN=true
 
 docker compose --project-directory "$WORK_DIR" \
@@ -298,11 +312,11 @@ elif [ "$PREVIOUS_RELEASE_AVAILABLE" = "false" ]; then
     "$WORK_DIR/logs" "$WORK_DIR/logs/info" "$WORK_DIR/logs/warn" "$WORK_DIR/logs/error"
 fi
 docker compose -f docker-compose.prod.yml up -d --force-recreate --pull never
-docker logout ghcr.io >/dev/null 2>&1 || true
+docker logout "$REGISTRY_HOST" >/dev/null 2>&1 || true
 REGISTRY_LOGGED_IN=false
 
 RUNNING_IMAGE=$(docker inspect --format '{{.Config.Image}}' wes-app)
-EXPECTED_IMAGE="ghcr.io/${OWNER_LOWERCASE}/${PUBLIC_IMAGE_BASENAME}:$TARGET_IMAGE_TAG"
+EXPECTED_IMAGE="$IMAGE_REPOSITORY:$TARGET_IMAGE_TAG"
 [ "$RUNNING_IMAGE" = "$EXPECTED_IMAGE" ] || {
   echo "실행 이미지 불일치: $RUNNING_IMAGE (expected $EXPECTED_IMAGE)" >&2
   exit 1

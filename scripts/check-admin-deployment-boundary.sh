@@ -40,7 +40,9 @@ grep -Fq -- '--rawfile script scripts/deploy-admin-api-ssm.sh' "$cd_workflow"
 [ "$(grep -Fc -- '--arg github_token "${{ secrets.GITHUB_TOKEN }}"' "$cd_workflow")" -eq 2 ]
 [ "$(grep -Fc 'env_line("GITHUB_TOKEN"; $github_token)' "$cd_workflow")" -eq 2 ]
 grep -Fq 'echo "$GITHUB_TOKEN"' "$public_deploy_script"
-grep -Fq 'docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin' "$public_deploy_script"
+# GHCR 은 CD 단기 토큰으로만, ECR(dev, #313)은 인스턴스 역할로만 로그인한다 — 오래 사는 레지스트리 비밀이 서버에 없다.
+grep -Fq 'docker login "$REGISTRY_HOST" -u "$GITHUB_ACTOR" --password-stdin' "$public_deploy_script"
+grep -Fq 'aws ecr get-login-password --region "$AWS_REGION"' "$public_deploy_script"
 grep -Fq 'echo "$GITHUB_TOKEN"' "$admin_deploy_script"
 grep -Fq 'docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin' "$admin_deploy_script"
 if grep -Fq '${{' "$public_deploy_script" || grep -Fq '${{' "$admin_deploy_script"; then
@@ -288,7 +290,15 @@ if grep -Fq 'secrets.AWS_ADMIN_API_DEPLOY_ROLE_ARN' "$dev_workflow" || grep -Eq 
   echo "dev CD가 운영 관리자 배포 롤·인스턴스를 쓰면 안 됩니다." >&2
   exit 1
 fi
-[ "$(grep -Fc -- '--arg github_token "${{ secrets.GITHUB_TOKEN }}"' "$dev_workflow")" -eq 2 ]
+# 관리자 배포는 워크플로에서, 공개 API 배포는 rolling-deploy.sh(서버마다 한 대씩, #313)에서 SSM 명령을 만든다 — 둘 다 단기 토큰만 싣는다.
+[ "$(grep -Fc -- '--arg github_token "${{ secrets.GITHUB_TOKEN }}"' "$dev_workflow")" -eq 1 ]
+rolling_deploy_script="$repo_root/scripts/rolling-deploy.sh"
+bash -n "$rolling_deploy_script"
+grep -Fq 'run: bash scripts/rolling-deploy.sh' "$dev_workflow"
+grep -Fq 'DEPLOY_SCRIPT: scripts/deploy-public-ssm.sh' "$dev_workflow"
+grep -Fq -- '--arg github_token "$GITHUB_TOKEN"' "$rolling_deploy_script"
+grep -Fq 'env_line("GITHUB_TOKEN"; $github_token)' "$rolling_deploy_script"
+grep -Fq -- '--rawfile script "$DEPLOY_SCRIPT"' "$rolling_deploy_script"
 # dev CD는 유닛의 운영 Loki 파라미터 경로를 바꿔 보낸다. 유닛의 그 줄이 바뀌면 sed가 조용히 아무것도 안 하므로 여기서 묶는다.
 grep -Fxq 'Environment=LOKI_PARAMETER=/wes/admin-api/prod/app.logging.loki-url' "$alloy_egress_unit"
 grep -Fq 's|^Environment=LOKI_PARAMETER=/wes/admin-api/prod/|Environment=LOKI_PARAMETER=${ADMIN_PARAMETER_PREFIX}/|' "$dev_workflow"
