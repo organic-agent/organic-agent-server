@@ -1,5 +1,6 @@
 package com.soma.wes.photo.infrastructure
 
+import com.soma.wes.global.cache.SharedCache
 import com.soma.wes.photo.config.ViewUrlCacheProperties
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
@@ -25,10 +26,16 @@ import java.util.concurrent.atomic.AtomicLong
  * Redis로 옮기는 날 이 클래스 경계에서 인터페이스를 뽑는다.
  *
  * 읽기와 담기 사이를 잠그지 않는다 — 같은 사진을 둘이 동시에 놓치면 둘 다 서명하고 나중 것이 남을 뿐이다.
+ *
+ * 서버가 여러 대면 이 메모리 뒤에 [SharedCache](Redis)를 둔다(#313 ADR-0002). 새로 뜬 서버는 메모리가 비어 목록마다 200장씩 다시 서명하는데,
+ * 재시작 직후 몰린 요청이 그 일로 10초 동안 멈췄다(A-0b-2 로그). 공유 층은 목록 단위로 **한 번에** 읽는다([prefetch]) — 서명 하나(≈ 0.1ms)가
+ * Redis 왕복 하나(≈ 0.5ms)보다 싸서, 사진마다 묻는 것은 손해다. 공유 층에는 URL을 통째로 둔다 — 서버마다 자격 증명이 달라 [Template]을
+ * 나눠 쓸 수 없다. 받은 서버는 자기 메모리에 나눠 담는다.
  */
 @Component
 class ViewUrlCache(
     private val properties: ViewUrlCacheProperties,
+    private val sharedCache: SharedCache,
     private val clock: Clock,
 ) {
 
@@ -40,11 +47,15 @@ class ViewUrlCache(
     private val hits = AtomicLong()
     private val misses = AtomicLong()
     private val skipped = AtomicLong()
+    private val sharedHits = AtomicLong()
     private val lastReportAt = AtomicLong()
 
     companion object {
         private const val DATE_PARAM = "X-Amz-Date"
         private const val SIGNATURE_PARAM = "X-Amz-Signature"
+
+        /** 공유 캐시 키 앞머리. 같은 Redis 를 리더 임대 등과 나눠 쓴다. */
+        private const val SHARED_KEY_PREFIX = "wes:view-url:"
 
         /** SigV4 서명은 SHA-256 HMAC — 16진수 64자, 32바이트. */
         private const val SIGNATURE_HEX_LENGTH = 64
@@ -80,26 +91,46 @@ class ViewUrlCache(
         reportIfDue(now)
 
         val cached = entries[key]
-        if (cached != null && now.isBefore(cached.reusableUntil(reuseWindow))) {
+        if (cached != null && cached.isReusable(now, reuseWindow)) {
             hits.incrementAndGet()
             return cached.toUrl(key)
         }
 
         misses.incrementAndGet()
         val url = sign()
-        store(key, url, now)
+        val stored = store(key, url, now) ?: return url
+        sharedCache.putLater(SHARED_KEY_PREFIX + key, url, Duration.between(now, stored.reusableUntil(reuseWindow)))
         return url
     }
 
-    private fun store(key: String, url: String, now: Instant) {
+    /**
+     * 곧 [get]으로 부를 [keys] 중 메모리에 없는 것을 공유 캐시에서 한 번에 읽어 메모리에 담는다. 목록 한 페이지(200장)를 그리기 전에 부른다.
+     * 공유 캐시가 꺼져 있거나 안 되면 아무것도 담지 않는다 — 그러면 [get]이 지금처럼 서명한다.
+     */
+    fun prefetch(keys: Collection<String>) {
+        val now = clock.instant()
+        val wanted = keys.distinct().filterNot { key -> entries[key]?.isReusable(now, reuseWindow) == true }
+        if (wanted.isEmpty()) return
+
+        val found = sharedCache.getAll(wanted.map { SHARED_KEY_PREFIX + it })
+        for (key in wanted) {
+            val url = found[SHARED_KEY_PREFIX + key] ?: continue
+            if (store(key, url, now) != null) sharedHits.incrementAndGet()
+        }
+    }
+
+    /** 나눠 담는다. 담지 못했거나(모양이 다름) 이미 창이 지난 URL이면 null. */
+    private fun store(key: String, url: String, now: Instant): Entry? {
         val entry = split(key, url)
         if (entry == null || entry.toUrl(key) != url) {
             skipped.incrementAndGet()
-            return
+            return null
         }
+        if (!entry.isReusable(now, reuseWindow)) return null
 
         if (entries.size >= properties.maxEntries) prune(now)
         entries[key] = entry
+        return entry
     }
 
     /** URL을 공통 부분과 사진마다 다른 조각으로 나눈다. 예상한 모양이 아니면 null — 담지 않는다. */
@@ -157,7 +188,7 @@ class ViewUrlCache(
 
     /** 창이 지난 것을 치우고, 그래도 상한이면 전부 비운다 — 다시 서명하면 될 값이라 비워도 틀리지 않는다. */
     private fun prune(now: Instant) {
-        entries.values.removeIf { entry -> !now.isBefore(entry.reusableUntil(reuseWindow)) }
+        entries.values.removeIf { entry -> !entry.isReusable(now, reuseWindow) }
         if (entries.size >= properties.maxEntries) entries.clear()
     }
 
@@ -169,12 +200,14 @@ class ViewUrlCache(
         val hitCount = hits.getAndSet(0)
         val missCount = misses.getAndSet(0)
         val skippedCount = skipped.getAndSet(0)
+        val sharedHitCount = sharedHits.getAndSet(0)
         val total = hitCount + missCount
         if (total == 0L) return
 
         log.info(
-            "event=view_url_cache hits={} misses={} skipped={} hit_rate={} entries={} templates={}",
+            "event=view_url_cache hits={} shared_hits={} misses={} skipped={} hit_rate={} entries={} templates={}",
             hitCount,
+            sharedHitCount,
             missCount,
             skippedCount,
             Math.round(hitCount * 1000.0 / total) / 1000.0,
@@ -197,6 +230,8 @@ class ViewUrlCache(
         val signature: ByteArray,
     ) {
         fun reusableUntil(window: Duration): Instant = Instant.ofEpochSecond(signedAtEpochSecond).plus(window)
+
+        fun isReusable(now: Instant, window: Duration): Boolean = now.isBefore(reusableUntil(window))
 
         fun toUrl(key: String): String = buildString {
             append(template.host).append('/').append(key).append('?')

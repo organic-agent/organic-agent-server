@@ -34,6 +34,12 @@ interface PhotoStorage {
     fun presignView(key: String): String
 
     /**
+     * 곧 [presignView]로 부를 키들을 미리 알린다 — 목록 한 페이지를 그리기 전에 한 번. 서버 여러 대가 함께 쓰는 캐시가 있으면 한 번에 읽어
+     * 둔다(#313). 부르지 않아도 [presignView]의 결과는 같다 — 느릴 뿐이다.
+     */
+    fun prepareViews(keys: Collection<String>) = Unit
+
+    /**
      * 원본을 원래 크기로 여는 URL. [presignView]와 서명하는 방식은 같고 수명만 다르다.
      *
      * 상세 화면은 목록과 달리 오래 열어두는 화면이라, 목록용 수명(15분)으로 서명하면

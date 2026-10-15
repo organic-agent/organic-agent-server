@@ -26,6 +26,7 @@ import com.soma.wes.gallery.service.GalleryService
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.gallery.support.GalleryInviteUrlResolver
 import com.soma.wes.global.SecureTokenGenerator
+import com.soma.wes.global.cache.DisabledSharedCache
 import com.soma.wes.global.config.SchedulingConfig
 import com.soma.wes.global.config.TimeConfig
 import com.soma.wes.global.config.WebMvcConfig
@@ -91,6 +92,8 @@ import org.springframework.context.annotation.Import
     SecureTokenGenerator::class,
     S3PhotoStorage::class,
     ViewUrlCache::class,
+    // 관리자 앱은 서명 URL 캐시를 켜지 않는다 — 서버 간 공유 층도 늘 꺼진 구현(#313).
+    DisabledSharedCache::class,
     AwsLambdaConfig::class,
     LambdaAiTaskSender::class,
     GalleryInviteUrlResolver::class,
