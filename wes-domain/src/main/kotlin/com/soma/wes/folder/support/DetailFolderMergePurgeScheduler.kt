@@ -1,6 +1,7 @@
 package com.soma.wes.folder.support
 
 import com.soma.wes.folder.service.DetailFolderMergePurgeService
+import com.soma.wes.global.cluster.SchedulerLeadership
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 
@@ -11,11 +12,13 @@ import org.springframework.stereotype.Component
 @Component
 class DetailFolderMergePurgeScheduler(
     private val purgeService: DetailFolderMergePurgeService,
+    private val leadership: SchedulerLeadership,
 ) {
 
     /** 매시 50분. 다른 정리 작업(정각 · 15 · 30 · 40 · 45분)과 겹치지 않게 둔다. 숨은 행은 보이지 않으니 급할 이유가 없다. */
     @Scheduled(cron = "0 50 * * * *")
     fun purge() {
+        if (!leadership.isLeader()) return
         purgeService.purgeExpired()
     }
 }

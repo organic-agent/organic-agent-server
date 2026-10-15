@@ -54,10 +54,13 @@ dependencies {
     api("tools.jackson.module:jackson-module-kotlin")
     api("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3")
     api("org.springframework.boot:spring-boot-starter-actuator")
+    // 서버 여러 대가 함께 쓰는 Redis 호환 캐시(ElastiCache Valkey) — 주기 작업 리더 임대(#313 ADR-0002).
+    api("org.springframework.boot:spring-boot-starter-data-redis")
 
     testFixturesApi("org.springframework.boot:spring-boot-starter-webmvc-test")
     testFixturesApi("org.springframework.boot:spring-boot-testcontainers")
     testFixturesApi("org.testcontainers:postgresql")
+    testFixturesApi("org.testcontainers:testcontainers")
 }
 
 kotlin {

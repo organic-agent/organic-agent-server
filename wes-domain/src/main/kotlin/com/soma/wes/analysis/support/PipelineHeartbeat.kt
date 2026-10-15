@@ -3,6 +3,7 @@ package com.soma.wes.analysis.support
 import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.domain.AnalysisStatus
 import com.soma.wes.analysis.repository.AnalysisJobRepository
+import com.soma.wes.global.cluster.SchedulerLeadership
 import com.soma.wes.global.logging.LogContext
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import java.time.Clock
@@ -28,12 +29,14 @@ class PipelineHeartbeat(
     private val photoPipelineRepository: PhotoPipelineRepository,
     private val properties: AnalysisProperties,
     private val clock: Clock,
+    private val leadership: SchedulerLeadership,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
     @Scheduled(fixedDelayString = "\${app.analysis.heartbeat-interval:PT1M}")
     fun beat() {
+        if (!leadership.isLeader()) return
         LogContext.sweep {
             sweepWatch.check()
             val dispatchedSince = ZonedDateTime.now(clock).minus(properties.embedRedispatchAfter)

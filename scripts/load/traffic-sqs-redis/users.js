@@ -44,6 +44,8 @@ const MAX_PAGES = 50;
 const PROFILES = {
   smoke: [["5s", "1m", 10]],
   full: [["30s", "2m", 50], ["30s", "2m", 100], ["30s", "2m", 200], ["30s", "2m", 400]],
+  // #313 가용성 기준선 — 200명을 10분 동안 그대로 두고 그 사이에 배포·장애 자극을 넣는다(availability-2-servers/).
+  steady: [["30s", "10m", 200]],
 };
 const STEPS = PROFILES[PROFILE];
 const ACTIONS = ["open", "list", "detail", "rating", "select", "deselect", "watch", "notifications", "retouch"];

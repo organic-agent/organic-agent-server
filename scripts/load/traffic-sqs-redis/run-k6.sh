@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # R-3 사용자 트래픽 실행 — dev 부하 발생기 EC2(Name=wes-dev-loadgen, infra #97)에서 k6 를 돌리고, 요약을 받아 단계별·동작별로 판정한다.
 #
-#   scripts/load/traffic-sqs-redis/run-k6.sh dev --label R-3-a [--profile full|smoke] [--intensity 2] [--keep-on]
+#   scripts/load/traffic-sqs-redis/run-k6.sh dev --label R-3-a [--profile full|smoke|steady] [--intensity 2] [--keep-on] [--csv]
 #   --intensity N  한 사람의 동작 횟수 배수(비율은 운영 로그 그대로, users.js RATES × N). 기본 2 = 분당 ≈ 24.6
+#   --csv          요청마다 시각·상태를 requests.csv.gz 로도 받는다(초 단위 실패 타임라인 — availability-2-servers/gap.sh)
 #   scripts/load/traffic-sqs-redis/run-k6.sh dev --label R-3-a --start-only     # 발생기만 켜 둔다(재생과 같은 순간에 시작하려고)
 #   scripts/load/traffic-sqs-redis/run-k6.sh dev --label R-3-a --report-only    # 이미 받은 요약으로 판정만 다시
 #
@@ -14,15 +15,16 @@ cd "$(dirname "$0")/../../.."
 source scripts/load/lib/report.sh
 report_parse_common "$@"; set -- "${REPORT_REST[@]+"${REPORT_REST[@]}"}"
 
-PROFILE="full"; INTENSITY="2"; KEEP_ON="false"; MODE="run"
+PROFILE="full"; INTENSITY="2"; KEEP_ON="false"; MODE="run"; CSV="false"
 while [ $# -gt 0 ]; do
   case "$1" in
     --profile) PROFILE="$2"; shift ;;
     --intensity) INTENSITY="$2"; shift ;;
     --keep-on) KEEP_ON="true" ;;
+    --csv) CSV="true" ;;
     --start-only) MODE="start" ;;
     --report-only) MODE="report" ;;
-    -h|--help) sed -n 2,11p "$0"; exit 0 ;;
+    -h|--help) sed -n 2,12p "$0"; exit 0 ;;
     *) echo "알 수 없는 인자: $1" >&2; exit 1 ;;
   esac
   shift
@@ -35,6 +37,11 @@ BUCKET=$(aws ssm get-parameter --region "$REGION" --name "$SSM_PREFIX/app.storag
 S3_PREFIX="s3://$BUCKET/load-results/$REPORT_LABEL"
 RUNS_DIR="${LOAD_RUNS_DIR:-docs/experiments/load-runs}"
 LOCAL_SUMMARY="$RUNS_DIR/$REPORT_LABEL-k6-summary.json"
+CSV_OUT=""; CSV_UPLOAD=""
+if [ "$CSV" = "true" ]; then
+  CSV_OUT="--out csv=requests.csv.gz"
+  CSV_UPLOAD="aws s3 cp --only-show-errors --region $REGION requests.csv.gz $S3_PREFIX/requests.csv.gz"
+fi
 mkdir -p "$RUNS_DIR"
 
 instance_id() {
@@ -56,6 +63,9 @@ wait_online() {
 start_loadgen() {
   local id; id=$(instance_id)
   [ "$id" != "None" ] || { echo "발생기($RESOURCE_PREFIX-loadgen)가 없다 — infra environments/dev loadgen.tf." >&2; exit 1; }
+  # 직전 회차가 끄는 중이면 start 가 IncorrectInstanceState 로 거절된다 — 다 꺼질 때까지 기다린다.
+  [ "$(aws ec2 describe-instances --region "$REGION" --instance-ids "$id" --query 'Reservations[0].Instances[0].State.Name' --output text)" = stopping ] \
+    && aws ec2 wait instance-stopped --region "$REGION" --instance-ids "$id"
   aws ec2 start-instances --region "$REGION" --instance-ids "$id" >/dev/null
   aws ec2 wait instance-running --region "$REGION" --instance-ids "$id"
   wait_online "$id"
@@ -72,9 +82,10 @@ run_remote() {
   local script="set -e; ulimit -n 65535; rm -rf /opt/r3 && mkdir -p /opt/r3 && cd /opt/r3
 aws s3 cp --only-show-errors --region $REGION $S3_PREFIX/inputs/targets.json targets.json
 aws s3 cp --only-show-errors --region $REGION $S3_PREFIX/inputs/users.js users.js
-k6 run --quiet -e API=$API -e TARGETS=targets.json -e PROFILE=$PROFILE -e INTENSITY=$INTENSITY -e SUMMARY=summary.json users.js > k6.log 2>&1 || echo \"k6 exit \$?\" >> k6.log
+k6 run --quiet $CSV_OUT -e API=$API -e TARGETS=targets.json -e PROFILE=$PROFILE -e INTENSITY=$INTENSITY -e SUMMARY=summary.json users.js > k6.log 2>&1 || echo \"k6 exit \$?\" >> k6.log
 aws s3 cp --only-show-errors --region $REGION k6.log $S3_PREFIX/k6.log
-aws s3 cp --only-show-errors --region $REGION summary.json $S3_PREFIX/summary.json"
+aws s3 cp --only-show-errors --region $REGION summary.json $S3_PREFIX/summary.json
+$CSV_UPLOAD"
   cid=$(aws ssm send-command --region "$REGION" --instance-ids "$id" --document-name AWS-RunShellScript \
     --timeout-seconds 600 --parameters "$(python3 -c 'import json,sys; print(json.dumps({"commands":[sys.argv[1]],"executionTimeout":["3600"]}))' "$script")" \
     --query Command.CommandId --output text)
@@ -98,6 +109,7 @@ if [ "$MODE" = "run" ]; then
   run_remote "$ID"
   aws s3 cp --only-show-errors --region "$REGION" "$S3_PREFIX/summary.json" "$LOCAL_SUMMARY"
   aws s3 cp --only-show-errors --region "$REGION" "$S3_PREFIX/k6.log" "$RUNS_DIR/$REPORT_LABEL-k6.log"
+  [ "$CSV" = "true" ] && aws s3 cp --only-show-errors --region "$REGION" "$S3_PREFIX/requests.csv.gz" "$RUNS_DIR/$REPORT_LABEL-requests.csv.gz"
   if [ "$KEEP_ON" != "true" ]; then stop_loadgen; trap - EXIT; fi
 fi
 

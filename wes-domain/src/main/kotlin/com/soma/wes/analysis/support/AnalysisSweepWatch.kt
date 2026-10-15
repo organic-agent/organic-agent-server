@@ -3,11 +3,13 @@ package com.soma.wes.analysis.support
 import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.dto.OpsAlertDto
 import com.soma.wes.analysis.service.port.OpsAlertSender
+import com.soma.wes.global.cluster.SchedulerLeadershipAcquiredEvent
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.time.ZonedDateTime
 import org.slf4j.LoggerFactory
+import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 
 /**
@@ -37,6 +39,15 @@ class AnalysisSweepWatch(
     /** 스윕 회차 하나가 끝났다. [at]은 테스트가 오래전에 끝난 것처럼 꾸밀 때만 넘긴다. */
     fun completed(at: Instant = clock.instant()) {
         lastCompletedAt = at
+    }
+
+    /**
+     * 방금 리더가 됐다(#313) — 리더가 아닌 동안 스윕을 돌리지 않아 마지막 완료 시각이 낡았다. 그대로 두면 첫 하트비트가 멈춤을 잘못 알린다.
+     * 리더가 된 시각에서 다시 잰다.
+     */
+    @EventListener(SchedulerLeadershipAcquiredEvent::class)
+    fun restartOnLeadership() {
+        completed()
     }
 
     /** 멈춤·회복이 바뀐 때만 알린다. 같은 상태가 이어지면 아무것도 하지 않는다. */
