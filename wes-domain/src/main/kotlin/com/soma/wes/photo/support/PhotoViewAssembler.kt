@@ -37,13 +37,16 @@ class PhotoViewAssembler(
      * [viewDataOf]로 미리 읽어 둔 별점·메모에 보기 주소를 서명해 붙인다. DB를 읽지 않으므로 연결을 놓은 뒤 부를 수 있다 —
      * 갤러리 목록 한 페이지(200장)는 서명하는 동안 연결을 쥐고 있으면 그만큼 다른 요청이 풀 앞에서 기다린다(#286 (b)).
      */
-    fun toResponses(photos: List<Photo>, viewData: PhotoViewDataDto): List<PhotoResponse> = photos.map {
-        PhotoResponse.of(
-            photo = it,
-            viewUrl = viewUrlOf(it),
-            score = viewData.scores[it.requiredId],
-            memo = viewData.memos[it.requiredId],
-        )
+    fun toResponses(photos: List<Photo>, viewData: PhotoViewDataDto): List<PhotoResponse> {
+        prepareViewUrls(photos)
+        return photos.map {
+            PhotoResponse.of(
+                photo = it,
+                viewUrl = viewUrlOf(it),
+                score = viewData.scores[it.requiredId],
+                memo = viewData.memos[it.requiredId],
+            )
+        }
     }
 
     /** 응답에 붙일 별점·메모를 한 번씩 읽는다. 읽기 트랜잭션 안에서 부른다. */
@@ -72,8 +75,15 @@ class PhotoViewAssembler(
     /**
      * 협업 링크로 여는 화면이 쓴다. 별점과 메모를 아예 붙이지 않는다.
      */
-    fun toAnonymousResponses(photos: List<Photo>): List<PhotoResponse> =
-        photos.map { PhotoResponse.of(photo = it, viewUrl = viewUrlOf(it), score = null) }
+    fun toAnonymousResponses(photos: List<Photo>): List<PhotoResponse> {
+        prepareViewUrls(photos)
+        return photos.map { PhotoResponse.of(photo = it, viewUrl = viewUrlOf(it), score = null) }
+    }
+
+    /** 목록의 보기 주소를 한 번에 준비시킨다 — 서버 여러 대가 함께 쓰는 캐시를 사진마다가 아니라 한 번 읽게(#313). */
+    private fun prepareViewUrls(photos: List<Photo>) {
+        photoStorage.prepareViews(photos.filter { it.status != PhotoStatus.PENDING }.map { it.viewKey })
+    }
 
     /**
      * 이 사진에 매겨진 점수. 아무도 매기지 않았으면 null이다.

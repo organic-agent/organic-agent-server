@@ -1,5 +1,6 @@
 package com.soma.wes.photo.infrastructure
 
+import com.soma.wes.global.cache.DisabledSharedCache
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.config.ViewUrlCacheProperties
 import com.soma.wes.photo.exception.PhotoErrorCode
@@ -47,6 +48,7 @@ class S3PhotoStorageTest {
 
     private fun viewUrlCache(enabled: Boolean) = ViewUrlCache(
         properties = ViewUrlCacheProperties(enabled = enabled),
+        sharedCache = DisabledSharedCache(),
         clock = Clock.systemUTC(),
     )
 

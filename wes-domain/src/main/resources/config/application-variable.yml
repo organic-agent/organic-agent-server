@@ -5,6 +5,10 @@
 spring:
   data:
     redis:
+      # 기본(Lettuce 명령 60초)이면 Redis 장애 때 요청·리더 갱신 하나가 1분씩 묶인다(#313 W1 dev 확인). 같은 VPC 안이라 정상 왕복은
+      # 1ms 안쪽이다 — 이를 넘기면 공유 캐시는 없는 셈 치고(회로 차단) 서버 메모리로 답한다.
+      timeout: 500ms
+      connect-timeout: 500ms
       # 엔티티는 전부 JPA다. 켜 두면 Spring Data가 엔티티마다 Redis 저장소 후보인지 묻고 경고를 남긴다.
       repositories:
         enabled: false
@@ -218,6 +222,13 @@ app:
     # 이쪽은 로그인을 요구하면 안 된다. 로그인하지 않는 하객·부모님을 위해 만든 링크다.
     # prod는 배포 도메인을 따라가므로 Parameter Store(app.collab.base-url)가 덮어쓴다.
     base-url: "http://localhost:3000/collab"
+  cache:
+    shared:
+      # 서명 URL 캐시를 서버 메모리 뒤 Redis 에 함께 둔다(#313 ADR-0002). 꺼져 있으면 서버마다 메모리 캐시만 — 오늘과 같다.
+      # 켜면 spring.data.redis.* 로 붙는다. 실패하면 open-for 동안 Redis 를 부르지 않는다.
+      enabled: false
+      open-for: PT30S
+      write-queue-capacity: 2000
   cluster:
     # 주기 작업(@Scheduled)을 여러 서버 중 한 대(리더)만 돌린다(#313 ADR-0002). 꺼져 있으면 모든 서버가 스스로를 리더로 보고
     # 오늘처럼 돈다 — 서버가 한 대일 때·로컬·테스트의 기본값. 켜면 spring.data.redis.* 로 붙는 Redis 에 임대 키를 둔다.

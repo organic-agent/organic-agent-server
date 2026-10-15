@@ -125,7 +125,7 @@ class RedisSchedulerLeadership(
             claim()
         } catch (e: RuntimeException) {
             // 지금까지의 임대 시각은 그대로 둔다 — 그 안이면 키는 아직 내 것이고, 지나면 isLeader 가 스스로 거짓이 된다.
-            log.warn("event=leader.unreachable was_leader={} — 다음 갱신에서 다시 본다", wasLeader, e)
+            log.warn("event=leader.unreachable was_leader={} error={} — 다음 갱신에서 다시 본다", wasLeader, e.toString())
             return
         }
 

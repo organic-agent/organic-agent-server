@@ -85,6 +85,10 @@ class S3PhotoStorage(
         return viewUrlCache.get(key) { presignGet(key, properties.viewUrlTtl.plus(viewUrlCache.reuseWindow)) }
     }
 
+    override fun prepareViews(keys: Collection<String>) {
+        if (viewUrlCache.enabled) viewUrlCache.prefetch(keys)
+    }
+
     override fun presignOriginal(key: String): String = presignGet(key, properties.originalUrlTtl)
 
     override fun presignDownload(key: String, originalFileName: String): String {
