@@ -204,6 +204,11 @@ app:
       model: codex-terra
       reasoning-effort: low
 
+  agent:
+    # 셀렉 도우미 질문 상한(사용자별, 서버마다). 질문 한 번이 LLM 호출 한 번이라 비용 남용을 막는다.
+    max-questions: 60
+    window: PT10M
+
   mock-gallery:
     # Mock 갤러리가 복제할 샘플 템플릿 갤러리 id. 0은 "기능 꺼짐"이다(생성 요청이 503).
     # 템플릿은 운영자 스튜디오가 일반 파이프라인으로 시드한 진짜 갤러리라 환경마다 id가 다르다.

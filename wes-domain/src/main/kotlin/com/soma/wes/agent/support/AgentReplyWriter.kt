@@ -93,7 +93,8 @@ class AgentReplyWriter {
         }
         val skipped = if (action.skippedPhotoCount > 0) " 이미 그 상태인 ${action.skippedPhotoCount}장은 뺐어요." else ""
         val overLimit = if (action.overLimitBy > 0) " 넣으면 계약 장수를 ${action.overLimitBy}장 넘어서 실행되지 않아요. 조건을 좁혀 주세요." else ""
-        return "$main$skipped$overLimit${unsupportedNote(unsupported)}"
+        val broad = if (action.broad) " 대부분의 사진이 바뀌는 큰 변경이에요. 정말 이대로 할지 확인해 주세요." else ""
+        return "$main$skipped$overLimit$broad${unsupportedNote(unsupported)}"
     }
 
     fun notEditable(): String = "선택을 이미 제출해서 사진을 넣거나 빼거나 옮길 수 없어요."

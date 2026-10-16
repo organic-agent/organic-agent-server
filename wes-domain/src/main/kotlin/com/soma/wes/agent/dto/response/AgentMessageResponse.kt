@@ -76,5 +76,7 @@ data class AgentMessageResponse(
         val skippedPhotoCount: Int,
         @field:Schema(description = "넣으면 계약 장수를 몇 장 넘는가. 넘지 않으면 0. 넘으면 실행이 거절된다")
         val overLimitBy: Int,
+        @field:Schema(description = "큰 변경 — 조건 없이 전부이거나 바꿀 수 있는 사진의 대부분을 바꾼다. 확인 화면이 한 번 더 경고한다")
+        val broad: Boolean = false,
     )
 }

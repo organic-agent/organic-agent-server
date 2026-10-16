@@ -3,6 +3,7 @@ package com.soma.wes.agent.service
 import com.soma.wes.agent.domain.AgentActionOp
 import com.soma.wes.agent.domain.AgentReplyKind
 import com.soma.wes.agent.domain.PhotoFilter
+import com.soma.wes.agent.dto.AgentContextDto
 import com.soma.wes.agent.dto.AgentDecisionDto
 import com.soma.wes.agent.dto.AgentGallerySnapshotDto
 import com.soma.wes.agent.dto.request.AgentMessageRequest
@@ -14,9 +15,12 @@ import com.soma.wes.agent.support.AgentActionPlanner
 import com.soma.wes.agent.support.AgentContextBuilder
 import com.soma.wes.agent.support.AgentGalleryLoader
 import com.soma.wes.agent.support.AgentPhotoFinder
+import com.soma.wes.agent.support.AgentQuestionLimiter
 import com.soma.wes.agent.support.AgentReplyWriter
 import com.soma.wes.agent.support.AgentStatsCounter
 import com.soma.wes.gallery.support.GalleryAccessPolicy
+import io.micrometer.core.instrument.MeterRegistry
+import io.micrometer.core.instrument.Timer
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 
@@ -36,6 +40,8 @@ class AgentMessageService(
     private val agentStatsCounter: AgentStatsCounter,
     private val agentActionPlanner: AgentActionPlanner,
     private val agentReplyWriter: AgentReplyWriter,
+    private val agentQuestionLimiter: AgentQuestionLimiter,
+    private val meterRegistry: MeterRegistry,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -45,19 +51,25 @@ class AgentMessageService(
         /** 후보가 많으면 고르기 어렵다. 2~3개만 보여 준다. */
         const val MAX_FOLDER_CANDIDATES = 3
         const val MOVE_TARGET_UNKNOWN = "어느 폴더로 옮길지 찾지 못했어요. 폴더 이름으로 다시 말해 주세요."
+
+        /** 판단 한 번의 지연. `result` 태그는 고른 주문서 종류 또는 판단 실패(`Unavailable`)다 — 응답 시간 목표(p50 1.6초)를 운영에서 본다. */
+        const val DECISION_TIMER = "agent.decision"
+        private const val RESULT_TAG = "result"
+        private const val UNAVAILABLE = "Unavailable"
     }
 
-    /** 부부만 묻는다. 작가 화면에는 도우미가 없다 — 고르는 사람의 도구다. */
+    /** 부부만 묻는다. 작가 화면에는 도우미가 없다 — 고르는 사람의 도구다. 사용자별 질문 상한을 넘으면 429다([AgentQuestionLimiter]). */
     fun send(galleryId: Long, userId: Long, request: AgentMessageRequest): AgentMessageResponse {
         galleryAccessPolicy.requireParticipantViewer(galleryId, userId)
 
         val question = request.text.trim()
         if (question.isEmpty()) throw AgentException(AgentErrorCode.EMPTY_QUESTION)
+        agentQuestionLimiter.acquire(userId)
 
         val snapshot = agentGalleryLoader.load(galleryId)
         val context = agentContextBuilder.build(snapshot, request.screen)
 
-        val decision = decisionClient.decide(question, context)
+        val decision = decide(question, context)
         log.info("셀렉 도우미 판단: galleryId={}, decision={}", galleryId, decision::class.simpleName)
 
         return when (decision) {
@@ -67,6 +79,18 @@ class AgentMessageService(
             is AgentDecisionDto.PlanAction -> planAction(snapshot, decision)
             is AgentDecisionDto.Clarify -> clarify(decision.question)
         }
+    }
+
+    private fun decide(question: String, context: AgentContextDto): AgentDecisionDto {
+        val sample = Timer.start(meterRegistry)
+        val decision = try {
+            decisionClient.decide(question, context)
+        } catch (e: AgentException) {
+            sample.stop(meterRegistry.timer(DECISION_TIMER, RESULT_TAG, UNAVAILABLE))
+            throw e
+        }
+        sample.stop(meterRegistry.timer(DECISION_TIMER, RESULT_TAG, decision::class.simpleName ?: UNAVAILABLE))
+        return decision
     }
 
     private fun findFolder(snapshot: AgentGallerySnapshotDto, decision: AgentDecisionDto.FindFolder): AgentMessageResponse {
