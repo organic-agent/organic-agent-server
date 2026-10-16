@@ -40,12 +40,14 @@ const RATES = {
 const PAGE_SIZE = 200;
 const MAX_PAGES = 50;
 
-// 단계 = [올리는 시간, 유지 시간, 목표 사용자 수]
+// 단계 = [올리는 시간, 유지 시간, 목표 사용자 수, (이름 — 같은 수가 두 번 나올 때 단계별 지표를 나누려고)]
 const PROFILES = {
   smoke: [["5s", "1m", 10]],
   full: [["30s", "2m", 50], ["30s", "2m", 100], ["30s", "2m", 200], ["30s", "2m", 400]],
   // #313 가용성 기준선 — 200명을 10분 동안 그대로 두고 그 사이에 배포·장애 자극을 넣는다(availability-2-servers/).
   steady: [["30s", "10m", 200]],
+  // #313 QA-4 피크 흡수(A-3) — 200명 3분(기준) → 30초에 600명으로 올려 10분 → 다시 200명 5분. 그 사이 ASG 가 서버를 늘리고 줄인다.
+  step600: [["30s", "3m", 200], ["30s", "10m", 600], ["30s", "5m", 200, "200-after"]],
 };
 const STEPS = PROFILES[PROFILE];
 const ACTIONS = ["open", "list", "detail", "rating", "select", "deselect", "watch", "notifications", "retouch"];
@@ -59,9 +61,9 @@ function seconds(text) {
 const BOUNDARIES = [];
 {
   let at = 0;
-  for (const [ramp, hold, target] of STEPS) {
+  for (const [ramp, hold, target, name] of STEPS) {
     at += seconds(ramp) + seconds(hold);
-    BOUNDARIES.push([at, String(target)]);
+    BOUNDARIES.push([at, name || String(target)]);
   }
 }
 function stageNow() {

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # R-3 사용자 트래픽 실행 — dev 부하 발생기 EC2(Name=wes-dev-loadgen, infra #97)에서 k6 를 돌리고, 요약을 받아 단계별·동작별로 판정한다.
 #
-#   scripts/load/traffic-sqs-redis/run-k6.sh dev --label R-3-a [--profile full|smoke|steady] [--intensity 2] [--keep-on] [--csv]
+#   scripts/load/traffic-sqs-redis/run-k6.sh dev --label R-3-a [--profile full|smoke|steady|step600] [--intensity 2] [--keep-on] [--csv]
 #   --intensity N  한 사람의 동작 횟수 배수(비율은 운영 로그 그대로, users.js RATES × N). 기본 2 = 분당 ≈ 24.6
 #   --csv          요청마다 시각·상태를 requests.csv.gz 로도 받는다(초 단위 실패 타임라인 — availability-2-servers/gap.sh)
 #   scripts/load/traffic-sqs-redis/run-k6.sh dev --label R-3-a --start-only     # 발생기만 켜 둔다(재생과 같은 순간에 시작하려고)
@@ -163,6 +163,12 @@ open(f"{sys.argv[2]}/actions.txt", "w").write(table(rows2) + "\n")
 p95, r = verdict.get("200", (None, None))
 print(f"P95_200={'' if p95 is None else round(p95)}")
 print(f"ERR_200={'' if r is None else f'{r*100:.2f}'}")
+# step600(#313 QA-4): 600명 동안 오류율 · 다시 200명이 된 뒤 p95
+p95, r = verdict.get("600", (None, None))
+print(f"ERR_600={'' if r is None else f'{r*100:.2f}'}")
+print(f"P95_600={'' if p95 is None else round(p95)}")
+p95, r = verdict.get("200-after", (None, None))
+print(f"P95_AFTER={'' if p95 is None else round(p95)}")
 def broken(s):
     p95, r = verdict[s]
     return (p95 or 0) > 500 or (r or 0) >= 0.01
@@ -187,6 +193,11 @@ if [ -z "$P95_200" ]; then
 else
   awk "BEGIN{exit !($P95_200 <= 500)}" && v=pass || v=fail; report_verdict "$v" "200명 p95 ≤ 500ms" "${P95_200}ms"
   awk "BEGIN{exit !($ERR_200 < 1)}" && v=pass || v=fail; report_verdict "$v" "200명 오류율 < 1%" "${ERR_200}%"
+fi
+if [ -n "$ERR_600" ]; then
+  awk "BEGIN{exit !($ERR_600 < 1)}" && v=pass || v=fail; report_verdict "$v" "QA-4 600명 동안 오류율 < 1%" "${ERR_600}% (p95 ${P95_600}ms)"
+  [ -n "$P95_AFTER" ] && { awk "BEGIN{exit !($P95_AFTER <= 500)}" && v=pass || v=fail; report_verdict "$v" "QA-4 다시 200명 p95 ≤ 500ms" "${P95_AFTER}ms"; }
+  report_verdict info "QA-4 늘어난 서버가 받기까지 ≤ 6분 · ≤ 20분 안 2대" "stimulus.sh watch 의 사건(ASG launching_done · terminating)과 대상 표본으로 본다"
 fi
 report_verdict info "처음 무너진 단계(p95 > 500ms 또는 오류율 ≥ 1%)" "${FIRST_BREAK:-없음}${FIRST_BREAK:+명}"
 report_note "원본: $LOCAL_SUMMARY · $RUNS_DIR/$REPORT_LABEL-k6.log"
