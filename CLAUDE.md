@@ -83,6 +83,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - `load/clone-gallery-photos.sh [local|remote] --source G --count N [--strip embed|score|categorize]` — 부하 실측용. 원본 갤러리의
     사진·분석 행을 새 갤러리 N개로 복제한다(같은 S3 객체를 가리켜 업로드 없음). `--strip`으로 그 단계부터 파이프라인이 다시 돌게 한다.
   - AI venv는 `scripts/lib/ai-venv.sh`가 `<모듈>/.venv`에 만든다(score venv에 categorize 포함).
+  - `llm/` — **로컬 LLM 게이트웨이.** codex-lb(ChatGPT 구독 계정) + LiteLLM(`localhost:4100/v1`) 도커 스택. local 프로필은
+    `app.llm.provider=openai`로 셀렉 도우미 판단기·보정 요청 다듬기를 여기로 보내 LLM 비용을 0으로 만든다(키 `WES_LLM_API_KEY`,
+    되돌리기 `WES_LLM_PROVIDER=bedrock`). 운영은 Bedrock. 처음 설정은 `llm/docker-compose.yml` 머리말.
+  - `agent-eval/run.sh <라벨> [bedrock|openai] [모델] [회수]` — 셀렉 도우미 판단기 질문 세트 측정(예측 → 채점 → 회차 비교 표).
+    질문 세트·채점기·채점 DB(도커 `agent-test-pg`)는 AI repo 로컬 폴더다. bedrock은 돈이 든다.
 
 ## 규칙 참조
 
