@@ -28,6 +28,8 @@ ASG_NAME=$(aws autoscaling describe-auto-scaling-instances --region "$AWS_REGION
 
 ORIGINAL_MIN=""
 TARGET_GROUP_ARN=""
+# 이 스크립트가 멈춘 알람 처리. 이미 누가 멈춰 둔 것이면 끝날 때 다시 켜지 않는다.
+SUSPENDED_ALARMS=false
 if [ -n "$ASG_NAME" ]; then
   read -r ORIGINAL_MIN TARGET_GROUP_ARN < <(aws autoscaling describe-auto-scaling-groups --region "$AWS_REGION" \
     --auto-scaling-group-names "$ASG_NAME" --query 'AutoScalingGroups[0].[MinSize,TargetGroupARNs[0]]' --output text)
@@ -50,9 +52,15 @@ cleanup() {
     aws autoscaling exit-standby --region "$AWS_REGION" --auto-scaling-group-name "$ASG_NAME" \
       --instance-ids "$IN_STANDBY" >/dev/null || echo "$IN_STANDBY standby 복귀 실패 — 손으로 exit-standby" >&2
   fi
-  [ -n "$ORIGINAL_MIN" ] || return 0
-  aws autoscaling update-auto-scaling-group --region "$AWS_REGION" \
-    --auto-scaling-group-name "$ASG_NAME" --min-size "$ORIGINAL_MIN" || echo "ASG min 되돌리기 실패 — 손으로 $ORIGINAL_MIN 으로" >&2
+  if [ -n "$ORIGINAL_MIN" ]; then
+    aws autoscaling update-auto-scaling-group --region "$AWS_REGION" \
+      --auto-scaling-group-name "$ASG_NAME" --min-size "$ORIGINAL_MIN" || echo "ASG min 되돌리기 실패 — 손으로 $ORIGINAL_MIN 으로" >&2
+  fi
+  # min 을 먼저 되돌린 뒤에 켠다 — 반대 순서면 켜지는 순간 ALARM 인 줄이기가 min 1 아래로 desired 를 내릴 수 있다.
+  if [ "$SUSPENDED_ALARMS" = "true" ]; then
+    aws autoscaling resume-processes --region "$AWS_REGION" --auto-scaling-group-name "$ASG_NAME" \
+      --scaling-processes AlarmNotification || echo "ASG 알람 처리 재개 실패 — 손으로 resume-processes AlarmNotification" >&2
+  fi
 }
 trap cleanup EXIT
 
@@ -138,6 +146,19 @@ deploy_on() {
     | jq -r '"--- \(.status)\n--- stdout ---\n\(.stdout)\n--- stderr ---\n\(.stderr)"'
   [ "$status" = "Success" ]
 }
+
+# CPU 목표 추적의 줄이기 알람(CPU < 35% × 15분)은 한가할 때 늘 ALARM 이다. min 을 낮추는 순간 그 알람이 desired 를 1 로 내려
+# standby 가 거절됐다(dev 10-16 20:34, min-size=1 desired-size=1). 배포 동안 알람 처리를 멈춘다 — 그동안 늘리기도 멈춘다(≈ 서버당 1분 반).
+if [ -n "$ASG_NAME" ]; then
+  already=$(aws autoscaling describe-auto-scaling-groups --region "$AWS_REGION" --auto-scaling-group-names "$ASG_NAME" \
+    --query "AutoScalingGroups[0].SuspendedProcesses[?ProcessName=='AlarmNotification'] | length(@)" --output text)
+  if [ "$already" = "0" ]; then
+    aws autoscaling suspend-processes --region "$AWS_REGION" --auto-scaling-group-name "$ASG_NAME" \
+      --scaling-processes AlarmNotification
+    SUSPENDED_ALARMS=true
+    log "ASG 알람 처리(늘리기·줄이기) 멈춤 — 끝나면 다시 켠다"
+  fi
+fi
 
 if [ -n "$ASG_NAME" ] && [ "$ORIGINAL_MIN" -gt 1 ]; then
   aws autoscaling update-auto-scaling-group --region "$AWS_REGION" \
