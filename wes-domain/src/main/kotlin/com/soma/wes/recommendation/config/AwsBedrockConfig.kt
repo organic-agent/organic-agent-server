@@ -27,6 +27,7 @@ class AwsBedrockConfig {
 
     @Bean
     @ConditionalOnProperty(prefix = "app.llm", name = ["enabled"], havingValue = "true")
+    @ConditionalOnProperty(prefix = "app.llm", name = ["provider"], havingValue = "bedrock", matchIfMissing = true)
     fun bedrockRuntimeClient(
         credentialsProvider: AwsCredentialsProvider,
         properties: LlmProperties,

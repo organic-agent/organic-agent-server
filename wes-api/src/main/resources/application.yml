@@ -48,6 +48,10 @@ app:
     # 그대로 쓰면 노트북 메모리를 넘긴다 — 로컬은 샤딩하지 않는다. 임베더는 한 번에 하나씩, score 폴백은 갤러리당 프로세스 하나.
     embed-max-in-flight: 1
     score-batch-size: 10000
+  llm:
+    # 로컬은 LLM 호출을 ChatGPT 구독 게이트웨이로 돌린다(scripts/llm, 비용 0). 켜기는 Parameter Store(/wes/local/app.llm.enabled)다.
+    # 게이트웨이 없이 Bedrock으로 부르려면 WES_LLM_PROVIDER=bedrock.
+    provider: ${WES_LLM_PROVIDER:openai}
 
 ---
 spring:

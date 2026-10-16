@@ -11,7 +11,11 @@ import tools.jackson.databind.ObjectMapper
  */
 object AgentDecisionPrompt {
 
-    fun system(context: AgentContextDto, objectMapper: ObjectMapper): String {
+    fun system(context: AgentContextDto, objectMapper: ObjectMapper): String =
+        "${stable(context, objectMapper)}\n${volatile(context, objectMapper)}"
+
+    /** 지침과 폴더 목록. 같은 갤러리면 질문마다 같다 — 프롬프트 캐시의 앞부분이 된다. */
+    fun stable(context: AgentContextDto, objectMapper: ObjectMapper): String {
         val folders = context.concepts.map { concept ->
             mapOf(
                 "id" to "c${concept.id}",
@@ -24,7 +28,6 @@ object AgentDecisionPrompt {
                 },
             )
         }
-        val limit = context.maxSelectablePhotoCount?.let { "계약 ${it}장" } ?: "계약 장수 없음"
 
         return """
             당신은 웨딩 사진 셀렉 서비스의 도우미다. 부부(신랑·신부)가 스튜디오 촬영 사진을 고르고 있다.
@@ -38,6 +41,13 @@ object AgentDecisionPrompt {
             사진 넣기·빼기·옮기기는 plan_action으로 계획만 만든다. 제출·삭제·별점은 할 수 없다고 ask_clarification으로 알린다.
             폴더 목록(shot_order = 촬영 순서, id의 c=컨셉 d=세부):
             ${objectMapper.writeValueAsString(folders)}
+        """.trimIndent()
+    }
+
+    /** 고른 장수·지금 화면. 질문마다 바뀌어 캐시 뒤에 둔다. */
+    fun volatile(context: AgentContextDto, objectMapper: ObjectMapper): String {
+        val limit = context.maxSelectablePhotoCount?.let { "계약 ${it}장" } ?: "계약 장수 없음"
+        return """
             고른 사진: ${context.selectedCount}장 / $limit
             지금 화면: ${screen(context.screen, objectMapper)}
         """.trimIndent()

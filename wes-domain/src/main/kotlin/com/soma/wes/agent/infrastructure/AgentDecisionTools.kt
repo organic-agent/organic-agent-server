@@ -1,9 +1,5 @@
 package com.soma.wes.agent.infrastructure
 
-import org.springframework.ai.chat.model.ToolContext
-import org.springframework.ai.tool.ToolCallback
-import org.springframework.ai.tool.definition.ToolDefinition
-
 /**
  * 판단기에게 보여 주는 도구 다섯 개. 정의(이름·설명·입력 모양)만 주고 실행하지 않는다 — 모델이 고른 도구와 인자가 곧 주문서다.
  *
@@ -38,7 +34,7 @@ object AgentDecisionTools {
          "description": "요청에 있지만 지금 데이터로 거를 수 없는 조건: person=특정 인물(부모님 등), face=눈감김·표정, prop=소품(베일·반지 등, 폴더 이름으로 못 찾을 때), composition=구도(전신·클로즈업)"}
     """.trimIndent()
 
-    val callbacks: List<ToolCallback> = listOf(
+    val definitions: List<Definition> = listOf(
         tool(
             name = FIND_FOLDER,
             description = "원하는 폴더를 찾아 화면에서 연다.",
@@ -91,16 +87,13 @@ object AgentDecisionTools {
         ),
     )
 
-    private fun tool(name: String, description: String, schema: String): ToolCallback =
-        DefinitionOnlyToolCallback(ToolDefinition.builder().name(name).description(description).inputSchema(schema).build())
+    private fun tool(name: String, description: String, schema: String) = Definition(name = name, description = description, inputSchema = schema)
 
-    /** 정의만 싣는다. Spring AI 2.0의 `BedrockProxyChatModel`은 도구를 스스로 실행하지 않고(실행은 `ChatClient` 어드바이저 몫) 고른 도구만 돌려준다. */
-    private class DefinitionOnlyToolCallback(private val definition: ToolDefinition) : ToolCallback {
-
-        override fun getToolDefinition(): ToolDefinition = definition
-
-        override fun call(toolInput: String): String = error("판단기 도구는 정의만 있다 — 실행되면 안 된다: ${definition.name()}")
-
-        override fun call(toolInput: String, toolContext: ToolContext?): String = call(toolInput)
-    }
+    /** 도구 하나의 정의. 판단기 구현이 자기 API 모양(Converse `toolSpec`, OpenAI `function`)으로 옮겨 싣는다. */
+    data class Definition(
+        val name: String,
+        val description: String,
+        /** JSON 스키마 문자열. */
+        val inputSchema: String,
+    )
 }

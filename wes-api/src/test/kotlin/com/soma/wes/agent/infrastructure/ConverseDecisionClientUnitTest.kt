@@ -9,23 +9,22 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
-import org.springframework.ai.bedrock.converse.BedrockChatOptions
-import org.springframework.ai.bedrock.converse.BedrockProxyChatModel
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider
 import software.amazon.awssdk.regions.Region
+import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient
 import tools.jackson.databind.json.JsonMapper
 import java.time.Duration
 
 /**
- * 실제 Bedrock으로 판단해 보는 회귀 가드(ADR-0001). Spring AI 2.0 · Boot 4.1 · AWS SDK 2.42 조합이 깨지면 여기서 먼저 보인다.
- * 돈이 들어 `BEDROCK_SPIKE=1`일 때만 돈다. 정확도는 질문 세트([BedrockDecisionEvalUnitTest])가 잰다.
+ * 실제 Bedrock으로 판단해 보는 회귀 가드. 운영 설정(도구 강제·캐시)으로 Converse를 불러 도구 인자가 주문서로 옮겨지는지,
+ * 캐시가 실제로 읽히는지 본다. 돈이 들어 `BEDROCK_SPIKE=1`일 때만 돈다. 정확도는 질문 세트([AgentDecisionEvalUnitTest])가 잰다.
  *
- *   BEDROCK_SPIKE=1 ./gradlew :wes-api:test --rerun --tests '*BedrockDecisionClientUnitTest*'
+ *   BEDROCK_SPIKE=1 ./gradlew :wes-api:test --rerun --tests '*ConverseDecisionClientUnitTest*'
  */
 @EnabledIfEnvironmentVariable(named = "BEDROCK_SPIKE", matches = "1")
-class BedrockDecisionClientUnitTest {
+class ConverseDecisionClientUnitTest {
 
-    private val client = bedrockDecisionClient()
+    private val client = converseDecisionClient()
 
     private val context = AgentContextDto(
         concepts = listOf(
@@ -43,20 +42,22 @@ class BedrockDecisionClientUnitTest {
 
         private const val SAMPLES = 5
         private const val NANOS_PER_MILLI = 1_000_000
-        private const val P50_LIMIT_MILLIS = 2_000L
+        private const val P50_LIMIT_MILLIS = 1_600L
         private const val MODEL = "global.anthropic.claude-sonnet-4-6"
 
-        /** 실제 Bedrock(서울, global 프로필)을 부르는 판단기. 질문 세트 재측정도 같은 것을 쓴다. */
-        fun bedrockDecisionClient(): BedrockDecisionClient {
-            val chatModel = BedrockProxyChatModel.builder()
-                .credentialsProvider(DefaultCredentialsProvider.builder().build())
-                .region(Region.AP_NORTHEAST_2)
-                .timeout(Duration.ofSeconds(30))
-                .options(BedrockChatOptions.builder().model(MODEL).build())
-                .build()
-            return BedrockDecisionClient(chatModel = chatModel, objectMapper = JsonMapper.builder().build(), modelId = MODEL)
-        }
-
+        /** 실제 Bedrock(서울, global 프로필)을 운영과 같은 설정으로 부르는 판단기. */
+        fun converseDecisionClient(): ConverseDecisionClient =
+            ConverseDecisionClient(
+                client = BedrockRuntimeClient.builder()
+                    .credentialsProvider(DefaultCredentialsProvider.builder().build())
+                    .region(Region.AP_NORTHEAST_2)
+                    .overrideConfiguration { it.apiCallTimeout(Duration.ofSeconds(30)) }
+                    .build(),
+                objectMapper = JsonMapper.builder().build(),
+                modelId = MODEL,
+                forceTool = true,
+                cache = true,
+            )
     }
 
     @Test
@@ -80,7 +81,7 @@ class BedrockDecisionClientUnitTest {
     }
 
     @Test
-    fun `결정 한 번은 평소 2초 안이다`() {
+    fun `결정 한 번은 평소 1600ms 안이다`() {
         // when
         val millis = List(SAMPLES) {
             val startedAt = System.nanoTime()
@@ -91,6 +92,18 @@ class BedrockDecisionClientUnitTest {
         // then
         println("[decide] p50=${millis[millis.size / 2]}ms max=${millis.last()}ms n=${millis.size}")
         assertThat(millis[millis.size / 2]).isLessThan(P50_LIMIT_MILLIS)
+    }
+
+    @Test
+    fun `같은 갤러리의 두 번째 질문은 도구 정의와 지침을 캐시에서 읽는다`() {
+        // given
+        client.converse("화이트스튜디오 폴더 열어줘", context)
+
+        // when
+        val (_, response) = client.converse("노을 사진만 보여줘", context)
+
+        // then
+        assertThat(response.usage().cacheReadInputTokens()).isPositive()
     }
 
     private fun concept(id: Long, name: String, shotOrder: Int, details: List<AgentContextDto.Detail>) =

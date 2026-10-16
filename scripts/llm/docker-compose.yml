@@ -1,0 +1,36 @@
+# 로컬 LLM 게이트웨이 — ChatGPT 구독 계정(codex-lb) 앞에 OpenAI 호환 API(LiteLLM)를 둔다.
+# 로컬 개발과 셀렉 도우미 측정의 LLM 비용을 0으로 만든다. 운영은 Bedrock 그대로다.
+#
+#   cp .env.example .env && docker compose up -d     # 띄우기 (scripts/llm 에서)
+#   ./verify.sh                                       # 모델 목록 → codex-lb 직접 → LiteLLM 경유
+#
+# 처음 한 번: http://localhost:2455 에서 관리자 비밀번호(bootstrap token은 docker logs wes-codex-lb) →
+# ChatGPT 계정 추가(OAuth, 콜백이 1455로 온다) → API Keys에서 sk-clb-… 발급 → .env 에 넣고 litellm 재생성.
+# gravit 의 같은 스택(gravit/codex-lb)과 2455·1455를 같이 쓰므로 둘을 동시에 띄우지 않는다.
+services:
+  codex-lb:
+    image: ghcr.io/soju06/codex-lb:latest
+    container_name: wes-codex-lb
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:2455:2455"   # 대시보드 + OpenAI 호환 API (/v1)
+      - "127.0.0.1:1455:1455"   # OAuth 콜백 (계정 추가 때만)
+    volumes:
+      - wes-codex-lb-data:/var/lib/codex-lb   # 계정 인증정보 + 사용량 DB
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: wes-litellm
+    restart: unless-stopped
+    depends_on:
+      - codex-lb
+    ports:
+      - "127.0.0.1:4100:4000"   # wes 가 부르는 곳: http://localhost:4100/v1
+    volumes:
+      - ./litellm_config.yaml:/app/config.yaml:ro
+    env_file:
+      - .env
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+
+volumes:
+  wes-codex-lb-data:

@@ -18,8 +18,6 @@ java {
 // 실행 앱이 아닌 공통 라이브러리다. API 모듈들이 쓰는 프레임워크 타입도 함께 노출한다.
 dependencyManagement {
     imports {
-        // Spring AI를 먼저 둔다 — 뒤의 spring-cloud-aws BOM이 AWS SDK 버전(2.42)을 정하게 한다(ADR-0001 스파이크 조건).
-        mavenBom("org.springframework.ai:spring-ai-bom:2.0.1")
         mavenBom("org.springframework.boot:spring-boot-dependencies:4.1.0")
         mavenBom("org.testcontainers:testcontainers-bom:1.21.4")
         mavenBom("io.awspring.cloud:spring-cloud-aws-dependencies:4.0.2")
@@ -50,8 +48,6 @@ dependencies {
     api("software.amazon.awssdk:sqs")
     // Bedrock 클라이언트의 소켓 타임아웃을 직접 잡기 위해 컴파일 의존으로 올린다(원래는 런타임 전이).
     api("software.amazon.awssdk:apache-client")
-    // 셀렉 도우미(agent)의 판단 — Bedrock Converse 도구 호출. 루프는 쓰지 않고 고른 도구·인자만 받는다.
-    api("org.springframework.ai:spring-ai-bedrock-converse")
 
     api("org.apache.pdfbox:pdfbox:3.0.8")
     api("org.jetbrains.kotlin:kotlin-reflect")
