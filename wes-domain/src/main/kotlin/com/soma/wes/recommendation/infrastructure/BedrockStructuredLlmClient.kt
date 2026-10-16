@@ -1,6 +1,6 @@
 package com.soma.wes.recommendation.infrastructure
 
-import com.soma.wes.recommendation.config.LlmProperties
+import com.soma.wes.global.config.LlmProperties
 import com.soma.wes.recommendation.dto.LlmJsonRequestDto
 import com.soma.wes.recommendation.exception.RecommendationErrorCode
 import com.soma.wes.recommendation.exception.RecommendationException

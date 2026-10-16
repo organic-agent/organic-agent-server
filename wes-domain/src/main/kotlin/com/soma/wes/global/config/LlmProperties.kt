@@ -1,12 +1,12 @@
-package com.soma.wes.recommendation.config
+package com.soma.wes.global.config
 
 import org.springframework.boot.context.properties.ConfigurationProperties
 
 /**
- * Bedrock(Anthropic Messages) 호출 손잡이.
+ * Bedrock 호출 손잡이. 보정 요청 다듬기(`recommendation`)와 셀렉 도우미(`agent`)가 같이 쓴다.
  *
- * [enabled]가 false면 LLM을 부르지 않는 구현이 꽂힌다 — LLM을 쓰는 기능(보정 요청 다듬기)은 다듬지 못했다고
- * 답한다. 로컬·테스트 기본값이고, prod는 Parameter Store가 켠다.
+ * [enabled]가 false면 LLM을 부르지 않는 구현이 꽂힌다 — 보정 요청 다듬기는 다듬지 못했다고 답하고,
+ * 셀렉 도우미는 쓸 수 없다고 답한다. 로컬·테스트 기본값이고, prod는 Parameter Store가 켠다.
  */
 @ConfigurationProperties(prefix = "app.llm")
 data class LlmProperties(

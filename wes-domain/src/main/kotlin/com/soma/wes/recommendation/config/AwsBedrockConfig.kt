@@ -1,5 +1,6 @@
 package com.soma.wes.recommendation.config
 
+import com.soma.wes.global.config.LlmProperties
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration

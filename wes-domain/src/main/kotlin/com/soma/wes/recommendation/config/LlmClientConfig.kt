@@ -1,5 +1,6 @@
 package com.soma.wes.recommendation.config
 
+import com.soma.wes.global.config.LlmProperties
 import com.soma.wes.recommendation.infrastructure.BedrockMessagesCodec
 import com.soma.wes.recommendation.infrastructure.BedrockStructuredLlmClient
 import com.soma.wes.recommendation.infrastructure.DisabledStructuredLlmClient
