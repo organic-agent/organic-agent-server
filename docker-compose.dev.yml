@@ -17,12 +17,9 @@ services:
       # GC 로그는 실제 힙 사용량을 보고 값을 다듬기 위해 남긴다 — alloy는 info·warn·error 폴더만 보내므로 이 파일은 서버에만 있다.
       # GC는 G1로 고정한다(#286 (g) ②). 메모리가 1.8GB 아래면 JVM이 Serial(한 스레드로 앱을 멈추고 치움)을 골라 부하 때
       # Full GC로 최대 15초 멈췄다(R-3-c). G1은 짧게 나눠 치워 응답 꼬리를 줄이고, 자체 메모리는 힙의 수 % 정도다.
-      # #313 A-2m 전 실측(10-16, micro 2대 유휴): JVM 전체 = RSS 386 + 스왑 424 ≈ 810MB로 힙 밖이 ≈ 500MB(위 가정 180의 세 배).
-      # 스왑으로 밀린 페이지를 G1 Remark가 다시 읽느라 유휴인데도 10~19초 멈췄고, ALB가 빼고 ASG가 서버를 갈았다(01:39).
-      # 그래서 힙 밖을 줄인다 — malloc arena(arm64 glibc는 코어마다 늘어남) 2개 · 코드 캐시 상한 128m · 스레드 스택 512k ·
-      # 힙 448 → 320m(커밋 313MB · GC 뒤 살아 있는 것 110~160MB). ADR-0001 §6의 조정 1회 — 안 되면 t4g.small.
-      - MALLOC_ARENA_MAX=2
-      - JAVA_TOOL_OPTIONS=-XX:+UseG1GC -Xmx320m -Xss512k -XX:ReservedCodeCacheSize=128m -Xlog:gc:file=/var/log/spring/gc.log:time,uptime,level,tags:filecount=5,filesize=5m
+      # #313(10-16): micro 2대에서 이 값(+ 힙 밖 줄이기 조정 #318)으로도 GC 멈춤 6~19초 · ALB 이탈 · ASG 교체가 이어져(A-2m)
+      # dev 서버를 운영과 같은 t4g.small 로 올렸다(infra #114). 그래서 JVM 값도 운영 compose 와 같게 둔다.
+      - JAVA_TOOL_OPTIONS=-XX:+UseG1GC -Xmx448m -Xlog:gc:file=/var/log/spring/gc.log:time,uptime,level,tags:filecount=5,filesize=5m
     ports:
       - "8080:8080"
     read_only: true

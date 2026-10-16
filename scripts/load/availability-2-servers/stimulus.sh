@@ -156,6 +156,8 @@ START_AT=$(now)
   done
 ) &
 TARGETS_PID=$!
+# job 표에서 뗀다 — 끝에 끌 때 셸이 'Terminated' 를 찍지 않게.
+disown "$TARGETS_PID"
 (
   while true; do
     for id in $(running_apps); do
@@ -166,6 +168,7 @@ TARGETS_PID=$!
   done
 ) &
 MEM_PID=$!
+disown "$MEM_PID"
 trap 'kill $TARGETS_PID $MEM_PID 2>/dev/null || true' EXIT
 
 say "$KIND · 서버 $(echo $APP_IDS) · 대기 $DELAY 초"
