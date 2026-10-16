@@ -21,8 +21,10 @@ paths:
 ## 도메인 단위 패키지
 
 `auth`, `user`, `studio`, `gallery`, `photo`, `analysis`, `folder`,
-`selection`, `collab`, `trash`, `retouch`, `recommendation`, `admin` + 횡단 관심사 `global`/`security`.
+`selection`, `collab`, `trash`, `retouch`, `recommendation`, `agent`, `admin` + 횡단 관심사 `global`/`security`.
 
+- `agent`(셀렉 도우미)는 자기 테이블이 없다. 다른 도메인을 읽고(`AgentPhotoQueryRepository`), 쓰기는
+  `selection`·`folder` 서비스를 그대로 부른다 — 권한·장수 검사를 다시 짜지 않는다.
 - `analysis`~`recommendation`은 전부 사진에 *관한* 도메인이지만 `photo`의 하위 패키지가
   아니다 — 각자 service·controller·config를 소유하고, `folder`/`selection`/`collab`은 자기
   엔티티도 가진다. 합치면 `photo`가 모든 것이 떨어지는 패키지가 된다.

@@ -96,6 +96,30 @@ class PhotoFixture(
         return photoRepository.saveAndFlush(photo)
     }
 
+    /**
+     * score·categorize 가 피사체와 연사 묶음을 적재한 것을 흉내 낸다. 벡터 없이 분석 행만 만든다.
+     * categorize 는 모든 사진에 연사 묶음을 매긴다 — 혼자인 사진은 자기 묶음의 대표(순위 0)다. 백분위·그룹도 함께 채운다(`ck_photo_analysis_categorized`).
+     */
+    fun 피사체_적재(photoId: Long, subjects: String, burstId: Int, burstRank: Int = 0) {
+        jdbcTemplate.update(
+            """
+            INSERT INTO photo_analysis (photo_id, subjects, technical_pct, aesthetic_pct, burst_id, burst_rank, embed_group_id, created_at, updated_at)
+            VALUES (?, ?, 50.0, 50.0, ?, ?, 1, now(), now())
+            ON CONFLICT (photo_id) DO UPDATE SET subjects = EXCLUDED.subjects, burst_id = EXCLUDED.burst_id,
+                burst_rank = EXCLUDED.burst_rank, updated_at = now()
+            """.trimIndent(),
+            photoId,
+            subjects,
+            burstId,
+            burstRank,
+        )
+    }
+
+    /** 업로드 완료 통보가 EXIF를 실은 것을 흉내 낸다 — 크기(가로·세로)와 찍은 시각. */
+    fun 메타데이터_적재(photoId: Long, width: Int, height: Int, takenAt: java.time.LocalDateTime? = null) {
+        jdbcTemplate.update("UPDATE photos SET width = ?, height = ?, taken_at = ? WHERE id = ?", width, height, takenAt, photoId)
+    }
+
     /** 임베더·score 가 사진 단위 결정적 실패를 남긴 것을 흉내 낸다. 이 사진은 기대 장수에서 빠진다. */
     fun 분석_실패(photoId: Long, error: String = "DECODE_FAILED") {
         jdbcTemplate.update(

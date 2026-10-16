@@ -32,4 +32,12 @@ class SelectionFixture(
             },
         )
     }
+
+    /** 부부가 제출한 상태. 담긴 사진이 한 장 이상 있어야 한다 — 빈 앨범은 제출되지 않는다. */
+    fun 제출(selectionId: Long, userId: Long) {
+        val selection = photoSelectionRepository.findById(selectionId).orElseThrow()
+        val selectedCount = photoSelectionItemRepository.findAllBySelectionId(selectionId).size
+        selection.submit(selectedCount = selectedCount, submittedByUserId = userId, at = java.time.ZonedDateTime.now())
+        photoSelectionRepository.saveAndFlush(selection)
+    }
 }

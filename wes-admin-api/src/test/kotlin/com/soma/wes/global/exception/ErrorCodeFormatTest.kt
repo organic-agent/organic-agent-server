@@ -1,6 +1,7 @@
 package com.soma.wes.global.exception
 
 import com.soma.wes.admin.exception.AdminErrorCode
+import com.soma.wes.agent.exception.AgentErrorCode
 import com.soma.wes.billing.exception.BillingErrorCode
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.auth.exception.AuthErrorCode
@@ -34,7 +35,8 @@ class ErrorCodeFormatTest {
             StudioErrorCode.entries + GalleryErrorCode.entries + PhotoErrorCode.entries +
             FolderErrorCode.entries + SelectionErrorCode.entries +
             RetouchErrorCode.entries + CollabErrorCode.entries + TrashErrorCode.entries +
-            RecommendationErrorCode.entries + AnalysisErrorCode.entries + NotificationErrorCode.entries + BillingErrorCode.entries
+            RecommendationErrorCode.entries + AnalysisErrorCode.entries + NotificationErrorCode.entries + BillingErrorCode.entries +
+            AgentErrorCode.entries
 
     private val format = Regex("""^([A-Z]+)_(\d{3})_(\d+)$""")
 

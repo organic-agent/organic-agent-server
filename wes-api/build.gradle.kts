@@ -15,6 +15,8 @@ java {
 
 dependencyManagement {
     imports {
+        // wes-domain의 Spring AI(agent) 버전. spring-cloud-aws BOM보다 앞에 둬 AWS SDK 버전은 그쪽이 정한다.
+        mavenBom("org.springframework.ai:spring-ai-bom:2.0.1")
         mavenBom("org.testcontainers:testcontainers-bom:1.21.4")
         mavenBom("io.awspring.cloud:spring-cloud-aws-dependencies:4.0.2")
     }
