@@ -214,15 +214,27 @@ else
     case "$TARGET" in
       i-*) TARGET_ID="$TARGET" ;;
       leader|follower)
+        # 부하 중엔 docker 로그(10m × 3)가 돌아 리더의 acquired 줄이 사라진다(A-1-2 18:59).
+        # 기록이 빈 서버가 하나뿐이고 나머지가 모두 리더가 아니라고 남겼으면 빈 쪽이 리더다.
+        LEADER_ID=""; BLANK_IDS=""; DEFINITE_FOLLOWERS=0; N_IDS=0
         for id in $APP_IDS; do
+          N_IDS=$((N_IDS + 1))
           state=$(on_app "$id" "$LEADER_STATE")
-          if [ "$TARGET" = leader ] && [ "$state" = acquired ]; then TARGET_ID="$id"; break; fi
-          if [ "$TARGET" = follower ] && [ "$state" != acquired ]; then TARGET_ID="$id"; break; fi
-        done ;;
+          if [ "$state" = acquired ]; then LEADER_ID="$id"
+          elif [ -z "$state" ]; then BLANK_IDS="$BLANK_IDS $id"
+          else DEFINITE_FOLLOWERS=$((DEFINITE_FOLLOWERS + 1)); fi
+        done
+        set -- $BLANK_IDS
+        if [ -z "$LEADER_ID" ] && [ "$#" -eq 1 ] && [ "$DEFINITE_FOLLOWERS" -eq $((N_IDS - 1)) ]; then
+          LEADER_ID="$1"; say "  리더 = $LEADER_ID (로그가 돌아 acquired 줄이 없음 — 나머지가 모두 리더 아님)"
+        fi
+        if [ "$TARGET" = leader ]; then TARGET_ID="$LEADER_ID"
+        else for id in $APP_IDS; do [ "$id" != "$LEADER_ID" ] && { TARGET_ID="$id"; break; }; done; fi ;;
       *) echo "--target 은 follower|leader|i-… 이다." >&2; exit 1 ;;
     esac
     [ -n "$TARGET_ID" ] || { echo "--target $TARGET 에 맞는 서버가 없다(서버 $(echo $APP_IDS))." >&2; exit 1; }
-    TARGET_ROLE=$(on_app "$TARGET_ID" "$LEADER_STATE"); [ "$TARGET_ROLE" = acquired ] && TARGET_ROLE=leader || TARGET_ROLE=follower
+    if [ -n "${LEADER_ID+x}" ]; then [ "$TARGET_ID" = "$LEADER_ID" ] && TARGET_ROLE=leader || TARGET_ROLE=follower
+    else TARGET_ROLE=$(on_app "$TARGET_ID" "$LEADER_STATE"); [ "$TARGET_ROLE" = acquired ] && TARGET_ROLE=leader || TARGET_ROLE=follower; fi
     BEFORE_HEALTHY=$(aws elbv2 describe-target-health --region "$REGION" --target-group-arn "$TG_ARN" \
       --query 'length(TargetHealthDescriptions[?TargetHealth.State==`healthy`])' --output text)
     # SSM 에이전트(snap)는 AppArmor 프로필 안에서 돌아 docker-default 컨테이너에 신호를 못 보낸다(kill: Permission denied, A-0b 첫 시도).
