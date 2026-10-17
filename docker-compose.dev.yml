@@ -10,6 +10,10 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=dev
       - SERVER_PORT=8080
+      # 헬스(actuator)를 별도 포트·별도 Tomcat 스레드로 뺀다(#313 W5b). 사용자 요청이 본 포트 스레드를 다 쥐어도 ALB liveness 가
+      # 줄 서지 않는다 — A-4a(10-17)에서 CPU 가 차자 본 포트 /livez 가 3초를 넘겨 ASG 가 멀쩡한 서버를 3번 갈았다.
+      # ALB 는 8090 /actuator/health/liveness, 배포 스크립트는 8090 /actuator/health/readiness(DB 포함)를 본다.
+      - MANAGEMENT_SERVER_PORT=8090
       - AWS_REGION=ap-northeast-2
       - TZ=Asia/Seoul
       # 힙 상한을 서버 메모리 안에 둔다(#274 A-1). t4g.micro 904MB에서 다른 프로세스 ≈ 200MB · JVM 힙 밖 ≈ 180MB를 빼면
@@ -22,6 +26,7 @@ services:
       - JAVA_TOOL_OPTIONS=-XX:+UseG1GC -Xmx448m -Xlog:gc:file=/var/log/spring/gc.log:time,uptime,level,tags:filecount=5,filesize=5m
     ports:
       - "8080:8080"
+      - "8090:8090"
     read_only: true
     cap_drop:
       - ALL

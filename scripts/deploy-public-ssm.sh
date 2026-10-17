@@ -28,6 +28,19 @@ TARGET_SERVICE=wes-api
 # 공개 API 이미지 한 벌(압축본 + 풀린 층)이 들어가고도 남는 여유.
 MIN_FREE_DISK_KB=2097152
 
+# 컨테이너가 요청을 받을 준비가 됐나(readiness, DB 포함)의 HTTP 상태 코드. 200 = UP, 503 = DOWN.
+# 관리 포트(8090, #313 W5b)가 열려 있으면 그 readiness 를 보고, 연결이 안 되면(000) 본 포트 /actuator/health 를 본다 —
+# 관리 포트를 열지 않은 compose(운영 P1 전)와 되살릴 옛 이미지도 같은 함수로 확인한다. 둘 다 DB 까지 본다.
+public_ready_code() {
+  code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 2 --max-time 5 \
+    "http://127.0.0.1:8090/actuator/health/readiness" || true)
+  if [ "$code" = "000" ]; then
+    code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 2 --max-time 5 \
+      "http://127.0.0.1:8080/actuator/health" || true)
+  fi
+  echo "$code"
+}
+
 # 같은 저장소의 태그 이미지는 인자로 받은 것만 남긴다.
 # `docker image prune`은 태그 없는 이미지만 지워 커밋마다 받은 이미지가 디스크를 채운다.
 remove_stale_images() (
@@ -123,9 +136,7 @@ rollback_public_release() (
   }
 
   for rollback_attempt in $(seq 1 30); do
-    ROLLBACK_HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
-      --connect-timeout 2 --max-time 5 \
-      "http://127.0.0.1:8080/actuator/health" || true)
+    ROLLBACK_HTTP_CODE=$(public_ready_code)
     if [ "$ROLLBACK_HTTP_CODE" = "200" ]; then
       echo "공개 API 이전 릴리스 복구 완료 (${rollback_attempt}번째 시도)" >&2
       return 0
@@ -133,7 +144,7 @@ rollback_public_release() (
     sleep 5
   done
 
-  echo "이전 공개 API 이미지로 복구했지만 8080 health 검증에 실패했습니다" >&2
+  echo "이전 공개 API 이미지로 복구했지만 readiness 검증에 실패했습니다" >&2
   docker logs --tail 100 wes-app >&2 || true
   return 1
 )
@@ -201,9 +212,7 @@ if docker inspect wes-app >/dev/null 2>&1; then
 
   PREVIOUS_HEALTHY=false
   for preflight_attempt in $(seq 1 5); do
-    PREFLIGHT_HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
-      --connect-timeout 2 --max-time 5 \
-      "http://127.0.0.1:8080/actuator/health" || true)
+    PREFLIGHT_HTTP_CODE=$(public_ready_code)
     if [ "$PREFLIGHT_HTTP_CODE" = "200" ]; then
       PREVIOUS_HEALTHY=true
       break
@@ -325,9 +334,7 @@ EXPECTED_IMAGE="$IMAGE_REPOSITORY:$TARGET_IMAGE_TAG"
 # 기동에 시간이 걸린다(Parameter Store 조회 + 컨텍스트 초기화).
 # 상태 코드로 판단한다. 200 = UP, 503 = DOWN.
 for i in $(seq 1 30); do
-  HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
-    --connect-timeout 2 --max-time 5 \
-    "http://127.0.0.1:8080/actuator/health" || true)
+  HTTP_CODE=$(public_ready_code)
   if [ "$HTTP_CODE" = "200" ]; then
     docker image prune -f
     echo "기동 완료 (${i}번째 시도)"

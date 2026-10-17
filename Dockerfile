@@ -16,7 +16,8 @@ COPY --chown=wes:wes ${JAR_FILE} app.jar
 
 USER wes
 EXPOSE 8080
+# 살아 대답하나(liveness)만 본다. 관리 포트는 compose 의 MANAGEMENT_SERVER_PORT(dev 8090, #313 W5b) — 없으면 본 포트에 있다.
 HEALTHCHECK --interval=15s --timeout=3s --start-period=30s --retries=4 \
-  CMD curl --fail --silent --show-error http://127.0.0.1:8080/actuator/health >/dev/null || exit 1
+  CMD curl --fail --silent --show-error "http://127.0.0.1:${MANAGEMENT_SERVER_PORT:-8080}/actuator/health/liveness" >/dev/null || exit 1
 
 ENTRYPOINT ["java", "-jar", "/app.jar"]

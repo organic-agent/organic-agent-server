@@ -34,6 +34,8 @@ management:
       # 헬스를 둘로 나눈다(#313 ADR-0001 §7 안건 1). ALB 는 "앱이 살아 대답하나"(liveness)만 본다 — DB 검사가 들어 있으면 DB 하나가
       # 흔들릴 때 서버가 다 같이 빠지고 ASG 가 멀쩡한 서버를 갈아 치운다(10-16 dev). 배포 스크립트는 DB 까지 보는 readiness 로 새
       # 컨테이너를 확인한다. add-additional-paths 는 본 포트에 /livez·/readyz 를 연다 — ALB 를 관리 포트로 옮기는 동안 이어 주는 길.
+      # 관리 포트(헬스를 사용자 요청과 다른 Tomcat 스레드로)는 서버 compose 의 MANAGEMENT_SERVER_PORT=8090 이 연다 — 여기 두면 MockMvc
+      # 테스트(실제 서버 없음)에서 actuator 가 사라진다. A-4a(10-17): CPU 가 차자 본 포트 /livez 가 3초 안에 못 대답해 ASG 가 3번 갈았다.
       # 관리자 앱은 ALB 뒤 여러 대가 아니라 이 파일을 import 하지 않는다.
       probes:
         enabled: true
