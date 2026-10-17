@@ -90,6 +90,13 @@ data class AnalysisProperties(
          * 지나면 켜는 이유가 되지 않고, 켰는데 일이 없으면 워커가 30초 뒤 스스로 꺼진다.
          */
         val startOnUploadWithin: Duration = Duration.ofMinutes(1),
+        /** 동시에 켜 둘 워커 상한. 1이면 늘 한 대다. */
+        val maxWorkers: Int = 1,
+        /**
+         * 워커가 켜져 있어도 1단계 점수 대기가 이만큼 쌓이면 한 대 더 켠다([maxWorkers]까지). 업로드 하나는 한 대가 도착 속도를 따라잡아
+         * 대기가 수백 장에 머물고, 동시 업로드가 많을 때만 대기가 수천 장으로 쌓인다(#313 A-4b-10: 10개 동시에 GPU 한 대가 마지막 단계).
+         */
+        val scaleOutBacklog: Long = 3000,
     )
 
     /**

@@ -52,7 +52,7 @@ class LocalScoreWorkerPool(
         )
     }
 
-    override fun start() {
+    override fun start(instanceId: String) {
         if (process?.isAlive == true) return
         val logFile = File(System.getProperty("java.io.tmpdir"), "wes-gpu-score-worker.log")
         process = try {

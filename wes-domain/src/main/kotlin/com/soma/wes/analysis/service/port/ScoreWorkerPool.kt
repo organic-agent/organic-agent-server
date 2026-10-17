@@ -14,8 +14,8 @@ interface ScoreWorkerPool {
     /** 풀의 인스턴스 전부와 지금 상태. */
     fun snapshot(): List<ScoreWorkerDto>
 
-    /** 꺼진 인스턴스 하나를 켠다. 켤 것이 없으면 아무것도 하지 않는다. 호출 자체가 실패하면 도메인 예외를 던진다. */
-    fun start()
+    /** [instanceId] 인스턴스를 켠다. 어느 것을 켤지는 호출자가 [snapshot]을 보고 고른다. 호출이 실패하면(재고 부족 포함) 도메인 예외를 던진다. */
+    fun start(instanceId: String)
 
     fun stop(instanceId: String)
 }

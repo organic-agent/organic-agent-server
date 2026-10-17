@@ -8,6 +8,8 @@ data class ScoreWorkerDto(
     val state: ScoreWorkerStateDto,
     /** 마지막으로 켠 시각. 켜진 적 없으면 null. 기동 유예([com.soma.wes.analysis.config.AnalysisProperties.Gpu.startGrace])의 기준이다. */
     val launchedAt: ZonedDateTime?,
+    /** 인스턴스가 있는 가용 영역. 한 영역에 GPU 재고가 없을 때 다른 영역 것을 먼저 켜는 데 쓴다. 모르면 null(로컬). */
+    val zone: String? = null,
 ) {
 
     /** 켜졌거나 켜지는 중 — 곧 집기를 시작할 것이라 다시 켜지 않는다. */
