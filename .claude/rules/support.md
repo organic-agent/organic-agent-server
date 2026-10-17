@@ -9,6 +9,13 @@ paths:
 **컨트롤러·스케줄러가 부르면 `service`, 서비스가 기대면 `support`.** 스케줄러 자신(`@Scheduled`)은
 알람만 울리는 얇은 support 클래스이고 판단은 부르는 서비스가 한다 (`AnalysisPipelineScheduler` → `AnalysisPipelineService`).
 
+## 주기 작업(`@Scheduled`)
+
+- 첫 줄에서 `if (!leadership.isLeader()) return`으로 리더 한 대만 돌게 한다(`global/cluster/SchedulerLeadership`). 서버마다 메모리에
+  쌓인 것을 비우는 일(활동 시각 버퍼 플러시)만 예외로 모든 서버가 돈다.
+- **중복 방지를 리더 하나에 기대지 않는다.** Redis 가 재시작하면 리더가 잠깐 둘이다(#313 ADR-0002 §7). 두 서버가 같은 틱을 돌아도
+  결과가 한 번이도록 조건부 UPDATE(영향 행 0이면 손 뗌)·`FOR UPDATE SKIP LOCKED`·행 잠금 + 발행 표식, 또는 두 번 해도 같은 일(삭제·UPSERT)로 짠다.
+
 ## 무엇이 여기 사는가
 
 - 인가 정책: `gallery/support/GalleryAccessPolicy`, `collab/support/CollabSessionAccess`

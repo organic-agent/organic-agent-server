@@ -59,6 +59,8 @@ class HttpLoggingFilter : OncePerRequestFilter() {
         /** 헬스체크·문서 조회는 양이 많고 알려주는 것이 없다. traceId는 심되 줄은 남기지 않는다. */
         private val EXCLUDE_PATTERNS: List<PathPattern> = listOf(
             "/actuator/**",
+            "/livez",
+            "/readyz",
             "/swagger-ui/**",
             "/v3/api-docs/**",
         ).map(PATH_PATTERN_PARSER::parse)

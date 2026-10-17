@@ -150,11 +150,13 @@ class HttpLoggingFilterTest @Autowired constructor(
     @Test
     fun `헬스체크는 기록하지 않는다`() {
         // when
-        val response = send("/actuator/health", accessToken = null)
+        val responses = listOf("/actuator/health", "/livez", "/readyz").map { path -> send(path, accessToken = null) }
 
         // then
         assertThat(appender.list).isEmpty()
-        assertThat(response.headers().firstValue(HttpLoggingFilter.CORRELATION_ID_HEADER)).isPresent
+        assertThat(responses).allSatisfy { response ->
+            assertThat(response.headers().firstValue(HttpLoggingFilter.CORRELATION_ID_HEADER)).isPresent
+        }
     }
 
     @Test

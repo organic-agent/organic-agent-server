@@ -7,6 +7,9 @@ object PublicPaths {
 
     val PATTERNS: List<String> = listOf(
         "/actuator/**",
+        // 헬스 프로브(application-variable.yml `management.endpoint.health.probes`) — ALB·배포 스크립트가 토큰 없이 부른다.
+        "/livez",
+        "/readyz",
         "/swagger-ui.html",
         "/swagger-ui/**",
         "/v3/api-docs/**",
