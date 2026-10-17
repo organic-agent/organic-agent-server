@@ -9,6 +9,8 @@
 # --workspace-ids  복제 갤러리를 이 스튜디오들에 돌아가며 나눈다(갤러리 k → k mod 개수). 없으면 원본 작업공간 그대로(R-3-a).
 #                  스튜디오의 OWNER가 갤러리 작가가 된다. 만들기: scripts/load/upload-5x-10min/make-studio.sh
 # --couples        한 갤러리의 사람들이 k6 에 연달아 들어온다(50명 = 갤러리 25개 × 2명). 없으면 갤러리마다 한 명씩 돌아가며(R-3-a).
+# --reuse-galleries 1579-1778   복제하지 않고 이미 있는 갤러리(id 범위 또는 쉼표)에 사용자·멤버만 더한다 — 사람 수만 늘릴 때(#313 A-4a).
+#                  사진 행을 만들지 않아 dev DB 가 거의 늘지 않는다. --source · --galleries · --workspace-ids 는 무시한다.
 #
 # 쓰는 것: 갤러리 N개(사진·분석 행 복제, S3 객체는 원본을 가리킴 — 업로드 없음) · users(provider GOOGLE, provider_id load-user-NNNN)
 #          · gallery_members. 사용자는 회차끼리 재사용한다(이미 있으면 그대로). 갤러리는 회차마다 새로 — 지우기는 cleanup.sh.
@@ -18,7 +20,7 @@ cd "$(dirname "$0")/../../.."
 source scripts/load/lib/report.sh
 report_parse_common "$@"; set -- "${REPORT_REST[@]+"${REPORT_REST[@]}"}"
 
-SOURCE=20; GALLERIES=10; USERS=400; WORKSPACE_IDS=""; COUPLES="false"
+SOURCE=20; GALLERIES=10; USERS=400; WORKSPACE_IDS=""; COUPLES="false"; REUSE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --source) SOURCE="$2"; shift ;;
@@ -26,6 +28,7 @@ while [ $# -gt 0 ]; do
     --users) USERS="$2"; shift ;;
     --workspace-ids) WORKSPACE_IDS="$2"; shift ;;
     --couples) COUPLES="true" ;;
+    --reuse-galleries) REUSE="$2"; shift ;;
     -h|--help) sed -n 2,18p "$0"; exit 0 ;;
     *) echo "알 수 없는 인자: $1" >&2; exit 1 ;;
   esac
@@ -35,6 +38,9 @@ done
 [ -n "$REPORT_LABEL" ] || { echo "--label 이 필요하다(예: R-3-a)." >&2; exit 1; }
 [[ "$REPORT_LABEL" =~ ^[A-Za-z0-9-]+$ ]] || { echo "--label 은 영문·숫자·하이픈만(제목 LIKE 패턴에 들어간다): $REPORT_LABEL" >&2; exit 1; }
 [[ -z "$WORKSPACE_IDS" || "$WORKSPACE_IDS" =~ ^[0-9]+(,[0-9]+)*$ ]] || { echo "--workspace-ids 는 쉼표로 구분한 숫자: $WORKSPACE_IDS" >&2; exit 1; }
+if [[ "$REUSE" =~ ^([0-9]+)-([0-9]+)$ ]]; then REUSE=$(seq "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" | paste -sd, -); fi
+[[ -z "$REUSE" || "$REUSE" =~ ^[0-9]+(,[0-9]+)*$ ]] || { echo "--reuse-galleries 는 a-b 범위나 쉼표로 구분한 숫자: $REUSE" >&2; exit 1; }
+[ -n "$REUSE" ] && GALLERIES=$(echo "$REUSE" | tr ',' '\n' | grep -c .)
 [ $((USERS % GALLERIES)) -eq 0 ] || { echo "--users 가 --galleries 로 나누어떨어져야 한다(갤러리마다 같은 인원)." >&2; exit 1; }
 report_connect
 
@@ -46,6 +52,12 @@ psql_write() {
 BUCKET=$(aws ssm get-parameter --region "$REGION" --name "$SSM_PREFIX/app.storage.bucket" --query Parameter.Value --output text)
 TITLE_PREFIX="[부하 $REPORT_LABEL] 사용자"
 
+if [ -n "$REUSE" ]; then
+  GALLERY_IDS=$(psql_write -c "SELECT id FROM galleries WHERE id = ANY('{$REUSE}'::bigint[]) AND deleted_at IS NULL ORDER BY id" | paste -sd, -)
+  COUNT=$(echo "$GALLERY_IDS" | tr ',' '\n' | grep -c .)
+  [ "$COUNT" -eq "$GALLERIES" ] || { echo "있는 갤러리가 $COUNT 개다(기대 $GALLERIES)." >&2; exit 1; }
+  WORKSPACE_IDS=""
+else
 # 1. 갤러리 복제 — 복제 스크립트가 만든 갤러리를 id 범위로 찾아 회차 제목을 붙인다(정리 때 제목으로 고른다).
 BEFORE=$(psql_write -c "SELECT coalesce(max(id), 0) FROM galleries")
 scripts/load/clone-gallery-photos.sh dev --source "$SOURCE" --count "$GALLERIES" --yes >/dev/null
@@ -71,6 +83,8 @@ if [ -n "$WORKSPACE_IDS" ]; then
       WHERE g.id = gk.id RETURNING g.id)
     SELECT count(*) FROM moved")
   [ "$MOVED" -eq "$GALLERIES" ] || { echo "스튜디오로 옮긴 갤러리가 $MOVED 개다(기대 $GALLERIES) — --workspace-ids 가 OWNER 있는 STUDIO 인지 확인." >&2; exit 1; }
+fi
+
 fi
 
 # 2. 테스트 사용자와 멤버 — 사용자 i 는 갤러리 (i mod N) 의 부부다.

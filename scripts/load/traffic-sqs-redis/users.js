@@ -16,10 +16,12 @@
 import http from "k6/http";
 import exec from "k6/execution";
 import { sleep } from "k6";
+import { SharedArray } from "k6/data";
 import { textSummary } from "https://jslib.k6.io/k6-summary/0.1.0/index.js";
 
 const API = __ENV.API;
-const TARGETS = JSON.parse(open(__ENV.TARGETS)); // [{ userId, galleryId, token }]
+// 가상 사용자마다 따로 읽으면 사람 수 × 파일 크기만큼 메모리를 먹는다(A-4a 1,800명: 발생기 4GB 에서 k6 가 OOM 으로 죽음) — 한 벌만 두고 같이 읽는다.
+const TARGETS = new SharedArray("targets", () => JSON.parse(open(__ENV.TARGETS))); // [{ userId, galleryId, token }]
 const PROFILE = __ENV.PROFILE || "full";
 
 const TICK_SECONDS = 5;
@@ -48,6 +50,8 @@ const PROFILES = {
   steady: [["30s", "10m", 200]],
   // #313 QA-4 피크 흡수(A-3) — 200명 3분(기준) → 30초에 600명으로 올려 10분 → 다시 200명 5분. 그 사이 ASG 가 서버를 늘리고 줄인다.
   step600: [["30s", "3m", 200], ["30s", "10m", 600], ["30s", "5m", 200, "200-after"]],
+  // #313 A-4a 요청 상한 — 600명부터 300명씩 5분 계단으로 1,800명까지. 처음 p95 > 500ms·오류 ≥ 1% 인 계단이 그 구성의 천장이다.
+  stairs1800: [["30s", "5m", 600], ["30s", "5m", 900], ["30s", "5m", 1200], ["30s", "5m", 1500], ["30s", "5m", 1800]],
 };
 const STEPS = PROFILES[PROFILE];
 const ACTIONS = ["open", "list", "detail", "rating", "select", "deselect", "watch", "notifications", "retouch"];
