@@ -47,7 +47,12 @@ class ScoreStepTest @Autowired constructor(
         galleryId = galleryFixture.멤버와_열린_갤러리().galleryId
     }
 
-    private fun step(enabled: Boolean = true, qualityStage: Boolean = false) = ScoreStep(
+    private fun step(
+        enabled: Boolean = true,
+        qualityStage: Boolean = false,
+        maxWorkers: Int = 1,
+        scaleOutBacklog: Long = 3000,
+    ) = ScoreStep(
         pool,
         photoPipelineRepository,
         aiTaskSender,
@@ -59,6 +64,8 @@ class ScoreStepTest @Autowired constructor(
                 idleStopAfter = Duration.ofMinutes(2),
                 fallbackAfter = Duration.ofMinutes(10),
                 fallbackInterval = Duration.ofMinutes(10),
+                maxWorkers = maxWorkers,
+                scaleOutBacklog = scaleOutBacklog,
             ),
             qualityStage = AnalysisProperties.QualityStage(enabled = qualityStage),
         ),
@@ -234,6 +241,75 @@ class ScoreStepTest @Autowired constructor(
             assertSoftly { softly ->
                 softly.assertThat(startsWithinGuard).isEqualTo(1)
                 softly.assertThat(pool.starts).hasSize(2)
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("동시 업로드로 점수 대기가 쌓일 때")
+    inner class ScaleOut {
+
+        @Test
+        fun `켜진 워커가 있어도 대기가 기준 이상이면 다른 영역의 워커를 한 대 더 켠다`() {
+            // given — 2a 워커는 이미 켜져 있다
+            photoFixture.임베딩된_사진(galleryId, count = 3)
+            pool.worker("i-a", ScoreWorkerStateDto.RUNNING, launchedAt = ZonedDateTime.now(clock), zone = "ap-northeast-2a")
+            pool.worker("i-a2", ScoreWorkerStateDto.STOPPED, zone = "ap-northeast-2a")
+            pool.worker("i-c", ScoreWorkerStateDto.STOPPED, zone = "ap-northeast-2c")
+            val step = step(maxWorkers = 2, scaleOutBacklog = 3)
+
+            // when
+            step.advance()
+            clock.advance(Duration.ofMinutes(2))
+            step.advance()
+
+            // then — 상한 2대라 두 번째 걸음은 더 켜지 않는다
+            assertThat(pool.startedIds).containsExactly("i-c")
+        }
+
+        @Test
+        fun `대기가 기준보다 적으면 한 대로 둔다 — 업로드 하나는 한 대가 따라잡는다`() {
+            // given
+            photoFixture.임베딩된_사진(galleryId, count = 2)
+            pool.worker("i-a", ScoreWorkerStateDto.RUNNING, launchedAt = ZonedDateTime.now(clock), zone = "ap-northeast-2a")
+            pool.worker("i-c", ScoreWorkerStateDto.STOPPED, zone = "ap-northeast-2c")
+
+            // when
+            step(maxWorkers = 2, scaleOutBacklog = 3).advance()
+
+            // then
+            assertThat(pool.startedIds).isEmpty()
+        }
+
+        @Test
+        fun `상한이 1이면 대기가 쌓여도 더 켜지 않는다`() {
+            // given
+            photoFixture.임베딩된_사진(galleryId, count = 3)
+            pool.worker("i-a", ScoreWorkerStateDto.RUNNING, launchedAt = ZonedDateTime.now(clock), zone = "ap-northeast-2a")
+            pool.worker("i-c", ScoreWorkerStateDto.STOPPED, zone = "ap-northeast-2c")
+
+            // when
+            step(maxWorkers = 1, scaleOutBacklog = 3).advance()
+
+            // then
+            assertThat(pool.startedIds).isEmpty()
+        }
+
+        @Test
+        fun `한 영역의 켜기가 실패하면 같은 걸음에서 다른 영역의 워커를 켠다`() {
+            // given — 2a 에 GPU 재고가 없다
+            photoFixture.업로드된_사진(galleryId, count = 1)
+            pool.worker("i-a", ScoreWorkerStateDto.STOPPED, zone = "ap-northeast-2a")
+            pool.worker("i-c", ScoreWorkerStateDto.STOPPED, zone = "ap-northeast-2c")
+            pool.failingStarts += "i-a"
+
+            // when
+            step().advance()
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(pool.startedIds).containsExactly("i-c")
+                softly.assertThat(pool.workers.single { it.instanceId == "i-c" }.state).isEqualTo(ScoreWorkerStateDto.PENDING)
             }
         }
     }

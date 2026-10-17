@@ -41,18 +41,15 @@ class Ec2ScoreWorkerPool(
             instanceId = instance.instanceId(),
             state = stateOf(instance.state().name()),
             launchedAt = instance.launchTime()?.let { ZonedDateTime.ofInstant(it, ZoneOffset.UTC) },
+            zone = instance.placement()?.availabilityZone(),
         )
     }
 
-    override fun start() {
-        val stopped = describe().firstOrNull { it.state().name() == InstanceStateName.STOPPED } ?: run {
-            log.warn("켤 GPU 워커가 없다: tag={}", properties.gpu.tag)
-            return
+    override fun start(instanceId: String) {
+        call("StartInstances", instanceId) {
+            ec2Client.startInstances(StartInstancesRequest.builder().instanceIds(instanceId).build())
         }
-        call("StartInstances", stopped.instanceId()) {
-            ec2Client.startInstances(StartInstancesRequest.builder().instanceIds(stopped.instanceId()).build())
-        }
-        log.info("GPU 워커 켬: instance={} tag={}", stopped.instanceId(), properties.gpu.tag)
+        log.info("GPU 워커 켬: instance={} tag={}", instanceId, properties.gpu.tag)
     }
 
     override fun stop(instanceId: String) {

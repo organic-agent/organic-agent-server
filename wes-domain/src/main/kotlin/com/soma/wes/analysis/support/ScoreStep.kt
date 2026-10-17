@@ -4,12 +4,14 @@ import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.domain.AnalysisJobEventType
 import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.dto.ScoreWorkerDto
+import com.soma.wes.analysis.dto.ScoreWorkerStateDto
 import com.soma.wes.analysis.exception.AnalysisException
 import com.soma.wes.analysis.service.port.AiTaskSender
 import com.soma.wes.analysis.service.port.ScoreWorkerPool
 import com.soma.wes.global.logging.LogContext
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import java.time.Clock
+import java.time.Duration
 import java.time.ZonedDateTime
 import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.LoggerFactory
@@ -23,6 +25,9 @@ import org.springframework.stereotype.Component
  *   벡터가 오기 전에, 첫 사진이 올라오기 전에 미리 켜 부팅이 업로드·임베딩과 겹치게 한다.
  *   [AnalysisProperties.QualityStage.enabled]면 화질 점수(2단계) 대기도 워커의 일로 센다 — 워커는 1단계 대기가 비면 2단계를 집으므로,
  *   1단계만 세면 2단계 도중 안전망이 워커를 끈다. 폴백은 1단계만 본다(폴더가 기다리는 것은 1단계뿐이다).
+ * - 늘리기: 켜진 워커가 있어도 1단계 대기가 [AnalysisProperties.Gpu.scaleOutBacklog] 이상이면 [AnalysisProperties.Gpu.maxWorkers]까지
+ *   한 대 더 켠다. 동시 업로드가 많을 때만 대기가 그만큼 쌓인다. 워커는 `FOR UPDATE SKIP LOCKED`로 집어 둘이 같은 사진을 매기지 않는다(AI repo).
+ * - 어느 것을 켜나: 켜진 워커가 없는 가용 영역의 것부터. 켜기가 실패하면(그 영역 GPU 재고 부족 등) 같은 걸음에서 다음 것을 켠다.
  * - 끄기: 워커의 유휴 30초 자기 정지(AI repo)가 1차다. 여기는 backlog 0 ∧ 켜진 지 [AnalysisProperties.Gpu.startGrace] 지남 ∧
  *   [AnalysisProperties.Gpu.idleStopAfter] 동안 점수 진행 없음일 때만 끄는 안전망이다.
  * - 폴백: backlog가 있는데 [AnalysisProperties.Gpu.fallbackAfter] 동안 워커가 뜨지 않거나 점수가 늘지 않으면, 벡터는 있는데 점수가
@@ -76,6 +81,11 @@ class ScoreStep(
     /** score 폴백을 갤러리마다 보낸 횟수. 미점수 사진이 없어진 갤러리는 지운다 — 다음에 올라온 사진은 처음부터 센다. */
     private val fallbackCount = ConcurrentHashMap<Long, Int>()
 
+    companion object {
+        /** 늘리기로 켠 뒤 다시 늘리기 전 기다림 — 켜기 직후 인스턴스가 PENDING 으로 보이기까지의 몇 초를 넉넉히 덮는다. */
+        private val SCALE_OUT_GUARD: Duration = Duration.ofMinutes(1)
+    }
+
     fun advance() {
         val now = ZonedDateTime.now(clock)
         val backlog = photoPipelineRepository.countScoreBacklog(dispatchedSince = now.minus(properties.embedRedispatchAfter))
@@ -83,7 +93,7 @@ class ScoreStep(
         observeProgress(workerBacklog, now)
         observeDelivery(backlog, now)
 
-        if (isWorkerPoolActive) controlWorkers(workerBacklog, now)
+        if (isWorkerPoolActive) controlWorkers(workerBacklog = workerBacklog, scoreBacklog = backlog, now = now)
         if (backlog == 0L) {
             deliveringAt = null
             fallbackCount.clear()
@@ -127,8 +137,9 @@ class ScoreStep(
         lastScoreBacklog = backlog
     }
 
-    /** 켜진 워커가 없으면 켜고, 일이 없는데 켜져 있으면 안전망으로 끈다. 호출 실패는 다음 스윕에 다시 본다. */
-    private fun controlWorkers(backlog: Long, now: ZonedDateTime) {
+    /** 켜진 워커가 없으면 켜고, 1단계 대기가 쌓이면 한 대 더 켜고, 일이 없는데 켜져 있으면 안전망으로 끈다. 호출 실패는 다음 스윕에 다시 본다. */
+    private fun controlWorkers(workerBacklog: Long, scoreBacklog: Long, now: ZonedDateTime) {
+        val backlog = workerBacklog
         val workers = try {
             scoreWorkerPool.snapshot()
         } catch (e: AnalysisException) {
@@ -141,14 +152,14 @@ class ScoreStep(
             if (up.isEmpty() && isStartDue(now)) {
                 val uploadOnly = backlog == 0L
                 if (!uploadOnly || isUploadStarting(now)) {
-                    scoreWorkerPool.start()
+                    startOne(workers, reason = if (uploadOnly) "upload" else "backlog", backlog = backlog)
                     lastStartAt = now
                     lastStartWasUploadOnly = uploadOnly
-                    log.info(
-                        "event=score.gpu.start backlog={} workers={} reason={}",
-                        backlog, workers.size, if (uploadOnly) "upload" else "backlog",
-                    )
                 }
+            } else if (isScaleOutDue(up, scoreBacklog, now)) {
+                startOne(workers, reason = "scale-out", backlog = scoreBacklog)
+                lastStartAt = now
+                lastStartWasUploadOnly = false
             }
             if (backlog == 0L) {
                 up.filter { isPastGrace(it, now) && isIdle(it, now) }.forEach { worker ->
@@ -163,6 +174,38 @@ class ScoreStep(
             log.warn("gpu control failed code={} — 다음 스윕에서 다시 본다", e.errorCode.code)
         }
         if (up.any { !isPastGrace(it, now) }) deliveringAt = now
+    }
+
+    /**
+     * 켜진 워커가 없는 가용 영역의 꺼진 인스턴스부터 하나를 켠다. 켜기가 실패하면 다음 것을 켠다 — 한 영역에 GPU 재고가 없어도 다른 영역
+     * 예비가 받게(10-17 확인 전에는 늘 '꺼진 첫 대'만 다시 켜 재고 부족 동안 폴백까지 기다렸다). 전부 실패하면 다음 걸음에 다시 본다.
+     */
+    private fun startOne(workers: List<ScoreWorkerDto>, reason: String, backlog: Long) {
+        val busyZones = workers.filter { it.isUp }.mapNotNull { it.zone }.toSet()
+        val candidates = workers
+            .filter { it.state == ScoreWorkerStateDto.STOPPED }
+            .sortedBy { it.zone in busyZones }
+        for (candidate in candidates) {
+            try {
+                scoreWorkerPool.start(candidate.instanceId)
+                log.info(
+                    "event=score.gpu.start instance={} zone={} backlog={} workers={} reason={}",
+                    candidate.instanceId, candidate.zone, backlog, workers.size, reason,
+                )
+                return
+            } catch (e: AnalysisException) {
+                log.warn("event=score.gpu.start_failed instance={} zone={} code={} — 다음 워커로", candidate.instanceId, candidate.zone, e.errorCode.code)
+            }
+        }
+        log.warn("event=score.gpu.no_start candidates={} reason={} — 다음 스윕에서 다시 본다", candidates.size, reason)
+    }
+
+    /** 늘리기는 켜기 직후 Describe 가 아직 STOPPED 를 돌려주는 동안 두 번 켜지 않게 [SCALE_OUT_GUARD]를 둔다. */
+    private fun isScaleOutDue(up: List<ScoreWorkerDto>, scoreBacklog: Long, now: ZonedDateTime): Boolean {
+        if (up.isEmpty() || up.size >= properties.gpu.maxWorkers) return false
+        if (scoreBacklog < properties.gpu.scaleOutBacklog) return false
+        val last = lastStartAt ?: return true
+        return last.plus(SCALE_OUT_GUARD).isBefore(now)
     }
 
     private fun isUploadStarting(now: ZonedDateTime): Boolean =
