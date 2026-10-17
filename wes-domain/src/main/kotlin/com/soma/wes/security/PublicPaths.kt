@@ -7,7 +7,7 @@ object PublicPaths {
 
     val PATTERNS: List<String> = listOf(
         "/actuator/**",
-        // 헬스 프로브(application-variable.yml `management.endpoint.health.probes`) — ALB·배포 스크립트가 토큰 없이 부른다.
+        // 헬스 프로브(application-api-runtime.yml `management.endpoint.health.probes`) — 관리 포트를 열지 않은 서버(로컬·운영 P1 전)의 본 포트 길.
         "/livez",
         "/readyz",
         "/swagger-ui.html",

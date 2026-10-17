@@ -160,6 +160,8 @@ grep -Fq 'up -d --force-recreate --pull never wes-admin-api' "$admin_deploy_scri
 grep -Fq '공개 API 이전 릴리스 롤백을 시작합니다' "$public_deploy_script"
 grep -Fq 'PREVIOUS_IMAGE_ID=$(docker inspect --format' "$public_deploy_script"
 grep -Fq 'http://127.0.0.1:8080/actuator/health' "$public_deploy_script"
+grep -Fq 'http://127.0.0.1:8090/actuator/health/readiness' "$public_deploy_script"
+grep -Fq 'HTTP_CODE=$(public_ready_code)' "$public_deploy_script"
 grep -Fq 'trap on_public_deploy_exit EXIT' "$public_deploy_script"
 grep -Fq 'rollback_public_release()' "$public_deploy_script"
 grep -Fq 'PREVIOUS_LEGACY_IMAGE="ghcr.io/${OWNER_LOWERCASE}/wes-server:latest"' "$public_deploy_script"

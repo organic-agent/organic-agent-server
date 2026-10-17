@@ -7,6 +7,8 @@
 #
 #   --ids    대상 갤러리 id (쉼표). 창은 min(T0) → max(DONE) + tail. DONE 없는 갤러리가 있으면 지금까지.
 #   --tail   DONE 뒤에 더 볼 시간(GPU 자기 정지·마지막 Lambda 꼬리). 기본 5min
+#   --print-window   창(START,END,사진 수)만 찍고 끝낸다 — END 는 now 로 자르지 않은 DONE + tail.
+#   --window S,E,N   DB 대신 이 창으로 센다. DONE 직후 창을 받아 두고 갤러리를 바로 지운 뒤(분석 2단계를 멈춤) 지표가 다 들어오면 센다.
 #
 # 주의: CloudWatch 지표는 함수·모델·인스턴스 단위라 같은 창 안의 다른 갤러리 처리도 섞인다(측정 중 실사용이 없어야 정확).
 #       단가는 공시가 기본값이다(pricing API는 SCP로 막힘) — 환경 변수로 덮어쓴다: GPU_HOURLY, LAMBDA_GBS, LAMBDA_REQ,
@@ -16,11 +18,13 @@ set -euo pipefail
 source "$(dirname "$0")/lib/report.sh"
 report_parse_common "$@"; set -- ${REPORT_REST[@]+"${REPORT_REST[@]}"}
 
-IDS=""; TAIL="5min"
+IDS=""; TAIL="5min"; PRINT_WINDOW=0; WINDOW=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --ids) IDS="$2"; shift ;;
     --tail) TAIL="$2"; shift ;;
+    --print-window) PRINT_WINDOW=1 ;;
+    --window) WINDOW="$2"; shift ;;
     -h|--help) sed -n 2,15p "$0"; exit 0 ;;
     *) echo "알 수 없는 인자: $1" >&2; exit 1 ;;
   esac
@@ -41,7 +45,11 @@ LAMBDA_FNS="${LAMBDA_FNS:-$RESOURCE_PREFIX-embedder $RESOURCE_PREFIX-score $RESO
 GPU_TAG="${GPU_TAG:-$GPU_TAG_NAME}"
 BEDROCK_REGION="us-east-1"; BEDROCK_MODEL="${BEDROCK_MODEL:-us.anthropic.claude-sonnet-4-6}"
 
-# 측정 창 — DB 시각을 UTC ISO 로.
+# 측정 창 — DB 시각을 UTC ISO 로. --print-window 는 now 로 자르지 않는다(지표가 다 들어온 뒤 --window 로 셀 창).
+CAP_NOW="least(now(), %s)"; [ "$PRINT_WINDOW" = 1 ] && CAP_NOW="%s"
+if [ -n "$WINDOW" ]; then
+  IFS=',' read -r START END PHOTOS <<< "$WINDOW"; ALL_DONE=t
+else
 IFS='|' read -r START END PHOTOS ALL_DONE < <(report_scalar -c "
   WITH p AS (SELECT gallery_id, min(created_at) t0, count(*) n FROM photos
              WHERE gallery_id = ANY('{$IDS}'::bigint[]) AND deleted_at IS NULL GROUP BY gallery_id),
@@ -49,11 +57,13 @@ IFS='|' read -r START END PHOTOS ALL_DONE < <(report_scalar -c "
                     (SELECT min(e.created_at) FROM analysis_job_events e WHERE e.job_id = j.id AND e.type = 'DONE') t_done
              FROM analysis_jobs j WHERE j.gallery_id = ANY('{$IDS}'::bigint[]) ORDER BY j.gallery_id, j.id DESC)
   SELECT to_char(min(p.t0) AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'),
-         to_char(least(now(), CASE WHEN bool_and(d.t_done IS NOT NULL) THEN max(d.t_done) + interval '$TAIL' ELSE now() END)
+         to_char($(printf "$CAP_NOW" "CASE WHEN bool_and(d.t_done IS NOT NULL) THEN max(d.t_done) + interval '$TAIL' ELSE now() END")
                  AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'),
          sum(p.n), bool_and(d.t_done IS NOT NULL)
   FROM p LEFT JOIN d USING (gallery_id)")
+fi
 [ -n "$START" ] || { echo "대상 갤러리에 사진이 없다." >&2; exit 1; }
+[ "$PRINT_WINDOW" = 1 ] && { echo "$START,$END,$PHOTOS"; exit 0; }
 
 kst() { TZ=Asia/Seoul date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$1" '+%m-%d %H:%M:%S' 2>/dev/null || echo "$1"; }
 epoch() { date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$1" +%s; }
