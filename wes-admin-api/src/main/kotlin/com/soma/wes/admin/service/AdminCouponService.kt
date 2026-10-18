@@ -6,7 +6,10 @@ import com.soma.wes.admin.audit.domain.AdminAuditTargetType
 import com.soma.wes.admin.audit.service.AdminAuditService
 import com.soma.wes.admin.domain.AdminAuthEvent
 import com.soma.wes.admin.domain.AdminProCouponStatus
-import com.soma.wes.admin.dto.request.AdminReasonRequest
+import com.soma.wes.admin.dto.request.IssueProCouponRequest
+import com.soma.wes.admin.dto.response.AdminProCouponUseResponse
+import com.soma.wes.billing.exception.BillingException
+import com.soma.wes.billing.exception.BillingErrorCode
 import com.soma.wes.admin.dto.request.ChangeProCouponStatusRequest
 import com.soma.wes.admin.dto.response.AdminProCouponResponse
 import com.soma.wes.admin.dto.response.IssueProCouponResponse
@@ -37,14 +40,21 @@ class AdminCouponService(
 ) {
     /** 관리자가 코드 한 개를 발급한다. 원문은 이 응답에서만 제공하고 감사 로그에도 남기지 않는다. */
     @Transactional
-    fun issue(actorAdminId: Long, request: AdminReasonRequest): IssueProCouponResponse {
+    fun issue(actorAdminId: Long, request: IssueProCouponRequest): IssueProCouponResponse {
         requireActiveAdmin(actorAdminId)
         validateReason(request.reason)
 
-        val code = codes.generate()
+        val now = ZonedDateTime.now(clock)
+        if (request.redeemUntil?.isAfter(now) == false) throw BillingException(BillingErrorCode.INVALID_COUPON_DEADLINE)
+        val customCode = request.code?.let(codes::normalize)
+        val code = customCode ?: codes.generate()
+        val hash = codes.hash(code)
+        queryRepository.lockCode(hash)
+        if (coupons.findByCodeHash(hash) != null) throw BillingException(BillingErrorCode.COUPON_CODE_DUPLICATE)
         val coupon = coupons.save(ProCoupon.of(
-            codeHash = codes.hash(code), codeSuffix = code.takeLast(ProCoupon.CODE_SUFFIX_LENGTH),
-            issuedByAdminId = actorAdminId,
+            codeHash = hash, codeSuffix = code.takeLast(ProCoupon.CODE_SUFFIX_LENGTH),
+            issuedByAdminId = actorAdminId, customCode = customCode, usagePolicy = request.usagePolicy,
+            redeemUntil = request.redeemUntil,
         ))
         audit.recordEvent(
             action = AdminAuditAction.COUPON_CODE_ISSUED, outcome = AdminAuditOutcome.SUCCESS,
@@ -82,7 +92,7 @@ class AdminCouponService(
         validateReason(request.reason)
         val coupon = coupons.findWithLockById(couponId) ?: throw AdminException(AdminErrorCode.RESOURCE_NOT_FOUND)
         if (coupon.version != request.expectedVersion) throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
-        if (coupon.consumedAt != null) throw AdminException(AdminErrorCode.COUPON_STATE_CHANGE_FORBIDDEN)
+        if (!coupon.reusable && coupon.consumedAt != null) throw AdminException(AdminErrorCode.COUPON_STATE_CHANGE_FORBIDDEN)
         if (request.enabled == (coupon.disabledAt == null)) throw AdminException(AdminErrorCode.COUPON_STATE_UNCHANGED)
 
         val now = ZonedDateTime.now(clock).truncatedTo(ChronoUnit.MICROS)
@@ -97,6 +107,15 @@ class AdminCouponService(
         val row = queryRepository.find(id = couponId, at = now)
             ?: throw AdminException(AdminErrorCode.RESOURCE_NOT_FOUND)
         return AdminProCouponResponse.from(row)
+    }
+
+    /** 사용한 갤러리가 삭제되어도 사용 횟수와 시각을 확인할 수 있다. */
+    @Transactional(readOnly = true)
+    fun getUses(couponId: Long, actorAdminId: Long, page: Int, size: Int): PageResponse<AdminProCouponUseResponse> {
+        requireActiveAdmin(actorAdminId)
+        if (!coupons.existsById(couponId)) throw AdminException(AdminErrorCode.RESOURCE_NOT_FOUND)
+        val found = queryRepository.findUses(couponId = couponId, pageable = PageRequests.of(page, size))
+        return PageResponse.of(found = found, contents = found.content.map(AdminProCouponUseResponse::from))
     }
 
     private fun requireActiveAdmin(actorAdminId: Long) {

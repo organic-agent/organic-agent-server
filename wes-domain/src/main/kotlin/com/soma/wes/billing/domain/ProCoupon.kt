@@ -4,6 +4,8 @@ import com.soma.wes.billing.exception.BillingErrorCode
 import com.soma.wes.billing.exception.BillingException
 import com.soma.wes.global.BaseEntity
 import jakarta.persistence.Column
+import jakarta.persistence.EnumType
+import jakarta.persistence.Enumerated
 import jakarta.persistence.Entity
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
@@ -11,7 +13,7 @@ import jakarta.persistence.Id
 import jakarta.persistence.Table
 import java.time.ZonedDateTime
 
-/** 코드 원문은 저장하지 않는다. 계정·갤러리가 삭제되어도 등록·사용 시각을 남겨 재사용을 막는다. */
+/** 자동 생성 코드의 원문은 저장하지 않으며, 직접 지정한 공유 코드는 관리자 식별용으로 보관한다. */
 @Entity
 @Table(name = "pro_coupons")
 class ProCoupon private constructor(
@@ -21,6 +23,13 @@ class ProCoupon private constructor(
     val codeSuffix: String? = null,
     @Column(name = "issued_by_admin_id", nullable = true, updatable = false)
     val issuedByAdminId: Long? = null,
+    @Column(name = "custom_code", nullable = true, updatable = false, length = MAX_CODE_LENGTH)
+    val customCode: String? = null,
+    @Enumerated(EnumType.STRING)
+    @Column(name = "usage_policy", nullable = false, updatable = false, length = 20)
+    val usagePolicy: CouponUsagePolicy = CouponUsagePolicy.SINGLE_USE,
+    @Column(name = "redeem_until", nullable = true, updatable = false)
+    val redeemUntil: ZonedDateTime? = null,
 ) : BaseEntity() {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -53,8 +62,24 @@ class ProCoupon private constructor(
     var disabledAt: ZonedDateTime? = null
         protected set
 
-    fun register(userId: Long, at: ZonedDateTime) {
+    @Column(name = "use_count", nullable = false)
+    var useCount: Long = 0
+        protected set
+
+    val reusable: Boolean
+        get() = usagePolicy != CouponUsagePolicy.SINGLE_USE
+
+    fun requireRedeemable(at: ZonedDateTime) {
         requireEnabled()
+        if (redeemUntil?.isAfter(at) == false) throw BillingException(BillingErrorCode.COUPON_EXPIRED)
+    }
+
+    fun recordUse() {
+        useCount += 1
+    }
+
+    fun register(userId: Long, at: ZonedDateTime) {
+        requireRedeemable(at)
         if (registeredAt != null) {
             if (this.userId == userId) return
             throw BillingException(BillingErrorCode.COUPON_CODE_ALREADY_REGISTERED)
@@ -69,20 +94,22 @@ class ProCoupon private constructor(
     }
 
     fun consume(galleryId: Long, at: ZonedDateTime, expiresAt: ZonedDateTime) {
+        requireRedeemable(at)
         requireUnused()
         checkNotNull(registeredAt) { "등록되지 않은 프로 쿠폰은 사용할 수 없다." }
         this.galleryId = galleryId
         consumedAt = at
         this.expiresAt = expiresAt
+        recordUse()
     }
 
     private fun requireEnabled() {
         if (disabledAt != null) throw BillingException(BillingErrorCode.COUPON_DISABLED)
     }
 
-    /** 이미 갤러리에 사용한 쿠폰의 변경은 갤러리 이용 기간에 영향을 줄 수 있으므로 금지한다. */
+    /** 기존 1회용 쿠폰은 사용 후 변경을 막고, 공유 코드는 향후 사용만 중지한다. */
     fun changeEnabled(enabled: Boolean, at: ZonedDateTime) {
-        if (consumedAt != null) throw BillingException(BillingErrorCode.COUPON_ALREADY_USED)
+        if (!reusable && consumedAt != null) throw BillingException(BillingErrorCode.COUPON_ALREADY_USED)
         disabledAt = if (enabled) null else at
     }
 
@@ -94,14 +121,27 @@ class ProCoupon private constructor(
         /** 사람이 입력하는 쿠폰 코드의 API 상한. */
         const val MAX_CODE_LENGTH = 80
 
-        fun of(codeHash: String, codeSuffix: String? = null, issuedByAdminId: Long? = null): ProCoupon {
+        fun of(
+            codeHash: String,
+            codeSuffix: String? = null,
+            issuedByAdminId: Long? = null,
+            customCode: String? = null,
+            usagePolicy: CouponUsagePolicy = CouponUsagePolicy.SINGLE_USE,
+            redeemUntil: ZonedDateTime? = null,
+        ): ProCoupon {
             if (!Regex("[0-9a-f]{$CODE_HASH_LENGTH}").matches(codeHash)) {
                 throw BillingException(BillingErrorCode.INVALID_COUPON_CODE)
             }
-            if (codeSuffix != null && !Regex("[0-9A-F]{$CODE_SUFFIX_LENGTH}").matches(codeSuffix)) {
+            if (codeSuffix != null && !Regex("[A-Z0-9_-]{1,$CODE_SUFFIX_LENGTH}").matches(codeSuffix)) {
                 throw BillingException(BillingErrorCode.INVALID_COUPON_CODE)
             }
-            return ProCoupon(codeHash = codeHash, codeSuffix = codeSuffix, issuedByAdminId = issuedByAdminId)
+            if (customCode != null && (customCode.length > MAX_CODE_LENGTH || !Regex("[A-Z0-9][A-Z0-9_-]*").matches(customCode))) {
+                throw BillingException(BillingErrorCode.INVALID_COUPON_CODE)
+            }
+            return ProCoupon(
+                codeHash = codeHash, codeSuffix = codeSuffix, issuedByAdminId = issuedByAdminId,
+                customCode = customCode, usagePolicy = usagePolicy, redeemUntil = redeemUntil,
+            )
         }
     }
 }

@@ -1,5 +1,7 @@
 package com.soma.wes.billing.support
 
+import com.soma.wes.billing.domain.CouponUsagePolicy
+import com.soma.wes.billing.domain.ProCouponUse
 import com.soma.wes.billing.domain.FreeGalleryClaim
 import com.soma.wes.billing.domain.GalleryPlan
 import com.soma.wes.billing.dto.GalleryPassDto
@@ -7,6 +9,8 @@ import com.soma.wes.billing.exception.BillingErrorCode
 import com.soma.wes.billing.exception.BillingException
 import com.soma.wes.billing.repository.FreeGalleryClaimRepository
 import com.soma.wes.billing.repository.ProCouponRepository
+import com.soma.wes.billing.repository.ProCouponRegistrationRepository
+import com.soma.wes.billing.repository.ProCouponUseRepository
 import com.soma.wes.billing.repository.TestCheckoutRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
@@ -18,6 +22,8 @@ class GalleryPasses(
     private val freeClaims: FreeGalleryClaimRepository,
     private val coupons: ProCouponRepository,
     private val checkouts: TestCheckoutRepository,
+    private val registrations: ProCouponRegistrationRepository,
+    private val uses: ProCouponUseRepository,
 ) {
     /** 호출자가 사용자 행을 잠근 트랜잭션에서만 실행해 무료 개설과 쿠폰 사용을 직렬화한다. */
     @Transactional(propagation = Propagation.MANDATORY)
@@ -43,9 +49,21 @@ class GalleryPasses(
             }
             GalleryPlan.PRO -> {
                 val id = couponId ?: throw BillingException(BillingErrorCode.PRO_COUPON_REQUIRED)
-                val found = coupons.findWithLockByIdAndUserId(id = id, userId = userId)
+                val found = coupons.findWithLockById(id)
                     ?: throw BillingException(BillingErrorCode.COUPON_NOT_FOUND)
-                found.requireUnused()
+                if (found.reusable) {
+                    registrations.findByCouponIdAndUserId(couponId = id, userId = userId)
+                        ?: throw BillingException(BillingErrorCode.COUPON_NOT_FOUND)
+                    found.requireRedeemable(at)
+                    if (found.usagePolicy == CouponUsagePolicy.ONCE_PER_ACCOUNT &&
+                        uses.findFirstByCouponIdAndUserIdOrderByConsumedAtDescIdDesc(couponId = id, userId = userId) != null) {
+                        throw BillingException(BillingErrorCode.COUPON_ALREADY_USED)
+                    }
+                } else {
+                    if (found.userId != userId) throw BillingException(BillingErrorCode.COUPON_NOT_FOUND)
+                    found.requireRedeemable(at)
+                    found.requireUnused()
+                }
                 found
             }
         }
@@ -68,7 +86,12 @@ class GalleryPasses(
             GalleryPlan.FREE -> freeClaims.save(FreeGalleryClaim.of(userId = userId, galleryId = galleryId))
             GalleryPlan.PRO -> {
                 val coupon = checkNotNull(pass.coupon) { "프로 이용권에 등록한 쿠폰이 없다." }
-                coupon.consume(galleryId = galleryId, at = at, expiresAt = pass.expiresAt)
+                if (coupon.reusable) coupon.recordUse()
+                else coupon.consume(galleryId = galleryId, at = at, expiresAt = pass.expiresAt)
+                uses.save(ProCouponUse(
+                    couponId = coupon.requiredId, userId = userId, galleryId = galleryId,
+                    consumedAt = at, expiresAt = pass.expiresAt,
+                ))
             }
             null -> {
                 val checkout = checkNotNull(pass.checkout) { "기존 이용권에는 결제 기록이 있어야 한다." }

@@ -2,6 +2,8 @@ package com.soma.wes.admin.repository
 
 import com.soma.wes.admin.domain.AdminProCouponStatus
 import com.soma.wes.admin.dto.AdminProCouponDto
+import com.soma.wes.admin.dto.AdminProCouponUseDto
+import com.soma.wes.billing.domain.CouponUsagePolicy
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.Pageable
@@ -32,9 +34,36 @@ class AdminProCouponRepository(private val jdbc: JdbcClient) {
         .param("at", at.toOffsetDateTime()).param("id", id)
         .query { rs, _ -> mapRow(rs) }.optional().orElse(null)
 
+    /** 아직 없는 코드도 발급 요청끼리 직렬화해 중복 원문의 동시 발급을 막는다. */
+    fun lockCode(hash: String) {
+        jdbc.sql("SELECT pg_advisory_xact_lock(hashtextextended(:hash, 0))")
+            .param("hash", hash).query { _, _ -> Unit }.single()
+    }
+
+    fun findUses(couponId: Long, pageable: Pageable): Page<AdminProCouponUseDto> {
+        val count = jdbc.sql("SELECT count(*) FROM pro_coupon_uses WHERE coupon_id = :id")
+            .param("id", couponId).query(Long::class.java).single()
+        val contents = jdbc.sql("""
+            SELECT h.*, u.nickname AS user_nickname, g.title AS gallery_title
+            FROM pro_coupon_uses h
+            LEFT JOIN users u ON u.id = h.user_id AND u.deleted_at IS NULL
+            LEFT JOIN galleries g ON g.id = h.gallery_id AND g.deleted_at IS NULL
+            WHERE h.coupon_id = :id ORDER BY h.consumed_at DESC, h.id DESC LIMIT :limit OFFSET :offset
+        """.trimIndent()).param("id", couponId).param("limit", pageable.pageSize).param("offset", pageable.offset)
+            .query { rs, _ -> AdminProCouponUseDto(
+                useId = rs.getLong("id"), userId = rs.getObject("user_id", java.lang.Long::class.java)?.toLong(),
+                userNickname = rs.getString("user_nickname"), galleryId = rs.getObject("gallery_id", java.lang.Long::class.java)?.toLong(),
+                galleryTitle = rs.getString("gallery_title"), consumedAt = checkNotNull(rs.time("consumed_at")),
+                expiresAt = checkNotNull(rs.time("expires_at")),
+            ) }.list()
+        return PageImpl(contents, pageable, count)
+    }
+
     private fun mapRow(rs: ResultSet): AdminProCouponDto = AdminProCouponDto(
         couponId = rs.getLong("id"), version = rs.getLong("version"), codeSuffix = rs.getString("code_suffix"),
         status = AdminProCouponStatus.valueOf(rs.getString("status")),
+        customCode = rs.getString("custom_code"), usagePolicy = CouponUsagePolicy.valueOf(rs.getString("usage_policy")),
+        redeemUntil = rs.time("redeem_until"), useCount = rs.getLong("use_count"),
         issuedByAdminId = rs.getObject("issued_by_admin_id", java.lang.Long::class.java)?.toLong(),
         createdAt = checkNotNull(rs.time("created_at")) { "발급한 쿠폰에 생성 시각이 없다." },
         userId = rs.getObject("user_id", java.lang.Long::class.java)?.toLong(),
@@ -51,7 +80,10 @@ class AdminProCouponRepository(private val jdbc: JdbcClient) {
                 SELECT c.id, c.version, c.code_suffix, c.issued_by_admin_id, c.created_at,
                        c.user_id, u.nickname AS user_nickname, c.registered_at, c.consumed_at,
                        c.gallery_id, g.title AS gallery_title, c.expires_at, c.disabled_at,
+                       c.custom_code, c.usage_policy, c.redeem_until, c.use_count,
                        CASE WHEN c.disabled_at IS NOT NULL THEN 'DISABLED'
+                            WHEN c.redeem_until <= :at THEN 'EXPIRED'
+                            WHEN c.usage_policy <> 'SINGLE_USE' THEN 'AVAILABLE'
                             WHEN c.registered_at IS NULL THEN 'ISSUED'
                             WHEN c.consumed_at IS NULL THEN 'REGISTERED'
                             WHEN c.expires_at <= :at THEN 'EXPIRED'
@@ -64,7 +96,7 @@ class AdminProCouponRepository(private val jdbc: JdbcClient) {
         private val FILTER = """
             WHERE (:status = '' OR c.status = :status)
               AND (c.id::text LIKE :query OR c.user_id::text LIKE :query
-                   OR c.code_suffix ILIKE :query OR c.user_nickname ILIKE :query)
+                   OR c.code_suffix ILIKE :query OR c.custom_code ILIKE :query OR c.user_nickname ILIKE :query)
         """.trimIndent()
     }
 }

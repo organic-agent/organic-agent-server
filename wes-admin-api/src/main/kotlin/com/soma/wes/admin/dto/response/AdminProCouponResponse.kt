@@ -1,6 +1,7 @@
 package com.soma.wes.admin.dto.response
 
 import com.soma.wes.admin.domain.AdminProCouponStatus
+import com.soma.wes.billing.domain.CouponUsagePolicy
 import com.soma.wes.admin.dto.AdminProCouponDto
 import io.swagger.v3.oas.annotations.media.Schema
 import java.time.ZonedDateTime
@@ -20,6 +21,10 @@ data class AdminProCouponResponse(
     @field:Schema(description = "현재 연결 갤러리 이름. 휴지통 또는 삭제된 갤러리는 null") val galleryTitle: String?,
     @field:Schema(description = "사용일부터 달력 기준 1년의 만료 시각. 미사용이면 null") val expiresAt: ZonedDateTime?,
     @field:Schema(description = "미사용 코드 비활성화 시각. 활성 코드이면 null") val disabledAt: ZonedDateTime?,
+    @field:Schema(description = "직접 지정한 공유 코드. 자동 생성 코드는 null") val customCode: String?,
+    @field:Schema(description = "쿠폰 사용 정책") val usagePolicy: CouponUsagePolicy,
+    @field:Schema(description = "쿠폰 사용 마감일. null이면 마감 없음") val redeemUntil: ZonedDateTime?,
+    @field:Schema(description = "실제 갤러리 생성에 성공한 총 사용 횟수") val useCount: Long,
 ) {
     companion object {
         fun from(row: AdminProCouponDto): AdminProCouponResponse = AdminProCouponResponse(
@@ -27,7 +32,8 @@ data class AdminProCouponResponse(
             issuedByAdminId = row.issuedByAdminId, createdAt = row.createdAt, userId = row.userId,
             userNickname = row.userNickname, registeredAt = row.registeredAt, consumedAt = row.consumedAt,
             galleryId = row.galleryId, galleryTitle = row.galleryTitle, expiresAt = row.expiresAt,
-            disabledAt = row.disabledAt,
+            disabledAt = row.disabledAt, customCode = row.customCode, usagePolicy = row.usagePolicy,
+            redeemUntil = row.redeemUntil, useCount = row.useCount,
         )
     }
 }

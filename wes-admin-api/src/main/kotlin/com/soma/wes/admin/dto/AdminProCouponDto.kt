@@ -1,6 +1,7 @@
 package com.soma.wes.admin.dto
 
 import com.soma.wes.admin.domain.AdminProCouponStatus
+import com.soma.wes.billing.domain.CouponUsagePolicy
 import java.time.ZonedDateTime
 
 data class AdminProCouponDto(
@@ -18,4 +19,8 @@ data class AdminProCouponDto(
     val galleryTitle: String?,
     val expiresAt: ZonedDateTime?,
     val disabledAt: ZonedDateTime?,
+    val customCode: String?,
+    val usagePolicy: CouponUsagePolicy,
+    val redeemUntil: ZonedDateTime?,
+    val useCount: Long,
 )
