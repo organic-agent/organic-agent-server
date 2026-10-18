@@ -11,7 +11,7 @@
 #   배포는 버튼 → 첫 서버 교체까지 ≈ 2분 30초라 기본 120초. 롤링은 서버당 ≈ 2분 15초라 10분 부하 안에 두 대가 다 들어간다.
 # 그동안 늘 남기는 것(자극과 무관 — 서버가 몇 대든):
 #   targets.tsv  2초마다 ALB 대상 그룹의 서버별 상태          servers.tsv  30초마다 서버별 남은 메모리·스왑·java RSS·스왑 입출력
-#   events.tsv   ASG 활동(standby·복귀·종료·새 서버) · 배포 명령 · 새 컨테이너 · 준비 · kill · 리더 넘김
+#   events.tsv   ASG 활동(standby·복귀·종료·새 서버) · 대상 빼기(draining) · 배포 명령 · 새 컨테이너 · 준비 · kill · 리더 넘김
 #   servers.txt  끝날 때 서버별 GC 멈춤(최대·1초 넘는 수, 이 회차 구간만) · 리더 여부 · 메모리
 #   stimulus.env KIND · PRESSED_AT · T0 · ENDED_AT(자극이 끝난 시각 — 배포 실행 끝 / kill 뒤 대상이 다 healthy + slow start) · …
 # 위치: docs/experiments/load-runs/<label>-*.{env,tsv,txt} 와 dev 버킷 load-results/<label>/
@@ -135,7 +135,7 @@ if [ "$DRY" = "true" ]; then
   say "dry-run · $KIND · label $REPORT_LABEL · $DELAY 초 뒤 · 서버 $(echo $APP_IDS) · ASG ${ASG_NAME:-없음} · 대상 그룹 ${TG_ARN##*/}"
   for id in $APP_IDS; do say "  $id 리더 임대: $(on_app "$id" "$LEADER_STATE")"; done
   case "$KIND" in
-    deploy) say "  gh workflow run cd-dev.yml --ref develop → 실행 끝까지 대기 → T0 = 첫 standby·배포 명령 중 이른 것 → 서버마다 컨테이너 시각" ;;
+    deploy) say "  gh workflow run cd-dev.yml --ref develop → 실행 끝까지 대기 → T0 = 첫 대상 빼기·배포 명령 중 이른 것 → 서버마다 컨테이너 시각" ;;
     kill) say "  --target $TARGET 인 서버에 SSM: systemd-run kill -9 → 대상 그룹이 다 healthy 로 돌아올 때까지(ASG 교체 포함, 최대 10분) + slow start ${SLOW_START_SECONDS}초" ;;
     watch) say "  자극 없이 $DURATION 초 관찰" ;;
   esac
@@ -298,12 +298,26 @@ for start, end, desc in json.load(sys.stdin):
     if end:
         print(f"{datetime.datetime.fromisoformat(end).timestamp():.3f}\t{iid}\t{kind}_done")' "$PRESSED_AT" >> "$BASE-events.tsv"
 fi
+# 배포가 서버를 ALB 대상에서 빼는 순간(rolling-deploy.sh 가 standby 대신 등록 해제, 10-18) — 2초 표본에서 서버가 draining 이 된 첫 시각.
+if [ "$KIND" = deploy ] && [ -s "$BASE-targets.tsv" ]; then
+  python3 -c 'import sys
+lo = float(sys.argv[2]); prev = {}
+for line in open(sys.argv[1]):
+    t, _, rest = line.rstrip("\n").partition("\t")
+    if float(t) < lo:
+        continue
+    for pair in rest.split():
+        iid, _, state = pair.partition(":")
+        if state == "draining" and prev.get(iid) != "draining":
+            print(f"{float(t):.3f}\t{iid}\tderegister")
+        prev[iid] = state' "$BASE-targets.tsv" "$PRESSED_AT" >> "$BASE-events.tsv"
+fi
 touch "$BASE-events.tsv"
 sort -n -o "$BASE-events.tsv" "$BASE-events.tsv"
 
-# T0 = 자극이 서비스에 닿기 시작한 순간. 배포는 첫 standby(ALB 에서 뺌)·첫 배포 명령 중 이른 것, kill 은 kill 시각, watch 는 시작.
+# T0 = 자극이 서비스에 닿기 시작한 순간. 배포는 첫 대상 빼기(등록 해제·옛 standby)·첫 배포 명령 중 이른 것, kill 은 kill 시각, watch 는 시작.
 case "$KIND" in
-  deploy) T0=$(awk -F'\t' '$3=="standby" || $3=="deploy_command" {print $1; exit}' "$BASE-events.tsv") ;;
+  deploy) T0=$(awk -F'\t' '$3=="deregister" || $3=="standby" || $3=="deploy_command" {print $1; exit}' "$BASE-events.tsv") ;;
   *) T0="$PRESSED_AT" ;;
 esac
 [ -n "$T0" ] || { echo "T0 를 정하지 못했다 — $BASE-events.tsv 를 보라." >&2; exit 1; }
