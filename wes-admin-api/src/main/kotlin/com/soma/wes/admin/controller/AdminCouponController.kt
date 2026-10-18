@@ -3,7 +3,8 @@ package com.soma.wes.admin.controller
 import com.soma.wes.admin.controller.docs.AdminCouponControllerDocs
 import com.soma.wes.admin.domain.AdminLoginUser
 import com.soma.wes.admin.domain.AdminProCouponStatus
-import com.soma.wes.admin.dto.request.AdminReasonRequest
+import com.soma.wes.admin.dto.request.IssueProCouponRequest
+import com.soma.wes.admin.dto.response.AdminProCouponUseResponse
 import com.soma.wes.admin.dto.request.ChangeProCouponStatusRequest
 import com.soma.wes.admin.dto.response.AdminProCouponResponse
 import com.soma.wes.admin.dto.response.IssueProCouponResponse
@@ -29,7 +30,7 @@ class AdminCouponController(private val service: AdminCouponService) : AdminCoup
     @PostMapping
     override fun issue(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
-        @Valid @RequestBody request: AdminReasonRequest,
+        @Valid @RequestBody request: IssueProCouponRequest,
     ): ResponseEntity<IssueProCouponResponse> {
         val status = HttpStatus.CREATED
         return ResponseEntity.status(status).cacheControl(CacheControl.noStore()).body(service.issue(loginUser.id, request))
@@ -53,6 +54,17 @@ class AdminCouponController(private val service: AdminCouponService) : AdminCoup
         @PathVariable couponId: Long,
     ): ResponseEntity<AdminProCouponResponse> {
         val result = service.getCoupon(couponId = couponId, actorAdminId = loginUser.id)
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(result)
+    }
+
+    @GetMapping("/{couponId}/uses")
+    override fun getUses(
+        @AuthenticationPrincipal loginUser: AdminLoginUser,
+        @PathVariable couponId: Long,
+        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "25") size: Int,
+    ): ResponseEntity<PageResponse<AdminProCouponUseResponse>> {
+        val result = service.getUses(couponId = couponId, actorAdminId = loginUser.id, page = page, size = size)
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(result)
     }
 

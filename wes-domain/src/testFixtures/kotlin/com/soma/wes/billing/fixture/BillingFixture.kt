@@ -1,5 +1,6 @@
 package com.soma.wes.billing.fixture
 
+import com.soma.wes.billing.domain.CouponUsagePolicy
 import com.soma.wes.billing.domain.ProCoupon
 import com.soma.wes.billing.repository.ProCouponRepository
 import com.soma.wes.billing.support.CouponCodes
@@ -13,9 +14,12 @@ class BillingFixture(
     private val codes: CouponCodes,
     private val clock: Clock,
 ) {
-    fun 미등록_프로_코드(): IssuedProCoupon {
-        val code = codes.generate()
-        val coupon = coupons.save(ProCoupon.of(codes.hash(code)))
+    fun 미등록_프로_코드(
+        usagePolicy: CouponUsagePolicy = CouponUsagePolicy.SINGLE_USE,
+        redeemUntil: ZonedDateTime? = null,
+        code: String = codes.generate(),
+    ): IssuedProCoupon {
+        val coupon = coupons.save(ProCoupon.of(codeHash = codes.hash(code), usagePolicy = usagePolicy, redeemUntil = redeemUntil))
         return IssuedProCoupon(id = coupon.requiredId, code = code)
     }
 

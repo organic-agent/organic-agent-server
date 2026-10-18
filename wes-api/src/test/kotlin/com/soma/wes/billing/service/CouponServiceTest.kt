@@ -212,7 +212,7 @@ class CouponServiceTest @Autowired constructor(
             assertThatThrownBy { target.resolve(user.requiredId, ResolveProCouponRequest(codes.generate())) }
                 .isInstanceOf(BillingException::class.java)
                 .extracting("errorCode").isEqualTo(BillingErrorCode.COUPON_NOT_FOUND)
-            for (code in listOf("", "bad-code", "x".repeat(81))) {
+            for (code in listOf("", "bad code!", "x".repeat(81))) {
                 assertThatThrownBy { target.resolve(user.requiredId, ResolveProCouponRequest(code)) }
                     .isInstanceOf(BillingException::class.java)
                     .extracting("errorCode").isEqualTo(BillingErrorCode.INVALID_COUPON_CODE)
@@ -338,7 +338,7 @@ class CouponServiceTest @Autowired constructor(
             assertThatThrownBy { target.register(user.requiredId, RegisterProCouponRequest(codes.generate())) }
                 .isInstanceOf(BillingException::class.java)
                 .extracting("errorCode").isEqualTo(BillingErrorCode.COUPON_NOT_FOUND)
-            for (code in listOf("", "bad-code", "x".repeat(81))) {
+            for (code in listOf("", "bad code!", "x".repeat(81))) {
                 assertThatThrownBy { target.register(user.requiredId, RegisterProCouponRequest(code)) }
                     .isInstanceOf(BillingException::class.java)
                     .extracting("errorCode").isEqualTo(BillingErrorCode.INVALID_COUPON_CODE)

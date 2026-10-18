@@ -21,5 +21,8 @@ enum class BillingErrorCode(
     FREE_PLAN_ALREADY_USED(HttpStatus.CONFLICT, "BILLING_409_2", "무료 갤러리는 계정당 한 번만 만들 수 있습니다."),
     COUPON_CODE_ALREADY_REGISTERED(HttpStatus.CONFLICT, "BILLING_409_3", "이미 등록된 쿠폰 코드입니다."),
     COUPON_DISABLED(HttpStatus.FORBIDDEN, "BILLING_403_1", "비활성화된 프로 쿠폰입니다. 관리자에게 문의해 주세요."),
+    COUPON_EXPIRED(HttpStatus.GONE, "BILLING_410_2", "쿠폰 사용 마감일이 지났습니다."),
+    COUPON_CODE_DUPLICATE(HttpStatus.CONFLICT, "BILLING_409_5", "이미 발급한 쿠폰 코드입니다."),
+    INVALID_COUPON_DEADLINE(HttpStatus.BAD_REQUEST, "BILLING_400_4", "쿠폰 사용 마감일은 현재보다 이후여야 합니다."),
     COUPON_ALREADY_USED(HttpStatus.CONFLICT, "BILLING_409_4", "이미 갤러리 개설에 사용한 프로 쿠폰입니다."),
 }

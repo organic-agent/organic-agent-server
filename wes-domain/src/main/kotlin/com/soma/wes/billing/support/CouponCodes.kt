@@ -20,16 +20,21 @@ class CouponCodes {
     }
 
     fun hash(code: String): String {
-        if (code.length > ProCoupon.MAX_CODE_LENGTH) throw BillingException(BillingErrorCode.INVALID_COUPON_CODE)
-        val normalized = code.trim().uppercase(Locale.ROOT)
-        if (!CODE_FORMAT.matches(normalized)) throw BillingException(BillingErrorCode.INVALID_COUPON_CODE)
+        val normalized = normalize(code)
         return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(normalized.toByteArray(Charsets.UTF_8)))
     }
 
+    fun normalize(code: String): String {
+        if (code.length > ProCoupon.MAX_CODE_LENGTH) throw BillingException(BillingErrorCode.INVALID_COUPON_CODE)
+        val normalized = code.trim().uppercase(Locale.ROOT)
+        if (!CODE_FORMAT.matches(normalized)) throw BillingException(BillingErrorCode.INVALID_COUPON_CODE)
+        return normalized
+    }
+
     companion object {
-        /** 일회용 쿠폰 코드에 128비트 난수로 추측 불가능한 값을 넣는다. */
+        /** 자동 생성 쿠폰 코드에 128비트 난수로 추측 불가능한 값을 넣는다. */
         private const val CODE_BYTES = 16
         private const val CODE_PREFIX = "WES-"
-        private val CODE_FORMAT = Regex("WES-[0-9A-F]{${CODE_BYTES * 2}}")
+        private val CODE_FORMAT = Regex("[A-Z0-9][A-Z0-9_-]*")
     }
 }

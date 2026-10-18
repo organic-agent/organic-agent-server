@@ -3,11 +3,16 @@ package com.soma.wes.admin.service
 import com.soma.wes.admin.audit.domain.AdminAuditAction
 import com.soma.wes.admin.audit.domain.AdminAuditTargetType
 import com.soma.wes.admin.audit.repository.AdminAuditLogRepository
-import com.soma.wes.admin.dto.request.AdminReasonRequest
+import com.soma.wes.admin.dto.request.IssueProCouponRequest
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.fixture.AdminAccountFixture
 import com.soma.wes.admin.repository.AdminAccountRepository
+import com.soma.wes.billing.domain.CouponUsagePolicy
+import com.soma.wes.billing.domain.ProCouponUse
+import com.soma.wes.billing.exception.BillingErrorCode
+import com.soma.wes.billing.exception.BillingException
+import com.soma.wes.billing.repository.ProCouponUseRepository
 import com.soma.wes.billing.repository.ProCouponRepository
 import com.soma.wes.billing.support.CouponCodes
 import com.soma.wes.support.IntegrationTest
@@ -36,6 +41,7 @@ class AdminCouponServiceTest @Autowired constructor(
     private val admins: AdminAccountFixture,
     private val accounts: AdminAccountRepository,
     private val coupons: ProCouponRepository,
+    private val uses: ProCouponUseRepository,
     private val codes: CouponCodes,
     private val audits: AdminAuditLogRepository,
     private val billing: BillingFixture,
@@ -48,7 +54,7 @@ class AdminCouponServiceTest @Autowired constructor(
         val admin = admins.관리자("coupon-issuer")
 
         // when
-        val result = target.issue(admin.requiredId, AdminReasonRequest("테스트 프로 쿠폰 발급"))
+        val result = target.issue(admin.requiredId, IssueProCouponRequest("테스트 프로 쿠폰 발급"))
         val stored = coupons.findById(result.couponId).orElseThrow()
         val audit = audits.findAll().single()
 
@@ -72,10 +78,10 @@ class AdminCouponServiceTest @Autowired constructor(
         accounts.saveAndFlush(admin)
 
         // when & then
-        assertThatThrownBy { target.issue(admin.requiredId, AdminReasonRequest("발급")) }
+        assertThatThrownBy { target.issue(admin.requiredId, IssueProCouponRequest("발급")) }
             .isInstanceOf(AdminException::class.java)
             .extracting("errorCode").isEqualTo(AdminErrorCode.ACCOUNT_SUSPENDED)
-        assertThatThrownBy { target.issue(Long.MAX_VALUE, AdminReasonRequest("발급")) }
+        assertThatThrownBy { target.issue(Long.MAX_VALUE, IssueProCouponRequest("발급")) }
             .isInstanceOf(AdminException::class.java)
             .extracting("errorCode").isEqualTo(AdminErrorCode.ACCOUNT_NOT_FOUND)
         assertThat(coupons.count()).isZero()
@@ -88,12 +94,89 @@ class AdminCouponServiceTest @Autowired constructor(
 
         // when & then
         for (reason in listOf("", "x".repeat(501))) {
-            assertThatThrownBy { target.issue(admin.requiredId, AdminReasonRequest(reason)) }
+            assertThatThrownBy { target.issue(admin.requiredId, IssueProCouponRequest(reason)) }
                 .isInstanceOf(AdminException::class.java)
                 .extracting("errorCode").isEqualTo(AdminErrorCode.INVALID_REASON)
         }
         assertThat(coupons.count()).isZero()
         assertThat(audits.count()).isZero()
+    }
+
+    @Nested
+    @DisplayName("공유 쿠폰을 관리할 때")
+    inner class Reusable {
+        @Test
+        fun `코드 문자열 정책 마감일을 지정하고 전체 지정 코드로 검색한다`() {
+            // given
+            val admin = admins.관리자("custom-coupon")
+            val deadline = ZonedDateTime.now(clock).plusDays(7)
+
+            // when
+            val issued = target.issue(admin.requiredId, IssueProCouponRequest(
+                reason = "프로모션", code = " partner_2026 ", usagePolicy = CouponUsagePolicy.ONCE_PER_ACCOUNT, redeemUntil = deadline,
+            ))
+            val detail = target.getCoupon(issued.couponId, admin.requiredId)
+            val searched = target.getCoupons(admin.requiredId, AdminProCouponStatus.AVAILABLE, "partner_2026", 0, 25)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(issued.code).isEqualTo("PARTNER_2026")
+                softly.assertThat(detail.customCode).isEqualTo(issued.code)
+                softly.assertThat(detail.usagePolicy).isEqualTo(CouponUsagePolicy.ONCE_PER_ACCOUNT)
+                softly.assertThat(detail.redeemUntil?.toInstant()).isEqualTo(deadline.withNano(deadline.nano / 1000 * 1000).toInstant())
+                softly.assertThat(detail.useCount).isZero()
+                softly.assertThat(searched.contents.map { it.couponId }).containsExactly(issued.couponId)
+            }
+        }
+
+        @Test
+        fun `이미 있는 코드와 과거 마감일은 발급하지 않는다`() {
+            // given
+            val admin = admins.관리자("duplicate-coupon")
+            target.issue(admin.requiredId, IssueProCouponRequest(reason = "프로모션", code = "PROMO"))
+
+            // when & then
+            assertThatThrownBy { target.issue(admin.requiredId, IssueProCouponRequest(reason = "중복", code = "promo")) }
+                .isInstanceOf(BillingException::class.java).extracting("errorCode").isEqualTo(BillingErrorCode.COUPON_CODE_DUPLICATE)
+            assertThatThrownBy { target.issue(admin.requiredId, IssueProCouponRequest(reason = "과거", redeemUntil = ZonedDateTime.now(clock).minusDays(1))) }
+                .isInstanceOf(BillingException::class.java).extracting("errorCode").isEqualTo(BillingErrorCode.INVALID_COUPON_DEADLINE)
+            assertThat(coupons.count()).isEqualTo(1L)
+        }
+
+        @Test
+        fun `사용한 공유 쿠폰도 중지하고 사용자 갤러리별 사용 이력을 페이지로 조회한다`() {
+            // given
+            val admin = admins.관리자("shared-history")
+            val user = resources.사용자(admin.requiredId)
+            val gallery = resources.갤러리(admin.requiredId, user.id)
+            val issued = target.issue(admin.requiredId, IssueProCouponRequest(reason = "공유", usagePolicy = CouponUsagePolicy.UNLIMITED))
+            val coupon = coupons.findById(issued.couponId).orElseThrow()
+            val now = ZonedDateTime.now(clock)
+            uses.save(ProCouponUse(couponId = issued.couponId, userId = user.id, galleryId = gallery.id, consumedAt = now, expiresAt = now.plusYears(1)))
+            uses.save(ProCouponUse(couponId = issued.couponId, userId = user.id, galleryId = null, consumedAt = now.minusDays(1), expiresAt = now.plusYears(1)))
+            coupon.recordUse()
+            coupon.recordUse()
+            coupons.saveAndFlush(coupon)
+            val before = target.getCoupon(issued.couponId, admin.requiredId)
+
+            // when
+            val changed = target.changeStatus(issued.couponId, admin.requiredId, ChangeProCouponStatusRequest(false, before.version, "행사 종료"))
+            val first = target.getUses(issued.couponId, admin.requiredId, 0, 1)
+            val second = target.getUses(issued.couponId, admin.requiredId, 1, 1)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(changed.status).isEqualTo(AdminProCouponStatus.DISABLED)
+                softly.assertThat(changed.useCount).isEqualTo(2L)
+                softly.assertThat(first.totalCount).isEqualTo(2L)
+                softly.assertThat(first.hasNext).isTrue()
+                softly.assertThat(first.contents.single().galleryId).isEqualTo(gallery.id)
+                softly.assertThat(first.contents.single().userId).isEqualTo(user.id)
+                softly.assertThat(second.contents.single().galleryId).isNull()
+                softly.assertThat(second.hasNext).isFalse()
+                softly.assertThat(uses.count()).isEqualTo(2L)
+            }
+        }
     }
 
     @Nested
@@ -103,7 +186,7 @@ class AdminCouponServiceTest @Autowired constructor(
         fun `끝자리와 발급 관리자만 반환하며 코드 원문과 해시는 목록에 없다`() {
             // given
             val admin = admins.관리자("coupon-list")
-            val issued = target.issue(admin.requiredId, AdminReasonRequest("[TEST_OPERATION] 목록 검증"))
+            val issued = target.issue(admin.requiredId, IssueProCouponRequest("[TEST_OPERATION] 목록 검증"))
             val stored = coupons.findById(issued.couponId).orElseThrow()
 
             // when
@@ -134,7 +217,7 @@ class AdminCouponServiceTest @Autowired constructor(
             val expired = billing.미사용_프로_쿠폰(owner.id, registeredAt = now.minusDays(200))
             expired.consume(gallery.id, now.minusDays(181), now.minusDays(1))
             coupons.saveAndFlush(expired)
-            val disabled = target.issue(admin.requiredId, AdminReasonRequest("발급"))
+            val disabled = target.issue(admin.requiredId, IssueProCouponRequest("발급"))
             target.changeStatus(disabled.couponId, admin.requiredId, ChangeProCouponStatusRequest(false, 0, "차단"))
 
             // when
@@ -158,7 +241,7 @@ class AdminCouponServiceTest @Autowired constructor(
         fun `상태와 식별자 검색을 적용하고 페이지로 나눈다`() {
             // given
             val admin = admins.관리자("coupon-search")
-            val issued = (1..3).map { target.issue(admin.requiredId, AdminReasonRequest("발급")) }
+            val issued = (1..3).map { target.issue(admin.requiredId, IssueProCouponRequest("발급")) }
 
             // when
             val first = target.getCoupons(admin.requiredId, null, "", 0, 2)
@@ -227,7 +310,7 @@ class AdminCouponServiceTest @Autowired constructor(
         fun `등록이나 다른 관리자 변경 이후의 오래된 화면은 최신 상태를 덮지 못한다`() {
             // given
             val admin = admins.관리자("coupon-stale")
-            val issued = target.issue(admin.requiredId, AdminReasonRequest("발급"))
+            val issued = target.issue(admin.requiredId, IssueProCouponRequest("발급"))
             val coupon = coupons.findById(issued.couponId).orElseThrow()
             coupon.register(resources.사용자(admin.requiredId).id, ZonedDateTime.now(clock))
             coupons.saveAndFlush(coupon)
@@ -261,7 +344,7 @@ class AdminCouponServiceTest @Autowired constructor(
         fun `같은 상태와 잘못된 사유는 변경하지 않는다`() {
             // given
             val admin = admins.관리자("coupon-invalid-change")
-            val issued = target.issue(admin.requiredId, AdminReasonRequest("발급"))
+            val issued = target.issue(admin.requiredId, IssueProCouponRequest("발급"))
 
             // when & then
             assertThatThrownBy { target.changeStatus(issued.couponId, admin.requiredId, ChangeProCouponStatusRequest(true, 0, "재활성")) }
@@ -276,7 +359,7 @@ class AdminCouponServiceTest @Autowired constructor(
         fun `같은 버전으로 동시에 상태를 바꾸면 한 요청만 성공한다`() {
             // given
             val admin = admins.관리자("coupon-concurrent")
-            val issued = target.issue(admin.requiredId, AdminReasonRequest("발급"))
+            val issued = target.issue(admin.requiredId, IssueProCouponRequest("발급"))
             val start = CountDownLatch(1)
 
             // when
