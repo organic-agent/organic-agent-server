@@ -33,7 +33,10 @@ TARGET_GROUP_ARN=""
 if [ -n "$ASG_NAME" ]; then
   TARGET_GROUP_ARN=$(aws autoscaling describe-auto-scaling-groups --region "$AWS_REGION" \
     --auto-scaling-group-names "$ASG_NAME" --query 'AutoScalingGroups[0].TargetGroupARNs[0]' --output text)
-  log "ASG $ASG_NAME · 대상 그룹 $TARGET_GROUP_ARN"
+  # 대상에서 빠지기를 기다리는 한도 = 등록 해제 대기(진행 중 요청 마저 처리) + 여유 60초.
+  DEREGISTER_DELAY=$(aws elbv2 describe-target-group-attributes --region "$AWS_REGION" --target-group-arn "$TARGET_GROUP_ARN" \
+    --query "Attributes[?Key=='deregistration_delay.timeout_seconds'].Value | [0]" --output text)
+  log "ASG $ASG_NAME · 대상 그룹 $TARGET_GROUP_ARN · 등록 해제 대기 ${DEREGISTER_DELAY}초"
 fi
 
 # 배포 동안 멈추는 ASG 처리. HealthCheck·ReplaceUnhealthy: 대상에서 뺀 서버를 헬스 실패로 보고 갈지 않게 · AZRebalance: 가용 영역을
@@ -50,17 +53,21 @@ target_state() {
 }
 
 # 끝날 때(실패해도) 되돌린다 — 빼 둔 서버를 먼저 다시 등록하고, 그다음 멈춘 처리를 켠다(반대면 헬스 판정이 빠진 서버를 갈 수 있다).
+# 되돌리기가 하나라도 실패하면 배포가 성공했어도 실패로 끝낸다 — 대상에서 빠진 서버나 멈춘 ASG 처리를 모르고 지나치지 않게(#329 리뷰).
 cleanup() {
+  local rc=$? failed=false
   [ -n "$ASG_NAME" ] || return 0
   if [ -n "$OUT_OF_TARGET" ]; then
-    aws elbv2 register-targets --region "$AWS_REGION" --target-group-arn "$TARGET_GROUP_ARN" \
-      --targets "Id=$OUT_OF_TARGET" || echo "$OUT_OF_TARGET 대상 재등록 실패 — 손으로 register-targets" >&2
+    aws elbv2 register-targets --region "$AWS_REGION" --target-group-arn "$TARGET_GROUP_ARN" --targets "Id=$OUT_OF_TARGET" \
+      || { echo "$OUT_OF_TARGET 대상 재등록 실패 — 손으로 register-targets" >&2; failed=true; }
   fi
   if [ -n "$PAUSED_BY_US" ]; then
     # shellcheck disable=SC2086
-    aws autoscaling resume-processes --region "$AWS_REGION" --auto-scaling-group-name "$ASG_NAME" \
-      --scaling-processes $PAUSED_BY_US || echo "ASG 처리 재개 실패 — 손으로 resume-processes $PAUSED_BY_US" >&2
+    aws autoscaling resume-processes --region "$AWS_REGION" --auto-scaling-group-name "$ASG_NAME" --scaling-processes $PAUSED_BY_US \
+      || { echo "ASG 처리 재개 실패 — 손으로 resume-processes $PAUSED_BY_US" >&2; failed=true; }
   fi
+  [ "$failed" = "false" ] || exit 1
+  exit "$rc"
 }
 trap cleanup EXIT
 
@@ -139,7 +146,7 @@ deploy_on() {
 
 if [ -n "$ASG_NAME" ]; then
   already=$(aws autoscaling describe-auto-scaling-groups --region "$AWS_REGION" --auto-scaling-group-names "$ASG_NAME" \
-    --query 'AutoScalingGroups[0].SuspendedProcesses[].ProcessName' --output text)
+    --query 'AutoScalingGroups[0].SuspendedProcesses[].ProcessName' --output text | tr '\t' ' ')
   for p in $PAUSE_PROCESSES; do
     case " $already " in *" $p "*) ;; *) PAUSED_BY_US="$PAUSED_BY_US $p" ;; esac
   done
@@ -157,7 +164,7 @@ for id in $INSTANCES; do
     log "$id ALB 대상에서 등록 해제 — 진행 중 요청을 마저 끝낸다"
     OUT_OF_TARGET="$id"
     aws elbv2 deregister-targets --region "$AWS_REGION" --target-group-arn "$TARGET_GROUP_ARN" --targets "Id=$id"
-    for _ in $(seq 1 60); do [ "$(target_state "$id")" = "unused" ] && break; sleep 5; done
+    for _ in $(seq 1 $(( (DEREGISTER_DELAY + 60) / 5 ))); do [ "$(target_state "$id")" = "unused" ] && break; sleep 5; done
     [ "$(target_state "$id")" = "unused" ] || { echo "$id 가 대상에서 빠지지 않았습니다" >&2; exit 1; }
   fi
 

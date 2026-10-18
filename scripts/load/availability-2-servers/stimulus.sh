@@ -301,15 +301,15 @@ fi
 # 배포가 서버를 ALB 대상에서 빼는 순간(rolling-deploy.sh 가 standby 대신 등록 해제, 10-18) — 2초 표본에서 서버가 draining 이 된 첫 시각.
 if [ "$KIND" = deploy ] && [ -s "$BASE-targets.tsv" ]; then
   python3 -c 'import sys
-lo = float(sys.argv[2]); prev = {}
+lo = float(sys.argv[2]); prev = {}; seen = set()
 for line in open(sys.argv[1]):
     t, _, rest = line.rstrip("\n").partition("\t")
     if float(t) < lo:
         continue
     for pair in rest.split():
         iid, _, state = pair.partition(":")
-        if state == "draining" and prev.get(iid) != "draining":
-            print(f"{float(t):.3f}\t{iid}\tderegister")
+        if state == "draining" and prev.get(iid) != "draining" and iid not in seen:
+            print(f"{float(t):.3f}\t{iid}\tderegister"); seen.add(iid)
         prev[iid] = state' "$BASE-targets.tsv" "$PRESSED_AT" >> "$BASE-events.tsv"
 fi
 touch "$BASE-events.tsv"
