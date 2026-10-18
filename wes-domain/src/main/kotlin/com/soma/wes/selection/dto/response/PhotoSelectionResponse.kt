@@ -31,6 +31,11 @@ data class PhotoSelectionResponse(
 
     @field:Schema(description = "서명된 조회 URL의 남은 수명. 지나기 전에 다시 부르면 새 URL이 온다")
     val viewUrlTtlSeconds: Long,
+
+    @field:Schema(
+        description = "viewUrl 중 만료되는 서명 URL이 있으면 true — 프론트는 true일 때만 수명 전에 다시 부른다. 미리보기가 모두 CDN 고정 주소(만료 없음)면 false.",
+    )
+    val viewUrlsExpire: Boolean = true,
 ) {
 
     companion object {
@@ -47,6 +52,7 @@ data class PhotoSelectionResponse(
             maxSelectablePhotoCount: Int?,
             photos: List<SelectedPhotoResponse>,
             viewUrlTtlSeconds: Long,
+            viewUrlsExpire: Boolean,
         ) = PhotoSelectionResponse(
             status = selection?.status ?: PhotoSelectionStatus.SELECTING,
             maxSelectablePhotoCount = maxSelectablePhotoCount,
@@ -56,6 +62,7 @@ data class PhotoSelectionResponse(
             submittedByUserId = selection?.submittedByUserId,
             photos = photos,
             viewUrlTtlSeconds = viewUrlTtlSeconds,
+            viewUrlsExpire = viewUrlsExpire,
         )
     }
 }

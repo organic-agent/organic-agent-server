@@ -304,6 +304,7 @@ class PhotoService(
         return PhotoPageResponse.of(
             page = PageResponse.of(read.page, photos),
             viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
+            viewUrlsExpire = photoViewAssembler.viewUrlsExpire(photos.map { it.viewUrl }),
         )
     }
 

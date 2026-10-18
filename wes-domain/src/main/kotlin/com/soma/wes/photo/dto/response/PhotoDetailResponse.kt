@@ -40,6 +40,11 @@ data class PhotoDetailResponse(
     val viewUrlTtlSeconds: Long,
 
     @field:Schema(
+        description = "만료되는 서명 URL이 있으면 true — 프론트는 true일 때만 수명 전에 다시 부른다. 상세는 originalUrl이 언제나 서명 URL이라 true다.",
+    )
+    val viewUrlsExpire: Boolean = true,
+
+    @field:Schema(
         description = "originalUrl이 살아 있는 시간(초). 상세는 오래 열어두는 화면이라 viewUrl보다 길다",
     )
     val originalUrlTtlSeconds: Long,

@@ -235,6 +235,7 @@ class PhotoSelectionService(
             maxSelectablePhotoCount = gallery.maxSelectablePhotoCount,
             photos = photos,
             viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
+            viewUrlsExpire = viewUrlsExpire(photos),
         )
     }
 
@@ -335,13 +336,19 @@ class PhotoSelectionService(
     private fun responseOf(gallery: Gallery, selection: PhotoSelection?): PhotoSelectionResponse {
         val items = selection?.let { photoSelectionItemRepository.findAllBySelectionId(it.requiredId) }.orEmpty()
 
+        val photos = selectedPhotoResponses(gallery.requiredId, items)
         return PhotoSelectionResponse.of(
             selection = selection,
             maxSelectablePhotoCount = gallery.maxSelectablePhotoCount,
-            photos = selectedPhotoResponses(gallery.requiredId, items),
+            photos = photos,
             viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
+            viewUrlsExpire = viewUrlsExpire(photos),
         )
     }
+
+    /** 미리보기와 보정 결과 주소 중 만료되는 것이 있는가. 보정 결과는 언제나 서명 URL이다. */
+    private fun viewUrlsExpire(photos: List<SelectedPhotoResponse>): Boolean =
+        photoViewAssembler.viewUrlsExpire(photos.flatMap { listOf(it.photo.viewUrl, it.resultUrl) })
 
     /**
      * 항목을 노출 순서대로 화면 응답으로 만든다. 보정본으로 담은 항목은 결과 key를 서명해

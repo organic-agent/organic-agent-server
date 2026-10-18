@@ -21,16 +21,22 @@ data class PhotoPageResponse(
         description = "viewUrl이 살아 있는 시간(초). 프론트는 이 시간이 지나기 전에 목록을 다시 불러야 한다.",
     )
     val viewUrlTtlSeconds: Long,
+
+    @field:Schema(
+        description = "viewUrl 중 만료되는 서명 URL이 있으면 true — 프론트는 true일 때만 수명 전에 다시 부른다. 미리보기가 모두 CDN 고정 주소(만료 없음)면 false.",
+    )
+    val viewUrlsExpire: Boolean,
 ) {
 
     companion object {
-        fun of(page: PageResponse<PhotoResponse>, viewUrlTtlSeconds: Long) = PhotoPageResponse(
+        fun of(page: PageResponse<PhotoResponse>, viewUrlTtlSeconds: Long, viewUrlsExpire: Boolean) = PhotoPageResponse(
             page = page.page,
             size = page.size,
             totalCount = page.totalCount,
             hasNext = page.hasNext,
             contents = page.contents,
             viewUrlTtlSeconds = viewUrlTtlSeconds,
+            viewUrlsExpire = viewUrlsExpire,
         )
     }
 }

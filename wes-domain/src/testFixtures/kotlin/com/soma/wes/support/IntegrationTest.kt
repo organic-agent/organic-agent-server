@@ -1,6 +1,6 @@
 package com.soma.wes.support
 
-
+import com.soma.wes.photo.FakePreviewCdnConfig
 import org.junit.jupiter.api.extension.ExtendWith
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
@@ -21,11 +21,12 @@ import org.springframework.context.annotation.Import
  * 필요한 테스트의 별도 import에 맡긴다.
  *
  * [FakeLlmConfig]는 Bedrock·S3 미리보기를 페이크로 바꾼다 — LLM이 필요한 테스트는 페이크를 주입받아 응답을 정한다.
+ * [FakePreviewCdnConfig]는 미리보기 CDN을 꺼진 채 두고, CDN이 필요한 테스트가 켰다 끈다(#336).
  */
 @Target(AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.RUNTIME)
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(TestcontainersConfiguration::class, DatabaseCleaner::class, FakeLlmConfig::class)
+@Import(TestcontainersConfiguration::class, DatabaseCleaner::class, FakeLlmConfig::class, FakePreviewCdnConfig::class)
 @ExtendWith(DatabaseClearExtension::class)
 annotation class IntegrationTest
