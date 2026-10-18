@@ -33,9 +33,11 @@ TARGET_GROUP_ARN=""
 if [ -n "$ASG_NAME" ]; then
   TARGET_GROUP_ARN=$(aws autoscaling describe-auto-scaling-groups --region "$AWS_REGION" \
     --auto-scaling-group-names "$ASG_NAME" --query 'AutoScalingGroups[0].TargetGroupARNs[0]' --output text)
-  # 대상에서 빠지기를 기다리는 한도 = 등록 해제 대기(진행 중 요청 마저 처리) + 여유 60초.
+  # 대상에서 빠지기를 기다리는 한도 = 등록 해제 대기(진행 중 요청 마저 처리) + 여유 60초. CD 역할이 속성을 못 읽으면 ALB 기본값 300초로 잡는다
+  # (10-18 dev 배포가 권한 없음으로 멈춤 — 기다리는 한도일 뿐이라 넉넉해도 된다).
   DEREGISTER_DELAY=$(aws elbv2 describe-target-group-attributes --region "$AWS_REGION" --target-group-arn "$TARGET_GROUP_ARN" \
-    --query "Attributes[?Key=='deregistration_delay.timeout_seconds'].Value | [0]" --output text)
+    --query "Attributes[?Key=='deregistration_delay.timeout_seconds'].Value | [0]" --output text 2>/dev/null) || DEREGISTER_DELAY=300
+  case "$DEREGISTER_DELAY" in ''|*[!0-9]*) DEREGISTER_DELAY=300 ;; esac
   log "ASG $ASG_NAME · 대상 그룹 $TARGET_GROUP_ARN · 등록 해제 대기 ${DEREGISTER_DELAY}초"
 fi
 
