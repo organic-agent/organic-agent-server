@@ -1,6 +1,9 @@
 services:
   wes-api:
-    image: ghcr.io/${OWNER_LOWERCASE}/wes-api:${IMAGE_TAG:?IMAGE_TAG must be set}
+    # 저장소는 배포 스크립트가 넘긴다 — ECR(#313 P2, ASG 새 서버가 인스턴스 역할로 받음).
+    # 관리 포트 8090(MANAGEMENT_SERVER_PORT)은 아직 열지 않는다 — 운영 ALB 가 8080 헬스를 보는 동안 열면 8080 /actuator/health 가 사라진다.
+    # ALB 를 8080 /livez 로 옮긴(infra P1b) 뒤 따로 연다(P2c → P1d, dev 의 W5a → I3a → W5b → I3b 와 같은 순서).
+    image: ${IMAGE_REPOSITORY:?IMAGE_REPOSITORY must be set}:${IMAGE_TAG:?IMAGE_TAG must be set}
     container_name: wes-app
     restart: always
     environment:

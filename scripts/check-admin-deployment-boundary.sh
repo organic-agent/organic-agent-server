@@ -33,12 +33,18 @@ bash -n "$public_deploy_script"
 bash -n "$admin_deploy_script"
 ruby "$workflow_run_size_check" "$cd_workflow"
 
-[ "$(grep -Fc 'scripts/deploy-public-ssm.sh' "$cd_workflow")" -eq 2 ]
+# 공개 API 는 rolling-deploy.sh 가 서버마다 SSM 명령을 만든다(#313 P2 — dev 와 같음). 관리자 API 는 워크플로가 직접 만든다.
+rolling_deploy_script="$repo_root/scripts/rolling-deploy.sh"
+bash -n "$rolling_deploy_script"
+grep -Fq 'DEPLOY_SCRIPT: scripts/deploy-public-ssm.sh' "$cd_workflow"
+grep -Fq 'run: bash scripts/rolling-deploy.sh' "$cd_workflow"
+grep -Fq -- '--rawfile script "$DEPLOY_SCRIPT"' "$rolling_deploy_script"
+grep -Fq -- '--arg github_token "$GITHUB_TOKEN"' "$rolling_deploy_script"
+grep -Fq 'env_line("GITHUB_TOKEN"; $github_token)' "$rolling_deploy_script"
 [ "$(grep -Fc 'scripts/deploy-admin-api-ssm.sh' "$cd_workflow")" -eq 2 ]
-grep -Fq -- '--rawfile script scripts/deploy-public-ssm.sh' "$cd_workflow"
 grep -Fq -- '--rawfile script scripts/deploy-admin-api-ssm.sh' "$cd_workflow"
-[ "$(grep -Fc -- '--arg github_token "${{ secrets.GITHUB_TOKEN }}"' "$cd_workflow")" -eq 2 ]
-[ "$(grep -Fc 'env_line("GITHUB_TOKEN"; $github_token)' "$cd_workflow")" -eq 2 ]
+[ "$(grep -Fc -- '--arg github_token "${{ secrets.GITHUB_TOKEN }}"' "$cd_workflow")" -eq 1 ]
+[ "$(grep -Fc 'env_line("GITHUB_TOKEN"; $github_token)' "$cd_workflow")" -eq 1 ]
 grep -Fq 'echo "$GITHUB_TOKEN"' "$public_deploy_script"
 # GHCR 은 CD 단기 토큰으로만, ECR(dev, #313)은 인스턴스 역할로만 로그인한다 — 오래 사는 레지스트리 비밀이 서버에 없다.
 grep -Fq 'docker login "$REGISTRY_HOST" -u "$GITHUB_ACTOR" --password-stdin' "$public_deploy_script"
@@ -256,8 +262,10 @@ if [ "$admin_api_rollback_call_line" -ge "$admin_host_restore_call_line" ] || \
   exit 1
 fi
 
-[ "$(grep -Fc -- '--timeout-seconds 1800' "$cd_workflow")" -eq 2 ]
-[ "$(grep -Fc 'for i in $(seq 1 180); do' "$cd_workflow")" -eq 2 ]
+# SSM 명령은 30분까지 — 관리자 API 는 워크플로에서, 공개 API 는 rolling-deploy.sh 에서(#313 P2).
+[ "$(grep -Fc -- '--timeout-seconds 1800' "$cd_workflow")" -eq 1 ]
+[ "$(grep -Fc 'for i in $(seq 1 180); do' "$cd_workflow")" -eq 1 ]
+grep -Fq -- '--timeout-seconds 1800' "$rolling_deploy_script"
 
 # 옛 태그 이미지는 롤백 기준점을 잡은 뒤, 새 이미지를 받기 전에 지운다.
 for deploy_script in "$public_deploy_script" "$admin_deploy_script"; do
