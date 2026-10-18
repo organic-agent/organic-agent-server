@@ -106,4 +106,14 @@ class PhotoSelectionController(
             .header(HttpHeaders.CACHE_CONTROL, "no-store")
             .body(result)
     }
+
+    @PostMapping("/export/cancel")
+    override fun cancelExport(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+    ): ResponseEntity<PhotoSelectionResponse> {
+        val result = photoSelectionService.cancelExport(galleryId, loginUser.id)
+
+        return ResponseEntity.ok(result)
+    }
 }

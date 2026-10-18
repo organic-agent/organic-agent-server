@@ -273,6 +273,33 @@ class PhotoSelectionService(
         return responseOf(gallery, selection).copy(photos = emptyList())
     }
 
+    /**
+     * 개인 갤러리의 요청서 내보내기를 취소해 다시 고르고 폴더를 정리할 수 있게 한다. 두 참여자 모두 할 수 있다 —
+     * 초대 갤러리의 [withdraw]와 달리 잠금을 풀어 줄 작가가 없다.
+     *
+     * 보정본이 한 장이라도 올라왔으면 거절한다. 보정본은 내보낸 목록을 보고 만든 것이라, 목록이 바뀌면
+     * 어느 결과가 어느 선택의 것인지 어긋난다. 보정 메모 초안은 남겨 다시 내보낼 때 그대로 실린다.
+     */
+    @Transactional
+    fun cancelExport(galleryId: Long, userId: Long): PhotoSelectionResponse {
+        galleryAccessPolicy.requirePersonalParticipant(galleryId, userId)
+
+        val gallery = galleryRepository.requireWithLockById(galleryId)
+        gallery.requireWritable(ZonedDateTime.now(clock))
+        val round = retouchRoundRepository.findFirstByGalleryIdOrderByRoundNoDesc(galleryId)
+            ?.takeIf { gallery.stage == GalleryStage.RETOUCH && it.status == RetouchRoundStatus.REQUESTED }
+            ?: throw SelectionException(SelectionErrorCode.SELECTION_NOT_EXPORTED)
+        if (retouchPhotoRepository.findAllByRoundId(round.requiredId).any { it.hasResult }) {
+            throw SelectionException(SelectionErrorCode.EXPORT_NOT_CANCELABLE)
+        }
+
+        round.reopenRequest()
+        gallery.markSelectionInProgress()
+        activityRecorder.recordGallery(galleryId)
+
+        return responseOf(gallery, photoSelectionRepository.findByGalleryId(galleryId))
+    }
+
     /** V5 이전 갤러리까지 안전하게 읽기 위한 호환 경로다. 신규 갤러리는 생성 트랜잭션에서 함께 만든다. */
     private fun loadOrCreate(galleryId: Long): PhotoSelection =
         photoSelectionRepository.findByGalleryId(galleryId)
