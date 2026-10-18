@@ -169,6 +169,17 @@ jobs:
               "ghcr.io/${OWNER_LOWERCASE}/${PUBLIC_IMAGE_BASENAME}:${IMAGE_TAG}"
           fi
 
+          # 교체가 실패하면 묶음·태그를 직전 릴리스로 되돌린다(아래 실패 단계) — 새 버전이 남으면 ASG 가 새로 띄우는 서버가 실패한 버전으로 뜬다
+          # (#328 리뷰). 직전 태그를 기억하고 묶음 4개를 옆 경로에 복사해 둔다. 처음 배포면 둘 다 없다.
+          PREV_TAG=$(aws ssm get-parameter --name "${PARAMETER_PREFIX}/app.deploy.image-tag" --query Parameter.Value --output text 2>/dev/null || true)
+          echo "prev_image_tag=${PREV_TAG}" >> "$GITHUB_OUTPUT"
+          echo "bundle=${BUNDLE}" >> "$GITHUB_OUTPUT"
+          if [ -n "$PREV_TAG" ]; then
+            for f in release.env deploy-public-ssm.sh docker-compose.yml config.alloy; do
+              aws s3 cp --only-show-errors "${BUNDLE}/${f}" "${BUNDLE}-prev/${f}"
+            done
+          fi
+
           # 새 서버의 user_data 가 읽는 묶음. 비밀은 담지 않는다(서버는 Parameter Store 를 직접 읽는다).
           {
             echo "OWNER_LOWERCASE=${OWNER_LOWERCASE}"
@@ -199,6 +210,20 @@ jobs:
           DEPLOY_SCRIPT: scripts/deploy-public-ssm.sh
           COMMENT_PREFIX: wes-api deploy
         run: bash scripts/rolling-deploy.sh
+
+      # 교체가 실패해 서버가 직전 릴리스로 돌아갔다면 묶음·태그도 직전으로 — ASG 새 서버가 서버들과 같은 버전으로 뜨게.
+      - name: 교체 실패 시 배포 묶음·이미지 태그를 직전 릴리스로
+        if: failure() && steps.release.outputs.prev_image_tag != ''
+        env:
+          PREV_TAG: ${{ steps.release.outputs.prev_image_tag }}
+          BUNDLE: ${{ steps.release.outputs.bundle }}
+        run: |
+          for f in release.env deploy-public-ssm.sh docker-compose.yml config.alloy; do
+            aws s3 cp --only-show-errors "${BUNDLE}-prev/${f}" "${BUNDLE}/${f}"
+          done
+          aws ssm put-parameter --name "${PARAMETER_PREFIX}/app.deploy.image-tag" --type String \
+            --value "$PREV_TAG" --overwrite >/dev/null
+          echo "::warning::배포 묶음·이미지 태그를 직전 릴리스 ${PREV_TAG} 로 되돌렸다"
 
   # 공개 API가 Flyway migration을 끝낸 뒤에만 관리자 API를 교체한다.
   deploy-admin:
