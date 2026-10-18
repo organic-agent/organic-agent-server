@@ -108,6 +108,13 @@ app:
     pending-first-check-after: 1m
     pending-recheck-every: 10m
     pending-give-up-after: 24h
+    # 부부·작가의 미리보기를 CloudFront 고정 주소 + 서명 쿠키로(#336 ADR-0001). 꺼져 있으면 지금처럼 서명 URL이다.
+    # 켤 때는 Parameter Store가 덮어쓴다: enabled · base-url · path-prefix(dev "d") · key-pair-id · private-key(SecureString) · cookie-domain.
+    # 되돌리기: /wes/{env}/app.storage.preview-cdn.enabled=false 뒤 앱 재시작 — 웹은 viewUrlsExpire=true를 보고 다시 12분 갱신을 돈다.
+    preview-cdn:
+      enabled: false
+      cookie-ttl: 20m
+      refresh-after: 10m
 
   folder:
     # 이미 폴더가 있는 갤러리에 새 세부 폴더를 만드는 최소 장수. 기존 폴더에 못 들어간 새 사진이 이보다 적으면 미분류로 둔다.

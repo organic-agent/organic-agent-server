@@ -46,6 +46,8 @@ dependencies {
     api("software.amazon.awssdk:bedrockruntime")
     // 분석 Lambda 실패 큐(analysis 도메인의 SqsAiFailureQueue, #286 (c)).
     api("software.amazon.awssdk:sqs")
+    // 미리보기 CloudFront 서명 쿠키(photo 도메인의 CloudFrontPreviewCdn, #336). 서명은 로컬 계산이라 네트워크를 타지 않는다.
+    api("software.amazon.awssdk:cloudfront")
     // Bedrock 클라이언트의 소켓 타임아웃을 직접 잡기 위해 컴파일 의존으로 올린다(원래는 런타임 전이).
     api("software.amazon.awssdk:apache-client")
 

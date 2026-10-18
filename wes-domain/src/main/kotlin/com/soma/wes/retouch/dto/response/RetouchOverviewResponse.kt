@@ -25,6 +25,11 @@ data class RetouchOverviewResponse(
 
     @field:Schema(description = "서명된 조회 URL의 남은 수명. 지나기 전에 다시 부르면 새 URL이 온다")
     val viewUrlTtlSeconds: Long,
+
+    @field:Schema(
+        description = "viewUrl 중 만료되는 서명 URL이 있으면 true — 프론트는 true일 때만 수명 전에 다시 부른다. 이 응답은 언제나 서명 URL이라 true다.",
+    )
+    val viewUrlsExpire: Boolean = true,
 ) {
 
     companion object {

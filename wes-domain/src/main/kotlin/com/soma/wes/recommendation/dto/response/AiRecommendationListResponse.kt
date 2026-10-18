@@ -15,6 +15,11 @@ data class AiRecommendationListResponse(
 
     @field:Schema(description = "photos의 미리보기 URL 수명(초). 넘기면 다시 조회한다.")
     val viewUrlTtlSeconds: Long,
+
+    @field:Schema(
+        description = "viewUrl 중 만료되는 서명 URL이 있으면 true — 프론트는 true일 때만 수명 전에 다시 부른다. 미리보기가 모두 CDN 고정 주소(만료 없음)면 false.",
+    )
+    val viewUrlsExpire: Boolean = true,
 ) {
 
     companion object {
@@ -24,6 +29,7 @@ data class AiRecommendationListResponse(
             job = null,
             photos = emptyList(),
             viewUrlTtlSeconds = viewUrlTtlSeconds,
+            viewUrlsExpire = false,
         )
     }
 }

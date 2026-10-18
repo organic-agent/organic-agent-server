@@ -175,6 +175,7 @@ class AiRecommendationService(
                 job = job,
                 photos = emptyList(),
                 viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
+                viewUrlsExpire = false,
             )
 
         // 사진마다 가장 최근 라운드의 행 하나. 거절 행은 표시하지 않는다(다음 계산이 뺄 근거로만 남는다).
@@ -191,15 +192,17 @@ class AiRecommendationService(
             compareBy<AiRecommendation, Long?>(nullsLast()) { currentFolderByPhoto[it.photoId] }.thenBy { it.rank },
         )
 
+        val photos = recommendationResponses(galleryId, selectionId, ordered, currentFolderByPhoto).map {
+            if (studioViewer) it.copy(photo = it.photo.copy(score = null),
+                selected = it.selected && selection.status == com.soma.wes.selection.domain.PhotoSelectionStatus.SUBMITTED)
+            else it
+        }
         return AiRecommendationListResponse(
             round = latestRound,
             job = job,
-            photos = recommendationResponses(galleryId, selectionId, ordered, currentFolderByPhoto).map {
-                if (studioViewer) it.copy(photo = it.photo.copy(score = null),
-                    selected = it.selected && selection.status == com.soma.wes.selection.domain.PhotoSelectionStatus.SUBMITTED)
-                else it
-            },
+            photos = photos,
             viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
+            viewUrlsExpire = photoViewAssembler.viewUrlsExpire(photos.map { it.photo.viewUrl }),
         )
     }
 
