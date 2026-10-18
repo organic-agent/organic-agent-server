@@ -47,6 +47,16 @@ enum class SelectionErrorCode(
     SELECTION_ALREADY_EXPORTED(HttpStatus.CONFLICT, "SELECTION_409_5", "요청서를 내보낸 선택 목록은 변경할 수 없습니다."),
     PHOTO_ORGANIZATION_REQUIRED(HttpStatus.CONFLICT, "SELECTION_409_4", "사진 정리를 폴더로 저장한 후 선택할 수 있습니다."),
 
+    /** 내보내기를 취소하려는데 내보낸 요청서(요청됨 상태의 보정 회차)가 없는 경우. 다른 화면에서 이미 취소했을 때도 여기다. */
+    SELECTION_NOT_EXPORTED(HttpStatus.CONFLICT, "SELECTION_409_7", "아직 요청서를 내보내지 않은 선택 목록입니다."),
+
+    /**
+     * 보정본이 올라오기 시작한 뒤 내보내기를 취소하려는 경우.
+     *
+     * 보정본은 내보낸 목록을 보고 만든 것이라, 그 뒤에 목록을 바꾸면 결과와 선택이 어긋난다.
+     */
+    EXPORT_NOT_CANCELABLE(HttpStatus.CONFLICT, "SELECTION_409_8", "보정본이 올라오기 시작해 내보내기를 취소할 수 없습니다."),
+
     /** 앨범에 없는 사진을 빼려는 경우. */
     PHOTO_NOT_SELECTED(HttpStatus.NOT_FOUND, "SELECTION_404_1", "선택 앨범에 없는 사진입니다."),
 

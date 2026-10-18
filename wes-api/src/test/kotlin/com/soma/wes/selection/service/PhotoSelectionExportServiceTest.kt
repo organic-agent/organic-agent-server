@@ -11,6 +11,8 @@ import com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest
 import com.soma.wes.retouch.dto.request.UpdateRetouchPhotoRequest
 import com.soma.wes.retouch.dto.request.IssueResultUploadUrlsRequest
 import com.soma.wes.retouch.dto.request.CompleteResultsRequest
+import com.soma.wes.retouch.domain.RetouchRoundStatus
+import com.soma.wes.retouch.repository.RetouchRoundRepository
 import com.soma.wes.retouch.service.RetouchService
 import com.soma.wes.retouch.support.RetouchStorageTestConfig
 import com.soma.wes.selection.domain.PhotoSelectionStatus
@@ -33,6 +35,7 @@ class PhotoSelectionExportServiceTest @Autowired constructor(
     private val fixtures: PersonalGalleryFixture,
     private val photos: PhotoFixture,
     private val galleries: GalleryRepository,
+    private val rounds: RetouchRoundRepository,
 ) {
     @Test
     fun `개인 파트너가 요청서를 내보내면 명시적 제출 없이 보정 단계가 되고 내용은 결정적이다`() {
@@ -116,5 +119,69 @@ class PhotoSelectionExportServiceTest @Autowired constructor(
             assertThatThrownBy { action() }.isInstanceOf(RetouchException::class.java).extracting("errorCode")
                 .isEqualTo(RetouchErrorCode.INVALID_ROUND_STATUS)
         }
+    }
+
+    @Test
+    fun `내보내기를 취소하면 다시 고를 수 있고 다시 내보내면 같은 1차 회차에 메모가 남아 있다`() {
+        // given
+        val fixture = fixtures.파트너와_개인_갤러리(target = 2)
+        val (kept, swapped, added) = photos.업로드된_사진(fixture.galleryId, count = 3)
+        selectionService.select(fixture.galleryId, fixture.ownerId, SelectPhotosRequest(photoIds = listOf(kept, swapped)))
+        retouchService.addPhotos(fixture.galleryId, fixture.ownerId, AddRetouchPhotosRequest(photoIds = listOf(kept, swapped)))
+        retouchService.updatePhoto(fixture.galleryId, kept, fixture.partnerId, UpdateRetouchPhotoRequest(requestText = "피부 보정"))
+        exportService.export(fixture.galleryId, fixture.ownerId)
+
+        // when
+        val canceled = selectionService.cancelExport(fixture.galleryId, fixture.partnerId)
+        selectionService.deselectPhoto(fixture.galleryId, swapped, fixture.partnerId)
+        selectionService.select(fixture.galleryId, fixture.partnerId, SelectPhotosRequest(photoIds = listOf(added)))
+        val exported = exportService.export(fixture.galleryId, fixture.ownerId).toString(Charsets.UTF_8)
+
+        // then
+        assertThat(canceled.status).isEqualTo(PhotoSelectionStatus.SELECTING)
+        assertThat(exported).contains("\"$kept\"", "피부 보정", "\"$added\"").doesNotContain("\"$swapped\"")
+        assertThat(galleries.findById(fixture.galleryId).orElseThrow().stage).isEqualTo(GalleryStage.RETOUCH)
+        val roundsAfter = rounds.findAllByGalleryIdOrderByRoundNoAsc(fixture.galleryId)
+        assertThat(roundsAfter).singleElement().satisfies({ round ->
+            assertThat(round.roundNo).isEqualTo(1)
+            assertThat(round.status).isEqualTo(RetouchRoundStatus.REQUESTED)
+        })
+    }
+
+    @Test
+    fun `보정본이 한 장이라도 올라왔으면 내보내기를 취소할 수 없다`() {
+        // given
+        val fixture = fixtures.파트너와_개인_갤러리(target = 1)
+        val ids = photos.업로드된_사진(fixture.galleryId, count = 1)
+        selectionService.select(fixture.galleryId, fixture.ownerId, SelectPhotosRequest(photoIds = ids))
+        exportService.export(fixture.galleryId, fixture.ownerId)
+        val issued = retouchService.issueResultUploadUrls(fixture.galleryId, 1, fixture.partnerId,
+            IssueResultUploadUrlsRequest(files = listOf(IssueResultUploadUrlsRequest.FileRequest(photoId = ids.single(), contentType = "image/jpeg"))))
+        retouchService.completeResults(fixture.galleryId, 1, fixture.partnerId, CompleteResultsRequest(results =
+            issued.uploads.map { CompleteResultsRequest.ResultRequest(photoId = it.photoId, resultKey = it.resultKey, contentType = "image/jpeg") }))
+
+        // when & then
+        assertThatThrownBy { selectionService.cancelExport(fixture.galleryId, fixture.ownerId) }
+            .isInstanceOf(SelectionException::class.java).extracting("errorCode")
+            .isEqualTo(SelectionErrorCode.EXPORT_NOT_CANCELABLE)
+        assertThat(galleries.findById(fixture.galleryId).orElseThrow().stage).isEqualTo(GalleryStage.RETOUCH)
+    }
+
+    @Test
+    fun `내보내지 않았거나 이미 취소한 선택은 취소할 수 없다`() {
+        // given
+        val fixture = fixtures.파트너와_개인_갤러리(target = 1)
+        selectionService.select(fixture.galleryId, fixture.ownerId,
+            SelectPhotosRequest(photoIds = photos.업로드된_사진(fixture.galleryId, count = 1)))
+
+        // when & then
+        assertThatThrownBy { selectionService.cancelExport(fixture.galleryId, fixture.ownerId) }
+            .isInstanceOf(SelectionException::class.java).extracting("errorCode")
+            .isEqualTo(SelectionErrorCode.SELECTION_NOT_EXPORTED)
+        exportService.export(fixture.galleryId, fixture.ownerId)
+        selectionService.cancelExport(fixture.galleryId, fixture.ownerId)
+        assertThatThrownBy { selectionService.cancelExport(fixture.galleryId, fixture.partnerId) }
+            .isInstanceOf(SelectionException::class.java).extracting("errorCode")
+            .isEqualTo(SelectionErrorCode.SELECTION_NOT_EXPORTED)
     }
 }

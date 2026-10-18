@@ -146,4 +146,25 @@ interface PhotoSelectionControllerDocs {
     fun withdraw(loginUser: LoginUser, galleryId: Long): ResponseEntity<PhotoSelectionResponse>
     @Operation(summary = "선택 목록과 보정 요청서 CSV 다운로드", description = "UTF-8 BOM CSV의 고정 컬럼: photo_id, filename, request, point_requests. 정확한 목표 장수를 채워야 하며 개인 갤러리는 첫 내보내기에 보정 단계로 전이한다.")
     fun export(loginUser: LoginUser, galleryId: Long): ResponseEntity<ByteArray>
+
+    @Operation(
+        summary = "개인 갤러리 요청서 내보내기 취소",
+        description = """
+            요청서를 내보내 보정 단계로 넘어간 개인 갤러리를 선택 단계로 되돌린다. 다시 담기·빼기와 폴더 정리가 열린다.
+            개인 갤러리의 두 참여자(소유자·파트너) 모두 할 수 있다 — 초대 갤러리는 작가의 제출 되돌리기(withdraw)를 쓴다.
+
+            보정본이 한 장이라도 올라왔으면 되돌릴 수 없다(SELECTION_409_8). 보정 메모 초안은 남고,
+            다시 내보내면 같은 1차 회차로 다시 요청된다.
+        """,
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "취소 성공. 선택 앨범을 돌려준다"),
+        ApiResponse(responseCode = "403", description = "개인 갤러리 참여자가 아니거나, 보관·만료된 갤러리", content = []),
+        ApiResponse(
+            responseCode = "409",
+            description = "내보낸 요청서가 없음(SELECTION_409_7), 보정본이 이미 올라옴(SELECTION_409_8)",
+            content = [],
+        ),
+    )
+    fun cancelExport(loginUser: LoginUser, galleryId: Long): ResponseEntity<PhotoSelectionResponse>
 }
