@@ -25,15 +25,22 @@ class CloudFrontPreviewCdnUnitTest {
     private val now = Instant.parse("2026-10-19T03:00:00Z")
     private val clock = Clock.fixed(now, ZoneOffset.UTC)
 
-    private fun cdn(enabled: Boolean = true, pathPrefix: String = "d", privateKey: String = PreviewCdnTestKeys.privatePem) =
+    private fun cdn(
+        enabled: Boolean = true,
+        pathPrefix: String = "d",
+        privateKey: String = PreviewCdnTestKeys.privatePem,
+        baseUrl: String = "https://img-dev.easyselect.kr",
+        keyPairId: String = "KTEST123",
+        cookieDomain: String = "easyselect.kr",
+    ) =
         CloudFrontPreviewCdn(
             properties = PreviewCdnProperties(
                 enabled = enabled,
-                baseUrl = "https://img-dev.easyselect.kr",
+                baseUrl = baseUrl,
                 pathPrefix = pathPrefix,
-                keyPairId = "KTEST123",
+                keyPairId = keyPairId,
                 privateKey = privateKey,
-                cookieDomain = "easyselect.kr",
+                cookieDomain = cookieDomain,
                 cookieTtl = Duration.ofMinutes(20),
                 refreshAfter = Duration.ofMinutes(10),
             ),
@@ -73,6 +80,35 @@ class CloudFrontPreviewCdnUnitTest {
                 softly.assertThat(cdn().isFixedUrl("https://bucket.s3.ap-northeast-2.amazonaws.com/previews/a.jpg?X-Amz-Signature=x")).isFalse()
                 softly.assertThat(cdn(enabled = false).isFixedUrl("https://img-dev.easyselect.kr/d/previews/galleries/52/a.jpg")).isFalse()
             }
+        }
+    }
+
+    @Nested
+    @DisplayName("켜진 채 뜰 때")
+    inner class Startup {
+
+        @Test
+        fun `PKCS#8이 아닌 키면 기동하지 않는다`() {
+            // openssl genrsa 의 PKCS#1(BEGIN RSA PRIVATE KEY)은 JDK가 읽지 못한다. 첫 쿠키 발급에서야 실패하면 그 서버의 미리보기가
+            // 전부 403인 채로 헬스는 통과한다 — 기동에서 막아 롤링 배포가 멈추게 한다.
+            assertThatThrownBy { cdn(privateKey = "-----BEGIN RSA PRIVATE KEY-----\nAAAA\n-----END RSA PRIVATE KEY-----") }
+                .isInstanceOf(IllegalStateException::class.java)
+        }
+
+        @Test
+        fun `주소나 키 ID나 쿠키 도메인이 비면 기동하지 않는다`() {
+            // 빈 주소는 상대 경로를 만들고, 그 경로를 고정 주소로 판정해 viewUrlsExpire 까지 틀린다(PR #337 리뷰).
+            assertSoftly { softly ->
+                softly.assertThatThrownBy { cdn(baseUrl = "") }.isInstanceOf(IllegalStateException::class.java)
+                softly.assertThatThrownBy { cdn(keyPairId = "") }.isInstanceOf(IllegalStateException::class.java)
+                softly.assertThatThrownBy { cdn(cookieDomain = "") }.isInstanceOf(IllegalStateException::class.java)
+            }
+        }
+
+        @Test
+        fun `꺼져 있으면 설정이 비어도 뜬다`() {
+            // 로컬·테스트·관리자 앱은 CDN 설정이 없다.
+            assertThat(cdn(enabled = false, baseUrl = "", keyPairId = "", cookieDomain = "", privateKey = "").enabled).isFalse()
         }
     }
 
@@ -123,12 +159,6 @@ class CloudFrontPreviewCdnUnitTest {
             assertThat(cdn(enabled = false, privateKey = "").accessFor(52)).isEqualTo(PreviewAccessDto.DISABLED)
         }
 
-        @Test
-        fun `PKCS#8이 아닌 키는 켜는 순간 알린다`() {
-            // openssl genrsa 의 PKCS#1(BEGIN RSA PRIVATE KEY)은 JDK가 읽지 못한다 — 조용히 틀린 쿠키를 내지 않고 500으로 드러낸다.
-            assertThatThrownBy { cdn(privateKey = "-----BEGIN RSA PRIVATE KEY-----\nAAAA\n-----END RSA PRIVATE KEY-----").accessFor(52) }
-                .isInstanceOf(IllegalStateException::class.java)
-        }
 
         /** CloudFront식 base64(+ → -, = → _, / → ~)를 되돌린다. */
         private fun cloudFrontDecode(value: String): ByteArray =

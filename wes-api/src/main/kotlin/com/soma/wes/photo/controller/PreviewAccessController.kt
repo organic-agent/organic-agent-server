@@ -25,7 +25,7 @@ class PreviewAccessController(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
     ): ResponseEntity<PreviewAccessResponse> {
-        val result = previewAccessService.issue(galleryId, loginUser.id)
+        val result = previewAccessService.issue(galleryId = galleryId, userId = loginUser.id)
 
         val cookies = result.cookies.map { it.toSetCookie() }.toTypedArray()
         return ResponseEntity.ok()

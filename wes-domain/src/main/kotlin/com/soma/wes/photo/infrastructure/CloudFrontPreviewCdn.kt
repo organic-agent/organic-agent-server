@@ -30,8 +30,11 @@ class CloudFrontPreviewCdn(
 
     private val utilities = CloudFrontUtilities.create()
 
-    /** 켜져 있을 때만 읽는다. 꺼진 환경(로컬·테스트·관리자 앱)은 키가 없어도 떠야 한다. */
-    private val privateKey: PrivateKey by lazy { parsePkcs8(properties.privateKey) }
+    /**
+     * 켜져 있을 때만 읽는다. 꺼진 환경(로컬·테스트·관리자 앱)은 키가 없어도 떠야 한다.
+     * 켜져 있으면 기동할 때 읽어, 잘못된 키가 첫 쿠키 발급에서야 드러나지 않게 한다 — 롤링 배포에서 그 서버가 뜨지 못해 배포가 멈춘다.
+     */
+    private val privateKey: PrivateKey? = if (properties.enabled) parsePkcs8(properties.privateKey) else null
 
     companion object {
         /** 미리보기 키의 머리. 쿠키는 이 아래 갤러리 경로만 연다 — 원본(`galleries/…`)·보정 결과는 범위 밖이다. */
@@ -39,6 +42,16 @@ class CloudFrontPreviewCdn(
 
         private const val PEM_BEGIN = "-----BEGIN PRIVATE KEY-----"
         private const val PEM_END = "-----END PRIVATE KEY-----"
+    }
+
+    init {
+        if (properties.enabled) {
+            check(properties.baseUrl.startsWith("https://")) {
+                "미리보기 CDN 주소가 https 절대 주소가 아니다(app.storage.preview-cdn.base-url) — 상대 주소를 고정 주소로 내주게 된다"
+            }
+            check(properties.keyPairId.isNotBlank()) { "미리보기 CDN 키 ID가 비어 있다(app.storage.preview-cdn.key-pair-id)" }
+            check(properties.cookieDomain.isNotBlank()) { "미리보기 쿠키 도메인이 비어 있다(app.storage.preview-cdn.cookie-domain)" }
+        }
     }
 
     override val enabled: Boolean
@@ -59,7 +72,7 @@ class CloudFrontPreviewCdn(
             CustomSignerRequest.builder()
                 .resourceUrl("${properties.baseUrl.trimEnd('/')}$cookiePath")
                 .resourceUrlPattern("${properties.baseUrl.trimEnd('/')}$cookiePath*")
-                .privateKey(privateKey)
+                .privateKey(checkNotNull(privateKey) { "켜진 CDN인데 개인키를 읽지 않았다" })
                 .keyPairId(properties.keyPairId)
                 .expirationDate(expiresAt)
                 .build(),
