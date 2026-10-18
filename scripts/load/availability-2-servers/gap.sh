@@ -54,7 +54,7 @@ report_section "2. 공백 (성공 응답이 하나도 없는 연속 초, 긴 순
 cat "$TABLES/gaps.txt"
 report_section "3. 사건 (ASG 활동 · 배포 명령 · 컨테이너 · kill · 리더)" "T0+ = T0 에서 몇 초 뒤"
 cat "$TABLES/events.txt"
-report_section "4. 대상 이탈 (ALB 대상 그룹 2초 표본에서 healthy → 다른 상태)" "배포의 standby(draining)·kill 한 서버는 예상된 이탈이다"
+report_section "4. 대상 이탈 (ALB 대상 그룹 2초 표본에서 healthy → 다른 상태)" "배포가 대상에서 뺀 서버(draining)·kill 한 서버는 예상된 이탈이다"
 cat "$TABLES/drops.txt"
 if [ -f "$EXTRA-servers.txt" ]; then
   report_section "5. 서버별 (이 회차 구간의 GC 멈춤 · 끝날 때 메모리)" "GC = gc.log 의 Pause 들 · 리더 임대 = 마지막 얻음·잃음 로그"
