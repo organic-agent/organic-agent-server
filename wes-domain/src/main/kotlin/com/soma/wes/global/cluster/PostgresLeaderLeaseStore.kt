@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component
  * - 연결은 분석 풀에서 꺼낸다. 사용자 요청이 몰려 사용자 풀이 차도 갱신이 밀려 멀쩡한 리더가 임대를 놓치지 않게(#286 (a)).
  */
 @Component
-@ConditionalOnExpression("\${app.cluster.leader.enabled:false} and '\${app.cluster.leader.store:redis}' == 'postgres'")
+@ConditionalOnExpression("\${app.cluster.leader.enabled:false} and '\${app.cluster.leader.store:redis}'.equalsIgnoreCase('postgres')")
 class PostgresLeaderLeaseStore(
     private val jdbcClient: JdbcClient,
     private val properties: ClusterLeaderProperties,

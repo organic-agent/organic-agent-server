@@ -11,7 +11,7 @@ import org.springframework.data.redis.core.StringRedisTemplate
 /** 임대를 Redis 키에 둘 때의 리더 계약(#313). 운영과 같은 엔진(Valkey)에 붙는다. B4에서 Redis 와 함께 지운다. */
 class RedisLeaderLeaseTest : LeaderLeaseContract() {
 
-    override val properties = ClusterLeaderProperties(enabled = true, store = "redis", key = "test:scheduler-leader")
+    override val properties = ClusterLeaderProperties(enabled = true, store = ClusterLeaderProperties.Store.REDIS, key = "test:scheduler-leader")
 
     private val connectionFactory = connect(SharedValkey.mappedPort)
     private val redis = StringRedisTemplate(connectionFactory)

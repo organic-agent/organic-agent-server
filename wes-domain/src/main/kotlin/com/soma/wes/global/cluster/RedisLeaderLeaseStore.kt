@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component
  * 둘이다(dev A-2r 실측 3초). 주기 작업이 중복 방지를 DB에 두는 까닭이다(#313 ADR-0002 §7).
  */
 @Component
-@ConditionalOnExpression("\${app.cluster.leader.enabled:false} and '\${app.cluster.leader.store:redis}' == 'redis'")
+@ConditionalOnExpression("\${app.cluster.leader.enabled:false} and '\${app.cluster.leader.store:redis}'.equalsIgnoreCase('redis')")
 class RedisLeaderLeaseStore(
     private val redis: StringRedisTemplate,
     private val properties: ClusterLeaderProperties,

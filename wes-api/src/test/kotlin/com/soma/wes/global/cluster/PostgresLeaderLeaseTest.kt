@@ -20,7 +20,7 @@ class PostgresLeaderLeaseTest @Autowired constructor(
     private val jdbcClient: JdbcClient,
 ) : LeaderLeaseContract() {
 
-    override val properties = ClusterLeaderProperties(enabled = true, store = "postgres", key = "test:scheduler-leader")
+    override val properties = ClusterLeaderProperties(enabled = true, store = ClusterLeaderProperties.Store.POSTGRES, key = "test:scheduler-leader")
 
     override val store: LeaderLeaseStore = PostgresLeaderLeaseStore(jdbcClient, properties, AnalysisPoolRoute())
 
