@@ -1,6 +1,8 @@
 package com.soma.wes.global
 
-import com.soma.wes.global.cluster.RedisSchedulerLeadership
+import com.soma.wes.global.cluster.LeaderLeaseStore
+import com.soma.wes.global.cluster.LeasedSchedulerLeadership
+import com.soma.wes.global.cluster.RedisLeaderLeaseStore
 import com.soma.wes.global.cluster.SchedulerLeadership
 import com.soma.wes.support.DatabaseClearExtension
 import com.soma.wes.support.SharedValkey
@@ -15,7 +17,7 @@ import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 
 /**
- * 리더 임대를 켜면(#313) 앱이 Redis 구현을 꽂고, 혼자 뜬 서버는 첫 갱신에서 리더가 된다. 규칙은 `RedisSchedulerLeadershipUnitTest`가
+ * 리더 임대를 켜면(#313) 앱이 Redis 구현을 꽂고, 혼자 뜬 서버는 첫 갱신에서 리더가 된다. 규칙은 `RedisLeaderLeaseTest`가
  * 본다 — 여기는 설정·자동 구성이 이어지는지만.
  */
 @SpringBootTest(
@@ -28,6 +30,7 @@ import org.springframework.test.context.DynamicPropertySource
 @ExtendWith(DatabaseClearExtension::class)
 class RedisWiringTest @Autowired constructor(
     private val leadership: SchedulerLeadership,
+    private val store: LeaderLeaseStore,
 ) {
 
     companion object {
@@ -44,7 +47,8 @@ class RedisWiringTest @Autowired constructor(
 
     @Test
     fun `리더 임대를 켜면 Redis 임대가 꽂히고 혼자 뜬 서버는 곧 리더가 된다`() {
-        assertThat(leadership).isInstanceOf(RedisSchedulerLeadership::class.java)
+        assertThat(leadership).isInstanceOf(LeasedSchedulerLeadership::class.java)
+        assertThat(store).isInstanceOf(RedisLeaderLeaseStore::class.java)
         assertThat(becomesLeader()).isTrue()
     }
 

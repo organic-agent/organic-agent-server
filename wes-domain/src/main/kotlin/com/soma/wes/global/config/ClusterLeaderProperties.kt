@@ -12,6 +12,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 @ConfigurationProperties(prefix = "app.cluster.leader")
 data class ClusterLeaderProperties(
     val enabled: Boolean = false,
+    /** 임대를 두는 곳 — `redis`(#313) 또는 `postgres`(#336 ADR-0002, V45). 전환이 끝나면(B4) postgres 하나만 남는다. */
+    val store: String = "redis",
+    /** Redis 에서는 키 이름, Postgres 에서는 `scheduler_leader_lease.lease_key`. */
     val key: String = "wes:scheduler-leader",
     val ttl: Duration = Duration.ofSeconds(30),
     val renewInterval: Duration = Duration.ofSeconds(10),

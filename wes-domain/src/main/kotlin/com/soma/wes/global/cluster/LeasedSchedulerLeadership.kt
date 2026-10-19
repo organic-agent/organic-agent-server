@@ -12,28 +12,24 @@ import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.context.SmartLifecycle
-import org.springframework.data.redis.core.StringRedisTemplate
-import org.springframework.data.redis.core.script.DefaultRedisScript
 import org.springframework.stereotype.Component
 
 /**
- * Redis 키 하나를 임대해 주기 작업 리더를 정한다(#313 ADR-0002). 키 값이 이 서버의 표식이면 리더다.
+ * 임대 하나를 쥔 서버가 주기 작업 리더다(#313 ADR-0002). 임대를 어디에 두는지는 [LeaderLeaseStore]가 정한다 — Redis(#313) 또는
+ * Postgres 행(#336 ADR-0002, `app.cluster.leader.store`).
  *
  * - [ClusterLeaderProperties.renewInterval]마다 자기 스레드에서 임대를 얻거나 늘린다. 스케줄러 스레드를 쓰지 않는 까닭: 분석 스윕이
  *   스레드를 오래 쥐면 갱신이 밀려 멀쩡한 리더가 임대를 놓친다.
- * - 리더라고 믿는 것은 마지막으로 임대를 얻거나 늘리기 **직전** 시각 + ttl − [SAFETY_MARGIN]까지다. 다른 서버는 키가 사라진 뒤에야
- *   얻으므로, 갱신이 끊기기만 해서는 두 서버가 동시에 리더라고 믿지 않는다.
- * - 예외: Redis 가 재시작해 키가 통째로 사라지면(영속화 끔) 다른 서버가 바로 얻고, 옛 리더는 다음 갱신까지 믿는다 — 최대
- *   [ClusterLeaderProperties.renewInterval] 동안 리더가 둘이다(dev A-2r 실측 3초). 그래서 주기 작업은 중복 방지를 리더 하나에 기대지
- *   않고 DB(조건부 UPDATE·SKIP LOCKED·행 잠금)나 멱등으로 지킨다(#313 ADR-0002 §7).
- * - Redis 가 안 되면 리더를 새로 못 정한다 — 주기 작업이 멈췄다가 Redis 가 돌아오면 이어진다(ADR-0002가 감수한 것). 사용자 요청은
- *   이 클래스와 무관하다.
+ * - 리더라고 믿는 것은 마지막으로 임대를 얻거나 늘리기 **직전** 시각 + ttl − [SAFETY_MARGIN]까지다. 다른 서버는 임대가 끝나거나
+ *   반납된 뒤에야 얻으므로, 갱신이 끊기기만 해서는 두 서버가 동시에 리더라고 믿지 않는다.
+ * - 그래도 주기 작업은 중복 방지를 리더 하나에 기대지 않고 DB(조건부 UPDATE·SKIP LOCKED·행 잠금)나 멱등으로 지킨다(#313 ADR-0002 §7).
+ * - 임대를 두는 곳이 안 되면 리더를 새로 못 정한다 — 주기 작업이 멈췄다가 돌아오면 이어진다. 사용자 요청은 이 클래스와 무관하다.
  * - 내려갈 때 임대를 돌려준다 — 배포 때 다음 서버가 ttl 을 기다리지 않고 바로 이어받는다.
  */
 @Component
 @ConditionalOnProperty(prefix = "app.cluster.leader", name = ["enabled"], havingValue = "true")
-class RedisSchedulerLeadership(
-    private val redis: StringRedisTemplate,
+class LeasedSchedulerLeadership(
+    private val store: LeaderLeaseStore,
     private val properties: ClusterLeaderProperties,
     private val events: ApplicationEventPublisher,
     private val clock: Clock,
@@ -41,7 +37,7 @@ class RedisSchedulerLeadership(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    /** 이 서버의 임대 표식. 키 값이 이것과 같을 때만 늘리고 돌려준다 — 남의 임대를 늘리거나 지우지 않게. */
+    /** 이 서버의 임대 표식. 임대 주인이 이것일 때만 늘리고 돌려준다 — 남의 임대를 늘리거나 지우지 않게. */
     private val token = "${System.getenv(HOSTNAME_ENV) ?: UNKNOWN_HOST}-${UUID.randomUUID()}"
 
     /** 이 시각 전까지 리더라고 믿는다. */
@@ -55,34 +51,6 @@ class RedisSchedulerLeadership(
     private var stopping = false
 
     companion object {
-        /** 내 임대면 늘리고, 빈 키면 얻는다. 남의 임대면 0. 읽고 쓰는 사이에 다른 서버가 끼지 않게 한 스크립트로 한다. */
-        private val CLAIM = DefaultRedisScript(
-            """
-            local holder = redis.call('get', KEYS[1])
-            if holder == ARGV[1] then
-              redis.call('pexpire', KEYS[1], ARGV[2])
-              return 1
-            end
-            if not holder then
-              redis.call('set', KEYS[1], ARGV[1], 'PX', ARGV[2])
-              return 1
-            end
-            return 0
-            """.trimIndent(),
-            Long::class.java,
-        )
-
-        /** 내 임대일 때만 지운다. */
-        private val RELEASE = DefaultRedisScript(
-            """
-            if redis.call('get', KEYS[1]) == ARGV[1] then
-              return redis.call('del', KEYS[1])
-            end
-            return 0
-            """.trimIndent(),
-            Long::class.java,
-        )
-
         /** 임대가 끝나기 이만큼 전부터 리더가 아니라고 본다 — 갱신 왕복·시계 어긋남 몫. */
         private val SAFETY_MARGIN: Duration = Duration.ofSeconds(2)
 
@@ -100,7 +68,7 @@ class RedisSchedulerLeadership(
         executor = Executors.newSingleThreadScheduledExecutor { task -> Thread(task, THREAD_NAME).apply { isDaemon = true } }.apply {
             scheduleWithFixedDelay(::tick, 0, properties.renewInterval.toMillis(), TimeUnit.MILLISECONDS)
         }
-        log.info("event=leader.started token={} ttl={} renew={}", token, properties.ttl, properties.renewInterval)
+        log.info("event=leader.started token={} store={} ttl={} renew={}", token, properties.store, properties.ttl, properties.renewInterval)
     }
 
     /**
@@ -127,7 +95,7 @@ class RedisSchedulerLeadership(
         val held = try {
             claim()
         } catch (e: RuntimeException) {
-            // 지금까지의 임대 시각은 그대로 둔다 — 그 안이면 키는 아직 내 것이고, 지나면 isLeader 가 스스로 거짓이 된다.
+            // 지금까지의 임대 시각은 그대로 둔다 — 그 안이면 임대는 아직 내 것이고, 지나면 isLeader 가 스스로 거짓이 된다.
             log.warn("event=leader.unreachable was_leader={} error={} — 다음 갱신에서 다시 본다", wasLeader, e.toString())
             return
         }
@@ -146,15 +114,14 @@ class RedisSchedulerLeadership(
         }
     }
 
-    private fun claim(): Boolean =
-        redis.execute(CLAIM, listOf(properties.key), token, properties.ttl.toMillis().toString()) == 1L
+    private fun claim(): Boolean = store.claim(token, properties.ttl)
 
     private fun release() {
         val wasLeader = isLeader()
         leaderUntil = Instant.MIN
         if (!wasLeader) return
         try {
-            redis.execute(RELEASE, listOf(properties.key), token)
+            store.release(token)
             log.info("event=leader.released token={}", token)
         } catch (e: RuntimeException) {
             log.warn("event=leader.release_failed — ttl 뒤 다른 서버가 이어받는다", e)
