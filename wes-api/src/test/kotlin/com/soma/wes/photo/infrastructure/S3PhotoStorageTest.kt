@@ -1,8 +1,6 @@
 package com.soma.wes.photo.infrastructure
 
-import com.soma.wes.global.cache.DisabledSharedCache
 import com.soma.wes.photo.config.StorageProperties
-import com.soma.wes.photo.config.ViewUrlCacheProperties
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
 import org.assertj.core.api.Assertions.assertThat
@@ -30,7 +28,6 @@ import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignReques
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest
 import java.net.URI
-import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.util.function.Consumer
@@ -43,13 +40,6 @@ class S3PhotoStorageTest {
         s3Client = s3Client,
         s3Presigner = s3Presigner,
         properties = properties(),
-        viewUrlCache = viewUrlCache(enabled = false),
-    )
-
-    private fun viewUrlCache(enabled: Boolean) = ViewUrlCache(
-        properties = ViewUrlCacheProperties(enabled = enabled),
-        sharedCache = DisabledSharedCache(),
-        clock = Clock.systemUTC(),
     )
 
     private fun properties() = StorageProperties(
@@ -92,38 +82,21 @@ class S3PhotoStorageTest {
             }
         }
 
-        private fun storageWith(presigner: S3Presigner, cacheEnabled: Boolean) = S3PhotoStorage(
+        private fun storageWith(presigner: S3Presigner) = S3PhotoStorage(
             s3Client = s3Client,
             s3Presigner = presigner,
             properties = properties(),
-            viewUrlCache = viewUrlCache(enabled = cacheEnabled),
         )
 
         @Test
-        fun `캐시가 켜져 있으면 같은 사진은 한 번만 서명하고 수명을 창만큼 늘린다`() {
+        fun `요청마다 15분으로 서명한다`() {
             // given
             val presigner = signingPresigner()
-            val cached = storageWith(presigner, cacheEnabled = true)
+            val signing = storageWith(presigner)
 
             // when
-            val first = cached.presignView("previews/galleries/1/a.jpg")
-            val second = cached.presignView("previews/galleries/1/a.jpg")
-
-            // then
-            assertThat(second).isEqualTo(first)
-            assertThat(first).contains("X-Amz-Expires=1500")
-            verify(presigner, times(1)).presignGetObject(any<GetObjectPresignRequest>())
-        }
-
-        @Test
-        fun `캐시가 꺼져 있으면 지금처럼 매번 15분으로 서명한다`() {
-            // given
-            val presigner = signingPresigner()
-            val uncached = storageWith(presigner, cacheEnabled = false)
-
-            // when
-            val first = uncached.presignView("previews/galleries/1/a.jpg")
-            uncached.presignView("previews/galleries/1/a.jpg")
+            val first = signing.presignView("previews/galleries/1/a.jpg")
+            signing.presignView("previews/galleries/1/a.jpg")
 
             // then
             assertThat(first).contains("X-Amz-Expires=900")
@@ -131,14 +104,14 @@ class S3PhotoStorageTest {
         }
 
         @Test
-        fun `원본 서명은 캐시하지 않는다`() {
+        fun `원본은 1시간으로 요청마다 서명한다`() {
             // given
             val presigner = signingPresigner()
-            val cached = storageWith(presigner, cacheEnabled = true)
+            val signing = storageWith(presigner)
 
             // when
-            val first = cached.presignOriginal("galleries/1/a.jpg")
-            cached.presignOriginal("galleries/1/a.jpg")
+            val first = signing.presignOriginal("galleries/1/a.jpg")
+            signing.presignOriginal("galleries/1/a.jpg")
 
             // then
             assertThat(first).contains("X-Amz-Expires=3600")
