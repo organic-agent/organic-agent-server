@@ -28,6 +28,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import java.time.Clock
 import java.time.ZonedDateTime
+import java.time.temporal.ChronoUnit
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -109,7 +110,8 @@ class AdminCouponServiceTest @Autowired constructor(
         fun `코드 문자열 정책 마감일을 지정하고 전체 지정 코드로 검색한다`() {
             // given
             val admin = admins.관리자("custom-coupon")
-            val deadline = ZonedDateTime.now(clock).plusDays(7)
+            // DB는 마이크로초로 반올림해 저장한다 — 나노초가 남은 시각을 넣으면 1μs 차이로 가끔 어긋난다
+            val deadline = ZonedDateTime.now(clock).plusDays(7).truncatedTo(ChronoUnit.MICROS)
 
             // when
             val issued = target.issue(admin.requiredId, IssueProCouponRequest(
@@ -123,7 +125,7 @@ class AdminCouponServiceTest @Autowired constructor(
                 softly.assertThat(issued.code).isEqualTo("PARTNER_2026")
                 softly.assertThat(detail.customCode).isEqualTo(issued.code)
                 softly.assertThat(detail.usagePolicy).isEqualTo(CouponUsagePolicy.ONCE_PER_ACCOUNT)
-                softly.assertThat(detail.redeemUntil?.toInstant()).isEqualTo(deadline.withNano(deadline.nano / 1000 * 1000).toInstant())
+                softly.assertThat(detail.redeemUntil?.toInstant()).isEqualTo(deadline.toInstant())
                 softly.assertThat(detail.useCount).isZero()
                 softly.assertThat(searched.contents.map { it.couponId }).containsExactly(issued.couponId)
             }
