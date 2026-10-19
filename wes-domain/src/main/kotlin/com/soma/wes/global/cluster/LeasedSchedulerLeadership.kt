@@ -15,8 +15,7 @@ import org.springframework.context.SmartLifecycle
 import org.springframework.stereotype.Component
 
 /**
- * 임대 하나를 쥔 서버가 주기 작업 리더다(#313 ADR-0002). 임대를 어디에 두는지는 [LeaderLeaseStore]가 정한다 — Redis(#313) 또는
- * Postgres 행(#336 ADR-0002, `app.cluster.leader.store`).
+ * 임대 하나를 쥔 서버가 주기 작업 리더다(#313 ADR-0002). 임대는 [LeaderLeaseStore] — Postgres 행 하나(#336 ADR-0002)에 둔다.
  *
  * - [ClusterLeaderProperties.renewInterval]마다 자기 스레드에서 임대를 얻거나 늘린다. 스케줄러 스레드를 쓰지 않는 까닭: 분석 스윕이
  *   스레드를 오래 쥐면 갱신이 밀려 멀쩡한 리더가 임대를 놓친다.
@@ -75,7 +74,7 @@ class LeasedSchedulerLeadership(
         executor = Executors.newSingleThreadScheduledExecutor { task -> Thread(task, THREAD_NAME).apply { isDaemon = true } }.apply {
             scheduleWithFixedDelay(::tick, 0, properties.renewInterval.toMillis(), TimeUnit.MILLISECONDS)
         }
-        log.info("event=leader.started token={} store={} ttl={} renew={}", token, properties.store, properties.ttl, properties.renewInterval)
+        log.info("event=leader.started token={} ttl={} renew={}", token, properties.ttl, properties.renewInterval)
     }
 
     /**

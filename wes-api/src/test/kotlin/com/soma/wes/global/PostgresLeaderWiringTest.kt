@@ -14,13 +14,12 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 
 /**
- * 리더 임대를 Postgres 로 고르면(#336 ADR-0002) 앱이 임대 행 저장소를 꽂고, 혼자 뜬 서버는 첫 갱신에서 리더가 된다. Redis 없이 뜬다.
+ * 리더 정하기를 켜면(#336 ADR-0002) 앱이 임대 행 저장소를 꽂고, 혼자 뜬 서버는 첫 갱신에서 리더가 된다.
  * 규칙은 `PostgresLeaderLeaseTest`가 본다 — 여기는 설정·자동 구성이 이어지는지만.
  */
 @SpringBootTest(
     properties = [
         "app.cluster.leader.enabled=true",
-        "app.cluster.leader.store=postgres",
         "app.cluster.leader.key=test:wiring-leader",
     ],
 )
