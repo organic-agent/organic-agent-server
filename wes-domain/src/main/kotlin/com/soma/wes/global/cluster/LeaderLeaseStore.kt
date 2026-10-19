@@ -5,7 +5,8 @@ import java.time.Duration
 /**
  * 리더 임대를 두는 곳(#336 ADR-0002). [LeasedSchedulerLeadership]이 갱신 주기·리더라고 믿는 시간·반납을 맡고, 이것은 한 번의 얻기와 반납만 한다.
  *
- * 전환 기간에는 `app.cluster.leader.store`로 Redis와 Postgres 중 하나를 고른다. Redis 쪽은 B4에서 지운다.
+ * 구현은 Postgres 행 하나([PostgresLeaderLeaseStore])다. Redis(ElastiCache) 구현은 전환을 마치고 지웠다(#336 B4) — 나눠 둔 덕에 리더 생애
+ * 테스트가 닿지 않는 저장소를 흉내 낼 수 있다.
  */
 interface LeaderLeaseStore {
 

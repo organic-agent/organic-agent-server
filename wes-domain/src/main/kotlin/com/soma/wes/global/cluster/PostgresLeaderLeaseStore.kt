@@ -3,7 +3,7 @@ package com.soma.wes.global.cluster
 import com.soma.wes.global.config.AnalysisPoolRoute
 import com.soma.wes.global.config.ClusterLeaderProperties
 import java.time.Duration
-import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Component
 
@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component
  * - 연결은 분석 풀에서 꺼낸다. 사용자 요청이 몰려 사용자 풀이 차도 갱신이 밀려 멀쩡한 리더가 임대를 놓치지 않게(#286 (a)).
  */
 @Component
-@ConditionalOnExpression("\${app.cluster.leader.enabled:false} and '\${app.cluster.leader.store:redis}'.equalsIgnoreCase('postgres')")
+@ConditionalOnProperty(prefix = "app.cluster.leader", name = ["enabled"], havingValue = "true")
 class PostgresLeaderLeaseStore(
     private val jdbcClient: JdbcClient,
     private val properties: ClusterLeaderProperties,
