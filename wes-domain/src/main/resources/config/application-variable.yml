@@ -237,9 +237,11 @@ app:
     base-url: "http://localhost:3000/collab"
   cluster:
     # 주기 작업(@Scheduled)을 여러 서버 중 한 대(리더)만 돌린다(#313 ADR-0002). 꺼져 있으면 모든 서버가 스스로를 리더로 보고
-    # 오늘처럼 돈다 — 서버가 한 대일 때·로컬·테스트의 기본값. 켜면 spring.data.redis.* 로 붙는 Redis 에 임대 키를 둔다.
+    # 오늘처럼 돈다 — 서버가 한 대일 때·로컬·테스트의 기본값. 켜면 store 가 정한 곳에 임대를 둔다:
+    # redis = spring.data.redis.* 로 붙는 Redis 키(#313) · postgres = scheduler_leader_lease 행(#336 ADR-0002, V45).
     leader:
       enabled: false
+      store: redis
       key: "wes:scheduler-leader"
       # 리더가 죽으면 이 시간 뒤 다른 서버가 이어받는다. 갱신은 renew-interval 마다 — ttl 안에 두 번 넘게 실패해야 놓친다.
       ttl: PT30S
