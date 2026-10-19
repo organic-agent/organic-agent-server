@@ -44,6 +44,13 @@ class LeasedSchedulerLeadership(
     @Volatile
     private var leaderUntil: Instant = Instant.MIN
 
+    /**
+     * 얻었다고 알린 뒤 아직 끝났다고 알리지 않았다. 임대를 두는 곳에 닿지 못해 [leaderUntil]이 저절로 지나면 [tick]의 잃음 분기를 타지
+     * 않아, 이것 없이는 마지막 로그가 `leader.acquired`로 남는다 — 10-19 RDS 복구 뒤 두 서버 모두 리더처럼 보였다(#336 08 F6).
+     */
+    @Volatile
+    private var announced = false
+
     private var executor: ScheduledExecutorService? = null
 
     /** 내려가는 중이다. 이미 돌던 갱신이 반납 뒤에 임대를 다시 얻지 않게 한다. */
@@ -92,6 +99,10 @@ class LeasedSchedulerLeadership(
         if (stopping) return
         val attemptedAt = clock.instant()
         val wasLeader = isLeader()
+        if (announced && !wasLeader) {
+            log.warn("event=leader.expired token={} — 갱신하지 못한 채 임대 시각이 지났다", token)
+            announced = false
+        }
         val held = try {
             claim()
         } catch (e: RuntimeException) {
@@ -103,12 +114,14 @@ class LeasedSchedulerLeadership(
         if (!held) {
             if (wasLeader) log.warn("event=leader.lost token={}", token)
             leaderUntil = Instant.MIN
+            announced = false
             return
         }
 
         if (stopping) return
         leaderUntil = attemptedAt.plus(properties.ttl).minus(SAFETY_MARGIN)
         if (!wasLeader) {
+            announced = true
             log.info("event=leader.acquired token={}", token)
             events.publishEvent(SchedulerLeadershipAcquiredEvent())
         }
@@ -119,6 +132,7 @@ class LeasedSchedulerLeadership(
     private fun release() {
         val wasLeader = isLeader()
         leaderUntil = Instant.MIN
+        announced = false
         if (!wasLeader) return
         try {
             store.release(token)
