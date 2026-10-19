@@ -44,7 +44,6 @@ class PhotoViewAssembler(
      * 갤러리 목록 한 페이지(200장)는 서명하는 동안 연결을 쥐고 있으면 그만큼 다른 요청이 풀 앞에서 기다린다(#286 (b)).
      */
     fun toResponses(photos: List<Photo>, viewData: PhotoViewDataDto): List<PhotoResponse> {
-        prepareViewUrls(photos)
         return photos.map {
             PhotoResponse.of(
                 photo = it,
@@ -84,20 +83,9 @@ class PhotoViewAssembler(
      * 하객은 세션에 공유된 사진만 볼 수 있어서 갤러리 경로 전체를 여는 CDN 쿠키를 줄 수 없다 — 언제나 서명 URL이다(#336 03 Q2).
      */
     fun toAnonymousResponses(photos: List<Photo>): List<PhotoResponse> {
-        prepareViewUrls(photos, signedOnly = true)
         return photos.map { PhotoResponse.of(photo = it, viewUrl = signedViewUrlOf(it), score = null) }
     }
 
-    /**
-     * 목록의 서명할 보기 주소를 한 번에 준비시킨다 — 서버 여러 대가 함께 쓰는 캐시를 사진마다가 아니라 한 번 읽게(#313).
-     * CDN 고정 주소로 나갈 사진은 서명하지 않으니 뺀다.
-     */
-    private fun prepareViewUrls(photos: List<Photo>, signedOnly: Boolean = false) {
-        val keys = photos.filter { it.status != PhotoStatus.PENDING }
-            .map { it.viewKey }
-            .filter { signedOnly || !servedByCdn(it) }
-        photoStorage.prepareViews(keys)
-    }
 
     /**
      * 응답에 실은 주소 중 만료되는 것이 있는가 — 응답의 `viewUrlsExpire`(#336 계약). 웹은 true일 때만 만료 전에 목록을 다시 읽는다.

@@ -26,17 +26,14 @@ import com.soma.wes.gallery.service.GalleryService
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.gallery.support.GalleryInviteUrlResolver
 import com.soma.wes.global.SecureTokenGenerator
-import com.soma.wes.global.cache.DisabledSharedCache
 import com.soma.wes.global.config.SchedulingConfig
 import com.soma.wes.global.config.TimeConfig
 import com.soma.wes.global.config.WebMvcConfig
 import com.soma.wes.global.exception.GlobalExceptionHandler
 import com.soma.wes.photo.config.PreviewCdnProperties
 import com.soma.wes.photo.config.StorageProperties
-import com.soma.wes.photo.config.ViewUrlCacheProperties
 import com.soma.wes.photo.infrastructure.CloudFrontPreviewCdn
 import com.soma.wes.photo.infrastructure.S3PhotoStorage
-import com.soma.wes.photo.infrastructure.ViewUrlCache
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.photo.service.PhotoService
 import com.soma.wes.photo.support.PhotoViewAssembler
@@ -72,7 +69,6 @@ import org.springframework.context.annotation.Import
     AdminObservabilityProperties::class,
     AdminWorkflowExecutorProperties::class,
     StorageProperties::class,
-    ViewUrlCacheProperties::class,
     PreviewCdnProperties::class,
     FolderProperties::class,
     TrashProperties::class,
@@ -95,9 +91,7 @@ import org.springframework.context.annotation.Import
     CustomAccessDeniedHandler::class,
     SecureTokenGenerator::class,
     S3PhotoStorage::class,
-    ViewUrlCache::class,
     // 관리자 앱은 서명 URL 캐시를 켜지 않는다 — 서버 간 공유 층도 늘 꺼진 구현(#313).
-    DisabledSharedCache::class,
     // 관리자 앱은 미리보기 CDN을 켜지 않는다 — 조립자가 기대므로 꺼진 채로 둔다(#336). 요청 필터는 없어도 서명 URL로 간다.
     CloudFrontPreviewCdn::class,
     PreviewDelivery::class,

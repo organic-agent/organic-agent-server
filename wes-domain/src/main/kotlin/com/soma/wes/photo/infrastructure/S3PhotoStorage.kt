@@ -28,7 +28,6 @@ class S3PhotoStorage(
     private val s3Client: S3Client,
     private val s3Presigner: S3Presigner,
     private val properties: StorageProperties,
-    private val viewUrlCache: ViewUrlCache,
 ) : PhotoStorage {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -76,18 +75,10 @@ class S3PhotoStorage(
     }
 
     /**
-     * 목록·셀렉·보정 화면이 사진마다 부르는 서명이라 가장 많이 불린다. 캐시가 켜져 있으면 같은 사진은 창(10분) 동안 다시 서명하지
-     * 않고, 그 대신 창 끝에 받은 사람도 [StorageProperties.viewUrlTtl]만큼 쓰도록 수명을 창만큼 늘려 서명한다(ADR 0004).
+     * 부부·작가의 미리보기는 CDN 고정 주소라 여기를 지나지 않는다(#336). 남은 손님은 하객 · 미리보기가 아직 없는 사진 · 보정 결과 ·
+     * 휴지통 · `preview=signed`로 물러난 탭이라 요청마다 그때그때 서명한다(서명 URL 캐시는 ADR-0002로 걷어냄).
      */
-    override fun presignView(key: String): String {
-        if (!viewUrlCache.enabled) return presignGet(key, properties.viewUrlTtl)
-
-        return viewUrlCache.get(key) { presignGet(key, properties.viewUrlTtl.plus(viewUrlCache.reuseWindow)) }
-    }
-
-    override fun prepareViews(keys: Collection<String>) {
-        if (viewUrlCache.enabled) viewUrlCache.prefetch(keys)
-    }
+    override fun presignView(key: String): String = presignGet(key, properties.viewUrlTtl)
 
     override fun presignOriginal(key: String): String = presignGet(key, properties.originalUrlTtl)
 
