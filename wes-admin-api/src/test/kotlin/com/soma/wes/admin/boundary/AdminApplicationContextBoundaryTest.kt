@@ -46,7 +46,9 @@ import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.service.PhotoService
 import com.soma.wes.photo.support.PhotoViewAssembler
+import com.soma.wes.analysis.support.AnalysisJobEventListener
 import com.soma.wes.analysis.support.AnalysisJobEventRecorder
+import com.soma.wes.analysis.support.AnalysisJobEventWriter
 import com.soma.wes.analysis.support.ConceptAssignmentLoader
 import com.soma.wes.retouch.repository.RetouchRoundRepository
 import com.soma.wes.retouch.service.RetouchService
@@ -150,6 +152,8 @@ class AdminApplicationContextBoundaryTest @Autowired constructor(
             FolderViewAssembler::class.java,
             ConceptAssignmentLoader::class.java,
             AnalysisJobEventRecorder::class.java,
+            AnalysisJobEventListener::class.java,
+            AnalysisJobEventWriter::class.java,
             // [REFACTOR-SUPPORT 2026-09-27] folder/service/AiFolderMaterializeService → folder/support/AiFolderMaterializer
             AiFolderMaterializer::class.java,
         )
