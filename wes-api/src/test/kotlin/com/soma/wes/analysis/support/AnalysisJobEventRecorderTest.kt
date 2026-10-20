@@ -1,5 +1,6 @@
 package com.soma.wes.analysis.support
 
+import com.soma.wes.analysis.domain.AnalysisJobEvent
 import com.soma.wes.analysis.domain.AnalysisJobEventType
 import com.soma.wes.analysis.repository.AnalysisJobEventRepository
 import com.soma.wes.analysis.service.AnalysisPipelineService
@@ -19,6 +20,9 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.transaction.support.TransactionTemplate
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * 분석 잡의 이력 — 잡이 단계를 넘을 때마다 `analysis_job_events` 에 한 줄씩 남는다. 로그(`job.*`)와 같은 지점이고,
@@ -29,6 +33,7 @@ class AnalysisJobEventRecorderTest @Autowired constructor(
     private val pipeline: AnalysisPipelineService,
     private val analysisService: AnalysisService,
     private val eventRecorder: AnalysisJobEventRecorder,
+    private val eventListener: AnalysisJobEventListener,
     private val eventRepository: AnalysisJobEventRepository,
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
@@ -41,6 +46,12 @@ class AnalysisJobEventRecorderTest @Autowired constructor(
     companion object {
         /** 없는 잡 번호 — 이 번호로 이력을 남기면 FK 위반으로 실패한다. */
         private const val MISSING_JOB_ID = -1L
+
+        /** 테스트 사용자 풀(10)보다 많게. */
+        private const val CROWD = 12
+
+        /** 연결 대기 시간(30초)보다 한참 짧게 — 서로 막으면 여기서 시간 초과로 실패한다. */
+        private const val CROWD_DEADLINE_SECONDS = 10L
     }
 
     private lateinit var fixture: OpenGallery
@@ -58,7 +69,13 @@ class AnalysisJobEventRecorderTest @Autowired constructor(
         return jobId to photos
     }
 
-    private fun typesOf(jobId: Long) = eventRepository.findAllByJobIdOrderByIdAsc(jobId).map { it.type }
+    /** 이력은 커밋 뒤 이력 스레드가 쓴다 — 넘긴 것이 다 쓰인 뒤에 읽는다. */
+    private fun eventsOf(jobId: Long): List<AnalysisJobEvent> {
+        eventListener.awaitIdle()
+        return eventRepository.findAllByJobIdOrderByIdAsc(jobId)
+    }
+
+    private fun typesOf(jobId: Long) = eventsOf(jobId).map { it.type }
 
     @Nested
     @DisplayName("잡이 끝까지 갈 때")
@@ -76,7 +93,7 @@ class AnalysisJobEventRecorderTest @Autowired constructor(
             pipeline.advance()
 
             // then
-            val events = eventRepository.findAllByJobIdOrderByIdAsc(jobId)
+            val events = eventsOf(jobId)
             val detailByType = events.associate { it.type to it.detail.orEmpty() }
             assertSoftly { softly ->
                 softly.assertThat(events.map { it.type }).containsExactly(
@@ -101,7 +118,7 @@ class AnalysisJobEventRecorderTest @Autowired constructor(
             val (jobId, _) = scoredJob(conceptCount = null)
 
             // then
-            val created = eventRepository.findAllByJobIdOrderByIdAsc(jobId).single()
+            val created = eventsOf(jobId).single()
             assertThat(created.detail.orEmpty()).containsKey("expected").doesNotContainKey("conceptCount")
         }
     }
@@ -140,7 +157,7 @@ class AnalysisJobEventRecorderTest @Autowired constructor(
             pipeline.advance()
 
             // then
-            val failed = eventRepository.findAllByJobIdOrderByIdAsc(jobId).last()
+            val failed = eventsOf(jobId).last()
             assertSoftly { softly ->
                 softly.assertThat(failed.type).isEqualTo(AnalysisJobEventType.FAILED)
                 softly.assertThat(failed.detail.orEmpty())
@@ -173,6 +190,7 @@ class AnalysisJobEventRecorderTest @Autowired constructor(
             eventRecorder.recordForActiveJob(fixture.galleryId, AnalysisJobEventType.SCORE_FALLBACK, mapOf("photos" to 3))
 
             // then
+            eventListener.awaitIdle()
             assertThat(eventRepository.findAll().filter { it.galleryId == fixture.galleryId }).isEmpty()
         }
     }
@@ -200,7 +218,7 @@ class AnalysisJobEventRecorderTest @Autowired constructor(
             val attempts = jdbcTemplate.queryForObject("SELECT attempts FROM analysis_jobs WHERE id = ?", Int::class.java, jobId)
             assertSoftly { softly ->
                 softly.assertThat(attempts).isEqualTo(7)
-                softly.assertThat(eventRepository.findAllByJobIdOrderByIdAsc(MISSING_JOB_ID)).isEmpty()
+                softly.assertThat(eventsOf(MISSING_JOB_ID)).isEmpty()
             }
         }
 
@@ -241,13 +259,48 @@ class AnalysisJobEventRecorderTest @Autowired constructor(
         }
     }
 
+    /**
+     * 10-20 dev: 한 서버에 "AI 분석" 요청이 사용자 풀 크기만큼 몰리자, 요청마다 첫 연결을 쥔 채 이력용 연결을 하나 더 기다려
+     * 풀이 연결 대기 시간(30초) 동안 멈췄다(#346). 이력 기록이 요청 스레드의 연결을 늘리지 않아야 한다.
+     */
+    @Nested
+    @DisplayName("요청이 연결 풀 크기보다 많이 몰릴 때")
+    inner class Crowded {
+
+        @Test
+        fun `분석 요청이 서로 막지 않고 끝나고 이력도 남는다`() {
+            // given — 사용자 풀(테스트 기본 10)보다 많은 갤러리
+            val galleries = List(CROWD) { galleryFixture.멤버와_열린_갤러리() }
+                .onEach { photoFixture.임베딩된_사진(it.galleryId, count = 1) }
+            val start = CountDownLatch(1)
+            val pool = Executors.newFixedThreadPool(CROWD)
+
+            // when — 한꺼번에 요청한다
+            val jobIds = try {
+                val futures = galleries.map { gallery ->
+                    pool.submit<Long> {
+                        start.await()
+                        analysisService.request(gallery.galleryId, gallery.photographer.requiredId).jobId
+                    }
+                }
+                start.countDown()
+                futures.map { it.get(CROWD_DEADLINE_SECONDS, TimeUnit.SECONDS) }
+            } finally {
+                pool.shutdownNow()
+            }
+
+            // then — 연결 대기 시간(30초)을 기다리지 않고 끝났고, 잡마다 생성 이력이 있다
+            assertThat(jobIds.map { typesOf(it) }).allSatisfy { assertThat(it).containsExactly(AnalysisJobEventType.CREATED) }
+        }
+    }
+
     @Test
     fun `트랜잭션 밖에서 기록이 실패해도 예외가 올라오지 않는다`() {
         // when
         eventRecorder.record(MISSING_JOB_ID, fixture.galleryId, AnalysisJobEventType.DONE)
 
         // then
-        assertThat(eventRepository.findAllByJobIdOrderByIdAsc(MISSING_JOB_ID)).isEmpty()
+        assertThat(eventsOf(MISSING_JOB_ID)).isEmpty()
     }
 
     @Test
@@ -260,6 +313,6 @@ class AnalysisJobEventRecorderTest @Autowired constructor(
         jdbcTemplate.update("DELETE FROM analysis_jobs WHERE id = ?", jobId)
 
         // then
-        assertThat(eventRepository.findAllByJobIdOrderByIdAsc(jobId)).isEmpty()
+        assertThat(eventsOf(jobId)).isEmpty()
     }
 }
