@@ -26,6 +26,7 @@ import com.soma.wes.gallery.service.GalleryService
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.gallery.support.GalleryInviteUrlResolver
 import com.soma.wes.global.SecureTokenGenerator
+import com.soma.wes.global.config.AnalysisPoolRoute
 import com.soma.wes.global.config.SchedulingConfig
 import com.soma.wes.global.config.TimeConfig
 import com.soma.wes.global.config.WebMvcConfig
@@ -39,7 +40,9 @@ import com.soma.wes.photo.service.PhotoService
 import com.soma.wes.photo.support.PhotoViewAssembler
 import com.soma.wes.photo.support.PreviewDelivery
 import com.soma.wes.notification.service.UserNotificationPublisher
+import com.soma.wes.analysis.support.AnalysisJobEventListener
 import com.soma.wes.analysis.support.AnalysisJobEventRecorder
+import com.soma.wes.analysis.support.AnalysisJobEventWriter
 import com.soma.wes.analysis.support.ConceptAssignmentLoader
 import com.soma.wes.retouch.service.RetouchService
 import com.soma.wes.retouch.service.RetouchRequestService
@@ -121,6 +124,10 @@ import org.springframework.context.annotation.Import
     FolderViewAssembler::class,
     ConceptAssignmentLoader::class,
     AnalysisJobEventRecorder::class,
+    // 이력은 커밋 뒤 이력 스레드가 쓴다(#346). 관리자 앱엔 분석 풀이 없어 풀 표시는 효과 없이 남는다.
+    AnalysisJobEventListener::class,
+    AnalysisJobEventWriter::class,
+    AnalysisPoolRoute::class,
     DetailFolderAssignmentBulkRepository::class,
     // [REFACTOR-SUPPORT 2026-09-27] folder/service/AiFolderMaterializeService → folder/support/AiFolderMaterializer
     AiFolderMaterializer::class,

@@ -9,6 +9,7 @@ import com.soma.wes.analysis.dto.AiFailureDto
 import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.repository.AnalysisJobEventRepository
 import com.soma.wes.analysis.repository.AnalysisJobRepository
+import com.soma.wes.analysis.support.AnalysisJobEventListener
 import com.soma.wes.analysis.support.EmbedStep
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
@@ -41,6 +42,7 @@ class AiFailureServiceTest @Autowired constructor(
     private val analysisService: AnalysisService,
     private val analysisJobRepository: AnalysisJobRepository,
     private val eventRepository: AnalysisJobEventRepository,
+    private val eventListener: AnalysisJobEventListener,
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
     private val aiTaskSender: FakeAiTaskSender,
@@ -66,7 +68,11 @@ class AiFailureServiceTest @Autowired constructor(
         failedAt = failedAt,
     )
 
-    private fun eventTypes(jobId: Long) = eventRepository.findAllByJobIdOrderByIdAsc(jobId).map { it.type }
+    /** 이력은 커밋 뒤 이력 스레드가 쓴다 — 넘긴 것이 다 쓰인 뒤에 읽는다. */
+    private fun eventTypes(jobId: Long): List<AnalysisJobEventType> {
+        eventListener.awaitIdle()
+        return eventRepository.findAllByJobIdOrderByIdAsc(jobId).map { it.type }
+    }
 
     private fun job(jobId: Long): AnalysisJob = analysisJobRepository.findById(jobId).orElseThrow()
 
