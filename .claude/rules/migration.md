@@ -68,6 +68,10 @@ paths:
   (백분위까지 채워짐)로 판단한다(#274 2물결). DB 제약(V3 → V40): `ck_photo_analysis_scored`(pipeline_version ⇒ subjects·analyzed_at),
   `ck_photo_analysis_grouped`(그룹·연사 묶음은 함께), `ck_photo_analysis_ranked`(백분위 둘·순위는 함께, 있으면 그룹도). 배치가 쓰는 컬럼 묶음을
   바꾸면 이 제약들도 같이 본다.
+- `photo_labels`(V46, #348)는 사진마다 닫힌 어휘 라벨과 점수(`label`·`score`·`source`·`labeled_at`, PK `(photo_id, label)`)다 — score 워커(`photoselect`)가
+  1단계 옆에서 라벨 9개 점수를 전부 쓰고(임계값 미달 포함) relabel 때 그 갤러리·source 행을 지우고 다시 쓰며, 이 서버는 읽기만 한다(엔티티 없음, native 조회).
+  "라벨이 붙었다" = `score >= 임계값(label)`이고 라벨 코드·임계값은 두 레포의 코드 상수다(`AgentLabel` · AI `score/labels.py`) — 어휘를 늘려도 마이그레이션이 없다.
+  photoselect GRANT 계약은 V46 블록이 V23 블록을 통째로 대체한다(`SELECT, INSERT, UPDATE, DELETE ON photo_labels` 추가).
 - `ai_selection_jobs`·`ai_recommendations`는 2026-09-04부터 이 서버가 쓴다(추천 실행기 `AiSelectionJobRunner`).
   AI repo는 더 이상 이 테이블을 쓰지 않는다. 비교샷 테이블 `ai_pair_verdicts`는 기능과 함께 V22에서 지웠다 —
   photoselect GRANT 계약도 V22 블록이 V16 블록을 통째로 대체한다.
