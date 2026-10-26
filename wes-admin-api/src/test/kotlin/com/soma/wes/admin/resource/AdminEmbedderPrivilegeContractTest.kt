@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.core.io.ClassPathResource
 
-/** 마이그레이션의 GRANT 계약(V15 embedder, V23 photoselect)이 Lambda의 실제 SQL을 실행할 수 있는지 검증한다. */
+/** 마이그레이션의 GRANT 계약(V15 embedder, V46 photoselect)이 Lambda·GPU 워커의 실제 SQL을 실행할 수 있는지 검증한다. */
 @IntegrationTest
 class AdminEmbedderPrivilegeContractTest @Autowired constructor(
     private val dataSource: DataSource,
@@ -54,16 +54,19 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
                             has_table_privilege('photoselect', 'public.photo_analysis', 'INSERT'),
                             has_column_privilege('photoselect', 'public.analysis_jobs', 'error', 'UPDATE'),
                             has_column_privilege('photoselect', 'public.analysis_jobs', 'status', 'UPDATE'),
-                            has_table_privilege('photoselect', 'public.analysis_jobs', 'SELECT')
+                            has_table_privilege('photoselect', 'public.analysis_jobs', 'SELECT'),
+                            has_table_privilege('photoselect', 'public.photo_labels', 'INSERT'),
+                            has_table_privilege('photoselect', 'public.photo_labels', 'DELETE')
                         """.trimIndent(),
                     ).use { result ->
                         check(result.next())
                         check(result.getBoolean(1) && result.getBoolean(2) && result.getBoolean(3) && result.getBoolean(5))
                         check(!result.getBoolean(4)) { "photoselect 는 잡 상태를 쓰면 안 된다 — 잡을 닫는 것은 wes 다" }
+                        check(result.getBoolean(6) && result.getBoolean(7)) { "score 워커는 photo_labels 를 쓰고 relabel 때 지운다(#348 ADR-1)" }
                     }
                     statement.execute("SET ROLE photoselect")
                     try {
-                        statementsUsedByCategorize.forEach { sql -> statement.execute(sql) }
+                        (statementsUsedByCategorize + statementsUsedByScoreLabels).forEach { sql -> statement.execute(sql) }
                     } finally {
                         statement.execute("RESET ROLE")
                     }
@@ -79,9 +82,8 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
     /** V15 가 V1 의 embedder 블록을 통째로 대체한다 — V1 블록은 지금 스키마에 없는 컬럼을 가리켜 실행할 수 없다. */
     private fun embedderGrantBlock(): String = grantBlock("V15__pipeline_v2_photo_layer.sql", "EMBEDDER_GRANT_CONTRACT")
 
-    /** V23 이 V22 블록을 통째로 대체한다 — 용어집 이름(analysis_jobs·concept_assignments·detail_folder_assignments)으로 바뀌었다. */
-    // [GLOSSARY-2 2026-09-27] photoselect 계약 V22 → V23 (V22 블록은 옛 테이블 이름을 가리킨다)
-    private fun photoselectGrantBlock(): String = grantBlock("V23__glossary_names.sql", "PHOTOSELECT_GRANT_CONTRACT")
+    /** V46 이 V23 블록을 통째로 대체한다 — photo_labels(#348) 권한이 더해졌다. V23 은 V22 를(용어집 이름), V22 는 V16 을 대체했다. */
+    private fun photoselectGrantBlock(): String = grantBlock("V46__photo_labels.sql", "PHOTOSELECT_GRANT_CONTRACT")
 
     /** 마이그레이션 파일의 `-- {marker}_BEGIN` … `_END` 사이에 있는 DO 블록 하나를 꺼낸다. */
     private fun grantBlock(migrationFile: String, marker: String): String {
@@ -112,6 +114,25 @@ class AdminEmbedderPrivilegeContractTest @Autowired constructor(
             SET concept_name = EXCLUDED.concept_name, detail_name = EXCLUDED.detail_name,
                 confidence = EXCLUDED.confidence, assigned_by = EXCLUDED.assigned_by,
                 updated_at = now(), version = concept_assignments.version + 1
+            """.trimIndent(),
+        )
+        // AI repo score — 1단계가 사진마다 라벨 9개 점수를 UPSERT 하고, relabel 이 그 갤러리·source 행을 지우고 다시 쓴다(#348 ADR-1).
+        val statementsUsedByScoreLabels = listOf(
+            """
+            EXPLAIN INSERT INTO photo_labels (photo_id, label, score, source, labeled_at)
+            VALUES (-1, 'EYES_CLOSED', 0.05, 'CLIP', now())
+            ON CONFLICT (photo_id, label) DO UPDATE
+            SET score = EXCLUDED.score, source = EXCLUDED.source, labeled_at = EXCLUDED.labeled_at
+            """.trimIndent(),
+            """
+            EXPLAIN DELETE FROM photo_labels
+            WHERE source = 'CLIP' AND photo_id IN (SELECT id FROM photos WHERE gallery_id = -1)
+            """.trimIndent(),
+            """
+            EXPLAIN SELECT a.photo_id, a.clip_embedding
+            FROM photo_analysis a
+            JOIN photos p ON p.id = a.photo_id
+            WHERE p.gallery_id = -1 AND p.deleted_at IS NULL AND a.clip_embedding IS NOT NULL
             """.trimIndent(),
         )
         val statementsUsedByWorker = listOf(
