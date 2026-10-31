@@ -38,15 +38,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 임베딩과 인프라
 
-- **클라이언트의 이미지 업로드·다운로드는 이 서버를 지나지 않는다.** 서버는 presigned S3 URL만
+- **클라이언트의 이미지 업로드·다운로드는 이 서버를 지나지 않는다.** <!-- CT-10 --> 서버는 presigned S3 URL만
   발급하고 브라우저가 직접 올리고 받는다. 대용량 원본이 서버 메모리·대역폭을 먹지 않게 하려는
   원칙이지, 서버가 S3를 읽지 말라는 뜻이 아니다 — AI 호출(Bedrock 이미지 블록 등)을 위해
   미리보기(`previews/`) 몇 장을 읽는 것은 무방하다. 임베딩·프리뷰·EXIF·분석 점수처럼 모델이
-  사진을 봐야 하는 일은 사진 50장 배치 단위로(`InvocationType.EVENT`) 호출되는 Lambda·GPU 워커의 일이다 —
+  사진을 봐야 하는 일은 사진 50장 배치 단위로(`InvocationType.EVENT`) 호출되는 Lambda·GPU 워커의 일이다 <!-- INF-12 --> —
   사진당 호출은 없다.
 - 객체 키는 `galleries/{galleryId}/…`이고 미리보기는 `previews/` + 원본 키다. 환경은 키가 아니라
   버킷으로 갈린다 — prod는 운영 버킷, dev 서버는 `wes-dev-photos-*`(`/wes/dev/`), local 프로필은 인프라
-  `module.storage_local`의 로컬 버킷 `wes-local-photos-*`(`/wes/local/app.storage.bucket`). 키 조립은 `PhotoStorage.galleryPrefix`를 지난다.
+  `module.storage_local`의 로컬 버킷 `wes-local-photos-*`(`/wes/local/app.storage.bucket`). 키 조립은 `PhotoStorage.galleryPrefix`를 지난다. <!-- INF-11 -->
 - AI 실행기는 셋이다 — `embedder`(미리보기·DINOv3 벡터·EXIF, Lambda) → `score`(CLIP·미학·기술 점수·피사체, GPU 워커 또는
   Lambda 폴백) → `categorize`(백분위·연사·그룹 + Bedrock 이름·배정, Lambda). 코드는 sibling repo `../../organic-agent-ai`의
   최상위 디렉토리 하나 = 함수 하나(AI #35). **사진 한 장의 진행은 `photo_analysis` 행 하나가 말한다**(파이프라인 v2):
@@ -92,7 +92,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Flyway 마이그레이션 / 스키마 변경 → `migration.md`
 - 공통 컨벤션 (레이어 흐름, 예외, 객체 생성, 상수, 포맷팅, 네이밍, 주석) → `common.md`
 - Kotlin 관용구 (널 처리, 불변성, 컬렉션, scope function, 타입 설계) → `kotlin.md`
-- 계층별 컨벤션 → `controller.md`, `domain.md`, `dto.md`, `service.md`, `repository.md`,
+- 계층별 컨벤션 → `controller.md`, `entrypoint.md`(scheduler·listener 입구), `domain.md`, `dto.md`, `service.md`, `repository.md`,
   `infrastructure.md`, `support.md`
 - 테스트 작성 (통합 테스트 인프라, 픽스처, 단언) → `test.md`
 - 부하 측정 스크립트·회차 진행 (회차는 사용자가 실행, 출력은 `scripts/load/lib/report.sh`) → `load-test.md`

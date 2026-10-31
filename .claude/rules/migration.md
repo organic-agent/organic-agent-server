@@ -9,26 +9,26 @@ paths:
 
 ## Flyway가 스키마를 소유한다
 
-- `wes-api/src/main/resources/db/migration`이 스키마의 유일한 출처다. `ddl-auto`는 모든 프로파일에서
-  `validate` — 스타일 취향이 아니다. `photo_analysis.embedding`은 pgvector `vector(768)` 컬럼이고,
+- `wes-api/src/main/resources/db/migration`이 스키마의 유일한 출처다. <!-- MG-05 --> `ddl-auto`는 모든 프로파일에서
+  `validate` — 스타일 취향이 아니다(예외: DB 없이 관리자 앱의 빈 경계만 보는 경계 테스트는 `none`으로 덮는다). <!-- MG-01 --> `photo_analysis.embedding`은 pgvector `vector(768)` 컬럼이고,
   `CREATE EXTENSION vector`가 어떤 테이블보다 먼저 실행돼야 하는데 `ddl-auto`는 그걸 못 한다.
-- **엔티티·컬럼을 추가하면 마이그레이션을 함께 쓴다.** 예외 없다.
+- **엔티티·컬럼을 추가하면 마이그레이션을 함께 쓴다.** 예외 없다. <!-- MG-02 -->
 - prod는 V1으로 baseline되어 있다(Flyway보다 오래된 DB). V1은 빈 DB에서만 실행된다.
 
 ## 버전 번호
 
 - main 병합 시점 기준 최신 +1. **rebase 후에는 번호 충돌을 직접 확인하라** — 파일명이 다르면
-  git은 충돌로 잡지 못하고, Flyway가 기동에서 실패한다 (V17 trash / V17→V18 folder 전례).
+  git은 충돌로 잡지 못하고, Flyway가 기동에서 실패한다 (V17 trash / V17→V18 folder 전례). <!-- MG-03 -->
 
 ## Postgres는 pgvector다
 
 - 로컬(`docker-compose.local.yml`)과 Testcontainers 모두 `pgvector/pgvector:pg16`을 쓴다.
-  stock `postgres` 이미지가 아니다.
+  stock `postgres` 이미지가 아니다. <!-- MG-06 -->
 
 ## 세 곳이 일치해야 하는 값
 
 - `EMBEDDING_DIMENSION`: `PhotoAnalysis.EMBEDDING_DIMENSION` ↔ 마이그레이션의 `vector(n)` ↔
-  인프라 repo의 `embedding_dimension`(Lambda의 `EMBED_DIM`). 하나를 바꾸면 셋 다 바꾼다.
+  인프라 repo의 `embedding_dimension`(Lambda의 `EMBED_DIM`). 하나를 바꾸면 셋 다 바꾼다. <!-- MG-07 -->
 
 ## AI가 쓰는 테이블
 
@@ -79,10 +79,10 @@ paths:
   서버는 읽지 않았다(#240). 그 GRANT 블록(V14 `PREFERENCE_GRANT_CONTRACT`)도 테이블과 함께 의미를 잃었다.
 - **GRANT는 마이그레이션 안에 둔다.** Lambda 전용 role은 Terraform 밖의 수동 생성이라, 새 테이블의 GRANT는
   `IF EXISTS (SELECT 1 FROM pg_roles …)` DO 블록을 `-- {NAME}_GRANT_CONTRACT_BEGIN/END` 마커로 감싸
-  같은 마이그레이션에 넣는다(V15 embedder, V16 photoselect — V1 블록은 적용된 파일이라 고치지 않고 통째로 대체한다).
+  같은 마이그레이션에 넣는다(V15 embedder, V16 photoselect — V1 블록은 적용된 파일이라 고치지 않고 통째로 대체한다). <!-- MG-04 -->
   운영(role 있음)은 배포 시 Flyway가 걸고
   로컬·테스트(role 없음)는 건너뛴다. `AdminEmbedderPrivilegeContractTest`가 그 블록을 꺼내 Lambda의 실제 SQL을
-  role로 실행하므로 계약을 늘리면 거기에 SQL도 보탠다. identity 컬럼은 시퀀스 GRANT가 필요 없다.
+  role로 실행하므로 계약을 늘리면 거기에 SQL도 보탠다. <!-- MG-08 --> identity 컬럼은 시퀀스 GRANT가 필요 없다.
 
 ## 용어집 이름 (V23)
 
@@ -90,13 +90,13 @@ paths:
   `ai_concept_assignments`→`concept_assignments`(`parent_name`·`concept_name`→`concept_name`·`detail_name`),
   `ai_analysis_jobs`→`analysis_jobs`, `photo_category_assignments`→`detail_folder_assignments`, `photo_analysis.cluster_*`→`burst_*`,
   `model_version`→`pipeline_version`(`photo_analysis`·`preference_models`), `detail_folders.category`→`cut_type`,
-  `ai_selection_jobs.folder_set_job_id`→`analysis_job_id`. 이 문서의 앞 절들이 V1~V22를 설명할 때도 테이블은 지금 이름으로 적는다.
+  `ai_selection_jobs.folder_set_job_id`→`analysis_job_id`. 이 문서의 앞 절들이 V1~V22를 설명할 때도 테이블은 지금 이름으로 적는다. <!-- MG-s1 -->
 - 이름을 바꾸는 마이그레이션은 AI repo 배포와 같은 창에서 적용한다(분석 멈춤 → wes 배포 → AI 배포 → 재개). 제약·인덱스 이름은
   카탈로그를 조회해 바꾼다(V23의 DO 블록) — 이미 지운 제약이 섞인 목록을 손으로 적지 않는다.
 
 ## 새 테이블의 부수 작업
 
 - `scripts/reset-test-data.sh`의 `TRUNCATE` 목록에 추가한다. V9부터 FK가 있어서, 비우려는
-  테이블을 참조하는 테이블이 하나라도 빠지면 Postgres가 문장 전체를 거절한다.
+  테이블을 참조하는 테이블이 하나라도 빠지면 Postgres가 문장 전체를 거절한다. <!-- MG-09 -->
 - 소프트 삭제 대상 테이블을 native SQL로 읽는다면 `deleted_at IS NULL`을 직접 건다 —
-  `@SQLRestriction`은 JPA 경로만 지킨다 (rules/repository.md 참조).
+  `@SQLRestriction`은 JPA 경로만 지킨다 (rules/repository.md 참조). <!-- MG-10 -->

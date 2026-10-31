@@ -15,33 +15,33 @@ paths:
 - 요청 DTO를 받고 응답 DTO를 돌려준다. 엔티티는 서비스 밖(컨트롤러)으로 내보내지 않는다.
   서비스 ↔ 서비스/서포트 사이의 엔티티 전달은 트랜잭션 안이므로 허용
   (`GalleryAccessPolicy.requirePhotographer`가 `Gallery`를 반환).
-- 파라미터 순서: 경로 id들(부모 → 자식) → `userId` → `request`.
+- 파라미터 순서: 경로 id들(부모 → 자식) → `userId` → `request`. <!-- LY-11 -->
 
 ## 트랜잭션
 
-- **`@Transactional`은 메서드에만, 클래스에 절대 붙이지 않는다.** 클래스 레벨은 나중에 추가되는
+- **`@Transactional`은 메서드에만, 클래스에 절대 붙이지 않는다.** <!-- TX-01 --> 클래스 레벨은 나중에 추가되는
   메서드까지 조용히 등록해서, S3·Lambda·OAuth를 부르는 메서드가 커넥션을 문 채 네트워크를 기다리게
-  된다. 쓰기는 `@Transactional`, 읽기는 `@Transactional(readOnly = true)`, DB를 안 만지는 메서드는
-  무표기 (`EmbeddingService.run`이 일부러 비어 있는 이유).
+  된다. <!-- TX-05 --> 쓰기는 `@Transactional`, 읽기는 `@Transactional(readOnly = true)`, DB를 안 만지는 메서드는
+  무표기 (`EmbeddingService.run`이 일부러 비어 있는 이유). <!-- TX-04 -->
 - **같은 클래스 안에서 `@Transactional` 메서드를 호출하지 마라.** 프록시를 우회해 애노테이션이
   조용히 무시된다. 헬퍼는 private·무표기로 두어 호출자의 트랜잭션을 물려받게 하거나, 트랜잭션이
-  필요한 부분을 별도 빈으로 뺀다 (`OAuthLoginService` → `OAuthLoginProcessor` 전례).
+  필요한 부분을 별도 빈으로 뺀다 (`OAuthLoginService` → `OAuthLoginProcessor` 전례). <!-- TX-02 TX-03 -->
 
 ## 유스케이스의 뼈대
 
 1. **첫 줄은 인가.** 정책 클래스의 `require*`를 부른다. 어느 문이 맞는지는 "보는 것인가,
    고르는 것인가"로 정한다 — 순수 조회는 `requireViewer`, 선택 행위는 `requireCouple` 또는
-   `requirePhotographerOrCouple` (CLAUDE.md의 역할 정의 참조).
+   `requirePhotographerOrCouple` (CLAUDE.md의 역할 정의 참조). <!-- LY-12 -->
 2. **자원은 스코프째 찾는다.** `findByIdAndGalleryId`처럼 부모 id를 함께 걸어 찾고, 없으면
-   도메인 예외로 404를 던진다 (repository.md 참조). id만으로 찾은 뒤 소유자를 비교하지 않는다.
+   도메인 예외로 404를 던진다 (repository.md 참조). id만으로 찾은 뒤 소유자를 비교하지 않는다. <!-- LY-13 -->
 3. **스코프 불변식을 지키는 쓰기는 스코프의 행을 먼저 잠근다.** 부모 스코프 사진 중복은 부모 행
    (`lockGroup`), 선택 앨범 정원은 갤러리 행 (`findWithLockById`). 잠글 행은 "불변식의 단위가
-   되는, 반드시 존재하는 행"이다 — 아직 없을 수 있는 행은 뮤텍스가 못 된다.
+   되는, 반드시 존재하는 행"이다 — 아직 없을 수 있는 행은 뮤텍스가 못 된다. <!-- LY-14 -->
 4. **전부 아니면 거절.** 배치 요청에 잘못된 항목이 섞이면 맞는 것만 처리하지 말고 전체를
    거절한다 (중복 409, 남의 갤러리 사진 400). 부분 성공은 성공처럼 보이는데 무엇이 빠졌는지
-   아무도 말할 수 없다.
+   아무도 말할 수 없다. <!-- LY-15 -->
 5. **검증이 저장보다 먼저다.** 거절될 요청이 부산물(빈 컨셉 폴더, 이름 없는 세션)을 남기지 않게,
-   저장 전에 전부 검증한다 (`FolderService.movePhotos`, `CollabSessionService.open` 전례).
+   저장 전에 전부 검증한다 (`FolderService.movePhotos`, `CollabSessionService.open` 전례). <!-- LY-16 -->
 
 ## 예외
 
@@ -51,8 +51,8 @@ paths:
 
 ## 배치와 규모
 
-- id 목록을 받는 경로는 `maxBatchSize`류 상한을 확인한다.
-- 목록 응답 조립은 배치로 (support.md). 루프 안의 단건 조회·단건 조립은 리뷰에서 막는다.
+- id 목록을 받는 경로는 `maxBatchSize`류 상한을 확인한다. <!-- LY-17 -->
+- 목록 응답 조립은 배치로 (support.md). 루프 안의 단건 조회·단건 조립은 리뷰에서 막는다. <!-- LY-18 -->
 
 ## 코드 배치
 
@@ -60,7 +60,7 @@ paths:
   받아 가는 값은 전부 `dto/` 루트의 `~Dto`다 (dto.md). `FolderStep`이 물질화 결과를
   `MaterializeOutcomeDto`로 `AnalysisJobCloser`에 넘기는 것이 기준 형태다. private sealed interface라도 예외가 아니다.
 - **`Controller`라는 이름은 REST 컨트롤러에만 쓴다.** 무언가를 제어하는 클래스는 역할 이름을 쓴다
-  (파이프라인 단계는 `~Step`: `EmbedStep`, `ScoreStep`).
+  (파이프라인 단계는 `~Step`: `EmbedStep`, `ScoreStep`). <!-- LY-10 -->
 - private 헬퍼는 **부르는 메서드 바로 아래**에 둔다. 여러 곳이 부르면 가장 아래 호출자 밑에.
   파일 하단으로 쓸어 모으지 마라.
-- public 메서드의 KDoc에는 정책과 그 이유를 적는다 — 시그니처가 이미 말하는 것을 반복하지 않는다.
+- public 메서드의 KDoc에는 정책과 그 이유를 적는다 — 시그니처가 이미 말하는 것을 반복하지 않는다. <!-- LY-s2 -->

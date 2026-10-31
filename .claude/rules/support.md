@@ -6,15 +6,9 @@ paths:
 # Support 컨벤션
 
 `{domain}/support`는 유스케이스가 기대는 협력자의 자리다. 구분 기준은 호출자다:
-**컨트롤러·스케줄러가 부르면 `service`, 서비스가 기대면 `support`.** 스케줄러 자신(`@Scheduled`)은
-알람만 울리는 얇은 support 클래스이고 판단은 부르는 서비스가 한다 (`AnalysisPipelineScheduler` → `AnalysisPipelineService`).
-
-## 주기 작업(`@Scheduled`)
-
-- 첫 줄에서 `if (!leadership.isLeader()) return`으로 리더 한 대만 돌게 한다(`global/cluster/SchedulerLeadership`). 서버마다 메모리에
-  쌓인 것을 비우는 일(활동 시각 버퍼 플러시)만 예외로 모든 서버가 돈다.
-- **중복 방지를 리더 하나에 기대지 않는다.** 리더의 갱신이 멈춘 사이 임대가 끝나면 옛 리더가 하던 틱과 새 리더의 틱이 겹칠 수 있다(#313 ADR-0002 §7). 두 서버가 같은 틱을 돌아도
-  결과가 한 번이도록 조건부 UPDATE(영향 행 0이면 손 뗌)·`FOR UPDATE SKIP LOCKED`·행 잠금 + 발행 표식, 또는 두 번 해도 같은 일(삭제·UPSERT)로 짠다.
+**입구(컨트롤러·스케줄러·리스너)가 부르면 `service`, 서비스가 기대면 `support`.** support는 비즈니스를 *돕는* 쪽이라
+service를 부르지 않는다 — 예외 없다. 스케줄러·리스너·러너는 service를 부르는 쪽이므로 support가 아니라 입구다
+(`entrypoint.md`).
 
 ## 무엇이 여기 사는가
 
@@ -30,8 +24,8 @@ paths:
 
 - **메서드 이름은 능력이 아니라 역할을 따른다**: `requirePhotographer`, `requireCouple`,
   `requireViewer`. "canUpload" 같은 능력 이름을 만들지 마라 — 새 엔드포인트가 어느 문을 쓸지는
-  "보는 것인가, 고르는 것인가"라는 질문으로 정한다.
-- 각 메서드의 KDoc에는 그 문을 쓰는 유스케이스를 나열한다 (어느 문이 맞는지 찾는 목차가 된다).
+  "보는 것인가, 고르는 것인가"라는 질문으로 정한다. <!-- LY-19 -->
+- 각 메서드의 KDoc에는 그 문을 쓰는 유스케이스를 나열한다 (어느 문이 맞는지 찾는 목차가 된다). <!-- LY-20 -->
 - 엔티티를 반환해도 된다 — 호출자(서비스)와 같은 트랜잭션 안이다.
 - 역할 전제가 다른 호출자는 다른 정책 클래스로 분리한다: 계정 없는 게스트는
   `CollabSessionAccess`(`requireReadable`/`requireWritable`/`requireGuest`)가 담당하고
@@ -50,10 +44,10 @@ paths:
 - 여러 서비스가 공유하는 검증 묶음은 support로 모은다. `RetouchPhotoLoader.loadPhotos`는
   "이 갤러리의 사진인가, 상한을 넘지 않는가, 비어 있지 않은가"를 한 곳에서 지키고 정렬까지
   책임진다 — 서비스마다 반쯤 복제된 검증이 생기면 이리로 옮길 신호다.
-- 검증 메서드 이름은 `validate...`/`require...`로 시작하고, 실패는 도메인 예외로 던진다.
+- 검증 메서드 이름은 `validate...`/`require...`로 시작하고, 실패는 도메인 예외로 던진다. <!-- LY-21 -->
 
 ## 도메인 사이의 문
 
 - 다른 도메인이 이 도메인을 쓸 때의 입구도 support다 — `folder`·`selection`·`collab` 서비스가
   `gallery/support/GalleryAccessPolicy`를 주입받는다. 다른 도메인의 repository를 직접 주입하는
-  것보다 정책/로더를 거치는 쪽을 우선하라.
+  것보다 정책/로더를 거치는 쪽을 우선하라. <!-- LY-s1 -->
