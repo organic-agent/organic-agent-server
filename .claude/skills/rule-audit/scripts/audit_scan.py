@@ -163,7 +163,7 @@ def test_names(mode):
         s = read(f)
         pkg = re.search(r'^package ([\w.]+)', s, re.M).group(1)
         base = re.sub(r'(UnitTest|Test)$', '', b)
-        guard = re.search(r'(BoundaryTest|WiringTest)$', b) or b in ('SwaggerDocsTest', 'ErrorCodeFormatTest', 'ScheduledLeadershipGuardTest')
+        guard = re.search(r'(BoundaryTest|WiringTest|GuardTest)$', b) or b in ('SwaggerDocsTest', 'ErrorCodeFormatTest')
         if mode == 'test-noclass' and base not in types and not guard:
             print(f'{rel(f)}:1: 대상 클래스 {base} 가 main 에 없다')
         elif mode == 'test-nomirror' and base in types and pkg not in types[base]:
