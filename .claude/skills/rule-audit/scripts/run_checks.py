@@ -18,6 +18,7 @@
 - `--full`: 기준 커밋을 임시 worktree로 꺼내 저장소 전체를 두 번 돌린다(파일 여러 개를 함께 보는 T 규칙 포함).
 - (규칙 ID, 경로)별 줄 수가 늘어난 것만 보고하고 종료 코드 1. 기존 위반은 양쪽에서 같이 세져 상쇄되므로 허용 목록은 쓰지 않는다.
 - 대상은 script 담당 규칙 중 git 이력·브랜치 규칙(GIT-*, MG-04)과 권장(ID에 소문자)을 뺀 것.
+- 명령이 돌지 못하면(rg 없음·시간 초과·그 밖의 실패) "위반 없음"이 아니라 종료 코드 2(검사 실패)로 끝난다.
 """
 import glob, os, re, shutil, subprocess, sys, tempfile, time
 from collections import Counter
@@ -94,16 +95,25 @@ def changed_files(base):
     return sorted({p for p in tracked + untracked if p})
 
 
+# 작은 나무에는 일부 경로만 있어 "없는 경로" 류 오류가 정상으로 난다. 그 밖의 stderr는 검사가 실제로 돌지 못한 것이다.
+BENIGN_STDERR = re.compile(r'No such file or directory|No files were searched|missing operand|Try .basename --help')
+
+
 def run_all(cwd, ids, commands):
-    """ID마다 명령을 cwd에서 돌려 {ID: [출력 줄]}. 없는 경로로 인한 오류는 비교에서 양쪽이 같으므로 무시한다."""
+    """ID마다 명령을 cwd에서 돌려 ({ID: [출력 줄]}, [오류]). 명령이 돌지 못하면(도구 없음·시간 초과·그 밖의 실패) 오류로 돌려준다 —
+    빈 출력으로 두면 "위반 없음"과 구별되지 않는다."""
     def one(rid):
         try:
             proc = subprocess.run(['bash', '-c', commands[rid]], cwd=cwd, capture_output=True, text=True, timeout=TIMEOUT)
-            return rid, [l for l in proc.stdout.splitlines() if l.strip()]
         except subprocess.TimeoutExpired:
-            return rid, []
+            return rid, [], f'{rid}: {TIMEOUT}초 초과'
+        bad = [l for l in proc.stderr.splitlines() if l.strip() and not BENIGN_STDERR.search(l)]
+        failed = 'command not found' in proc.stderr or (proc.returncode not in (0, 1) and bad)
+        error = f'{rid}: 종료 코드 {proc.returncode} — {(bad or proc.stderr.splitlines() or [""])[0][:200]}' if failed else None
+        return rid, [l for l in proc.stdout.splitlines() if l.strip()], error
     with ThreadPoolExecutor(max_workers=8) as pool:
-        return dict(pool.map(one, ids))
+        results = list(pool.map(one, ids))
+    return {rid: lines for rid, lines, _ in results}, [e for _, _, e in results if e]
 
 
 def path_of(line):
@@ -198,21 +208,27 @@ def compare_main(args):
             try:
                 shutil.copytree(os.path.join(ROOT, SKILL_DIR), os.path.join(before_root, SKILL_DIR), dirs_exist_ok=True,
                                 ignore=shutil.ignore_patterns('__pycache__'))
-                before = run_all(before_root, ids, commands)
+                before, errors_before = run_all(before_root, ids, commands)
             finally:
                 git('worktree', 'remove', '--force', before_root)
-            after = run_all(ROOT, ids, commands)
+            after, errors_after = run_all(ROOT, ids, commands)
             scope = None
         else:
             before_root, after_root = os.path.join(tmp, 'before'), os.path.join(tmp, 'after')
             copy_tree(before_root, files, read_at(base))
             copy_tree(after_root, files, read_now)
-            before = run_all(before_root, ids, commands)
-            after = run_all(after_root, ids, commands)
+            before, errors_before = run_all(before_root, ids, commands)
+            after, errors_after = run_all(after_root, ids, commands)
             scope = set(files)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+    errors = sorted(set(errors_before + errors_after))
+    if errors:
+        print(f'검사 실패 — 명령 {len(errors)}개가 돌지 못해 위반 여부를 알 수 없다(기준 {base[:8]}). ripgrep(rg)이 설치돼 있는지 먼저 본다.')
+        for e in errors[:10]:
+            print(f'   {e}')
+        return 2
     allowed = path_allowlist()
     excused = [i for i in compare(before, after, scope) if i[1] in allowed.get(i[0], set())]
     increases = [i for i in compare(before, after, scope) if i not in excused]

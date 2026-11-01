@@ -4,6 +4,7 @@
 - 규칙 쪽: .claude/rules/*.md · .claude/spec/git-convention.md · CLAUDE.md 의 `<!-- ID [ID...] -->` 마커
 - 검사 쪽: .claude/skills/rule-audit/reference/checks.md 표의 첫 열 ID
 - 허용 목록: reference/allowlist-*.txt 첫 줄 `# rules: ID...`
+- checks.md에 같은 ID 행이 두 번 이상 있는 것
 - 담당: `script`인데 명령 블록이 없는 ID(아무도 검사하지 않게 된다) · `test`인데 찾는 법의 테스트 클래스가 저장소에 없는 ID
 하나라도 어긋나면 종료 코드 1.
 """
@@ -40,8 +41,11 @@ for p in RULES:
                 dups.append(f'{i}: {os.path.relpath(p, ROOT)} 한 마커 안에서 두 번')
 
 checks, owners = {}, {}
+dup_rows = []
 checks_md = rd(CHECKS)
 for m in ROW.finditer(checks_md):
+    if m.group(1) in checks:
+        dup_rows.append(m.group(1))
     checks[m.group(1)] = m.group(2)
     owners[m.group(1)] = (m.group(5), m.group(3))
 with_cmd = set(CMD.findall(checks_md))
@@ -75,4 +79,5 @@ print('(c) 허용 목록 머리글 문제:', bad_allow or '없음')
 print('(d) 중복 마커:', dups or '없음')
 print('(e) script 담당인데 명령이 없는 ID:', no_command or '없음')
 print('(f) test 담당인데 테스트가 없는 ID:', missing_test or '없음')
-sys.exit(1 if (no_check or no_rule or bad_allow or dups or no_command or missing_test) else 0)
+print('(g) checks.md에 행이 두 번 이상인 ID:', dup_rows or '없음')
+sys.exit(1 if (no_check or no_rule or bad_allow or dups or no_command or missing_test or dup_rows) else 0)

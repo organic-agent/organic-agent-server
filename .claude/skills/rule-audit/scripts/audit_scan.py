@@ -104,8 +104,9 @@ def companion(mode):
                 elif d == 0:
                     if word_at(t, k, 'fun '): funs.append(k)
                     elif word_at(t, k, 'val ') or word_at(t, k, 'var '): props.append(k)
-            cb, nl = t.find('{', idx), t.find('\n', idx)
-            ce = idx + len('companion object') if (cb < 0 or (nl >= 0 and cb > nl)) else match_brace(t, cb)
+            # 몸통 `{`는 이름·상위 타입 뒤 줄바꿈을 넘어 올 수 있다. 다음 선언이 먼저 나오면 몸통 없는 companion이다.
+            body = re.match(r'companion object(?:\s+\w+)?(?:\s*:\s*[\w<>.,?\s()]+?)?\s*\{', t[idx:])
+            ce = match_brace(t, idx + body.end() - 1) if body else t.find('\n', idx) if t.find('\n', idx) >= 0 else len(t) - 1
             at_end = t[ce + 1:e].strip() == ''
             below_fields = not [x for x in funs if x < idx] and not [x for x in props if x > ce]
             name = hm.group(2)
