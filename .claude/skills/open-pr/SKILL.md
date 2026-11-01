@@ -31,6 +31,13 @@ effort: xhigh
    - 커밋이 하나도 없으면 PR을 열 게 없다. 알리고 중단하라.
 4. 이미 열린 PR이 있는지 확인하라 (`gh pr view --json url,state 2>/dev/null`).
    있으면 URL을 알리고 중단하라 — push된 커밋은 기존 PR에 이미 반영된다.
+5. CI `rules` job과 같은 규칙 비교 검사를 먼저 돌려라 — Stop hook은 바꾼 파일만 보므로 파일 여러 개를 함께 보는 규칙(T)은 여기서 처음 드러난다:
+   ```bash
+   python3 -I .claude/skills/rule-audit/scripts/run_checks.py --compare origin/{base} --full
+   ```
+   - "늘어난 위반 없음"이면 계속한다.
+   - 늘어난 위반이 있으면 출력 그대로 사용자에게 보여 주고 멈춰라. 고치거나, 규칙이 허용하는 경우면 허용 목록에 경로 + 까닭을
+     넣을지 사용자가 정한다. 그대로 PR을 열면 CI가 빨갛게 된다.
 
 > 다음 Phase 조건: 이슈 번호와 변경 사항이 파악되었을 때
 

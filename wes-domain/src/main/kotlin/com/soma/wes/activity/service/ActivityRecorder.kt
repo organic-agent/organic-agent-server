@@ -25,18 +25,19 @@ import java.time.ZonedDateTime
  * 갤러리 여럿에서 동시에 쓰면 모든 쓰기가 작업공간 한 행을 기다렸다. 그때 시각은 [ActivityFlushService]가 몇 초 뒤에 쓴다.
  */
 @Service
-@Transactional(propagation = Propagation.MANDATORY)
 class ActivityRecorder(
     private val repository: ActivityRepository,
     private val clock: Clock,
     private val buffer: ActivityBuffer?,
 ) {
+    @Transactional(propagation = Propagation.MANDATORY)
     fun recordGallery(galleryId: Long) {
         val at = ZonedDateTime.now(clock)
         val buffer = buffer ?: return repository.recordGallery(galleryId, at)
         afterCommit { buffer.markGallery(galleryId, at) }
     }
 
+    @Transactional(propagation = Propagation.MANDATORY)
     fun recordWorkspace(workspaceId: Long) {
         val at = ZonedDateTime.now(clock)
         val buffer = buffer ?: return repository.recordWorkspace(workspaceId, at)

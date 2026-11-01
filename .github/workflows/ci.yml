@@ -14,6 +14,26 @@ permissions:
   pull-requests: write
 
 jobs:
+  # 이 PR이 새로 들여오는 코드 규칙 위반만 본다(기존 위반은 세지 않음). 테스트와 따로 돌아 서로의 결과를 가리지 않는다.
+  # Claude Code 없이 python3·git·ripgrep만으로 돈다. 규칙 문장은 .claude/rules, 검사 명령은 rule-audit의 checks.md.
+  # 예외는 .claude/skills/rule-audit/reference/allowlist-*.txt에 경로 한 줄 + 까닭 주석(리뷰에서 보인다).
+  rules:
+    name: 코드 규칙 비교 검사
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 체크아웃
+        uses: actions/checkout@v4
+        with:
+          # PR의 기준 브랜치와 갈라진 지점을 찾으려면 이력이 필요하다.
+          fetch-depth: 0
+
+      - name: 새로 생긴 규칙 위반 비교
+        run: |
+          command -v rg >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep; }
+          python3 -I .claude/skills/rule-audit/scripts/run_checks.py --compare "origin/${{ github.base_ref }}" --full
+
   test:
     name: 테스트 코드 실행
     runs-on: ubuntu-latest
