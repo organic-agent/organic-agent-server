@@ -286,7 +286,7 @@ def main():
     for rid, row in rows.items():
         owner = row['owner']
         cmd = commands.get(rid)
-        if owner != 'script':
+        if owner not in ('script', 'test'):
             work.setdefault(owner, []).append((rid, row, bool(cmd)))
         if not cmd:
             continue

@@ -12,7 +12,7 @@
 | 출처 | 마커가 붙은 규칙 파일(`.claude/` 기준 경로). `CLAUDE.md`의 규칙도 마커가 붙어 있다 |
 | 찾는 법 | **G** 한 줄 grep/ripgrep 명령 · **S** 스크립트·여러 줄 명령(`scripts/audit_scan.py` 또는 셸 반복문) · **J** 코드를 읽고 판단(무엇을 보면 되는지 한 줄) · **G→J** 명령이 후보를 모으고 담당 sonnet이 읽어 판단 |
 | 강제 | **H** 편집 시 hook으로 막을 수 있음(파일 하나만 보고 기계 판정) · **T** 테스트/CI로(여러 파일·구조 대조) · **R** 글 규칙으로만(판단 필요) |
-| 담당 | `script` = G·S 규칙 — 명령 출력 줄이 곧 위반이다 · `sonnet-a` 레이어·입구·트랜잭션(LY·EP·TX) · `sonnet-b` 도메인·DTO·예외·Kotlin 판단형(DM·DTO·EX·KT) · `sonnet-c` 저장·인프라·마이그레이션(RP·INF·MG) · `sonnet-d` 컨트롤러·공통·git·load(CT·CM·GIT·LT) · `sonnet-e` 테스트(TS) |
+| 담당 | `script` = G·S 규칙 — 명령 출력 줄이 곧 위반이다 · `test` = 저장소의 테스트가 지킨다(CI `./gradlew test`, 찾는 법에 테스트 클래스 이름) — 스크립트·sonnet은 보지 않는다 · `sonnet-a` 레이어·입구·트랜잭션(LY·EP·TX) · `sonnet-b` 도메인·DTO·예외·Kotlin 판단형(DM·DTO·EX·KT) · `sonnet-c` 저장·인프라·마이그레이션(RP·INF·MG) · `sonnet-d` 컨트롤러·공통·git·load(CT·CM·GIT·LT) · `sonnet-e` 테스트(TS) |
 
 ### 명령 규약
 
@@ -266,7 +266,7 @@ rg -nUP -t kotlin '@Transactional[^\n]*\n(\s*@[^\n]*\n)*\s*private fun' wes-*/sr
 | DM-07 | rules/domain.md | **J** 마이그레이션의 UK/CHECK 대비 서비스 검증 · 역정규화 컬럼의 KDoc | R | sonnet-b |
 | DM-08 | rules/domain.md | **S** 엔티티·`@Embeddable`·`@MappedSuperclass`의 companion 뒤에 멤버가 더 있다 | H | script |
 | DM-09 | rules/domain.md | **J** 같은 정렬·상수 리터럴이 도메인마다 복제되었는지 | R | sonnet-b |
-| DM-10 | rules/domain.md | **S** 엔티티 메타데이터(Kotlin 타입의 nullable)와 `information_schema.columns.is_nullable` 비교 테스트 — Docker 필요 | T | script |
+| DM-10 | rules/domain.md | **S** `EntityNullabilityGuardTest` — 엔티티 메타데이터(Kotlin 타입의 nullable)와 `information_schema.columns.is_nullable` 비교(Docker 필요) | T | test |
 | DM-11 | rules/domain.md | **G** `@Entity` 파일의 `var` 본문 프로퍼티 중 다음 줄이 `protected set`이 아닌 것 | H | script |
 | DM-12 | rules/domain.md | **G→J** `x.prop = …` 대입 후보를 읽어 엔티티인지 가른다(엔티티가 아닌 라이브러리 객체 대입은 거른다) | R | sonnet-b |
 
@@ -550,7 +550,7 @@ rg -n -t kotlin '"previews/|"galleries/' wes-*/src/main/kotlin | rg -v 'S3PhotoS
 | ID | 출처 | 찾는 법 | 강제 | 담당 |
 |---|---|---|---|---|
 | MG-01 | rules/migration.md | **G** `ddl-auto`가 `validate`가 아닌 설정 (`*BoundaryTest` 제외) | H | script |
-| MG-02 | rules/migration.md | **S** `ddl-auto=validate` 컨텍스트 로딩이 대조해 준다: `./gradlew :wes-api:test --tests com.soma.wes.WesApplicationTests` (Docker 필요) | T | script |
+| MG-02 | rules/migration.md | **S** `WesApplicationTests` — `ddl-auto=validate` 컨텍스트 로딩이 대조해 준다 (Docker 필요) | T | test |
 | MG-03 | rules/migration.md | **S** 버전 번호가 1부터 연속인지 · 파일명 형식 | T | script |
 | MG-04 | rules/migration.md | **S** git 이력에서 마이그레이션 파일이 수정(M)된 적 있는지 | H | script |
 | MG-05 | rules/migration.md | **G** 그 밖의 `V*__*.sql` | H | script |
