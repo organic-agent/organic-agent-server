@@ -65,7 +65,12 @@ dependencies {
 
 kotlin {
     compilerOptions {
-        freeCompilerArgs.addAll("-Xjsr305=strict", "-Xannotation-default-target=param-property")
+        freeCompilerArgs.addAll(
+            "-Xjsr305=strict",
+            "-Xannotation-default-target=param-property",
+            // enum·sealed `when`에서 모든 경우를 나열하고도 남은 `else`는 새 상태를 삼킨다(KT-16) — 경고가 아니라 오류로.
+            "-Xwarning-level=REDUNDANT_ELSE_IN_WHEN:error",
+        )
     }
 }
 
