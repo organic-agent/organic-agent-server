@@ -50,7 +50,7 @@
 | KT-15 | rules/kotlin.md | **G→J** 파일 이름 찾기(find) + 확장 함수가 도메인 행위인지 읽기 | H | sonnet-b |
 | KT-16 | rules/kotlin.md | **S** `when` 분기가 enum·sealed 이름(`X.Y`) 또는 enum 상수 이름(`Y`)인데 `else`가 있다 | T | script |
 | KT-17 | rules/kotlin.md | **J** 문자열 리터럴 비교·분기  | R | sonnet-b |
-| KT-18 | rules/kotlin.md | **G** `@JvmInline value class` 타입이 `domain/`·`repository/` 필드·시그니처에 나오는지 | H | script |
+| KT-18 | rules/kotlin.md | **G** `@JvmInline value class` 타입이 `domain/`·`repository/` 필드·시그니처에 나오는지 || T | script |
 | KT-19 | rules/kotlin.md | **J** 엔티티 두 개를 `==`·`in`·`contains`·`toSet`으로 비교하는 곳 | R | sonnet-b |
 | KT-20 | rules/kotlin.md | **G→J** 스프링 애노테이션 붙은 `object` + `object` 안의 `var` | H | sonnet-b |
 | KT-21 | rules/kotlin.md | **G→J** public 시그니처의 `Mutable*` (G) · `var` 정당성(J) | H | sonnet-b |
@@ -220,7 +220,7 @@ rg -l -t kotlin 'import com\.soma\.wes\.[a-z.]+\.repository\.' $(rg -l -t kotlin
 rg -nUP -t kotlin '^[ \t]*@Scheduled\b[^\n]*\n[ \t]*fun \w+\([^\n]*\{\n(?!\s*if \(!\w*[lL]eadership\.isLeader\(\)\) return)' wes-*/src/main/kotlin | rg -v 'wes-admin-api/'
 
 # EP-07
-rg -n -t kotlin '^\s*@Transactional(\(|\s*$)' $(rg -l -t kotlin '^[ \t]*@(Scheduled|EventListener|TransactionalEventListener|SqsListener)\b|:\s*(ApplicationRunner|CommandLineRunner)\b|^(open |internal )?class \w+(Listener|Scheduler)\b' wes-*/src/main/kotlin | rg -v '/service/')
+rg -l -t kotlin '^[ \t]*@(Scheduled|EventListener|TransactionalEventListener|SqsListener)\b|:\s*(ApplicationRunner|CommandLineRunner)\b|^(open |internal )?class \w+(Listener|Scheduler)\b' wes-*/src/main/kotlin | rg -v '/service/' | xargs -r rg -n -t kotlin '^\s*@Transactional(\(|\s*$)'
 
 ```
 
@@ -312,7 +312,7 @@ rg -n -t kotlin -g '**/service/**/*' -g '**/support/**/*' '^\s*[a-z]\w*(\?)?\.[a
 | DTO-06 | rules/dto.md | **S** `dto/request\|response` 파일별 `val` 수 > `@field:Schema` 수 | H | script |
 | DTO-07 | rules/dto.md | **J** 요청 DTO의 필드 검증 애노테이션 유무, 서비스의 2차 방어(`EMPTY_PHOTO_IDS` 류) | R | sonnet-b |
 | DTO-08 | rules/dto.md | **G→J** `@field:Size(max = 숫자)` 리터럴이 도메인 상수와 같은 값인지 | R | sonnet-b |
-| DTO-09 | rules/dto.md | **G** `dto/response`의 `val x: <엔티티·값객체>` | H | script |
+| DTO-09 | rules/dto.md | **G** `dto/response`의 `val x: <엔티티·값객체>` || T | script |
 | DTO-10 | rules/repository.md | **G** `repository/`(projection 제외) 안의 `data class` | H | script |
 
 <details><summary>DTO 명령 (9)</summary>
@@ -355,7 +355,7 @@ rg -n -t kotlin -g '**/repository/**/*' -g '!**/projection/**' '^\s*(private |in
 
 | ID | 출처 | 찾는 법 | 강제 | 담당 |
 |---|---|---|---|---|
-| CT-01 | rules/controller.md | **G** `controller/`의 `…repository.`·`…infrastructure.`·엔티티 클래스 import | H | script |
+| CT-01 | rules/controller.md | **G** `controller/`의 `…repository.`·`…infrastructure.`·엔티티 클래스 import || T | script |
 | CT-02 | rules/controller.md | **G→J** 정책 클래스 import(G) + 본문의 분기·매핑(J) | R | sonnet-d |
 | CT-03 | rules/controller.md | **G** `@RequestMapping`이 없거나 두 접두사로 시작하지 않는 컨트롤러 | H | script |
 | CT-04 | rules/controller.md | **G** `=` 본문 `fun`(여러 줄 시그니처 포함) · `@ResponseStatus` | H | script |
