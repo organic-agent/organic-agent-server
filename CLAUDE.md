@@ -21,7 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - jackson-module-kotlin (Spring Boot 4.x의 `tools.jackson.module` 좌표)
 - springdoc-openapi — 애노테이션은 `controller/docs`의 `*ControllerDocs` 인터페이스에
 - 테스트: JUnit 5 + Testcontainers (**Docker 필요**)
-- Kotlin 컴파일러 플래그: `-Xjsr305=strict`, `-Xannotation-default-target=param-property`
+- Kotlin 컴파일러 플래그: `-Xjsr305=strict`, `-Xannotation-default-target=param-property`, `-Xwarning-level=REDUNDANT_ELSE_IN_WHEN:error`
 
 ## 빌드 & 실행
 
