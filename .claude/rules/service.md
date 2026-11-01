@@ -19,10 +19,15 @@ paths:
 
 ## 트랜잭션
 
-- **`@Transactional`은 메서드에만, 클래스에 절대 붙이지 않는다.** <!-- TX-01 --> 클래스 레벨은 나중에 추가되는
-  메서드까지 조용히 등록해서, S3·Lambda·OAuth를 부르는 메서드가 커넥션을 문 채 네트워크를 기다리게
-  된다. <!-- TX-05 --> 쓰기는 `@Transactional`, 읽기는 `@Transactional(readOnly = true)`, DB를 안 만지는 메서드는
+- **`@Transactional`은 메서드에만, 클래스에 절대 붙이지 않는다** — `propagation = MANDATORY`도 메서드마다 붙인다. <!-- TX-01 -->
+  클래스 레벨은 나중에 추가되는 메서드까지 조용히 등록해서, 네트워크를 부르는 새 메서드가 커넥션을 문 채
+  기다리게 된다(아래 TX-05).
+  쓰기는 `@Transactional`, 읽기는 `@Transactional(readOnly = true)`, DB를 안 만지는 메서드는
   무표기 (`EmbeddingService.run`이 일부러 비어 있는 이유). <!-- TX-04 -->
+- **트랜잭션 안에서 네트워크를 기다리지 않는다.** S3에 요청하는 호출(`exists`·`copy`·`deleteAll`), Lambda `send`, <!-- TX-05 -->
+  OAuth 호출은 트랜잭션 밖에서 하거나 `afterCommit`으로 미룬다 — 커넥션을 문 채 기다리면 풀이 마른다(#346).
+  서명 URL 만들기(`presign*`)·키 조립(`galleryPrefix`·`buildKey`)·`isAvailable`처럼 서버 안에서 끝나는 호출은
+  트랜잭션 안에서 불러도 된다.
 - **같은 클래스 안에서 `@Transactional` 메서드를 호출하지 마라.** 프록시를 우회해 애노테이션이
   조용히 무시된다. 헬퍼는 private·무표기로 두어 호출자의 트랜잭션을 물려받게 하거나, 트랜잭션이
   필요한 부분을 별도 빈으로 뺀다 (`OAuthLoginService` → `OAuthLoginProcessor` 전례). <!-- TX-02 TX-03 -->

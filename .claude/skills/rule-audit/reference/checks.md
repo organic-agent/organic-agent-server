@@ -236,7 +236,7 @@ rg -n -t kotlin '^\s*@Transactional(\(|\s*$)' $(rg -l -t kotlin '^[ \t]*@(Schedu
 | TX-02 | rules/service.md | **G** `@Transactional` 다음 `private fun` | H | script |
 | TX-03 | rules/service.md | **J** 클래스 안에서 자기 `@Transactional` 메서드를 부르는 곳(오버로드 포함) | R | sonnet-a |
 | TX-04 | rules/service.md | **J** 서비스 public 메서드의 표기와 실제 DB 접근 일치 | R | sonnet-a |
-| TX-05 | rules/service.md | **J** `@Transactional` 메서드 안의 `PhotoStorage`·`AiTaskSender`·`OAuthClient` 호출 | R | sonnet-a |
+| TX-05 | rules/service.md | **J** `@Transactional` 메서드 안의 네트워크 호출(`exists`·`copy`·`deleteAll`·`send`·OAuth) — `presign*`·키 조립·`isAvailable`은 제외 | R | sonnet-a |
 
 <details><summary>TX 명령 (2)</summary>
 

@@ -40,5 +40,7 @@ paths:
 
 ## 공개 경로
 
-- 인증 없는 경로는 `PublicPaths`에 명시된 것뿐이다(현재 `/api/v1/collab/**`). <!-- CT-08 -->
+- 공개 API에서 인증 없는 경로는 `PublicPaths.PATTERNS`에 있는 것뿐이다 — 목록의 정본은 그 파일이고, <!-- CT-08 -->
+  규칙에 옮겨 적지 않는다. `permitAll`은 `SecurityConfig`가 그 목록을 돌 때만 붙인다.
+  관리자 앱은 `PublicPaths`를 쓰지 않는다 — 공개는 로그인과 헬스뿐이고, `admin/security/`의 설정 안에서만 연다.
   새 공개 경로는 실수로 열리지 않는다 — 열어야 한다면 그 결정을 리뷰에서 드러내라.
