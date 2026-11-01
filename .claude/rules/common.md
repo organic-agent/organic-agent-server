@@ -8,34 +8,38 @@ paths:
 
 ## 레이어 구조
 
-Controller → Service → Repository 순서를 따르고, Service는 support(협력자)와
-infrastructure(port를 통해)에 기댈 수 있다. **역방향 의존을 만들지 마라**:
-support가 service를, infrastructure가 service·repository를 참조하면 안 된다.
+입구(Controller·Scheduler·Listener) → Service → Repository 순서를 따르고, Service는 support(협력자)와
+infrastructure(port를 통해)에 기댈 수 있다. 입구는 무엇이 깨우느냐(HTTP·시간·이벤트)만 다르고 하는 일은 같다 —
+service를 부르고, 판단은 service가 한다(`entrypoint.md`). **역방향 의존을 만들지 마라**:
+support가 service를, infrastructure가 service·repository를 참조하면 안 된다. 예외는 없다. <!-- LY-01 LY-02 LY-03 -->
 계층별 세부 규칙은 각 계층 파일(controller.md, service.md, …)을 따른다.
 
 ## 예외 처리
 
 - `throw {Domain}Exception({Domain}ErrorCode.XXX)` 패턴만 쓴다.
-  `require`·`check`·표준 예외를 던지고 나중에 번역하는 방식은 쓰지 않는다.
+  `require`·`check`·표준 예외를 던지고 나중에 번역하는 방식은 쓰지 않는다. <!-- EX-01 -->
   (이 금지는 요청·비즈니스 규칙의 실패에 대한 것이다. 저장 전 id 같은 개발자 불변식 위반은
   `checkNotNull`·`error`로 500을 낸다 — `kotlin.md`의 "실패의 두 종류" 참조.)
 - 에러코드 형식: `ERROR_NAME(HttpStatus.XXX, "{DOMAIN}_{HTTP상태}_{N}", "한글 메시지")` —
-  `ErrorCodeFormatTest`가 형식을 강제하므로 새 enum은 그 테스트 목록에 추가한다.
-- 자명하지 않은 에러코드에는 KDoc으로 "언제, 왜"를 남긴다 (`RecommendationErrorCode` 참조).
+  `ErrorCodeFormatTest`가 형식을 강제하므로 새 enum은 그 테스트 목록에 추가한다. <!-- EX-02 -->
+- 자명하지 않은 에러코드에는 KDoc으로 "언제, 왜"를 남긴다 (`RecommendationErrorCode` 참조). <!-- EX-03 -->
 
 ## 객체 생성
 
 - 외부 입력으로 만드는 엔티티·값객체는 companion의 정적 팩토리(`of`)로만 만들고 검증을 거기 둔다
-  (domain.md 참조).
+  (domain.md 참조). <!-- DM-06 -->
 - 검증이 필요 없는 단순 연결 행(`ConceptAssignment`)과 DTO는 생성자를 직접 써도 된다.
   이때 **인자 2개 이상이면 named argument로 쓴다** — `AiTaskDto.Embed(galleryId = ..., photoIds = ...)`.
 
 ## 상수
 
 - 매직넘버·매직스트링을 코드에 직접 쓰지 말고 companion object의 `const val`로 선언하고
-  KDoc 한 줄로 출처를 남긴다 (`MAX_DELETE_OBJECTS`: S3 한 요청의 최대 키 수).
+  KDoc 한 줄로 출처를 남긴다 (`MAX_DELETE_OBJECTS`: S3 한 요청의 최대 키 수). <!-- CM-04 -->
+- companion object의 자리: **엔티티·값객체는 클래스 맨 끝**(`domain.md`), **그 밖의 클래스(service·support·
+  infrastructure·repository·입구 등)는 필드 바로 아래·메서드 위**다 — 모든 필드가 companion보다 위에 있고 모든 메서드가 아래에 있다. 거기 사는 로거·상수는 필드와 같은 성격이라
+  Java의 static 상수처럼 필드 옆에서 읽힌다. <!-- CM-06 -->
 - 운영에서 조정할 값은 상수가 아니라 설정으로 뺀다 (`app.storage.*`, `app.trash.retention` —
-  `@ConfigurationProperties` 클래스는 해당 도메인의 `config`에).
+  `@ConfigurationProperties` 클래스는 해당 도메인의 `config`에). <!-- CM-05 -->
 
 ## 포맷팅
 
@@ -48,14 +52,14 @@ support가 service를, infrastructure가 service·repository를 참조하면 안
       request: CreateDetailFolderRequest,
   ): DetailFolderResponse {
   ```
-- 생성자 주입 필드도 같은 형태로 한 줄에 하나씩.
-- import는 와일드카드 없이 전부 나열한다.
-- 마지막 import와 그 뒤의 첫 주석·코드 사이에는 빈 줄을 **정확히 한 줄** 둔다. 두 줄 이상 비우지 않는다.
+- 생성자 주입 필드도 같은 형태로 한 줄에 하나씩. <!-- CM-03 -->
+- import는 와일드카드 없이 전부 나열한다. <!-- CM-01 -->
+- 마지막 import와 그 뒤의 첫 주석·코드 사이에는 빈 줄을 **정확히 한 줄** 둔다. 두 줄 이상 비우지 않는다. <!-- CM-02 -->
 
 ## 메서드 본문 구성
 
 논리 단계가 바뀌면 빈 줄로 구분해 맥락을 드러낸다. 서비스 유스케이스라면
-인가 → 조회·잠금 → 검증 → 저장 → 응답 조립의 단계가 빈 줄로 보여야 한다:
+인가 → 조회·잠금 → 검증 → 저장 → 응답 조립의 단계가 빈 줄로 보여야 한다: <!-- CM-07 -->
 
 ```kotlin
 galleryAccessPolicy.requireManager(galleryId, userId)
@@ -75,20 +79,20 @@ return detailResponse(detail, emptyList())
 
 - 특정 개념을 검증하는 로직이 커지거나, 반복되거나, 조건이 얽혀 복잡해지면 **개념이 드러나는
   이름의 private 메서드로 뽑는다** (`validateMinScore`, `requireConcept`, `validateEmbeddingComplete`).
-  호출부에는 검증의 이름만 남고, 세부 조건은 메서드 안으로 들어간다.
-- private 헬퍼는 부르는 메서드 바로 아래에 둔다 (service.md의 배치 규칙).
+  호출부에는 검증의 이름만 남고, 세부 조건은 메서드 안으로 들어간다. <!-- CM-s1 -->
+- private 헬퍼는 부르는 메서드 바로 아래에 둔다 (service.md의 배치 규칙). <!-- CM-08 -->
 - 여러 서비스가 같은 검증을 반복하면 private 추출을 넘어 support로 옮길 신호다
   (`RetouchPhotoLoader`, support.md 참조).
 
 ## 네이밍
 
 - 패키지는 도메인 단위로 나눈다 (`gallery`, `photo`, `folder`, `collab`).
-  전부 소문자 한 단어 — 도메인 이름이 두 단어가 되면 이름을 다시 생각하라.
+  전부 소문자 한 단어 — 도메인 이름이 두 단어가 되면 이름을 다시 생각하라. <!-- LY-07 -->
 - 클래스는 PascalCase (`AiFolderMaterializer`, `GalleryAccessPolicy`).
 - 메서드는 camelCase + 역할이 드러나는 동사 접두사:
   - 조회: `find...`(nullable 반환) / `get...`(유스케이스) / `load...`(검증을 겸한 조회)
-  - 강제: `require...`(아니면 예외) / `validate...`(검증만) / `lock...`(잠그고 조회)
-- API 경로는 kebab-case 복수형 (`/api/v1/galleries`, `/concept-folders`, `/collab-sessions`).
+  - 강제: `require...`(아니면 예외) / `validate...`(검증만) / `lock...`(잠그고 조회) <!-- CM-09 -->
+- API 경로는 kebab-case 복수형 (`/api/v1/galleries`, `/concept-folders`, `/collab-sessions`). <!-- CT-09 -->
 
 ## 주석
 
@@ -97,5 +101,5 @@ return detailResponse(detail, emptyList())
   (`RetouchPhoto.galleryId`의 역정규화 근거, `ConceptAssignment`의 읽기 전용 근거).
   이 저장소의 주석은 한국어로 쓴다.
 - 리뷰어에게 말하는 주석("이 변경이 맞는 이유", "다음 줄이 하는 일")은 금지 — 머지되는 순간
-  소음이 된다.
-- 배경·정책이 문서 분량이면 주석이 아니라 CLAUDE.md 또는 `.claude/rules/`의 해당 파일에 남긴다.
+  소음이 된다. <!-- CM-10 -->
+- 배경·정책이 문서 분량이면 주석이 아니라 CLAUDE.md 또는 `.claude/rules/`의 해당 파일에 남긴다. <!-- CM-s2 -->

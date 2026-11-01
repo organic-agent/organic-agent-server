@@ -1,0 +1,18 @@
+# rules: EP-01 EP-02 EP-04 EP-07 LY-01 — scheduler/listener 밖에 있는 기존 입구 17개(옮기기 전까지 허용)
+wes-admin-api/src/main/kotlin/com/soma/wes/admin/audit/support/AdminRevisionPurgeScheduler.kt
+wes-admin-api/src/main/kotlin/com/soma/wes/admin/resource/service/AdminCascadeTrashPurgeService.kt
+wes-admin-api/src/main/kotlin/com/soma/wes/admin/resource/service/AdminChildTrashService.kt
+wes-admin-api/src/main/kotlin/com/soma/wes/admin/resource/service/AdminWorkflowExecutor.kt
+wes-admin-api/src/main/kotlin/com/soma/wes/admin/support/AdminRecoveryRunner.kt
+wes-domain/src/main/kotlin/com/soma/wes/activity/support/ActivityFlushScheduler.kt
+wes-domain/src/main/kotlin/com/soma/wes/analysis/support/AiFailureListener.kt
+wes-domain/src/main/kotlin/com/soma/wes/analysis/support/AnalysisJobEventListener.kt
+wes-domain/src/main/kotlin/com/soma/wes/analysis/support/AnalysisPipelineScheduler.kt
+wes-domain/src/main/kotlin/com/soma/wes/analysis/support/AnalysisSweepWatch.kt
+wes-domain/src/main/kotlin/com/soma/wes/analysis/support/PipelineHeartbeat.kt
+wes-domain/src/main/kotlin/com/soma/wes/auth/support/OAuthStateCleaner.kt
+wes-domain/src/main/kotlin/com/soma/wes/folder/support/DetailFolderMergePurgeScheduler.kt
+wes-domain/src/main/kotlin/com/soma/wes/gallery/support/GalleryLifecycleScheduler.kt
+wes-domain/src/main/kotlin/com/soma/wes/photo/support/PendingUploadSweeper.kt
+wes-domain/src/main/kotlin/com/soma/wes/recommendation/support/AiSelectionJobRecovery.kt
+wes-domain/src/main/kotlin/com/soma/wes/trash/support/TrashPurgeScheduler.kt

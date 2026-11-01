@@ -31,7 +31,8 @@ ls wes-api/src/main/resources/db/migration/ | sort -V | tail -3   # 저장소 �
 export PGPASSWORD=$(aws ssm get-parameter --region ap-northeast-2 \
   --name /wes/prod/spring.datasource.password --with-decryption \
   --query Parameter.Value --output text)
-docker run --rm -e PGPASSWORD pgvector/pgvector:pg16 psql \
+# 운영 DB 조회는 읽기 전용 세션으로만 — 이 옵션이 없으면 Bash hook(.claude/hooks/guard_bash.py)이 막는다.
+docker run --rm -e PGPASSWORD -e PGOPTIONS='-c default_transaction_read_only=on' pgvector/pgvector:pg16 psql \
   -h host.docker.internal -p 15432 -U wes_admin -d wes_db -t \
   -c "SELECT version, success FROM flyway_schema_history ORDER BY installed_rank DESC LIMIT 3;"
 ```
