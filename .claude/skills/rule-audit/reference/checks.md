@@ -178,7 +178,7 @@ find wes-*/src/main/kotlin/com/soma/wes -mindepth 2 -maxdepth 3 -type d | sed -E
 find wes-domain/src/main wes-api/src/main -type d -path '*/com/soma/wes/admin*'; find wes-domain/src/main -type d -name controller; find wes-domain/src/main -name '*Application.k?'
 
 # LY-10
-rg -l -t kotlin '^(open |abstract )?class \w*Controller\b' wes-*/src/main/kotlin | xargs rg --files-without-match '^@RestController\b'
+rg -l -t kotlin '^(open |abstract )?class \w*Controller\b' wes-*/src/main/kotlin | xargs -r rg --files-without-match '^@RestController\b'
 
 # LY-19
 rg -n -t kotlin -g '*Policy*' -g '*Access*' '\bfun can[A-Z]' wes-*/src/main/kotlin | rg -v 'private fun'
@@ -277,7 +277,7 @@ rg -nUP -t kotlin '@Transactional[^\n]*\n(\s*@[^\n]*\n)*\s*private fun' wes-*/sr
 rg -nUP -t kotlin '^@(Entity|Embeddable)\b[^\n]*\n(@[^\n]*\n)*(open )?data class' wes-*/src/main/kotlin
 
 # DM-02
-rg -l -t kotlin '^@Entity\b' wes-*/src/main/kotlin | xargs rg --files-without-match 'BaseEntity\(\)'
+rg -l -t kotlin '^@Entity\b' wes-*/src/main/kotlin | xargs -r rg --files-without-match 'BaseEntity\(\)'
 
 # DM-03
 rg -n -t kotlin -g '**/domain/*' '@Column\b' wes-*/src/main/kotlin | rg -v '@Column\(.*name\s*='
@@ -289,7 +289,7 @@ rg -n -t kotlin -g '**/domain/*' '^\s*init\s*\{' wes-*/src/main/kotlin
 python3 -I .claude/skills/rule-audit/scripts/audit_scan.py companion-entity
 
 # DM-11
-rg -l -t kotlin '^@Entity' wes-*/src/main/kotlin | xargs rg -nUP '^[ \t]+(?:override |lateinit )?var \w+(?>[^\n]*)(?!\n[ \t]*protected set)'
+rg -l -t kotlin '^@Entity' wes-*/src/main/kotlin | xargs -r rg -nUP '^[ \t]+(?:override |lateinit )?var \w+(?>[^\n]*)(?!\n[ \t]*protected set)'
 
 # DM-12
 rg -n -t kotlin -g '**/service/**/*' -g '**/support/**/*' '^\s*[a-z]\w*(\?)?\.[a-z]\w* = [^=]' wes-*/src/main/kotlin | rg -v 'val |\.apply|propagationBehavior|queryTimeout|isDaemon|timeout'
@@ -388,7 +388,7 @@ python3 -I .claude/skills/rule-audit/scripts/audit_scan.py ctrl-param-order
 rg -nP -t kotlin -g '**/controller/*' '(?<!@Valid )@RequestBody' wes-*/src/main/kotlin
 
 # CT-07
-rg -l -t kotlin '^@RestController\b' wes-*/src/main/kotlin | xargs rg --files-without-match 'ControllerDocs'; rg -n -t kotlin -g '!**/controller/docs/**' '^\s*@(Tag|Operation|ApiResponses?)\b' wes-*/src/main/kotlin
+rg -l -t kotlin '^@RestController\b' wes-*/src/main/kotlin | xargs -r rg --files-without-match 'ControllerDocs'; rg -n -t kotlin -g '!**/controller/docs/**' '^\s*@(Tag|Operation|ApiResponses?)\b' wes-*/src/main/kotlin
 
 # CT-08
 rg -n -t kotlin 'permitAll|requestMatchers\(' wes-*/src/main/kotlin
@@ -478,7 +478,7 @@ rg -n -t kotlin '@Modifying' wes-*/src/main/kotlin | rg -v 'clearAutomatically\s
 rg -nUP -t kotlin '@Modifying[^\n]*\n(?:(?![^\n]*\bfun \w+\()[^\n]*\n){0,14}[ \t]*fun \w+\((?:[^()]|\([^()]*\))*\)(?!\s*:\s*Int\b)' wes-*/src/main/kotlin
 
 # RP-09
-rg -l -t kotlin 'batchUpdate' wes-*/src/main/kotlin | rg -v 'BulkRepository'; rg --files -t kotlin -g '*BulkRepository' wes-*/src/main/kotlin | xargs rg --files-without-match 'Propagation.MANDATORY'
+rg -l -t kotlin 'batchUpdate' wes-*/src/main/kotlin | rg -v 'BulkRepository'; rg --files -t kotlin -g '*BulkRepository.kt' wes-*/src/main/kotlin | xargs -r rg --files-without-match 'Propagation.MANDATORY'
 
 # RP-12
 rg -n -t kotlin '^\s*(data |sealed )?(class|interface) \w*Projection\b' wes-*/src/main/kotlin | rg -v '/projection/'
@@ -646,7 +646,7 @@ python3 -I .claude/skills/rule-audit/scripts/audit_scan.py test-nonspring
 rg -n -t kotlin '^\s*@(TestPropertySource|Mock\w*Bean|Spy\w*Bean)\b' wes-*/src/test/kotlin; rg -n -t kotlin '^\s+@TestConfiguration' wes-*/src/test/kotlin
 
 # TS-09
-rg -l -t kotlin '@SpringBootTest' wes-*/src/test/kotlin | xargs rg --files-without-match 'DatabaseClearExtension|IntegrationTest'
+rg -l -t kotlin '@SpringBootTest' wes-*/src/test/kotlin | xargs -r rg --files-without-match 'DatabaseClearExtension|IntegrationTest'
 
 # TS-10
 rg -nP -t kotlin '^\s*[^*/\s].*\bdeleteAllInBatch\(' wes-*/src/test/kotlin wes-domain/src/testFixtures/kotlin
@@ -673,7 +673,7 @@ rg -n -t kotlin 'AtomicLong\(' wes-*/src/test/kotlin
 rg -nUP -t kotlin '@Nested[^\n]*\n(\s*@[^\n]*\n)*\s*(?!inner )class \w+' wes-*/src/test/kotlin; rg -nUP -t kotlin '@Test\b(?=[^\n]*\n(\s*@[^\n]*\n)*\s*fun (?!`)\w+)' wes-*/src/test/kotlin
 
 # TS-19
-rg -l -t kotlin -g '*Test' '@Test' wes-*/src/test/kotlin | xargs rg --files-without-match '// (given|when|then)'
+rg -l -t kotlin -g '*Test.kt' '@Test' wes-*/src/test/kotlin | xargs -r rg --files-without-match '// (given|when|then)'
 
 # TS-20
 rg -n -t kotlin '^import (kotlin\.test\.|org\.junit\.jupiter\.api\.Assertions|org\.junit\.Assert)' wes-*/src/test/kotlin wes-domain/src/testFixtures/kotlin
