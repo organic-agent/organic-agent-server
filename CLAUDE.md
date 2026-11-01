@@ -109,7 +109,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 규칙(`.claude/rules`)은 세 겹으로 지킨다. 검사 명령의 출처는 하나 — `.claude/skills/rule-audit/reference/checks.md`.
 
 - **편집·명령 직전(PreToolUse hook, `.claude/hooks/guard_*.py`)** — 되돌릴 수 없는 것만 막는다.
-  - 이미 커밋된 `V*__*.sql` 마이그레이션의 Edit·Write와 Bash 수정·삭제(`sed -i`·`rm`·`>>` 등) → 새 V 파일로.
+  - develop에 이미 들어간(= dev·운영 DB에 적용된) `V*__*.sql` 마이그레이션의 Edit·Write와 Bash 수정·삭제(`sed -i`·`rm`·`>>` 등) → 새 V 파일로.
+    이 브랜치에서 새로 만든 V 파일은 커밋한 뒤에도 고칠 수 있다.
   - 운영 데이터 쓰기(`remote` 데이터 스크립트, 읽기 전용 옵션 없는 15432 `psql`)와 운영 배포(main push, `ready-to-merge` 라벨,
     `gh workflow run cd-prod`, base가 main인 `gh pr merge`, 배포 스크립트 직접 실행) → 사용자에게 `! <명령>`으로 직접 실행을 부탁한다.
 - **답을 끝낼 때(Stop hook, `.claude/hooks/stop_check.py`)** — `origin/develop`과 갈라진 지점 대비 바꾼 파일에서 규칙 위반 수가 늘면
