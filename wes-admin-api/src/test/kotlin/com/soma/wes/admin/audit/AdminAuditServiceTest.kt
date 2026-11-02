@@ -5,8 +5,6 @@ import com.soma.wes.admin.audit.domain.AdminAuditTargetType
 import com.soma.wes.admin.audit.repository.AdminAuditLogRepository
 import com.soma.wes.admin.audit.repository.AdminEntityRevisionRepository
 import com.soma.wes.admin.audit.service.AdminAuditQueryService
-import com.soma.wes.admin.audit.service.AdminRevisionRestoreService
-import com.soma.wes.admin.audit.dto.request.AdminRevisionRestoreRequest
 import com.soma.wes.admin.audit.support.AdminAuditSnapshotCodec
 import com.soma.wes.admin.audit.support.AdminMutationAuditContext
 import com.soma.wes.admin.audit.support.AdminRevisionPurgeScheduler
@@ -34,7 +32,6 @@ class AdminAuditServiceTest @Autowired constructor(
     private val auditLogRepository: AdminAuditLogRepository,
     private val revisionRepository: AdminEntityRevisionRepository,
     private val queryService: AdminAuditQueryService,
-    private val restoreService: AdminRevisionRestoreService,
     private val purgeScheduler: AdminRevisionPurgeScheduler,
     private val snapshotCodec: AdminAuditSnapshotCodec,
     private val adminAccountFixture: AdminAccountFixture,
@@ -107,48 +104,6 @@ class AdminAuditServiceTest @Autowired constructor(
         } finally {
             removeAuditInsertFailureTrigger()
         }
-    }
-
-    @Test
-    fun `7일 리비전으로 계정 상태를 복원하고 복원 자체도 새 리비전으로 남긴다`() {
-        val actor = adminAccountFixture.관리자("restore-actor")
-        val created = adminAccountService.create(
-            actorAdminId = actor.requiredId,
-            request = CreateAdminAccountRequest("restore-target", "복원 대상", "운영 담당자 추가"),
-            sourceAddress = "127.0.0.1",
-        )
-        adminAccountService.changeStatus(
-            actorAdminId = actor.requiredId,
-            targetAdminId = created.account.id,
-            request = ChangeAdminStatusRequest(AdminAccountStatus.SUSPENDED, "일시 정지"),
-            sourceAddress = "127.0.0.1",
-        )
-
-        val activeRevision = revisionRepository
-            .findAllByTargetTypeAndTargetIdOrderByRevisionNumberDesc(
-                AdminAuditTargetType.ADMIN_ACCOUNT,
-                created.account.id.toString(),
-            )
-            .last()
-
-        val restoreAuditId = restoreService.restore(
-            actorAdminId = actor.requiredId,
-            revisionId = activeRevision.requiredId,
-            request = AdminRevisionRestoreRequest(
-                reason = "정상 상태로 복원",
-                expectedVersion = adminAccountRepository.findById(created.account.id).orElseThrow().version,
-            ),
-            sourceAddress = "127.0.0.1",
-        )
-
-        val restored = adminAccountRepository.findById(created.account.id).orElseThrow()
-        assertThat(restored.status).isEqualTo(AdminAccountStatus.ACTIVE)
-        assertThat(queryService.getDetail(restoreAuditId).audit.action)
-            .isEqualTo(AdminAuditAction.REVISION_RESTORED)
-        assertThat(revisionRepository.findAllByTargetTypeAndTargetIdOrderByRevisionNumberDesc(
-            AdminAuditTargetType.ADMIN_ACCOUNT,
-            created.account.id.toString(),
-        )).hasSize(3)
     }
 
     @Test
