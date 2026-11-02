@@ -71,7 +71,7 @@ class AdminWorkflowService(
         val requestHash = requestHash(type, id, request)
 
         // 재처리는 admin_processing_jobs 자체가 durable outbox다. 예약부터 PENDING 재등록,
-        // 감사, 응답 저장까지 한 트랜잭션에 넣어 외부 호출이나 고착된 PENDING 예약을 만들지 않는다.
+        // 변경과 응답 저장을 한 트랜잭션에 넣어 외부 호출이나 고착된 PENDING 예약을 만들지 않는다.
         if (request.action == AdminWorkflowAction.RETRY_PROCESSING_JOB) {
             return retryProcessingJob(
                 actorAdminId = actorAdminId,
@@ -942,7 +942,7 @@ class AdminWorkflowService(
     /**
      * 초대·협업 토큰은 최초 성공 응답에서만 보인다. 사진 교체 URL도 저장하지 않되 pending
      * replacement의 storage key/content type으로 멱등 재생 때 새 URL을 transient하게 서명한다.
-     * 따라서 DB의 멱등 결과와 감사/context 어느 쪽도 presigned URL 저장소가 되지 않는다.
+     * 따라서 DB의 멱등 결과와 context 어느 쪽도 presigned URL 저장소가 되지 않는다.
      */
     private fun AdminWorkflowResponse.forIdempotentReplay(): AdminWorkflowResponse {
         if (action == AdminWorkflowAction.ISSUE_PHOTO_REPLACEMENT) {

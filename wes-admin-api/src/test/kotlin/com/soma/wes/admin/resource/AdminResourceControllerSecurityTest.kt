@@ -704,6 +704,80 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
         }
     }
 
+    @Test
+    fun `대리보기 자연 만료와 수동 종료는 세션을 닫고 재접근을 차단한다`() {
+        val account = adminAccountFixture.관리자("impersonation-expiry")
+        val changed = adminAuthService.changePassword(
+            account.requiredId,
+            ChangeAdminPasswordRequest(
+                AdminAccountFixture.DEFAULT_PASSWORD,
+                "impersonation-expiry-password-456",
+            ),
+            "127.0.0.1",
+        )
+        val cookie = Cookie(AdminSessionCookie.NAME, changed.rawSessionToken)
+        val target = adminResourceService.create(
+            account.requiredId,
+            AdminResourceType.USER,
+            CreateAdminResourceRequest(
+                mapOf(
+                    "provider" to "GOOGLE",
+                    "providerId" to "impersonation-expiry-target",
+                    "nickname" to "만료 대상",
+                ),
+            ),
+            "127.0.0.1",
+        )
+        val mapper = tools.jackson.databind.json.JsonMapper.builder().build()
+
+        fun start(): String {
+            val response = mockMvc.post("/internal/admin/v1/impersonations") {
+                cookie(cookie)
+                header(AdminMutationHeaderFilter.HEADER_NAME, AdminMutationHeaderFilter.HEADER_VALUE)
+                contentType = MediaType.APPLICATION_JSON
+                content = """
+                    {
+                      "targetType": "USER",
+                      "targetId": ${target.id}
+                    }
+                """.trimIndent()
+            }.andExpect { status { isCreated() } }.andReturn().response
+            return mapper.readTree(response.contentAsString).path("id").asText()
+        }
+
+        val expiredSessionId = start()
+        jdbcClient.sql(
+            "UPDATE admin_impersonation_sessions SET expires_at = CURRENT_TIMESTAMP - INTERVAL '1 minute' " +
+                "WHERE id = CAST(:id AS UUID)",
+        ).param("id", expiredSessionId).update()
+
+        val expiryResponse = mockMvc.get("/internal/admin/v1/impersonations/current") {
+            cookie(cookie)
+        }.andExpect { status { isNotFound() } }.andReturn().response
+        val expiryCorrelationId = requireNotNull(
+            expiryResponse.getHeader(HttpLoggingFilter.CORRELATION_ID_HEADER),
+        )
+        assertThat(expiryCorrelationId).matches(REQUEST_TRACE_REGEX)
+        mockMvc.get("/internal/admin/v1/impersonations/current") {
+            cookie(cookie)
+        }.andExpect { status { isNotFound() } }
+
+        val manualSessionId = start()
+        mockMvc.delete("/internal/admin/v1/impersonations/current") {
+            cookie(cookie)
+            header(AdminMutationHeaderFilter.HEADER_NAME, AdminMutationHeaderFilter.HEADER_VALUE)
+        }.andExpect { status { isNoContent() } }
+        mockMvc.delete("/internal/admin/v1/impersonations/current") {
+            cookie(cookie)
+            header(AdminMutationHeaderFilter.HEADER_NAME, AdminMutationHeaderFilter.HEADER_VALUE)
+        }.andExpect { status { isNotFound() } }
+        listOf(expiredSessionId, manualSessionId).forEach { sessionId ->
+            assertThat(jdbcClient.sql(
+                "SELECT ended_at IS NOT NULL FROM admin_impersonation_sessions WHERE id = CAST(:id AS UUID)",
+            ).param("id", sessionId).query { rs, _ -> rs.getBoolean(1) }.single()).isTrue()
+        }
+    }
+
     private fun createConceptFolder(galleryId: Long): Long = jdbcClient.sql(
         """
         INSERT INTO concept_folders
@@ -727,25 +801,4 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
         private const val REQUEST_TRACE_REGEX = "[0-9a-f]{16}"
     }
 
-    private data class ResourceReadAuditRow(
-        val actorAdminId: Long,
-        val actorUsername: String?,
-        val targetType: String?,
-        val targetId: String?,
-        val targetLabel: String?,
-        val sourceAddress: String?,
-        val reason: String?,
-        val changedFields: String?,
-        val hasRevision: Boolean,
-        val correlationId: String?,
-    )
-
-    private data class GenericReadAuditRow(
-        val actorAdminId: Long?,
-        val outcome: String,
-        val targetType: String?,
-        val targetId: String?,
-        val reason: String?,
-        val hasRevision: Boolean,
-    )
 }

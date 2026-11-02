@@ -10,7 +10,7 @@ import java.time.ZonedDateTime
 /**
  * 보정 표식·결과 파일의 관리자용 2단계 업로드 저장소다.
  *
- * storage key는 이 저장소와 스토리지 서비스 사이에서만 흐른다. 컨텍스트·감사 스냅샷과
+ * storage key는 이 저장소와 스토리지 서비스 사이에서만 흐른다. 컨텍스트와
  * 영구 멱등 응답은 upload id, 유형, 버전만 기록한다.
  */
 @Repository
