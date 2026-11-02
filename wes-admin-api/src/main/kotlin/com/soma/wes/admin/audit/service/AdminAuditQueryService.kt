@@ -28,7 +28,6 @@ class AdminAuditQueryService(
     private val revisionRepository: AdminEntityRevisionRepository,
     private val snapshotCodec: AdminAuditSnapshotCodec,
     private val sanitizer: AdminAuditSanitizer,
-    private val restorePolicy: AdminRevisionRestorePolicy,
 ) {
 
     @Transactional(readOnly = true)
@@ -127,7 +126,7 @@ class AdminAuditQueryService(
         return AdminAuditLogDetailResponse(
             audit = AdminAuditLogResponse.from(audit, sanitizer, snapshotCodec),
             revision = revision?.let {
-                AdminEntityRevisionResponse.from(it, snapshotCodec, restorePolicy.isRestorable(it))
+                AdminEntityRevisionResponse.from(it, snapshotCodec, false)
             },
         )
     }
@@ -135,5 +134,5 @@ class AdminAuditQueryService(
     @Transactional(readOnly = true)
     fun getRevisions(targetType: AdminAuditTargetType, targetId: String): List<AdminEntityRevisionResponse> =
         revisionRepository.findAllByTargetTypeAndTargetIdOrderByRevisionNumberDesc(targetType, targetId)
-            .map { AdminEntityRevisionResponse.from(it, snapshotCodec, restorePolicy.isRestorable(it)) }
+            .map { AdminEntityRevisionResponse.from(it, snapshotCodec, false) }
 }
