@@ -1,6 +1,7 @@
 package com.soma.wes.folder.service
 
 import com.soma.wes.activity.service.ActivityRecorder
+import com.soma.wes.billing.domain.GalleryPlan
 import com.soma.wes.folder.config.FolderProperties
 import com.soma.wes.folder.domain.ConceptFolder
 import com.soma.wes.folder.domain.DetailFolder
@@ -254,9 +255,14 @@ class FolderService(
         activityRecorder.recordGallery(galleryId)
     }
 
-    /** 중복을 걷어낸 id를 돌려준다. 휴지통 사진은 `@SQLRestriction`에 걸러져 "없음"으로 센다. */
+    /**
+     * 중복을 걷어낸 id를 돌려준다. 휴지통 사진은 `@SQLRestriction`에 걸러져 "없음"으로 센다.
+     *
+     * 상한은 갤러리 최대 사진 수(프로 요금제)다. 웹의 이동 모달은 고른 사진을 한 번에 보내므로, 정상 요청은 늘 이 안에 든다.
+     */
     private fun validatePhotoIds(galleryId: Long, requested: List<Long>): List<Long> {
         if (requested.isEmpty()) throw FolderException(FolderErrorCode.EMPTY_PHOTO_IDS)
+        if (requested.size > GalleryPlan.PRO.maxPhotoCount) throw FolderException(FolderErrorCode.TOO_MANY_PHOTOS)
         val photoIds = requested.distinct()
         if (photoRepository.findAllByGalleryIdAndIdIn(galleryId, photoIds).size != photoIds.size) {
             throw FolderException(FolderErrorCode.PHOTO_NOT_FOUND)
