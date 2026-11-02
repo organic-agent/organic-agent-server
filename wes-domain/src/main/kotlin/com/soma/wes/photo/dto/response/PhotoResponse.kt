@@ -40,10 +40,23 @@ data class PhotoResponse(
             "개인 갤러리 소유자와 파트너가 공유하며 작가·게스트 응답에는 null이다.",
     )
     val memo: PhotoMemoResponse? = null,
+
+    @field:Schema(description = "마지막으로 별점을 매긴 사용자 id. 별점이 없거나 작가·게스트 응답이면 null", example = "42")
+    val ratedBy: Long? = null,
+
+    @field:Schema(description = "마지막 별점 수정 시각. 별점이 없거나 작가·게스트 응답이면 null", example = "2026-11-02T09:30:00Z")
+    val ratedAt: ZonedDateTime? = null,
 ) {
 
     companion object {
-        fun of(photo: Photo, viewUrl: String?, score: Int?, memo: PhotoMemoResponse? = null) = PhotoResponse(
+        fun of(
+            photo: Photo,
+            viewUrl: String?,
+            score: Int?,
+            memo: PhotoMemoResponse? = null,
+            ratedBy: Long? = null,
+            ratedAt: ZonedDateTime? = null,
+        ) = PhotoResponse(
             photoId = photo.requiredId,
             storageKey = photo.storageKey,
             originalFileName = photo.originalFileName,
@@ -55,6 +68,8 @@ data class PhotoResponse(
             previewReady = photo.previewKey != null,
             score = score,
             memo = memo,
+            ratedBy = ratedBy,
+            ratedAt = ratedAt,
         )
     }
 }

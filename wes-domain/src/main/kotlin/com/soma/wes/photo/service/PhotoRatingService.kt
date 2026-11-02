@@ -23,13 +23,21 @@ class PhotoRatingService(
     private val activityRecorder: ActivityRecorder,
 ) {
 
+    /** 부부만 공유 별점을 읽는다. 전체 목록으로 교체하면 삭제된 별점도 화면에서 지워진다. */
+    @Transactional(readOnly = true)
+    fun list(galleryId: Long, userId: Long): List<PhotoRatingResponse> {
+        galleryAccessPolicy.requireParticipantViewer(galleryId, userId)
+
+        return photoRatingRepository.findAllByGalleryId(galleryId).map { PhotoRatingResponse.from(it) }
+    }
+
     /** 별점을 매긴다. 같은 사진에 다시 부르면 덮어쓴다.*/
     @Transactional
     fun rate(
         galleryId: Long,
         photoId: Long,
         userId: Long,
-        request: RatePhotoRequest
+        request: RatePhotoRequest,
     ): PhotoRatingResponse {
         galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
@@ -40,6 +48,7 @@ class PhotoRatingService(
             ?.apply { rate(request.score, userId) }
             ?: photoRatingRepository.save(PhotoRating.of(photo.requiredId, request.score, userId))
 
+        photoRatingRepository.flush()
         activityRecorder.recordGallery(galleryId)
         return PhotoRatingResponse.from(rating)
     }
@@ -51,7 +60,7 @@ class PhotoRatingService(
     fun clear(galleryId: Long, photoId: Long, userId: Long) {
         galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
 
-        val photo = photoRepository.findByIdAndGalleryId(photoId, galleryId)
+        val photo = photoRepository.findWithLockByIdAndGalleryId(photoId, galleryId)
             ?: throw PhotoException(PhotoErrorCode.PHOTO_NOT_FOUND)
 
         photoRatingRepository.deleteByPhotoId(photo.requiredId)
