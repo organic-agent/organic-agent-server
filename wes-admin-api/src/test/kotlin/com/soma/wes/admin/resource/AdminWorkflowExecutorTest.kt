@@ -103,7 +103,6 @@ class AdminWorkflowExecutorTest @Autowired constructor(
                 dispatchedTimeout = Duration.ofSeconds(1),
             ),
             aiTaskSender = aiTaskSender,
-
             transactionTemplate = transactionTemplate,
         )
 
@@ -140,7 +139,6 @@ class AdminWorkflowExecutorTest @Autowired constructor(
                 dispatchedTimeout = Duration.ofSeconds(1),
             ),
             aiTaskSender = aiTaskSender,
-
             transactionTemplate = transactionTemplate,
         )
 
@@ -192,7 +190,6 @@ class AdminWorkflowExecutorTest @Autowired constructor(
                 dispatchedTimeout = Duration.ofSeconds(1),
             ),
             aiTaskSender = aiTaskSender,
-
             transactionTemplate = transactionTemplate,
         )
 
@@ -391,7 +388,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
     }
 
     private fun create(type: AdminResourceType, actorId: Long, fields: Map<String, Any?>): AdminResourceResponse =
-        resourceService.create(actorId, type, CreateAdminResourceRequest("executor test", fields), "127.0.0.1")
+        resourceService.create(actorId, type, CreateAdminResourceRequest(fields), "127.0.0.1")
 
     private fun processingJob(
         jobType: String,
@@ -444,7 +441,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
             INSERT INTO admin_processing_jobs
                 (job_type,status,target_type,target_id,revision_id,payload,attempt_count,reason,created_at,updated_at)
             VALUES (:jobType,'PENDING',:targetType,:targetId,:revisionId,CAST(:payload AS JSONB),0,
-                    'reasonCategory=TEST_OPERATION operatorReasonProvided=true',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+                    '',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
             RETURNING id
             """.trimIndent(),
         ).param("jobType", jobType).param("targetType", targetType.name).param("targetId", targetId)
@@ -458,7 +455,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
         INSERT INTO admin_notification_outbox
             (notification_type,recipient_reference,source_type,source_id,payload,status,attempt_count,reason,created_at,updated_at)
         VALUES ('TEST','user:1',:sourceType,:sourceId,'{}'::JSONB,'PENDING',0,
-                'reasonCategory=TEST_OPERATION operatorReasonProvided=true',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+                '',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
         RETURNING id
         """.trimIndent(),
     ).param("sourceType", sourceType.name).param("sourceId", sourceId)

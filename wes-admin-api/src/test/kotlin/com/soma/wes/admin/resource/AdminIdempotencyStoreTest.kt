@@ -81,7 +81,6 @@ class AdminIdempotencyStoreTest @Autowired constructor(
             targetType = AdminAuditTargetType.GALLERY,
             targetId = "1",
             targetLabel = "테스트 갤러리",
-            reason = "임베딩 재처리",
             sourceAddress = "127.0.0.1",
             before = mapOf("id" to 1L, "version" to 0L),
         )

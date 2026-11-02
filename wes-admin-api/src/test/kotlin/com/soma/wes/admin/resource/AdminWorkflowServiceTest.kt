@@ -184,7 +184,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
 
         val request = AdminWorkflowRequest(
             action = AdminWorkflowAction.SET_STUDIO_RETOUCH_CAPABILITY,
-            reason = "스튜디오 보정 기능 활성화",
             expectedVersion = graph.studio.version,
             idempotencyKey = "capability-idem-001",
             confirm = true,
@@ -349,7 +348,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
             .containsEntry("status", "FULL")
         val inviteRequest = AdminWorkflowRequest(
             AdminWorkflowAction.REISSUE_GALLERY_INVITE,
-            "만료된 초대 재발급",
             3,
             "gallery-invite-reissue-001",
             true,
@@ -459,7 +457,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.COLLABORATION,
             CreateAdminResourceRequest(
-                "협업 링크 생성",
                 mapOf(
                     "galleryId" to graph.gallery.id,
                     "name" to "가족 협업",
@@ -797,7 +794,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
         val unsharedPhotoId = createPhoto(actor.requiredId, graph.gallery.id, "unshared").id
         val session = resourceService.create(
             actor.requiredId, AdminResourceType.COLLABORATION,
-            CreateAdminResourceRequest("수동 공유폴더 생성", mapOf("galleryId" to graph.gallery.id, "name" to "선택 사진")),
+            CreateAdminResourceRequest(mapOf("galleryId" to graph.gallery.id, "name" to "선택 사진")),
             "127.0.0.1",
         )
         jdbcClient.sql(
@@ -850,7 +847,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.COLLABORATION,
             CreateAdminResourceRequest(
-                "좋아요 충돌 협업",
                 mapOf(
                     "galleryId" to graph.gallery.id,
                     "name" to "가족",
@@ -940,7 +936,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
 
         val issueRequest = AdminWorkflowRequest(
             action = AdminWorkflowAction.ISSUE_PHOTO_REPLACEMENT,
-            reason = "[CUSTOMER_REQUEST] 고객 private@example.com 010-1234-5678 원본 교체",
             expectedVersion = 0,
             idempotencyKey = "photo-replacement-issue-001",
             confirm = true,
@@ -984,7 +979,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
         ).isEqualTo("$replacementKey|image/jpeg").doesNotContain("http", "X-Amz")
         val completeRequest = AdminWorkflowRequest(
             AdminWorkflowAction.COMPLETE_PHOTO_REPLACEMENT,
-            "[DATA_CORRECTION] 고객 pii@example.com 원본 반영",
             1,
             "photo-replacement-complete-001",
             true,
@@ -1035,7 +1029,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
             .map { (it as Number).toLong() }
         val retryRequest = AdminWorkflowRequest(
             AdminWorkflowAction.RETRY_PROCESSING_JOB,
-            "임베딩 처리 재시도",
             2,
             "photo-processing-retry-001",
             true,
@@ -1069,7 +1062,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
         )
         val notificationRequest = AdminWorkflowRequest(
             AdminWorkflowAction.RESEND_NOTIFICATION,
-            "[CUSTOMER_REQUEST] 고객 notify@example.com 알림 재전송",
             4,
             "photo-notification-resend-001",
             true,
@@ -1116,8 +1108,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             """.trimIndent(),
         ).param("photoId", photo.id).query { rs, _ -> rs.getString(1) }.list()
         assertThat(durableReasons)
-            .contains("reasonCategory=CUSTOMER_REQUEST operatorReasonProvided=true")
-            .contains("reasonCategory=DATA_CORRECTION operatorReasonProvided=true")
+            .containsOnly("")
         assertThat(durableReasons.joinToString())
             .doesNotContain("private@example.com", "pii@example.com", "notify@example.com", "010-1234-5678")
 
@@ -1147,7 +1138,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
 
         val request = AdminWorkflowRequest(
             action = AdminWorkflowAction.RETRY_PROCESSING_JOB,
-            reason = "[DATA_CORRECTION] 수동 재시도",
             expectedVersion = photo.version,
             idempotencyKey = "reprocess-manual-requeue-001",
             confirm = true,
@@ -1181,7 +1171,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
             ).param("id", jobId).query { rs, _ -> rs.getString(1) }.single(),
         ).isEqualTo(
             "PENDING:0:NULL:${actor.requiredId}:" +
-                "reasonCategory=DATA_CORRECTION operatorReasonProvided=true",
+                "",
         )
         assertThat(resourceService.get(AdminResourceType.PHOTO, photo.id).version).isEqualTo(photo.version + 1)
 
@@ -1334,7 +1324,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.RETOUCH_REQUEST,
             CreateAdminResourceRequest(
-                "리비전 연결 보정",
                 mapOf("galleryId" to graph.gallery.id, "roundNo" to 1),
             ),
             "127.0.0.1",
@@ -1344,7 +1333,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
             AdminResourceType.RETOUCH_REQUEST,
             retouch.id,
             UpdateAdminResourceRequest(
-                reason = "선택 제출 전 보정 요청 확정",
                 expectedVersion = retouch.version,
                 fields = mapOf("status" to "REQUESTED"),
             ),
@@ -1391,7 +1379,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.RETOUCH_REQUEST,
             CreateAdminResourceRequest(
-                "보정 키 검증",
                 mapOf("galleryId" to graph.gallery.id, "roundNo" to 1),
             ),
             "127.0.0.1",
@@ -1496,7 +1483,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
             AdminResourceType.RETOUCH_REQUEST,
             firstRound.id,
             UpdateAdminResourceRequest(
-                reason = "결과 key 검증 단계 전환",
                 expectedVersion = 4,
                 fields = mapOf("status" to "REQUESTED"),
             ),
@@ -1555,7 +1541,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.RETOUCH_REQUEST,
             CreateAdminResourceRequest(
-                "다른 보정 회차",
                 mapOf("galleryId" to graph.gallery.id, "roundNo" to 2),
             ),
             "127.0.0.1",
@@ -1575,7 +1560,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
             AdminResourceType.RETOUCH_REQUEST,
             secondRound.id,
             UpdateAdminResourceRequest(
-                reason = "다른 회차 결과 key 검증 단계 전환",
                 expectedVersion = 1,
                 fields = mapOf("status" to "REQUESTED"),
             ),
@@ -1636,7 +1620,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
         id,
         AdminWorkflowRequest(
             action = action,
-            reason = "관리자 워크플로 통합 테스트",
             expectedVersion = expectedVersion,
             idempotencyKey = idempotencyKey,
             confirm = true,
@@ -1651,7 +1634,6 @@ private fun createGraph(actorAdminId: Long, suffix: String, withPhoto: Boolean =
             actorAdminId,
             AdminResourceType.STUDIO,
             CreateAdminResourceRequest(
-                "워크플로 스튜디오 생성",
                 mapOf("ownerUserId" to user.id, "name" to "$suffix 스튜디오", "galleryUrl" to "workflow-$suffix"),
             ),
             "127.0.0.1",
@@ -1660,7 +1642,6 @@ private fun createGraph(actorAdminId: Long, suffix: String, withPhoto: Boolean =
             actorAdminId,
             AdminResourceType.GALLERY,
             CreateAdminResourceRequest(
-                "워크플로 갤러리 생성",
                 mapOf("workspaceId" to studio.id, "title" to "$suffix 갤러리"),
             ),
             "127.0.0.1",
@@ -1677,7 +1658,6 @@ private fun createGraph(actorAdminId: Long, suffix: String, withPhoto: Boolean =
         actorAdminId,
         AdminResourceType.USER,
         CreateAdminResourceRequest(
-            "워크플로 사용자 생성",
             mapOf("provider" to "GOOGLE", "providerId" to "workflow-$suffix", "nickname" to suffix),
         ),
         "127.0.0.1",
@@ -1696,7 +1676,6 @@ private fun createGraph(actorAdminId: Long, suffix: String, withPhoto: Boolean =
             actorAdminId,
             AdminResourceType.PHOTO,
             CreateAdminResourceRequest(
-                "워크플로 사진 생성",
                 mapOf(
                     "galleryId" to galleryId,
                     "storageKey" to "galleries/$galleryId/$suffix.jpg",
@@ -1718,7 +1697,7 @@ private fun createGraph(actorAdminId: Long, suffix: String, withPhoto: Boolean =
             VALUES (
                 'EMBEDDING', 'PENDING', 'PHOTO', :photoId,
                 jsonb_build_object('galleryId', :galleryId), 0,
-                :actorAdminId, 'reasonCategory=TEST_OPERATION operatorReasonProvided=true',
+                :actorAdminId, '',
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             RETURNING id

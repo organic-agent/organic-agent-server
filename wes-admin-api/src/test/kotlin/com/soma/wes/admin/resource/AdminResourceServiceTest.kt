@@ -35,7 +35,6 @@ class AdminResourceServiceTest @Autowired constructor(
             actorAdminId = actor.requiredId,
             type = AdminResourceType.USER,
             request = CreateAdminResourceRequest(
-                reason = "지원 요청으로 사용자 생성",
                 fields = mapOf(
                     "provider" to "google",
                     "providerId" to "provider-secret-value",
@@ -55,7 +54,6 @@ class AdminResourceServiceTest @Autowired constructor(
             type = AdminResourceType.USER,
             id = created.id,
             request = UpdateAdminResourceRequest(
-                reason = "닉네임 정정",
                 expectedVersion = created.version,
                 fields = mapOf("nickname" to "정정된 사용자"),
             ),
@@ -64,9 +62,6 @@ class AdminResourceServiceTest @Autowired constructor(
 
         assertThat(updated.version).isEqualTo(1)
         assertThat(updated.label).isEqualTo("정정된 사용자")
-
-
-
     }
 
     @Test
@@ -76,7 +71,6 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.USER,
             CreateAdminResourceRequest(
-                "충돌 테스트 사용자 생성",
                 mapOf("provider" to "KAKAO", "providerId" to "v-1", "nickname" to "버전 사용자"),
             ),
             "127.0.0.1",
@@ -85,7 +79,7 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.USER,
             user.id,
-            UpdateAdminResourceRequest("첫 변경", user.version, mapOf("nickname" to "첫 변경 완료")),
+            UpdateAdminResourceRequest(user.version, mapOf("nickname" to "첫 변경 완료")),
             "127.0.0.1",
         )
 
@@ -94,13 +88,12 @@ class AdminResourceServiceTest @Autowired constructor(
                 actor.requiredId,
                 AdminResourceType.USER,
                 user.id,
-                UpdateAdminResourceRequest("오래된 변경", user.version, mapOf("nickname" to "덮어쓰기")),
+                UpdateAdminResourceRequest(user.version, mapOf("nickname" to "덮어쓰기")),
                 "127.0.0.1",
             )
         }.isInstanceOfSatisfying(AdminException::class.java) {
             assertThat(it.errorCode).isEqualTo(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
         }
-
     }
 
     @Test
@@ -113,7 +106,7 @@ class AdminResourceServiceTest @Autowired constructor(
                 actor.requiredId,
                 AdminResourceType.USER,
                 user.id,
-                ChangeAdminResourceStateRequest("지원 요청 종료", user.version),
+                ChangeAdminResourceStateRequest(user.version),
                 "127.0.0.1",
             )
         }.isInstanceOfSatisfying(AdminException::class.java) {
@@ -121,7 +114,6 @@ class AdminResourceServiceTest @Autowired constructor(
         }
 
         assertThat(service.get(AdminResourceType.USER, user.id).id).isEqualTo(user.id)
-
     }
 
     @Test
@@ -132,7 +124,6 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.STUDIO,
             CreateAdminResourceRequest(
-                "복원 테스트 스튜디오",
                 mapOf("ownerUserId" to user.id, "name" to "복원 스튜디오", "galleryUrl" to "restore-studio"),
             ),
             "127.0.0.1",
@@ -141,7 +132,6 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.GALLERY,
             CreateAdminResourceRequest(
-                "복원 테스트 갤러리",
                 mapOf("workspaceId" to studio.id, "title" to "복원 갤러리"),
             ),
             "127.0.0.1",
@@ -151,7 +141,7 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.GALLERY,
             gallery.id,
-            ChangeAdminResourceStateRequest("실수로 생성", gallery.version),
+            ChangeAdminResourceStateRequest(gallery.version),
             "127.0.0.1",
         )
         val deleted = service.get(AdminResourceType.GALLERY, gallery.id)
@@ -162,7 +152,7 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.GALLERY,
             gallery.id,
-            ChangeAdminResourceStateRequest("삭제 취소", deleted.version),
+            ChangeAdminResourceStateRequest(deleted.version),
             "127.0.0.1",
         )
         assertThat(restored.deleted).isFalse()
@@ -176,13 +166,13 @@ class AdminResourceServiceTest @Autowired constructor(
         val studio = service.create(
             actor.requiredId,
             AdminResourceType.STUDIO,
-            CreateAdminResourceRequest("협업 스튜디오", mapOf("ownerUserId" to user.id, "name" to "협업", "galleryUrl" to "collab-studio")),
+            CreateAdminResourceRequest(mapOf("ownerUserId" to user.id, "name" to "협업", "galleryUrl" to "collab-studio")),
             "127.0.0.1",
         )
         val gallery = service.create(
             actor.requiredId,
             AdminResourceType.GALLERY,
-            CreateAdminResourceRequest("협업 갤러리", mapOf("workspaceId" to studio.id, "title" to "협업 갤러리")),
+            CreateAdminResourceRequest(mapOf("workspaceId" to studio.id, "title" to "협업 갤러리")),
             "127.0.0.1",
         )
 
@@ -190,7 +180,6 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.COLLABORATION,
             CreateAdminResourceRequest(
-                "지원용 링크 생성",
                 mapOf("galleryId" to gallery.id, "name" to "가족 의견"),
             ),
             "127.0.0.1",
@@ -213,20 +202,19 @@ class AdminResourceServiceTest @Autowired constructor(
         val studio = service.create(
             actor.requiredId,
             AdminResourceType.STUDIO,
-            CreateAdminResourceRequest("전체 리소스 스튜디오", mapOf("ownerUserId" to user.id, "name" to "전체 리소스", "galleryUrl" to "all-resource")),
+            CreateAdminResourceRequest(mapOf("ownerUserId" to user.id, "name" to "전체 리소스", "galleryUrl" to "all-resource")),
             "127.0.0.1",
         )
         val gallery = service.create(
             actor.requiredId,
             AdminResourceType.GALLERY,
-            CreateAdminResourceRequest("전체 리소스 갤러리", mapOf("workspaceId" to studio.id, "title" to "전체 리소스 갤러리")),
+            CreateAdminResourceRequest(mapOf("workspaceId" to studio.id, "title" to "전체 리소스 갤러리")),
             "127.0.0.1",
         )
         val photo = service.create(
             actor.requiredId,
             AdminResourceType.PHOTO,
             CreateAdminResourceRequest(
-                "운영 복구 사진 등록",
                 mapOf(
                     "galleryId" to gallery.id,
                     "storageKey" to "galleries/${gallery.id}/all-resource.jpg",
@@ -243,7 +231,6 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.COLLABORATION,
             CreateAdminResourceRequest(
-                "협업 복구",
                 mapOf("galleryId" to gallery.id, "name" to "전체 리소스 협업"),
             ),
             "127.0.0.1",
@@ -251,7 +238,7 @@ class AdminResourceServiceTest @Autowired constructor(
         val retouch = service.create(
             actor.requiredId,
             AdminResourceType.RETOUCH_REQUEST,
-            CreateAdminResourceRequest("보정 요청 복구", mapOf("galleryId" to gallery.id, "roundNo" to 1)),
+            CreateAdminResourceRequest(mapOf("galleryId" to gallery.id, "roundNo" to 1)),
             "127.0.0.1",
         )
 
@@ -291,7 +278,7 @@ class AdminResourceServiceTest @Autowired constructor(
                 actor.requiredId,
                 AdminResourceType.USER,
                 owner.id,
-                UpdateAdminResourceRequest("전역 역할 수정 차단", owner.version, mapOf("role" to "ADMIN")),
+                UpdateAdminResourceRequest(owner.version, mapOf("role" to "ADMIN")),
                 "127.0.0.1",
             )
         }.isInstanceOfSatisfying(AdminException::class.java) {
@@ -302,7 +289,6 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.STUDIO,
             CreateAdminResourceRequest(
-                "새 스키마 스튜디오",
                 mapOf("ownerUserId" to owner.id, "name" to "새 스키마", "galleryUrl" to "new-schema"),
             ),
             "127.0.0.1",
@@ -311,7 +297,6 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.GALLERY,
             CreateAdminResourceRequest(
-                "새 스키마 갤러리",
                 mapOf("workspaceId" to studio.id, "createdByUserId" to owner.id, "title" to "분류 갤러리"),
             ),
             "127.0.0.1",
@@ -320,7 +305,6 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.PHOTO,
             CreateAdminResourceRequest(
-                "분류 사진",
                 mapOf(
                     "galleryId" to gallery.id,
                     "storageKey" to "galleries/${gallery.id}/category.jpg",
@@ -334,7 +318,6 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.CONCEPT_FOLDER,
             CreateAdminResourceRequest(
-                "컨셉 폴더 생성",
                 mapOf("galleryId" to gallery.id, "name" to "가족", "sortOrder" to 0),
             ),
             "127.0.0.1",
@@ -343,7 +326,6 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.DETAIL_FOLDER,
             CreateAdminResourceRequest(
-                "세부 폴더 생성",
                 mapOf("conceptFolderId" to concept.id, "name" to "부모님", "sortOrder" to 0),
             ),
             "127.0.0.1",
@@ -352,7 +334,6 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.DETAIL_FOLDER,
             CreateAdminResourceRequest(
-                "대체 세부 폴더 생성",
                 mapOf("conceptFolderId" to concept.id, "name" to "형제", "sortOrder" to 1),
             ),
             "127.0.0.1",
@@ -361,7 +342,6 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
             CreateAdminResourceRequest(
-                "사진 수동 분류",
                 mapOf(
                     "photoId" to photo.id,
                     "detailFolderId" to firstDetail.id,
@@ -374,7 +354,6 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.PHOTO_RATING,
             CreateAdminResourceRequest(
-                "사진 평점",
                 mapOf("photoId" to photo.id, "score" to 4, "ratedByUserId" to owner.id),
             ),
             "127.0.0.1",
@@ -434,7 +413,6 @@ class AdminResourceServiceTest @Autowired constructor(
             AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
             assignment.id,
             UpdateAdminResourceRequest(
-                "분류 이동",
                 assignment.version,
                 mapOf("detailFolderId" to secondDetail.id, "assignedByUserId" to owner.id),
             ),
@@ -448,7 +426,7 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.PHOTO_RATING,
             rating.id,
-            UpdateAdminResourceRequest("평점 수정", rating.version, mapOf("score" to 5)),
+            UpdateAdminResourceRequest(rating.version, mapOf("score" to 5)),
             "127.0.0.1",
         )
         assertThat(rerated.fields["score"]).isEqualTo(5)
@@ -460,7 +438,7 @@ class AdminResourceServiceTest @Autowired constructor(
                         actor.requiredId,
                         type,
                         id,
-                        ChangeAdminResourceStateRequest("지원하지 않는 삭제", service.get(type, id).version),
+                        ChangeAdminResourceStateRequest(service.get(type, id).version),
                         "127.0.0.1",
                     )
                 }.isInstanceOfSatisfying(AdminException::class.java) {
@@ -471,14 +449,14 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
             moved.id,
-            ChangeAdminResourceStateRequest("분류 제거", moved.version),
+            ChangeAdminResourceStateRequest(moved.version),
             "127.0.0.1",
         )
         service.delete(
             actor.requiredId,
             AdminResourceType.PHOTO_RATING,
             rerated.id,
-            ChangeAdminResourceStateRequest("평점 제거", rerated.version),
+            ChangeAdminResourceStateRequest(rerated.version),
             "127.0.0.1",
         )
         assertThat(jdbcClient.sql("SELECT COUNT(*) FROM detail_folder_assignments WHERE photo_id = :id")
@@ -497,7 +475,6 @@ class AdminResourceServiceTest @Autowired constructor(
                 actor.requiredId,
                 AdminResourceType.SELECTION,
                 CreateAdminResourceRequest(
-                    "제출 상태 우회 시도",
                     mapOf("galleryId" to galleryId, "status" to "SUBMITTED"),
                 ),
                 "127.0.0.1",
@@ -515,7 +492,7 @@ class AdminResourceServiceTest @Autowired constructor(
             service.create(
                 actor.requiredId,
                 AdminResourceType.SELECTION,
-                CreateAdminResourceRequest("중복 셀렉 생성", mapOf("galleryId" to galleryId)),
+                CreateAdminResourceRequest(mapOf("galleryId" to galleryId)),
                 "127.0.0.1",
             )
         }.isInstanceOfSatisfying(AdminException::class.java) {
@@ -526,7 +503,7 @@ class AdminResourceServiceTest @Autowired constructor(
                 actor.requiredId,
                 AdminResourceType.SELECTION,
                 selection.id,
-                UpdateAdminResourceRequest("직접 제출 우회", selection.version, mapOf("status" to "SUBMITTED")),
+                UpdateAdminResourceRequest(selection.version, mapOf("status" to "SUBMITTED")),
                 "127.0.0.1",
             )
         }.isInstanceOfSatisfying(AdminException::class.java) {
@@ -544,7 +521,6 @@ class AdminResourceServiceTest @Autowired constructor(
                 actor.requiredId,
                 AdminResourceType.RETOUCH_REQUEST,
                 CreateAdminResourceRequest(
-                    "완료 상태 우회 시도",
                     mapOf("galleryId" to galleryId, "roundNo" to 1, "status" to "COMPLETED"),
                 ),
                 "127.0.0.1",
@@ -556,7 +532,7 @@ class AdminResourceServiceTest @Autowired constructor(
         val round = service.create(
             actor.requiredId,
             AdminResourceType.RETOUCH_REQUEST,
-            CreateAdminResourceRequest("보정 회차 생성", mapOf("galleryId" to galleryId, "roundNo" to 1)),
+            CreateAdminResourceRequest(mapOf("galleryId" to galleryId, "roundNo" to 1)),
             "127.0.0.1",
         )
         assertThatThrownBy {
@@ -564,7 +540,7 @@ class AdminResourceServiceTest @Autowired constructor(
                 actor.requiredId,
                 AdminResourceType.RETOUCH_REQUEST,
                 round.id,
-                UpdateAdminResourceRequest("완료 직행 차단", round.version, mapOf("status" to "COMPLETED")),
+                UpdateAdminResourceRequest(round.version, mapOf("status" to "COMPLETED")),
                 "127.0.0.1",
             )
         }.isInstanceOfSatisfying(AdminException::class.java) {
@@ -575,7 +551,7 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.RETOUCH_REQUEST,
             round.id,
-            UpdateAdminResourceRequest("보정 요청 제출", round.version, mapOf("status" to "REQUESTED")),
+            UpdateAdminResourceRequest(round.version, mapOf("status" to "REQUESTED")),
             "127.0.0.1",
         )
         assertThat(requested.fields["status"]).isEqualTo("REQUESTED")
@@ -586,7 +562,7 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.RETOUCH_REQUEST,
             round.id,
-            UpdateAdminResourceRequest("보정 완료", requested.version, mapOf("status" to "COMPLETED")),
+            UpdateAdminResourceRequest(requested.version, mapOf("status" to "COMPLETED")),
             "127.0.0.1",
         )
         assertThat(completed.fields["status"]).isEqualTo("COMPLETED")
@@ -598,7 +574,6 @@ class AdminResourceServiceTest @Autowired constructor(
                 AdminResourceType.RETOUCH_REQUEST,
                 round.id,
                 UpdateAdminResourceRequest(
-                    "완료 시각 직접 삭제 차단",
                     completed.version,
                     mapOf("completedAt" to null),
                 ),
@@ -618,7 +593,6 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.STUDIO,
             CreateAdminResourceRequest(
-                "워크스페이스 기반 스튜디오 생성",
                 mapOf("ownerUserId" to owner.id, "name" to "워크스페이스 스튜디오", "galleryUrl" to "workspace-owner"),
             ),
             "127.0.0.1",
@@ -647,7 +621,7 @@ class AdminResourceServiceTest @Autowired constructor(
                 actor.requiredId,
                 AdminResourceType.USER,
                 owner.id,
-                UpdateAdminResourceRequest("구 사용자 유형 변경 차단", owner.version, mapOf("userType" to "CLIENT")),
+                UpdateAdminResourceRequest(owner.version, mapOf("userType" to "CLIENT")),
                 "127.0.0.1",
             )
         }.isInstanceOfSatisfying(AdminException::class.java) {
@@ -663,7 +637,6 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.STUDIO,
             CreateAdminResourceRequest(
-                "상태 정책 스튜디오",
                 mapOf("ownerUserId" to user.id, "name" to "상태 정책", "galleryUrl" to "gallery-state-policy"),
             ),
             "127.0.0.1",
@@ -674,7 +647,6 @@ class AdminResourceServiceTest @Autowired constructor(
                 actor.requiredId,
                 AdminResourceType.GALLERY,
                 CreateAdminResourceRequest(
-                    "OPEN 생성 우회",
                     mapOf(
                         "workspaceId" to studio.id,
                         "title" to "우회 갤러리",
@@ -694,7 +666,6 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.GALLERY,
             CreateAdminResourceRequest(
-                "DRAFT 갤러리 생성",
                 mapOf("workspaceId" to studio.id, "title" to "정상 갤러리"),
             ),
             "127.0.0.1",
@@ -705,7 +676,6 @@ class AdminResourceServiceTest @Autowired constructor(
                 AdminResourceType.GALLERY,
                 gallery.id,
                 UpdateAdminResourceRequest(
-                    "일반 수정으로 상태 우회",
                     gallery.version,
                     mapOf(
                         "status" to "CLOSED",
@@ -739,7 +709,6 @@ class AdminResourceServiceTest @Autowired constructor(
                 actor.requiredId,
                 AdminResourceType.STUDIO,
                 CreateAdminResourceRequest(
-                    "과거 유입 경로 생성 차단",
                     mapOf(
                         "ownerUserId" to owner.id,
                         "name" to "잘못된 스튜디오",
@@ -756,7 +725,6 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.STUDIO,
             CreateAdminResourceRequest(
-                "스튜디오 프로필 생성",
                 mapOf(
                     "ownerUserId" to owner.id,
                     "name" to "프로필 스튜디오",
@@ -787,7 +755,6 @@ class AdminResourceServiceTest @Autowired constructor(
             AdminResourceType.STUDIO,
             studio.id,
             UpdateAdminResourceRequest(
-                "스튜디오 프로필 수정",
                 detail.version,
                 mapOf("contact" to "010-9999-0000", "description" to "본식과 리허설 전문"),
             ),
@@ -803,7 +770,7 @@ class AdminResourceServiceTest @Autowired constructor(
                 actor.requiredId,
                 AdminResourceType.STUDIO,
                 studio.id,
-                UpdateAdminResourceRequest("과거 유입 경로 수정 차단", updated.version, mapOf("inflowChannel" to "ADMIN")),
+                UpdateAdminResourceRequest(updated.version, mapOf("inflowChannel" to "ADMIN")),
                 "127.0.0.1",
             )
         }.isInstanceOfSatisfying(AdminException::class.java) {
@@ -819,7 +786,6 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.STUDIO,
             CreateAdminResourceRequest(
-                "알림 컨텍스트 스튜디오",
                 mapOf("ownerUserId" to owner.id, "name" to "알림 스튜디오", "galleryUrl" to "notification-context"),
             ),
             "127.0.0.1",
@@ -828,7 +794,6 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.GALLERY,
             CreateAdminResourceRequest(
-                "알림 컨텍스트 갤러리",
                 mapOf("workspaceId" to studio.id, "title" to "알림 갤러리"),
             ),
             "127.0.0.1",
@@ -876,7 +841,7 @@ class AdminResourceServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.GALLERY,
             gallery.id,
-            UpdateAdminResourceRequest("관리자 제목 정정", gallery.version, mapOf("title" to "정정된 알림 갤러리")),
+            UpdateAdminResourceRequest(gallery.version, mapOf("title" to "정정된 알림 갤러리")),
             "127.0.0.1",
         )
         assertThat(jdbcClient.sql("SELECT COUNT(*) FROM user_notifications").query { rs, _ -> rs.getLong(1) }.single())
@@ -923,7 +888,6 @@ class AdminResourceServiceTest @Autowired constructor(
             actorAdminId,
             AdminResourceType.STUDIO,
             CreateAdminResourceRequest(
-                "테스트 스튜디오 생성",
                 mapOf("ownerUserId" to user.id, "name" to slug, "galleryUrl" to slug),
             ),
             "127.0.0.1",
@@ -931,7 +895,7 @@ class AdminResourceServiceTest @Autowired constructor(
         return service.create(
             actorAdminId,
             AdminResourceType.GALLERY,
-            CreateAdminResourceRequest("테스트 갤러리 생성", mapOf("workspaceId" to studio.id, "title" to slug)),
+            CreateAdminResourceRequest(mapOf("workspaceId" to studio.id, "title" to slug)),
             "127.0.0.1",
         ).id
     }
@@ -941,7 +905,6 @@ class AdminResourceServiceTest @Autowired constructor(
             actorAdminId,
             AdminResourceType.USER,
             CreateAdminResourceRequest(
-                "테스트 사용자 생성",
                 mapOf("provider" to "GOOGLE", "providerId" to providerId, "nickname" to providerId),
             ),
             "127.0.0.1",

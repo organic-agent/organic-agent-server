@@ -4,7 +4,6 @@ import com.soma.wes.admin.domain.AdminAccount
 import com.soma.wes.admin.domain.AdminAccountStatus
 import com.soma.wes.admin.domain.AdminEventType
 import com.soma.wes.admin.audit.support.AdminAuditSanitizer
-import com.soma.wes.admin.dto.request.AdminReasonRequest
 import com.soma.wes.admin.dto.request.ChangeAdminStatusRequest
 import com.soma.wes.admin.dto.request.CreateAdminAccountRequest
 import com.soma.wes.admin.dto.response.AdminAccountListResponse
@@ -44,7 +43,6 @@ class AdminAccountService(
         request: CreateAdminAccountRequest,
         sourceAddress: String?,
     ): AdminTemporaryPasswordResponse {
-        validateReason(request.reason)
         val username = AdminAccount.normalizeUsername(request.username)
         if (adminAccountRepository.existsByUsername(username)) {
             throw AdminException(AdminErrorCode.USERNAME_ALREADY_EXISTS)
@@ -78,7 +76,6 @@ class AdminAccountService(
         request: ChangeAdminStatusRequest,
         sourceAddress: String?,
     ): AdminAccountResponse {
-        validateReason(request.reason)
         val account = requireWithLock(targetAdminId)
 
         val eventType = when (request.status) {
@@ -99,10 +96,8 @@ class AdminAccountService(
     fun unlock(
         actorAdminId: Long,
         targetAdminId: Long,
-        request: AdminReasonRequest,
         sourceAddress: String?,
     ): AdminAccountResponse {
-        validateReason(request.reason)
         val account = requireWithLock(targetAdminId)
 
         account.unlock()
@@ -113,10 +108,8 @@ class AdminAccountService(
     fun issueTemporaryPassword(
         actorAdminId: Long,
         targetAdminId: Long,
-        request: AdminReasonRequest,
         sourceAddress: String?,
     ): AdminTemporaryPasswordResponse {
-        validateReason(request.reason)
         if (actorAdminId == targetAdminId) {
             throw AdminException(AdminErrorCode.SELF_TEMPORARY_PASSWORD_FORBIDDEN)
         }
@@ -159,11 +152,4 @@ class AdminAccountService(
     private fun requireWithLock(adminId: Long): AdminAccount =
         adminAccountRepository.findWithLockById(adminId)
             ?: throw AdminException(AdminErrorCode.ACCOUNT_NOT_FOUND)
-
-    private fun validateReason(reason: String) {
-        if (reason.isBlank() || reason.trim().length > 500) {
-            throw AdminException(AdminErrorCode.INVALID_REASON)
-        }
-    }
-
 }

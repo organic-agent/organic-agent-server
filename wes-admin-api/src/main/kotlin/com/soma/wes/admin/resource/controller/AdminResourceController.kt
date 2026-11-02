@@ -5,7 +5,6 @@ import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.dto.AdminAnalysisFailuresResponse
 import com.soma.wes.admin.resource.dto.AdminReprocessRequest
 import com.soma.wes.admin.resource.dto.AdminReprocessResponse
-import com.soma.wes.admin.resource.dto.AdminReasonRequest
 import com.soma.wes.admin.resource.dto.AdminOperationsOverviewResponse
 import com.soma.wes.admin.resource.dto.AdminObservabilityLinksResponse
 import com.soma.wes.admin.resource.dto.AdminPhotoAccessRequest
@@ -95,10 +94,9 @@ class AdminResourceController(
     fun restoreTrashBatch(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable batchId: Long,
-        @Valid @RequestBody request: AdminReasonRequest,
         servletRequest: HttpServletRequest,
     ): ResponseEntity<AdminTrashBatchResponse> = ResponseEntity.ok(
-        cascadeTrashService.restoreBatch(loginUser.id, batchId, request, servletRequest.remoteAddr),
+        cascadeTrashService.restoreBatch(loginUser.id, batchId, servletRequest.remoteAddr),
     )
 
     @GetMapping("/resources")
