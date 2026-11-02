@@ -228,7 +228,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             """
             INSERT INTO admin_selection_revisions
                 (selection_id, revision_number, source, status, photo_items, actor_admin_id, reason, created_at)
-            VALUES (:selectionId, 1, 'ADMIN', 'SELECTING', '[]'::JSONB, :actorId, 'trash facts', CURRENT_TIMESTAMP)
+            VALUES (:selectionId, 1, 'AI_DRAFT', 'SELECTING', '[]'::JSONB, :actorId, '', CURRENT_TIMESTAMP)
             """.trimIndent(),
         ).param("selectionId", selection.id).param("actorId", actor.requiredId).update()
         jdbcClient.sql(

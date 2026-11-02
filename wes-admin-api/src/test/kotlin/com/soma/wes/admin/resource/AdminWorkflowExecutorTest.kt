@@ -454,10 +454,6 @@ class AdminWorkflowExecutorTest @Autowired constructor(
         rs.getString("status"), rs.getInt("attempt_count"), rs.getString("failure_code"),
     ) }.single()
 
-    private fun revisionJson(id: Long): String = jdbcClient.sql(
-        "SELECT photo_items::TEXT FROM admin_selection_revisions WHERE id=:id",
-    ).param("id", id).query { rs, _ -> rs.getString(1) }.single()
-
     private data class Graph(
         val actorId: Long,
         val studio: AdminResourceResponse,

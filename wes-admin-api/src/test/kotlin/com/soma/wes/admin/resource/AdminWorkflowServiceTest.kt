@@ -1184,7 +1184,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `AI 초안은 임베딩과 품질로 결정적으로 다양화하고 제출 리비전을 남긴다`() {
+    fun `AI 초안은 현재 선택과 분리하고 관리자 이력 없이 적용해 제출한다`() {
         val actor = adminAccountFixture.관리자("workflow-selection-owner")
         val graph = createGraph(actor.requiredId, "selection")
         val selection = selectionForGallery(graph.gallery.id)
@@ -1205,6 +1205,9 @@ class AdminWorkflowServiceTest @Autowired constructor(
         val revisionId = (draft.details.getValue("revisionId") as Number).toLong()
         assertThat(draft.status).isEqualTo("SUCCEEDED")
         assertThat(draft.details["photoIds"] as List<*>).containsExactly(photos[0].id, photos[2].id)
+        assertThat(contextService.get(AdminResourceType.SELECTION, selection.id).sections)
+            .containsKey("aiDrafts")
+            .doesNotContainKeys("items", "revisions")
         assertThatThrownBy {
             jdbcClient.sql("UPDATE admin_selection_revisions SET reason = 'tampered' WHERE id = :id")
                 .param("id", revisionId).update()
@@ -1220,6 +1223,15 @@ class AdminWorkflowServiceTest @Autowired constructor(
             mapOf("revisionId" to revisionId),
         )
         assertThat(submitted.status).isEqualTo("COMPLETED")
+        assertThat(submitted.details).containsEntry("photoCount", 2).doesNotContainKeys("revisionId", "previousRevisionId")
+        val selectionContext = contextService.get(AdminResourceType.SELECTION, selection.id)
+        assertThat(selectionContext.sections.getValue("items").map { it["photoId"] })
+            .containsExactly(photos[0].id, photos[2].id)
+        assertThat(selectionContext.sections.getValue("aiDrafts").single()["id"]).isEqualTo(revisionId)
+        assertThat(
+            jdbcClient.sql("SELECT source FROM admin_selection_revisions WHERE selection_id = :id")
+                .param("id", selection.id).query { rs, _ -> rs.getString(1) }.list(),
+        ).containsExactly("AI_DRAFT")
         assertThat(
             jdbcClient.sql("SELECT status FROM photo_selections WHERE id = :id")
                 .param("id", selection.id).query { rs, _ -> rs.getString(1) }.single(),
@@ -1302,10 +1314,11 @@ class AdminWorkflowServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `선택 변경 전 리비전은 기존 보정에 고정된다`() {
-        val actor = adminAccountFixture.관리자("workflow-revision-link-owner")
-        val graph = createGraph(actor.requiredId, "revision-link", withPhoto = true)
+    fun `현재 선택의 수정 제출 취소는 이력 없이 동작하고 기존 보정 항목을 보존한다`() {
+        val actor = adminAccountFixture.관리자("workflow-selection-edit-owner")
+        val graph = createGraph(actor.requiredId, "selection-edit", withPhoto = true)
         val photo = requireNotNull(graph.photo)
+        val newPhoto = createPhoto(actor.requiredId, graph.gallery.id, "selection-edit-new")
         val selection = selectionForGallery(graph.gallery.id)
         execute(
             actor.requiredId,
@@ -1324,12 +1337,21 @@ class AdminWorkflowServiceTest @Autowired constructor(
             ),
             "127.0.0.1",
         )
+        execute(
+            actor.requiredId,
+            AdminResourceType.RETOUCH_REQUEST,
+            retouch.id,
+            AdminWorkflowAction.CREATE_RETOUCH_ITEM,
+            retouch.version,
+            "selection-edit-retouch-item-001",
+            mapOf("photoId" to photo.id, "requestText" to "기존 보정 요청"),
+        )
         resourceService.update(
             actor.requiredId,
             AdminResourceType.RETOUCH_REQUEST,
             retouch.id,
             UpdateAdminResourceRequest(
-                expectedVersion = retouch.version,
+                expectedVersion = retouch.version + 1,
                 fields = mapOf("status" to "REQUESTED"),
             ),
             "127.0.0.1",
@@ -1343,27 +1365,101 @@ class AdminWorkflowServiceTest @Autowired constructor(
             1,
             "revision-link-submit-001",
         )
-        val previousRevisionId = (submitted.details.getValue("previousRevisionId") as Number).toLong()
-        val submittedRevisionId = (submitted.details.getValue("revisionId") as Number).toLong()
-        assertThat(previousRevisionId).isNotEqualTo(submittedRevisionId)
-        assertThat(
-            jdbcClient.sql("SELECT selection_revision_id FROM retouch_rounds WHERE id = :id")
-                .param("id", retouch.id).query { rs, _ -> rs.getLong(1) }.single(),
-        ).isEqualTo(previousRevisionId)
+        assertThat(submitted.details).containsEntry("photoCount", 1).doesNotContainKeys("revisionId", "previousRevisionId")
+        assertThat(resourceService.get(AdminResourceType.SELECTION, selection.id).fields["status"]).isEqualTo("SUBMITTED")
+
+        execute(
+            actor.requiredId,
+            AdminResourceType.SELECTION,
+            selection.id,
+            AdminWorkflowAction.WITHDRAW_SELECTION,
+            2,
+            "selection-edit-withdraw-001",
+        )
+        assertThat(resourceService.get(AdminResourceType.SELECTION, selection.id).fields["status"]).isEqualTo("SELECTING")
 
         execute(
             actor.requiredId,
             AdminResourceType.SELECTION,
             selection.id,
             AdminWorkflowAction.REPLACE_SELECTION_ITEMS,
-            2,
+            3,
             "revision-link-items-002",
-            mapOf("photoIds" to listOf(photo.id)),
+            mapOf("photoIds" to listOf(newPhoto.id)),
         )
+        val context = contextService.get(AdminResourceType.SELECTION, selection.id)
+        assertThat(context.resource.version).isEqualTo(4L)
+        assertThat(context.sections.getValue("items").map { it["photoId"] }).containsExactly(newPhoto.id)
+        assertThat(context.sections).doesNotContainKey("revisions")
         assertThat(
-            jdbcClient.sql("SELECT selection_revision_id FROM retouch_rounds WHERE id = :id")
-                .param("id", retouch.id).query { rs, _ -> rs.getLong(1) }.single(),
-        ).isEqualTo(previousRevisionId)
+            jdbcClient.sql("SELECT COUNT(*) FROM admin_selection_revisions WHERE selection_id = :id")
+                .param("id", selection.id).query { rs, _ -> rs.getLong(1) }.single(),
+        ).isZero()
+        val retouchContext = contextService.get(AdminResourceType.RETOUCH_REQUEST, retouch.id)
+        assertThat(retouchContext.resource.version).isEqualTo(2L)
+        assertThat(retouchContext.sections.getValue("items").map { it["photoId"] }).containsExactly(photo.id)
+        assertThat(retouchContext.facts).doesNotContainKey("selectionRevisionId")
+        execute(
+            actor.requiredId,
+            AdminResourceType.RETOUCH_REQUEST,
+            retouch.id,
+            AdminWorkflowAction.UPDATE_RETOUCH_DELIVERY,
+            retouchContext.resource.version,
+            "selection-edit-delivery-001",
+            mapOf("consented" to true, "delivered" to true, "deliveryNote" to "기존 보정 전달"),
+        )
+        assertThat(contextService.get(AdminResourceType.RETOUCH_REQUEST, retouch.id).facts)
+            .containsEntry("deliveryNote", "기존 보정 전달")
+            .doesNotContainKey("selectionRevisionId")
+    }
+
+    @Test
+    fun `이전 관리자 이력과 다른 셀렉의 AI 초안은 제출할 수 없다`() {
+        val actor = adminAccountFixture.관리자("workflow-selection-scope-owner")
+        val graph = createGraph(actor.requiredId, "selection-scope", withPhoto = true)
+        val selection = selectionForGallery(graph.gallery.id)
+        val otherGraph = createGraph(actor.requiredId, "selection-scope-other", withPhoto = true)
+        val otherSelection = selectionForGallery(otherGraph.gallery.id)
+        val legacyId = jdbcClient.sql(
+            """
+            INSERT INTO admin_selection_revisions
+                (selection_id, revision_number, source, status, photo_items, actor_admin_id, reason, created_at)
+            VALUES (:selectionId, 1, 'ADMIN', 'SUBMITTED',
+                    CAST(:items AS JSONB), :actorId, '', CURRENT_TIMESTAMP)
+            RETURNING id
+            """.trimIndent(),
+        ).param("selectionId", selection.id).param("actorId", actor.requiredId)
+            .param("items", """[{"photoId":${requireNotNull(graph.photo).id},"retouchPhotoId":null,"sortOrder":0}]""")
+            .query { rs, _ -> rs.getLong(1) }.single()
+        setEmbedded(requireNotNull(otherGraph.photo).id, unitVector(0), 2400, 1600)
+        val otherDraft = execute(
+            actor.requiredId,
+            AdminResourceType.SELECTION,
+            otherSelection.id,
+            AdminWorkflowAction.CREATE_AI_SELECTION_DRAFT,
+            0,
+            "selection-scope-other-draft-001",
+            mapOf("requestedCount" to 1),
+        )
+        val otherDraftId = (otherDraft.details.getValue("revisionId") as Number).toLong()
+        listOf(legacyId, otherDraftId).forEach { draftId ->
+            assertThatThrownBy {
+                execute(
+                    actor.requiredId,
+                    AdminResourceType.SELECTION,
+                    selection.id,
+                    AdminWorkflowAction.SUBMIT_SELECTION_REVISION,
+                    0,
+                    "selection-scope-submit-$draftId",
+                    mapOf("revisionId" to draftId),
+                )
+            }.isInstanceOfSatisfying(AdminException::class.java) {
+                assertThat(it.errorCode).isEqualTo(AdminErrorCode.RESOURCE_NOT_FOUND)
+            }
+        }
+        assertThat(resourceService.get(AdminResourceType.SELECTION, selection.id).version).isZero()
+        assertThat(contextService.get(AdminResourceType.SELECTION, selection.id).sections)
+            .doesNotContainKeys("aiDrafts", "revisions", "items")
     }
 
     @Test
