@@ -935,12 +935,10 @@ class AdminWorkflowRepository(
     fun replaceSelectionItems(
         selectionId: Long,
         photoIds: List<Long>,
-        actorAdminId: Long,
         expectedVersion: Long,
-    ): SelectionRevisionResult {
+    ): Int {
         val galleryId = selectionGalleryId(selectionId, expectedVersion)
         validatePhotosInGallery(galleryId, photoIds)
-        val previousRevisionId = snapshotSelection(selectionId, actorAdminId)
 
         jdbcClient.sql("DELETE FROM photo_selection_items WHERE selection_id = :selectionId")
             .param("selectionId", selectionId)
@@ -969,36 +967,23 @@ class AdminWorkflowRepository(
             .param("selectionId", selectionId)
             .param("expectedVersion", expectedVersion)
             .update()
-        val revisionId = insertSelectionRevision(
-            selectionId = selectionId,
-            source = "ADMIN",
-            status = "SELECTING",
-            items = photoIds.distinct().mapIndexed { index, photoId -> SelectionItem(photoId, null, index) },
-            actorAdminId = actorAdminId,
-        )
-        return SelectionRevisionResult(
-            revisionId = revisionId,
-            photoIds = photoIds.distinct(),
-            previousRevisionId = previousRevisionId,
-        )
+        return photoIds.distinct().size
     }
 
-    fun submitSelectionRevision(
+    fun submitSelection(
         selectionId: Long,
-        revisionId: Long?,
-        actorAdminId: Long,
+        aiDraftId: Long?,
         expectedVersion: Long,
-    ): SelectionRevisionResult {
+    ): Int {
         val galleryId = selectionGalleryId(selectionId, expectedVersion)
-        val items = if (revisionId == null) {
+        val items = if (aiDraftId == null) {
             selectionItems(selectionId)
         } else {
-            loadSelectionRevision(selectionId, revisionId)
+            loadAiSelectionDraft(selectionId, aiDraftId)
         }
         if (items.isEmpty()) throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         validatePhotosInGallery(galleryId, items.map(SelectionItem::photoId))
-        val previousRevisionId = snapshotSelection(selectionId, actorAdminId)
-        if (revisionId != null) {
+        if (aiDraftId != null) {
             jdbcClient.sql("DELETE FROM photo_selection_items WHERE selection_id = :selectionId")
                 .param("selectionId", selectionId).update()
             items.forEachIndexed { index, item ->
@@ -1030,27 +1015,14 @@ class AdminWorkflowRepository(
             .param("selectionId", selectionId)
             .param("expectedVersion", expectedVersion)
             .update()
-        val submittedRevisionId = insertSelectionRevision(
-            selectionId = selectionId,
-            source = "ADMIN",
-            status = "SUBMITTED",
-            items = items,
-            actorAdminId = actorAdminId,
-        )
-        return SelectionRevisionResult(
-            revisionId = submittedRevisionId,
-            photoIds = items.map(SelectionItem::photoId),
-            previousRevisionId = previousRevisionId,
-        )
+        return items.size
     }
 
     fun withdrawSelection(
         selectionId: Long,
-        actorAdminId: Long,
         expectedVersion: Long,
-    ): Long {
+    ) {
         selectionGalleryId(selectionId, expectedVersion)
-        snapshotSelection(selectionId, actorAdminId)
         val updated = jdbcClient.sql(
             """
             UPDATE photo_selections
@@ -1063,13 +1035,6 @@ class AdminWorkflowRepository(
             .param("expectedVersion", expectedVersion)
             .update()
         if (updated != 1) throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
-        return insertSelectionRevision(
-            selectionId = selectionId,
-            source = "ADMIN",
-            status = "SELECTING",
-            items = selectionItems(selectionId),
-            actorAdminId = actorAdminId,
-        )
     }
 
     private fun selectionGalleryId(selectionId: Long, expectedVersion: Long): Long = jdbcClient.sql(
@@ -1122,38 +1087,6 @@ class AdminWorkflowRepository(
         """.trimIndent(),
     ).param("jobId", jobId).param("selectionId", selectionId).update()
 
-    private fun snapshotSelection(selectionId: Long, actorAdminId: Long): Long {
-        val status = jdbcClient.sql("SELECT status FROM photo_selections WHERE id = :selectionId")
-            .param("selectionId", selectionId)
-            .query { rs, _ -> rs.getString("status") }
-            .single()
-        val revisionId = insertSelectionRevision(
-            selectionId = selectionId,
-            source = "ADMIN",
-            status = status,
-            items = selectionItems(selectionId),
-            actorAdminId = actorAdminId,
-        )
-        // 기존 산출물은 변경 후 선택이 아니라 바로 직전 선택에 귀속돼야 한다. 이미 귀속된
-        // 산출물은 후속 관리자 변경에서도 절대 새 리비전으로 이동시키지 않는다.
-        jdbcClient.sql(
-            """
-            UPDATE retouch_rounds r
-            SET selection_revision_id = :revisionId,
-                version = r.version + 1,
-                updated_at = CURRENT_TIMESTAMP
-            FROM photo_selections s
-            WHERE s.id = :selectionId AND r.gallery_id = s.gallery_id
-              AND r.selection_revision_id IS NULL
-              AND r.status IN ('REQUESTED', 'COMPLETED')
-            """.trimIndent(),
-        )
-            .param("revisionId", revisionId)
-            .param("selectionId", selectionId)
-            .update()
-        return revisionId
-    }
-
     private fun insertSelectionRevision(
         selectionId: Long,
         source: String,
@@ -1198,9 +1131,12 @@ class AdminWorkflowRepository(
         ) }
         .list()
 
-    private fun loadSelectionRevision(selectionId: Long, revisionId: Long): List<SelectionItem> {
+    private fun loadAiSelectionDraft(selectionId: Long, revisionId: Long): List<SelectionItem> {
         val json = jdbcClient.sql(
-            "SELECT photo_items::TEXT FROM admin_selection_revisions WHERE id = :revisionId AND selection_id = :selectionId",
+            """
+            SELECT photo_items::TEXT FROM admin_selection_revisions
+            WHERE id = :revisionId AND selection_id = :selectionId AND source = 'AI_DRAFT'
+            """.trimIndent(),
         )
             .param("revisionId", revisionId)
             .param("selectionId", selectionId)
@@ -1529,32 +1465,17 @@ class AdminWorkflowRepository(
         consented: Boolean,
         delivered: Boolean,
         deliveryNote: String?,
-        selectionRevisionId: Long?,
         expectedVersion: Long,
     ) {
-        val revisionValue = if (selectionRevisionId == null) "NULL" else ":selectionRevisionId"
-        val revisionPredicate = if (selectionRevisionId == null) {
-            ""
-        } else {
-            """
-            AND EXISTS (
-                SELECT 1 FROM admin_selection_revisions sr
-                JOIN photo_selections s ON s.id = sr.selection_id
-                WHERE sr.id = :selectionRevisionId AND s.gallery_id = r.gallery_id
-            )
-            """.trimIndent()
-        }
-        var statement = jdbcClient.sql(
+        val updated = jdbcClient.sql(
             """
             UPDATE retouch_rounds r
             SET customer_consented_at = CASE WHEN :consented THEN COALESCE(r.customer_consented_at, CURRENT_TIMESTAMP) ELSE NULL END,
                 delivered_at = CASE WHEN :delivered THEN COALESCE(r.delivered_at, CURRENT_TIMESTAMP) ELSE NULL END,
                 delivery_note = :deliveryNote,
-                selection_revision_id = $revisionValue,
                 version = r.version + 1,
                 updated_at = CURRENT_TIMESTAMP
             WHERE r.id = :roundId AND r.version = :expectedVersion
-              $revisionPredicate
             """.trimIndent(),
         )
             .param("consented", consented)
@@ -1562,10 +1483,7 @@ class AdminWorkflowRepository(
             .param("deliveryNote", deliveryNote)
             .param("roundId", roundId)
             .param("expectedVersion", expectedVersion)
-        if (selectionRevisionId != null) {
-            statement = statement.param("selectionRevisionId", selectionRevisionId)
-        }
-        val updated = statement.update()
+            .update()
         if (updated != 1) throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
     }
 
@@ -1678,11 +1596,6 @@ class AdminWorkflowRepository(
         val jobIds: List<Long>,
     )
     data class PendingReplacementUpload(val storageKey: String, val contentType: String)
-    data class SelectionRevisionResult(
-        val revisionId: Long,
-        val photoIds: List<Long>,
-        val previousRevisionId: Long? = null,
-    )
     data class AiSelectionDraftResult(
         val jobId: Long,
         val status: String,
