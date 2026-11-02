@@ -572,24 +572,12 @@ class TrashRepository(
             WHERE n.target_type = t.resource_type
               AND n.target_id = t.resource_id
             RETURNING 1
-        ), expired_revision_payloads AS (
-            UPDATE admin_entity_revisions r
-            SET before_restore_payload = NULL,
-                after_restore_payload = NULL,
-                restore_expires_at = LEAST(r.restore_expires_at, CURRENT_TIMESTAMP),
-                updated_at = CURRENT_TIMESTAMP
-            FROM targets t
-            WHERE r.target_type = t.resource_type
-              AND r.target_id = t.resource_id::TEXT
-              AND (r.before_restore_payload IS NOT NULL OR r.after_restore_payload IS NOT NULL)
-            RETURNING 1
         )
         SELECT
             (SELECT COUNT(*) FROM deleted_idempotency)
             + (SELECT COUNT(*) FROM deleted_processing_jobs)
             + (SELECT COUNT(*) FROM deleted_notifications)
             + (SELECT COUNT(*) FROM deleted_inbox_notifications)
-            + (SELECT COUNT(*) FROM expired_revision_payloads)
         """.trimIndent(),
     )
         .param("galleryId", galleryId)
@@ -626,24 +614,12 @@ class TrashRepository(
             WHERE n.target_type = t.resource_type
               AND n.target_id = t.resource_id
             RETURNING 1
-        ), expired_revision_payloads AS (
-            UPDATE admin_entity_revisions r
-            SET before_restore_payload = NULL,
-                after_restore_payload = NULL,
-                restore_expires_at = LEAST(r.restore_expires_at, CURRENT_TIMESTAMP),
-                updated_at = CURRENT_TIMESTAMP
-            FROM targets t
-            WHERE r.target_type = t.resource_type
-              AND r.target_id = t.resource_id::TEXT
-              AND (r.before_restore_payload IS NOT NULL OR r.after_restore_payload IS NOT NULL)
-            RETURNING 1
         )
         SELECT
             (SELECT COUNT(*) FROM deleted_idempotency)
             + (SELECT COUNT(*) FROM deleted_processing_jobs)
             + (SELECT COUNT(*) FROM deleted_notifications)
             + (SELECT COUNT(*) FROM deleted_inbox_notifications)
-            + (SELECT COUNT(*) FROM expired_revision_payloads)
         """.trimIndent(),
     )
         .param("photoIds", photoIds)

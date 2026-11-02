@@ -26,6 +26,6 @@ interface AdminCouponControllerDocs {
     @Operation(summary = "쿠폰 사용 이력", description = "실제 갤러리 생성에 성공한 사용만 최신순으로 반환한다. 계정·갤러리를 삭제해도 사용 기록은 남는다.")
     fun getUses(loginUser: AdminLoginUser, couponId: Long, page: Int, size: Int): ResponseEntity<PageResponse<AdminProCouponUseResponse>>
 
-    @Operation(summary = "코드 비활성화·재활성화", description = "비활성 코드는 등록과 갤러리 생성에 사용할 수 없다. 이미 사용한 1회용 쿠폰은 변경하지 않는다. 공유 코드는 사용 후에도 중지할 수 있으며 기존 갤러리에 영향을 주지 않는다. 사유와 expectedVersion을 요구하며, 등록·사용·다른 관리자 변경이 먼저 일어나면 409로 거절한다.")
+    @Operation(summary = "코드 비활성화·재활성화", description = "비활성 코드는 등록과 갤러리 생성에 사용할 수 없다. 이미 사용한 1회용 쿠폰은 변경하지 않는다. 공유 코드는 사용 후에도 중지할 수 있으며 기존 갤러리에 영향을 주지 않는다. expectedVersion을 요구하며, 등록·사용·다른 관리자 변경이 먼저 일어나면 409로 거절한다.")
     fun changeStatus(loginUser: AdminLoginUser, couponId: Long, request: ChangeProCouponStatusRequest): ResponseEntity<AdminProCouponResponse>
 }

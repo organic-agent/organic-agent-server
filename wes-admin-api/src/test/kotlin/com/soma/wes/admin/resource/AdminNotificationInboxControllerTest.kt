@@ -221,12 +221,6 @@ class AdminNotificationInboxControllerTest @Autowired constructor(
 
         val permanentEvidence = jdbcClient.sql(
             """
-            SELECT COALESCE(reason, '') || COALESCE(changed_fields, '') AS evidence
-            FROM admin_audit_logs
-            UNION ALL
-            SELECT COALESCE(before_snapshot, '') || COALESCE(after_snapshot, '') AS evidence
-            FROM admin_entity_revisions
-            UNION ALL
             SELECT safe_summary || COALESCE(correlation_id, '') AS evidence
             FROM admin_notification_inbox
             """.trimIndent(),
