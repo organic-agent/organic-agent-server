@@ -50,7 +50,7 @@ class AdminReprocessServiceTest @Autowired constructor(
         val gallery = createGallery(actor.requiredId)
         val photos = embeddedPhotos(gallery.id, count = 2)
         jdbcTemplate.update("UPDATE photos SET dispatched_at = now(), embed_attempts = 3 WHERE id IN (?, ?)", photos[0], photos[1])
-        val request = AdminReprocessRequest(reason = "모델 교체 재계산", expectedVersion = gallery.version, idempotencyKey = "gallery-reprocess-001")
+        val request = AdminReprocessRequest(expectedVersion = gallery.version, idempotencyKey = "gallery-reprocess-001")
 
         // when
         val response = service.reprocess(actor.requiredId, AdminResourceType.GALLERY, gallery.id, request, "127.0.0.1")
@@ -76,7 +76,7 @@ class AdminReprocessServiceTest @Autowired constructor(
     fun `같은 멱등성 키의 갤러리 재처리는 한 번만 받아들이고 살아 있는 잡이 있으면 새 잡을 만들지 않는다`() {
         val actor = adminAccountFixture.관리자("reprocess-idempotent")
         val gallery = createGallery(actor.requiredId)
-        val request = AdminReprocessRequest("임베딩 결과 복구", gallery.version, "gallery-reprocess-002")
+        val request = AdminReprocessRequest(gallery.version, "gallery-reprocess-002")
 
         val first = service.reprocess(actor.requiredId, AdminResourceType.GALLERY, gallery.id, request, "127.0.0.1")
         val duplicate = service.reprocess(actor.requiredId, AdminResourceType.GALLERY, gallery.id, request, "127.0.0.1")
@@ -98,26 +98,6 @@ class AdminReprocessServiceTest @Autowired constructor(
     }
 
     @Test
-    fun `같은 키로 사유를 바꾸면 다른 요청으로 판단해 차단한다`() {
-        val actor = adminAccountFixture.관리자("reprocess-conflict")
-        val gallery = createGallery(actor.requiredId)
-        val first = AdminReprocessRequest("첫 재처리", gallery.version, "gallery-reprocess-004")
-        service.reprocess(actor.requiredId, AdminResourceType.GALLERY, gallery.id, first, "127.0.0.1")
-
-        assertThatThrownBy {
-            service.reprocess(
-                actor.requiredId,
-                AdminResourceType.GALLERY,
-                gallery.id,
-                first.copy(reason = "다른 사유"),
-                "127.0.0.1",
-            )
-        }.isInstanceOfSatisfying(AdminException::class.java) {
-            assertThat(it.errorCode).isEqualTo(AdminErrorCode.IDEMPOTENCY_KEY_REUSED)
-        }
-    }
-
-    @Test
     fun `실행기가 설정되지 않았으면 리셋하지 않는다`() {
         val actor = adminAccountFixture.관리자("reprocess-unconfigured")
         val gallery = createGallery(actor.requiredId)
@@ -129,7 +109,7 @@ class AdminReprocessServiceTest @Autowired constructor(
                 actor.requiredId,
                 AdminResourceType.GALLERY,
                 gallery.id,
-                AdminReprocessRequest("실행기 없음", gallery.version, "gallery-reprocess-005"),
+                AdminReprocessRequest(gallery.version, "gallery-reprocess-005"),
                 "127.0.0.1",
             )
         }.isInstanceOfSatisfying(AnalysisException::class.java) {
@@ -148,7 +128,6 @@ class AdminReprocessServiceTest @Autowired constructor(
         val failed = failedPhoto(gallery.id, error = PhotoPipelineRepository.EMBED_ATTEMPTS_EXCEEDED)
         jdbcTemplate.update("UPDATE photos SET embed_attempts = 1 WHERE id IN (?, ?)", healthy[0], healthy[1])
         val request = AdminReprocessRequest(
-            reason = "임베더 스로틀링으로 빠진 사진 복구",
             expectedVersion = gallery.version,
             idempotencyKey = "gallery-reprocess-failed-001",
             scope = AdminReprocessScope.FAILED_ONLY,
@@ -181,7 +160,7 @@ class AdminReprocessServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.GALLERY,
             gallery.id,
-            AdminReprocessRequest("깨진 파일 재시도", gallery.version, "gallery-reprocess-failed-002", AdminReprocessScope.FAILED_ONLY),
+            AdminReprocessRequest(gallery.version, "gallery-reprocess-failed-002", AdminReprocessScope.FAILED_ONLY),
             "127.0.0.1",
         )
         // 임베더가 세 번 다 벡터를 내지 못했다
@@ -208,7 +187,7 @@ class AdminReprocessServiceTest @Autowired constructor(
                 actor.requiredId,
                 AdminResourceType.GALLERY,
                 gallery.id,
-                AdminReprocessRequest("실패 없음", gallery.version, "gallery-reprocess-failed-003", AdminReprocessScope.FAILED_ONLY),
+                AdminReprocessRequest(gallery.version, "gallery-reprocess-failed-003", AdminReprocessScope.FAILED_ONLY),
                 "127.0.0.1",
             )
         }.isInstanceOfSatisfying(AdminException::class.java) {
@@ -236,7 +215,7 @@ class AdminReprocessServiceTest @Autowired constructor(
                 actor.requiredId,
                 AdminResourceType.GALLERY,
                 gallery.id,
-                AdminReprocessRequest("분류 중 재시도", gallery.version, "gallery-reprocess-failed-004", AdminReprocessScope.FAILED_ONLY),
+                AdminReprocessRequest(gallery.version, "gallery-reprocess-failed-004", AdminReprocessScope.FAILED_ONLY),
                 "127.0.0.1",
             )
         }.isInstanceOfSatisfying(AdminException::class.java) {
@@ -336,7 +315,6 @@ class AdminReprocessServiceTest @Autowired constructor(
             actorAdminId,
             AdminResourceType.USER,
             CreateAdminResourceRequest(
-                "재처리 테스트 사용자",
                 mapOf("provider" to "GOOGLE", "providerId" to "reprocess-$actorAdminId", "nickname" to "재처리 사용자"),
             ),
             "127.0.0.1",
@@ -345,7 +323,6 @@ class AdminReprocessServiceTest @Autowired constructor(
             actorAdminId,
             AdminResourceType.STUDIO,
             CreateAdminResourceRequest(
-                "재처리 테스트 스튜디오",
                 mapOf("ownerUserId" to user.id, "name" to "재처리", "galleryUrl" to "reprocess-$actorAdminId"),
             ),
             "127.0.0.1",
@@ -354,7 +331,6 @@ class AdminReprocessServiceTest @Autowired constructor(
             actorAdminId,
             AdminResourceType.GALLERY,
             CreateAdminResourceRequest(
-                "재처리 테스트 갤러리",
                 mapOf("workspaceId" to studio.id, "title" to "재처리 갤러리"),
             ),
             "127.0.0.1",

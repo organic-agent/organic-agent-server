@@ -4,7 +4,6 @@ import com.soma.wes.admin.audit.support.AdminAuditSanitizer
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.domain.AdminResourceType
-import com.soma.wes.admin.resource.dto.AdminReasonRequest
 import com.soma.wes.admin.resource.dto.AdminResourceResponse
 import com.soma.wes.admin.resource.dto.AdminTrashBatchResponse
 import com.soma.wes.admin.resource.dto.AdminTrashEntryResponse
@@ -59,14 +58,13 @@ class AdminCascadeTrashService(
         val canonicalLabel = requireNotNull(
             auditSanitizer.canonicalTargetLabel(type.auditTargetType, id.toString(), before.label),
         )
-        val sanitizedReason = auditSanitizer.canonicalOperatorReason(request.reason)
+
         val batchId = try {
             trashRepository.createBatch(
                 actorAdminId = actorAdminId,
                 rootType = type,
                 rootId = id,
                 rootLabel = canonicalLabel,
-                reason = sanitizedReason,
                 deletedAt = deletedAt,
                 restoreUntil = deletedAt.plus(trashProperties.retention),
             )
@@ -111,11 +109,10 @@ class AdminCascadeTrashService(
             return restoreLegacy(
                 actorAdminId,
                 current,
-                auditSanitizer.canonicalOperatorReason(request.reason),
                 sourceAddress,
             )
         }
-        restore(actorAdminId, batch, auditSanitizer.canonicalOperatorReason(request.reason), sourceAddress)
+        restore(batch)
         return requireResource(type, id)
     }
 
@@ -123,15 +120,14 @@ class AdminCascadeTrashService(
     fun restoreBatch(
         actorAdminId: Long,
         batchId: Long,
-        request: AdminReasonRequest,
         sourceAddress: String?,
     ): AdminTrashBatchResponse {
         val batch = trashRepository.find(batchId) ?: throw AdminException(AdminErrorCode.TRASH_BATCH_NOT_FOUND)
-        restore(actorAdminId, batch, auditSanitizer.canonicalOperatorReason(request.reason), sourceAddress)
+        restore(batch)
         return response(requireNotNull(trashRepository.find(batchId)))
     }
 
-    private fun restore(actorAdminId: Long, batch: BatchRow, reason: String, sourceAddress: String?) {
+    private fun restore(batch: BatchRow) {
         if (batch.status == "PURGING" || !ZonedDateTime.now(clock).isBefore(batch.restoreUntil)) {
             throw AdminException(AdminErrorCode.TRASH_BATCH_EXPIRED)
         }
@@ -152,7 +148,6 @@ class AdminCascadeTrashService(
     private fun restoreLegacy(
         actorAdminId: Long,
         before: AdminResourceResponse,
-        reason: String,
         sourceAddress: String?,
     ): AdminResourceResponse {
         if (before.type !in LEGACY_TRASH_TYPES || !before.deleted) {
@@ -182,7 +177,6 @@ class AdminCascadeTrashService(
         rootLabel = batch.rootLabel,
         status = batch.status,
         actorUsername = batch.actorUsername,
-        reason = batch.reason,
         deletedAt = batch.deletedAt,
         restoreUntil = batch.restoreUntil,
         purgeEligibleAt = batch.restoreUntil,

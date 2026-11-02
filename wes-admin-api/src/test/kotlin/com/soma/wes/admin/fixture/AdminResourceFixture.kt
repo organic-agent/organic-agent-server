@@ -14,19 +14,19 @@ class AdminResourceFixture(private val resources: AdminResourceService) {
         actorAdminId = actorAdminId,
         type = AdminResourceType.USER,
         sourceAddress = null,
-        request = CreateAdminResourceRequest(reason = "[TEST_OPERATION] 배경 계정", fields = mapOf(
+        request = CreateAdminResourceRequest(fields = mapOf(
             "provider" to "KAKAO", "providerId" to "coupon-fixture-${TestSequence.next()}", "nickname" to "쿠폰 사용자",
         )),
     )
 
     fun 갤러리(actorAdminId: Long, ownerUserId: Long): AdminResourceResponse {
         val studio = resources.create(actorAdminId = actorAdminId, type = AdminResourceType.STUDIO, sourceAddress = null,
-            request = CreateAdminResourceRequest(reason = "[TEST_OPERATION] 배경 스튜디오", fields = mapOf(
+            request = CreateAdminResourceRequest(fields = mapOf(
                 "ownerUserId" to ownerUserId, "name" to "쿠폰 스튜디오", "galleryUrl" to "coupon-fixture-${TestSequence.next()}",
             )),
         )
         return resources.create(actorAdminId = actorAdminId, type = AdminResourceType.GALLERY, sourceAddress = null,
-            request = CreateAdminResourceRequest(reason = "[TEST_OPERATION] 배경 갤러리", fields = mapOf(
+            request = CreateAdminResourceRequest(fields = mapOf(
                 "workspaceId" to studio.id, "title" to "쿠폰 갤러리",
             )),
         )

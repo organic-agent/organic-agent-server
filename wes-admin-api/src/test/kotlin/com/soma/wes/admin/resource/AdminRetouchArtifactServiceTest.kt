@@ -51,7 +51,6 @@ class AdminRetouchArtifactServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.RETOUCH_REQUEST,
             CreateAdminResourceRequest(
-                "[TEST_OPERATION] 보정 산출물 테스트 회차",
                 mapOf("galleryId" to graph.galleryId, "roundNo" to 1),
             ),
             "127.0.0.1",
@@ -142,7 +141,7 @@ class AdminRetouchArtifactServiceTest @Autowired constructor(
                 .param("id", number(annotationIssue.details, "uploadId"))
                 .query { rs, _ -> rs.getString(1) }
                 .single(),
-        ).isEqualTo("reasonCategory=TEST_OPERATION operatorReasonProvided=true")
+        ).isEqualTo("")
 
         execute(
             actor.requiredId,
@@ -164,7 +163,6 @@ class AdminRetouchArtifactServiceTest @Autowired constructor(
             itemId,
             AdminRetouchArtifactType.ANNOTATION,
             AdminRetouchArtifactAccessRequest(
-                reason = "[TEST_OPERATION] 표식 열람 민감 상세",
                 mode = AdminRetouchArtifactAccessMode.VIEW,
             ),
             "127.0.0.1",
@@ -211,7 +209,6 @@ class AdminRetouchArtifactServiceTest @Autowired constructor(
             AdminResourceType.RETOUCH_REQUEST,
             round.id,
             UpdateAdminResourceRequest(
-                reason = "[TEST_OPERATION] 작가 결과 업로드 단계 전환",
                 expectedVersion = 4,
                 fields = mapOf("status" to "REQUESTED"),
             ),
@@ -298,7 +295,6 @@ class AdminRetouchArtifactServiceTest @Autowired constructor(
             AdminResourceType.RETOUCH_REQUEST,
             round.id,
             UpdateAdminResourceRequest(
-                reason = "[TEST_OPERATION] 보정 회차 완료",
                 expectedVersion = 8,
                 fields = mapOf("status" to "COMPLETED"),
             ),
@@ -343,7 +339,6 @@ class AdminRetouchArtifactServiceTest @Autowired constructor(
 
         val contextText = contextService.get(AdminResourceType.RETOUCH_REQUEST, round.id).toString()
         assertThat(contextText).doesNotContain(annotationKey, resultKey, "https://")
-
     }
 
     @Test
@@ -354,7 +349,6 @@ class AdminRetouchArtifactServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.RETOUCH_REQUEST,
             CreateAdminResourceRequest(
-                "[TEST_OPERATION] 표식 완료 단계 경계 회차",
                 mapOf("galleryId" to graph.galleryId, "roundNo" to 1),
             ),
             "127.0.0.1",
@@ -396,7 +390,6 @@ class AdminRetouchArtifactServiceTest @Autowired constructor(
             AdminResourceType.RETOUCH_REQUEST,
             round.id,
             UpdateAdminResourceRequest(
-                reason = "[TEST_OPERATION] 표식 발급 뒤 제출",
                 expectedVersion = 2,
                 fields = mapOf("status" to "REQUESTED"),
             ),
@@ -462,7 +455,6 @@ class AdminRetouchArtifactServiceTest @Autowired constructor(
         fields: Map<String, Any?>,
     ) = AdminWorkflowRequest(
         action = action,
-        reason = "[TEST_OPERATION] 민감 상세 private@example.com",
         expectedVersion = expectedVersion,
         idempotencyKey = idempotencyKey,
         confirm = true,
@@ -474,7 +466,6 @@ class AdminRetouchArtifactServiceTest @Autowired constructor(
             actorAdminId,
             AdminResourceType.USER,
             CreateAdminResourceRequest(
-                "[TEST_OPERATION] 산출물 사용자",
                 mapOf(
                     "provider" to "GOOGLE",
                     "providerId" to "retouch-artifact-owner",
@@ -487,7 +478,6 @@ class AdminRetouchArtifactServiceTest @Autowired constructor(
             actorAdminId,
             AdminResourceType.STUDIO,
             CreateAdminResourceRequest(
-                "[TEST_OPERATION] 산출물 스튜디오",
                 mapOf(
                     "ownerUserId" to user.id,
                     "name" to "산출물 스튜디오",
@@ -500,7 +490,6 @@ class AdminRetouchArtifactServiceTest @Autowired constructor(
             actorAdminId,
             AdminResourceType.GALLERY,
             CreateAdminResourceRequest(
-                "[TEST_OPERATION] 산출물 갤러리",
                 mapOf("workspaceId" to studio.id, "title" to "산출물 갤러리"),
             ),
             "127.0.0.1",
@@ -509,7 +498,6 @@ class AdminRetouchArtifactServiceTest @Autowired constructor(
             actorAdminId,
             AdminResourceType.PHOTO,
             CreateAdminResourceRequest(
-                "[TEST_OPERATION] 산출물 사진",
                 mapOf(
                     "galleryId" to gallery.id,
                     "storageKey" to "galleries/${gallery.id}/source.jpg",

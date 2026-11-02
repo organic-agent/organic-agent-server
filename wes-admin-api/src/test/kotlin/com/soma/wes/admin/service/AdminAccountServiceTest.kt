@@ -1,7 +1,6 @@
 package com.soma.wes.admin.service
 
 import com.soma.wes.admin.domain.AdminAccountStatus
-import com.soma.wes.admin.dto.request.AdminReasonRequest
 import com.soma.wes.admin.dto.request.ChangeAdminStatusRequest
 import com.soma.wes.admin.dto.request.CreateAdminAccountRequest
 import com.soma.wes.admin.exception.AdminAuthenticationException
@@ -33,7 +32,6 @@ class AdminAccountServiceTest @Autowired constructor(
             request = CreateAdminAccountRequest(
                 username = "new-owner",
                 displayName = "신규 관리자",
-                reason = "운영 담당자 추가",
             ),
             sourceAddress = "127.0.0.1",
         )
@@ -45,7 +43,6 @@ class AdminAccountServiceTest @Autowired constructor(
             com.soma.wes.admin.dto.request.AdminLoginRequest("new-owner", result.temporaryPassword),
             "127.0.0.1",
         ).response.admin.id).isEqualTo(result.account.id)
-
     }
 
     @Test
@@ -67,7 +64,6 @@ class AdminAccountServiceTest @Autowired constructor(
             targetAdminId = target.requiredId,
             request = ChangeAdminStatusRequest(
                 status = AdminAccountStatus.SUSPENDED,
-                reason = "담당 업무 종료",
             ),
             sourceAddress = "127.0.0.1",
         )
@@ -95,7 +91,6 @@ class AdminAccountServiceTest @Autowired constructor(
         val response = adminAccountService.issueTemporaryPassword(
             actorAdminId = actor.requiredId,
             targetAdminId = target.requiredId,
-            request = AdminReasonRequest("분실 신고"),
             sourceAddress = "127.0.0.1",
         )
 
@@ -141,6 +136,5 @@ class AdminAccountServiceTest @Autowired constructor(
             ),
             "127.0.0.1",
         ).response.admin.id).isEqualTo(account.requiredId)
-
     }
 }

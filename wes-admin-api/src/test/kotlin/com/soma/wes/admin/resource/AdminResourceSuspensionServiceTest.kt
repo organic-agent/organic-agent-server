@@ -32,7 +32,7 @@ class AdminResourceSuspensionServiceTest @Autowired constructor(
         val created = resourceService.create(
             actor.requiredId,
             AdminResourceType.USER,
-            CreateAdminResourceRequest("정지 테스트 사용자", mapOf(
+            CreateAdminResourceRequest(mapOf(
                 "provider" to "GOOGLE",
                 "providerId" to "suspended-user",
                 "nickname" to "정지 사용자",
@@ -46,7 +46,7 @@ class AdminResourceSuspensionServiceTest @Autowired constructor(
 
         val suspended = suspensionService.suspend(
             actor.requiredId, AdminResourceType.USER, created.id,
-            ChangeAdminResourceStateRequest("부정 사용 조사", created.version), "127.0.0.1",
+            ChangeAdminResourceStateRequest(created.version), "127.0.0.1",
         )
 
         assertThat(suspended.fields["suspendedAt"]).isNotNull()
@@ -58,7 +58,7 @@ class AdminResourceSuspensionServiceTest @Autowired constructor(
 
         val activated = suspensionService.activate(
             actor.requiredId, AdminResourceType.USER, created.id,
-            ChangeAdminResourceStateRequest("조사 종료", suspended.version), "127.0.0.1",
+            ChangeAdminResourceStateRequest(suspended.version), "127.0.0.1",
         )
         assertThat(activated.fields["suspendedAt"]).isNull()
         assertThatCode { accessStatusRepository.requireActive(created.id) }
@@ -70,13 +70,13 @@ class AdminResourceSuspensionServiceTest @Autowired constructor(
         val actor = adminAccountFixture.관리자("suspend-studio")
         val user = resourceService.create(
             actor.requiredId, AdminResourceType.USER,
-            CreateAdminResourceRequest("스튜디오 소유자", mapOf(
+            CreateAdminResourceRequest(mapOf(
                 "provider" to "NAVER", "providerId" to "studio-suspended", "nickname" to "스튜디오 소유자",
             )), "127.0.0.1",
         )
         val studio = resourceService.create(
             actor.requiredId, AdminResourceType.STUDIO,
-            CreateAdminResourceRequest("정지할 스튜디오", mapOf(
+            CreateAdminResourceRequest(mapOf(
                 "ownerUserId" to user.id, "name" to "정지 스튜디오", "galleryUrl" to "suspended-studio",
             )), "127.0.0.1",
         )
@@ -87,7 +87,7 @@ class AdminResourceSuspensionServiceTest @Autowired constructor(
 
         val suspended = suspensionService.suspend(
             actor.requiredId, AdminResourceType.STUDIO, studio.id,
-            ChangeAdminResourceStateRequest("스튜디오 운영 정지", studio.version), "127.0.0.1",
+            ChangeAdminResourceStateRequest(studio.version), "127.0.0.1",
         )
 
         assertThat(suspended.fields["suspendedAt"]).isNotNull()
@@ -97,7 +97,7 @@ class AdminResourceSuspensionServiceTest @Autowired constructor(
 
         val activated = suspensionService.activate(
             actor.requiredId, AdminResourceType.STUDIO, studio.id,
-            ChangeAdminResourceStateRequest("스튜디오 운영 재개", suspended.version), "127.0.0.1",
+            ChangeAdminResourceStateRequest(suspended.version), "127.0.0.1",
         )
         assertThat(activated.fields["suspendedAt"]).isNull()
         assertThatCode { accessStatusRepository.requireActive(user.id) }

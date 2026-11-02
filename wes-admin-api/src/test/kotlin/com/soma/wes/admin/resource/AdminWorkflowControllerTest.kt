@@ -55,7 +55,6 @@ class AdminWorkflowControllerTest @Autowired constructor(
             account.requiredId,
             AdminResourceType.USER,
             CreateAdminResourceRequest(
-                "컨트롤러 사용자",
                 mapOf("provider" to "KAKAO", "providerId" to "workflow-controller", "nickname" to "컨트롤러"),
             ),
             "127.0.0.1",
@@ -64,7 +63,6 @@ class AdminWorkflowControllerTest @Autowired constructor(
             account.requiredId,
             AdminResourceType.STUDIO,
             CreateAdminResourceRequest(
-                "컨트롤러 스튜디오",
                 mapOf("ownerUserId" to user.id, "name" to "컨트롤러 스튜디오", "galleryUrl" to "workflow-controller"),
             ),
             "127.0.0.1",

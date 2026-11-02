@@ -7,9 +7,6 @@ import jakarta.validation.constraints.Size
 
 data class AdminWorkflowRequest(
     val action: AdminWorkflowAction,
-    @field:NotBlank
-    @field:Size(max = 500)
-    val reason: String,
     @field:PositiveOrZero
     val expectedVersion: Long,
     @field:NotBlank

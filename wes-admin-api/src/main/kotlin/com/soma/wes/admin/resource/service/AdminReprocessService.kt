@@ -73,7 +73,7 @@ class AdminReprocessService(
             validateFailedOnly(id, targets)
         }
 
-        val requestHash = sha256("$type:$id:${request.expectedVersion}:${request.reason.trim()}:${request.scope}")
+        val requestHash = sha256("$type:$id:${request.expectedVersion}:${request.scope}")
         val reservation = idempotencyStore.reserve(
             action = ACTION,
             idempotencyKey = request.idempotencyKey,
@@ -82,7 +82,6 @@ class AdminReprocessService(
             targetType = type.auditTargetType,
             targetId = id.toString(),
             targetLabel = gallery.label,
-            reason = request.reason.trim(),
             sourceAddress = sourceAddress,
             before = mapOf("type" to type.name, "id" to id, "version" to gallery.version, "scope" to request.scope.name),
         )

@@ -6,7 +6,6 @@ import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.fixture.AdminAccountFixture
 import com.soma.wes.admin.resource.domain.AdminResourceType
-import com.soma.wes.admin.resource.dto.AdminReasonRequest
 import com.soma.wes.admin.resource.dto.ChangeAdminResourceStateRequest
 import com.soma.wes.admin.resource.dto.CreateAdminResourceRequest
 import com.soma.wes.admin.resource.repository.AdminCascadeTrashRepository
@@ -57,17 +56,17 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         jdbcClient.sql("UPDATE galleries SET plan_max_photo_count = 1 WHERE id = :id").param("id", gallery.id).update()
         val photo = createPhoto(actor.requiredId, gallery.id, "deleted.jpg")
         val batch = service.delete(actor.requiredId, AdminResourceType.PHOTO, photo.id,
-            ChangeAdminResourceStateRequest("삭제", photo.version), null)
+            ChangeAdminResourceStateRequest(photo.version), null)
         val replacement = createPhoto(actor.requiredId, gallery.id, "replacement.jpg")
 
         // when & then
-        assertThatThrownBy { service.restoreBatch(actor.requiredId, batch.id, AdminReasonRequest("복원"), null) }
+        assertThatThrownBy { service.restoreBatch(actor.requiredId, batch.id, null) }
             .isInstanceOf(GalleryException::class.java)
             .extracting("errorCode").isEqualTo(GalleryErrorCode.PHOTO_PLAN_LIMIT_EXCEEDED)
         assertThat(deletedAt("photos", photo.id)).isNotNull()
         service.delete(actor.requiredId, AdminResourceType.PHOTO, replacement.id,
-            ChangeAdminResourceStateRequest("복원 자리 확보", replacement.version), null)
-        service.restoreBatch(actor.requiredId, batch.id, AdminReasonRequest("복원"), null)
+            ChangeAdminResourceStateRequest(replacement.version), null)
+        service.restoreBatch(actor.requiredId, batch.id, null)
         assertThat(deletedAt("photos", photo.id)).isNull()
     }
 
@@ -90,7 +89,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
 
         // when & then
         assertThatThrownBy { resourceService.restore(actor.requiredId, AdminResourceType.PHOTO, photo.id,
-            ChangeAdminResourceStateRequest("복원", deleted.version), null) }
+            ChangeAdminResourceStateRequest(deleted.version), null) }
             .isInstanceOf(GalleryException::class.java)
             .extracting("errorCode").isEqualTo(GalleryErrorCode.PHOTO_PLAN_LIMIT_EXCEEDED)
         assertThat(deletedAt("photos", photo.id)).isNotNull()
@@ -129,7 +128,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         assertThatThrownBy {
             service.delete(
                 actor.requiredId, AdminResourceType.COLLABORATION, collaboration.id,
-                ChangeAdminResourceStateRequest("선행 사진 삭제와 충돌", collaboration.version), "127.0.0.1",
+                ChangeAdminResourceStateRequest(collaboration.version), "127.0.0.1",
             )
         }.isInstanceOfSatisfying(AdminException::class.java) {
             assertThat(it.errorCode).isEqualTo(AdminErrorCode.TRASH_BATCH_CONFLICT)
@@ -140,12 +139,12 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
 
         val batch = service.delete(
             actor.requiredId, AdminResourceType.COLLABORATION, collaboration.id,
-            ChangeAdminResourceStateRequest("공유 삭제", collaboration.version), "127.0.0.1",
+            ChangeAdminResourceStateRequest(collaboration.version), "127.0.0.1",
         )
         assertThat(batch.affectedCounts).containsEntry("COLLABORATION", 1L).doesNotContainKey("PHOTO")
         assertThat(count("collab_session_photos", "collab_session_id", collaboration.id)).isOne()
         assertThat(deletedAt("photos", photo.id)).isNull()
-        service.restoreBatch(actor.requiredId, batch.id, AdminReasonRequest("공유 복원"), "127.0.0.1")
+        service.restoreBatch(actor.requiredId, batch.id, "127.0.0.1")
         val restored = contextService.get(AdminResourceType.COLLABORATION, collaboration.id)
         assertThat(restored.resource.fields).doesNotContainKey("conceptFolderId")
         assertThat(restored.sections.getValue("sharedPhotos").map { it["photoId"] }).containsExactly(photo.id)
@@ -153,7 +152,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
 
         val purgeBatch = service.delete(
             actor.requiredId, AdminResourceType.COLLABORATION, collaboration.id,
-            ChangeAdminResourceStateRequest("공유 영구 삭제", restored.resource.version), "127.0.0.1",
+            ChangeAdminResourceStateRequest(restored.resource.version), "127.0.0.1",
         )
         jdbcClient.sql("UPDATE admin_trash_batches SET restore_until = CURRENT_TIMESTAMP - INTERVAL '1 minute' WHERE id = :id")
             .param("id", purgeBatch.id).update()
@@ -246,7 +245,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.GALLERY,
             gallery.id,
-            ChangeAdminResourceStateRequest("계약 취소로 전체 숨김", gallery.version),
+            ChangeAdminResourceStateRequest(gallery.version),
             "127.0.0.1",
         )
 
@@ -273,7 +272,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         assertThat(durableBatch.first).isEqualTo("GALLERY #${gallery.id}")
         assertThat(durableBatch.second).isEqualTo("ADMIN #${actor.requiredId}")
         assertThat(durableBatch.third)
-            .isEqualTo("reasonCategory=UNSPECIFIED operatorReasonProvided=true")
+            .isEqualTo("")
         assertThat(batch.entries.count { it.root }).isEqualTo(1)
         assertThat(batch.entries.single { it.root }.relationPath).isEqualTo("ROOT")
         assertThat(batch.entries.single { it.resourceType == "PHOTO" }.relationPath).isEqualTo("GALLERY>PHOTO")
@@ -296,13 +295,13 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
                 actor.requiredId,
                 AdminResourceType.PHOTO,
                 activePhoto.id,
-                ChangeAdminResourceStateRequest("하위 사진만 복원 시도", deletedChild.version),
+                ChangeAdminResourceStateRequest(deletedChild.version),
                 "127.0.0.1",
             )
         }.hasMessageContaining("루트 배치")
         assertThat(deletedAt("photos", activePhoto.id)).isNotNull()
 
-        service.restoreBatch(actor.requiredId, batch.id, AdminReasonRequest("계약 복구"), "127.0.0.1")
+        service.restoreBatch(actor.requiredId, batch.id, "127.0.0.1")
 
         assertThat(deletedAt("galleries", gallery.id)).isNull()
         assertThat(deletedAt("photos", activePhoto.id)).isNull()
@@ -342,7 +341,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.CONCEPT_FOLDER,
             concept.id,
-            ChangeAdminResourceStateRequest("카테고리 폴더 삭제", concept.version),
+            ChangeAdminResourceStateRequest(concept.version),
             "127.0.0.1",
         )
 
@@ -359,7 +358,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             .containsEntry("trashBatchId", batch.id)
             .containsEntry("canRestoreDirectly", false)
 
-        service.restoreBatch(actor.requiredId, batch.id, AdminReasonRequest("카테고리 폴더 복원"), "127.0.0.1")
+        service.restoreBatch(actor.requiredId, batch.id, "127.0.0.1")
 
         assertThat(resourceService.get(AdminResourceType.CONCEPT_FOLDER, concept.id).deleted).isFalse()
         assertThat(resourceService.get(AdminResourceType.DETAIL_FOLDER, detail.id).deleted).isFalse()
@@ -402,7 +401,6 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
                 AdminResourceType.USER,
                 user.id,
                 ChangeAdminResourceStateRequest(
-                    "product purge와 겹치는 사용자 삭제",
                     resourceService.get(AdminResourceType.USER, user.id).version,
                 ),
                 "127.0.0.1",
@@ -474,7 +472,6 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         val batch = service.delete(
             actor.requiredId, AdminResourceType.USER, target.id,
             ChangeAdminResourceStateRequest(
-                "사용자 탈퇴 처리",
                 resourceService.get(AdminResourceType.USER, target.id).version,
             ),
             "127.0.0.1",
@@ -492,7 +489,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         assertThat(deletedAt("gallery_members", memberId)).isNotNull()
         assertThat(count("refresh_tokens", "user_id", target.id)).isZero()
 
-        service.restoreBatch(actor.requiredId, batch.id, AdminReasonRequest("탈퇴 처리 취소"), "127.0.0.1")
+        service.restoreBatch(actor.requiredId, batch.id, "127.0.0.1")
 
         assertThat(deletedAt("workspace_members", externalStudioMemberId)).isNull()
         assertThat(deletedAt("workspace_members", ownedStudioMemberId)).isNull()
@@ -507,7 +504,6 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             AdminResourceType.USER,
             target.id,
             ChangeAdminResourceStateRequest(
-                "[POLICY_ENFORCEMENT] 사용자 영구 삭제",
                 restoredTarget.version,
             ),
             "127.0.0.1",
@@ -540,7 +536,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
                 actor.requiredId,
                 AdminResourceType.USER,
                 owner.id,
-                ChangeAdminResourceStateRequest("마지막 OWNER 삭제 시도", owner.version),
+                ChangeAdminResourceStateRequest(owner.version),
                 "127.0.0.1",
             )
         }.isInstanceOfSatisfying(AdminException::class.java) {
@@ -575,13 +571,13 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
 
         service.delete(
             actor.requiredId, AdminResourceType.USER, member.id,
-            ChangeAdminResourceStateRequest("외부 멤버 삭제", member.version), "127.0.0.1",
+            ChangeAdminResourceStateRequest(member.version), "127.0.0.1",
         )
 
         assertThatThrownBy {
             service.delete(
                 actor.requiredId, AdminResourceType.GALLERY, gallery.id,
-                ChangeAdminResourceStateRequest("겹치는 갤러리 삭제", gallery.version), "127.0.0.1",
+                ChangeAdminResourceStateRequest(gallery.version), "127.0.0.1",
             )
         }.hasMessageContaining("연쇄 삭제 상태")
     }
@@ -612,7 +608,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.STUDIO,
             studio.id,
-            ChangeAdminResourceStateRequest("[CUSTOMER_REQUEST] 스튜디오 휴지통 이동", studio.version),
+            ChangeAdminResourceStateRequest(studio.version),
             "127.0.0.1",
         )
 
@@ -630,7 +626,6 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         service.restoreBatch(
             actor.requiredId,
             batch.id,
-            AdminReasonRequest("[INCIDENT_RECOVERY] 스튜디오 복원"),
             "127.0.0.1",
         )
         assertThat(deletedAt("workspace_members", memberRelationId)).isNull()
@@ -643,7 +638,6 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             AdminResourceType.STUDIO,
             studio.id,
             ChangeAdminResourceStateRequest(
-                "[POLICY_ENFORCEMENT] 스튜디오 영구 삭제",
                 restoredStudio.version,
             ),
             "127.0.0.1",
@@ -700,7 +694,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         val rawStorageKey = storageKey(photo.id)
         val batch = service.delete(
             actor.requiredId, AdminResourceType.GALLERY, gallery.id,
-            ChangeAdminResourceStateRequest("복구 기간 후 삭제", gallery.version), "127.0.0.1",
+            ChangeAdminResourceStateRequest(gallery.version), "127.0.0.1",
         )
         assertThat(Duration.between(batch.deletedAt, batch.restoreUntil)).isEqualTo(Duration.ofDays(7))
         assertThat(batch.purgeEligibleAt).isEqualTo(batch.restoreUntil)
@@ -764,7 +758,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
                 actor.requiredId,
                 AdminResourceType.GALLERY,
                 gallery.id,
-                ChangeAdminResourceStateRequest("[TEST_OPERATION] 대량 삭제 $index", gallery.version),
+                ChangeAdminResourceStateRequest(gallery.version),
                 "127.0.0.1",
             )
             batch.id to gallery.id
@@ -876,7 +870,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.GALLERY,
             gallery.id,
-            ChangeAdminResourceStateRequest("[CUSTOMER_REQUEST] 취소 대상 삭제", gallery.version),
+            ChangeAdminResourceStateRequest(gallery.version),
             "127.0.0.1",
         )
 
@@ -934,7 +928,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
                     actor.requiredId,
                     type,
                     id,
-                    ChangeAdminResourceStateRequest("만료된 기존 데이터 복원 시도", current.version),
+                    ChangeAdminResourceStateRequest(current.version),
                     "127.0.0.1",
                 )
             }.hasMessageContaining("7일")
@@ -948,7 +942,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.GALLERY,
             expiredGallery.id,
-            ChangeAdminResourceStateRequest("7일 내 기존 데이터 복원", restorable.version),
+            ChangeAdminResourceStateRequest(restorable.version),
             "127.0.0.1",
         )
         assertThat(restored.deleted).isFalse()
@@ -961,7 +955,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
                 .param("galleryId", galleryId).query { rs, _ -> rs.getLong(1) }.single()
             resourceService.get(type, selectionId)
         } else {
-            resourceService.create(actorId, type, CreateAdminResourceRequest("테스트 데이터 생성", fields), "127.0.0.1")
+            resourceService.create(actorId, type, CreateAdminResourceRequest(fields), "127.0.0.1")
         }
 
     private fun assignPhotoToSession(sessionId: Long, photoId: Long) {
@@ -993,7 +987,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
                  reason, created_at, updated_at)
             VALUES
                 ('DERIVATIVE', :status, 'PHOTO', :targetId, CAST(:payload AS JSONB), 0,
-                 'reasonCategory=TEST_OPERATION operatorReasonProvided=true',
+                 '',
                  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """.trimIndent(),
         ).param("status", status).param("targetId", targetId)
@@ -1087,7 +1081,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
                 (selection_id, status, input_conditions, attempt_count, reason, created_at, updated_at)
             VALUES
                 (:selectionId, :status, '{}'::JSONB, 0,
-                 'reasonCategory=TEST_OPERATION operatorReasonProvided=true',
+                 '',
                  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """.trimIndent(),
         ).param("selectionId", selectionId).param("status", status).update()
@@ -1101,7 +1095,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
                  status, attempt_count, reason, created_at, updated_at)
             VALUES
                 ('PHOTO_READY', :recipient, 'PHOTO', :sourceId, '{}'::JSONB,
-                 :status, 0, 'reasonCategory=TEST_OPERATION operatorReasonProvided=true',
+                 :status, 0, '',
                  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """.trimIndent(),
         ).param("recipient", "recipient-$suffix").param("sourceId", sourceId)
@@ -1117,7 +1111,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             VALUES
                 (:photoId, :storageKey, :fileName, 'image/jpeg', :status,
                  CURRENT_TIMESTAMP + INTERVAL '1 day',
-                 'reasonCategory=TEST_OPERATION operatorReasonProvided=true',
+                 '',
                  CURRENT_TIMESTAMP, CASE WHEN :status = 'COMPLETED' THEN CURRENT_TIMESTAMP ELSE NULL END)
             """.trimIndent(),
         ).param("photoId", photoId).param("storageKey", "replacement/$suffix.jpg")
