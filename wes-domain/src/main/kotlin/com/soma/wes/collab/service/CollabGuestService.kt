@@ -94,9 +94,9 @@ class CollabGuestService(
     private fun deleteCommentInternal(collabToken: String, commentId: Long, userId: Long?, guestToken: String?) {
         val access = sessionAccess.requireWritable(collabToken)
         val participant = sessionAccess.requireParticipant(access, userId, guestToken)
-        val comment = commentRepository.findById(commentId)
-            .orElseThrow { CollabException(CollabErrorCode.COMMENT_NOT_FOUND) }
-        if (comment.collabSessionId != access.sessionId || !comment.isWrittenBy(participant.requiredId)) {
+        val comment = commentRepository.findByIdAndCollabSessionId(commentId, access.sessionId)
+            ?: throw CollabException(CollabErrorCode.COMMENT_NOT_FOUND)
+        if (!comment.isWrittenBy(participant.requiredId)) {
             throw CollabException(CollabErrorCode.COMMENT_NOT_OWNED)
         }
         if (!productChildTrashService.deleteParticipantComment(access.sessionId, commentId, participant.requiredId)) {

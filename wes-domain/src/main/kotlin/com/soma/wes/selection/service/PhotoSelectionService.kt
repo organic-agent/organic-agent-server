@@ -1,6 +1,7 @@
 package com.soma.wes.selection.service
 
 import com.soma.wes.activity.service.ActivityRecorder
+import com.soma.wes.billing.domain.GalleryPlan
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryStage
 import com.soma.wes.gallery.repository.GalleryMemberRepository
@@ -141,10 +142,16 @@ class PhotoSelectionService(
 
     /**
      * 여러 장을 한 번에 뺀다.
+     *
+     * 상한은 담기(`maxBatchSize`)가 아니라 갤러리 최대 사진 수(프로 요금제)다. 웹은 바뀐 것을 한 번에 보내므로,
+     * 여러 번 나눠 담은 앨범을 한꺼번에 비우는 정상 요청도 이 안에 든다.
      */
     @Transactional
     fun deselect(galleryId: Long, userId: Long, request: DeselectPhotosRequest): PhotoSelectionResponse {
         galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
+        if (request.photoIds.size > GalleryPlan.PRO.maxPhotoCount) {
+            throw SelectionException(SelectionErrorCode.TOO_MANY_PHOTOS)
+        }
 
         val gallery = galleryRepository.requireWithLockById(galleryId)
         requireSelectionNotExported(gallery)

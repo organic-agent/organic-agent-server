@@ -201,9 +201,9 @@ class CollabSessionService(
     fun deleteComment(galleryId: Long, sessionId: Long, commentId: Long, userId: Long) {
         galleryAccessPolicy.requireCollabManager(galleryId, userId, writable = false)
         lockSession(galleryId, sessionId)
-        val comment = commentRepository.findById(commentId)
-            .orElseThrow { CollabException(CollabErrorCode.COMMENT_NOT_FOUND) }
-        if (comment.collabSessionId != sessionId || !productChildTrashService.deleteUserComment(sessionId, commentId)) {
+        commentRepository.findByIdAndCollabSessionId(commentId, sessionId)
+            ?: throw CollabException(CollabErrorCode.COMMENT_NOT_FOUND)
+        if (!productChildTrashService.deleteUserComment(sessionId, commentId)) {
             throw CollabException(CollabErrorCode.COMMENT_NOT_FOUND)
         }
         activityRecorder.recordGallery(galleryId)

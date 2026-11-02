@@ -10,6 +10,9 @@ import org.springframework.data.repository.query.Param
 
 interface CollabPhotoCommentRepository : JpaRepository<CollabPhotoComment, Long> {
 
+    /** 공유폴더째 찾는다. 다른 공유폴더의 댓글은 "없음"이다. */
+    fun findByIdAndCollabSessionId(id: Long, collabSessionId: Long): CollabPhotoComment?
+
     /** 최근에 쓴 것이 위로. 사진 아래 붙는 목록이라 새 말이 먼저 보여야 한다. */
     fun findAllByCollabSessionIdAndPhotoIdOrderByIdDesc(
         collabSessionId: Long,

@@ -1,5 +1,6 @@
 package com.soma.wes.selection.service
 
+import com.soma.wes.billing.domain.GalleryPlan
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.domain.GalleryStage
@@ -299,6 +300,21 @@ class PhotoSelectionServiceTest @Autowired constructor(
 
             // then
             assertThat(result.selectedCount).isEqualTo(0)
+        }
+
+        @Test
+        fun `갤러리 최대 사진 수를 넘는 id 목록은 거절한다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리(maxSelectablePhotoCount = 5)
+            val photoIds = List(GalleryPlan.PRO.maxPhotoCount + 1) { index -> index + 1L }
+
+            // when & then
+            assertThatThrownBy {
+                photoSelectionService.deselect(fixture.galleryId, fixture.member.requiredId, DeselectPhotosRequest(photoIds))
+            }
+                .isInstanceOf(SelectionException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(SelectionErrorCode.TOO_MANY_PHOTOS)
         }
     }
 
