@@ -1,6 +1,5 @@
 package com.soma.wes.admin.resource.dto
 
-import com.soma.wes.admin.audit.dto.response.AdminAuditLogResponse
 import com.soma.wes.admin.resource.domain.AdminChildTrashType
 import com.soma.wes.admin.resource.domain.AdminReprocessScope
 import com.soma.wes.admin.resource.domain.AdminResourceType
@@ -171,7 +170,6 @@ data class AdminSystemSettingsResponse(
     val sessionIdleTtlSeconds: Long,
     val maxFailedLoginAttempts: Int,
     val accountLockoutSeconds: Long,
-    val revisionRetentionDays: Long,
     val trashRetentionDays: Long,
     val embeddingConfigured: Boolean,
     val uploadMaxBatchSize: Int,
@@ -226,7 +224,6 @@ data class AdminOperationsOverviewResponse(
     val operationalIssues: List<AdminOperationalIssueResponse>,
     val recentFailedOperations: List<AdminOperationRecordResponse>,
     val trashPendingCount: Long,
-    val recentAudits: List<AdminAuditLogResponse>,
     val generatedAt: ZonedDateTime,
 )
 

@@ -1,6 +1,5 @@
 package com.soma.wes.admin.resource
 
-import com.soma.wes.admin.audit.repository.AdminAuditLogRepository
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.fixture.AdminAccountFixture
@@ -12,7 +11,6 @@ import com.soma.wes.admin.resource.service.AdminCascadeTrashService
 import com.soma.wes.admin.resource.service.AdminResourceContextService
 import com.soma.wes.admin.resource.service.AdminResourceService
 import com.soma.wes.support.IntegrationTest
-import java.time.OffsetDateTime
 import java.time.ZonedDateTime
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -26,12 +24,11 @@ class AdminResourceServiceTest @Autowired constructor(
     private val contextService: AdminResourceContextService,
     private val cascadeTrashService: AdminCascadeTrashService,
     private val adminAccountFixture: AdminAccountFixture,
-    private val auditLogRepository: AdminAuditLogRepository,
     private val jdbcClient: JdbcClient,
 ) {
 
     @Test
-    fun `허용한 필드만 생성 수정하며 비밀값과 감사 스냅샷을 마스킹한다`() {
+    fun `허용한 필드만 생성 수정하며 비밀값을 마스킹한다`() {
         val actor = adminAccountFixture.관리자("resource-owner")
 
         val created = service.create(
@@ -67,17 +64,13 @@ class AdminResourceServiceTest @Autowired constructor(
 
         assertThat(updated.version).isEqualTo(1)
         assertThat(updated.label).isEqualTo("정정된 사용자")
-        assertThat(auditLogRepository.findAll()).hasSize(2)
 
-        val revisions = jdbcClient.sql(
-            "SELECT before_snapshot, after_snapshot FROM admin_entity_revisions ORDER BY id",
-        ).query { rs, _ -> listOf(rs.getString(1), rs.getString(2)) }.list().flatten().filterNotNull()
-        assertThat(revisions.joinToString()).doesNotContain("provider-secret-value", "private@example.com")
-        assertThat(revisions.joinToString()).contains("[REDACTED]")
+
+
     }
 
     @Test
-    fun `오래된 expectedVersion 변경은 감사 이력 없이 차단한다`() {
+    fun `오래된 expectedVersion 변경은 차단한다`() {
         val actor = adminAccountFixture.관리자("version-owner")
         val user = service.create(
             actor.requiredId,
@@ -95,7 +88,6 @@ class AdminResourceServiceTest @Autowired constructor(
             UpdateAdminResourceRequest("첫 변경", user.version, mapOf("nickname" to "첫 변경 완료")),
             "127.0.0.1",
         )
-        val auditCount = auditLogRepository.count()
 
         assertThatThrownBy {
             service.update(
@@ -108,14 +100,13 @@ class AdminResourceServiceTest @Autowired constructor(
         }.isInstanceOfSatisfying(AdminException::class.java) {
             assertThat(it.errorCode).isEqualTo(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
         }
-        assertThat(auditLogRepository.count()).isEqualTo(auditCount)
+
     }
 
     @Test
     fun `휴지통을 지원하지 않는 리소스는 물리 삭제하지 않는다`() {
         val actor = adminAccountFixture.관리자("delete-guard-owner")
         val user = createUser(actor.requiredId, "delete-guard-user")
-        val auditCount = auditLogRepository.count()
 
         assertThatThrownBy {
             service.delete(
@@ -130,7 +121,7 @@ class AdminResourceServiceTest @Autowired constructor(
         }
 
         assertThat(service.get(AdminResourceType.USER, user.id).id).isEqualTo(user.id)
-        assertThat(auditLogRepository.count()).isEqualTo(auditCount)
+
     }
 
     @Test
@@ -955,18 +946,4 @@ class AdminResourceServiceTest @Autowired constructor(
             ),
             "127.0.0.1",
         )
-
-    private fun userRevisionCount(userId: Long): Long = jdbcClient.sql(
-        "SELECT COUNT(*) FROM admin_entity_revisions WHERE target_type = 'USER' AND target_id = :targetId",
-    )
-        .param("targetId", userId.toString())
-        .query { rs, _ -> rs.getLong(1) }
-        .single()
-
-    private fun userAuditCount(userId: Long): Long = jdbcClient.sql(
-        "SELECT COUNT(*) FROM admin_audit_logs WHERE target_type = 'USER' AND target_id = :targetId",
-    )
-        .param("targetId", userId.toString())
-        .query { rs, _ -> rs.getLong(1) }
-        .single()
 }

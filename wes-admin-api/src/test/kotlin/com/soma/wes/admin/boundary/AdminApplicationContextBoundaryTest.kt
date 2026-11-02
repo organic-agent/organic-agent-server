@@ -1,7 +1,6 @@
 package com.soma.wes.admin.boundary
 
 import com.soma.wes.WesAdminApiApplication
-import com.soma.wes.admin.audit.repository.AdminAuditLogRepository
 import com.soma.wes.admin.config.AdminAuthProperties
 import com.soma.wes.admin.config.AdminDomainDependenciesConfiguration
 import com.soma.wes.admin.config.AdminObservabilityProperties
@@ -110,7 +109,6 @@ class AdminApplicationContextBoundaryTest @Autowired constructor(
             GalleryLifecycleProperties::class.java,
             CollabProperties::class.java,
             AdminAccountRepository::class.java,
-            AdminAuditLogRepository::class.java,
             GalleryRepository::class.java,
             StudioRepository::class.java,
             PhotoRepository::class.java,

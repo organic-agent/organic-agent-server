@@ -1,7 +1,5 @@
 package com.soma.wes.admin.resource.service
 
-import com.soma.wes.admin.audit.domain.AdminAuditAction
-import com.soma.wes.admin.audit.service.AdminAuditService
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.domain.AdminResourceType
@@ -14,7 +12,6 @@ import org.springframework.transaction.annotation.Transactional
 @Service
 class AdminResourceSuspensionService(
     private val repository: AdminResourceRepository,
-    private val auditService: AdminAuditService,
 ) {
     @Transactional
     fun suspend(
@@ -53,27 +50,8 @@ class AdminResourceSuspensionService(
         }
         if (suspended) repository.affectedUserIds(type, id).forEach(repository::revokeRefreshToken)
         val after = repository.find(type, id) ?: throw AdminException(AdminErrorCode.RESOURCE_NOT_FOUND)
-        auditService.recordMutation(
-            action = if (suspended) AdminAuditAction.RESOURCE_SUSPENDED else AdminAuditAction.RESOURCE_ACTIVATED,
-            actorAdminId = actorAdminId,
-            targetType = type.auditTargetType,
-            targetId = id.toString(),
-            targetLabel = after.label,
-            reason = request.reason.trim(),
-            sourceAddress = sourceAddress,
-            before = before.snapshot(),
-            after = after.snapshot(),
-        )
         return after
     }
-
-    private fun AdminResourceResponse.snapshot(): Map<String, Any?> = linkedMapOf(
-        "type" to type.name,
-        "id" to id,
-        "version" to version,
-        "label" to label,
-        "deleted" to deleted,
-    ) + fields
 
     companion object {
         private val SUPPORTED_TYPES = setOf(AdminResourceType.USER, AdminResourceType.STUDIO)
