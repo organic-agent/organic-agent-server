@@ -115,7 +115,7 @@ enum class AdminWorkflowAction(
     UPDATE_RETOUCH_DELIVERY(
         setOf(AdminResourceType.RETOUCH_REQUEST),
         setOf("consented", "delivered"),
-        setOf("deliveryNote", "selectionRevisionId"),
+        setOf("deliveryNote"),
     ),
     SET_STUDIO_RETOUCH_CAPABILITY(
         setOf(AdminResourceType.STUDIO),

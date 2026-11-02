@@ -253,7 +253,7 @@ class AdminResourceContextRepository(
         ) }
         AdminResourceType.RETOUCH_REQUEST -> singleFacts(
             """
-                SELECT r.selection_revision_id, r.customer_consented_at, r.delivered_at, r.delivery_note,
+                SELECT r.customer_consented_at, r.delivered_at, r.delivery_note,
                        COUNT(p.*) FILTER (WHERE p.deleted_at IS NULL) AS photos,
                        COUNT(p.*) FILTER (WHERE p.deleted_at IS NULL AND p.result_key IS NOT NULL) AS completed_results,
                        COUNT(p.*) FILTER (WHERE p.deleted_at IS NULL AND p.result_key IS NULL) AS pending_results
@@ -263,7 +263,6 @@ class AdminResourceContextRepository(
                 GROUP BY r.id
             """.trimIndent(), id,
         ) { rs -> linkedMapOf(
-            "selectionRevisionId" to rs.getObject("selection_revision_id"),
             "customerConsentedAt" to rs.getObject("customer_consented_at"),
             "deliveredAt" to rs.getObject("delivered_at"),
             "deliveryNote" to rs.getString("delivery_note"),
@@ -886,20 +885,16 @@ class AdminResourceContextRepository(
                 "startedAt" to rs.getObject("started_at"),
                 "completedAt" to rs.getObject("completed_at"),
             ) },
-            "revisions" to rows(
+            "aiDrafts" to rows(
                 """
-                    SELECT id, revision_number, source, status, photo_items, actor_admin_id, reason, created_at
-                    FROM admin_selection_revisions WHERE selection_id = :id ORDER BY revision_number DESC
+                    SELECT id, photo_items, created_at
+                    FROM admin_selection_revisions
+                    WHERE selection_id = :id AND source = 'AI_DRAFT' ORDER BY id DESC
                 """.trimIndent(),
                 id,
             ) { rs -> linkedMapOf(
                 "id" to rs.getLong("id"),
-                "revisionNumber" to rs.getLong("revision_number"),
-                "source" to rs.getString("source"),
-                "status" to rs.getString("status"),
                 "photoItems" to rs.getString("photo_items"),
-                "actorAdminId" to rs.getObject("actor_admin_id"),
-                "reason" to rs.getString("reason"),
                 "createdAt" to rs.getObject("created_at"),
             ) },
             "items" to rows(
@@ -1016,12 +1011,11 @@ class AdminResourceContextRepository(
             ) },
             "delivery" to rows(
                 """
-                    SELECT selection_revision_id, customer_consented_at, delivered_at, delivery_note
+                    SELECT customer_consented_at, delivered_at, delivery_note
                     FROM retouch_rounds WHERE id = :id
                 """.trimIndent(),
                 id,
             ) { rs -> linkedMapOf(
-                "selectionRevisionId" to rs.getObject("selection_revision_id"),
                 "customerConsentedAt" to rs.getObject("customer_consented_at"),
                 "deliveredAt" to rs.getObject("delivered_at"),
                 "deliveryNote" to rs.getString("delivery_note"),

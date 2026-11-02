@@ -39,7 +39,6 @@ class AdminSystemSettingsService(
                 "mockGallery" to mockGalleryProperties.isConfigured,
                 "adminReadOnlyImpersonation" to true,
                 "adminCascadeTrash" to true,
-                "adminSelectionRevisions" to true,
                 "adminPhotoReplacement" to true,
                 "adminNotificationInbox" to true,
             ),

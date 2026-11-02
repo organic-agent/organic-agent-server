@@ -438,36 +438,24 @@ class AdminWorkflowService(
         }
         AdminWorkflowAction.REPLACE_SELECTION_ITEMS -> {
             requireType(type, AdminResourceType.SELECTION)
-            val result = workflowRepository.replaceSelectionItems(
-                id, request.longs("photoIds"), actorAdminId, request.expectedVersion,
+            val photoCount = workflowRepository.replaceSelectionItems(
+                id, request.longs("photoIds"), request.expectedVersion,
             )
-            WorkflowExecution(details = mapOf(
-                "previousRevisionId" to result.previousRevisionId,
-                "revisionId" to result.revisionId,
-                "photoCount" to result.photoIds.size,
-            ))
+            WorkflowExecution(details = mapOf("photoCount" to photoCount))
         }
         AdminWorkflowAction.SUBMIT_SELECTION_REVISION -> {
             requireType(type, AdminResourceType.SELECTION)
-            val result = workflowRepository.submitSelectionRevision(
+            val photoCount = workflowRepository.submitSelection(
                 id,
                 request.optionalLong("revisionId"),
-                actorAdminId,
                 request.expectedVersion,
             )
-            WorkflowExecution(details = mapOf(
-                "previousRevisionId" to result.previousRevisionId,
-                "revisionId" to result.revisionId,
-                "photoCount" to result.photoIds.size,
-            ))
+            WorkflowExecution(details = mapOf("photoCount" to photoCount))
         }
         AdminWorkflowAction.WITHDRAW_SELECTION -> {
             requireType(type, AdminResourceType.SELECTION)
-            WorkflowExecution(details = mapOf(
-                "revisionId" to workflowRepository.withdrawSelection(
-                    id, actorAdminId, request.expectedVersion,
-                ),
-            ))
+            workflowRepository.withdrawSelection(id, request.expectedVersion)
+            WorkflowExecution()
         }
         AdminWorkflowAction.CREATE_COLLAB_COMMENT -> {
             requireType(type, AdminResourceType.COLLABORATION)
@@ -638,7 +626,6 @@ class AdminWorkflowService(
                 request.boolean("consented"),
                 request.boolean("delivered"),
                 request.optionalText("deliveryNote", 500),
-                request.optionalLong("selectionRevisionId"),
                 request.expectedVersion,
             )
             WorkflowExecution()
