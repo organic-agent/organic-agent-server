@@ -1,7 +1,5 @@
 package com.soma.wes.admin.resource.service
 
-import com.soma.wes.admin.audit.domain.AdminAuditAction
-import com.soma.wes.admin.audit.service.AdminAuditService
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.repository.AdminCascadeTrashRepository
@@ -69,7 +67,6 @@ class AdminCascadeTrashPurgeService(
 @Service
 class AdminCascadeTrashPurgeFinalizer(
     private val repository: AdminCascadeTrashRepository,
-    private val auditService: AdminAuditService,
 ) {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun finalize(claimed: BatchRow) {
@@ -79,16 +76,5 @@ class AdminCascadeTrashPurgeFinalizer(
         repository.deleteOperationalPayloads(current.id)
         if (repository.deleteRoot(current) != 1) throw AdminException(AdminErrorCode.TRASH_BATCH_CONFLICT)
         if (repository.markPurged(current.id) != 1) throw AdminException(AdminErrorCode.TRASH_BATCH_CONFLICT)
-        auditService.recordMutation(
-            action = AdminAuditAction.RESOURCE_PURGED,
-            actorAdminId = current.actorAdminId,
-            targetType = current.rootType.auditTargetType,
-            targetId = current.rootId.toString(),
-            targetLabel = current.rootLabel,
-            reason = "7일 복구 기간 만료 자동 영구 삭제",
-            sourceAddress = null,
-            before = mapOf("deleted" to true, "trashBatchId" to current.id),
-            after = mapOf("purged" to true, "trashBatchId" to current.id),
-        )
     }
 }

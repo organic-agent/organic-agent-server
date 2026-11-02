@@ -284,15 +284,7 @@ class AdminChildTrashServiceTest @Autowired constructor(
         assertThat(childTrashStatus(trash.trashId)).isEqualTo("PURGED")
         assertThat(photoStorage.deletedKeys())
             .contains("annotations/child-purge.png", "results/child-purge.jpg", pendingArtifactKey)
-        assertThat(
-            jdbcClient.sql(
-                """
-                SELECT COUNT(*) FROM admin_audit_logs
-                WHERE action = 'RESOURCE_PURGED' AND target_type = 'TRASH_BATCH'
-                  AND target_id = :targetId
-                """.trimIndent(),
-            ).param("targetId", "CHILD-${trash.trashId}").query { rs, _ -> rs.getLong(1) }.single(),
-        ).isOne()
+
     }
 
     @Test

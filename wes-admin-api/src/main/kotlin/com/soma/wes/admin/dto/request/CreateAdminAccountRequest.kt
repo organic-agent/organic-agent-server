@@ -1,7 +1,6 @@
 package com.soma.wes.admin.dto.request
 
 import com.soma.wes.admin.domain.AdminAccount
-import com.soma.wes.admin.domain.AdminAuthEvent
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
@@ -18,7 +17,7 @@ data class CreateAdminAccountRequest(
     val displayName: String,
 
     @field:NotBlank
-    @field:Size(max = AdminAuthEvent.REASON_MAX_LENGTH)
+    @field:Size(max = 500)
     @field:Schema(description = "계정 생성 사유")
     val reason: String,
 )

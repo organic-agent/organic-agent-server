@@ -1,6 +1,5 @@
 package com.soma.wes.admin.resource
 
-import com.soma.wes.admin.audit.service.AdminAuditService
 import com.soma.wes.admin.fixture.AdminAccountFixture
 import com.soma.wes.admin.resource.config.AdminWorkflowExecutorProperties
 import com.soma.wes.admin.resource.domain.AdminResourceType
@@ -39,7 +38,6 @@ class AdminWorkflowExecutorTest @Autowired constructor(
     private val adminAccountFixture: AdminAccountFixture,
     private val workflowExecutionRepository: AdminWorkflowExecutionRepository,
     private val workflowRepository: AdminWorkflowRepository,
-    private val auditService: AdminAuditService,
     private val transactionTemplate: TransactionTemplate,
     private val jdbcClient: JdbcClient,
     private val objectMapper: ObjectMapper,
@@ -71,10 +69,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
         assertThat(processingState(embeddingJob)).isEqualTo(State("DISPATCHED", 1, null))
         assertThat(processingState(derivativeJob)).isEqualTo(State("DISPATCHED", 1, null))
         assertThat(notificationState()).isEqualTo(State("PENDING", 0, null))
-        assertThat(dispatchAudits(AdminResourceType.PHOTO, graph.photos[0].id))
-            .containsExactly("REPROCESS_DISPATCHED:SUCCESS")
-        assertThat(dispatchAudits(AdminResourceType.PHOTO, graph.photos[1].id))
-            .containsExactly("REPROCESS_DISPATCHED:SUCCESS")
+
         val requests = argumentCaptor<AiTaskDto.ExactPhoto>()
         verify(aiTaskSender, times(2)).send(requests.capture())
         assertThat(requests.allValues.map { it.jobType })
@@ -108,7 +103,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
                 dispatchedTimeout = Duration.ofSeconds(1),
             ),
             aiTaskSender = aiTaskSender,
-            auditService = auditService,
+
             transactionTemplate = transactionTemplate,
         )
 
@@ -121,10 +116,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
         shortTimeoutExecutor.runOnce()
 
         assertThat(processingState(jobId)).isEqualTo(State("FAILED", 1, "DISPATCH_RESULT_TIMEOUT"))
-        assertThat(dispatchAudits(AdminResourceType.PHOTO, photo.id)).containsExactly(
-            "REPROCESS_DISPATCHED:SUCCESS",
-            "REPROCESS_DISPATCH_FAILED:FAILURE",
-        )
+
         verify(aiTaskSender, times(1)).send(any<AiTaskDto.ExactPhoto>())
     }
 
@@ -148,7 +140,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
                 dispatchedTimeout = Duration.ofSeconds(1),
             ),
             aiTaskSender = aiTaskSender,
-            auditService = auditService,
+
             transactionTemplate = transactionTemplate,
         )
 
@@ -156,8 +148,6 @@ class AdminWorkflowExecutorTest @Autowired constructor(
 
         assertThat(processingState(jobId))
             .isEqualTo(State("DISPATCHING", 1, "DISPATCH_OUTCOME_UNKNOWN"))
-        assertThat(dispatchAudits(AdminResourceType.PHOTO, graph.photos.single().id))
-            .containsExactly("REPROCESS_DISPATCH_UNKNOWN:FAILURE")
 
         jdbcClient.sql(
             "UPDATE admin_processing_jobs SET last_run_at=CURRENT_TIMESTAMP-INTERVAL '1 day' WHERE id=:id",
@@ -166,10 +156,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
 
         assertThat(processingState(jobId))
             .isEqualTo(State("FAILED", 1, "DISPATCH_RESULT_TIMEOUT"))
-        assertThat(dispatchAudits(AdminResourceType.PHOTO, graph.photos.single().id)).containsExactly(
-            "REPROCESS_DISPATCH_UNKNOWN:FAILURE",
-            "REPROCESS_DISPATCH_FAILED:FAILURE",
-        )
+
         verify(aiTaskSender, times(1)).send(any<AiTaskDto.ExactPhoto>())
     }
 
@@ -205,7 +192,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
                 dispatchedTimeout = Duration.ofSeconds(1),
             ),
             aiTaskSender = aiTaskSender,
-            auditService = auditService,
+
             transactionTemplate = transactionTemplate,
         )
 
@@ -213,8 +200,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
 
         assertThat(processingState(retryJobId)).isEqualTo(State("FAILED", 1, "DISPATCH_RESULT_TIMEOUT"))
         assertThat(processingState(cancelJobId)).isEqualTo(State("FAILED", 1, "DISPATCH_RESULT_TIMEOUT"))
-        assertThat(dispatchAudits(AdminResourceType.PHOTO, graph.photos[0].id))
-            .containsExactly("REPROCESS_DISPATCH_FAILED:FAILURE")
+
         assertThat(workflowRepository.cancelProcessingJob(cancelJobId)).isEqualTo(1)
         assertThat(processingState(cancelJobId)).isEqualTo(State("CANCELED", 1, null))
         verify(aiTaskSender, times(0)).send(any<AiTaskDto.ExactPhoto>())
@@ -326,7 +312,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
         executor.runOnce()
 
         assertThat(processingState(jobId)).isEqualTo(State("CANCELED", 0, null))
-        assertThat(dispatchAudits(AdminResourceType.PHOTO, graph.photos.single().id)).isEmpty()
+
         verify(aiTaskSender, times(0)).send(any<AiTaskDto.ExactPhoto>())
     }
 
@@ -349,60 +335,8 @@ class AdminWorkflowExecutorTest @Autowired constructor(
         executor.runOnce()
 
         assertThat(processingState(jobId)).isEqualTo(State("CANCELED", 0, "TARGET_DELETED"))
-        assertThat(dispatchAudits(AdminResourceType.PHOTO, photo.id)).isEmpty()
+
         verify(aiTaskSender, times(0)).send(any<AiTaskDto.ExactPhoto>())
-    }
-
-    @Test
-    fun `임베딩 성공 뒤 불명 감사도 실패하면 상태와 감사를 함께 rollback하고 재호출하지 않는다`() {
-        val graph = graph("executor-ambiguous-audit", photoCount = 1)
-        val photo = graph.photos.single()
-        val jobId = processingJob(
-            "EMBEDDING",
-            AdminResourceType.PHOTO,
-            photo.id,
-            mapOf("galleryId" to graph.gallery.id),
-        )
-        val functionName = "test_block_executor_dispatch_audit"
-        val triggerName = "test_block_executor_dispatch_audit_trigger"
-        jdbcClient.sql(
-            """
-            CREATE OR REPLACE FUNCTION $functionName()
-            RETURNS TRIGGER
-            LANGUAGE plpgsql
-            AS ${'$'}trigger${'$'}
-            BEGIN
-                IF NEW.action IN ('REPROCESS_DISPATCHED', 'REPROCESS_DISPATCH_UNKNOWN')
-                   AND NEW.target_type = 'PHOTO'
-                   AND NEW.target_id = '${photo.id}' THEN
-                    RAISE EXCEPTION 'forced dispatch audit failure';
-                END IF;
-                RETURN NEW;
-            END;
-            ${'$'}trigger${'$'}
-            """.trimIndent(),
-        ).update()
-        jdbcClient.sql(
-            """
-            CREATE TRIGGER $triggerName
-            BEFORE INSERT ON admin_audit_logs
-            FOR EACH ROW EXECUTE FUNCTION $functionName()
-            """.trimIndent(),
-        ).update()
-        try {
-            executor.runOnce()
-        } finally {
-            jdbcClient.sql("DROP TRIGGER IF EXISTS $triggerName ON admin_audit_logs").update()
-            jdbcClient.sql("DROP FUNCTION IF EXISTS $functionName()").update()
-        }
-
-        assertThat(processingState(jobId)).isEqualTo(State("DISPATCHING", 1, null))
-        assertThat(dispatchAudits(AdminResourceType.PHOTO, photo.id)).isEmpty()
-        jdbcClient.sql(
-            "UPDATE admin_processing_jobs SET last_run_at=CURRENT_TIMESTAMP-INTERVAL '1 day' WHERE id=:id",
-        ).param("id", jobId).update()
-        executor.runOnce()
-        verify(aiTaskSender, times(1)).send(any<AiTaskDto.ExactPhoto>())
     }
 
     @Test
@@ -429,8 +363,7 @@ class AdminWorkflowExecutorTest @Autowired constructor(
         executor.runOnce()
 
         assertThat(processingState(jobId)).isEqualTo(State("CANCELED", 1, null))
-        assertThat(dispatchAudits(AdminResourceType.PHOTO, photo.id))
-            .containsExactly("REPROCESS_DISPATCHED:SUCCESS")
+
         verify(aiTaskSender, times(1)).send(any<AiTaskDto.ExactPhoto>())
     }
 
@@ -542,19 +475,6 @@ class AdminWorkflowExecutorTest @Autowired constructor(
     ).query { rs, _ -> State(
         rs.getString("status"), rs.getInt("attempt_count"), rs.getString("failure_code"),
     ) }.single()
-
-    private fun dispatchAudits(type: AdminResourceType, id: Long): List<String> = jdbcClient.sql(
-        """
-        SELECT action || ':' || outcome
-        FROM admin_audit_logs
-        WHERE target_type = :targetType AND target_id = :targetId
-          AND action IN (
-            'REPROCESS_DISPATCHED', 'REPROCESS_DISPATCH_FAILED', 'REPROCESS_DISPATCH_UNKNOWN'
-          )
-        ORDER BY id
-        """.trimIndent(),
-    ).param("targetType", type.auditTargetType.name).param("targetId", id.toString())
-        .query { rs, _ -> rs.getString(1) }.list()
 
     private fun revisionJson(id: Long): String = jdbcClient.sql(
         "SELECT photo_items::TEXT FROM admin_selection_revisions WHERE id=:id",

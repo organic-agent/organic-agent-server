@@ -1,10 +1,5 @@
 package com.soma.wes.admin.service
 
-import com.soma.wes.admin.audit.domain.AdminAuditAction
-import com.soma.wes.admin.audit.domain.AdminAuditOutcome
-import com.soma.wes.admin.audit.domain.AdminAuditTargetType
-import com.soma.wes.admin.audit.service.AdminAuditService
-import com.soma.wes.admin.domain.AdminAuthEvent
 import com.soma.wes.admin.domain.AdminProCouponStatus
 import com.soma.wes.admin.dto.request.IssueProCouponRequest
 import com.soma.wes.admin.dto.response.AdminProCouponUseResponse
@@ -35,7 +30,6 @@ class AdminCouponService(
     private val coupons: ProCouponRepository,
     private val queryRepository: AdminProCouponRepository,
     private val codes: CouponCodes,
-    private val audit: AdminAuditService,
     private val clock: Clock,
 ) {
     /** 관리자가 코드 한 개를 발급한다. 원문은 이 응답에서만 제공하고 감사 로그에도 남기지 않는다. */
@@ -56,11 +50,6 @@ class AdminCouponService(
             issuedByAdminId = actorAdminId, customCode = customCode, usagePolicy = request.usagePolicy,
             redeemUntil = request.redeemUntil,
         ))
-        audit.recordEvent(
-            action = AdminAuditAction.COUPON_CODE_ISSUED, outcome = AdminAuditOutcome.SUCCESS,
-            actorAdminId = actorAdminId, targetType = AdminAuditTargetType.PRO_COUPON,
-            targetId = coupon.requiredId.toString(), targetLabel = null, reason = request.reason, sourceAddress = null,
-        )
         return IssueProCouponResponse(couponId = coupon.requiredId, code = code)
     }
 
@@ -98,12 +87,6 @@ class AdminCouponService(
         val now = ZonedDateTime.now(clock).truncatedTo(ChronoUnit.MICROS)
         coupon.changeEnabled(enabled = request.enabled, at = now)
         coupons.saveAndFlush(coupon)
-        audit.recordEvent(
-            action = if (request.enabled) AdminAuditAction.COUPON_CODE_ENABLED else AdminAuditAction.COUPON_CODE_DISABLED,
-            outcome = AdminAuditOutcome.SUCCESS, actorAdminId = actorAdminId, targetType = AdminAuditTargetType.PRO_COUPON,
-            targetId = coupon.requiredId.toString(), targetLabel = null, reason = request.reason, sourceAddress = null,
-            changedFields = listOf("disabledAt"),
-        )
         val row = queryRepository.find(id = couponId, at = now)
             ?: throw AdminException(AdminErrorCode.RESOURCE_NOT_FOUND)
         return AdminProCouponResponse.from(row)
@@ -124,7 +107,7 @@ class AdminCouponService(
     }
 
     private fun validateReason(reason: String) {
-        if (reason.isBlank() || reason.length > AdminAuthEvent.REASON_MAX_LENGTH) throw AdminException(AdminErrorCode.INVALID_REASON)
+        if (reason.isBlank() || reason.length > 500) throw AdminException(AdminErrorCode.INVALID_REASON)
     }
 
     companion object {

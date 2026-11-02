@@ -1,7 +1,5 @@
 package com.soma.wes.admin.resource.service
 
-import com.soma.wes.admin.audit.domain.AdminAuditAction
-import com.soma.wes.admin.audit.service.AdminAuditService
 import com.soma.wes.admin.audit.support.AdminAuditSanitizer
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
@@ -27,7 +25,6 @@ import java.time.ZonedDateTime
 class AdminCascadeTrashService(
     private val trashRepository: AdminCascadeTrashRepository,
     private val resourceRepository: AdminResourceRepository,
-    private val auditService: AdminAuditService,
     private val auditSanitizer: AdminAuditSanitizer,
     private val trashProperties: TrashProperties,
     private val clock: Clock,
@@ -90,26 +87,6 @@ class AdminCascadeTrashService(
         trashRepository.cancelPendingOperations(batchId)
         val relationshipFacts = trashRepository.captureRelationshipFacts(batchId)
 
-        auditService.recordMutation(
-            action = AdminAuditAction.RESOURCE_DELETED,
-            actorAdminId = actorAdminId,
-            targetType = type.auditTargetType,
-            targetId = id.toString(),
-            targetLabel = canonicalLabel,
-            reason = sanitizedReason,
-            sourceAddress = sourceAddress,
-            before = before.snapshot(),
-            after = before.snapshot() + mapOf(
-                "version" to before.version + 1,
-                "deleted" to true,
-                "trashBatchId" to batchId,
-                "restoreUntil" to deletedAt.plus(trashProperties.retention),
-                "affectedCounts" to counts,
-                "relationshipFacts" to relationshipFacts,
-            ),
-        )
-        // 삭제 감사 자체가 만든 리비전까지 배치의 최종 관계 사실에 포함한다.
-        trashRepository.captureRelationshipFacts(batchId)
         return response(requireNotNull(trashRepository.find(batchId)))
     }
 
@@ -167,18 +144,6 @@ class AdminCascadeTrashService(
         if (restoredCount != expectedCount || trashRepository.markRestored(batch.id) != 1) {
             throw AdminException(AdminErrorCode.TRASH_BATCH_CONFLICT)
         }
-        val after = requireResource(batch.rootType, batch.rootId)
-        auditService.recordMutation(
-            action = AdminAuditAction.RESOURCE_RESTORED,
-            actorAdminId = actorAdminId,
-            targetType = batch.rootType.auditTargetType,
-            targetId = batch.rootId.toString(),
-            targetLabel = batch.rootLabel,
-            reason = reason,
-            sourceAddress = sourceAddress,
-            before = mapOf("deleted" to true, "trashBatchId" to batch.id),
-            after = after.snapshot() + mapOf("trashBatchId" to batch.id, "restoredCount" to restoredCount),
-        )
     }
 
     private fun requireResource(type: AdminResourceType, id: Long): AdminResourceResponse =
@@ -203,17 +168,6 @@ class AdminCascadeTrashService(
             throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
         }
         val after = requireResource(before.type, before.id)
-        auditService.recordMutation(
-            action = AdminAuditAction.RESOURCE_RESTORED,
-            actorAdminId = actorAdminId,
-            targetType = before.type.auditTargetType,
-            targetId = before.id.toString(),
-            targetLabel = before.label,
-            reason = reason,
-            sourceAddress = sourceAddress,
-            before = before.snapshot(),
-            after = after.snapshot(),
-        )
         return after
     }
 
@@ -249,14 +203,6 @@ class AdminCascadeTrashService(
             )
         },
     )
-
-    private fun AdminResourceResponse.snapshot(): Map<String, Any?> = linkedMapOf(
-        "type" to type.name,
-        "id" to id,
-        "version" to version,
-        "label" to label,
-        "deleted" to deleted,
-    ) + fields
 
     companion object {
         private val CASCADE_TRASH_ROOT_TYPES = setOf(

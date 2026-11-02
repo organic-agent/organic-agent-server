@@ -256,10 +256,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
         val graph = createGraph(actor.requiredId, "relationship")
         val nextOwner = createUser(actor.requiredId, "relationship-next-owner")
         val galleryClient = createUser(actor.requiredId, "relationship-gallery-client")
-        val nextOwnerRevisionCountBefore = userRevisionCount(nextOwner.id)
-        val nextOwnerAuditCountBefore = userAuditCount(nextOwner.id)
-        val galleryClientRevisionCountBefore = userRevisionCount(galleryClient.id)
-        val galleryClientAuditCountBefore = userAuditCount(galleryClient.id)
 
         val addedStudioMember = execute(
             actor.requiredId,
@@ -317,10 +313,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
                 .map { relation -> relation.id },
         ).isEmpty()
         assertThat(galleryContextAfterRemoval.facts["members"]).isEqualTo(0L)
-        assertThat(userRevisionCount(nextOwner.id)).isEqualTo(nextOwnerRevisionCountBefore)
-        assertThat(userAuditCount(nextOwner.id)).isEqualTo(nextOwnerAuditCountBefore)
-        assertThat(userRevisionCount(galleryClient.id)).isEqualTo(galleryClientRevisionCountBefore)
-        assertThat(userAuditCount(galleryClient.id)).isEqualTo(galleryClientAuditCountBefore)
+
         execute(
             actor.requiredId,
             AdminResourceType.GALLERY,
@@ -612,8 +605,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
         val actor = adminAccountFixture.관리자("workflow-studio-owner-policy")
         val graph = createGraph(actor.requiredId, "studio-owner-policy")
         val nextOwner = createUser(actor.requiredId, "studio-next-owner")
-        val revisionCountBefore = userRevisionCount(nextOwner.id)
-        val auditCountBefore = userAuditCount(nextOwner.id)
 
         execute(
             actor.requiredId,
@@ -630,8 +621,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
         ).param("workspaceId", graph.studio.id).query { rs, _ -> rs.getLong(1) }.list()
         assertThat(owners).containsExactlyInAnyOrder(graph.user.id, nextOwner.id)
         assertThat(resourceService.get(AdminResourceType.USER, nextOwner.id).version).isEqualTo(nextOwner.version)
-        assertThat(userRevisionCount(nextOwner.id)).isEqualTo(revisionCountBefore)
-        assertThat(userAuditCount(nextOwner.id)).isEqualTo(auditCountBefore)
+
         assertThatThrownBy {
             execute(
                 actor.requiredId, AdminResourceType.STUDIO, graph.studio.id,
@@ -683,8 +673,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
         }
 
         val photographerWedding = createGraph(actor.requiredId, "gallery-member-photographer-wedding")
-        val photographerRevisionCountBefore = userRevisionCount(graph.user.id)
-        val photographerAuditCountBefore = userAuditCount(graph.user.id)
         val admittedPhotographer = execute(
             actor.requiredId, AdminResourceType.GALLERY, photographerWedding.gallery.id,
             AdminWorkflowAction.ADD_GALLERY_MEMBER, 0, "gallery-policy-photographer-allow-001",
@@ -692,8 +680,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
         )
         assertThat((admittedPhotographer.details.getValue("memberId") as Number).toLong()).isPositive()
         assertThat(resourceService.get(AdminResourceType.USER, graph.user.id).version).isEqualTo(graph.user.version)
-        assertThat(userRevisionCount(graph.user.id)).isEqualTo(photographerRevisionCountBefore)
-        assertThat(userAuditCount(graph.user.id)).isEqualTo(photographerAuditCountBefore)
 
         val staff = createUser(actor.requiredId, "gallery-member-staff")
         execute(
@@ -1071,17 +1057,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
         )
         assertThat(retried.status).isEqualTo("PENDING")
         assertThat(retryReplay.replayed).isTrue()
-        assertThat(
-            jdbcClient.sql(
-                """
-                SELECT action || ':' || outcome
-                FROM admin_audit_logs
-                WHERE target_type = 'PHOTO' AND target_id = :targetId
-                  AND action IN ('REPROCESS_REQUESTED', 'REPROCESS_DISPATCHED', 'REPROCESS_DISPATCH_FAILED')
-                ORDER BY id
-                """.trimIndent(),
-            ).param("targetId", photo.id.toString()).query { rs, _ -> rs.getString(1) }.list(),
-        ).containsExactly("REPROCESS_REQUESTED:SUCCESS")
+
         execute(
             actor.requiredId,
             AdminResourceType.PHOTO,
@@ -1144,21 +1120,10 @@ class AdminWorkflowServiceTest @Autowired constructor(
             .contains("reasonCategory=DATA_CORRECTION operatorReasonProvided=true")
         assertThat(durableReasons.joinToString())
             .doesNotContain("private@example.com", "pii@example.com", "notify@example.com", "010-1234-5678")
-        val auditSnapshots = jdbcClient.sql(
-            "SELECT COALESCE(before_snapshot, '') || COALESCE(after_snapshot, '') FROM admin_entity_revisions",
-        ).query { rs, _ -> rs.getString(1) }.list().joinToString()
-        assertThat(auditSnapshots).doesNotContain("secret-signature")
+
         assertThat(contextService.get(AdminResourceType.PHOTO, photo.id).toString())
             .doesNotContain("secret-signature", "upload.example.test")
-        val persistedAudit = jdbcClient.sql(
-            """
-            SELECT COALESCE(changed_fields, '') AS evidence FROM admin_audit_logs
-            UNION ALL
-            SELECT COALESCE(before_snapshot, '') || COALESCE(after_snapshot, '') AS evidence
-            FROM admin_entity_revisions
-            """.trimIndent(),
-        ).query { rs, _ -> rs.getString("evidence") }.list().joinToString()
-        assertThat(persistedAudit).doesNotContain("secret-signature", "upload.example.test")
+
         verify(photoStorage, times(2)).presignUpload(eq(replacementKey), eq("image/jpeg"), anyOrNull(), anyOrNull())
         verify(photoStorage).exists(replacementKey)
         verify(aiTaskSender, never()).send(any())
@@ -1219,20 +1184,7 @@ class AdminWorkflowServiceTest @Autowired constructor(
                 "reasonCategory=DATA_CORRECTION operatorReasonProvided=true",
         )
         assertThat(resourceService.get(AdminResourceType.PHOTO, photo.id).version).isEqualTo(photo.version + 1)
-        assertThat(
-            jdbcClient.sql(
-                """
-                SELECT action || ':' || outcome
-                FROM admin_audit_logs
-                WHERE target_type = 'PHOTO' AND target_id = :targetId
-                  AND action IN (
-                    'REPROCESS_REQUESTED', 'REPROCESS_DISPATCHED',
-                    'REPROCESS_DISPATCH_FAILED', 'REPROCESS_DISPATCH_UNKNOWN'
-                  )
-                ORDER BY id
-                """.trimIndent(),
-            ).param("targetId", photo.id.toString()).query { rs, _ -> rs.getString(1) }.list(),
-        ).containsExactly("REPROCESS_REQUESTED:SUCCESS")
+
         assertThat(
             jdbcClient.sql(
                 """
@@ -1242,83 +1194,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
                 """.trimIndent(),
             ).query { rs, _ -> rs.getString(1) }.single(),
         ).isEqualTo("COMPLETED")
-        verify(aiTaskSender, never()).send(any())
-    }
-
-    @Test
-    fun `재처리 요청 감사 저장 실패는 job과 리소스 버전을 함께 rollback하고 외부 호출을 막는다`() {
-        val actor = adminAccountFixture.관리자("workflow-reprocess-audit-failure")
-        val graph = createGraph(actor.requiredId, "reprocess-audit-failure", withPhoto = true)
-        val photo = requireNotNull(graph.photo)
-        val jobId = createEmbeddingJob(actor.requiredId, photo.id, graph.gallery.id)
-        val triggerFunction = "test_block_reprocess_audit_insert"
-        val triggerName = "test_block_reprocess_audit_insert_trigger"
-
-        jdbcClient.sql(
-            """
-            CREATE OR REPLACE FUNCTION $triggerFunction()
-            RETURNS TRIGGER
-            LANGUAGE plpgsql
-            AS ${'$'}trigger${'$'}
-            BEGIN
-                IF NEW.action = 'REPROCESS_REQUESTED'
-                   AND NEW.target_type = 'PHOTO'
-                   AND NEW.target_id = '${photo.id}' THEN
-                    RAISE EXCEPTION 'forced reprocess audit failure';
-                END IF;
-                RETURN NEW;
-            END;
-            ${'$'}trigger${'$'}
-            """.trimIndent(),
-        ).update()
-        jdbcClient.sql(
-            """
-            CREATE TRIGGER $triggerName
-            BEFORE INSERT ON admin_audit_logs
-            FOR EACH ROW EXECUTE FUNCTION $triggerFunction()
-            """.trimIndent(),
-        ).update()
-        try {
-            assertThatThrownBy {
-                execute(
-                    actor.requiredId,
-                    AdminResourceType.PHOTO,
-                    photo.id,
-                    AdminWorkflowAction.RETRY_PROCESSING_JOB,
-                    photo.version,
-                    "reprocess-audit-failure-001",
-                    mapOf("jobId" to jobId),
-                )
-            }.isInstanceOf(DataAccessException::class.java)
-        } finally {
-            jdbcClient.sql("DROP TRIGGER IF EXISTS $triggerName ON admin_audit_logs").update()
-            jdbcClient.sql("DROP FUNCTION IF EXISTS $triggerFunction()").update()
-        }
-
-        assertThat(
-            jdbcClient.sql(
-                "SELECT status || ':' || attempt_count FROM admin_processing_jobs WHERE id = :id",
-            ).param("id", jobId).query { rs, _ -> rs.getString(1) }.single(),
-        ).isEqualTo("PENDING:0")
-        assertThat(resourceService.get(AdminResourceType.PHOTO, photo.id).version).isEqualTo(photo.version)
-        assertThat(
-            jdbcClient.sql(
-                """
-                SELECT COUNT(*) FROM admin_audit_logs
-                WHERE target_type = 'PHOTO' AND target_id = :targetId
-                  AND action IN ('REPROCESS_REQUESTED', 'REPROCESS_DISPATCHED', 'REPROCESS_DISPATCH_FAILED')
-                """.trimIndent(),
-            ).param("targetId", photo.id.toString()).query { rs, _ -> rs.getLong(1) }.single(),
-        ).isZero()
-        assertThat(
-            jdbcClient.sql(
-                """
-                SELECT COUNT(*) FROM admin_idempotency_keys
-                WHERE action = 'WORKFLOW_RETRY_PROCESSING_JOB'
-                  AND idempotency_key = 'reprocess-audit-failure-001'
-                """.trimIndent(),
-            ).query { rs, _ -> rs.getLong(1) }.single(),
-        ).isZero()
         verify(aiTaskSender, never()).send(any())
     }
 
@@ -1901,20 +1776,6 @@ private fun createGraph(actorAdminId: Long, suffix: String, withPhoto: Boolean =
             """.trimIndent(),
         ).param("sessionId", sessionId).param("photoId", photoId).update()
     }
-
-    private fun userRevisionCount(userId: Long): Long = jdbcClient.sql(
-        "SELECT COUNT(*) FROM admin_entity_revisions WHERE target_type = 'USER' AND target_id = :targetId",
-    )
-        .param("targetId", userId.toString())
-        .query { rs, _ -> rs.getLong(1) }
-        .single()
-
-    private fun userAuditCount(userId: Long): Long = jdbcClient.sql(
-        "SELECT COUNT(*) FROM admin_audit_logs WHERE target_type = 'USER' AND target_id = :targetId",
-    )
-        .param("targetId", userId.toString())
-        .query { rs, _ -> rs.getLong(1) }
-        .single()
 
     private fun setEmbedded(photoId: Long, embedding: String, width: Int, height: Int) {
         jdbcClient.sql(
