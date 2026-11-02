@@ -45,7 +45,6 @@ class AdminRetouchArtifactRepository(
         contentType: String,
         expiresAt: ZonedDateTime,
         actorAdminId: Long,
-        reason: String,
         expectedRoundVersion: Long,
         expectedPhotoVersion: Long,
     ): RetouchArtifactUploadCreated {
@@ -86,7 +85,7 @@ class AdminRetouchArtifactRepository(
                  content_type, status, expires_at, actor_admin_id, reason, created_at)
             VALUES
                 (:roundId, :retouchPhotoId, :artifactType, :storageKey, :originalFileName,
-                 :contentType, 'PENDING', :expiresAt, :actorAdminId, :reason, CURRENT_TIMESTAMP)
+                 :contentType, 'PENDING', :expiresAt, :actorAdminId, '', CURRENT_TIMESTAMP)
             RETURNING id
             """.trimIndent(),
         )
@@ -98,7 +97,7 @@ class AdminRetouchArtifactRepository(
             .param("contentType", contentType)
             .param("expiresAt", expiresAt.toOffsetDateTime())
             .param("actorAdminId", actorAdminId)
-            .param("reason", reason)
+
             .query { rs, _ -> rs.getLong("id") }
             .single()
         bumpVersions(roundId, retouchPhotoId, expectedRoundVersion, expectedPhotoVersion)

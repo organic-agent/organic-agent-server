@@ -316,11 +316,9 @@ class AdminChildTrashRepository(
         resourceId: Long,
         parentId: Long,
         actorAdminId: Long,
-        reason: String,
         deletedAt: ZonedDateTime,
         restoreUntil: ZonedDateTime,
     ): Long {
-        val canonicalReason = auditSanitizer.sanitizeStoredReason(reason)
         return jdbcClient.sql(
             """
             INSERT INTO admin_child_trash_records (
@@ -330,7 +328,7 @@ class AdminChildTrashRepository(
             VALUES (
                 :resourceType, :resourceId, :parentType, :parentId, :actorAdminId,
                 left('ADMIN #' || CAST(:actorAdminId AS TEXT), 64),
-                :reason, 'ACTIVE', :deletedAt, :restoreUntil, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                '', 'ACTIVE', :deletedAt, :restoreUntil, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             RETURNING id
             """.trimIndent(),
@@ -340,7 +338,6 @@ class AdminChildTrashRepository(
             .param("parentType", type.parentType.name)
             .param("parentId", parentId)
             .param("actorAdminId", actorAdminId)
-            .param("reason", canonicalReason)
             .param("deletedAt", deletedAt.toOffsetDateTime())
             .param("restoreUntil", restoreUntil.toOffsetDateTime())
             .query { rs, _ -> rs.getLong("id") }
@@ -517,7 +514,7 @@ class AdminChildTrashRepository(
         SET status = 'PURGED', purged_at = :purgedAt, purge_started_at = NULL,
             next_purge_attempt_at = NULL,
             actor_username = NULL,
-            reason = 'reasonCategory=UNSPECIFIED operatorReasonProvided=false',
+            reason = '',
             failure_code = NULL, updated_at = CURRENT_TIMESTAMP
         WHERE id = :id AND status = 'PURGING'
         """.trimIndent(),
@@ -531,7 +528,6 @@ class AdminChildTrashRepository(
         parentId = rs.getLong("parent_id"),
         actorAdminId = rs.getLong("actor_admin_id").takeUnless { rs.wasNull() },
         actorUsername = rs.getString("actor_username"),
-        reason = rs.getString("reason"),
         status = rs.getString("status"),
         deletedAt = rs.getObject("deleted_at", OffsetDateTime::class.java).toZonedDateTime(),
         restoreUntil = rs.getObject("restore_until", OffsetDateTime::class.java).toZonedDateTime(),
@@ -570,7 +566,7 @@ class AdminChildTrashRepository(
         val parentId: Long,
         val actorAdminId: Long?,
         val actorUsername: String?,
-        val reason: String,
+
         val status: String,
         val deletedAt: ZonedDateTime,
         val restoreUntil: ZonedDateTime,

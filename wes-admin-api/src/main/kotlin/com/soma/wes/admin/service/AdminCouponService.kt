@@ -36,7 +36,6 @@ class AdminCouponService(
     @Transactional
     fun issue(actorAdminId: Long, request: IssueProCouponRequest): IssueProCouponResponse {
         requireActiveAdmin(actorAdminId)
-        validateReason(request.reason)
 
         val now = ZonedDateTime.now(clock)
         if (request.redeemUntil?.isAfter(now) == false) throw BillingException(BillingErrorCode.INVALID_COUPON_DEADLINE)
@@ -78,7 +77,6 @@ class AdminCouponService(
     @Transactional
     fun changeStatus(couponId: Long, actorAdminId: Long, request: ChangeProCouponStatusRequest): AdminProCouponResponse {
         requireActiveAdmin(actorAdminId)
-        validateReason(request.reason)
         val coupon = coupons.findWithLockById(couponId) ?: throw AdminException(AdminErrorCode.RESOURCE_NOT_FOUND)
         if (coupon.version != request.expectedVersion) throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
         if (!coupon.reusable && coupon.consumedAt != null) throw AdminException(AdminErrorCode.COUPON_STATE_CHANGE_FORBIDDEN)
@@ -104,10 +102,6 @@ class AdminCouponService(
     private fun requireActiveAdmin(actorAdminId: Long) {
         val admin = accounts.findByIdOrNull(actorAdminId) ?: throw AdminException(AdminErrorCode.ACCOUNT_NOT_FOUND)
         if (admin.isSuspended()) throw AdminException(AdminErrorCode.ACCOUNT_SUSPENDED)
-    }
-
-    private fun validateReason(reason: String) {
-        if (reason.isBlank() || reason.length > 500) throw AdminException(AdminErrorCode.INVALID_REASON)
     }
 
     companion object {

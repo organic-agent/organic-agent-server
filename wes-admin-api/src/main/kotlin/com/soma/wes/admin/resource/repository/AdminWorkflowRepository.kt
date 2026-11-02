@@ -458,7 +458,6 @@ class AdminWorkflowRepository(
         contentType: String,
         expiresAt: ZonedDateTime,
         actorAdminId: Long,
-        reason: String,
         expectedVersion: Long,
     ): Long {
         requireVersion("photos", photoId, expectedVersion, lock = true)
@@ -483,7 +482,7 @@ class AdminWorkflowRepository(
                  actor_admin_id, reason, created_at)
             VALUES
                 (:photoId, :storageKey, :originalFileName, :contentType, 'PENDING', :expiresAt,
-                 :actorAdminId, :reason, CURRENT_TIMESTAMP)
+                 :actorAdminId, '', CURRENT_TIMESTAMP)
             RETURNING id
             """.trimIndent(),
         )
@@ -493,7 +492,7 @@ class AdminWorkflowRepository(
             .param("contentType", contentType)
             .param("expiresAt", expiresAt.toOffsetDateTime())
             .param("actorAdminId", actorAdminId)
-            .param("reason", reason)
+
             .query { rs, _ -> rs.getLong("id") }
             .single()
         bumpVersion("photos", photoId, expectedVersion)
@@ -524,7 +523,6 @@ class AdminWorkflowRepository(
         photoId: Long,
         replacementId: Long,
         actorAdminId: Long,
-        reason: String,
         expectedVersion: Long,
     ): PhotoReplacementResult {
         val pending = jdbcClient.sql(
@@ -649,7 +647,6 @@ class AdminWorkflowRepository(
                 revisionId = revisionId,
                 payload = mapOf("galleryId" to current.galleryId, "storageKey" to pending.storageKey),
                 actorAdminId = actorAdminId,
-                reason = reason,
             )
         }
         return PhotoReplacementResult(
@@ -723,7 +720,6 @@ class AdminWorkflowRepository(
         revisionId: Long?,
         payload: Map<String, Any?>,
         actorAdminId: Long?,
-        reason: String,
     ): Long = jdbcClient.sql(
         """
         INSERT INTO admin_processing_jobs
@@ -731,7 +727,7 @@ class AdminWorkflowRepository(
              attempt_count, actor_admin_id, reason, created_at, updated_at)
         VALUES
             (:jobType, 'PENDING', :targetType, :targetId, :revisionId, CAST(:payload AS JSONB),
-             0, :actorAdminId, :reason, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+             0, :actorAdminId, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON CONFLICT (job_type, target_type, target_id, revision_id) WHERE revision_id IS NOT NULL
         DO UPDATE SET updated_at = admin_processing_jobs.updated_at
         RETURNING id
@@ -743,7 +739,7 @@ class AdminWorkflowRepository(
         .param("revisionId", revisionId)
         .param("payload", objectMapper.writeValueAsString(payload))
         .param("actorAdminId", actorAdminId)
-        .param("reason", reason)
+
         .query { rs, _ -> rs.getLong(1) }
         .single()
 
@@ -774,14 +770,13 @@ class AdminWorkflowRepository(
     fun queueProcessingJob(
         jobId: Long,
         actorAdminId: Long,
-        reason: String,
     ): ProcessingJob {
         val updated = jdbcClient.sql(
             """
             UPDATE admin_processing_jobs
             SET status = 'PENDING', attempt_count = 0,
                 failure_code = NULL, last_run_at = NULL,
-                actor_admin_id = :actorAdminId, reason = :reason,
+                actor_admin_id = :actorAdminId, reason = '',
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = :jobId
               AND (
@@ -794,7 +789,6 @@ class AdminWorkflowRepository(
         )
             .param("jobId", jobId)
             .param("actorAdminId", actorAdminId)
-            .param("reason", reason)
             .param("claimedNotSent", AdminWorkflowExecutionRepository.CLAIMED_NOT_SENT)
             .query { rs, _ -> ProcessingJob(
                 id = rs.getLong("id"),
@@ -849,7 +843,6 @@ class AdminWorkflowRepository(
     fun createAiSelectionDraft(
         selectionId: Long,
         actorAdminId: Long,
-        reason: String,
         expectedVersion: Long,
         requestedCount: Int?,
     ): AiSelectionDraftResult {
@@ -874,7 +867,7 @@ class AdminWorkflowRepository(
                 (selection_id, status, input_conditions, attempt_count, actor_admin_id, reason,
                  created_at, started_at, updated_at)
             VALUES
-                (:selectionId, 'RUNNING', CAST(:inputConditions AS JSONB), 1, :actorAdminId, :reason,
+                (:selectionId, 'RUNNING', CAST(:inputConditions AS JSONB), 1, :actorAdminId, '',
                  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             RETURNING id
             """.trimIndent(),
@@ -882,7 +875,7 @@ class AdminWorkflowRepository(
             .param("selectionId", selectionId)
             .param("inputConditions", objectMapper.writeValueAsString(inputConditions))
             .param("actorAdminId", actorAdminId)
-            .param("reason", reason)
+
             .query { rs, _ -> rs.getLong(1) }.single()
         val candidates = jdbcClient.sql(
             """
@@ -926,7 +919,6 @@ class AdminWorkflowRepository(
             status = "SELECTING",
             items = items,
             actorAdminId = actorAdminId,
-            reason = reason,
         )
         jdbcClient.sql(
             """
@@ -944,12 +936,11 @@ class AdminWorkflowRepository(
         selectionId: Long,
         photoIds: List<Long>,
         actorAdminId: Long,
-        reason: String,
         expectedVersion: Long,
     ): SelectionRevisionResult {
         val galleryId = selectionGalleryId(selectionId, expectedVersion)
         validatePhotosInGallery(galleryId, photoIds)
-        val previousRevisionId = snapshotSelection(selectionId, actorAdminId, "변경 전: $reason")
+        val previousRevisionId = snapshotSelection(selectionId, actorAdminId)
 
         jdbcClient.sql("DELETE FROM photo_selection_items WHERE selection_id = :selectionId")
             .param("selectionId", selectionId)
@@ -984,7 +975,6 @@ class AdminWorkflowRepository(
             status = "SELECTING",
             items = photoIds.distinct().mapIndexed { index, photoId -> SelectionItem(photoId, null, index) },
             actorAdminId = actorAdminId,
-            reason = reason,
         )
         return SelectionRevisionResult(
             revisionId = revisionId,
@@ -997,7 +987,6 @@ class AdminWorkflowRepository(
         selectionId: Long,
         revisionId: Long?,
         actorAdminId: Long,
-        reason: String,
         expectedVersion: Long,
     ): SelectionRevisionResult {
         val galleryId = selectionGalleryId(selectionId, expectedVersion)
@@ -1008,7 +997,7 @@ class AdminWorkflowRepository(
         }
         if (items.isEmpty()) throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         validatePhotosInGallery(galleryId, items.map(SelectionItem::photoId))
-        val previousRevisionId = snapshotSelection(selectionId, actorAdminId, "제출 전: $reason")
+        val previousRevisionId = snapshotSelection(selectionId, actorAdminId)
         if (revisionId != null) {
             jdbcClient.sql("DELETE FROM photo_selection_items WHERE selection_id = :selectionId")
                 .param("selectionId", selectionId).update()
@@ -1047,7 +1036,6 @@ class AdminWorkflowRepository(
             status = "SUBMITTED",
             items = items,
             actorAdminId = actorAdminId,
-            reason = reason,
         )
         return SelectionRevisionResult(
             revisionId = submittedRevisionId,
@@ -1059,11 +1047,10 @@ class AdminWorkflowRepository(
     fun withdrawSelection(
         selectionId: Long,
         actorAdminId: Long,
-        reason: String,
         expectedVersion: Long,
     ): Long {
         selectionGalleryId(selectionId, expectedVersion)
-        snapshotSelection(selectionId, actorAdminId, "제출 취소 전: $reason")
+        snapshotSelection(selectionId, actorAdminId)
         val updated = jdbcClient.sql(
             """
             UPDATE photo_selections
@@ -1082,7 +1069,6 @@ class AdminWorkflowRepository(
             status = "SELECTING",
             items = selectionItems(selectionId),
             actorAdminId = actorAdminId,
-            reason = reason,
         )
     }
 
@@ -1136,7 +1122,7 @@ class AdminWorkflowRepository(
         """.trimIndent(),
     ).param("jobId", jobId).param("selectionId", selectionId).update()
 
-    private fun snapshotSelection(selectionId: Long, actorAdminId: Long, reason: String): Long {
+    private fun snapshotSelection(selectionId: Long, actorAdminId: Long): Long {
         val status = jdbcClient.sql("SELECT status FROM photo_selections WHERE id = :selectionId")
             .param("selectionId", selectionId)
             .query { rs, _ -> rs.getString("status") }
@@ -1147,7 +1133,6 @@ class AdminWorkflowRepository(
             status = status,
             items = selectionItems(selectionId),
             actorAdminId = actorAdminId,
-            reason = reason,
         )
         // 기존 산출물은 변경 후 선택이 아니라 바로 직전 선택에 귀속돼야 한다. 이미 귀속된
         // 산출물은 후속 관리자 변경에서도 절대 새 리비전으로 이동시키지 않는다.
@@ -1175,7 +1160,6 @@ class AdminWorkflowRepository(
         status: String,
         items: List<SelectionItem>,
         actorAdminId: Long,
-        reason: String,
     ): Long {
         val revisionNumber = jdbcClient.sql(
             "SELECT COALESCE(MAX(revision_number), 0) + 1 FROM admin_selection_revisions WHERE selection_id = :selectionId",
@@ -1185,7 +1169,7 @@ class AdminWorkflowRepository(
             INSERT INTO admin_selection_revisions
                 (selection_id, revision_number, source, status, photo_items, actor_admin_id, reason, created_at)
             VALUES
-                (:selectionId, :revisionNumber, :source, :status, CAST(:photoItems AS JSONB), :actorAdminId, :reason, CURRENT_TIMESTAMP)
+                (:selectionId, :revisionNumber, :source, :status, CAST(:photoItems AS JSONB), :actorAdminId, '', CURRENT_TIMESTAMP)
             RETURNING id
             """.trimIndent(),
         )
@@ -1195,7 +1179,7 @@ class AdminWorkflowRepository(
             .param("status", status)
             .param("photoItems", objectMapper.writeValueAsString(items))
             .param("actorAdminId", actorAdminId)
-            .param("reason", reason)
+
             .query { rs, _ -> rs.getLong("id") }
             .single()
     }

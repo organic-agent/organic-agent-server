@@ -394,7 +394,6 @@ class AdminWorkflowService(
                 contentType = upload.contentType,
                 expiresAt = upload.expiresAt.atZone(ZonedDateTime.now(clock).zone),
                 actorAdminId = actorAdminId,
-                reason = durableReason(request),
                 expectedVersion = request.expectedVersion,
             )
             WorkflowExecution(details = mapOf(
@@ -411,7 +410,6 @@ class AdminWorkflowService(
                 id,
                 verified.replacementId,
                 actorAdminId,
-                durableReason(request),
                 request.expectedVersion,
             )
             WorkflowExecution(details = mapOf(
@@ -443,7 +441,7 @@ class AdminWorkflowService(
         AdminWorkflowAction.REPLACE_SELECTION_ITEMS -> {
             requireType(type, AdminResourceType.SELECTION)
             val result = workflowRepository.replaceSelectionItems(
-                id, request.longs("photoIds"), actorAdminId, durableReason(request), request.expectedVersion,
+                id, request.longs("photoIds"), actorAdminId, request.expectedVersion,
             )
             WorkflowExecution(details = mapOf(
                 "previousRevisionId" to result.previousRevisionId,
@@ -457,7 +455,6 @@ class AdminWorkflowService(
                 id,
                 request.optionalLong("revisionId"),
                 actorAdminId,
-                durableReason(request),
                 request.expectedVersion,
             )
             WorkflowExecution(details = mapOf(
@@ -470,7 +467,7 @@ class AdminWorkflowService(
             requireType(type, AdminResourceType.SELECTION)
             WorkflowExecution(details = mapOf(
                 "revisionId" to workflowRepository.withdrawSelection(
-                    id, actorAdminId, durableReason(request), request.expectedVersion,
+                    id, actorAdminId, request.expectedVersion,
                 ),
             ))
         }
@@ -512,7 +509,6 @@ class AdminWorkflowService(
                     parentId = id,
                     expectedParentVersion = request.expectedVersion,
                     expectedChildVersion = commentExpectedVersion,
-                    reason = durableReason(request),
                 )
             } else {
                 childTrashService.restore(
@@ -549,7 +545,6 @@ class AdminWorkflowService(
                 parentId = id,
                 expectedParentVersion = request.expectedVersion,
                 expectedChildVersion = request.long("likeExpectedVersion"),
-                reason = durableReason(request),
             )
             WorkflowExecution(details = result.workflowDetails() + ("likeId" to likeId))
         }
@@ -601,7 +596,6 @@ class AdminWorkflowService(
                 contentType = upload.contentType,
                 expiresAt = upload.expiresAt.atZone(ZonedDateTime.now(clock).zone),
                 actorAdminId = actorAdminId,
-                reason = durableReason(request),
                 expectedRoundVersion = request.expectedVersion,
                 expectedPhotoVersion = request.long("retouchPhotoExpectedVersion"),
             )
@@ -750,7 +744,6 @@ class AdminWorkflowService(
         val result = workflowRepository.createAiSelectionDraft(
             id,
             actorAdminId,
-            durableReason(request),
             request.expectedVersion,
             request.optionalInt("requestedCount"),
         )
@@ -782,7 +775,6 @@ class AdminWorkflowService(
                 parentId = id,
                 expectedParentVersion = request.expectedVersion,
                 expectedChildVersion = itemExpectedVersion,
-                reason = durableReason(request),
             )
         } else {
             childTrashService.restore(
@@ -836,7 +828,6 @@ class AdminWorkflowService(
             val queued = workflowRepository.queueProcessingJob(
                 jobId = jobId,
                 actorAdminId = actorAdminId,
-                reason = durableReason(request),
             )
             workflowRepository.bumpResourceVersion(type, id, request.expectedVersion)
             val response = AdminWorkflowResponse(
@@ -878,7 +869,7 @@ class AdminWorkflowService(
     }
 
     private fun validateRequest(type: AdminResourceType, request: AdminWorkflowRequest) {
-        if (!request.confirm || request.reason.isBlank() || request.reason.length > 500 || request.expectedVersion < 0) {
+        if (!request.confirm || request.expectedVersion < 0) {
             throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         }
         if (!IDEMPOTENCY_KEY.matches(request.idempotencyKey)) {
@@ -924,15 +915,11 @@ class AdminWorkflowService(
         }
     }
 
-    private fun durableReason(request: AdminWorkflowRequest): String =
-        auditSanitizer.canonicalOperatorReason(request.reason)
-
     private fun requestHash(type: AdminResourceType, id: Long, request: AdminWorkflowRequest): String {
         val canonical = linkedMapOf(
             "type" to type.name,
             "id" to id,
             "action" to request.action.name,
-            "reason" to durableReason(request),
             "expectedVersion" to request.expectedVersion,
             "fields" to canonicalize(request.fields),
         )

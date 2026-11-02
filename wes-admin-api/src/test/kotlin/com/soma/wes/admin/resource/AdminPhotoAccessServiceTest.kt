@@ -47,7 +47,7 @@ class AdminPhotoAccessServiceTest {
         val response = service.access(
             actorAdminId = 9,
             photoId = 42,
-            request = AdminPhotoAccessRequest("고객 요청 원본 확인", AdminPhotoAccessMode.DOWNLOAD),
+            request = AdminPhotoAccessRequest(AdminPhotoAccessMode.DOWNLOAD),
             sourceAddress = "127.0.0.1",
         )
 
@@ -71,7 +71,7 @@ class AdminPhotoAccessServiceTest {
         val response = service.access(
             actorAdminId = 9,
             photoId = 43,
-            request = AdminPhotoAccessRequest("앨범 목업 배치 확인", AdminPhotoAccessMode.PREVIEW),
+            request = AdminPhotoAccessRequest(AdminPhotoAccessMode.PREVIEW),
             sourceAddress = "127.0.0.1",
         )
 

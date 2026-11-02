@@ -1,7 +1,6 @@
 package com.soma.wes.admin.controller.docs
 
 import com.soma.wes.admin.domain.AdminLoginUser
-import com.soma.wes.admin.dto.request.AdminReasonRequest
 import com.soma.wes.admin.dto.request.ChangeAdminStatusRequest
 import com.soma.wes.admin.dto.request.CreateAdminAccountRequest
 import com.soma.wes.admin.dto.response.AdminAccountListResponse
@@ -43,7 +42,6 @@ interface AdminAccountControllerDocs {
     fun unlock(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable adminId: Long,
-        @Valid @RequestBody request: AdminReasonRequest,
         servletRequest: HttpServletRequest,
     ): ResponseEntity<AdminAccountResponse>
 
@@ -51,7 +49,6 @@ interface AdminAccountControllerDocs {
     fun issueTemporaryPassword(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable adminId: Long,
-        @Valid @RequestBody request: AdminReasonRequest,
         servletRequest: HttpServletRequest,
     ): ResponseEntity<AdminTemporaryPasswordResponse>
 }

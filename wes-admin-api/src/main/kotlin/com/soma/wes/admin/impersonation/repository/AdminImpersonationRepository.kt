@@ -22,7 +22,7 @@ class AdminImpersonationRepository(
                  correlation_id, started_at, expires_at)
             VALUES
                 (:id, :adminId, :adminSessionId, :viewerUserId, :viewerRole,
-                 :targetType, :targetId, :targetLabel, :reason, :sourceAddress,
+                 :targetType, :targetId, :targetLabel, '', :sourceAddress,
                  :correlationId, :startedAt, :expiresAt)
             """.trimIndent(),
         )
@@ -34,7 +34,6 @@ class AdminImpersonationRepository(
             .param("targetType", session.targetType.name)
             .param("targetId", session.targetId)
             .param("targetLabel", session.targetLabel)
-            .param("reason", session.reason)
             .param("sourceAddress", session.sourceAddress)
             .param("correlationId", session.correlationId)
             .param("startedAt", session.startedAt.toOffsetDateTime())
@@ -42,7 +41,7 @@ class AdminImpersonationRepository(
             .update()
     }
 
-    /** ended_at이 비어 있는 만료 세션만 원자적으로 claim한다. 반환 행만 END 감사 대상이다. */
+    /** ended_at이 비어 있는 만료 세션만 원자적으로 종료한다. */
     fun closeExpired(adminSessionId: UUID, now: ZonedDateTime): List<Session> = jdbcClient.sql(
         """
         UPDATE admin_impersonation_sessions
@@ -110,7 +109,6 @@ class AdminImpersonationRepository(
         targetType = AdminResourceType.valueOf(rs.getString("target_type")),
         targetId = rs.getLong("target_id"),
         targetLabel = rs.getString("target_label"),
-        reason = rs.getString("reason"),
         sourceAddress = rs.getString("source_address"),
         correlationId = rs.getString("correlation_id"),
         startedAt = rs.getObject("started_at", OffsetDateTime::class.java).toZonedDateTime(),
@@ -126,7 +124,7 @@ class AdminImpersonationRepository(
         val targetType: AdminResourceType,
         val targetId: Long,
         val targetLabel: String,
-        val reason: String,
+
         val sourceAddress: String?,
         /** 대리보기 시작 요청의 MDC trace. 생명주기 식별자는 [id]다. */
         val correlationId: String?,
