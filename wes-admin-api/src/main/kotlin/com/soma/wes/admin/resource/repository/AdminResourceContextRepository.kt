@@ -527,7 +527,6 @@ class AdminResourceContextRepository(
                 "expiresAt" to rs.getObject("expires_at"),
                 "revokedAt" to rs.getObject("revoked_at"),
                 "createdAt" to rs.getObject("created_at"),
-                "token" to "[MASKED]",
             ) },
             "userNotifications" to rows(
                 """
@@ -668,7 +667,6 @@ class AdminResourceContextRepository(
                         ?.isBefore(java.time.OffsetDateTime.now()) == true -> "EXPIRED"
                     else -> "ACTIVE"
                 },
-                "token" to "[MASKED]",
                 "expiresAt" to rs.getObject("expires_at"),
                 "createdAt" to rs.getObject("created_at"),
             ) },

@@ -1,7 +1,5 @@
 package com.soma.wes.admin.impersonation.service
 
-import com.soma.wes.admin.audit.domain.AdminAuditTargetType
-import com.soma.wes.admin.audit.support.AdminAuditSanitizer
 import com.soma.wes.admin.domain.AdminLoginUser
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
@@ -28,7 +26,6 @@ class AdminImpersonationService(
     private val viewRepository: AdminImpersonationViewRepository,
     private val readModelService: AdminImpersonationReadModelService,
     private val expiryService: AdminImpersonationExpiryService,
-    private val sanitizer: AdminAuditSanitizer,
     private val clock: Clock,
 ) {
 
@@ -47,7 +44,6 @@ class AdminImpersonationService(
 
         val viewer = viewRepository.resolveViewer(request.targetType, request.targetId, request.viewerUserId)
         val sessionId = UUID.randomUUID()
-        val auditTargetType = AdminAuditTargetType.valueOf(request.targetType.name)
         val session = AdminImpersonationRepository.Session(
             id = sessionId,
             adminId = actor.id,
@@ -56,9 +52,7 @@ class AdminImpersonationService(
             viewerAccessRole = viewer.accessRole,
             targetType = request.targetType,
             targetId = request.targetId,
-            targetLabel = requireNotNull(
-                sanitizer.canonicalTargetLabel(auditTargetType, request.targetId.toString(), null),
-            ),
+            targetLabel = "${request.targetType} #${request.targetId}",
 
             // IP는 요청 trace와 운영 로그로만 추적하고 장기 세션 행에는 저장하지 않는다.
             sourceAddress = null,
@@ -105,7 +99,7 @@ class AdminImpersonationService(
         endSession(actor, session, sourceAddress)
     }
 
-    /** Security filter용 조회. 감사 VIEW 행을 남기지 않고 로그인 세션 결속만 확인한다. */
+    /** Security filter용 조회. 로그인 세션 결속을 확인한다. */
     @Transactional(readOnly = true)
     fun findCurrent(adminSessionId: UUID): AdminImpersonationRepository.Session? {
         val now = ZonedDateTime.now(clock)
@@ -151,13 +145,14 @@ class AdminImpersonationService(
     }
 
     private fun currentRequestCorrelationId(): String? =
-        sanitizer.sanitizeCorrelationId(MDC.get(HttpLoggingFilter.TRACE_ID_KEY))
+        MDC.get(HttpLoggingFilter.TRACE_ID_KEY)?.takeIf(REQUEST_TRACE::matches)
 
     private fun requireSupportedTarget(targetType: AdminResourceType) {
         if (targetType !in SUPPORTED_TARGETS) throw AdminException(AdminErrorCode.INVALID_IMPERSONATION_TARGET)
     }
 
     companion object {
+        private val REQUEST_TRACE = Regex("[0-9a-f]{16}")
         private val SESSION_TTL = Duration.ofMinutes(30)
         private val SUPPORTED_TARGETS = setOf(
             AdminResourceType.USER,

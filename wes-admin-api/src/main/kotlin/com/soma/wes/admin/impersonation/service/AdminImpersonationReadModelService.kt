@@ -1,6 +1,5 @@
 package com.soma.wes.admin.impersonation.service
 
-import com.soma.wes.admin.audit.support.AdminAuditSanitizer
 import com.soma.wes.admin.impersonation.dto.AdminImpersonationViewResponse
 import com.soma.wes.admin.impersonation.repository.AdminImpersonationViewRepository
 import com.soma.wes.admin.resource.domain.AdminResourceType
@@ -29,11 +28,10 @@ class AdminImpersonationReadModelService(
     private val collabSessionQueryService: CollabSessionQueryService,
     private val folderService: FolderService,
     private val retouchService: RetouchService,
-    private val sanitizer: AdminAuditSanitizer,
     transactionManager: PlatformTransactionManager,
 ) {
 
-    /** 금지된 section의 조회 실패가 대리보기 세션 생성과 감사 트랜잭션까지 rollback-only로 만들지 않게 분리한다. */
+    /** 금지된 section의 조회 실패가 대리보기 세션 생성과 트랜잭션까지 rollback-only로 만들지 않게 분리한다. */
     private val sectionRead = TransactionTemplate(transactionManager).apply {
         propagationBehavior = TransactionDefinition.PROPAGATION_REQUIRES_NEW
         isReadOnly = true
@@ -95,7 +93,7 @@ class AdminImpersonationReadModelService(
                         "sessionId" to comment.sessionId,
                         "commentId" to comment.commentId,
                         "photoId" to comment.photoId,
-                        "content" to sanitizer.sanitizeText(comment.content),
+                        "content" to comment.content,
                         "createdAt" to comment.createdAt,
                     )
                 }
@@ -104,13 +102,13 @@ class AdminImpersonationReadModelService(
                 linkedMapOf(
                     "galleryId" to gallery.id,
                     "conceptFolderId" to concept.id,
-                    "name" to sanitizer.sanitizeText(concept.name),
+                    "name" to concept.name,
                     "createdSource" to concept.createdSource.name,
                     "analysisJobId" to concept.analysisJobId,
                     "details" to concept.details.map { detail ->
                         linkedMapOf(
                             "detailFolderId" to detail.id,
-                            "name" to sanitizer.sanitizeText(detail.name),
+                            "name" to detail.name,
                             "photoCount" to detail.photoIds.size,
                         )
                     },
@@ -141,7 +139,7 @@ class AdminImpersonationReadModelService(
                                 linkedMapOf(
                                     "retouchPhotoId" to item.retouchPhotoId,
                                     "photo" to safePhoto(gallery.id, item.photo),
-                                    "requestText" to sanitizer.sanitizeText(item.requestText),
+                                    "requestText" to item.requestText,
                                     "hasResult" to item.hasResult,
                                 )
                             },
@@ -186,7 +184,7 @@ class AdminImpersonationReadModelService(
     private fun safeCollaboration(session: CollabSessionResponse): Map<String, Any?> = linkedMapOf(
         "galleryId" to session.galleryId,
         "sessionId" to session.sessionId,
-        "name" to sanitizer.sanitizeText(session.name),
+        "name" to session.name,
         "revoked" to session.revoked,
         "revokedAt" to session.revokedAt,
         "photoCount" to session.photoCount,

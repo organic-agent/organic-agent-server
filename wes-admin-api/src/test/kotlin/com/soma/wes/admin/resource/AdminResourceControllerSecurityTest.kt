@@ -65,13 +65,13 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
         mockMvc.post("/internal/admin/v1/pro-coupons") {
             cookie(cookie)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"reason":"[TEST_OPERATION] 코드 발급"}"""
+            content = """{}"""
         }.andExpect { status { isForbidden() } }
         val response = mockMvc.post("/internal/admin/v1/pro-coupons") {
             cookie(cookie)
             header(AdminMutationHeaderFilter.HEADER_NAME, AdminMutationHeaderFilter.HEADER_VALUE)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"reason":"[TEST_OPERATION] 코드 발급"}"""
+            content = """{}"""
         }.andExpect {
             status { isCreated() }
             header { string("Cache-Control", "no-store") }
@@ -97,7 +97,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             cookie(cookie)
             header(AdminMutationHeaderFilter.HEADER_NAME, AdminMutationHeaderFilter.HEADER_VALUE)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"enabled":false,"expectedVersion":0,"reason":"[POLICY_ENFORCEMENT] 차단"}"""
+            content = """{"enabled":false,"expectedVersion":0}"""
         }.andExpect {
             status { isOk() }
             jsonPath("$.status") { value("DISABLED") }
@@ -107,7 +107,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             cookie(cookie)
             header(AdminMutationHeaderFilter.HEADER_NAME, AdminMutationHeaderFilter.HEADER_VALUE)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"enabled":true,"expectedVersion":0,"reason":"[CUSTOMER_REQUEST] 재활성화"}"""
+            content = """{"enabled":true,"expectedVersion":0}"""
         }.andExpect {
             status { isConflict() }
             jsonPath("$.code") { value("ADMIN_409_5") }
@@ -115,7 +115,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
     }
 
     @Test
-    fun `최고 관리자 세션은 생성 검색 상세 설정 조회를 사용하고 비밀값은 받지 않는다`() {
+    fun `최고 관리자 세션은 생성 검색 상세 설정 조회를 사용한다`() {
         val account = adminAccountFixture.관리자("resource-controller")
         val changed = adminAuthService.changePassword(
             account.requiredId,
@@ -133,7 +133,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             contentType = MediaType.APPLICATION_JSON
             content = """
                 {
-                  "reason": "고객 지원으로 계정 생성",
+
                   "fields": {
                     "provider": "GOOGLE",
                     "providerId": "controller-provider-secret",
@@ -144,10 +144,10 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             """.trimIndent()
         }.andExpect {
             status { isCreated() }
-            jsonPath("$.fields.providerId") { value("[MASKED]") }
+            jsonPath("$.fields.providerId") { value("controller-provider-secret") }
             jsonPath("$.version") { value(0) }
         }.andReturn().response
-        assertThat(created.contentAsString).doesNotContain("controller-provider-secret")
+        assertThat(created.contentAsString).contains("controller-provider-secret")
         val createdId = tools.jackson.databind.json.JsonMapper.builder().build()
             .readTree(created.contentAsString).path("id").asLong()
 
@@ -166,7 +166,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             cookie(cookie)
         }.andExpect {
             status { isOk() }
-            jsonPath("$.secretsMasked") { value(true) }
+            jsonPath("$.secretsMasked") { doesNotExist() }
             jsonPath("$.mutable") { value(false) }
         }
 
@@ -284,7 +284,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
     }
 
     @Test
-    fun `대리보기는 로그인 세션에 결속되고 헤더 없이도 쓰기를 차단하며 sanitized view와 상관 감사를 남긴다`() {
+    fun `대리보기는 로그인 세션에 결속되고 헤더 없이도 쓰기를 차단하며 운영 데이터를 원문으로 보여준다`() {
         val account = adminAccountFixture.관리자("impersonation-controller")
         val changed = adminAuthService.changePassword(
             account.requiredId,
@@ -305,7 +305,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             mutationHeaders()
             content = """
                 {
-                  "reason": "대리보기 테스트 사용자 생성",
+
                   "fields": {
                     "provider": "KAKAO",
                     "providerId": "impersonation-target",
@@ -402,8 +402,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             content = """
                 {
                   "targetType": "USER",
-                  "targetId": $userId,
-                  "reason": "고객 화면 상태 확인"
+                  "targetId": $userId
                 }
             """.trimIndent()
         }.andExpect {
@@ -448,8 +447,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
         assertThat(sessionResponse.contentAsString)
             .doesNotContain(
                 "providerId",
-                "private@example.com",
-                "must-not-leak",
+                "must-not-leak-guest-token",
                 "storageKey",
                 "impersonation-secret.jpg",
                 "originalFile",
@@ -459,7 +457,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
                 "resultUrl",
                 "annotationUrl",
             )
-            .contains("[REDACTED_EMAIL]", "[REDACTED]")
+            .contains("컨셉 private@example.com token=must-not-leak")
 
         val currentResponse = mockMvc.get("/internal/admin/v1/impersonations/current") {
             cookie(cookie)
@@ -478,7 +476,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             mutationHeaders()
             content = """
                 {
-                  "reason": "차단되어야 하는 생성",
+
                   "fields": {
                     "provider": "KAKAO",
                     "providerId": "must-not-exist",
@@ -495,14 +493,6 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
                 .query { rs, _ -> rs.getLong(1) }.single(),
         ).isZero()
 
-
-
-
-
-
-
-
-
         val secondSession = adminAuthService.login(
             AdminLoginRequest("impersonation-controller", "impersonation-controller-password-456"),
             "127.0.0.1",
@@ -513,7 +503,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             contentType = MediaType.APPLICATION_JSON
             content = """
                 {
-                  "reason": "다른 로그인 세션은 대리보기에 결속되지 않음",
+
                   "fields": {
                     "provider": "KAKAO",
                     "providerId": "second-session-write",
@@ -540,8 +530,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             content = """
                 {
                   "targetType": "USER",
-                  "targetId": $userId,
-                  "reason": "로그아웃 종료 검증"
+                  "targetId": $userId
                 }
             """.trimIndent()
         }.andExpect { status { isCreated() } }.andReturn().response
@@ -633,8 +622,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
                 {
                   "targetType": "STUDIO",
                   "targetId": ${studio.id},
-                  "viewerUserId": ${member.id},
-                  "reason": "[TEST_OPERATION] 실제 구성원 화면 확인"
+                  "viewerUserId": ${member.id}
                 }
             """.trimIndent()
         }.andExpect {
@@ -665,8 +653,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
                 {
                   "targetType": "STUDIO",
                   "targetId": ${studio.id},
-                  "viewerUserId": ${member.id},
-                  "reason": "[TEST_OPERATION] 탈퇴 구성원 차단 확인"
+                  "viewerUserId": ${member.id}
                 }
             """.trimIndent()
         }.andExpect {
@@ -688,8 +675,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             content = """
                 {
                   "targetType": "USER",
-                  "targetId": ${member.id},
-                  "reason": "[TEST_OPERATION] DRAFT 멤버 목록 비노출 확인"
+                  "targetId": ${member.id}
                 }
             """.trimIndent()
         }.andExpect {
@@ -709,8 +695,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
                 {
                   "targetType": "GALLERY",
                   "targetId": ${gallery.id},
-                  "viewerUserId": ${member.id},
-                  "reason": "[TEST_OPERATION] DRAFT 직접 대리보기 차단 확인"
+                  "viewerUserId": ${member.id}
                 }
             """.trimIndent()
         }.andExpect {

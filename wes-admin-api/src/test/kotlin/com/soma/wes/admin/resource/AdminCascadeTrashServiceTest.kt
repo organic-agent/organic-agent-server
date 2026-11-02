@@ -269,8 +269,8 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         ).param("id", batch.id).query { rs, _ ->
             Triple(rs.getString("root_label"), rs.getString("actor_username"), rs.getString("reason"))
         }.single()
-        assertThat(durableBatch.first).isEqualTo("GALLERY #${gallery.id}")
-        assertThat(durableBatch.second).isEqualTo("ADMIN #${actor.requiredId}")
+        assertThat(durableBatch.first).isEqualTo(gallery.label)
+        assertThat(durableBatch.second).isEqualTo(actor.username)
         assertThat(durableBatch.third)
             .isEqualTo("")
         assertThat(batch.entries.count { it.root }).isEqualTo(1)
