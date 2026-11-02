@@ -388,7 +388,7 @@ class CollabManualFolderServiceTest @Autowired constructor(
                 }
             } finally { executor.shutdownNow() }
             // then
-            assertThat(guestQuery.listComments(token, linked.photoId, visitor.guestToken, 0, 20).contents).hasSize(1)
+            assertThat(guestQuery.listComments(token, linked.photoId, null, visitor.guestToken, 0, 20).contents).hasSize(1)
         }
 
         @Test

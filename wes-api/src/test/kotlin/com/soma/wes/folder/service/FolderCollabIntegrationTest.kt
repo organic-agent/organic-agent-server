@@ -69,7 +69,7 @@ class FolderCollabIntegrationTest @Autowired constructor(
             fixture.photographer.requiredId,
             MoveFolderPhotosRequest(listOf(photoIds.first()), null),
         )
-        val afterUnassign = collabGuestQueryService.listPhotos(first.collabUrl.substringAfterLast('/'), null, 0, 20)
+        val afterUnassign = collabGuestQueryService.listPhotos(first.collabUrl.substringAfterLast('/'), null, null, 0, 20)
         val reopened = collabSessionService.open(
             fixture.galleryId,
             fixture.member.requiredId,
@@ -120,6 +120,6 @@ class FolderCollabIntegrationTest @Autowired constructor(
         assertThat(assignmentRepository.findById(photoId)).isEmpty()
         assertThat(likeRepository.count()).isEqualTo(1)
         assertThat(commentRepository.count()).isEqualTo(1)
-        assertThat(collabGuestQueryService.listPhotos(token, guest.guestToken, 0, 20).contents.single().liked).isTrue()
+        assertThat(collabGuestQueryService.listPhotos(token, null, guest.guestToken, 0, 20).contents.single().liked).isTrue()
     }
 }
