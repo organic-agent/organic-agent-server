@@ -17,7 +17,6 @@ import java.sql.ResultSet
 import java.time.OffsetDateTime
 import java.time.ZonedDateTime
 import java.util.Locale
-import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
 
 @Repository
@@ -509,58 +508,6 @@ class AdminResourceRepository(
      * 감사 스냅샷에서 수정 허용 필드만 복원한다. 식별자·소유 관계·삭제 상태·secret은
      * 스냅샷이 변조되어도 이 경로로 바뀌지 않는다.
      */
-    fun restoreRevision(
-        type: AdminResourceType,
-        id: Long,
-        expectedVersion: Long,
-        snapshot: JsonNode,
-    ): RevisionRestoreResult {
-        val definition = definition(type)
-        val before = find(type, id) ?: throw AdminException(AdminErrorCode.RESOURCE_NOT_FOUND)
-        if (before.version != expectedVersion) throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
-        if (
-            snapshot.path("type").asText() != type.name ||
-            !snapshot.path("id").isIntegralNumber ||
-            snapshot.path("id").asLong() != id ||
-            !snapshot.path("version").isIntegralNumber ||
-            !snapshot.path("deleted").isBoolean ||
-            snapshot.path("deleted").asBoolean() != before.deleted ||
-            before.deleted
-        ) {
-            throw AdminException(AdminErrorCode.REVISION_RESTORE_UNSUPPORTED)
-        }
-
-        RELATION_FIELDS.getValue(type).forEach { relation ->
-            val selected = snapshot.get(relation)
-                ?: throw AdminException(AdminErrorCode.REVISION_RESTORE_UNSUPPORTED)
-            if (!sameValue(before.fields[relation], jsonValue(selected))) {
-                throw AdminException(AdminErrorCode.REVISION_RESTORE_UNSUPPORTED)
-            }
-        }
-
-        val restoredFields = definition.fields
-            .asSequence()
-            .filter { it.updateAllowed && !it.masked }
-            .mapNotNull { field ->
-                val node = snapshot.get(field.name) ?: return@mapNotNull null
-                val value = jsonValue(node)
-                if (value == REDACTED || value == MASKED) null else field.name to value
-            }
-            .filterNot { (name, value) -> sameValue(before.fields[name], value) }
-            .toMap()
-        if (restoredFields.isEmpty()) throw AdminException(AdminErrorCode.REVISION_RESTORE_UNSUPPORTED)
-
-        val updated = try {
-            update(type, id, expectedVersion, restoredFields)
-        } catch (error: AdminException) {
-            if (error.errorCode == AdminErrorCode.RESOURCE_VERSION_CONFLICT) throw error
-            throw AdminException(AdminErrorCode.REVISION_RESTORE_UNSUPPORTED)
-        }
-        if (updated != 1) throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
-        val after = find(type, id) ?: throw AdminException(AdminErrorCode.RESOURCE_NOT_FOUND)
-        return RevisionRestoreResult(before, after)
-    }
-
     fun delete(type: AdminResourceType, id: Long, expectedVersion: Long): Int {
         if (type in HARD_DELETE_TYPES) {
             val definition = definition(type)
@@ -671,21 +618,6 @@ class AdminResourceRepository(
             throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         }
         return fields.mapValues { (name, value) -> definition.field(name).normalize(value) }
-    }
-
-    private fun jsonValue(node: JsonNode): Any? = when {
-        node.isNull -> null
-        node.isBoolean -> node.asBoolean()
-        node.isIntegralNumber -> node.asLong()
-        node.isFloatingPointNumber -> node.asDouble()
-        node.isTextual -> node.asText()
-        else -> throw AdminException(AdminErrorCode.REVISION_RESTORE_UNSUPPORTED)
-    }
-
-    private fun sameValue(left: Any?, right: Any?): Boolean = when {
-        left is Number && right is Number -> left.toLong() == right.toLong()
-        left is OffsetDateTime && right is String -> left.toString() == right
-        else -> left == right
     }
 
     private fun summary(rs: ResultSet): AdminResourceSummaryResponse =
@@ -855,21 +787,6 @@ class AdminResourceRepository(
             AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
             AdminResourceType.PHOTO_RATING,
         )
-        private val RELATION_FIELDS = mapOf(
-            AdminResourceType.USER to emptySet(),
-            AdminResourceType.WORKSPACE to setOf("type", "personalOwnerUserId"),
-            AdminResourceType.STUDIO to setOf("workspaceId", "ownerUserId"),
-            AdminResourceType.GALLERY to setOf("workspaceId"),
-            AdminResourceType.PHOTO to setOf("galleryId"),
-            AdminResourceType.CONCEPT_FOLDER to setOf("galleryId"),
-            AdminResourceType.DETAIL_FOLDER to setOf("conceptFolderId"),
-            AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT to setOf("photoId"),
-            AdminResourceType.PHOTO_RATING to setOf("photoId"),
-            AdminResourceType.SELECTION to setOf("galleryId"),
-            AdminResourceType.COLLABORATION to setOf("galleryId"),
-            AdminResourceType.RETOUCH_REQUEST to setOf("galleryId"),
-        )
-
         private val DEFINITIONS = listOf(
             ResourceDefinition(
                 type = AdminResourceType.USER,
@@ -1222,8 +1139,4 @@ class AdminResourceRepository(
         val previewKey: String? = null,
     )
 
-    data class RevisionRestoreResult(
-        val before: AdminResourceResponse,
-        val after: AdminResourceResponse,
-    )
 }
