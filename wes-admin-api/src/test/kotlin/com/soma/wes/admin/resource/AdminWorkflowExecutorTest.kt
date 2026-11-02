@@ -58,17 +58,15 @@ class AdminWorkflowExecutorTest @Autowired constructor(
     }
 
     @Test
-    fun `claim은 처리 작업만 실행하고 폐기된 외부 알림 outbox는 건드리지 않는다`() {
+    fun `claim은 사진 처리 작업을 실행한다`() {
         val graph = graph("executor-claim", photoCount = 2)
         val embeddingJob = processingJob("EMBEDDING", AdminResourceType.PHOTO, graph.photos[0].id)
         val derivativeJob = processingJob("DERIVATIVE", AdminResourceType.PHOTO, graph.photos[1].id)
-        notification(AdminResourceType.GALLERY, graph.gallery.id)
 
         executor.runOnce()
 
         assertThat(processingState(embeddingJob)).isEqualTo(State("DISPATCHED", 1, null))
         assertThat(processingState(derivativeJob)).isEqualTo(State("DISPATCHED", 1, null))
-        assertThat(notificationState()).isEqualTo(State("PENDING", 0, null))
 
         val requests = argumentCaptor<AiTaskDto.ExactPhoto>()
         verify(aiTaskSender, times(2)).send(requests.capture())
@@ -450,26 +448,9 @@ class AdminWorkflowExecutorTest @Autowired constructor(
             .query { rs, _ -> rs.getLong(1) }.single()
     }
 
-    private fun notification(sourceType: AdminResourceType, sourceId: Long): Long = jdbcClient.sql(
-        """
-        INSERT INTO admin_notification_outbox
-            (notification_type,recipient_reference,source_type,source_id,payload,status,attempt_count,reason,created_at,updated_at)
-        VALUES ('TEST','user:1',:sourceType,:sourceId,'{}'::JSONB,'PENDING',0,
-                '',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
-        RETURNING id
-        """.trimIndent(),
-    ).param("sourceType", sourceType.name).param("sourceId", sourceId)
-        .query { rs, _ -> rs.getLong(1) }.single()
-
     private fun processingState(id: Long): State = jdbcClient.sql(
         "SELECT status,attempt_count,failure_code FROM admin_processing_jobs WHERE id=:id",
     ).param("id", id).query { rs, _ -> State(
-        rs.getString("status"), rs.getInt("attempt_count"), rs.getString("failure_code"),
-    ) }.single()
-
-    private fun notificationState(): State = jdbcClient.sql(
-        "SELECT status,attempt_count,failure_code FROM admin_notification_outbox",
-    ).query { rs, _ -> State(
         rs.getString("status"), rs.getInt("attempt_count"), rs.getString("failure_code"),
     ) }.single()
 

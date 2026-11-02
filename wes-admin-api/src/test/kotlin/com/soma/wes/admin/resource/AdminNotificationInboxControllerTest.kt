@@ -103,7 +103,7 @@ class AdminNotificationInboxControllerTest @Autowired constructor(
             jsonPath("$.details.notificationId") { value(notificationId) }
         }
         assertThat(countInboxRows()).isOne()
-        assertThat(countLegacyOutboxRows()).isZero()
+        assertThat(legacyOutboxTableExists()).isFalse()
 
         jdbcClient.sql(
             """
@@ -290,6 +290,7 @@ class AdminNotificationInboxControllerTest @Autowired constructor(
     private fun countInboxRows(): Long = jdbcClient.sql("SELECT COUNT(*) FROM admin_notification_inbox")
         .query { rs, _ -> rs.getLong(1) }.single()
 
-    private fun countLegacyOutboxRows(): Long = jdbcClient.sql("SELECT COUNT(*) FROM admin_notification_outbox")
-        .query { rs, _ -> rs.getLong(1) }.single()
+    private fun legacyOutboxTableExists(): Boolean =
+        jdbcClient.sql("SELECT to_regclass('public.admin_notification_outbox') IS NOT NULL")
+            .query { rs, _ -> rs.getBoolean(1) }.single()
 }
