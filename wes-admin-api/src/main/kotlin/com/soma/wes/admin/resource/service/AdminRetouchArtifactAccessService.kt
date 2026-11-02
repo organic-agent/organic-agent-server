@@ -20,7 +20,7 @@ class AdminRetouchArtifactAccessService(
     private val clock: Clock,
 ) {
 
-    /** storage key는 이 메서드 밖으로 나가지 않고, 서명 URL도 영구 감사에는 기록하지 않는다. */
+    /** storage key는 이 메서드 밖으로 나가지 않고 서명 URL만 응답한다. */
     @Transactional
     fun access(
         actorAdminId: Long,

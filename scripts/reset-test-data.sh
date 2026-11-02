@@ -125,10 +125,10 @@ TABLES="$TABLES, pro_coupon_uses, pro_coupon_registrations, pro_coupons, free_ga
 TABLES="$TABLES, user_notifications, user_notification_settings, gallery_activity, workspace_activity"
 TABLES="$TABLES, studio_retouch_capabilities"
 # 관리자 쪽 갤러리·사진 참조 기록. FK가 없는 것도 있지만 가리키는 행이 사라지면 쓰레기라 함께 비운다.
-TABLES="$TABLES, admin_processing_jobs, admin_trash_entries, admin_trash_batches, admin_child_trash_records, admin_entity_revisions, product_purge_claims"
+TABLES="$TABLES, admin_processing_jobs, admin_trash_entries, admin_trash_batches, admin_child_trash_records, product_purge_claims"
 if [ "$SCOPE" = "all" ]; then
-  TABLES="$TABLES, admin_notification_inbox_reads, admin_notification_inbox, admin_notification_outbox, admin_audit_logs"
-  TABLES="$TABLES, admin_impersonation_sessions, admin_auth_events, admin_sessions, admin_accounts"
+  TABLES="$TABLES, admin_notification_inbox_reads, admin_notification_inbox, admin_notification_outbox"
+  TABLES="$TABLES, admin_impersonation_sessions, admin_sessions, admin_accounts"
   TABLES="$TABLES, studios"
   # users를 지우려면 users를 참조하는 workspaces·workspace_members(studios·galleries의 부모)도 같이 비워야 한다.
   TABLES="$TABLES, workspace_members, workspaces"

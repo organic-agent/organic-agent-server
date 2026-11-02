@@ -504,10 +504,6 @@ class AdminResourceRepository(
             .update()
     }
 
-    /**
-     * 감사 스냅샷에서 수정 허용 필드만 복원한다. 식별자·소유 관계·삭제 상태·secret은
-     * 스냅샷이 변조되어도 이 경로로 바뀌지 않는다.
-     */
     fun delete(type: AdminResourceType, id: Long, expectedVersion: Long): Int {
         if (type in HARD_DELETE_TYPES) {
             val definition = definition(type)

@@ -76,8 +76,6 @@ class AdminWorkflowExecutionRepository(
      * 없으므로 이벤트가 더는 도착하거나 실행될 수 없는 [dispatchedTimeout] 뒤에만 FAILED로
      * 바꾼다. 다음 retry는 attempt를 증가시키며, 늦은 이전 이벤트는 worker의 attempt CAS에서
      * 탈락한다. 명시적인 결과 불명 상태도 같은 안전 시간이 지난 뒤 회수한다.
-     *
-     * 상태 변경 뒤 감사가 실패하면 호출 측 트랜잭션이 이 UPDATE도 함께 rollback한다.
      */
     @Transactional
     fun markStaleExactPhotoJobsFailed(

@@ -428,16 +428,6 @@ class AdminCascadeTrashRepository(
                 "SELECT COUNT(*) FROM admin_trash_entries WHERE batch_id = :batchId AND resource_type = 'COLLAB_COMMENT'",
                 batchId,
             ),
-            "entityRevisionCount" to scalar(
-                """
-                SELECT COUNT(*)
-                FROM admin_entity_revisions r
-                JOIN admin_trash_entries e
-                  ON e.resource_type = r.target_type AND e.resource_id::TEXT = r.target_id
-                WHERE e.batch_id = :batchId
-                """.trimIndent(),
-                batchId,
-            ),
             "photoRevisionCount" to scalar(
                 """
                 SELECT COUNT(*)
@@ -925,23 +915,6 @@ class AdminCascadeTrashRepository(
         .query { rs, _ -> rs.getInt(1) }
         .single()
 
-    fun expireRevisionRestorePayloads(batchId: Long): Int = jdbcClient.sql(
-        """
-        UPDATE admin_entity_revisions r
-        SET before_restore_payload = NULL,
-            after_restore_payload = NULL,
-            restore_expires_at = LEAST(r.restore_expires_at, CURRENT_TIMESTAMP),
-            updated_at = CURRENT_TIMESTAMP
-        WHERE EXISTS (
-            SELECT 1 FROM admin_trash_entries e
-            WHERE e.batch_id = :batchId
-              AND e.resource_type = r.target_type
-              AND e.resource_id::TEXT = r.target_id
-        )
-          AND (r.before_restore_payload IS NOT NULL OR r.after_restore_payload IS NOT NULL)
-        """.trimIndent(),
-    ).param("batchId", batchId).update()
-
     fun markPurged(batchId: Long): Int = jdbcClient.sql(
         """
         UPDATE admin_trash_batches
@@ -1166,7 +1139,6 @@ class AdminCascadeTrashRepository(
             "entryCount",
             "rootEntryCount",
             "commentCount",
-            "entityRevisionCount",
             "photoRevisionCount",
             "selectionRevisionCount",
             "photoStorageMetadataCount",
