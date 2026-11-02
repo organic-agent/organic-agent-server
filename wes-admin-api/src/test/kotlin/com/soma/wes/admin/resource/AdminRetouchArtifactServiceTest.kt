@@ -173,16 +173,6 @@ class AdminRetouchArtifactServiceTest @Autowired constructor(
         assertThat(viewed.originalFileName).isEqualTo("private-annotation.png")
         assertThat(viewed.toString()).doesNotContain(annotationKey)
         verify(photoStorage).presignView(annotationKey)
-        val accessAudit = jdbcClient.sql(
-            """
-            SELECT target_id, reason
-            FROM admin_audit_logs
-            WHERE action = 'RETOUCH_ARTIFACT_VIEWED'
-            ORDER BY id DESC LIMIT 1
-            """.trimIndent(),
-        ).query { rs, _ -> rs.getString("target_id") to rs.getString("reason") }.single()
-        assertThat(accessAudit.first).isEqualTo("RA-${round.id}-$itemId-ANNOTATION")
-        assertThat(accessAudit.second).isEqualTo("reasonCategory=TEST_OPERATION operatorReasonProvided=true")
 
         // DRAFTING에서는 고객 요청·표식·AI metadata만 바꿀 수 있다.
         execute(
@@ -353,17 +343,7 @@ class AdminRetouchArtifactServiceTest @Autowired constructor(
 
         val contextText = contextService.get(AdminResourceType.RETOUCH_REQUEST, round.id).toString()
         assertThat(contextText).doesNotContain(annotationKey, resultKey, "https://")
-        val permanentSnapshots = jdbcClient.sql(
-            """
-            SELECT COALESCE(string_agg(COALESCE(before_snapshot, '') || COALESCE(after_snapshot, ''), ''), '')
-            FROM admin_entity_revisions
-            WHERE target_type = 'RETOUCH_REQUEST' AND target_id = :targetId
-            """.trimIndent(),
-        )
-            .param("targetId", round.id.toString())
-            .query { rs, _ -> rs.getString(1) }
-            .single()
-        assertThat(permanentSnapshots).doesNotContain(annotationKey, resultKey, "https://upload.example")
+
     }
 
     @Test

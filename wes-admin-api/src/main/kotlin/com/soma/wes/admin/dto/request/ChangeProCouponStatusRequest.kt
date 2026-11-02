@@ -1,6 +1,5 @@
 package com.soma.wes.admin.dto.request
 
-import com.soma.wes.admin.domain.AdminAuthEvent
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.NotBlank
@@ -12,7 +11,7 @@ data class ChangeProCouponStatusRequest(
     @field:Min(0)
     @field:Schema(description = "마지막 조회의 version. 이후 등록·사용·관리 변경이 있으면 409")
     val expectedVersion: Long,
-    @field:NotBlank @field:Size(max = AdminAuthEvent.REASON_MAX_LENGTH)
+    @field:NotBlank @field:Size(max = 500)
     @field:Schema(description = "상태 변경 사유. 감사 로그에는 허용된 분류만 보존한다.")
     val reason: String,
 )

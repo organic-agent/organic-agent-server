@@ -1,6 +1,5 @@
 package com.soma.wes.admin.resource.service
 
-import com.soma.wes.admin.audit.service.AdminAuditService
 import com.soma.wes.admin.config.AdminAuthProperties
 import com.soma.wes.admin.config.AdminObservabilityProperties
 import com.soma.wes.admin.resource.dto.AdminSystemSettingsResponse
@@ -26,7 +25,6 @@ class AdminSystemSettingsService(
             sessionIdleTtlSeconds = adminAuthProperties.session.idleTtl.seconds,
             maxFailedLoginAttempts = adminAuthProperties.lockout.maxFailedAttempts,
             accountLockoutSeconds = adminAuthProperties.lockout.duration.seconds,
-            revisionRetentionDays = AdminAuditService.REVISION_RETENTION_DAYS,
             trashRetentionDays = trashProperties.retention.toDays(),
             embeddingConfigured = lambdaAiTaskProperties.isEmbedderConfigured,
             uploadMaxBatchSize = storageProperties.maxBatchSize,

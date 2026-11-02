@@ -1,8 +1,5 @@
 package com.soma.wes.admin.resource.service
 
-import com.soma.wes.admin.audit.domain.AdminAuditAction
-import com.soma.wes.admin.audit.domain.AdminAuditTargetType
-import com.soma.wes.admin.audit.service.AdminAuditService
 import com.soma.wes.admin.audit.support.AdminAuditSanitizer
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
@@ -301,7 +298,6 @@ class AdminChildTrashPurgeService(
 @Service
 class AdminChildTrashPurgeFinalizer(
     private val repository: AdminChildTrashRepository,
-    private val auditService: AdminAuditService,
     private val clock: Clock,
 ) {
 
@@ -318,30 +314,5 @@ class AdminChildTrashPurgeFinalizer(
         if (repository.markPurged(current.id, purgedAt) != 1) {
             throw AdminException(AdminErrorCode.TRASH_BATCH_CONFLICT)
         }
-        auditService.recordMutation(
-            action = AdminAuditAction.RESOURCE_PURGED,
-            actorAdminId = current.actorAdminId,
-            targetType = AdminAuditTargetType.TRASH_BATCH,
-            // cascade batch id와 child trash id는 서로 다른 sequence다. 접두어가 없으면
-            // 같은 TRASH_BATCH 감사 대상 revision으로 합쳐질 수 있다.
-            targetId = "CHILD-${current.id}",
-            targetLabel = null,
-            reason = "7일 복구 기간 만료 자동 영구 삭제",
-            sourceAddress = null,
-            before = mapOf(
-                "childType" to current.type.name,
-                "childId" to current.resourceId,
-                "parentType" to current.parentType.name,
-                "parentId" to current.parentId,
-                "deleted" to true,
-            ),
-            after = mapOf(
-                "childType" to current.type.name,
-                "childId" to current.resourceId,
-                "parentType" to current.parentType.name,
-                "parentId" to current.parentId,
-                "purged" to true,
-            ),
-        )
     }
 }

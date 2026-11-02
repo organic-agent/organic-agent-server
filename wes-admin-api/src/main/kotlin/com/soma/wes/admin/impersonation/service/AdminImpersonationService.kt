@@ -1,9 +1,7 @@
 package com.soma.wes.admin.impersonation.service
 
 import com.soma.wes.admin.audit.domain.AdminAuditAction
-import com.soma.wes.admin.audit.domain.AdminAuditOutcome
 import com.soma.wes.admin.audit.domain.AdminAuditTargetType
-import com.soma.wes.admin.audit.service.AdminAuditService
 import com.soma.wes.admin.audit.support.AdminAuditSanitizer
 import com.soma.wes.admin.domain.AdminLoginUser
 import com.soma.wes.admin.exception.AdminErrorCode
@@ -31,7 +29,6 @@ class AdminImpersonationService(
     private val viewRepository: AdminImpersonationViewRepository,
     private val readModelService: AdminImpersonationReadModelService,
     private val expiryService: AdminImpersonationExpiryService,
-    private val auditService: AdminAuditService,
     private val sanitizer: AdminAuditSanitizer,
     private val clock: Clock,
 ) {
@@ -75,21 +72,18 @@ class AdminImpersonationService(
         } catch (_: DataIntegrityViolationException) {
             throw AdminException(AdminErrorCode.IMPERSONATION_ALREADY_ACTIVE)
         }
-        record(session, actor, AdminAuditAction.READ_ONLY_IMPERSONATION_STARTED, sourceAddress)
         return session.toResponse(actor)
     }
 
     @Transactional
     fun current(actor: AdminLoginUser, sourceAddress: String?): AdminImpersonationResponse {
         val session = requireCurrent(actor.adminSessionId)
-        record(session, actor, AdminAuditAction.READ_ONLY_IMPERSONATION_VIEWED, sourceAddress)
         return session.toResponse(actor)
     }
 
     @Transactional
     fun view(actor: AdminLoginUser, sessionId: UUID, sourceAddress: String?): AdminImpersonationResponse {
         val session = requireActive(sessionId, actor.adminSessionId)
-        record(session, actor, AdminAuditAction.READ_ONLY_IMPERSONATION_VIEWED, sourceAddress)
         return session.toResponse(actor)
     }
 
@@ -140,27 +134,6 @@ class AdminImpersonationService(
         if (!repository.end(session.id, actor.adminSessionId, ZonedDateTime.now(clock))) {
             throw AdminException(AdminErrorCode.IMPERSONATION_NOT_FOUND)
         }
-        record(session, actor, AdminAuditAction.READ_ONLY_IMPERSONATION_ENDED, sourceAddress)
-    }
-
-    private fun record(
-        session: AdminImpersonationRepository.Session,
-        actor: AdminLoginUser,
-        action: AdminAuditAction,
-        sourceAddress: String?,
-    ) {
-        auditService.recordEvent(
-            action = action,
-            outcome = AdminAuditOutcome.SUCCESS,
-            actorAdminId = actor.id,
-            actorUsername = actor.username,
-            targetType = AdminAuditTargetType.valueOf(session.targetType.name),
-            targetId = session.targetId.toString(),
-            targetLabel = session.targetLabel,
-            reason = session.reason,
-            sourceAddress = sourceAddress,
-            impersonationSessionId = session.id,
-        )
     }
 
     private fun AdminImpersonationRepository.Session.toResponse(actor: AdminLoginUser): AdminImpersonationResponse {

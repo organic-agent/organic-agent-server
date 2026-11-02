@@ -1,14 +1,12 @@
 package com.soma.wes.admin.service
 
 import com.soma.wes.admin.domain.AdminAccountStatus
-import com.soma.wes.admin.domain.AdminEventType
 import com.soma.wes.admin.dto.request.AdminReasonRequest
 import com.soma.wes.admin.dto.request.ChangeAdminStatusRequest
 import com.soma.wes.admin.dto.request.CreateAdminAccountRequest
 import com.soma.wes.admin.exception.AdminAuthenticationException
 import com.soma.wes.admin.fixture.AdminAccountFixture
 import com.soma.wes.admin.repository.AdminAccountRepository
-import com.soma.wes.admin.repository.AdminAuthEventRepository
 import com.soma.wes.support.IntegrationTest
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -22,7 +20,6 @@ class AdminAccountServiceTest @Autowired constructor(
     private val adminSessionService: AdminSessionService,
     private val adminAccountFixture: AdminAccountFixture,
     private val adminAccountRepository: AdminAccountRepository,
-    private val adminAuthEventRepository: AdminAuthEventRepository,
 ) {
 
     @Test
@@ -48,8 +45,7 @@ class AdminAccountServiceTest @Autowired constructor(
             com.soma.wes.admin.dto.request.AdminLoginRequest("new-owner", result.temporaryPassword),
             "127.0.0.1",
         ).response.admin.id).isEqualTo(result.account.id)
-        assertThat(adminAuthEventRepository.findAll().map { it.eventType })
-            .contains(AdminEventType.ACCOUNT_CREATED)
+
     }
 
     @Test
@@ -145,7 +141,6 @@ class AdminAccountServiceTest @Autowired constructor(
             ),
             "127.0.0.1",
         ).response.admin.id).isEqualTo(account.requiredId)
-        assertThat(adminAuthEventRepository.findAll().map { it.eventType })
-            .contains(AdminEventType.CLI_RECOVERY)
+
     }
 }

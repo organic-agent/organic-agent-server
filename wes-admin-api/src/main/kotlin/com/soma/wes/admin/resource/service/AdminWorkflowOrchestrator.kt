@@ -1,20 +1,16 @@
 package com.soma.wes.admin.resource.service
 
-import com.soma.wes.admin.audit.domain.AdminAuditAction
-import com.soma.wes.admin.audit.service.AdminAuditService
 import com.soma.wes.admin.audit.support.AdminAuditSanitizer
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.domain.AdminChildTrashType
 import com.soma.wes.admin.resource.domain.AdminInboxEventType
 import com.soma.wes.admin.resource.domain.AdminResourceType
-import com.soma.wes.admin.resource.dto.AdminResourceResponse
 import com.soma.wes.admin.resource.dto.AdminRetouchArtifactType
 import com.soma.wes.admin.resource.dto.AdminWorkflowAction
 import com.soma.wes.admin.resource.dto.AdminWorkflowRequest
 import com.soma.wes.admin.resource.dto.AdminWorkflowResponse
 import com.soma.wes.admin.resource.repository.AdminNotificationInboxRepository
-import com.soma.wes.admin.resource.repository.AdminResourceContextRepository
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
 import com.soma.wes.admin.resource.repository.AdminRetouchArtifactRepository
 import com.soma.wes.admin.resource.repository.AdminWorkflowRepository
@@ -51,8 +47,6 @@ class AdminWorkflowService(
     private val retouchArtifactRepository: AdminRetouchArtifactRepository,
     private val childTrashService: AdminChildTrashService,
     private val resourceRepository: AdminResourceRepository,
-    private val contextRepository: AdminResourceContextRepository,
-    private val auditService: AdminAuditService,
     private val auditSanitizer: AdminAuditSanitizer,
     private val photoStorage: PhotoStorage,
     private val tokenGenerator: SecureTokenGenerator,
@@ -114,8 +108,6 @@ class AdminWorkflowService(
             throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
         }
 
-        val before = transactionTemplate.execute { snapshot(type, id, request.action) }
-            ?: error("workflow snapshot transaction returned null")
         return try {
             val prepared = prepareExternalWork(type, id, request)
             transactionTemplate.execute {
@@ -128,11 +120,6 @@ class AdminWorkflowService(
                     status = execution.status,
                     details = execution.details,
                 )
-                val after = snapshot(type, id, request.action) + mapOf(
-                    "workflowStatus" to execution.status,
-                    "workflowDetails" to execution.details.toAuditDetails(),
-                )
-                audit(actorAdminId, type, id, initial.label, request, sourceAddress, before, after)
                 workflowRepository.completeWorkflow(
                     actionKey,
                     request.idempotencyKey,
@@ -843,7 +830,6 @@ class AdminWorkflowService(
             if (currentResource.deleted || currentResource.version != request.expectedVersion) {
                 throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
             }
-            val before = snapshot(type, id, request.action)
             val job = workflowRepository.findProcessingJob(jobId)
                 ?: throw AdminException(AdminErrorCode.RESOURCE_NOT_FOUND)
             requireJobTarget(job, type, id)
@@ -853,22 +839,6 @@ class AdminWorkflowService(
                 reason = durableReason(request),
             )
             workflowRepository.bumpResourceVersion(type, id, request.expectedVersion)
-            val after = snapshot(type, id, request.action) + mapOf(
-                "jobId" to jobId,
-                "jobStatus" to "PENDING",
-                "attemptCount" to queued.attemptCount,
-            )
-            auditService.recordMutation(
-                action = AdminAuditAction.REPROCESS_REQUESTED,
-                actorAdminId = actorAdminId,
-                targetType = type.auditTargetType,
-                targetId = id.toString(),
-                targetLabel = resourceRepository.find(type, id)?.label,
-                reason = durableReason(request),
-                sourceAddress = sourceAddress,
-                before = before,
-                after = after,
-            )
             val response = AdminWorkflowResponse(
                 request.action,
                 type,
@@ -900,60 +870,6 @@ class AdminWorkflowService(
             throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         }
     }
-
-    private fun snapshot(
-        type: AdminResourceType,
-        id: Long,
-        action: AdminWorkflowAction,
-    ): Map<String, Any?> {
-        val resource = resourceRepository.find(type, id)
-            ?: throw AdminException(AdminErrorCode.RESOURCE_NOT_FOUND)
-        return linkedMapOf(
-            "workflowAction" to action.name,
-            "resource" to linkedMapOf(
-                "type" to type.name,
-                "id" to id,
-                "version" to resource.version,
-                "label" to resource.label,
-                "deleted" to resource.deleted,
-                "fields" to resource.fields,
-            ),
-            "facts" to contextRepository.findFacts(type, id),
-            "sections" to contextRepository.findSections(type, id),
-        )
-    }
-
-    private fun audit(
-        actorAdminId: Long,
-        type: AdminResourceType,
-        id: Long,
-        label: String?,
-        request: AdminWorkflowRequest,
-        sourceAddress: String?,
-        before: Map<String, Any?>,
-        after: Map<String, Any?>,
-    ) {
-        auditService.recordMutation(
-            AdminAuditAction.RESOURCE_UPDATED,
-            actorAdminId,
-            type.auditTargetType,
-            id.toString(),
-            label,
-            durableReason(request),
-            sourceAddress,
-            before,
-            after,
-        )
-    }
-
-    private fun AdminResourceResponse.auditSnapshot(): Map<String, Any?> =
-        linkedMapOf(
-            "type" to type.name,
-            "id" to id,
-            "version" to version,
-            "label" to label,
-            "deleted" to deleted,
-        ) + fields
 
     private fun failReservation(actionKey: String, request: AdminWorkflowRequest, failureCode: String) {
         transactionTemplate.execute {
@@ -1036,10 +952,6 @@ class AdminWorkflowService(
         }
         is Collection<*> -> value.map(::canonicalize)
         else -> value
-    }
-
-    private fun Map<String, Any?>.toAuditDetails(): Map<String, Any?> = mapValues { (key, value) ->
-        if (key.endsWith("Url", ignoreCase = true)) "[REDACTED]" else value
     }
 
     /**

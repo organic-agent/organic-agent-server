@@ -1,8 +1,5 @@
 package com.soma.wes.admin.resource.service
 
-import com.soma.wes.admin.audit.domain.AdminAuditAction
-import com.soma.wes.admin.audit.domain.AdminAuditOutcome
-import com.soma.wes.admin.audit.service.AdminAuditService
 import com.soma.wes.admin.resource.config.AdminWorkflowExecutorProperties
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.repository.AdminWorkflowExecutionRepository
@@ -22,7 +19,6 @@ class AdminWorkflowExecutor(
     private val repository: AdminWorkflowExecutionRepository,
     private val properties: AdminWorkflowExecutorProperties,
     private val aiTaskSender: AiTaskSender,
-    private val auditService: AdminAuditService,
     private val transactionTemplate: TransactionTemplate,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -116,24 +112,13 @@ class AdminWorkflowExecutor(
                     repository.markProcessingJobDispatched(startedJob.id, startedJob.attemptCount),
                     startedJob,
                 )
-                auditService.recordEvent(
-                    action = AdminAuditAction.REPROCESS_DISPATCHED,
-                    outcome = AdminAuditOutcome.SUCCESS,
-                    actorAdminId = job.actorAdminId,
-                    targetType = job.targetType.auditTargetType,
-                    targetId = job.targetId.toString(),
-                    targetLabel = null,
-                    reason = job.reason,
-                    sourceAddress = null,
-                    changedFields = listOf("jobStatus"),
-                )
             }
         } catch (error: ProcessingClaimLostException) {
             // cascade 취소가 terminal CAS를 이겨도 외부 수락 자체는 이미 일어난 사실이다.
-            // CANCELED 행은 덮어쓰지 않고 그 사실만 별도 트랜잭션의 영구 감사로 남긴다.
+            // CANCELED 행을 덮어쓰지 않고 수락 사실을 진단 로그로 남긴다.
             recordDispatchAcceptedAfterClaimLoss(startedJob)
         } catch (error: Exception) {
-            // 외부 호출은 성공했지만 DB 상태와 감사의 원자 finalize에 실패했다.
+            // 외부 호출은 성공했지만 DB 상태 finalize에 실패했다.
             markDispatchOutcomeUnknown(startedJob, error)
         }
     }
@@ -144,21 +129,7 @@ class AdminWorkflowExecutor(
                 repository.markStaleExactPhotoJobsFailed(
                     limit = properties.batchSize,
                     dispatchedTimeout = properties.dispatchedTimeout,
-                ).also { jobs ->
-                    jobs.forEach { job ->
-                        auditService.recordEvent(
-                            action = AdminAuditAction.REPROCESS_DISPATCH_FAILED,
-                            outcome = AdminAuditOutcome.FAILURE,
-                            actorAdminId = job.actorAdminId,
-                            targetType = job.targetType.auditTargetType,
-                            targetId = job.targetId.toString(),
-                            targetLabel = null,
-                            reason = job.reason,
-                            sourceAddress = null,
-                            changedFields = listOf("jobStatus", "failureCode"),
-                        )
-                    }
-                }
+                )
             }.orEmpty()
             timedOut.forEach { job ->
                 log.warn(
@@ -169,11 +140,11 @@ class AdminWorkflowExecutor(
                 )
             }
         } catch (error: Exception) {
-            log.error("stale exact-photo 상태와 실패 감사를 원자 저장하지 못함", error)
+            log.error("stale exact-photo 상태를 저장하지 못함", error)
         }
     }
 
-    /** 외부 호출 전에 확정된 오류만 FAILED와 실패 감사로 한 트랜잭션에 남긴다. */
+    /** 외부 호출 전에 확정된 오류만 FAILED로 기록한다. */
     private fun failBeforeSend(job: ProcessingExecutionJob, failureCode: String) {
         try {
             transactionTemplate.executeWithoutResult {
@@ -181,23 +152,12 @@ class AdminWorkflowExecutor(
                     repository.markProcessingJobFailedBeforeStart(job.id, job.attemptCount, failureCode),
                     job,
                 )
-                auditService.recordEvent(
-                    action = AdminAuditAction.REPROCESS_DISPATCH_FAILED,
-                    outcome = AdminAuditOutcome.FAILURE,
-                    actorAdminId = job.actorAdminId,
-                    targetType = job.targetType.auditTargetType,
-                    targetId = job.targetId.toString(),
-                    targetLabel = null,
-                    reason = job.reason,
-                    sourceAddress = null,
-                    changedFields = listOf("jobStatus", "failureCode"),
-                )
             }
             log.warn("관리자 처리 작업 실행 전 실패: jobId={}, type={}, code={}", job.id, job.jobType, failureCode)
         } catch (error: ProcessingClaimLostException) {
             log.info("관리자 처리 작업 claim이 해제되어 실패 상태를 저장하지 않음: jobId={}", job.id)
         } catch (error: Exception) {
-            log.error("관리자 처리 작업 실패 상태와 감사를 원자 저장하지 못함: jobId={}", job.id, error)
+            log.error("관리자 처리 작업 실패 상태를 저장하지 못함: jobId={}", job.id, error)
         }
     }
 
@@ -209,17 +169,6 @@ class AdminWorkflowExecutor(
                     repository.markProcessingJobAttemptsExhausted(job.id, job.attemptCount),
                     job,
                 )
-                auditService.recordEvent(
-                    action = AdminAuditAction.REPROCESS_DISPATCH_FAILED,
-                    outcome = AdminAuditOutcome.FAILURE,
-                    actorAdminId = job.actorAdminId,
-                    targetType = job.targetType.auditTargetType,
-                    targetId = job.targetId.toString(),
-                    targetLabel = null,
-                    reason = job.reason,
-                    sourceAddress = null,
-                    changedFields = listOf("jobStatus", "failureCode"),
-                )
             }
             log.warn(
                 "관리자 처리 작업 최대 attempt 소진: jobId={}, type={}, attempts={}",
@@ -230,7 +179,7 @@ class AdminWorkflowExecutor(
         } catch (error: ProcessingClaimLostException) {
             log.info("최대 attempt 처리 전 claim이 해제되어 실패 상태를 저장하지 않음: jobId={}", job.id)
         } catch (error: Exception) {
-            log.error("최대 attempt 실패 상태와 감사를 원자 저장하지 못함: jobId={}", job.id, error)
+            log.error("최대 attempt 실패 상태를 저장하지 못함: jobId={}", job.id, error)
         }
     }
 
@@ -245,25 +194,14 @@ class AdminWorkflowExecutor(
                     ),
                     job,
                 )
-                auditService.recordEvent(
-                    action = AdminAuditAction.REPROCESS_DISPATCH_UNKNOWN,
-                    outcome = AdminAuditOutcome.FAILURE,
-                    actorAdminId = job.actorAdminId,
-                    targetType = job.targetType.auditTargetType,
-                    targetId = job.targetId.toString(),
-                    targetLabel = null,
-                    reason = job.reason,
-                    sourceAddress = null,
-                    changedFields = listOf("jobStatus", "failureCode"),
-                )
             }
         } catch (error: ProcessingClaimLostException) {
             log.info("관리자 처리 작업 claim이 해제되어 불확실 상태를 덮어쓰지 않음: jobId={}", job.id)
             return
         } catch (error: Exception) {
-            // 상태와 감사를 함께 rollback한다. 외부 작업의 plain stale DISPATCHING도 claim에서
-            // 제외되므로 audit 장애가 자동 중복 호출로 이어지지 않는다.
-            log.error("불확실한 dispatch 상태와 감사를 원자 저장하지 못함: jobId={}", job.id, error)
+            // 상태를 rollback한다. 외부 작업의 plain stale DISPATCHING도 claim에서
+            // 제외되므로 상태 저장 장애가 자동 중복 호출로 이어지지 않는다.
+            log.error("불확실한 dispatch 상태를 저장하지 못함: jobId={}", job.id, error)
             return
         }
         log.error(
@@ -276,24 +214,7 @@ class AdminWorkflowExecutor(
     }
 
     private fun recordDispatchAcceptedAfterClaimLoss(job: ProcessingExecutionJob) {
-        runCatching {
-            transactionTemplate.executeWithoutResult {
-                auditService.recordEvent(
-                    action = AdminAuditAction.REPROCESS_DISPATCHED,
-                    outcome = AdminAuditOutcome.SUCCESS,
-                    actorAdminId = job.actorAdminId,
-                    targetType = job.targetType.auditTargetType,
-                    targetId = job.targetId.toString(),
-                    targetLabel = null,
-                    reason = job.reason,
-                    sourceAddress = null,
-                )
-            }
-        }.onSuccess {
-            log.info("취소 경쟁 뒤 외부 dispatch 수락 사실을 별도 감사함: jobId={}", job.id)
-        }.onFailure { auditError ->
-            log.error("취소 경쟁 뒤 외부 dispatch 수락 감사를 저장하지 못함: jobId={}", job.id, auditError)
-        }
+        log.info("관리자 처리 작업 수락 뒤 claim이 해제됨: jobId={}", job.id)
     }
 
     private fun cancelDeletedTarget(job: ProcessingExecutionJob) {

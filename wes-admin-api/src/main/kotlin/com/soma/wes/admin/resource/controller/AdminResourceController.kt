@@ -1,6 +1,5 @@
 package com.soma.wes.admin.resource.controller
 
-import com.soma.wes.admin.audit.service.AdminResourceReadAuditService
 import com.soma.wes.admin.domain.AdminLoginUser
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.dto.AdminAnalysisFailuresResponse
@@ -56,7 +55,6 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/internal/admin/v1")
 class AdminResourceController(
     private val resourceService: AdminResourceService,
-    private val resourceReadAuditService: AdminResourceReadAuditService,
     private val reprocessService: AdminReprocessService,
     private val systemSettingsService: AdminSystemSettingsService,
     private val operationsOverviewService: AdminOperationsOverviewService,
@@ -113,17 +111,6 @@ class AdminResourceController(
         servletRequest: HttpServletRequest,
     ): ResponseEntity<AdminResourcePageResponse> {
         val response = resourceService.search(query, types.orEmpty(), page, size)
-        resourceReadAuditService.recordList(
-            actor = loginUser,
-            sourceAddress = servletRequest.remoteAddr,
-            page = page,
-            size = size,
-            queryFilterPresent = !query.isNullOrBlank(),
-            typeFilterPresent = types != null,
-            typeFilterCount = types?.size ?: 0,
-            returnedCount = response.contents.size,
-            totalCount = response.totalCount,
-        )
         return ResponseEntity.ok(response)
     }
 
@@ -135,7 +122,6 @@ class AdminResourceController(
         servletRequest: HttpServletRequest,
     ): ResponseEntity<AdminResourceResponse> {
         val response = resourceService.get(type, id)
-        resourceReadAuditService.recordDetail(loginUser, servletRequest.remoteAddr, type, id)
         return ResponseEntity.ok(response)
     }
 
@@ -147,7 +133,6 @@ class AdminResourceController(
         servletRequest: HttpServletRequest,
     ): ResponseEntity<AdminResourceContextResponse> {
         val response = resourceContextService.get(type, id)
-        resourceReadAuditService.recordContext(loginUser, servletRequest.remoteAddr, type, id)
         return ResponseEntity.ok(response)
     }
 
@@ -269,7 +254,6 @@ class AdminResourceController(
         servletRequest: HttpServletRequest,
     ): ResponseEntity<AdminAnalysisFailuresResponse> {
         val response = reprocessService.getAnalysisFailures(id)
-        resourceReadAuditService.recordAnalysisFailures(loginUser, servletRequest.remoteAddr, id)
         return ResponseEntity.ok(response)
     }
 

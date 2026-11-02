@@ -1,8 +1,5 @@
 package com.soma.wes.admin.service
 
-import com.soma.wes.admin.audit.domain.AdminAuditAction
-import com.soma.wes.admin.audit.domain.AdminAuditTargetType
-import com.soma.wes.admin.audit.repository.AdminAuditLogRepository
 import com.soma.wes.admin.dto.request.IssueProCouponRequest
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
@@ -44,30 +41,25 @@ class AdminCouponServiceTest @Autowired constructor(
     private val coupons: ProCouponRepository,
     private val uses: ProCouponUseRepository,
     private val codes: CouponCodes,
-    private val audits: AdminAuditLogRepository,
     private val billing: BillingFixture,
     private val resources: AdminResourceFixture,
     private val clock: Clock,
 ) {
     @Test
-    fun `원문은 반환만 하고 DB에 해시와 발급 감사만 저장한다`() {
+    fun `원문은 반환만 하고 DB에는 해시를 저장한다`() {
         // given
         val admin = admins.관리자("coupon-issuer")
 
         // when
         val result = target.issue(admin.requiredId, IssueProCouponRequest("테스트 프로 쿠폰 발급"))
         val stored = coupons.findById(result.couponId).orElseThrow()
-        val audit = audits.findAll().single()
 
         // then
         assertSoftly { softly ->
             softly.assertThat(result.code).matches("WES-[0-9A-F]{32}")
             softly.assertThat(stored.codeHash).isEqualTo(codes.hash(result.code))
             softly.assertThat(stored.registeredAt).isNull()
-            softly.assertThat(audit.action).isEqualTo(AdminAuditAction.COUPON_CODE_ISSUED)
-            softly.assertThat(audit.targetType).isEqualTo(AdminAuditTargetType.PRO_COUPON)
-            softly.assertThat(audit.targetId).isEqualTo(result.couponId.toString())
-            softly.assertThat(audit.reason).doesNotContain(result.code, stored.codeHash)
+
         }
     }
 
@@ -100,7 +92,7 @@ class AdminCouponServiceTest @Autowired constructor(
                 .extracting("errorCode").isEqualTo(AdminErrorCode.INVALID_REASON)
         }
         assertThat(coupons.count()).isZero()
-        assertThat(audits.count()).isZero()
+
     }
 
     @Nested
@@ -305,7 +297,7 @@ class AdminCouponServiceTest @Autowired constructor(
                 softly.assertThat(enabled.expiresAt).isNull()
                 softly.assertThat(enabled.version).isEqualTo(before.version + 2)
             }
-            assertThat(audits.findAll().filter { it.targetType == AdminAuditTargetType.PRO_COUPON }.map { it.action }).containsExactly(AdminAuditAction.COUPON_CODE_DISABLED, AdminAuditAction.COUPON_CODE_ENABLED)
+
         }
 
         @Test
@@ -339,7 +331,7 @@ class AdminCouponServiceTest @Autowired constructor(
                 .isInstanceOf(AdminException::class.java).extracting("errorCode").isEqualTo(AdminErrorCode.COUPON_STATE_CHANGE_FORBIDDEN)
             val after = target.getCoupon(coupon.requiredId, admin.requiredId)
             assertThat(after).isEqualTo(before)
-            assertThat(audits.findAll().filter { it.targetType == AdminAuditTargetType.PRO_COUPON }).isEmpty()
+
         }
 
         @Test
@@ -354,7 +346,7 @@ class AdminCouponServiceTest @Autowired constructor(
             assertThatThrownBy { target.changeStatus(issued.couponId, admin.requiredId, ChangeProCouponStatusRequest(false, 0, "")) }
                 .isInstanceOf(AdminException::class.java).extracting("errorCode").isEqualTo(AdminErrorCode.INVALID_REASON)
             assertThat(target.getCoupon(issued.couponId, admin.requiredId).version).isZero()
-            assertThat(audits.count()).isEqualTo(1L)
+
         }
 
         @Test

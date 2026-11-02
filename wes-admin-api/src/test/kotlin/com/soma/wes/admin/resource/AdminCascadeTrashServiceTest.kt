@@ -96,7 +96,6 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         assertThat(deletedAt("photos", photo.id)).isNotNull()
     }
 
-
     @Test
     fun `수동 공유폴더 삭제 복원과 영구 삭제는 원본 사진을 보존한다`() {
         val actor = adminAccountFixture.관리자("manual-collab-trash")
@@ -286,7 +285,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             .containsEntry("selectionRevisionCount", 1L)
             .containsEntry("photoStorageMetadataCount", 2L)
             .containsEntry("retouchStorageMetadataCount", 2L)
-        assertThat(batch.relationshipFacts.getValue("entityRevisionCount")).isGreaterThanOrEqualTo(5)
+        assertThat(batch.relationshipFacts.getValue("entityRevisionCount")).isZero()
         assertThat(deletedAt("photos", activePhoto.id)).isNotNull()
         assertThat(deletedAt("gallery_members", galleryMemberId)).isNotNull()
         val preexistingDeletedAt = deletedAt("photos", alreadyTrashedPhoto.id)
