@@ -13,17 +13,30 @@ import org.springframework.http.ResponseEntity
 interface PhotoRatingControllerDocs {
 
     @Operation(
+        summary = "갤러리 별점 전체 목록",
+        description = """
+            부부 참여자만 조회한다. 작가·게스트에게는 공개하지 않는다. 별점 있는 사진만 photoId 순서로 반환한다.
+            처음 진입하거나 연결을 복구했을 때 이 목록을 기준으로 별점 상태 전체를 교체한다.
+            응답에 없는 사진은 별점이 없는 상태이므로 기존 점수·작성자·시각도 지운다. 휴지통 사진은 제외한다.
+        """,
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "별점 전체 목록. 없으면 빈 배열"),
+        ApiResponse(responseCode = "403", description = "부부 참여자가 아님", content = []),
+        ApiResponse(responseCode = "404", description = "갤러리 없음", content = []),
+    )
+    fun list(loginUser: LoginUser, galleryId: Long): ResponseEntity<List<PhotoRatingResponse>>
+
+    @Operation(
         summary = "별점 매기기",
         description = """
             사진 한 장에 1~5점을 매긴다. 같은 사진에 다시 보내면 덮어쓴다(POST가 아니라 PUT인 이유다).
 
-            **점수는 사진당 하나이고 누가 매겼는지로 나뉘지 않는다.** 신랑·신부·작가가 같은 한 칸을
-            나눠 쓰고, 마지막에 매긴 사람이 ratedBy에 남는다. 부부 두 사람은 같이 고르는 한 팀이라
-            각자의 점수를 평균 내는 것이 화면에서 의미가 없고, 작가의 추천작도 같은 자리에 표시된다.
+            점수는 사진당 하나이며 두 참여자가 공유한다. 마지막에 매긴 사람이 ratedBy에 남는다.
+            작가는 매기거나 읽을 수 없다. 초대 고객은 공개된 갤러리의 선택 마감 전,
+            개인 갤러리 참여자는 이용 기간 안에 매길 수 있다.
 
-            부부는 갤러리가 열려 있고 선택 마감 기한 안일 때만 매길 수 있고, 작가에게는 그 제약이 없다.
-
-            매긴 점수는 사진 목록·상세·폴더 응답의 `score`로 함께 온다.
+            사진 목록·폴더 응답에는 score·ratedBy·ratedAt으로 함께 온다.
         """,
     )
     @ApiResponses(

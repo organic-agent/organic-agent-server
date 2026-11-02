@@ -300,7 +300,7 @@ class PhotoService(
         ) { "사진 목록 읽기 트랜잭션이 결과 없이 끝났다" }
 
         val photos = photoViewAssembler.toResponses(read.page.content, read.viewData)
-            .map { if (read.studioViewer) it.copy(score = null, memo = null) else it }
+            .map { if (read.studioViewer) it.copy(score = null, ratedBy = null, ratedAt = null, memo = null) else it }
         return PhotoPageResponse.of(
             page = PageResponse.of(read.page, photos),
             viewUrlTtlSeconds = properties.viewUrlTtl.seconds,

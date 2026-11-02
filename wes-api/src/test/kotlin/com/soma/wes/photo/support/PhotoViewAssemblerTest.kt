@@ -208,6 +208,8 @@ class PhotoViewAssemblerTest @Autowired constructor(
             assertSoftly { softly ->
                 softly.assertThat(result).hasSize(2)
                 softly.assertThat(result.map { it.score }).containsOnlyNulls()
+                softly.assertThat(result.map { it.ratedBy }).containsOnlyNulls()
+                softly.assertThat(result.map { it.ratedAt }).containsOnlyNulls()
                 // 숨기는 것은 별점뿐이다. 사진 자체는 게스트도 봐야 한다.
                 softly.assertThat(result[0].viewUrl).contains("X-Amz-Signature")
             }
