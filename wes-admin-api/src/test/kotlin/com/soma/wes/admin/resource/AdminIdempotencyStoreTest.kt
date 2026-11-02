@@ -1,6 +1,6 @@
 package com.soma.wes.admin.resource
 
-import com.soma.wes.admin.audit.domain.AdminAuditTargetType
+import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.fixture.AdminAccountFixture
@@ -77,11 +77,7 @@ class AdminIdempotencyStoreTest @Autowired constructor(
             action = "GALLERY_EMBEDDING",
             idempotencyKey = "reprocess-key-001",
             requestHash = requestHash,
-            actorAdminId = actorAdminId,
-            targetType = AdminAuditTargetType.GALLERY,
+            targetType = AdminResourceType.GALLERY,
             targetId = "1",
-            targetLabel = "테스트 갤러리",
-            sourceAddress = "127.0.0.1",
-            before = mapOf("id" to 1L, "version" to 0L),
         )
 }

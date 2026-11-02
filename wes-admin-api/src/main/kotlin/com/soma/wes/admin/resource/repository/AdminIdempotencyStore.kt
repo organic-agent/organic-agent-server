@@ -1,6 +1,6 @@
 package com.soma.wes.admin.resource.repository
 
-import com.soma.wes.admin.audit.domain.AdminAuditTargetType
+import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.global.filter.HttpLoggingFilter
@@ -20,12 +20,8 @@ class AdminIdempotencyStore(
         action: String,
         idempotencyKey: String,
         requestHash: String,
-        actorAdminId: Long,
-        targetType: AdminAuditTargetType,
+        targetType: AdminResourceType,
         targetId: String,
-        targetLabel: String?,
-        sourceAddress: String?,
-        before: Map<String, Any?>,
     ): Reservation {
         val inserted = jdbcClient.sql(
             """

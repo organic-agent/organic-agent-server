@@ -67,7 +67,7 @@ class AdminNotificationInboxControllerTest @Autowired constructor(
         val workflowBody = """
             {
               "action": "RESEND_NOTIFICATION",
-              "reason": "[CUSTOMER_REQUEST] private-inbox@example.com 에게 다시 보내 주세요",
+
               "expectedVersion": 0,
               "idempotencyKey": "notification-inbox-create-001",
               "confirm": true,
@@ -152,8 +152,7 @@ class AdminNotificationInboxControllerTest @Autowired constructor(
             content = """
                 {
                   "targetType": "USER",
-                  "targetId": ${target.id},
-                  "reason": "[TEST_OPERATION] 인박스 읽기 전용 경계 확인"
+                  "targetId": ${target.id}
                 }
             """.trimIndent()
         }.andExpect { status { isCreated() } }
@@ -206,7 +205,7 @@ class AdminNotificationInboxControllerTest @Autowired constructor(
             content = """
                 {
                   "action": "RESEND_NOTIFICATION",
-                  "reason": "[TEST_OPERATION] 금지 필드 확인",
+
                   "expectedVersion": 1,
                   "idempotencyKey": "notification-inbox-reject-001",
                   "confirm": true,

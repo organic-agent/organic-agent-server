@@ -78,12 +78,8 @@ class AdminReprocessService(
             action = ACTION,
             idempotencyKey = request.idempotencyKey,
             requestHash = requestHash,
-            actorAdminId = actorAdminId,
-            targetType = type.auditTargetType,
+            targetType = type,
             targetId = id.toString(),
-            targetLabel = gallery.label,
-            sourceAddress = sourceAddress,
-            before = mapOf("type" to type.name, "id" to id, "version" to gallery.version, "scope" to request.scope.name),
         )
         reservation.existing?.let { existing ->
             if (existing.status == "COMPLETED") {

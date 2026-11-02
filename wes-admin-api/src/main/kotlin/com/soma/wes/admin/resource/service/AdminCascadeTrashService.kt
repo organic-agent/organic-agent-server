@@ -1,6 +1,5 @@
 package com.soma.wes.admin.resource.service
 
-import com.soma.wes.admin.audit.support.AdminAuditSanitizer
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.domain.AdminResourceType
@@ -24,7 +23,6 @@ import java.time.ZonedDateTime
 class AdminCascadeTrashService(
     private val trashRepository: AdminCascadeTrashRepository,
     private val resourceRepository: AdminResourceRepository,
-    private val auditSanitizer: AdminAuditSanitizer,
     private val trashProperties: TrashProperties,
     private val clock: Clock,
     private val photoRestoreQuota: AdminPhotoRestoreQuota,
@@ -55,16 +53,13 @@ class AdminCascadeTrashService(
         trashRepository.lockProductPurgeCoordinationScope(type, id)
 
         val deletedAt = ZonedDateTime.now(clock)
-        val canonicalLabel = requireNotNull(
-            auditSanitizer.canonicalTargetLabel(type.auditTargetType, id.toString(), before.label),
-        )
 
         val batchId = try {
             trashRepository.createBatch(
                 actorAdminId = actorAdminId,
                 rootType = type,
                 rootId = id,
-                rootLabel = canonicalLabel,
+                rootLabel = before.label,
                 deletedAt = deletedAt,
                 restoreUntil = deletedAt.plus(trashProperties.retention),
             )

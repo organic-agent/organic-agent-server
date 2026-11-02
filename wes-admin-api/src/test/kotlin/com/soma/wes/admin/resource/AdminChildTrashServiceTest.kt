@@ -141,7 +141,7 @@ class AdminChildTrashServiceTest @Autowired constructor(
             .isEqualTo("")
             .doesNotContain("private@example.com", "문의")
         val listed = service.list().associateBy { it.id }.getValue(commentTrash.trashId)
-        assertThat(listed.actorUsername).isEqualTo("ADMIN #${graph.actorId}")
+        assertThat(listed.actorUsername).isEqualTo("child-restore")
         assertThat(listed.resourceType).isEqualTo(AdminChildTrashType.COLLAB_COMMENT)
         assertThat(listed.parentType).isEqualTo(AdminResourceType.COLLABORATION)
         assertThat(listed.deletedAt.toInstant().toEpochMilli())

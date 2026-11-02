@@ -37,7 +37,7 @@ class AdminPhotoAccessServiceTest {
     private val service = AdminPhotoAccessService(repository, photoStorage, properties, clock)
 
     @Test
-    fun `원본 다운로드는 attachment 서명 URL을 발급하고 감사 로그를 남긴다`() {
+    fun `원본 다운로드는 attachment 서명 URL을 발급한다`() {
         whenever(repository.findPhotoOriginal(42)).thenReturn(
             AdminResourceRepository.PhotoOriginal(42, "wedding final.jpg", "galleries/7/photo.jpg"),
         )
@@ -56,7 +56,7 @@ class AdminPhotoAccessServiceTest {
     }
 
     @Test
-    fun `목업 preview는 파생 키만 짧게 서명하고 별도 감사 로그를 남긴다`() {
+    fun `목업 preview는 파생 키만 짧게 서명한다`() {
         whenever(repository.findPhotoOriginal(43)).thenReturn(
             AdminResourceRepository.PhotoOriginal(
                 43,

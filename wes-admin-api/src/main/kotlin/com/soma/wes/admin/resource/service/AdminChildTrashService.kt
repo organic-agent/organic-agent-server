@@ -1,6 +1,5 @@
 package com.soma.wes.admin.resource.service
 
-import com.soma.wes.admin.audit.support.AdminAuditSanitizer
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.domain.AdminChildTrashType
@@ -23,7 +22,6 @@ import org.springframework.transaction.annotation.Transactional
 @Service
 class AdminChildTrashService(
     private val repository: AdminChildTrashRepository,
-    private val sanitizer: AdminAuditSanitizer,
     private val trashProperties: TrashProperties,
     private val clock: Clock,
 ) {
