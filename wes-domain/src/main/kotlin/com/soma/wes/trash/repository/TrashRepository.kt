@@ -560,12 +560,6 @@ class TrashRepository(
             WHERE j.target_type = t.resource_type
               AND j.target_id = t.resource_id
             RETURNING 1
-        ), deleted_notifications AS (
-            DELETE FROM admin_notification_outbox n
-            USING targets t
-            WHERE n.source_type = t.resource_type
-              AND n.source_id = t.resource_id
-            RETURNING 1
         ), deleted_inbox_notifications AS (
             DELETE FROM admin_notification_inbox n
             USING targets t
@@ -576,7 +570,6 @@ class TrashRepository(
         SELECT
             (SELECT COUNT(*) FROM deleted_idempotency)
             + (SELECT COUNT(*) FROM deleted_processing_jobs)
-            + (SELECT COUNT(*) FROM deleted_notifications)
             + (SELECT COUNT(*) FROM deleted_inbox_notifications)
         """.trimIndent(),
     )
@@ -602,12 +595,6 @@ class TrashRepository(
             WHERE j.target_type = t.resource_type
               AND j.target_id = t.resource_id
             RETURNING 1
-        ), deleted_notifications AS (
-            DELETE FROM admin_notification_outbox n
-            USING targets t
-            WHERE n.source_type = t.resource_type
-              AND n.source_id = t.resource_id
-            RETURNING 1
         ), deleted_inbox_notifications AS (
             DELETE FROM admin_notification_inbox n
             USING targets t
@@ -618,7 +605,6 @@ class TrashRepository(
         SELECT
             (SELECT COUNT(*) FROM deleted_idempotency)
             + (SELECT COUNT(*) FROM deleted_processing_jobs)
-            + (SELECT COUNT(*) FROM deleted_notifications)
             + (SELECT COUNT(*) FROM deleted_inbox_notifications)
         """.trimIndent(),
     )

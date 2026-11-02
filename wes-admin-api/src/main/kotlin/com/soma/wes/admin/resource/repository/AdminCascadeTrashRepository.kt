@@ -827,19 +827,6 @@ class AdminCascadeTrashRepository(
               )
             """.trimIndent(),
         ).param("batchId", batchId).update()
-        val notifications = jdbcClient.sql(
-            """
-            UPDATE admin_notification_outbox n
-            SET status = 'CANCELED', updated_at = CURRENT_TIMESTAMP
-            WHERE n.status IN ('PENDING', 'SENDING', 'FAILED')
-              AND EXISTS (
-                  SELECT 1 FROM admin_trash_entries e
-                  WHERE e.batch_id = :batchId
-                    AND e.resource_type = n.source_type
-                    AND e.resource_id = n.source_id
-              )
-            """.trimIndent(),
-        ).param("batchId", batchId).update()
         val inboxNotifications = jdbcClient.sql(
             """
             UPDATE admin_notification_inbox n
@@ -866,7 +853,7 @@ class AdminCascadeTrashRepository(
               )
             """.trimIndent(),
         ).param("batchId", batchId).update()
-        return idempotency + processingJobs + aiJobs + notifications + inboxNotifications + replacementUploads
+        return idempotency + processingJobs + aiJobs + inboxNotifications + replacementUploads
     }
 
     /**
@@ -891,12 +878,6 @@ class AdminCascadeTrashRepository(
             WHERE j.target_type = t.resource_type
               AND j.target_id = t.resource_id
             RETURNING 1
-        ), deleted_notifications AS (
-            DELETE FROM admin_notification_outbox n
-            USING targets t
-            WHERE n.source_type = t.resource_type
-              AND n.source_id = t.resource_id
-            RETURNING 1
         ), deleted_inbox_notifications AS (
             DELETE FROM admin_notification_inbox n
             USING targets t
@@ -907,7 +888,6 @@ class AdminCascadeTrashRepository(
         SELECT
             (SELECT COUNT(*) FROM deleted_idempotency)
             + (SELECT COUNT(*) FROM deleted_processing_jobs)
-            + (SELECT COUNT(*) FROM deleted_notifications)
             + (SELECT COUNT(*) FROM deleted_inbox_notifications)
         """.trimIndent(),
     )

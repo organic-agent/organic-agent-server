@@ -1096,10 +1096,6 @@ class AdminWorkflowServiceTest @Autowired constructor(
             jdbcClient.sql("SELECT COUNT(*) FROM admin_notification_inbox WHERE target_id = :photoId")
                 .param("photoId", photo.id).query { rs, _ -> rs.getLong(1) }.single(),
         ).isOne()
-        assertThat(
-            jdbcClient.sql("SELECT COUNT(*) FROM admin_notification_outbox WHERE source_id = :photoId")
-                .param("photoId", photo.id).query { rs, _ -> rs.getLong(1) }.single(),
-        ).isZero()
         val durableReasons = jdbcClient.sql(
             """
             SELECT reason FROM admin_photo_replacement_uploads WHERE photo_id = :photoId

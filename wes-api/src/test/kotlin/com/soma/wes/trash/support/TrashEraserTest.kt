@@ -226,7 +226,6 @@ class TrashEraserTest @Autowired constructor(
         assertThat(countGalleryRows(galleryId)).isEqualTo(1L)
         assertThat(countOperationalRows("admin_idempotency_keys", "target_id", photo.requiredId)).isOne()
         assertThat(countOperationalRows("admin_processing_jobs", "target_id", photo.requiredId)).isOne()
-        assertThat(countOperationalRows("admin_notification_outbox", "source_id", photo.requiredId)).isOne()
 
         // when
         photoStorage.failDelete = false
@@ -250,10 +249,8 @@ class TrashEraserTest @Autowired constructor(
         assertThat(countPurgeClaims("GALLERY", galleryId)).isZero()
         assertThat(countOperationalRows("admin_idempotency_keys", "target_id", photo.requiredId)).isZero()
         assertThat(countOperationalRows("admin_processing_jobs", "target_id", photo.requiredId)).isZero()
-        assertThat(countOperationalRows("admin_notification_outbox", "source_id", photo.requiredId)).isZero()
         assertThat(countOperationalRows("admin_idempotency_keys", "target_id", unrelatedPhoto.requiredId)).isOne()
         assertThat(countOperationalRows("admin_processing_jobs", "target_id", unrelatedPhoto.requiredId)).isOne()
-        assertThat(countOperationalRows("admin_notification_outbox", "source_id", unrelatedPhoto.requiredId)).isOne()
     }
 
     @Test
@@ -555,18 +552,6 @@ class TrashEraserTest @Autowired constructor(
             VALUES ('DERIVATIVE', 'SUCCEEDED', 'PHOTO', ?, CAST(? AS JSONB), 1,
                     'test purge', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """.trimIndent(),
-            photoId,
-            "{\"photoId\":$photoId}",
-        )
-        jdbcTemplate.update(
-            """
-            INSERT INTO admin_notification_outbox
-                (notification_type, recipient_reference, source_type, source_id, payload,
-                 status, attempt_count, reason, created_at, updated_at)
-            VALUES ('PHOTO_READY', ?, 'PHOTO', ?, CAST(? AS JSONB),
-                    'SENT', 1, 'test purge', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """.trimIndent(),
-            "recipient-$suffix",
             photoId,
             "{\"photoId\":$photoId}",
         )

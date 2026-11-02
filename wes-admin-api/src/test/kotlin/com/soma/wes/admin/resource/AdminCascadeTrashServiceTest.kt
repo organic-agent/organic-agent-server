@@ -684,10 +684,8 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         ))
         val siblingPhoto = createPhoto(actor.requiredId, siblingGallery.id, "sibling.jpg")
         insertProcessingJob(photo.id, "SUCCEEDED", "purge-target")
-        insertNotification(photo.id, "SENT", "purge-target")
         insertIdempotency(photo.id, "COMPLETED", "purge-target")
         insertProcessingJob(siblingPhoto.id, "SUCCEEDED", "purge-sibling")
-        insertNotification(siblingPhoto.id, "SENT", "purge-sibling")
         insertIdempotency(siblingPhoto.id, "COMPLETED", "purge-sibling")
         val retouchArtifactKey = insertRetouchArtifact(gallery.id, photo.id, "cascade-purge")
         val historicalKeys = insertPhotoHistory(photo.id, "cascade-purge")
@@ -711,7 +709,6 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         assertThat(count("galleries", "id", gallery.id)).isOne()
         assertThat(batchStatus(batch.id)).isEqualTo("ACTIVE")
         assertThat(count("admin_processing_jobs", "target_id", photo.id)).isOne()
-        assertThat(count("admin_notification_outbox", "source_id", photo.id)).isOne()
         assertThat(idempotencyStatuses(photo.id)).hasSize(1)
 
         photoStorage.failDelete = false
@@ -726,10 +723,8 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
         assertThat(count("users", "id", member.id)).isOne()
         assertThat(count("gallery_members", "id", memberRelationId)).isZero()
         assertThat(count("admin_processing_jobs", "target_id", photo.id)).isZero()
-        assertThat(count("admin_notification_outbox", "source_id", photo.id)).isZero()
         assertThat(idempotencyStatuses(photo.id)).isEmpty()
         assertThat(count("admin_processing_jobs", "target_id", siblingPhoto.id)).isOne()
-        assertThat(count("admin_notification_outbox", "source_id", siblingPhoto.id)).isOne()
         assertThat(idempotencyStatuses(siblingPhoto.id)).hasSize(1)
         assertThat(batchStatus(batch.id)).isEqualTo("PURGED")
         assertThat(photoStorage.deletedKeys()).contains(rawStorageKey, retouchArtifactKey)
@@ -854,10 +849,6 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             insertAiJob(selection.id, status)
         }
         insertAiJob(otherSelection.id, "PENDING")
-        listOf("PENDING", "SENDING", "FAILED", "SENT").forEachIndexed { index, status ->
-            insertNotification(photo.id, status, "main-$index")
-        }
-        insertNotification(otherPhoto.id, "PENDING", "unrelated")
         insertReplacementUpload(photo.id, "PENDING", "main-pending")
         insertReplacementUpload(photo.id, "COMPLETED", "main-completed")
         insertReplacementUpload(otherPhoto.id, "PENDING", "unrelated")
@@ -878,8 +869,6 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             .containsExactlyInAnyOrder("CANCELED", "CANCELED", "CANCELED", "CANCELED", "SUCCEEDED")
         assertThat(statuses("admin_ai_selection_jobs", "selection_id", selection.id))
             .containsExactlyInAnyOrder("CANCELED", "CANCELED", "CANCELED", "SUCCEEDED")
-        assertThat(statuses("admin_notification_outbox", "source_id", photo.id))
-            .containsExactlyInAnyOrder("CANCELED", "CANCELED", "CANCELED", "SENT")
         assertThat(statuses("admin_photo_replacement_uploads", "photo_id", photo.id))
             .containsExactlyInAnyOrder("EXPIRED", "COMPLETED")
         assertThat(idempotencyStatuses(photo.id))
@@ -887,7 +876,6 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
 
         assertThat(statuses("admin_processing_jobs", "target_id", otherPhoto.id)).containsExactly("PENDING")
         assertThat(statuses("admin_ai_selection_jobs", "selection_id", otherSelection.id)).containsExactly("PENDING")
-        assertThat(statuses("admin_notification_outbox", "source_id", otherPhoto.id)).containsExactly("PENDING")
         assertThat(statuses("admin_photo_replacement_uploads", "photo_id", otherPhoto.id))
             .containsExactly("PENDING")
         assertThat(idempotencyStatuses(otherPhoto.id)).containsExactly("PENDING")
@@ -1085,21 +1073,6 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
                  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """.trimIndent(),
         ).param("selectionId", selectionId).param("status", status).update()
-    }
-
-    private fun insertNotification(sourceId: Long, status: String, suffix: String) {
-        jdbcClient.sql(
-            """
-            INSERT INTO admin_notification_outbox
-                (notification_type, recipient_reference, source_type, source_id, payload,
-                 status, attempt_count, reason, created_at, updated_at)
-            VALUES
-                ('PHOTO_READY', :recipient, 'PHOTO', :sourceId, '{}'::JSONB,
-                 :status, 0, '',
-                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """.trimIndent(),
-        ).param("recipient", "recipient-$suffix").param("sourceId", sourceId)
-            .param("status", status).update()
     }
 
     private fun insertReplacementUpload(photoId: Long, status: String, suffix: String) {
