@@ -2,12 +2,15 @@ package com.soma.wes.collab.service
 
 import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
 import com.soma.wes.folder.service.FolderService
+import com.soma.wes.collab.dto.request.EnterCollabRequest
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
 import com.soma.wes.collab.dto.request.RenameCollabSessionRequest
+import com.soma.wes.collab.dto.request.WriteCollabCommentRequest
 import com.soma.wes.collab.exception.CollabErrorCode
 import com.soma.wes.collab.exception.CollabException
 import com.soma.wes.collab.fixture.CollabFixture
 import com.soma.wes.collab.fixture.SharedCollab
+import com.soma.wes.collab.repository.CollabPhotoCommentRepository
 import com.soma.wes.gallery.domain.GalleryStatus
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
@@ -29,6 +32,8 @@ import org.springframework.beans.factory.annotation.Autowired
 @IntegrationTest
 class CollabSessionServiceTest @Autowired constructor(
     private val service: CollabSessionService,
+    private val guestService: CollabGuestService,
+    private val commentRepository: CollabPhotoCommentRepository,
     private val queryService: CollabSessionQueryService,
     private val folderService: FolderService,
     private val collabFixture: CollabFixture,
@@ -189,6 +194,21 @@ class CollabSessionServiceTest @Autowired constructor(
                 assertThatThrownBy { mutation() }.isInstanceOf(CollabException::class.java)
                     .extracting("errorCode").isEqualTo(CollabErrorCode.SESSION_NOT_FOUND)
             }
+        }
+
+        @Test
+        fun `자기 공유폴더 경로로 다른 공유폴더의 댓글을 지울 수 없다`() {
+            // given
+            val other = collabFixture.사진이_있는_세션(shared.gallery)
+            val writer = guestService.enter(other.token, EnterCollabRequest("게스트"))
+            val foreign = guestService.writeComment(other.token, other.photoId, null, writer.guestToken, WriteCollabCommentRequest("의견"))
+
+            // when & then
+            assertThatThrownBy {
+                service.deleteComment(shared.galleryId, shared.session.sessionId, foreign.commentId, shared.gallery.member.requiredId)
+            }.isInstanceOf(CollabException::class.java)
+                .extracting("errorCode").isEqualTo(CollabErrorCode.COMMENT_NOT_FOUND)
+            assertThat(commentRepository.existsById(foreign.commentId)).isTrue()
         }
     }
 

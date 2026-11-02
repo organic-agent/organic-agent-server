@@ -58,9 +58,6 @@ class CollabGuestQueryService(
         )
     }
 
-    fun listPhotos(collabToken: String, guestToken: String?, page: Int, size: Int): CollabPhotoPageResponse =
-        listPhotos(collabToken, null, guestToken, page, size)
-
     @Transactional(readOnly = true)
     fun listComments(
         collabToken: String,
@@ -92,12 +89,4 @@ class CollabGuestQueryService(
             )
         })
     }
-
-    fun listComments(
-        collabToken: String,
-        photoId: Long,
-        guestToken: String?,
-        page: Int,
-        size: Int,
-    ): PageResponse<CollabCommentResponse> = listComments(collabToken, photoId, null, guestToken, page, size)
 }

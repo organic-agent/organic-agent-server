@@ -1,5 +1,6 @@
 package com.soma.wes.folder.service
 
+import com.soma.wes.billing.domain.GalleryPlan
 import com.soma.wes.folder.domain.FolderName
 import com.soma.wes.folder.domain.FolderSource
 import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
@@ -169,6 +170,22 @@ class FolderServiceTest @Autowired constructor(
             assertThatThrownBy { folderService.renameConcept(personal.galleryId, concept.id, personal.ownerId, RenameFolderRequest("변경")) }
                 .isInstanceOf(GalleryException::class.java)
                 .extracting("errorCode").isEqualTo(GalleryErrorCode.GALLERY_ARCHIVED)
+        }
+    }
+
+    @Nested
+    @DisplayName("사진을 옮길 때")
+    inner class MovePhotos {
+        @Test
+        fun `갤러리 최대 사진 수를 넘는 id 목록은 거절한다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val photoIds = List(GalleryPlan.PRO.maxPhotoCount + 1) { index -> index + 1L }
+
+            // when & then
+            assertThatThrownBy {
+                folderService.movePhotos(fixture.galleryId, fixture.photographer.requiredId, MoveFolderPhotosRequest(photoIds, null))
+            }.isInstanceOf(FolderException::class.java).extracting("errorCode").isEqualTo(FolderErrorCode.TOO_MANY_PHOTOS)
         }
     }
 

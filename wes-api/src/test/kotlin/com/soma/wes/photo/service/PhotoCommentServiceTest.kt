@@ -663,7 +663,7 @@ class PhotoCommentServiceTest @Autowired constructor(
                 token, photoId, guest.guestToken, WriteCollabCommentRequest("하객이 남긴 의견"),
             )
             val internal = photoCommentService.list(fixture.galleryId, photoId, fixture.member.requiredId, 0, 20)
-            val guestComments = collabGuestQueryService.listComments(token, photoId, guest.guestToken, 0, 20)
+            val guestComments = collabGuestQueryService.listComments(token, photoId, null, guest.guestToken, 0, 20)
 
             // then
             assertThat(internal.contents.map { it.content }).containsExactly("부부끼리만 보는 의견")
