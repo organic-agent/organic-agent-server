@@ -231,7 +231,7 @@ class RetouchService(
                 galleryId, items,
                 includeResults = round.status == RetouchRoundStatus.COMPLETED ||
                     galleryAccessPolicy.canInspectRetouchDrafts(galleryId, userId),
-            ).map { if (hideRating) it.copy(photo = it.photo.copy(score = null)) else it },
+            ).map { if (hideRating) it.copy(photo = it.photo.copy(score = null, ratedBy = null, ratedAt = null)) else it },
             viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
             hideDraft = hideRating,
         )
@@ -324,7 +324,7 @@ class RetouchService(
                 round = lockedRound,
                 photos = retouchViewAssembler.toDetailResponses(
                     galleryId, retouchPhotoRepository.findAllByRoundId(lockedRound.requiredId),
-                ).map { if (hideRating) it.copy(photo = it.photo.copy(score = null)) else it },
+                ).map { if (hideRating) it.copy(photo = it.photo.copy(score = null, ratedBy = null, ratedAt = null)) else it },
                 viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
                 hideDraft = hideRating,
             )
@@ -537,7 +537,7 @@ class RetouchService(
                     photos = retouchViewAssembler.toResponses(galleryId, currentItems).map { photo ->
                         photo.copy(
                             hasResult = photo.hasResult && (it.status == RetouchRoundStatus.COMPLETED || inspectDrafts),
-                            photo = if (hideRating) photo.photo.copy(score = null) else photo.photo,
+                            photo = if (hideRating) photo.photo.copy(score = null, ratedBy = null, ratedAt = null) else photo.photo,
                         )
                     },
                     hideDraft = hideRating,

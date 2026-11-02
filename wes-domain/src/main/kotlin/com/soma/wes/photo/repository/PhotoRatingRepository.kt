@@ -2,6 +2,7 @@ package com.soma.wes.photo.repository
 
 import com.soma.wes.photo.domain.PhotoRating
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Query
 
 interface PhotoRatingRepository : JpaRepository<PhotoRating, Long> {
 
@@ -12,6 +13,9 @@ interface PhotoRatingRepository : JpaRepository<PhotoRating, Long> {
      * 목록 화면이 쓴다. 사진마다 [findByPhotoId]를 부르면 한 페이지 200장이 질의 200번이 된다.
      */
     fun findAllByPhotoIdIn(photoIds: Collection<Long>): List<PhotoRating>
+
+    @Query("select r from PhotoRating r, Photo p where p.id = r.photoId and p.galleryId = :galleryId order by r.photoId")
+    fun findAllByGalleryId(galleryId: Long): List<PhotoRating>
 
     /** 별점을 지운다. 매긴 적 없는 사진이면 0을 돌려준다 — 그 경우도 호출자가 성공으로 본다. */
     fun deleteByPhotoId(photoId: Long): Long

@@ -4,6 +4,7 @@ import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.dto.PhotoViewDataDto
 import com.soma.wes.photo.dto.response.PhotoMemoResponse
+import com.soma.wes.photo.dto.response.PhotoRatingResponse
 import com.soma.wes.photo.dto.response.PhotoResponse
 import com.soma.wes.photo.repository.PhotoMemoRepository
 import com.soma.wes.photo.repository.PhotoRatingRepository
@@ -26,12 +27,7 @@ class PhotoViewAssembler(
     private val photoMemoRepository: PhotoMemoRepository,
 ) {
 
-    fun toResponse(photo: Photo): PhotoResponse = PhotoResponse.of(
-        photo = photo,
-        viewUrl = viewUrlOf(photo),
-        score = scoreOf(photo),
-        memo = memoOf(photo),
-    )
+    fun toResponse(photo: Photo): PhotoResponse = toResponses(listOf(photo)).single()
 
     /**
      * 여러 장을 한 번에. 별점과 메모를 사진 수만큼 따로 읽지 않는다.
@@ -48,26 +44,28 @@ class PhotoViewAssembler(
             PhotoResponse.of(
                 photo = it,
                 viewUrl = viewUrlOf(it),
-                score = viewData.scores[it.requiredId],
+                score = viewData.ratings[it.requiredId]?.score,
+                ratedBy = viewData.ratings[it.requiredId]?.ratedBy,
+                ratedAt = viewData.ratings[it.requiredId]?.updatedAt,
                 memo = viewData.memos[it.requiredId],
             )
         }
     }
 
     /** 응답에 붙일 별점·메모를 한 번씩 읽는다. 읽기 트랜잭션 안에서 부른다. */
-    fun viewDataOf(photos: List<Photo>): PhotoViewDataDto = PhotoViewDataDto(scores = scoresOf(photos), memos = memosOf(photos))
+    fun viewDataOf(photos: List<Photo>): PhotoViewDataDto = PhotoViewDataDto(ratings = ratingsOf(photos), memos = memosOf(photos))
 
     /** [viewDataOf]가 쓴다. 사진이 없으면 IN 절이 빈 채로 나가지 않도록 먼저 끊는다. */
-    private fun scoresOf(photos: List<Photo>): Map<Long, Int> {
+    private fun ratingsOf(photos: List<Photo>): Map<Long, PhotoRatingResponse> {
         if (photos.isEmpty()) {
             return emptyMap()
         }
 
         return photoRatingRepository.findAllByPhotoIdIn(photos.map { it.requiredId })
-            .associate { it.photoId to it.score }
+            .associate { it.photoId to PhotoRatingResponse.from(it) }
     }
 
-    /** [viewDataOf]가 쓴다. [scoresOf]와 같이 빈 IN 절을 내보내지 않는다. */
+    /** [viewDataOf]가 쓴다. [ratingsOf]와 같이 빈 IN 절을 내보내지 않는다. */
     private fun memosOf(photos: List<Photo>): Map<Long, PhotoMemoResponse> {
         if (photos.isEmpty()) {
             return emptyMap()

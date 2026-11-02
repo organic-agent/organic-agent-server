@@ -193,7 +193,7 @@ class AiRecommendationService(
         )
 
         val photos = recommendationResponses(galleryId, selectionId, ordered, currentFolderByPhoto).map {
-            if (studioViewer) it.copy(photo = it.photo.copy(score = null),
+            if (studioViewer) it.copy(photo = it.photo.copy(score = null, ratedBy = null, ratedAt = null),
                 selected = it.selected && selection.status == com.soma.wes.selection.domain.PhotoSelectionStatus.SUBMITTED)
             else it
         }

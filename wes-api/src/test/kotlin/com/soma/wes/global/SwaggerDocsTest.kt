@@ -43,6 +43,10 @@ class SwaggerDocsTest @Autowired constructor(
                 jsonPath("$.paths['/api/v1/notifications/settings'].put") { exists() }
                 jsonPath("$.paths['/api/v1/galleries/{galleryId}/members/me'].delete") { exists() }
                 jsonPath("$.paths['/api/v1/galleries/{galleryId}/photo-clusters']") { doesNotExist() }
+                jsonPath("$.paths['/api/v1/galleries/{galleryId}/selection-sync'].get.summary") { value("선택·별점 변경 번호 조회") }
+                jsonPath("$.paths['/api/v1/galleries/{galleryId}/photo-ratings'].get.summary") { value("갤러리 별점 전체 목록") }
+                jsonPath("$.components.schemas.PhotoResponse.properties.ratedBy.example") { exists() }
+                jsonPath("$.components.schemas.PhotoResponse.properties.ratedAt.example") { exists() }
             }
     }
 

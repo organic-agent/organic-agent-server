@@ -76,7 +76,7 @@ class PhotoSelectionService(
         val response = responseOf(gallery, selection)
         if (galleryAccessPolicy.isStudioManager(galleryId, userId)) {
             if (selection?.isSubmitted != true) return response.copy(photos = emptyList())
-            return response.copy(photos = response.photos.map { it.copy(photo = it.photo.copy(score = null)) })
+            return response.copy(photos = response.photos.map { it.copy(photo = it.photo.copy(score = null, ratedBy = null, ratedAt = null)) })
         }
         return response
     }

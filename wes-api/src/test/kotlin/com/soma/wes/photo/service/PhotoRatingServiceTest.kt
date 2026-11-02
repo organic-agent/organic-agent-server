@@ -326,6 +326,81 @@ class PhotoRatingServiceTest @Autowired constructor(
         verifyPrivacy()
     }
 
+    @Nested
+    @DisplayName("공유 별점 전체를 읽을 때")
+    inner class Snapshot {
+        @Test
+        fun `파트너가 같은 점수로 덮어써도 목록과 그리드에 마지막 사람이 남는다`() {
+            // given
+            val personal = personalGalleryFixture.파트너와_개인_갤러리()
+            val photoId = photoFixture.업로드된_사진(personal.galleryId, count = 1).single()
+            photoRatingService.rate(personal.galleryId, photoId, personal.ownerId, RatePhotoRequest(score = 5))
+
+            // when
+            val written = photoRatingService.rate(personal.galleryId, photoId, personal.partnerId, RatePhotoRequest(score = 5))
+            val snapshot = photoRatingService.list(personal.galleryId, personal.ownerId).single()
+            val grid = photoService.list(personal.galleryId, personal.ownerId, null, null, page = 0, size = 20).contents.single()
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(snapshot.ratedBy).isEqualTo(personal.partnerId)
+                softly.assertThat(snapshot.updatedAt).isNotNull()
+                softly.assertThat(written.updatedAt?.toInstant()).isEqualTo(snapshot.updatedAt?.toInstant())
+                softly.assertThat(grid.ratedBy).isEqualTo(personal.partnerId)
+                softly.assertThat(grid.ratedAt?.toInstant()).isEqualTo(snapshot.updatedAt?.toInstant())
+                softly.assertThat(photoRatingRepository.count()).isEqualTo(1L)
+            }
+        }
+
+        @Test
+        fun `삭제한 별점과 다른 갤러리와 휴지통 사진을 제외한다`() {
+            // given
+            val ids = photoFixture.업로드된_사진(fixture.galleryId, count = 4)
+            for (id in ids.take(3)) rate(id, score = 4)
+            val other = galleryFixture.멤버와_열린_갤러리()
+            val otherId = photoFixture.업로드된_사진(other.galleryId, count = 1).single()
+            photoRatingService.rate(other.galleryId, otherId, other.member.requiredId, RatePhotoRequest(score = 5))
+
+            // when
+            photoRatingService.clear(fixture.galleryId, ids[0], fixture.member.requiredId)
+            jdbc.update("update photos set deleted_at = current_timestamp where id = ?", ids[1])
+            val snapshot = photoRatingService.list(fixture.galleryId, fixture.member.requiredId)
+
+            // then
+            assertThat(snapshot.map { it.photoId }).containsExactly(ids[2])
+        }
+
+        @Test
+        fun `작가와 관계없는 사용자는 별점 목록을 읽을 수 없다`() {
+            // given
+            val stranger = userFixture.사용자()
+
+            // when & then
+            for (userId in listOf(fixture.photographer.requiredId, stranger.requiredId)) {
+                assertThatThrownBy { photoRatingService.list(fixture.galleryId, userId) }
+                    .isInstanceOf(GalleryException::class.java)
+                    .extracting("errorCode").isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+            }
+        }
+
+        @Test
+        fun `작가에게는 점수와 작업자 정보가 함께 숨겨진다`() {
+            // given
+            val photoId = photoFixture.업로드된_사진(fixture.galleryId, count = 1).single()
+            rate(photoId, score = 4)
+
+            // when
+            val photo = photoService.list(fixture.galleryId, fixture.photographer.requiredId, null, null, page = 0, size = 20).contents.single()
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(photo.score).isNull()
+                softly.assertThat(photo.ratedBy).isNull()
+                softly.assertThat(photo.ratedAt).isNull()
+            }
+        }
+    }
+
     // --- helpers ---
 
     private fun rate(photoId: Long, score: Int) {

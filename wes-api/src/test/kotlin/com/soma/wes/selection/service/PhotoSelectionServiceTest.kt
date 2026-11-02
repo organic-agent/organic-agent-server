@@ -54,6 +54,29 @@ class PhotoSelectionServiceTest @Autowired constructor(
     private val retouchRoundRepository: RetouchRoundRepository,
 ) {
 
+    @Test
+    fun `상대가 뺐다가 다시 담으면 마지막으로 담은 사람이 기록된다`() {
+        // given
+        val personal = personalGalleryFixture.파트너와_개인_갤러리()
+        val photoId = photoFixture.업로드된_사진(personal.galleryId, count = 1).single()
+        photoSelectionService.select(personal.galleryId, personal.ownerId, SelectPhotosRequest(photoIds = listOf(photoId)))
+
+        // when
+        photoSelectionService.deselect(personal.galleryId, personal.partnerId, DeselectPhotosRequest(photoIds = listOf(photoId)))
+        photoSelectionService.select(personal.galleryId, personal.partnerId, SelectPhotosRequest(photoIds = listOf(photoId)))
+        val album = photoSelectionService.get(personal.galleryId, personal.ownerId)
+        photoSelectionService.deselectPhoto(personal.galleryId, photoId, personal.ownerId)
+        val empty = photoSelectionService.get(personal.galleryId, personal.partnerId)
+        val again = photoSelectionService.select(personal.galleryId, personal.ownerId, SelectPhotosRequest(photoIds = listOf(photoId)))
+
+        // then
+        assertSoftly { softly ->
+            softly.assertThat(album.photos.single().addedByUserId).isEqualTo(personal.partnerId)
+            softly.assertThat(empty.photos).isEmpty()
+            softly.assertThat(again.photos.single().addedByUserId).isEqualTo(personal.ownerId)
+        }
+    }
+
     @Nested
     @DisplayName("앨범을 조회할 때")
     inner class Read {

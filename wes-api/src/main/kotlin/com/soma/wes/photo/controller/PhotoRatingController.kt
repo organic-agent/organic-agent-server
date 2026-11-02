@@ -10,20 +10,29 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.DeleteMapping
+import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
-
 @RestController
-@RequestMapping("/api/v1/galleries/{galleryId}/photos/{photoId}/rating")
+@RequestMapping("/api/v1/galleries/{galleryId}")
 class PhotoRatingController(
     private val photoRatingService: PhotoRatingService,
 ) : PhotoRatingControllerDocs {
 
-    @PutMapping
+    @GetMapping("/photo-ratings")
+    override fun list(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+    ): ResponseEntity<List<PhotoRatingResponse>> {
+        val result = photoRatingService.list(galleryId = galleryId, userId = loginUser.id)
+        return ResponseEntity.ok(result)
+    }
+
+    @PutMapping("/photos/{photoId}/rating")
     override fun rate(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
@@ -35,7 +44,7 @@ class PhotoRatingController(
         return ResponseEntity.ok(result)
     }
 
-    @DeleteMapping
+    @DeleteMapping("/photos/{photoId}/rating")
     override fun clear(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
