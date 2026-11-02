@@ -2,8 +2,6 @@ package com.soma.wes.admin.service
 
 import com.soma.wes.admin.domain.AdminAccount
 import com.soma.wes.admin.domain.AdminAccountStatus
-import com.soma.wes.admin.domain.AdminEventType
-import com.soma.wes.admin.audit.support.AdminAuditSanitizer
 import com.soma.wes.admin.dto.request.ChangeAdminStatusRequest
 import com.soma.wes.admin.dto.request.CreateAdminAccountRequest
 import com.soma.wes.admin.dto.response.AdminAccountListResponse
@@ -23,7 +21,6 @@ import java.time.ZonedDateTime
 @Service
 class AdminAccountService(
     private val adminAccountRepository: AdminAccountRepository,
-    private val auditSanitizer: AdminAuditSanitizer,
     private val adminSessionService: AdminSessionService,
     private val passwordHasher: AdminPasswordHasher,
     private val secretGenerator: AdminSecretGenerator,
@@ -78,15 +75,13 @@ class AdminAccountService(
     ): AdminAccountResponse {
         val account = requireWithLock(targetAdminId)
 
-        val eventType = when (request.status) {
+        when (request.status) {
             AdminAccountStatus.ACTIVE -> {
                 account.activate()
-                AdminEventType.ACCOUNT_ACTIVATED
             }
             AdminAccountStatus.SUSPENDED -> {
                 account.suspend()
                 adminSessionService.revokeAll(targetAdminId)
-                AdminEventType.ACCOUNT_SUSPENDED
             }
         }
         return AdminAccountResponse.from(account)

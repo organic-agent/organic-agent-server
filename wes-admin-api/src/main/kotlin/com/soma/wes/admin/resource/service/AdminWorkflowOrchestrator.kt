@@ -1,6 +1,5 @@
 package com.soma.wes.admin.resource.service
 
-import com.soma.wes.admin.audit.support.AdminAuditSanitizer
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.domain.AdminChildTrashType
@@ -47,7 +46,6 @@ class AdminWorkflowService(
     private val retouchArtifactRepository: AdminRetouchArtifactRepository,
     private val childTrashService: AdminChildTrashService,
     private val resourceRepository: AdminResourceRepository,
-    private val auditSanitizer: AdminAuditSanitizer,
     private val photoStorage: PhotoStorage,
     private val tokenGenerator: SecureTokenGenerator,
     private val galleryInviteUrlResolver: GalleryInviteUrlResolver,

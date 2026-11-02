@@ -32,7 +32,7 @@ class AdminCouponService(
     private val codes: CouponCodes,
     private val clock: Clock,
 ) {
-    /** 관리자가 코드 한 개를 발급한다. 원문은 이 응답에서만 제공하고 감사 로그에도 남기지 않는다. */
+    /** 관리자가 코드 한 개를 발급한다. 원문은 이 응답에서만 제공한다. */
     @Transactional
     fun issue(actorAdminId: Long, request: IssueProCouponRequest): IssueProCouponResponse {
         requireActiveAdmin(actorAdminId)

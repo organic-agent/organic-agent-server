@@ -1,6 +1,5 @@
 package com.soma.wes.admin.resource.repository
 
-import com.soma.wes.admin.audit.support.AdminAuditSanitizer
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.trash.repository.purgeObjectKeysSql
 import org.springframework.jdbc.core.simple.JdbcClient
@@ -16,7 +15,6 @@ import tools.jackson.databind.ObjectMapper
 class AdminCascadeTrashRepository(
     private val jdbcClient: JdbcClient,
     private val objectMapper: ObjectMapper,
-    private val auditSanitizer: AdminAuditSanitizer,
 ) {
 
     fun isLastOwnerOfAnyStudio(userId: Long): Boolean {
@@ -154,10 +152,6 @@ class AdminCascadeTrashRepository(
         deletedAt: ZonedDateTime,
         restoreUntil: ZonedDateTime,
     ): Long {
-        val canonicalRootLabel = requireNotNull(
-            auditSanitizer.canonicalTargetLabel(rootType.auditTargetType, rootId.toString(), rootLabel),
-        )
-
         return jdbcClient.sql(
             """
             INSERT INTO admin_trash_batches (
@@ -166,7 +160,7 @@ class AdminCascadeTrashRepository(
             )
             VALUES (
                 :rootType, :rootId, :rootLabel, :actorAdminId,
-                left('ADMIN #' || CAST(:actorAdminId AS TEXT), 64), '',
+                (SELECT username FROM admin_accounts WHERE id = :actorAdminId), '',
                 'ACTIVE', :deletedAt, :restoreUntil, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             RETURNING id
@@ -174,7 +168,7 @@ class AdminCascadeTrashRepository(
         )
             .param("rootType", rootType.name)
             .param("rootId", rootId)
-            .param("rootLabel", canonicalRootLabel)
+            .param("rootLabel", rootLabel)
             .param("actorAdminId", actorAdminId)
             .param("deletedAt", deletedAt.toOffsetDateTime())
             .param("restoreUntil", restoreUntil.toOffsetDateTime())
@@ -1119,7 +1113,6 @@ class AdminCascadeTrashRepository(
         val rootLabel: String,
         val actorAdminId: Long?,
         val actorUsername: String?,
-
         val status: String,
         val deletedAt: ZonedDateTime,
         val restoreUntil: ZonedDateTime,
