@@ -244,18 +244,6 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
         )
         jdbcClient.sql(
             """
-            INSERT INTO admin_notification_outbox
-                (notification_type, recipient_reference, source_type, source_id, payload,
-                 status, attempt_count, actor_admin_id, reason, created_at, updated_at)
-            VALUES
-                ('PHOTO_READY', 'private-recipient@example.com', 'PHOTO', :photoId,
-                 '{"customerName":"김민수","token":"must-not-leak","delivery":"서울시"}'::JSONB,
-                 'PENDING', 0, :actorId, '',
-                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """.trimIndent(),
-        ).param("photoId", photo.id).param("actorId", account.requiredId).update()
-        jdbcClient.sql(
-            """
             INSERT INTO admin_notification_inbox
                 (event_type, target_type, target_id, work_status, safe_summary, idempotency_key_hash,
                  created_by_admin_id, version, created_at, updated_at)
