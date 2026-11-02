@@ -56,7 +56,6 @@ class AdminNotificationInboxControllerTest @Autowired constructor(
             actor.requiredId,
             AdminResourceType.USER,
             CreateAdminResourceRequest(
-                "인박스 대상",
                 mapOf(
                     "provider" to "GOOGLE",
                     "providerId" to "notification-inbox-target",

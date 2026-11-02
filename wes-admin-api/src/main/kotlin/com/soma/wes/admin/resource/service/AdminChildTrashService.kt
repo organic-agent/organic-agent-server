@@ -39,7 +39,6 @@ class AdminChildTrashService(
         parentId: Long,
         expectedParentVersion: Long,
         expectedChildVersion: Long?,
-        reason: String,
     ): AdminChildTrashResult {
         repository.lockProductPurgeCoordination(type, resourceId, parentId)
         val parent = repository.lockParent(type, parentId)
@@ -76,7 +75,6 @@ class AdminChildTrashService(
             throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
         }
 
-        val sanitizedReason = sanitizer.canonicalOperatorReason(reason)
         val restoreUntil = deletedAt.plus(trashProperties.retention)
         val id = try {
             repository.create(
@@ -84,7 +82,6 @@ class AdminChildTrashService(
                 resourceId = resourceId,
                 parentId = parentId,
                 actorAdminId = actorAdminId,
-                reason = sanitizedReason,
                 deletedAt = deletedAt,
                 restoreUntil = restoreUntil,
             )
@@ -100,7 +97,6 @@ class AdminChildTrashService(
                 parentId = parentId,
                 actorAdminId = actorAdminId,
                 actorUsername = null,
-                reason = sanitizedReason,
                 status = "ACTIVE",
                 deletedAt = deletedAt,
                 restoreUntil = restoreUntil,
@@ -204,7 +200,6 @@ class AdminChildTrashService(
         parentId = row.parentId,
         status = row.status,
         actorUsername = row.actorUsername,
-        reason = row.reason,
         deletedAt = row.deletedAt,
         restoreUntil = row.restoreUntil,
         purgeEligibleAt = row.restoreUntil,

@@ -2,7 +2,6 @@ package com.soma.wes.admin.controller
 
 import com.soma.wes.admin.controller.docs.AdminAccountControllerDocs
 import com.soma.wes.admin.domain.AdminLoginUser
-import com.soma.wes.admin.dto.request.AdminReasonRequest
 import com.soma.wes.admin.dto.request.ChangeAdminStatusRequest
 import com.soma.wes.admin.dto.request.CreateAdminAccountRequest
 import com.soma.wes.admin.dto.response.AdminAccountListResponse
@@ -64,10 +63,9 @@ class AdminAccountController(
     override fun unlock(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable adminId: Long,
-        @Valid @RequestBody request: AdminReasonRequest,
         servletRequest: HttpServletRequest,
     ): ResponseEntity<AdminAccountResponse> {
-        val result = adminAccountService.unlock(loginUser.id, adminId, request, servletRequest.remoteAddr)
+        val result = adminAccountService.unlock(loginUser.id, adminId, servletRequest.remoteAddr)
 
         return ResponseEntity.ok(result)
     }
@@ -76,13 +74,11 @@ class AdminAccountController(
     override fun issueTemporaryPassword(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable adminId: Long,
-        @Valid @RequestBody request: AdminReasonRequest,
         servletRequest: HttpServletRequest,
     ): ResponseEntity<AdminTemporaryPasswordResponse> {
         val result = adminAccountService.issueTemporaryPassword(
             actorAdminId = loginUser.id,
             targetAdminId = adminId,
-            request = request,
             sourceAddress = servletRequest.remoteAddr,
         )
 

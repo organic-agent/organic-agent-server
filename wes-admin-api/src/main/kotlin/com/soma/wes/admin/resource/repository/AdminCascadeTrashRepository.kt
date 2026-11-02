@@ -151,14 +151,13 @@ class AdminCascadeTrashRepository(
         rootType: AdminResourceType,
         rootId: Long,
         rootLabel: String,
-        reason: String,
         deletedAt: ZonedDateTime,
         restoreUntil: ZonedDateTime,
     ): Long {
         val canonicalRootLabel = requireNotNull(
             auditSanitizer.canonicalTargetLabel(rootType.auditTargetType, rootId.toString(), rootLabel),
         )
-        val canonicalReason = auditSanitizer.sanitizeStoredReason(reason)
+
         return jdbcClient.sql(
             """
             INSERT INTO admin_trash_batches (
@@ -167,7 +166,7 @@ class AdminCascadeTrashRepository(
             )
             VALUES (
                 :rootType, :rootId, :rootLabel, :actorAdminId,
-                left('ADMIN #' || CAST(:actorAdminId AS TEXT), 64), :reason,
+                left('ADMIN #' || CAST(:actorAdminId AS TEXT), 64), '',
                 'ACTIVE', :deletedAt, :restoreUntil, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             RETURNING id
@@ -177,7 +176,6 @@ class AdminCascadeTrashRepository(
             .param("rootId", rootId)
             .param("rootLabel", canonicalRootLabel)
             .param("actorAdminId", actorAdminId)
-            .param("reason", canonicalReason)
             .param("deletedAt", deletedAt.toOffsetDateTime())
             .param("restoreUntil", restoreUntil.toOffsetDateTime())
             .query { rs, _ -> rs.getLong("id") }
@@ -957,7 +955,7 @@ class AdminCascadeTrashRepository(
             next_purge_attempt_at = NULL,
             root_label = root_type || ' #' || root_id,
             actor_username = NULL,
-            reason = 'reasonCategory=UNSPECIFIED operatorReasonProvided=false',
+            reason = '',
             failure_code = NULL, updated_at = CURRENT_TIMESTAMP
         WHERE id = :batchId AND status = 'PURGING'
         """.trimIndent(),
@@ -993,7 +991,6 @@ class AdminCascadeTrashRepository(
         rootLabel = rs.getString("root_label"),
         actorAdminId = rs.getLong("actor_admin_id").takeUnless { rs.wasNull() },
         actorUsername = rs.getString("actor_username"),
-        reason = rs.getString("reason"),
         status = rs.getString("status"),
         deletedAt = dateTime(rs, "deleted_at")!!,
         restoreUntil = dateTime(rs, "restore_until")!!,
@@ -1122,7 +1119,7 @@ class AdminCascadeTrashRepository(
         val rootLabel: String,
         val actorAdminId: Long?,
         val actorUsername: String?,
-        val reason: String,
+
         val status: String,
         val deletedAt: ZonedDateTime,
         val restoreUntil: ZonedDateTime,

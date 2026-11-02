@@ -125,7 +125,7 @@ class AdminProductChildTrashRestoreTest @Autowired constructor(
         resourceService.create(
             actorId,
             type,
-            CreateAdminResourceRequest("제품 휴지통 복원 테스트 데이터 생성", fields),
+            CreateAdminResourceRequest(fields),
             "127.0.0.1",
         )
 

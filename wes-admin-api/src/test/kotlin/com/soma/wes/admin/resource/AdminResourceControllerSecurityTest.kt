@@ -218,7 +218,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
         fun create(type: AdminResourceType, fields: Map<String, Any?>) = adminResourceService.create(
             account.requiredId,
             type,
-            CreateAdminResourceRequest("[TEST_OPERATION] 컨텍스트 마스킹 준비", fields),
+            CreateAdminResourceRequest(fields),
             "127.0.0.1",
         )
         val user = create(
@@ -250,7 +250,7 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             VALUES
                 ('PHOTO_READY', 'private-recipient@example.com', 'PHOTO', :photoId,
                  '{"customerName":"김민수","token":"must-not-leak","delivery":"서울시"}'::JSONB,
-                 'PENDING', 0, :actorId, 'reasonCategory=TEST_OPERATION operatorReasonProvided=true',
+                 'PENDING', 0, :actorId, '',
                  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """.trimIndent(),
         ).param("photoId", photo.id).param("actorId", account.requiredId).update()
@@ -320,7 +320,6 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             account.requiredId,
             AdminResourceType.STUDIO,
             CreateAdminResourceRequest(
-                "[TEST_OPERATION] 대리보기 스튜디오 준비",
                 mapOf(
                     "ownerUserId" to userId,
                     "name" to "대리보기 스튜디오",
@@ -335,7 +334,6 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             account.requiredId,
             AdminResourceType.GALLERY,
             CreateAdminResourceRequest(
-                "[TEST_OPERATION] 대리보기 갤러리 준비",
                 mapOf("workspaceId" to studio.id, "title" to "대리보기 갤러리"),
             ),
             "127.0.0.1",
@@ -344,7 +342,6 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             account.requiredId,
             AdminResourceType.PHOTO,
             CreateAdminResourceRequest(
-                "[TEST_OPERATION] 대리보기 사진 준비",
                 mapOf(
                     "galleryId" to gallery.id,
                     "storageKey" to "galleries/${gallery.id}/impersonation-secret.jpg",
@@ -366,7 +363,6 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             account.requiredId,
             AdminResourceType.COLLABORATION,
             CreateAdminResourceRequest(
-                "[TEST_OPERATION] 협업 준비",
                 mapOf(
                     "galleryId" to gallery.id,
                     "name" to "가족 의견",
@@ -378,7 +374,6 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             account.requiredId,
             AdminResourceType.RETOUCH_REQUEST,
             CreateAdminResourceRequest(
-                "[TEST_OPERATION] 보정 준비",
                 mapOf("galleryId" to gallery.id, "roundNo" to 1),
             ),
             "127.0.0.1",
@@ -592,7 +587,6 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             account.requiredId,
             AdminResourceType.USER,
             CreateAdminResourceRequest(
-                "[TEST_OPERATION] 스튜디오 소유자 준비",
                 mapOf("provider" to "GOOGLE", "providerId" to "impersonation-owner", "nickname" to "소유자"),
             ),
             "127.0.0.1",
@@ -601,7 +595,6 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             account.requiredId,
             AdminResourceType.USER,
             CreateAdminResourceRequest(
-                "[TEST_OPERATION] 스튜디오 구성원 준비",
                 mapOf("provider" to "KAKAO", "providerId" to "impersonation-member", "nickname" to "구성원"),
             ),
             "127.0.0.1",
@@ -610,7 +603,6 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             account.requiredId,
             AdminResourceType.STUDIO,
             CreateAdminResourceRequest(
-                "[TEST_OPERATION] 구성원 대리보기 스튜디오 준비",
                 mapOf("ownerUserId" to owner.id, "name" to "공동 운영 스튜디오", "galleryUrl" to "member-view"),
             ),
             "127.0.0.1",
@@ -619,7 +611,6 @@ class AdminResourceControllerSecurityTest @Autowired constructor(
             account.requiredId,
             AdminResourceType.GALLERY,
             CreateAdminResourceRequest(
-                "[TEST_OPERATION] 구성원 대리보기 갤러리 준비",
                 mapOf("workspaceId" to studio.id, "title" to "구성원 접근 갤러리"),
             ),
             "127.0.0.1",

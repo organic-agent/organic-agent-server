@@ -62,9 +62,6 @@ data class AdminResourceSectionPageInfo(
 enum class AdminPhotoAccessMode { PREVIEW, VIEW, DOWNLOAD }
 
 data class AdminPhotoAccessRequest(
-    @field:NotBlank
-    @field:Size(max = 500)
-    val reason: String,
     val mode: AdminPhotoAccessMode,
 )
 
@@ -81,9 +78,6 @@ enum class AdminRetouchArtifactType { ANNOTATION, RESULT }
 enum class AdminRetouchArtifactAccessMode { VIEW, DOWNLOAD }
 
 data class AdminRetouchArtifactAccessRequest(
-    @field:NotBlank
-    @field:Size(max = 500)
-    val reason: String,
     val mode: AdminRetouchArtifactAccessMode,
 )
 
@@ -99,39 +93,22 @@ data class AdminRetouchArtifactAccessResponse(
 )
 
 data class CreateAdminResourceRequest(
-    @field:NotBlank
-    @field:Size(max = 500)
-    val reason: String,
     val fields: Map<String, Any?>,
 )
 
 data class UpdateAdminResourceRequest(
-    @field:NotBlank
-    @field:Size(max = 500)
-    val reason: String,
     @field:PositiveOrZero
     val expectedVersion: Long,
     val fields: Map<String, Any?>,
 )
 
 data class ChangeAdminResourceStateRequest(
-    @field:NotBlank
-    @field:Size(max = 500)
-    val reason: String,
     @field:PositiveOrZero
     val expectedVersion: Long,
 )
 
-data class AdminReasonRequest(
-    @field:NotBlank
-    @field:Size(max = 500)
-    val reason: String,
-)
 
 data class AdminReprocessRequest(
-    @field:NotBlank
-    @field:Size(max = 500)
-    val reason: String,
     @field:PositiveOrZero
     val expectedVersion: Long,
     @field:NotBlank
@@ -234,7 +211,6 @@ data class AdminTrashBatchResponse(
     val rootLabel: String,
     val status: String,
     val actorUsername: String?,
-    val reason: String,
     val deletedAt: ZonedDateTime,
     val restoreUntil: ZonedDateTime,
     val purgeEligibleAt: ZonedDateTime,
@@ -264,7 +240,6 @@ data class AdminChildTrashResponse(
     val parentId: Long,
     val status: String,
     val actorUsername: String?,
-    val reason: String,
     val deletedAt: ZonedDateTime,
     val restoreUntil: ZonedDateTime,
     val purgeEligibleAt: ZonedDateTime,

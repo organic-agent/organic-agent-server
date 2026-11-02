@@ -1,6 +1,5 @@
 package com.soma.wes.admin.impersonation.service
 
-import com.soma.wes.admin.audit.domain.AdminAuditAction
 import com.soma.wes.admin.audit.domain.AdminAuditTargetType
 import com.soma.wes.admin.audit.support.AdminAuditSanitizer
 import com.soma.wes.admin.domain.AdminLoginUser
@@ -60,7 +59,7 @@ class AdminImpersonationService(
             targetLabel = requireNotNull(
                 sanitizer.canonicalTargetLabel(auditTargetType, request.targetId.toString(), null),
             ),
-            reason = sanitizer.operatorReason(AdminAuditAction.READ_ONLY_IMPERSONATION_STARTED, request.reason),
+
             // IP는 요청 trace와 운영 로그로만 추적하고 장기 세션 행에는 저장하지 않는다.
             sourceAddress = null,
             correlationId = currentRequestCorrelationId(),

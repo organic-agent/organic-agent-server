@@ -24,7 +24,6 @@ class AdminIdempotencyStore(
         targetType: AdminAuditTargetType,
         targetId: String,
         targetLabel: String?,
-        reason: String,
         sourceAddress: String?,
         before: Map<String, Any?>,
     ): Reservation {

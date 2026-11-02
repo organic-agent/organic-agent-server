@@ -13,11 +13,6 @@ data class CreateAdminAccountRequest(
 
     @field:NotBlank
     @field:Size(max = AdminAccount.DISPLAY_NAME_MAX_LENGTH)
-    @field:Schema(description = "감사 이력과 화면에 표시할 관리자 이름")
+    @field:Schema(description = "화면에 표시할 관리자 이름")
     val displayName: String,
-
-    @field:NotBlank
-    @field:Size(max = 500)
-    @field:Schema(description = "계정 생성 사유")
-    val reason: String,
 )

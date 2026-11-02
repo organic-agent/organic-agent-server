@@ -96,7 +96,7 @@ class AdminChildTrashServiceTest @Autowired constructor(
                 parentId = collaboration.id,
                 expectedParentVersion = collaboration.version,
                 expectedChildVersion = null,
-                reason = "claim 중 댓글 삭제",
+
             )
         }.isInstanceOfSatisfying(AdminException::class.java) {
             assertThat(it.errorCode).isEqualTo(AdminErrorCode.TRASH_BATCH_CONFLICT)
@@ -127,7 +127,7 @@ class AdminChildTrashServiceTest @Autowired constructor(
             parentId = collaboration.id,
             expectedParentVersion = collaboration.version,
             expectedChildVersion = null,
-            reason = "[CUSTOMER_REQUEST] 문의 private@example.com 댓글 삭제",
+
         )
 
         listOf(commentTrash).forEach { trash ->
@@ -138,7 +138,7 @@ class AdminChildTrashServiceTest @Autowired constructor(
             assertThat(childTrashStatus(trash.trashId)).isEqualTo("ACTIVE")
         }
         assertThat(childTrashReason(commentTrash.trashId))
-            .isEqualTo("reasonCategory=CUSTOMER_REQUEST operatorReasonProvided=true")
+            .isEqualTo("")
             .doesNotContain("private@example.com", "문의")
         val listed = service.list().associateBy { it.id }.getValue(commentTrash.trashId)
         assertThat(listed.actorUsername).isEqualTo("ADMIN #${graph.actorId}")
@@ -182,14 +182,14 @@ class AdminChildTrashServiceTest @Autowired constructor(
             parentId = collaboration.id,
             expectedParentVersion = collaboration.version,
             expectedChildVersion = null,
-            reason = "댓글 선삭제",
+
         )
         val currentParent = resourceService.get(AdminResourceType.COLLABORATION, collaboration.id)
         cascadeTrashService.delete(
             graph.actorId,
             AdminResourceType.COLLABORATION,
             collaboration.id,
-            ChangeAdminResourceStateRequest("부모 연쇄 삭제", currentParent.version),
+            ChangeAdminResourceStateRequest(currentParent.version),
             "127.0.0.1",
         )
 
@@ -255,7 +255,7 @@ class AdminChildTrashServiceTest @Autowired constructor(
             parentId = retouch.id,
             expectedParentVersion = retouch.version,
             expectedChildVersion = null,
-            reason = "보정 항목 삭제",
+
         )
 
         jdbcClient.sql(
@@ -284,7 +284,6 @@ class AdminChildTrashServiceTest @Autowired constructor(
         assertThat(childTrashStatus(trash.trashId)).isEqualTo("PURGED")
         assertThat(photoStorage.deletedKeys())
             .contains("annotations/child-purge.png", "results/child-purge.jpg", pendingArtifactKey)
-
     }
 
     @Test
@@ -343,7 +342,7 @@ class AdminChildTrashServiceTest @Autowired constructor(
             parentId = retouch.id,
             expectedParentVersion = retouch.version,
             expectedChildVersion = null,
-            reason = "공유 키 보정 항목 삭제",
+
         )
         jdbcClient.sql(
             "UPDATE admin_child_trash_records SET restore_until = CURRENT_TIMESTAMP - INTERVAL '1 minute' WHERE id = :id",
@@ -386,7 +385,7 @@ class AdminChildTrashServiceTest @Autowired constructor(
             parentId = collaboration.id,
             expectedParentVersion = collaboration.version,
             expectedChildVersion = null,
-            reason = "경쟁 조건 검증용 좋아요 삭제",
+
         )
         val restoreParentVersion = resourceService.get(AdminResourceType.COLLABORATION, collaboration.id).version
 
@@ -630,7 +629,7 @@ class AdminChildTrashServiceTest @Autowired constructor(
                 )
                 SELECT 'COLLAB_COMMENT', comment.id, 'COLLABORATION', :sessionId, :actorId,
                        (SELECT username FROM admin_accounts WHERE id = :actorId),
-                       'reasonCategory=TEST_OPERATION operatorReasonProvided=true',
+                       '',
                        'ACTIVE', comment.deleted_at, CURRENT_TIMESTAMP - INTERVAL '1 minute',
                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                 FROM inserted_comments comment
@@ -673,7 +672,7 @@ class AdminChildTrashServiceTest @Autowired constructor(
         return resourceService.create(
             actorId,
             type,
-            CreateAdminResourceRequest("테스트 데이터 생성", normalized),
+            CreateAdminResourceRequest(normalized),
             "127.0.0.1",
         )
     }
