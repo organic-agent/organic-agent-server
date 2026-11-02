@@ -72,7 +72,6 @@ class AdminCascadeTrashPurgeFinalizer(
     fun finalize(claimed: BatchRow) {
         val current = repository.find(claimed.id) ?: throw AdminException(AdminErrorCode.TRASH_BATCH_NOT_FOUND)
         if (current.status != "PURGING") throw AdminException(AdminErrorCode.TRASH_BATCH_CONFLICT)
-        repository.expireRevisionRestorePayloads(current.id)
         repository.deleteOperationalPayloads(current.id)
         if (repository.deleteRoot(current) != 1) throw AdminException(AdminErrorCode.TRASH_BATCH_CONFLICT)
         if (repository.markPurged(current.id) != 1) throw AdminException(AdminErrorCode.TRASH_BATCH_CONFLICT)

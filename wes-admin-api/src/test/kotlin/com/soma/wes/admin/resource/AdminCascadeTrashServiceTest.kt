@@ -284,7 +284,7 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             .containsEntry("selectionRevisionCount", 1L)
             .containsEntry("photoStorageMetadataCount", 2L)
             .containsEntry("retouchStorageMetadataCount", 2L)
-        assertThat(batch.relationshipFacts.getValue("entityRevisionCount")).isZero()
+        assertThat(batch.relationshipFacts).doesNotContainKey("entityRevisionCount")
         assertThat(deletedAt("photos", activePhoto.id)).isNotNull()
         assertThat(deletedAt("gallery_members", galleryMemberId)).isNotNull()
         val preexistingDeletedAt = deletedAt("photos", alreadyTrashedPhoto.id)
