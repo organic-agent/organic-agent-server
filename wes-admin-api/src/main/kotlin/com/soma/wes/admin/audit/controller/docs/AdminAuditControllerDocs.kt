@@ -3,7 +3,6 @@ package com.soma.wes.admin.audit.controller.docs
 import com.soma.wes.admin.audit.domain.AdminAuditAction
 import com.soma.wes.admin.audit.domain.AdminAuditOutcome
 import com.soma.wes.admin.audit.domain.AdminAuditTargetType
-import com.soma.wes.admin.audit.dto.request.AdminRevisionRestoreRequest
 import com.soma.wes.admin.audit.dto.response.AdminAuditLogDetailResponse
 import com.soma.wes.admin.audit.dto.response.AdminAuditLogResponse
 import com.soma.wes.admin.audit.dto.response.AdminEntityRevisionResponse
@@ -43,11 +42,4 @@ interface AdminAuditControllerDocs {
         targetId: String,
     ): ResponseEntity<List<AdminEntityRevisionResponse>>
 
-    @Operation(summary = "7일 이내 리비전 상태로 복원")
-    fun restoreRevision(
-        loginUser: AdminLoginUser,
-        revisionId: Long,
-        request: AdminRevisionRestoreRequest,
-        servletRequest: jakarta.servlet.http.HttpServletRequest,
-    ): ResponseEntity<AdminAuditLogDetailResponse>
 }

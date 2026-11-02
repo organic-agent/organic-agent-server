@@ -4,23 +4,17 @@ import com.soma.wes.admin.audit.controller.docs.AdminAuditControllerDocs
 import com.soma.wes.admin.audit.domain.AdminAuditAction
 import com.soma.wes.admin.audit.domain.AdminAuditOutcome
 import com.soma.wes.admin.audit.domain.AdminAuditTargetType
-import com.soma.wes.admin.audit.dto.request.AdminRevisionRestoreRequest
 import com.soma.wes.admin.audit.dto.response.AdminAuditLogDetailResponse
 import com.soma.wes.admin.audit.dto.response.AdminAuditLogResponse
 import com.soma.wes.admin.audit.dto.response.AdminEntityRevisionResponse
 import com.soma.wes.admin.audit.service.AdminAuditQueryService
-import com.soma.wes.admin.audit.service.AdminRevisionRestoreService
 import com.soma.wes.admin.domain.AdminLoginUser
 import com.soma.wes.global.page.PageResponse
-import jakarta.servlet.http.HttpServletRequest
-import jakarta.validation.Valid
 import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
-import org.springframework.web.bind.annotation.PostMapping
-import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
@@ -31,7 +25,6 @@ import java.util.UUID
 @RequestMapping("/internal/admin/v1/audit-logs")
 class AdminAuditController(
     private val queryService: AdminAuditQueryService,
-    private val restoreService: AdminRevisionRestoreService,
 ) : AdminAuditControllerDocs {
 
     @GetMapping
@@ -82,19 +75,4 @@ class AdminAuditController(
     ): ResponseEntity<List<AdminEntityRevisionResponse>> =
         ResponseEntity.ok(queryService.getRevisions(targetType, targetId))
 
-    @PostMapping("/revisions/{revisionId}/restore")
-    override fun restoreRevision(
-        @AuthenticationPrincipal loginUser: AdminLoginUser,
-        @PathVariable revisionId: Long,
-        @Valid @RequestBody request: AdminRevisionRestoreRequest,
-        servletRequest: HttpServletRequest,
-    ): ResponseEntity<AdminAuditLogDetailResponse> {
-        val auditLogId = restoreService.restore(
-            actorAdminId = loginUser.id,
-            revisionId = revisionId,
-            request = request,
-            sourceAddress = servletRequest.remoteAddr,
-        )
-        return ResponseEntity.ok(queryService.getDetail(auditLogId))
-    }
 }
