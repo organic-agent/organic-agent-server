@@ -1,6 +1,5 @@
 package com.soma.wes.admin.resource.repository
 
-import com.soma.wes.admin.audit.support.AdminAuditSanitizer
 import com.soma.wes.admin.resource.domain.AdminChildTrashType
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import org.springframework.jdbc.core.simple.JdbcClient
@@ -14,7 +13,6 @@ import java.time.ZonedDateTime
 @Repository
 class AdminChildTrashRepository(
     private val jdbcClient: JdbcClient,
-    private val auditSanitizer: AdminAuditSanitizer,
 ) {
 
     /** product claim과 같은 advisory mutex를 parent row보다 먼저 잡아 child mutation 경쟁을 직렬화한다. */
@@ -327,7 +325,7 @@ class AdminChildTrashRepository(
             )
             VALUES (
                 :resourceType, :resourceId, :parentType, :parentId, :actorAdminId,
-                left('ADMIN #' || CAST(:actorAdminId AS TEXT), 64),
+                (SELECT username FROM admin_accounts WHERE id = :actorAdminId),
                 '', 'ACTIVE', :deletedAt, :restoreUntil, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             RETURNING id
@@ -566,7 +564,6 @@ class AdminChildTrashRepository(
         val parentId: Long,
         val actorAdminId: Long?,
         val actorUsername: String?,
-
         val status: String,
         val deletedAt: ZonedDateTime,
         val restoreUntil: ZonedDateTime,

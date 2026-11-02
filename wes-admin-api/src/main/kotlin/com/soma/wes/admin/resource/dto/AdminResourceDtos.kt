@@ -107,7 +107,6 @@ data class ChangeAdminResourceStateRequest(
     val expectedVersion: Long,
 )
 
-
 data class AdminReprocessRequest(
     @field:PositiveOrZero
     val expectedVersion: Long,
@@ -159,7 +158,6 @@ data class AdminSystemSettingsResponse(
     val featureFlags: Map<String, Boolean>,
     val grafanaConfigured: Boolean,
     val lokiConfigured: Boolean,
-    val secretsMasked: Boolean = true,
     val mutable: Boolean = false,
 )
 

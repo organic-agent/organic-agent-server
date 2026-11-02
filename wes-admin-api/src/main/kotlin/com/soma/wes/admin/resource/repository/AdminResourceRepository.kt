@@ -638,7 +638,7 @@ class AdminResourceRepository(
             version = rs.getLong("version"),
             label = rs.getString("label"),
             deleted = rs.getBoolean("deleted"),
-            fields = definition.fields.associate { field -> field.name to field.read(rs, objectMapper) },
+            fields = definition.responseFields.associate { field -> field.name to field.read(rs, objectMapper) },
             createdAt = zonedDateTime(rs, "created_at"),
             updatedAt = zonedDateTime(rs, "updated_at"),
         )
@@ -661,6 +661,8 @@ class AdminResourceRepository(
         val createSupported: Boolean = true,
         val updateSupported: Boolean = true,
     ) {
+        val responseFields: List<FieldDefinition> = fields.filterNot { it.name == "collabToken" }
+
         val summarySql: String = """
             SELECT '${type.name}' AS resource_type,
                    $idColumn AS id,
@@ -680,7 +682,7 @@ class AdminResourceRepository(
                    ${softDeleteColumn?.let { "$it IS NOT NULL" } ?: "FALSE"} AS deleted,
                    created_at,
                    updated_at,
-                   ${fields.joinToString { it.selectExpression }}
+                   ${responseFields.joinToString { it.selectExpression }}
             FROM $table
             WHERE $idColumn = :id
         """.trimIndent()
@@ -701,7 +703,6 @@ class AdminResourceRepository(
         val minNumber: Long? = null,
         val maxNumber: Long? = null,
         val allowedValues: Set<String> = emptySet(),
-        val masked: Boolean = false,
         val readExpression: String? = null,
         val readColumn: String = column,
     ) {
@@ -710,7 +711,6 @@ class AdminResourceRepository(
 
         fun read(rs: ResultSet, objectMapper: ObjectMapper): Any? {
             val raw = rs.getObject(readColumn)
-            if (masked && raw != null) return MASKED
             return when (kind) {
                 FieldKind.REVOKED -> raw != null
                 FieldKind.DATE_TIME -> raw?.let { rs.getObject(readColumn, OffsetDateTime::class.java) }
@@ -776,8 +776,7 @@ class AdminResourceRepository(
     )
 
     companion object {
-        private const val MASKED = "[MASKED]"
-        private const val REDACTED = "[REDACTED]"
+
         private val EMAIL = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
         private val LEGACY_DIRECT_TRASH_TYPES = setOf(
             AdminResourceType.GALLERY,
@@ -795,7 +794,7 @@ class AdminResourceRepository(
                 searchExpression = "CONCAT_WS(' ', nickname, email, provider)",
                 fields = listOf(
                     FieldDefinition("provider", "provider", FieldKind.ENUM, requiredOnCreate = true, updateAllowed = false, allowedValues = setOf("GOOGLE", "NAVER", "KAKAO")),
-                    FieldDefinition("providerId", "provider_id", FieldKind.STRING, requiredOnCreate = true, updateAllowed = false, maxLength = 255, masked = true),
+                    FieldDefinition("providerId", "provider_id", FieldKind.STRING, requiredOnCreate = true, updateAllowed = false, maxLength = 255),
                     FieldDefinition("nickname", "nickname", FieldKind.STRING, requiredOnCreate = true, maxLength = 50),
                     FieldDefinition("email", "email", FieldKind.EMAIL, nullable = true, maxLength = 255),
                     FieldDefinition("suspendedAt", "suspended_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
@@ -941,12 +940,12 @@ class AdminResourceRepository(
                 searchExpression = "CONCAT_WS(' ', original_file_name, status, gallery_id, content_type)",
                 fields = listOf(
                     FieldDefinition("galleryId", "gallery_id", FieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
-                    FieldDefinition("storageKey", "storage_key", FieldKind.STRING, requiredOnCreate = true, updateAllowed = false, maxLength = 500, masked = true),
+                    FieldDefinition("storageKey", "storage_key", FieldKind.STRING, requiredOnCreate = true, updateAllowed = false, maxLength = 500),
                     FieldDefinition("originalFileName", "original_file_name", FieldKind.STRING, requiredOnCreate = true, updateAllowed = false, maxLength = 255),
                     FieldDefinition("contentType", "content_type", FieldKind.STRING, requiredOnCreate = true, updateAllowed = false, maxLength = 100),
                     FieldDefinition("displayOrder", "display_order", FieldKind.INT, minNumber = 0),
                     FieldDefinition("status", "status", FieldKind.ENUM, allowedValues = setOf("PENDING", "UPLOADED")),
-                    FieldDefinition("previewKey", "preview_key", FieldKind.STRING, createAllowed = false, updateAllowed = false, nullable = true, masked = true),
+                    FieldDefinition("previewKey", "preview_key", FieldKind.STRING, createAllowed = false, updateAllowed = false, nullable = true),
                     FieldDefinition("uploadUrlExpiresAt", "upload_url_expires_at", FieldKind.DATE_TIME, nullable = true),
                     FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                 ),
@@ -1071,7 +1070,7 @@ class AdminResourceRepository(
                 fields = listOf(
                     FieldDefinition("galleryId", "gallery_id", FieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
                     FieldDefinition("name", "name", FieldKind.STRING, requiredOnCreate = true, maxLength = 100),
-                    FieldDefinition("collabToken", "collab_token", FieldKind.STRING, createAllowed = false, updateAllowed = false, maxLength = 255, masked = true),
+                    FieldDefinition("collabToken", "collab_token", FieldKind.STRING, createAllowed = false, updateAllowed = false, maxLength = 255),
                     FieldDefinition(
                         "revoked",
                         "revoked_at",

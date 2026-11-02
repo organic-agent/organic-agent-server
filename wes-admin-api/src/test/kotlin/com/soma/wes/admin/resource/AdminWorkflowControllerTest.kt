@@ -100,7 +100,7 @@ class AdminWorkflowControllerTest @Autowired constructor(
         """
         {
           "action": "SET_STUDIO_RETOUCH_CAPABILITY",
-          "reason": "고객 요청에 따른 보정 기능 활성화",
+
           "expectedVersion": 0,
           "idempotencyKey": "workflow-controller-001",
           "confirm": $confirm,

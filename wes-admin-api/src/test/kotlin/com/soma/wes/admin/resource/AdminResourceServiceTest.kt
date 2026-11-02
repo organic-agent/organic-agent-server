@@ -28,7 +28,7 @@ class AdminResourceServiceTest @Autowired constructor(
 ) {
 
     @Test
-    fun `허용한 필드만 생성 수정하며 비밀값을 마스킹한다`() {
+    fun `허용한 필드만 생성 수정하며 운영 필드 원문을 반환한다`() {
         val actor = adminAccountFixture.관리자("resource-owner")
 
         val created = service.create(
@@ -46,7 +46,7 @@ class AdminResourceServiceTest @Autowired constructor(
         )
 
         assertThat(created.version).isZero()
-        assertThat(created.fields["providerId"]).isEqualTo("[MASKED]")
+        assertThat(created.fields["providerId"]).isEqualTo("provider-secret-value")
         assertThat(created.fields["email"]).isEqualTo("private@example.com")
 
         val updated = service.update(
@@ -185,14 +185,14 @@ class AdminResourceServiceTest @Autowired constructor(
             "127.0.0.1",
         )
 
-        assertThat(collaboration.fields["collabToken"]).isEqualTo("[MASKED]")
-        assertThat(service.get(AdminResourceType.COLLABORATION, collaboration.id).fields["collabToken"])
-            .isEqualTo("[MASKED]")
+        assertThat(collaboration.fields).doesNotContainKey("collabToken")
+        assertThat(service.get(AdminResourceType.COLLABORATION, collaboration.id).fields)
+            .doesNotContainKey("collabToken")
         val raw = jdbcClient.sql("SELECT collab_token FROM collab_sessions WHERE id = :id")
             .param("id", collaboration.id)
             .query { rs, _ -> rs.getString(1) }
             .single()
-        assertThat(raw).isNotBlank().isNotEqualTo("[MASKED]")
+        assertThat(raw).isNotBlank()
     }
 
     @Test
@@ -242,9 +242,9 @@ class AdminResourceServiceTest @Autowired constructor(
             "127.0.0.1",
         )
 
-        assertThat(photo.fields["storageKey"]).isEqualTo("[MASKED]")
+        assertThat(photo.fields["storageKey"]).isEqualTo("galleries/${gallery.id}/all-resource.jpg")
         assertThat(selection.fields["status"]).isEqualTo("SELECTING")
-        assertThat(collaboration.fields["collabToken"]).isEqualTo("[MASKED]")
+        assertThat(collaboration.fields).doesNotContainKey("collabToken")
         assertThat(retouch.fields["status"]).isEqualTo("DRAFTING")
 
         val found = service.search("전체 리소스", emptySet(), page = 0, size = 100)
