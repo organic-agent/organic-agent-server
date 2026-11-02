@@ -1,7 +1,5 @@
 package com.soma.wes
 
-import com.soma.wes.admin.audit.domain.AdminAuditLog
-import com.soma.wes.admin.audit.repository.AdminAuditLogRepository
 import com.soma.wes.admin.domain.AdminAccount
 import com.soma.wes.admin.repository.AdminAccountRepository
 import com.soma.wes.analysis.domain.AnalysisJob
@@ -36,7 +34,6 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories
 @EntityScan(
     basePackageClasses = [
         AdminAccount::class,
-        AdminAuditLog::class,
         ConceptFolder::class,
         Gallery::class,
         ProCoupon::class,
@@ -52,7 +49,6 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories
 @EnableJpaRepositories(
     basePackageClasses = [
         AdminAccountRepository::class,
-        AdminAuditLogRepository::class,
         DetailFolderRepository::class,
         DetailFolderAssignmentRepository::class,
         GalleryRepository::class,

@@ -1,6 +1,5 @@
 package com.soma.wes.admin.dto.request
 
-import com.soma.wes.admin.domain.AdminAuthEvent
 import com.soma.wes.billing.domain.CouponUsagePolicy
 import com.soma.wes.billing.domain.ProCoupon
 import io.swagger.v3.oas.annotations.media.Schema
@@ -9,7 +8,7 @@ import jakarta.validation.constraints.Size
 import java.time.ZonedDateTime
 
 data class IssueProCouponRequest(
-    @field:NotBlank @field:Size(max = AdminAuthEvent.REASON_MAX_LENGTH)
+    @field:NotBlank @field:Size(max = 500)
     @field:Schema(description = "코드 발급 사유") val reason: String,
     @field:Size(max = ProCoupon.MAX_CODE_LENGTH)
     @field:Schema(description = "직접 지정할 코드. 영문·숫자·하이픈·밑줄, 대소문자 구분 없음. null이면 자동 생성")

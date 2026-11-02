@@ -1,9 +1,5 @@
 package com.soma.wes.admin.resource.service
 
-import com.soma.wes.admin.audit.domain.AdminAuditAction
-import com.soma.wes.admin.audit.domain.AdminAuditOutcome
-import com.soma.wes.admin.audit.domain.AdminAuditTargetType
-import com.soma.wes.admin.audit.service.AdminAuditService
 import com.soma.wes.admin.resource.dto.AdminRetouchArtifactAccessMode
 import com.soma.wes.admin.resource.dto.AdminRetouchArtifactAccessRequest
 import com.soma.wes.admin.resource.dto.AdminRetouchArtifactAccessResponse
@@ -21,7 +17,6 @@ class AdminRetouchArtifactAccessService(
     private val repository: AdminRetouchArtifactRepository,
     private val photoStorage: PhotoStorage,
     private val storageProperties: StorageProperties,
-    private val auditService: AdminAuditService,
     private val clock: Clock,
 ) {
 
@@ -36,25 +31,11 @@ class AdminRetouchArtifactAccessService(
         sourceAddress: String?,
     ): AdminRetouchArtifactAccessResponse {
         val artifact = repository.access(roundId, retouchPhotoId, artifactType)
-        val action = when (request.mode) {
-            AdminRetouchArtifactAccessMode.VIEW -> AdminAuditAction.RETOUCH_ARTIFACT_VIEWED
-            AdminRetouchArtifactAccessMode.DOWNLOAD -> AdminAuditAction.RETOUCH_ARTIFACT_DOWNLOADED
-        }
         val url = when (request.mode) {
             AdminRetouchArtifactAccessMode.VIEW -> photoStorage.presignView(artifact.storageKey)
             AdminRetouchArtifactAccessMode.DOWNLOAD ->
                 photoStorage.presignDownload(artifact.storageKey, artifact.originalFileName)
         }
-        auditService.recordEvent(
-            action = action,
-            outcome = AdminAuditOutcome.SUCCESS,
-            actorAdminId = actorAdminId,
-            targetType = AdminAuditTargetType.RETOUCH_REQUEST,
-            targetId = "RA-$roundId-$retouchPhotoId-${artifactType.name}",
-            targetLabel = "${artifactType.name.lowercase()}:${artifact.originalFileName}",
-            reason = request.reason.trim(),
-            sourceAddress = sourceAddress,
-        )
         val ttl = when (request.mode) {
             AdminRetouchArtifactAccessMode.VIEW -> storageProperties.viewUrlTtl
             AdminRetouchArtifactAccessMode.DOWNLOAD -> storageProperties.originalUrlTtl

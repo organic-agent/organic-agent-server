@@ -1,14 +1,12 @@
 package com.soma.wes.admin.service
 
 import com.soma.wes.admin.domain.AdminAccountStatus
-import com.soma.wes.admin.domain.AdminEventType
 import com.soma.wes.admin.dto.request.AdminLoginRequest
 import com.soma.wes.admin.dto.request.ChangeAdminPasswordRequest
 import com.soma.wes.admin.exception.AdminAuthenticationException
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.fixture.AdminAccountFixture
 import com.soma.wes.admin.repository.AdminAccountRepository
-import com.soma.wes.admin.repository.AdminAuthEventRepository
 import com.soma.wes.admin.repository.AdminSessionRepository
 import com.soma.wes.admin.support.AdminSessionTokenHasher
 import com.soma.wes.support.IntegrationTest
@@ -27,7 +25,6 @@ class AdminAuthServiceTest @Autowired constructor(
     private val adminAccountFixture: AdminAccountFixture,
     private val adminAccountRepository: AdminAccountRepository,
     private val adminSessionRepository: AdminSessionRepository,
-    private val adminAuthEventRepository: AdminAuthEventRepository,
     private val tokenHasher: AdminSessionTokenHasher,
 ) {
 
@@ -51,9 +48,7 @@ class AdminAuthServiceTest @Autowired constructor(
             assertThat(result.response.absoluteExpiresAt)
                 .isBetween(before.plusHours(7).plusMinutes(59), before.plusHours(8).plusMinutes(1))
             assertThat(result.response.admin.mustChangePassword).isTrue()
-            val authEvent = adminAuthEventRepository.findAll().single()
-            assertThat(authEvent.eventType).isEqualTo(AdminEventType.LOGIN_SUCCEEDED)
-            assertThat(authEvent.sourceAddress).isNull()
+
         }
 
         @Test
@@ -79,8 +74,7 @@ class AdminAuthServiceTest @Autowired constructor(
                 .isInstanceOf(AdminAuthenticationException::class.java)
                 .extracting("errorCode")
                 .isEqualTo(AdminErrorCode.SESSION_INVALID)
-            assertThat(adminAuthEventRepository.findAll().map { it.eventType })
-                .contains(AdminEventType.ACCOUNT_LOCKED)
+
         }
 
         @Test
@@ -123,8 +117,7 @@ class AdminAuthServiceTest @Autowired constructor(
             .isEqualTo(AdminErrorCode.SESSION_INVALID)
         assertThat(adminSessionService.authenticate(changed.rawSessionToken).isAuthenticated).isTrue()
         assertThat(changed.response.admin.mustChangePassword).isFalse()
-        assertThat(adminAuthEventRepository.findAll().map { it.eventType })
-            .contains(AdminEventType.PASSWORD_CHANGED)
+
     }
 
     private fun login(

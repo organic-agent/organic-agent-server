@@ -1,7 +1,6 @@
 package com.soma.wes.admin.resource
 
 import com.soma.wes.admin.audit.domain.AdminAuditTargetType
-import com.soma.wes.admin.audit.repository.AdminAuditLogRepository
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.fixture.AdminAccountFixture
@@ -19,7 +18,6 @@ import org.springframework.jdbc.core.simple.JdbcClient
 class AdminIdempotencyStoreTest @Autowired constructor(
     private val store: AdminIdempotencyStore,
     private val adminAccountFixture: AdminAccountFixture,
-    private val auditLogRepository: AdminAuditLogRepository,
     private val jdbcClient: JdbcClient,
 ) {
 
@@ -33,7 +31,7 @@ class AdminIdempotencyStoreTest @Autowired constructor(
         val duplicate = reserve(actor.requiredId, "request-hash")
         assertThat(duplicate.existing?.status).isEqualTo("COMPLETED")
         assertThat(duplicate.existing?.resultPayload).isEqualTo("17")
-        assertThat(auditLogRepository.count()).isEqualTo(1)
+
     }
 
     @Test
@@ -71,7 +69,7 @@ class AdminIdempotencyStoreTest @Autowired constructor(
             .isInstanceOfSatisfying(AdminException::class.java) {
                 assertThat(it.errorCode).isEqualTo(AdminErrorCode.IDEMPOTENCY_KEY_REUSED)
             }
-        assertThat(auditLogRepository.count()).isEqualTo(1)
+
     }
 
     private fun reserve(actorAdminId: Long, requestHash: String) =

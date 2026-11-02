@@ -1,8 +1,6 @@
 package com.soma.wes.admin.resource.repository
 
-import com.soma.wes.admin.audit.domain.AdminAuditAction
 import com.soma.wes.admin.audit.domain.AdminAuditTargetType
-import com.soma.wes.admin.audit.service.AdminAuditService
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.global.filter.HttpLoggingFilter
@@ -15,7 +13,6 @@ import org.springframework.transaction.annotation.Transactional
 @Repository
 class AdminIdempotencyStore(
     private val jdbcClient: JdbcClient,
-    private val auditService: AdminAuditService,
 ) {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -59,17 +56,6 @@ class AdminIdempotencyStore(
             return Reservation(existing = existing)
         }
 
-        auditService.recordMutation(
-            action = AdminAuditAction.REPROCESS_REQUESTED,
-            actorAdminId = actorAdminId,
-            targetType = targetType,
-            targetId = targetId,
-            targetLabel = targetLabel,
-            reason = reason,
-            sourceAddress = sourceAddress,
-            before = before,
-            after = before + ("reprocessStatus" to "PENDING"),
-        )
         return Reservation(existing = null)
     }
 

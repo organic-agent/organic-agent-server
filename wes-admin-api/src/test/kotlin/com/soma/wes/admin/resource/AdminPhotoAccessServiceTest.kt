@@ -1,7 +1,5 @@
 package com.soma.wes.admin.resource
 
-import com.soma.wes.admin.audit.domain.AdminAuditAction
-import com.soma.wes.admin.audit.service.AdminAuditService
 import com.soma.wes.admin.resource.dto.AdminPhotoAccessMode
 import com.soma.wes.admin.resource.dto.AdminPhotoAccessRequest
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
@@ -15,8 +13,6 @@ import java.time.ZoneId
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
-import org.mockito.kotlin.eq
-import org.mockito.kotlin.isNull
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
@@ -26,7 +22,6 @@ class AdminPhotoAccessServiceTest {
 
     private val repository = mock<AdminResourceRepository>()
     private val photoStorage = mock<PhotoStorage>()
-    private val auditService = mock<AdminAuditService>()
     private val clock = Clock.fixed(Instant.parse("2026-08-25T12:00:00Z"), ZoneId.of("Asia/Seoul"))
     private val properties = StorageProperties(
         bucket = "test-bucket",
@@ -39,7 +34,7 @@ class AdminPhotoAccessServiceTest {
         pendingRecheckEvery = Duration.ofMinutes(10),
         pendingGiveUpAfter = Duration.ofHours(24),
     )
-    private val service = AdminPhotoAccessService(repository, photoStorage, properties, auditService, clock)
+    private val service = AdminPhotoAccessService(repository, photoStorage, properties, clock)
 
     @Test
     fun `원본 다운로드는 attachment 서명 URL을 발급하고 감사 로그를 남긴다`() {
@@ -58,20 +53,6 @@ class AdminPhotoAccessServiceTest {
 
         assertThat(response.url).isEqualTo("https://signed.example/download")
         assertThat(response.expiresAt.toInstant()).isEqualTo(Instant.parse("2026-08-25T13:00:00Z"))
-        verify(auditService).recordEvent(
-            action = eq(AdminAuditAction.ORIGINAL_PHOTO_DOWNLOADED),
-            outcome = any(),
-            actorAdminId = eq(9),
-            actorUsername = isNull(),
-            targetType = any(),
-            targetId = eq("42"),
-            targetLabel = eq("wedding final.jpg"),
-            reason = eq("고객 요청 원본 확인"),
-            sourceAddress = eq("127.0.0.1"),
-            changedFields = any(),
-            correlationId = isNull(),
-            impersonationSessionId = isNull(),
-        )
     }
 
     @Test
@@ -97,19 +78,5 @@ class AdminPhotoAccessServiceTest {
         assertThat(response.url).isEqualTo("https://signed.example/preview")
         assertThat(response.expiresAt.toInstant()).isEqualTo(Instant.parse("2026-08-25T12:15:00Z"))
         verify(photoStorage, never()).presignOriginal(any())
-        verify(auditService).recordEvent(
-            action = eq(AdminAuditAction.PHOTO_PREVIEW_VIEWED),
-            outcome = any(),
-            actorAdminId = eq(9),
-            actorUsername = isNull(),
-            targetType = any(),
-            targetId = eq("43"),
-            targetLabel = eq("wedding preview.jpg"),
-            reason = eq("앨범 목업 배치 확인"),
-            sourceAddress = eq("127.0.0.1"),
-            changedFields = any(),
-            correlationId = isNull(),
-            impersonationSessionId = isNull(),
-        )
     }
 }

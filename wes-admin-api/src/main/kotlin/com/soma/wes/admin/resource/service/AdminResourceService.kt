@@ -1,7 +1,5 @@
 package com.soma.wes.admin.resource.service
 
-import com.soma.wes.admin.audit.domain.AdminAuditAction
-import com.soma.wes.admin.audit.service.AdminAuditService
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.domain.AdminResourceType
@@ -19,7 +17,6 @@ import org.springframework.transaction.annotation.Transactional
 @Service
 class AdminResourceService(
     private val repository: AdminResourceRepository,
-    private val auditService: AdminAuditService,
     private val photoRestoreQuota: AdminPhotoRestoreQuota,
 ) {
 
@@ -48,17 +45,6 @@ class AdminResourceService(
     ): AdminResourceResponse = translateIntegrityFailure {
         val creation = repository.create(type, request.fields)
         val created = requireResource(type, creation.id)
-        auditService.recordMutation(
-            action = AdminAuditAction.RESOURCE_CREATED,
-            actorAdminId = actorAdminId,
-            targetType = type.auditTargetType,
-            targetId = creation.id.toString(),
-            targetLabel = created.label,
-            reason = request.reason.trim(),
-            sourceAddress = sourceAddress,
-            before = null,
-            after = created.snapshot(),
-        )
         created
     }
 
@@ -76,17 +62,6 @@ class AdminResourceService(
             throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
         }
         val after = requireResource(type, id)
-        auditService.recordMutation(
-            action = AdminAuditAction.RESOURCE_UPDATED,
-            actorAdminId = actorAdminId,
-            targetType = type.auditTargetType,
-            targetId = id.toString(),
-            targetLabel = after.label,
-            reason = request.reason.trim(),
-            sourceAddress = sourceAddress,
-            before = before.snapshot(),
-            after = after.snapshot(),
-        )
         after
     }
 
@@ -103,18 +78,6 @@ class AdminResourceService(
         if (repository.delete(type, id, request.expectedVersion) == 0) {
             throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
         }
-        val after = repository.find(type, id)
-        auditService.recordMutation(
-            action = AdminAuditAction.RESOURCE_DELETED,
-            actorAdminId = actorAdminId,
-            targetType = type.auditTargetType,
-            targetId = id.toString(),
-            targetLabel = before.label,
-            reason = request.reason.trim(),
-            sourceAddress = sourceAddress,
-            before = before.snapshot(),
-            after = after?.snapshot(),
-        )
     }
 
     @Transactional
@@ -135,17 +98,6 @@ class AdminResourceService(
             throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
         }
         val after = requireResource(type, id)
-        auditService.recordMutation(
-            action = AdminAuditAction.RESOURCE_RESTORED,
-            actorAdminId = actorAdminId,
-            targetType = type.auditTargetType,
-            targetId = id.toString(),
-            targetLabel = after.label,
-            reason = request.reason.trim(),
-            sourceAddress = sourceAddress,
-            before = before.snapshot(),
-            after = after.snapshot(),
-        )
         after
     }
 
@@ -157,15 +109,6 @@ class AdminResourceService(
             throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
         }
     }
-
-    private fun AdminResourceResponse.snapshot(): Map<String, Any?> =
-        linkedMapOf(
-            "type" to type.name,
-            "id" to id,
-            "version" to version,
-            "label" to label,
-            "deleted" to deleted,
-        ) + fields
 
     private inline fun <T> translateIntegrityFailure(block: () -> T): T =
         try {

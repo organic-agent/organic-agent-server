@@ -1,15 +1,11 @@
 package com.soma.wes.admin.security
 
-import com.soma.wes.admin.audit.service.AdminMutationFailureAuditService
-import com.soma.wes.admin.audit.service.AdminResourceReadAuditService
 import com.soma.wes.admin.impersonation.service.AdminImpersonationService
 import com.soma.wes.admin.service.AdminSessionService
 import com.soma.wes.security.exception.CustomAccessDeniedHandler
 import com.soma.wes.security.exception.CustomAuthenticationEntryPoint
 import com.soma.wes.security.filter.AdminImpersonationReadOnlyFilter
-import com.soma.wes.security.filter.AdminMutationFailureAuditFilter
 import com.soma.wes.security.filter.AdminMutationHeaderFilter
-import com.soma.wes.security.filter.AdminReadAuditFilter
 import com.soma.wes.security.filter.AdminSessionAuthFilter
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -32,8 +28,6 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 class AdminSecurityConfig(
     private val adminSessionService: AdminSessionService,
     private val adminImpersonationService: AdminImpersonationService,
-    private val adminMutationFailureAuditService: AdminMutationFailureAuditService,
-    private val adminResourceReadAuditService: AdminResourceReadAuditService,
     private val authenticationEntryPoint: CustomAuthenticationEntryPoint,
     private val accessDeniedHandler: CustomAccessDeniedHandler,
 ) {
@@ -63,12 +57,6 @@ class AdminSecurityConfig(
             }
 
             addFilterBefore<UsernamePasswordAuthenticationFilter>(
-                AdminMutationFailureAuditFilter(adminMutationFailureAuditService),
-            )
-            addFilterAfter<AdminMutationFailureAuditFilter>(
-                AdminReadAuditFilter(adminResourceReadAuditService),
-            )
-            addFilterAfter<AdminReadAuditFilter>(
                 AdminSessionAuthFilter(adminSessionService, authenticationEntryPoint),
             )
             addFilterAfter<AdminSessionAuthFilter>(
