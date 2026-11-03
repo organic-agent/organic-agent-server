@@ -35,12 +35,14 @@ import com.soma.wes.support.IntegrationTest
 import com.soma.wes.trash.repository.TrashRepository
 import com.soma.wes.user.fixture.UserFixture
 import jakarta.persistence.EntityManagerFactory
+import java.nio.charset.StandardCharsets
 import java.time.Clock
 import java.time.ZonedDateTime
 import java.util.concurrent.Callable
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import javax.sql.DataSource
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.assertj.core.api.SoftAssertions.assertSoftly
@@ -49,6 +51,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.core.io.ClassPathResource
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
@@ -80,6 +83,7 @@ class PhotoExclusionServiceTest @Autowired constructor(
     private val transactions: PlatformTransactionManager,
     private val entityManagers: EntityManagerFactory,
     private val clock: Clock,
+    private val dataSource: DataSource,
 ) {
     @Nested
     @DisplayName("셀렉에서 제외하고 복원할 때")
@@ -328,6 +332,32 @@ class PhotoExclusionServiceTest @Autowired constructor(
                 softly.assertThat(photos.list(gallery.galleryId, gallery.member.requiredId, null, 5, 0, 200).totalCount).isEqualTo(1L)
                 softly.assertThat(photoRepository.countAgainstQuota(gallery.galleryId, clock.instant())).isEqualTo(501L)
             }
+        }
+
+        @Test
+        fun `제외 마이그레이션 재실행은 데이터와 변경 번호를 보존하고 트리거를 중복하지 않는다`() {
+            // given
+            val gallery = galleries.멤버와_열린_갤러리()
+            val ids = photoFixture.업로드된_사진(gallery.galleryId, count = 1)
+            val request = ChangePhotoExclusionsRequest(photoIds = ids)
+            exclusions.exclude(gallery.galleryId, gallery.member.requiredId, request)
+            val before = sync.get(gallery.galleryId, gallery.member.requiredId)
+            val hidden = exclusions.list(gallery.galleryId, gallery.member.requiredId, 0, 200).contents.single()
+            val migration = ClassPathResource("db/migration/R__photo_exclusions.sql")
+                .getContentAsString(StandardCharsets.UTF_8)
+
+            // when
+            dataSource.connection.use { connection ->
+                connection.createStatement().use { statement -> statement.execute(migration) }
+            }
+
+            // then
+            assertThat(sync.get(gallery.galleryId, gallery.member.requiredId)).isEqualTo(before)
+            val repeated = exclusions.list(gallery.galleryId, gallery.member.requiredId, 0, 200).contents.single()
+            assertThat(repeated.excludedBy).isEqualTo(hidden.excludedBy)
+            assertThat(repeated.excludedAt).isEqualTo(hidden.excludedAt)
+            exclusions.restore(gallery.galleryId, gallery.member.requiredId, request)
+            assertThat(sync.get(gallery.galleryId, gallery.member.requiredId).exclusionRevision).isEqualTo(before.exclusionRevision + 1)
         }
 
         @Test
