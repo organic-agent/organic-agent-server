@@ -319,7 +319,7 @@ class PhotoSelectionService(
         }
 
         val requested = photoIds.toSet()
-        val photos = photoRepository.findAllByGalleryIdAndIdIn(galleryId, requested)
+        val photos = photoRepository.findAllByGalleryIdAndIdInAndExcludedAtIsNull(galleryId, requested)
         if (photos.size != requested.size) {
             throw SelectionException(SelectionErrorCode.PHOTO_NOT_IN_GALLERY)
         }
@@ -362,7 +362,7 @@ class PhotoSelectionService(
             return emptyList()
         }
 
-        val photos = photoRepository.findAllByGalleryIdAndIdIn(galleryId, items.map { it.photoId })
+        val photos = photoRepository.findAllByGalleryIdAndIdInAndExcludedAtIsNull(galleryId, items.map { it.photoId })
         val photoResponsesById = photoViewAssembler.toResponses(photos).associateBy { it.photoId }
         val resultKeyByRetouchPhotoId = retouchResultLoader
             .findResults(galleryId, items.mapNotNull { it.retouchPhotoId })

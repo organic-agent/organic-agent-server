@@ -16,6 +16,7 @@ interface SelectionSyncControllerDocs {
             부부 참여자가 화면을 보고 있는 동안 3초 간격으로 조회한다. 작가·게스트는 접근할 수 없다.
             selectionRevision이 달라지면 기존 선택 앨범 GET을, ratingRevision이 달라지면
             GET /api/v1/galleries/{galleryId}/photo-ratings를 호출한다. 변경이 없으면 목록을 다시 읽지 않는다.
+            exclusionRevision이 달라지면 일반 사진·제외 사진 목록, 폴더, 공유 정보를 다시 읽는다.
             담기·빼기·재담기·제출·철회와 별점 변경·삭제, 사진의 휴지통 이동·복원도 감지한다.
 
             처음 진입하거나 재연결할 때는 이 번호를 먼저 읽고 선택·별점 전체 목록을 읽는다.

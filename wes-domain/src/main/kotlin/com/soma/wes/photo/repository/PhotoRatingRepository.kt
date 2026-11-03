@@ -14,7 +14,7 @@ interface PhotoRatingRepository : JpaRepository<PhotoRating, Long> {
      */
     fun findAllByPhotoIdIn(photoIds: Collection<Long>): List<PhotoRating>
 
-    @Query("select r from PhotoRating r, Photo p where p.id = r.photoId and p.galleryId = :galleryId order by r.photoId")
+    @Query("select r from PhotoRating r, Photo p where p.id = r.photoId and p.galleryId = :galleryId and p.excludedAt is null order by r.photoId")
     fun findAllByGalleryId(galleryId: Long): List<PhotoRating>
 
     /** 별점을 지운다. 매긴 적 없는 사진이면 0을 돌려준다 — 그 경우도 호출자가 성공으로 본다. */

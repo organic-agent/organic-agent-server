@@ -36,7 +36,7 @@ class AiFolderSetReader(
         val conceptById = concepts.associateBy { it.requiredId }
         val details = detailFolderRepository.findAllByConceptFolderIdIn(conceptById.keys)
             .sortedWith(compareBy({ it.conceptFolderId }, { it.sortOrder }, { it.requiredId }))
-        val photoIdsByDetail = assignmentRepository.findAllByDetailFolderIdIn(details.map { it.requiredId })
+        val photoIdsByDetail = assignmentRepository.findVisibleByDetailFolderIdIn(details.map { it.requiredId })
             .groupBy({ it.detailFolderId }, { it.photoId })
         return details.map { detail ->
             FolderSetDetailDto(
@@ -57,7 +57,7 @@ class AiFolderSetReader(
             detailFolderId = detail.requiredId,
             conceptName = concept.name,
             detailName = detail.name,
-            photoIds = assignmentRepository.findAllByDetailFolderId(detail.requiredId).map { it.photoId },
+            photoIds = assignmentRepository.findVisibleByDetailFolderId(detail.requiredId).map { it.photoId },
         )
     }
 

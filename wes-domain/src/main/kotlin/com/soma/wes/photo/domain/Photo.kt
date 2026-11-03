@@ -111,6 +111,15 @@ class Photo(
     var deletedAt: ZonedDateTime? = null
         protected set
 
+    /** 셀렉 제외는 보관·분석·용량에 영향을 주지 않아 전역 SQLRestriction에 넣지 않는다. */
+    @Column(name = "excluded_at")
+    var excludedAt: ZonedDateTime? = null
+        protected set
+
+    @Column(name = "excluded_by")
+    var excludedBy: Long? = null
+        protected set
+
     fun moveToTrash(at: ZonedDateTime) {
         deletedAt = at
     }

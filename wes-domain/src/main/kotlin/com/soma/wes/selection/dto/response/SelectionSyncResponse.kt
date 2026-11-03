@@ -9,4 +9,6 @@ data class SelectionSyncResponse(
 
     @field:Schema(description = "이전 값과 다르면 별점 전체 목록으로 화면 상태를 교체한다. 삭제도 번호가 증가한다", example = "7")
     val ratingRevision: Long,
+    @field:Schema(description = "이전 값과 다르면 일반·제외 사진, 폴더, 공유 정보를 다시 읽는다", example = "3")
+    val exclusionRevision: Long = 0,
 )

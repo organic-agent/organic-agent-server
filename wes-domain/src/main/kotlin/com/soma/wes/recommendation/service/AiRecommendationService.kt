@@ -217,7 +217,7 @@ class AiRecommendationService(
         currentFolderByPhoto: Map<Long, Long>,
     ): List<AiRecommendationResponse> {
         val photoIds = recommendations.map { it.photoId }
-        val photos = photoRepository.findAllByGalleryIdAndIdIn(galleryId, photoIds)
+        val photos = photoRepository.findAllByGalleryIdAndIdInAndExcludedAtIsNull(galleryId, photoIds)
         val photoResponseById = photoViewAssembler.toResponses(photos).associateBy { it.photoId }
         val selectedPhotoIds = photoSelectionItemRepository.findAllBySelectionId(selectionId)
             .map { it.photoId }

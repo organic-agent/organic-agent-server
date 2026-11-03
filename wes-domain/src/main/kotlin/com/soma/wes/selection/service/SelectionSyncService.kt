@@ -20,6 +20,7 @@ class SelectionSyncService(
         return SelectionSyncResponse(
             selectionRevision = revision.selectionRevision,
             ratingRevision = revision.ratingRevision,
+            exclusionRevision = revision.exclusionRevision,
         )
     }
 }

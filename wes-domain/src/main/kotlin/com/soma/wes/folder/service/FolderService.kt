@@ -105,14 +105,14 @@ class FolderService(
             ?: throw FolderException(FolderErrorCode.DETAIL_NOT_FOUND)
         detail.rename(request.name)
         activityRecorder.recordGallery(galleryId)
-        return DetailFolderResponse.of(detail, assignmentRepository.findAllByDetailFolderId(detailId).map { it.photoId })
+        return DetailFolderResponse.of(detail, assignmentRepository.findVisibleByDetailFolderId(detailId).map { it.photoId })
     }
 
     /** 작가의 "AI로 폴더 만들기" 버튼. 인가만 여기서 하고 물질화는 [AiFolderMaterializer]가 같은 트랜잭션에서 한다. */
     @Transactional
     fun createFromAnalysis(galleryId: Long, userId: Long): List<ConceptFolderResponse> {
         galleryAccessPolicy.requireUploader(galleryId, userId)
-        return aiFolderMaterializer.materialize(galleryId)
+        return viewAssembler.withoutExcluded(galleryId, aiFolderMaterializer.materialize(galleryId))
     }
 
     @Transactional(readOnly = true)
@@ -171,7 +171,7 @@ class FolderService(
         source.hide(now)
 
         activityRecorder.recordGallery(galleryId)
-        val photoIds = assignmentRepository.findAllByDetailFolderId(target.requiredId).map { it.photoId }
+        val photoIds = assignmentRepository.findVisibleByDetailFolderId(target.requiredId).map { it.photoId }
         return MergeDetailFolderResponse(mergeId = merge.requiredId, target = DetailFolderResponse.of(target, photoIds))
     }
 
@@ -206,9 +206,9 @@ class FolderService(
         merge.markUndone(now)
 
         activityRecorder.recordGallery(galleryId)
-        val targetPhotoIds = assignmentRepository.findAllByDetailFolderId(target.requiredId).map { it.photoId }
+        val targetPhotoIds = assignmentRepository.findVisibleByDetailFolderId(target.requiredId).map { it.photoId }
         return UndoDetailFolderMergeResponse(
-            source = DetailFolderResponse.of(source, movedAssignments.map { it.photoId }),
+            source = DetailFolderResponse.of(source, assignmentRepository.findVisibleByDetailFolderId(source.requiredId).map { it.photoId }),
             target = DetailFolderResponse.of(target, targetPhotoIds),
         )
     }
@@ -258,7 +258,7 @@ class FolderService(
     private fun validatePhotoIds(galleryId: Long, requested: List<Long>): List<Long> {
         if (requested.isEmpty()) throw FolderException(FolderErrorCode.EMPTY_PHOTO_IDS)
         val photoIds = requested.distinct()
-        if (photoRepository.findAllByGalleryIdAndIdIn(galleryId, photoIds).size != photoIds.size) {
+        if (photoRepository.findAllByGalleryIdAndIdInAndExcludedAtIsNull(galleryId, photoIds).size != photoIds.size) {
             throw FolderException(FolderErrorCode.PHOTO_NOT_FOUND)
         }
         return photoIds

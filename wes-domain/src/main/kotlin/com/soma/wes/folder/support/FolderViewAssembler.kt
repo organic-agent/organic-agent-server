@@ -5,6 +5,7 @@ import com.soma.wes.folder.dto.response.ConceptFolderResponse
 import com.soma.wes.folder.dto.response.DetailFolderResponse
 import com.soma.wes.folder.repository.DetailFolderRepository
 import com.soma.wes.folder.repository.DetailFolderAssignmentRepository
+import com.soma.wes.photo.repository.PhotoRepository
 import org.springframework.stereotype.Component
 
 // [REFACTOR-A 2026-09-27] 신규. FolderService.list 본문과 AiFolderService.responsesOf가 같은 조립을 한 벌씩 들고 있던 것을
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Component
  */
 @Component
 class FolderViewAssembler(
+    private val photos: PhotoRepository,
     private val detailRepository: DetailFolderRepository,
     private val assignmentRepository: DetailFolderAssignmentRepository,
 ) {
@@ -26,7 +28,7 @@ class FolderViewAssembler(
         // [REFACTOR-A 2026-09-27] 빈 목록이면 IN 쿼리 둘을 보내지 않는다. 결과는 이전과 같다(빈 리스트).
         if (concepts.isEmpty()) return emptyList()
         val details = detailRepository.findAllByConceptFolderIdIn(concepts.map { it.requiredId })
-        val photoIdsByDetail = assignmentRepository.findAllByDetailFolderIdIn(details.map { it.requiredId })
+        val photoIdsByDetail = assignmentRepository.findVisibleByDetailFolderIdIn(details.map { it.requiredId })
             .groupBy({ it.detailFolderId }, { it.photoId })
         val detailsByConcept = details.groupBy { it.conceptFolderId }
         return concepts.map { concept ->
@@ -38,4 +40,14 @@ class FolderViewAssembler(
             )
         }
     }
+
+    /** AI 물질화의 원본 배정은 보존하고, 공개 응답에서만 제외 사진 id를 걷는다. */
+    fun withoutExcluded(galleryId: Long, responses: List<ConceptFolderResponse>): List<ConceptFolderResponse> {
+        if (responses.isEmpty()) return responses
+        val visible = photos.findVisibleIdsByGalleryId(galleryId).toSet()
+        return responses.map { concept ->
+            concept.copy(details = concept.details.map { detail -> detail.copy(photoIds = detail.photoIds.filter { it in visible }) })
+        }
+    }
+
 }
