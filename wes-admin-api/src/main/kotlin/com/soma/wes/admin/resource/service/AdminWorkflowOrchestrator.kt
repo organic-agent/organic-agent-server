@@ -26,6 +26,7 @@ import java.security.MessageDigest
 import java.time.Clock
 import java.time.OffsetDateTime
 import java.time.ZonedDateTime
+import java.util.HexFormat
 import java.util.TreeMap
 import org.slf4j.MDC
 import org.springframework.stereotype.Service
@@ -910,13 +911,13 @@ class AdminWorkflowService(
         )
         return MessageDigest.getInstance("SHA-256")
             .digest(objectMapper.writeValueAsString(canonical).toByteArray(StandardCharsets.UTF_8))
-            .joinToString("") { byte -> "%02x".format(byte) }
+            .let(HexFormat.of()::formatHex)
     }
 
     private fun inboxIdempotencyKeyHash(idempotencyKey: String): String =
         MessageDigest.getInstance("SHA-256")
             .digest("ADMIN_NOTIFICATION_INBOX:$idempotencyKey".toByteArray(StandardCharsets.UTF_8))
-            .joinToString("") { byte -> "%02x".format(byte) }
+            .let(HexFormat.of()::formatHex)
 
     private fun canonicalize(value: Any?): Any? = when (value) {
         is Map<*, *> -> TreeMap<String, Any?>().apply {
