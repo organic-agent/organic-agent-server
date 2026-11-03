@@ -52,11 +52,9 @@ class RetouchRefinementService(
         if (!llmClient.isEnabled) {
             return unavailable(request.text)
         }
-        if (request.photoId == null) {
-            return refineTextOnly(request.text)
-        }
+        val photoId = request.photoId ?: return refineTextOnly(request.text)
 
-        val images = images(galleryId, request) ?: return unavailable(request.text)
+        val images = images(galleryId, photoId, request) ?: return unavailable(request.text)
         return refineWithPhoto(request, images)
     }
 
@@ -72,8 +70,8 @@ class RetouchRefinementService(
     }
 
     /** 미리보기가 없거나 읽지 못하면 null — 호출자는 정제를 포기한다. */
-    private fun images(galleryId: Long, request: RefineRetouchRequest): RetouchPointImagesDto? {
-        val photo = photoLoader.loadPhotos(galleryId, listOf(request.photoId!!)).first()
+    private fun images(galleryId: Long, photoId: Long, request: RefineRetouchRequest): RetouchPointImagesDto? {
+        val photo = photoLoader.loadPhotos(galleryId, listOf(photoId)).first()
         val previewKey = photo.previewKey
         if (previewKey == null) {
             log.info("미리보기가 없어 정제를 건너뛴다: photoId={}", photo.requiredId)
@@ -91,8 +89,11 @@ class RetouchRefinementService(
     }
 
     private fun refineWithPhoto(request: RefineRetouchRequest, images: RetouchPointImagesDto): RefineRetouchResponse {
+        // crop은 좌표가 둘 다 있을 때만 만들어진다(RetouchPointImageFactory.create).
+        val x = request.x
+        val y = request.y
         val parts = buildList {
-            if (images.crop == null) {
+            if (images.crop == null || x == null || y == null) {
                 add(LlmPartDto.Text(RetouchRefinePrompt.wholePhotoLead()))
                 add(LlmPartDto.Image(images.full))
                 add(LlmPartDto.Text(RetouchRefinePrompt.textOnly(request.text)))
@@ -101,7 +102,7 @@ class RetouchRefinementService(
                 add(LlmPartDto.Image(images.full))
                 add(LlmPartDto.Text(RetouchRefinePrompt.cropLead()))
                 add(LlmPartDto.Image(images.crop))
-                add(LlmPartDto.Text(RetouchRefinePrompt.pointAndText(request.x!!, request.y!!, request.text)))
+                add(LlmPartDto.Text(RetouchRefinePrompt.pointAndText(x, y, request.text)))
             }
         }
         val response = llmClient.completeJson(

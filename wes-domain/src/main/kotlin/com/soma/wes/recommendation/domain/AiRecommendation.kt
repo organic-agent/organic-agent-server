@@ -71,5 +71,5 @@ class AiRecommendation(
     val rejectedAt: ZonedDateTime? = null
 
     val requiredId: Long
-        get() = id ?: error("아직 저장되지 않은 AiRecommendation 이다")
+        get() = checkNotNull(id) { "아직 저장되지 않은 AiRecommendation 이다" }
 }

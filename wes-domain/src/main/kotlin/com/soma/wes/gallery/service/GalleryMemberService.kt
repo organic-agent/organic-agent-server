@@ -17,6 +17,7 @@ import com.soma.wes.workspace.repository.WorkspaceRepository
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
+import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -39,7 +40,7 @@ class GalleryMemberService(
     @Transactional(readOnly = true)
     fun list(galleryId: Long, userId: Long): List<GalleryMemberResponse> {
         val gallery = galleryAccessPolicy.requireViewer(galleryId, userId)
-        val workspace = workspaceRepository.findById(gallery.workspaceId).orElse(null)
+        val workspace = workspaceRepository.findByIdOrNull(gallery.workspaceId)
         if (workspace?.type == WorkspaceType.PERSONAL) {
             val members = workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId)
             val users = userRepository.findAllById(members.map { it.userId }).associateBy { it.requiredId }
@@ -64,7 +65,7 @@ class GalleryMemberService(
         galleryAccessPolicy.requireManager(galleryId, userId)
         // 정원을 바꾸는 경로는 전부 갤러리 행을 잠그고 시작한다.
         val gallery = galleryRepository.requireWithLockById(galleryId)
-        val workspace = workspaceRepository.findById(gallery.workspaceId).orElse(null)
+        val workspace = workspaceRepository.findByIdOrNull(gallery.workspaceId)
         if (workspace?.type == WorkspaceType.PERSONAL) {
             workspaceRepository.findWithLockById(gallery.workspaceId)
             val target = workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId)
@@ -99,7 +100,7 @@ class GalleryMemberService(
     @Transactional
     fun leave(galleryId: Long, userId: Long) {
         val gallery = galleryRepository.requireWithLockById(galleryId)
-        val workspace = workspaceRepository.findById(gallery.workspaceId).orElse(null)
+        val workspace = workspaceRepository.findByIdOrNull(gallery.workspaceId)
         if (workspace?.type == WorkspaceType.PERSONAL) {
             workspaceRepository.findWithLockById(gallery.workspaceId)
             val target = workspaceMemberRepository.findByWorkspaceIdAndUserId(gallery.workspaceId, userId)

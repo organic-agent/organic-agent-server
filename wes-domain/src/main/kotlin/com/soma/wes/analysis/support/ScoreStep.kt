@@ -234,7 +234,8 @@ class ScoreStep(
     /** GPU가 없으면 바로, 있으면 워커가 [AnalysisProperties.Gpu.fallbackAfter] 동안 아무것도 내지 못했을 때. */
     private fun isFallbackDue(now: ZonedDateTime): Boolean {
         if (!isWorkerPoolActive) return true
-        val since = deliveringAt ?: run {
+        val since = deliveringAt
+        if (since == null) {
             deliveringAt = now
             return false
         }

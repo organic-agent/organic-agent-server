@@ -4,6 +4,7 @@ import com.soma.wes.folder.dto.FolderSetDetailDto
 import com.soma.wes.folder.repository.ConceptFolderRepository
 import com.soma.wes.folder.repository.DetailFolderRepository
 import com.soma.wes.folder.repository.DetailFolderAssignmentRepository
+import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
 
@@ -52,7 +53,7 @@ class AiFolderSetReader(
     @Transactional(readOnly = true)
     fun detailFolder(galleryId: Long, detailFolderId: Long): FolderSetDetailDto? {
         val detail = detailFolderRepository.findByIdAndGalleryId(detailFolderId, galleryId) ?: return null
-        val concept = conceptFolderRepository.findById(detail.conceptFolderId).orElse(null) ?: return null
+        val concept = conceptFolderRepository.findByIdOrNull(detail.conceptFolderId) ?: return null
         return FolderSetDetailDto(
             detailFolderId = detail.requiredId,
             conceptName = concept.name,

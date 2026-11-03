@@ -20,7 +20,7 @@ class OAuthRedirectUriResolver(
 
     fun resolve(configuredRedirectUri: String, requestOrigin: String?): String {
         val origin = when {
-            requestOrigin in allowedOrigins -> requestOrigin!!
+            requestOrigin != null && requestOrigin in allowedOrigins -> requestOrigin
             fallbackOrigin.isNotBlank() -> fallbackOrigin
             else -> return configuredRedirectUri
         }

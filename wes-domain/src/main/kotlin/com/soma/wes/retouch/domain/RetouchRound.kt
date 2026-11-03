@@ -70,7 +70,7 @@ class RetouchRound(
     var requestText: String? = null
 
     val requiredId: Long
-        get() = id ?: error("아직 저장되지 않은 RetouchRound 다")
+        get() = checkNotNull(id) { "아직 저장되지 않은 RetouchRound 다" }
 
     val isDrafting: Boolean
         get() = status == RetouchRoundStatus.DRAFTING

@@ -20,6 +20,7 @@ import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.domain.WorkspaceType
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository
+import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionSynchronization
@@ -128,8 +129,8 @@ class UserService(
         val deletedWorkspaces = ownedPersonalWorkspaces + ownedStudioWorkspaces
         val deletedWorkspaceIds = deletedWorkspaces.map { it.requiredId }.toSet()
 
-        memberships.filter { it.workspaceId !in deletedWorkspaceIds }.forEach { membership ->
-            val workspace = workspaceRepository.findById(membership.workspaceId).orElse(null) ?: return@forEach
+        for (membership in memberships.filter { it.workspaceId !in deletedWorkspaceIds }) {
+            val workspace = workspaceRepository.findByIdOrNull(membership.workspaceId) ?: continue
             notificationPublisher.publish(
                 userIds = workspaceMemberRepository.findAllByWorkspaceId(workspace.requiredId)
                     .filter { it.role == WorkspaceRole.OWNER && it.userId != id }.map { it.userId },
@@ -159,8 +160,8 @@ class UserService(
             )
         }
 
-        galleryMemberships.forEach { membership ->
-            val gallery = galleryRepository.findById(membership.galleryId).orElse(null) ?: return@forEach
+        for (membership in galleryMemberships) {
+            val gallery = galleryRepository.findByIdOrNull(membership.galleryId) ?: continue
             val owners = workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId)
                 .filter { it.role == WorkspaceRole.OWNER }
                 .map { it.userId }

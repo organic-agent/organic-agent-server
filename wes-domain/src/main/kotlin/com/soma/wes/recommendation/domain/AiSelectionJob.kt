@@ -86,7 +86,7 @@ class AiSelectionJob(
         protected set
 
     val requiredId: Long
-        get() = id ?: kotlin.error("아직 저장되지 않은 AiSelectionJob 이다")
+        get() = checkNotNull(id) { "아직 저장되지 않은 AiSelectionJob 이다" }
 
     /** 추천을 저장하며 라운드가 정해진 잡. 실행 중 죽었다가 다시 집으면 추천은 다시 계산하지 않고 잡만 닫는다. */
     fun assignRound(round: Int) {
