@@ -61,7 +61,16 @@ class AdminImpersonationViewRepository(
                 ?: invalidTarget()
             Viewer(viewerId, accessRole)
         }
-        else -> invalidTarget()
+        AdminResourceType.WORKSPACE,
+        AdminResourceType.PHOTO,
+        AdminResourceType.CONCEPT_FOLDER,
+        AdminResourceType.DETAIL_FOLDER,
+        AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
+        AdminResourceType.PHOTO_RATING,
+        AdminResourceType.SELECTION,
+        AdminResourceType.COLLABORATION,
+        AdminResourceType.RETOUCH_REQUEST,
+        -> invalidTarget()
     }
 
     fun view(type: AdminResourceType, targetId: Long, viewer: Viewer): AdminImpersonationViewResponse {
@@ -130,7 +139,17 @@ class AdminImpersonationViewRepository(
         val scope = when (type) {
             AdminResourceType.STUDIO -> "AND g.workspace_id = :targetId"
             AdminResourceType.GALLERY -> "AND g.id = :targetId"
-            else -> ""
+            AdminResourceType.USER,
+            AdminResourceType.WORKSPACE,
+            AdminResourceType.PHOTO,
+            AdminResourceType.CONCEPT_FOLDER,
+            AdminResourceType.DETAIL_FOLDER,
+            AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
+            AdminResourceType.PHOTO_RATING,
+            AdminResourceType.SELECTION,
+            AdminResourceType.COLLABORATION,
+            AdminResourceType.RETOUCH_REQUEST,
+            -> ""
         }
         var statement = jdbcClient.sql(
             """

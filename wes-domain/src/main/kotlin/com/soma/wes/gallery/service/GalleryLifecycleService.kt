@@ -18,6 +18,7 @@ import java.time.Clock
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import org.springframework.data.domain.PageRequest
+import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -44,7 +45,7 @@ class GalleryLifecycleService(
     fun process(galleryId: Long) {
         val gallery = galleries.findWithLockById(galleryId) ?: return
         if (gallery.stage == GalleryStage.ARCHIVED) return
-        val workspace = workspaces.findById(gallery.workspaceId).orElse(null) ?: return
+        val workspace = workspaces.findByIdOrNull(gallery.workspaceId) ?: return
         val personal = workspace.type == WorkspaceType.PERSONAL
         val now = ZonedDateTime.now(clock)
         val recipients = (workspaceMembers.findAllByWorkspaceId(gallery.workspaceId).map { it.userId } +

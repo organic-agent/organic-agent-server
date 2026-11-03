@@ -23,6 +23,7 @@ import com.soma.wes.workspace.domain.WorkspaceMember
 import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository
+import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -99,7 +100,9 @@ class StudioService(
     @Transactional(readOnly = true)
     fun get(workspaceId: Long, userId: Long): StudioResponse {
         requireStudioMember(workspaceId, userId)
-        return responseFor(studioRepository.findById(workspaceId).orElseThrow(), userId)
+        val studio = studioRepository.findByIdOrNull(workspaceId)
+            ?: error("스튜디오 멤버 확인을 지난 작업공간에 스튜디오가 없다: $workspaceId")
+        return responseFor(studio, userId)
     }
 
     @Transactional
@@ -152,7 +155,7 @@ class StudioService(
 
     @Transactional
     fun leave(workspaceId: Long, userId: Long) {
-        val studio = studioRepository.findById(workspaceId).orElse(null)
+        val studio = studioRepository.findByIdOrNull(workspaceId)
             ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
         val members = workspaceMemberRepository.findAllWithLockByWorkspaceId(workspaceId)
         val membership = members.find { it.userId == userId }
@@ -257,7 +260,8 @@ class StudioService(
         if (!workspaceMemberRepository.existsByWorkspaceIdAndUserIdAndRoleIn(workspaceId, userId, listOf(WorkspaceRole.OWNER))) {
             throw StudioException(StudioErrorCode.NOT_STUDIO_OWNER)
         }
-        val studio = studioRepository.findById(workspaceId).orElseThrow()
+        val studio = studioRepository.findByIdOrNull(workspaceId)
+            ?: error("스튜디오 멤버 확인을 지난 작업공간에 스튜디오가 없다: $workspaceId")
         deleteStudio(studio, userId)
     }
 

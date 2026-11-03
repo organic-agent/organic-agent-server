@@ -1,5 +1,8 @@
 package com.soma.wes.retouch.support
 
+import java.math.BigDecimal
+import java.math.RoundingMode
+
 /**
  * 포인트 정제 프롬프트와 출력 스키마.
  *
@@ -91,7 +94,10 @@ object RetouchRefinePrompt {
     fun cropLead() = "이미지 2: 탭한 지점 주변 확대"
 
     fun pointAndText(x: Double, y: Double, text: String) =
-        "탭 좌표(좌상단 기준 0~1): x=%.2f, y=%.2f\n요청 원문:\n%s".format(x, y, text)
+        "탭 좌표(좌상단 기준 0~1): x=${twoDecimals(x)}, y=${twoDecimals(y)}\n요청 원문:\n$text"
+
+    private fun twoDecimals(value: Double): String =
+        BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).toPlainString()
 
     fun textOnly(text: String) = "요청 원문:\n$text"
 

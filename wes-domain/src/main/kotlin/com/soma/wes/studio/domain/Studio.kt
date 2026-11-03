@@ -60,9 +60,6 @@ class Studio(
     val id: Long
         get() = workspaceId
 
-    val requiredId: Long
-        get() = workspaceId
-
     fun update(name: String, galleryUrl: String, contact: String?, description: String?) {
         validateProfile(name, contact, description)
         this.name = name.trim()

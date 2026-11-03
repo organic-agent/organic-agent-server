@@ -31,6 +31,7 @@ import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.selection.domain.PhotoSelection
 import com.soma.wes.selection.repository.PhotoSelectionRepository
+import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -249,8 +250,9 @@ class GalleryService(
         galleryAccessPolicy.requireSelectionEditor(galleryId, userId)
         val gallery = galleryRepository.requireWithLockById(galleryId)
         photoSelectionRepository.findByGalleryId(galleryId)?.requireEditable()
-        if (workspaceRepository.findById(gallery.workspaceId).orElse(null)?.type != WorkspaceType.STUDIO ||
-            gallery.maxSelectablePhotoCount == null || request.requestedCount <= gallery.maxSelectablePhotoCount!! ||
+        val maxSelectable = gallery.maxSelectablePhotoCount
+        if (workspaceRepository.findByIdOrNull(gallery.workspaceId)?.type != WorkspaceType.STUDIO ||
+            maxSelectable == null || request.requestedCount <= maxSelectable ||
             request.message.orEmpty().length > 300
         ) throw GalleryException(GalleryErrorCode.INVALID_INCREASE_REQUEST)
         notificationPublisher.publish(
@@ -269,7 +271,7 @@ class GalleryService(
     }
 
     private fun requireOperatingWorkspace(workspaceId: Long, userId: Long) {
-        val workspace = workspaceRepository.findById(workspaceId).orElse(null)
+        val workspace = workspaceRepository.findByIdOrNull(workspaceId)
             ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
         if (!workspaceMemberRepository.existsByWorkspaceIdAndUserIdAndRoleIn(
                 workspaceId,

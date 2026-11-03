@@ -108,7 +108,7 @@ class AnalysisJob(
         protected set
 
     val requiredId: Long
-        get() = id ?: kotlin.error("아직 저장되지 않은 AnalysisJob 이다")
+        get() = checkNotNull(id) { "아직 저장되지 않은 AnalysisJob 이다" }
 
     companion object {
         /** `error` 컬럼은 text지만 Lambda 쪽과 같은 길이로 자른다. */

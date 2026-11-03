@@ -7,6 +7,7 @@ import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.recommendation.domain.AiRecommendation
+import com.soma.wes.recommendation.domain.AiSelectionJob
 import com.soma.wes.recommendation.domain.AiSelectionMode
 import com.soma.wes.recommendation.dto.RecommendablePhotoDto
 import com.soma.wes.recommendation.repository.AiRecommendationRepository
@@ -17,6 +18,7 @@ import com.soma.wes.recommendation.support.FolderFitRule
 import com.soma.wes.recommendation.support.FolderQuota
 import com.soma.wes.recommendation.support.MmrSelector
 import com.soma.wes.recommendation.support.RecommendationScoring
+import com.soma.wes.selection.domain.PhotoSelection
 import com.soma.wes.selection.repository.PhotoSelectionItemRepository
 import com.soma.wes.selection.repository.PhotoSelectionRepository
 import java.time.Clock
@@ -25,6 +27,7 @@ import java.time.ZonedDateTime
 import kotlin.math.round
 import kotlin.math.sqrt
 import org.slf4j.LoggerFactory
+import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
 
@@ -59,7 +62,7 @@ class AiSelectionJobRunner(
     private val log = LoggerFactory.getLogger(javaClass)
 
     fun run(jobId: Long) {
-        val claimed = transactionTemplate.execute { aiSelectionJobRepository.claim(jobId, ZonedDateTime.now(clock)) }!!
+        val claimed = inTransaction { aiSelectionJobRepository.claim(jobId, ZonedDateTime.now(clock)) }
         if (claimed == 0) {
             log.info("AI 추천 잡을 집지 못함(이미 실행 중이거나 끝남): jobId={}", jobId)
             return
@@ -71,22 +74,26 @@ class AiSelectionJobRunner(
                 finishSavedRound(saved, timing)
                 return
             }
-            val world = timing.measure("load") { transactionTemplate.execute { load(jobId) }!! }
+            val world = timing.measure("load") { inTransaction { load(jobId) } }
             val draft = timing.measure("plan") { plan(world) }
-            val roundNo = timing.measure("persist") { transactionTemplate.execute { persistRound(world, draft) }!! }
+            val roundNo = timing.measure("persist") { inTransaction { persistRound(world, draft) } }
             transactionTemplate.execute {
-                val job = aiSelectionJobRepository.findById(jobId).orElseThrow()
+                val job = requireJob(jobId)
                 job.finish(summary(world, draft, roundNo, timing), ZonedDateTime.now(clock))
             }
             log.info("AI 추천 잡 완료: jobId={}, round={}, k={}", jobId, roundNo, draft.picks.size)
         } catch (e: Exception) {
             log.error("AI 추천 잡 실패: jobId={}", jobId, e)
             transactionTemplate.execute {
-                val job = aiSelectionJobRepository.findById(jobId).orElseThrow()
+                val job = requireJob(jobId)
                 job.fail("${e::class.simpleName}: ${e.message}", ZonedDateTime.now(clock))
             }
         }
     }
+
+    /** 값을 돌려주는 콜백이라 `execute`가 null을 내는 길은 콜백이 null을 돌려줄 때뿐이다 — 여기선 없다. */
+    private fun <T : Any> inTransaction(block: () -> T): T =
+        checkNotNull(transactionTemplate.execute { block() }) { "값을 돌려주는 트랜잭션 콜백의 결과가 null이다" }
 
     // ── 읽기 ──
 
@@ -95,9 +102,9 @@ class AiSelectionJobRunner(
      * 바뀌었어도 저장된 라운드를 그대로 두고 요약만 남겨 닫는다. 거절했거나 휴지통에 들어간 사진은 장수에서 뺀다.
      */
     private fun loadSavedRound(jobId: Long): SavedRound? {
-        val job = aiSelectionJobRepository.findById(jobId).orElseThrow()
+        val job = requireJob(jobId)
         val round = job.round ?: return null
-        val selection = photoSelectionRepository.findById(job.selectionId).orElseThrow()
+        val selection = requireSelection(job.selectionId)
         val notRejected = aiRecommendationRepository.findAllBySelectionIdAndRound(job.selectionId, round)
             .filter { it.rejectedAt == null }
         val livePhotoIds = photoRepository.findAllByGalleryIdAndIdIn(selection.galleryId, notRejected.map { it.photoId })
@@ -127,16 +134,16 @@ class AiSelectionJobRunner(
             "elapsedSeconds" to timing.elapsedSeconds(), "timing" to timing.toMap(), "recovered" to true,
         )
         transactionTemplate.execute {
-            aiSelectionJobRepository.findById(saved.jobId).orElseThrow().finish(summary, ZonedDateTime.now(clock))
+            requireJob(saved.jobId).finish(summary, ZonedDateTime.now(clock))
         }
         log.info("AI 추천 잡 복구 완료: jobId={}, round={}, k={}", saved.jobId, saved.round, k)
     }
 
     private fun load(jobId: Long): World {
-        val job = aiSelectionJobRepository.findById(jobId).orElseThrow()
-        val selection = photoSelectionRepository.findById(job.selectionId).orElseThrow()
+        val job = requireJob(jobId)
+        val selection = requireSelection(job.selectionId)
         val galleryId = selection.galleryId
-        val gallery = galleryRepository.findById(galleryId).orElseThrow()
+        val gallery = galleryRepository.findByIdOrNull(galleryId) ?: error("선택 앨범의 갤러리가 없다: gallery=$galleryId")
 
         // 갤러리 전체는 벡터 없는 요약으로 읽는다 — 점수 정규화·피사체 통계가 전체 행을 보지만 벡터는 안 본다.
         val summaryById = photoAnalysisRepository.findAllAnalyzedSummaryByGalleryId(galleryId).associateBy { it.photoId }
@@ -179,6 +186,9 @@ class AiSelectionJobRunner(
             previousRound = previousRound,
         )
     }
+
+    private fun requireSelection(selectionId: Long): PhotoSelection =
+        photoSelectionRepository.findByIdOrNull(selectionId) ?: error("AI 추천 잡의 선택 앨범이 없다: selection=$selectionId")
 
     /**
      * 벡터는 이번 라운드가 도는 사진만 읽는다 — 폴더 이상치 판정과 MMR이 폴더 안에서만 벡터를 비교하기 때문이다.
@@ -284,8 +294,8 @@ class AiSelectionJobRunner(
         val rejectedSet = world.rejected.mapNotNull { indexById[it] }.toSet()
         val coverage = linkedMapOf("pieces" to 0, "skippedPieces" to 0, "nearDuplicates" to 0, "cap" to 0, "groupExcluded" to 0)
 
-        folders.sortedByDescending { it.photoIds.size }.forEach { folder ->
-            if (folder.photoIds.isEmpty()) return@forEach
+        for (folder in folders.sortedByDescending { it.photoIds.size }) {
+            if (folder.photoIds.isEmpty()) continue
             val folderPicks = if (scoped) {
                 val allMembers = allMembersByFolder.getValue(folder.folderId)
                 val groupShots = allMembers.filter { rows[it].subjects == GROUP }.toSet()
@@ -353,7 +363,7 @@ class AiSelectionJobRunner(
     // ── 적재 ──
 
     private fun persistRound(world: World, draft: Draft): Int {
-        val job = aiSelectionJobRepository.findById(world.job.id).orElseThrow()
+        val job = requireJob(world.job.id)
         val roundNo = if (world.job.mode == AiSelectionMode.DRAFT) 1 else world.previousRound + 1
         val now = ZonedDateTime.now(clock)
         // 리셋 — 이 잡의 범위에 든 사진의 기존 추천을 지운다. 폴더 범위면 그 폴더의 지금 사진, 전체면 분석된
@@ -381,6 +391,9 @@ class AiSelectionJobRunner(
         job.assignRound(roundNo)
         return roundNo
     }
+
+    private fun requireJob(jobId: Long): AiSelectionJob =
+        aiSelectionJobRepository.findByIdOrNull(jobId) ?: error("실행 중인 AI 추천 잡이 없다: jobId=$jobId")
 
     private fun summary(world: World, draft: Draft, roundNo: Int, timing: StageTiming): Map<String, Any?> {
         return linkedMapOf(

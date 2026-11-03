@@ -11,6 +11,7 @@ import com.soma.wes.admin.resource.dto.AdminResourceResponse
 import com.soma.wes.admin.resource.dto.AdminResourceSummaryResponse
 import com.soma.wes.global.SecureTokenGenerator
 import com.soma.wes.studio.domain.Studio
+import java.time.Clock
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Repository
 import java.sql.ResultSet
@@ -24,6 +25,7 @@ class AdminResourceRepository(
     private val jdbcClient: JdbcClient,
     private val secureTokenGenerator: SecureTokenGenerator,
     private val objectMapper: ObjectMapper,
+    private val clock: Clock,
 ) {
 
     fun findPhotoOriginal(photoId: Long): PhotoOriginal? = jdbcClient.sql(
@@ -243,11 +245,32 @@ class AdminResourceRepository(
 
         val id = when (type) {
             AdminResourceType.STUDIO -> createStudio(normalized)
-            else -> insertResource(definition, normalized).also { createdId ->
+            AdminResourceType.USER,
+            AdminResourceType.WORKSPACE,
+            AdminResourceType.GALLERY,
+            AdminResourceType.PHOTO,
+            AdminResourceType.CONCEPT_FOLDER,
+            AdminResourceType.DETAIL_FOLDER,
+            AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
+            AdminResourceType.PHOTO_RATING,
+            AdminResourceType.SELECTION,
+            AdminResourceType.COLLABORATION,
+            AdminResourceType.RETOUCH_REQUEST,
+            -> insertResource(definition, normalized).also { createdId ->
                 when (type) {
                     AdminResourceType.USER -> createPersonalWorkspace(createdId, normalized.getValue("nickname").toString())
                     AdminResourceType.GALLERY -> createSelection(createdId)
-                    else -> Unit
+                    AdminResourceType.WORKSPACE,
+                    AdminResourceType.STUDIO,
+                    AdminResourceType.PHOTO,
+                    AdminResourceType.CONCEPT_FOLDER,
+                    AdminResourceType.DETAIL_FOLDER,
+                    AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
+                    AdminResourceType.PHOTO_RATING,
+                    AdminResourceType.SELECTION,
+                    AdminResourceType.COLLABORATION,
+                    AdminResourceType.RETOUCH_REQUEST,
+                    -> Unit
                 }
             }
         }
@@ -350,7 +373,8 @@ class AdminResourceRepository(
         }
         val normalized = normalizeFields(definition, fields, creating = false).toMutableMap()
         if (type == AdminResourceType.COLLABORATION && fields["revoked"] == false) {
-            normalized[definition.generatedSecretField!!] = secureTokenGenerator.generate()
+            val secretField = checkNotNull(definition.generatedSecretField) { "공유폴더 정의에 링크 토큰 필드가 없다" }
+            normalized[secretField] = secureTokenGenerator.generate()
         }
         if (normalized.isEmpty()) {
             throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
@@ -590,7 +614,17 @@ class AdminResourceRepository(
             ORDER BY id
             """.trimIndent(),
         ).param("id", id).query { rs, _ -> rs.getLong("user_id") }.list()
-        else -> throw AdminException(AdminErrorCode.RESOURCE_SUSPENSION_UNSUPPORTED)
+        AdminResourceType.WORKSPACE,
+        AdminResourceType.GALLERY,
+        AdminResourceType.PHOTO,
+        AdminResourceType.CONCEPT_FOLDER,
+        AdminResourceType.DETAIL_FOLDER,
+        AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
+        AdminResourceType.PHOTO_RATING,
+        AdminResourceType.SELECTION,
+        AdminResourceType.COLLABORATION,
+        AdminResourceType.RETOUCH_REQUEST,
+        -> throw AdminException(AdminErrorCode.RESOURCE_SUSPENSION_UNSUPPORTED)
     }
 
     fun revokeRefreshToken(userId: Long) {
@@ -613,7 +647,8 @@ class AdminResourceRepository(
         if (creating && definition.fields.any { it.requiredOnCreate && !fields.containsKey(it.name) }) {
             throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         }
-        return fields.mapValues { (name, value) -> definition.field(name).normalize(value) }
+        val now = OffsetDateTime.now(clock)
+        return fields.mapValues { (name, value) -> definition.field(name).normalize(value, now) }
     }
 
     private fun summary(rs: ResultSet): AdminResourceSummaryResponse =
@@ -714,11 +749,19 @@ class AdminResourceRepository(
                     objectMapper.readValue(rs.getString(readColumn), Map::class.java).entries
                         .associate { (key, value) -> key.toString() to value }
                 }
-                else -> raw
+                FieldKind.STRING,
+                FieldKind.EMAIL,
+                FieldKind.GALLERY_URL,
+                FieldKind.ENUM,
+                FieldKind.LONG,
+                FieldKind.INT,
+                FieldKind.DECIMAL,
+                FieldKind.BOOLEAN,
+                -> raw
             }
         }
 
-        fun normalize(value: Any?): Any? {
+        fun normalize(value: Any?, now: OffsetDateTime): Any? {
             if (value == null) {
                 if (!nullable) throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
                 return null
@@ -750,8 +793,8 @@ class AdminResourceRepository(
                     FieldKind.DATE_TIME -> OffsetDateTime.parse(value.toString())
                     FieldKind.JSON -> invalid()
                     FieldKind.REVOKED -> when (value) {
-                        is Boolean -> if (value) OffsetDateTime.now() else null
-                        is String -> if (value.toBooleanStrict()) OffsetDateTime.now() else null
+                        is Boolean -> if (value) now else null
+                        is String -> if (value.toBooleanStrict()) now else null
                         else -> invalid()
                     }
                 }

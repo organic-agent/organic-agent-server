@@ -1,6 +1,7 @@
 package com.soma.wes.admin.resource.repository
 
 import com.soma.wes.admin.resource.domain.AdminResourceType
+import java.time.Clock
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Repository
 import java.sql.ResultSet
@@ -8,6 +9,7 @@ import java.sql.ResultSet
 @Repository
 class AdminResourceContextRepository(
     private val jdbcClient: JdbcClient,
+    private val clock: Clock,
 ) {
 
     fun findRelations(type: AdminResourceType, id: Long): Set<ResourceReference> = when (type) {
@@ -663,7 +665,7 @@ class AdminResourceContextRepository(
                     rs.getObject("revoked_at") != null -> "REVOKED"
                     // 타입 없이 꺼내면 드라이버가 java.sql.Timestamp 를 돌려준다 — OffsetDateTime 으로 강제 변환하면 500 이다(#229).
                     rs.getObject("expires_at", java.time.OffsetDateTime::class.java)
-                        ?.isBefore(java.time.OffsetDateTime.now()) == true -> "EXPIRED"
+                        ?.isBefore(java.time.OffsetDateTime.now(clock)) == true -> "EXPIRED"
                     else -> "ACTIVE"
                 },
                 "expiresAt" to rs.getObject("expires_at"),

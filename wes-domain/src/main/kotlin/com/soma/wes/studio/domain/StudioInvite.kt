@@ -29,5 +29,6 @@ class StudioInvite(
     @Column(name = "used_count", nullable = false)
     var usedCount: Int = 0
 
-    val requiredId: Long get() = checkNotNull(id)
+    val requiredId: Long
+        get() = checkNotNull(id) { "아직 저장되지 않은 StudioInvite 다" }
 }
