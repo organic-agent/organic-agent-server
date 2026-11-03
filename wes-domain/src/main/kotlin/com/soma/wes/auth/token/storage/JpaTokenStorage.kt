@@ -5,6 +5,7 @@ import com.soma.wes.auth.domain.Subject
 import com.soma.wes.auth.token.TokenStorage
 import com.soma.wes.auth.token.config.JwtProperties
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -24,7 +25,7 @@ class JpaTokenStorage(
         val userId = subject.toUserId()
         val expiresAt = ZonedDateTime.now(clock).plus(jwtProperties.refreshTokenExpiration)
 
-        val entity = refreshTokenRepository.findById(userId).orElse(null)
+        val entity = refreshTokenRepository.findByIdOrNull(userId)
         if (entity == null) {
             refreshTokenRepository.save(
                 RefreshTokenEntity(userId = userId, token = refreshToken.value, expiresAt = expiresAt),
@@ -37,8 +38,7 @@ class JpaTokenStorage(
 
     @Transactional(readOnly = true)
     override fun find(subject: Subject): RefreshToken? =
-        refreshTokenRepository.findById(subject.toUserId())
-            .orElse(null)
+        refreshTokenRepository.findByIdOrNull(subject.toUserId())
             ?.takeUnless { it.isExpired(ZonedDateTime.now(clock)) }
             ?.let { RefreshToken(it.token) }
 

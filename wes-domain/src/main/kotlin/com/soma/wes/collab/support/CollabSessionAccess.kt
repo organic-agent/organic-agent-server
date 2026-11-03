@@ -13,6 +13,7 @@ import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.requireById
 import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.repository.PhotoRepository
+import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -202,6 +203,6 @@ class CollabSessionAccess(
     }
 
     private fun isPersonal(access: CollabAccessDto): Boolean =
-        workspaceRepository.findById(access.gallery.workspaceId).orElse(null)?.type ==
+        workspaceRepository.findByIdOrNull(access.gallery.workspaceId)?.type ==
             com.soma.wes.workspace.domain.WorkspaceType.PERSONAL
 }

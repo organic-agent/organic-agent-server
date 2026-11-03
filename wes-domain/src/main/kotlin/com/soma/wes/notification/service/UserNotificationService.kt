@@ -15,6 +15,7 @@ import com.soma.wes.notification.exception.NotificationErrorCode
 import com.soma.wes.notification.exception.NotificationException
 import java.time.Clock
 import java.time.ZonedDateTime
+import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -70,17 +71,15 @@ class UserNotificationService(
 
     @Transactional(readOnly = true)
     fun getSettings(userId: Long): UserNotificationSettingsResponse =
-        settingRepository.findById(userId).map(UserNotificationSettingsResponse::from)
-            .orElseGet(UserNotificationSettingsResponse::defaults)
+        settingRepository.findByIdOrNull(userId)?.let(UserNotificationSettingsResponse::from)
+            ?: UserNotificationSettingsResponse.defaults()
 
     @Transactional
     fun updateSettings(
         userId: Long,
         request: UpdateUserNotificationSettingsRequest,
     ): UserNotificationSettingsResponse {
-        val setting = settingRepository.findById(userId).orElseGet {
-            UserNotificationSetting(userId = userId)
-        }
+        val setting = settingRepository.findByIdOrNull(userId) ?: UserNotificationSetting(userId = userId)
         setting.update(request.emailEnabled, request.browserEnabled)
         return UserNotificationSettingsResponse.from(settingRepository.save(setting))
     }

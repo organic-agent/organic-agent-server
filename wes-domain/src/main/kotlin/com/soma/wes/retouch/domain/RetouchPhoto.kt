@@ -73,7 +73,7 @@ class RetouchPhoto(
         protected set
 
     val requiredId: Long
-        get() = id ?: error("아직 저장되지 않은 RetouchPhoto 다")
+        get() = checkNotNull(id) { "아직 저장되지 않은 RetouchPhoto 다" }
 
     val hasResult: Boolean
         get() = resultKey != null

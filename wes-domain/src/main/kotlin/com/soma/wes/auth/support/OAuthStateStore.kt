@@ -3,6 +3,7 @@ package com.soma.wes.auth.support
 import com.soma.wes.auth.domain.OAuthState
 import com.soma.wes.auth.repository.OAuthStateRepository
 import org.slf4j.LoggerFactory
+import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
 import java.security.SecureRandom
@@ -72,7 +73,7 @@ class OAuthStateStore(
             return null
         }
 
-        val found = oAuthStateRepository.findById(state).orElse(null)
+        val found = oAuthStateRepository.findByIdOrNull(state)
         if (found == null) {
             // 이미 쓴 state이거나 우리가 발급하지 않은 값이다. 로그인 자체를 막지는 않지만,
             // 자주 찍히면 프론트가 state를 흘리고 있다는 뜻이다.

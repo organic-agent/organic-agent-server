@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.Clock
 import java.time.ZonedDateTime
+import java.util.HexFormat
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
@@ -96,9 +97,8 @@ class AdminReprocessService(
         }
 
         try {
-            val (reset, jobCreated) = transactionTemplate.execute {
-                reset(id, request.scope) to ensureAnalysisJob(id)
-            }!!
+            val result = transactionTemplate.execute { reset(id, request.scope) to ensureAnalysisJob(id) }
+            val (reset, jobCreated) = checkNotNull(result) { "값을 돌려주는 트랜잭션 콜백의 결과가 null이다" }
             idempotencyStore.complete(ACTION, request.idempotencyKey, targets)
             log.info(
                 "관리자 분석 재처리(리셋): galleryId={}, 범위={}, 대상={}장, 지운 분석 행={}, 잡 생성={}",
@@ -183,7 +183,7 @@ class AdminReprocessService(
     private fun sha256(value: String): String =
         MessageDigest.getInstance("SHA-256")
             .digest(value.toByteArray(StandardCharsets.UTF_8))
-            .joinToString("") { "%02x".format(it) }
+            .let(HexFormat.of()::formatHex)
 
     companion object {
         private const val ACTION = "GALLERY_EMBEDDING"

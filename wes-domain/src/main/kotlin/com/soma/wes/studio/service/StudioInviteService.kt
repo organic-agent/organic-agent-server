@@ -24,6 +24,7 @@ import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository
 import java.time.Clock
 import java.time.ZonedDateTime
+import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -93,7 +94,7 @@ class StudioInviteService(
     @Transactional(readOnly = true)
     fun previewIfPresent(token: String, userId: Long): GalleryInvitePreviewResponse? {
         val invite = inviteRepository.findByToken(token) ?: return null
-        val studio = studioRepository.findById(invite.workspaceId).orElse(null)
+        val studio = studioRepository.findByIdOrNull(invite.workspaceId)
             ?.takeIf { it.suspendedAt == null } ?: throw GalleryException(GalleryErrorCode.INVITE_INVALID)
         val status = status(invite, ZonedDateTime.now(clock))
         return GalleryInvitePreviewResponse(
@@ -109,7 +110,7 @@ class StudioInviteService(
             usedCount = invite.usedCount,
             remainingUses = null,
             expiresAt = invite.expiresAt,
-            inviterNickname = invite.issuedByUserId?.let { userRepository.findById(it).orElse(null)?.nickname },
+            inviterNickname = invite.issuedByUserId?.let { userRepository.findByIdOrNull(it)?.nickname },
         )
     }
 

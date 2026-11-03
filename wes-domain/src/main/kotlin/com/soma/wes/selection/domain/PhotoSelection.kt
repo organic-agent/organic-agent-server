@@ -55,7 +55,7 @@ class PhotoSelection(
     var submittedByUserId: Long? = null
 
     val requiredId: Long
-        get() = id ?: error("아직 저장되지 않은 PhotoSelection 이다")
+        get() = checkNotNull(id) { "아직 저장되지 않은 PhotoSelection 이다" }
 
     val isSubmitted: Boolean
         get() = status == PhotoSelectionStatus.SUBMITTED

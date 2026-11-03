@@ -300,7 +300,12 @@ class AdminWorkflowExecutionRepository(
         AdminResourceType.SELECTION -> "photo_selections"
         AdminResourceType.COLLABORATION -> "collab_sessions"
         AdminResourceType.RETOUCH_REQUEST -> "retouch_rounds"
-        else -> throw IllegalArgumentException("processing workflow target is unsupported: $type")
+        AdminResourceType.WORKSPACE,
+        AdminResourceType.CONCEPT_FOLDER,
+        AdminResourceType.DETAIL_FOLDER,
+        AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
+        AdminResourceType.PHOTO_RATING,
+        -> throw IllegalArgumentException("processing workflow target is unsupported: $type")
     }
 }
 

@@ -21,7 +21,7 @@ data class StudioResponse(
 
     companion object {
         fun from(studio: Studio, role: WorkspaceRole? = null) = StudioResponse(
-            id = studio.requiredId,
+            id = studio.workspaceId,
             workspaceId = studio.workspaceId,
             name = studio.name,
             galleryUrl = studio.galleryUrl,

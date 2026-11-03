@@ -48,7 +48,17 @@ class AdminImpersonationReadModelService(
             when (type) {
                 AdminResourceType.STUDIO -> gallery.workspaceId == targetId
                 AdminResourceType.GALLERY -> gallery.id == targetId
-                else -> true
+                AdminResourceType.USER,
+                AdminResourceType.WORKSPACE,
+                AdminResourceType.PHOTO,
+                AdminResourceType.CONCEPT_FOLDER,
+                AdminResourceType.DETAIL_FOLDER,
+                AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
+                AdminResourceType.PHOTO_RATING,
+                AdminResourceType.SELECTION,
+                AdminResourceType.COLLABORATION,
+                AdminResourceType.RETOUCH_REQUEST,
+                -> true
             }
         }
 

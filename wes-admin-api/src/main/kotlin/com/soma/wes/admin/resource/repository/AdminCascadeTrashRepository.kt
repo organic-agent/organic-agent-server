@@ -70,7 +70,16 @@ class AdminCascadeTrashRepository(
                 .query { rs, _ -> rs.getLong("id") }
                 .list()
             AdminResourceType.GALLERY -> listOf(rootId)
-            else -> emptyList()
+            AdminResourceType.WORKSPACE,
+            AdminResourceType.PHOTO,
+            AdminResourceType.CONCEPT_FOLDER,
+            AdminResourceType.DETAIL_FOLDER,
+            AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
+            AdminResourceType.PHOTO_RATING,
+            AdminResourceType.SELECTION,
+            AdminResourceType.COLLABORATION,
+            AdminResourceType.RETOUCH_REQUEST,
+            -> emptyList()
         }
         galleryIds.distinct().sorted().forEach { galleryId ->
             lockProductPurgeCoordination("GALLERY", galleryId)
@@ -137,7 +146,10 @@ class AdminCascadeTrashRepository(
                 "detail_folder_id",
                 rootId,
             )
-            else -> emptyList()
+            AdminResourceType.WORKSPACE,
+            AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
+            AdminResourceType.PHOTO_RATING,
+            -> emptyList()
         }
         photoIds.distinct().sorted().forEach { photoId ->
             lockProductPurgeCoordination("PHOTO", photoId)
@@ -182,8 +194,8 @@ class AdminCascadeTrashRepository(
         rootId: Long,
         deletedAt: ZonedDateTime,
     ): Map<String, Long> {
-        SOFT_TARGETS.forEach { target ->
-            val predicate = scopePredicate(rootType, target.type) ?: return@forEach
+        for (target in SOFT_TARGETS) {
+            val predicate = scopePredicate(rootType, target.type) ?: continue
             jdbcClient.sql(
                 """
                 WITH affected AS (
@@ -735,12 +747,33 @@ class AdminCascadeTrashRepository(
         val galleryPredicate = galleryScopePredicate(batch.rootType)
         val photoPredicate = when (batch.rootType) {
             AdminResourceType.PHOTO -> "p.id = :rootId"
-            else -> galleryPredicate?.let { "p.gallery_id IN (SELECT g.id FROM galleries g WHERE $it)" }
+            AdminResourceType.USER,
+            AdminResourceType.WORKSPACE,
+            AdminResourceType.STUDIO,
+            AdminResourceType.GALLERY,
+            AdminResourceType.CONCEPT_FOLDER,
+            AdminResourceType.DETAIL_FOLDER,
+            AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
+            AdminResourceType.PHOTO_RATING,
+            AdminResourceType.SELECTION,
+            AdminResourceType.COLLABORATION,
+            AdminResourceType.RETOUCH_REQUEST,
+            -> galleryPredicate?.let { "p.gallery_id IN (SELECT g.id FROM galleries g WHERE $it)" }
         }
         val retouchPredicate = when (batch.rootType) {
             AdminResourceType.PHOTO -> "rp.photo_id = :rootId"
             AdminResourceType.RETOUCH_REQUEST -> "rp.round_id = :rootId"
-            else -> galleryPredicate?.let { "rp.gallery_id IN (SELECT g.id FROM galleries g WHERE $it)" }
+            AdminResourceType.USER,
+            AdminResourceType.WORKSPACE,
+            AdminResourceType.STUDIO,
+            AdminResourceType.GALLERY,
+            AdminResourceType.CONCEPT_FOLDER,
+            AdminResourceType.DETAIL_FOLDER,
+            AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
+            AdminResourceType.PHOTO_RATING,
+            AdminResourceType.SELECTION,
+            AdminResourceType.COLLABORATION,
+            -> galleryPredicate?.let { "rp.gallery_id IN (SELECT g.id FROM galleries g WHERE $it)" }
         }
         if (photoPredicate == null && retouchPredicate == null) return emptyList()
 
@@ -784,7 +817,7 @@ class AdminCascadeTrashRepository(
         AdminResourceType.RETOUCH_REQUEST -> deleteById("retouch_rounds", batch.rootId)
         AdminResourceType.CONCEPT_FOLDER -> deleteById("concept_folders", batch.rootId)
         AdminResourceType.DETAIL_FOLDER -> deleteById("detail_folders", batch.rootId)
-        else -> 0
+        AdminResourceType.WORKSPACE, AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT, AdminResourceType.PHOTO_RATING -> 0
     }
 
     fun cancelPendingOperations(batchId: Long): Int {
@@ -939,8 +972,8 @@ class AdminCascadeTrashRepository(
         actorAdminId = rs.getLong("actor_admin_id").takeUnless { rs.wasNull() },
         actorUsername = rs.getString("actor_username"),
         status = rs.getString("status"),
-        deletedAt = dateTime(rs, "deleted_at")!!,
-        restoreUntil = dateTime(rs, "restore_until")!!,
+        deletedAt = requiredDateTime(rs, "deleted_at"),
+        restoreUntil = requiredDateTime(rs, "restore_until"),
         restoredAt = dateTime(rs, "restored_at"),
         purgedAt = dateTime(rs, "purged_at"),
         purgeAttemptCount = rs.getInt("purge_attempt_count"),
@@ -961,6 +994,9 @@ class AdminCascadeTrashRepository(
 
     private fun dateTime(rs: ResultSet, column: String): ZonedDateTime? =
         rs.getObject(column, OffsetDateTime::class.java)?.toZonedDateTime()
+
+    private fun requiredDateTime(rs: ResultSet, column: String): ZonedDateTime =
+        checkNotNull(dateTime(rs, column)) { "NOT NULL 컬럼 $column 이 null이다" }
 
     private fun scopePredicate(root: AdminResourceType, target: String): String? = when (root) {
         AdminResourceType.USER -> when (target) {
@@ -1006,7 +1042,7 @@ class AdminCascadeTrashRepository(
             else -> null
         }
         AdminResourceType.DETAIL_FOLDER -> if (target == "DETAIL_FOLDER") "r.id = :rootId" else null
-        else -> null
+        AdminResourceType.WORKSPACE, AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT, AdminResourceType.PHOTO_RATING -> null
     }
 
     private fun childGalleryPredicate(target: String, galleryPredicate: String): String? = when (target) {
@@ -1036,7 +1072,16 @@ class AdminCascadeTrashRepository(
         """.trimIndent()
         AdminResourceType.STUDIO -> descendantOverlap("g.workspace_id = :rootId", includeStudio = true)
         AdminResourceType.GALLERY -> descendantOverlap("g.id = :rootId", includeStudio = false)
-        else -> "b.root_type = '${root.name}' AND b.root_id = :rootId"
+        AdminResourceType.WORKSPACE,
+        AdminResourceType.PHOTO,
+        AdminResourceType.CONCEPT_FOLDER,
+        AdminResourceType.DETAIL_FOLDER,
+        AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
+        AdminResourceType.PHOTO_RATING,
+        AdminResourceType.SELECTION,
+        AdminResourceType.COLLABORATION,
+        AdminResourceType.RETOUCH_REQUEST,
+        -> "b.root_type = '${root.name}' AND b.root_id = :rootId"
     }
 
     private fun descendantOverlap(galleryPredicate: String, includeStudio: Boolean): String = buildList {
@@ -1056,7 +1101,16 @@ class AdminCascadeTrashRepository(
         AdminResourceType.USER -> "g.workspace_id IN ($USER_OWNED_WORKSPACES_SQL)"
         AdminResourceType.STUDIO -> "g.workspace_id = :rootId"
         AdminResourceType.GALLERY -> "g.id = :rootId"
-        else -> null
+        AdminResourceType.WORKSPACE,
+        AdminResourceType.PHOTO,
+        AdminResourceType.CONCEPT_FOLDER,
+        AdminResourceType.DETAIL_FOLDER,
+        AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
+        AdminResourceType.PHOTO_RATING,
+        AdminResourceType.SELECTION,
+        AdminResourceType.COLLABORATION,
+        AdminResourceType.RETOUCH_REQUEST,
+        -> null
     }
 
     data class BatchRow(

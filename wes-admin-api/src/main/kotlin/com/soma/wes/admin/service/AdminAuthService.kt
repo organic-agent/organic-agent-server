@@ -14,6 +14,7 @@ import com.soma.wes.admin.repository.AdminAccountRepository
 import com.soma.wes.admin.support.AdminPasswordHasher
 import java.time.Clock
 import java.time.ZonedDateTime
+import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -83,7 +84,7 @@ class AdminAuthService(
         rawSessionToken: String,
         sourceAddress: String?,
     ) {
-        val account = adminAccountRepository.findById(actor.id).orElse(null)
+        val account = adminAccountRepository.findByIdOrNull(actor.id)
         adminImpersonationService.endCurrentIfPresent(actor, sourceAddress)
         adminSessionService.revoke(rawSessionToken)
     }

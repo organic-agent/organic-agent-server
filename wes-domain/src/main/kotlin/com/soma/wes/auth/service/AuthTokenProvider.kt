@@ -20,6 +20,7 @@ import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
 import io.jsonwebtoken.Claims
 import org.slf4j.LoggerFactory
+import org.springframework.data.repository.findByIdOrNull
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
 import org.springframework.security.core.Authentication
 import org.springframework.security.core.authority.SimpleGrantedAuthority
@@ -136,8 +137,8 @@ class AuthTokenProvider(
     fun parseUser(token: Token): User {
         val userId = parseSubject(token).toUserId()
         accessStatusRepository.requireActive(userId)
-        return userRepository.findById(userId)
-            .orElseThrow { TokenException(AuthErrorCode.TOKEN_OWNER_NOT_FOUND) }
+        return userRepository.findByIdOrNull(userId)
+            ?: throw TokenException(AuthErrorCode.TOKEN_OWNER_NOT_FOUND)
     }
 
     fun parseSubject(token: Token): Subject = Subject(verifiedClaims(token).subject)

@@ -35,6 +35,7 @@ import com.soma.wes.workspace.repository.WorkspaceRepository
 import java.time.Clock
 import java.time.Duration
 import java.time.ZonedDateTime
+import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -68,9 +69,8 @@ class GalleryInviteService(
         galleryAccessPolicy.requireManager(galleryId, userId)
         val gallery = galleryRepository.requireWithLockById(galleryId)
         gallery.requireWritable(ZonedDateTime.now(clock))
-        val workspace = workspaceRepository.findById(gallery.workspaceId).orElseThrow {
-            GalleryException(GalleryErrorCode.GALLERY_NOT_FOUND)
-        }
+        val workspace = workspaceRepository.findByIdOrNull(gallery.workspaceId)
+            ?: throw GalleryException(GalleryErrorCode.GALLERY_NOT_FOUND)
         validateKind(request.kind, workspace)
         if (request.maxUses !in 1..100) {
             throw GalleryException(GalleryErrorCode.INVALID_INVITE_MAX_USES)
@@ -124,9 +124,8 @@ class GalleryInviteService(
         val invite = galleryInviteRepository.findByToken(token)
             ?: throw GalleryException(GalleryErrorCode.INVITE_INVALID)
         val gallery = galleryRepository.requireById(invite.galleryId)
-        val workspace = workspaceRepository.findById(gallery.workspaceId).orElseThrow {
-            GalleryException(GalleryErrorCode.INVITE_INVALID)
-        }
+        val workspace = workspaceRepository.findByIdOrNull(gallery.workspaceId)
+            ?: throw GalleryException(GalleryErrorCode.INVITE_INVALID)
         val now = ZonedDateTime.now(clock)
         val status = when {
             invite.isRevoked -> GalleryInviteStatus.REVOKED
@@ -139,7 +138,7 @@ class GalleryInviteService(
             kind = invite.kind,
             status = status,
             workspaceId = workspace.requiredId,
-            studioName = studioRepository.findById(workspace.requiredId).orElse(null)?.name,
+            studioName = studioRepository.findByIdOrNull(workspace.requiredId)?.name,
             galleryId = gallery.requiredId,
             galleryTitle = gallery.title,
             maxUses = invite.maxUses,
@@ -147,7 +146,7 @@ class GalleryInviteService(
             remainingUses = (invite.maxUses - invite.usedCount).coerceAtLeast(0),
             expiresAt = invite.expiresAt,
             inviterNickname = (invite.issuedByUserId
-                ?: workspace.personalOwnerUserId)?.let { userRepository.findById(it).orElse(null)?.nickname },
+                ?: workspace.personalOwnerUserId)?.let { userRepository.findByIdOrNull(it)?.nickname },
         )
     }
 

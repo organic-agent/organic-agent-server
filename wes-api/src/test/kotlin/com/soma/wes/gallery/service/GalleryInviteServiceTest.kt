@@ -104,7 +104,7 @@ class GalleryInviteServiceTest @Autowired constructor(
         )
         return galleryRepository.save(
             Gallery(
-                workspaceId = studio.requiredId,
+                workspaceId = studio.workspaceId,
                 createdByUserId = ownerUserId,
                 title = "본식",
                 status = GalleryStatus.OPEN,

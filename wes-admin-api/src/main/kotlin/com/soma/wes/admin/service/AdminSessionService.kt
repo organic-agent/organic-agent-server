@@ -14,6 +14,7 @@ import com.soma.wes.admin.support.AdminSecretGenerator
 import com.soma.wes.admin.support.AdminSessionTokenHasher
 import java.time.Clock
 import java.time.ZonedDateTime
+import org.springframework.data.repository.findByIdOrNull
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
 import org.springframework.security.core.Authentication
 import org.springframework.security.core.authority.SimpleGrantedAuthority
@@ -58,8 +59,8 @@ class AdminSessionService(
             throw AdminAuthenticationException(AdminErrorCode.SESSION_INVALID)
         }
 
-        val account = adminAccountRepository.findById(session.adminId)
-            .orElseThrow { AdminAuthenticationException(AdminErrorCode.SESSION_INVALID) }
+        val account = adminAccountRepository.findByIdOrNull(session.adminId)
+            ?: throw AdminAuthenticationException(AdminErrorCode.SESSION_INVALID)
         if (account.isSuspended()) {
             throw AdminAuthenticationException(AdminErrorCode.ACCOUNT_SUSPENDED)
         }
@@ -84,13 +85,13 @@ class AdminSessionService(
         adminId: Long,
         rawToken: String,
     ): AdminSessionResponse {
-        val session = adminSessionRepository.findById(tokenHasher.hash(rawToken))
-            .orElseThrow { AdminAuthenticationException(AdminErrorCode.SESSION_INVALID) }
+        val session = adminSessionRepository.findByIdOrNull(tokenHasher.hash(rawToken))
+            ?: throw AdminAuthenticationException(AdminErrorCode.SESSION_INVALID)
         if (session.adminId != adminId) {
             throw AdminAuthenticationException(AdminErrorCode.SESSION_INVALID)
         }
-        val account = adminAccountRepository.findById(adminId)
-            .orElseThrow { AdminAuthenticationException(AdminErrorCode.SESSION_INVALID) }
+        val account = adminAccountRepository.findByIdOrNull(adminId)
+            ?: throw AdminAuthenticationException(AdminErrorCode.SESSION_INVALID)
 
         return AdminSessionResponse.of(account, session.absoluteExpiresAt)
     }
