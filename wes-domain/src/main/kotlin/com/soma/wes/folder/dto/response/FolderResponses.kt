@@ -3,6 +3,7 @@ package com.soma.wes.folder.dto.response
 import com.soma.wes.folder.domain.ConceptFolder
 import com.soma.wes.folder.domain.DetailFolder
 import com.soma.wes.folder.domain.FolderSource
+import io.swagger.v3.oas.annotations.media.Schema
 
 data class DetailFolderResponse(
     val id: Long,
@@ -33,6 +34,10 @@ data class ConceptFolderResponse(
     val name: String,
     val sortOrder: Int,
     val createdSource: FolderSource,
+    @field:Schema(
+        description = "이 컨셉을 만든 AI 분석 잡 id. AI 폴더 만들기로 생긴 컨셉에만 있고 사람이 만든 컨셉은 null이다. 이름을 바꿔도 남는다.",
+        example = "7",
+    )
     val analysisJobId: Long?,
     val details: List<DetailFolderResponse>,
 ) {

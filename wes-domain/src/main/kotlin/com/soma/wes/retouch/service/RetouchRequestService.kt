@@ -24,6 +24,10 @@ class RetouchRequestService(
     private val productChildTrashService: ProductChildTrashService,
     private val entityManager: EntityManager,
 ) {
+    /**
+     * `EntityManager.refresh` — 지운 항목은 [ProductChildTrashService]가 SQL로 회차 행의 `version`을 올리므로, 같은 트랜잭션의
+     * 회차 엔티티를 다시 읽어야 이어지는 `submit`이 낙관적 잠금에 걸리지 않는다.
+     */
     fun submit(
         gallery: Gallery,
         roundNo: Int,

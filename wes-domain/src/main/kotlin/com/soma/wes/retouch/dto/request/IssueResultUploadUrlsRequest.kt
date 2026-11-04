@@ -11,6 +11,7 @@ data class IssueResultUploadUrlsRequest(
 
     @field:NotEmpty
     @field:Valid
+    @field:Schema(description = "업로드 URL을 받을 결과 목록. 비울 수 없고, 사진마다 제출된(REQUESTED) 이 회차에 담긴 것이어야 한다. Content-Type은 image/jpeg·png·webp·heic·heif만 받는다.")
     val files: List<FileRequest>,
 ) {
 

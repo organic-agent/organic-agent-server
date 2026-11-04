@@ -18,18 +18,22 @@ data class CollabLandingResponse(
     val photoCount: Long,
 
     @field:Schema(
-        description = "지금 댓글을 남길 수 있는지. false면 선택 마감이 지났거나 갤러리가 보관된 것이다 — " +
-            "화면은 댓글창을 감추면 된다. 좋아요는 likable을 본다.",
+        description = "지금 댓글을 남길 수 있는지. false면 선택 마감이 지났거나 갤러리가 보관된 것이다 — 화면은 댓글창을 감추면 된다. 좋아요는 likable을 본다.",
     )
     val writable: Boolean,
 
     @field:Schema(
-        description = "지금 좋아요를 누를 수 있는지. 선택 마감이 지나도 true이고, 갤러리가 보관되거나 " +
-            "이용 기간이 끝나면 false다 — 화면은 좋아요 버튼을 감추면 된다.",
+        description = "지금 좋아요를 누를 수 있는지. 선택 마감이 지나도 true이고, 갤러리가 보관되거나 이용 기간이 끝나면 false다 — 화면은 좋아요 버튼을 감추면 된다.",
     )
     val likable: Boolean,
+    @field:Schema(description = "표지 제목. 부부가 표지 제목을 적지 않았으면 공유폴더 이름이 대신 온다.", example = "민지 ♥ 준호의 본식")
     val coverTitle: String? = null,
+    @field:Schema(description = "표지 작성자 표기. 부부가 적지 않았으면 null이다.", example = "민지·준호")
     val coverAuthor: String? = null,
+    @field:Schema(
+        description = "링크 만료 시각. 공유폴더를 열거나 다시 발행한 때부터 7일이고, 지나면 이 링크로 들어올 수 없다. null이면 기한이 없다.",
+        example = "2026-11-11T10:15:30+09:00",
+    )
     val expiresAt: java.time.ZonedDateTime? = null,
     val albums: List<Album> = emptyList(),
 ) {

@@ -15,24 +15,21 @@ data class PhotoDetailResponse(
     val contentType: String,
     val status: PhotoStatus,
     val displayOrder: Int,
+    @field:Schema(description = "사진 행이 생긴 시각, 곧 업로드 URL을 발급받은 때다. 촬영 시각(metadata.takenAt)과 다르다.", example = "2026-11-02T09:30:00+09:00")
     val createdAt: ZonedDateTime?,
 
     @field:Schema(
-        description = "화면에 그릴 URL. 파생 JPEG가 있으면 그쪽을, 없으면 원본을 가리킨다. " +
-            "아직 올라오지 않은(PENDING) 사진은 null이다.",
+        description = "화면에 그릴 URL. 파생 JPEG가 있으면 그쪽을, 없으면 원본을 가리킨다. 아직 올라오지 않은(PENDING) 사진은 null이다.",
     )
     val viewUrl: String?,
 
     @field:Schema(
-        description = "원본을 원래 크기로 여는 URL. 아직 올라오지 않은(PENDING) 사진은 null이다. " +
-            "원본은 형식에 따라(아이폰 HEIC 등) 브라우저가 그리지 못할 수 있으므로, " +
-            "먼저 viewUrl로 그리고 확대·다운로드에 이 URL을 쓴다.",
+        description = "원본을 원래 크기로 여는 URL. 아직 올라오지 않은(PENDING) 사진은 null이다. 원본은 형식에 따라(아이폰 HEIC 등) 브라우저가 그리지 못할 수 있으므로, 먼저 viewUrl로 그리고 확대·다운로드에 이 URL을 쓴다.",
     )
     val originalUrl: String?,
 
     @field:Schema(
-        description = "viewUrl이 브라우저가 그릴 수 있는 파생 JPEG를 가리키는지. " +
-            "false면 viewUrl과 originalUrl이 같은 객체를 가리킨다(수명만 다르다).",
+        description = "viewUrl이 브라우저가 그릴 수 있는 파생 JPEG를 가리키는지. false면 viewUrl과 originalUrl이 같은 객체를 가리킨다(수명만 다르다).",
     )
     val previewReady: Boolean,
 
@@ -53,14 +50,12 @@ data class PhotoDetailResponse(
     val metadata: PhotoMetadataResponse?,
 
     @field:Schema(
-        description = "이 사진에 매겨진 별점(1~5). 아무도 매기지 않았으면 null이다. " +
-            "클라이언트 두 명이 공유하며 작가 응답에는 null이다.",
+        description = "이 사진에 매겨진 별점(1~5). 아무도 매기지 않았으면 null이다. 클라이언트 두 명이 공유하며 작가 응답에는 null이다.",
     )
     val score: Int?,
 
     @field:Schema(
-        description = "이 사진의 메모. 아무도 적지 않았으면 null이다. " +
-            "개인 갤러리 소유자와 파트너가 공유하며 작가·게스트 응답에는 null이다.",
+        description = "이 사진의 메모. 아무도 적지 않았으면 null이다. 개인 갤러리 소유자와 파트너가 공유하며 작가·게스트 응답에는 null이다.",
     )
     val memo: PhotoMemoResponse? = null,
 ) {

@@ -14,6 +14,9 @@ data class IssueUploadUrlsRequest(
 
     @field:NotEmpty
     @field:Valid
+    @field:Schema(
+        description = "올릴 파일 목록. 한 번에 최대 500개(`app.storage.max-batch-size`)이고, 갤러리 사진 한도를 넘기면 전체를 거절한다. 사진은 보낸 순서대로 기존 사진 뒤에 붙는다.",
+    )
     val files: List<FileRequest>,
 ) {
 
@@ -43,8 +46,7 @@ data class IssueUploadUrlsRequest(
         @field:NotBlank
         @field:Pattern(regexp = Photo.CRC32C_BASE64_PATTERN)
         @field:Schema(
-            description = "PUT 할 바이트의 CRC32C를 base64로 적은 값. x-amz-checksum-crc32c 헤더로 서명에 들어가므로 "
-                + "PUT 할 때 같은 헤더에 같은 값을 보내야 하고, S3가 받은 바이트와 대조해 다르면 거절한다.",
+            description = "PUT 할 바이트의 CRC32C를 base64로 적은 값. x-amz-checksum-crc32c 헤더로 서명에 들어가므로 PUT 할 때 같은 헤더에 같은 값을 보내야 하고, S3가 받은 바이트와 대조해 다르면 거절한다.",
             example = "wdRDgw==",
         )
         val crc32c: String,

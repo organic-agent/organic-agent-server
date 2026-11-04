@@ -13,13 +13,17 @@ data class RetouchRoundResponse(
 
     val status: RetouchRoundStatus,
 
+    @field:Schema(
+        description = "부부가 회차를 제출해 REQUESTED가 된 시각. 제출 전(DRAFTING)이면 null이고, 작가가 작업 전에 선택을 다시 열면 null로 돌아간다.",
+        example = "2026-11-04T10:15:30+09:00",
+    )
     val requestedAt: ZonedDateTime?,
 
+    @field:Schema(description = "작가가 결과를 다 올리고 회차를 끝낸(COMPLETED) 시각. 끝나기 전에는 null이다.", example = "2026-11-06T18:00:00+09:00")
     val completedAt: ZonedDateTime?,
 
     @field:Schema(
-        description = "회차의 모든 사진에 적용되는 보정 요청. 적지 않았으면 null이다. " +
-            "작가에게는 제출 전(DRAFTING) 초안이라 null이다.",
+        description = "회차의 모든 사진에 적용되는 보정 요청. 적지 않았으면 null이다. 작가에게는 제출 전(DRAFTING) 초안이라 null이다.",
         example = "전체적으로 톤을 밝게 맞춰주세요",
     )
     val requestText: String?,

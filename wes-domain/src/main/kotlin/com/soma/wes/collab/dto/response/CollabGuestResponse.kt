@@ -8,15 +8,14 @@ import io.swagger.v3.oas.annotations.media.Schema
 data class CollabGuestResponse(
 
     @field:Schema(
-        description = "이후 댓글·반응 요청의 X-Guest-Token 헤더에 그대로 싣는다. " +
-            "브라우저에 보관해야 다음에 열었을 때 같은 사람으로 이어진다 — 잃어버리면 다시 입장하면 되고, " +
-            "그때는 새 사람이 된다.",
+        description = "이후 댓글·반응 요청의 X-Guest-Token 헤더에 그대로 싣는다. 브라우저에 보관해야 다음에 열었을 때 같은 사람으로 이어진다 — 잃어버리면 다시 입장하면 되고, 그때는 새 사람이 된다.",
     )
     val guestToken: String,
 
     val nickname: String,
     val participantId: Long,
     val participantType: CollabParticipantType,
+    @field:Schema(description = "참여자의 계정 id. 닉네임으로 입장한 하객은 계정이 없어 null이다.")
     val userId: Long?,
 ) {
 

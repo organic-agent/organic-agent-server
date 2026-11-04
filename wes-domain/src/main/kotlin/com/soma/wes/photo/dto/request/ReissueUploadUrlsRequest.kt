@@ -13,6 +13,9 @@ data class ReissueUploadUrlsRequest(
 
     @field:NotEmpty
     @field:Valid
+    @field:Schema(
+        description = "새 URL을 받을 사진 목록. 한 번에 최대 500개이고, 하나라도 이 갤러리에 없거나 이미 올라온(PENDING이 아닌) 사진이 섞이면 전체를 거절한다.",
+    )
     val photos: List<PhotoRequest>,
 ) {
 

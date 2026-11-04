@@ -18,9 +18,9 @@ data class CollabPhotoResponse(
     val commentCount: Long,
 
     @field:Schema(
-        description = "이 요청을 보낸 하객이 좋아요를 눌렀는지. 하객 토큰이 없으면 false이고, " +
-            "부부·작가가 결과를 볼 때도 false다 — 그들은 하객이 아니다.",
+        description = "이 요청을 보낸 하객이 좋아요를 눌렀는지. 하객 토큰이 없으면 false이고, 부부·작가가 결과를 볼 때도 false다 — 그들은 하객이 아니다.",
     )
     val liked: Boolean,
+    @field:Schema(description = "사진의 촬영 정보(EXIF). 아직 채워지지 않았거나 읽힌 값이 하나도 없으면 null이다.")
     val metadata: com.soma.wes.photo.dto.response.PhotoMetadataResponse? = null,
 )
