@@ -117,8 +117,9 @@ class StudioController(
     fun listMembers(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable workspaceId: Long,
-    ): ResponseEntity<List<StudioMemberResponse>> =
-        ResponseEntity.ok(studioService.listMembers(workspaceId, loginUser.id))
+    ): ResponseEntity<List<StudioMemberResponse>> {
+        return ResponseEntity.ok(studioService.listMembers(workspaceId, loginUser.id))
+    }
 
     @PatchMapping("/{workspaceId}/members/{memberId}/role")
     fun changeMemberRole(
@@ -126,8 +127,9 @@ class StudioController(
         @PathVariable workspaceId: Long,
         @PathVariable memberId: Long,
         @Valid @RequestBody request: ChangeStudioMemberRoleRequest,
-    ): ResponseEntity<StudioMemberResponse> =
-        ResponseEntity.ok(studioService.changeMemberRole(workspaceId, memberId, loginUser.id, request))
+    ): ResponseEntity<StudioMemberResponse> {
+        return ResponseEntity.ok(studioService.changeMemberRole(workspaceId, memberId, loginUser.id, request))
+    }
 
     @GetMapping("/me")
     override fun getMyStudio(

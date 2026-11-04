@@ -151,8 +151,8 @@ interface OAuthControllerDocs {
             schema = Schema(allowableValues = ["google", "naver", "kakao"], example = "kakao"),
         )
         provider: String,
-        request: AuthCodeRequest,
         @Parameter(hidden = true)
         origin: String?,
+        request: AuthCodeRequest,
     ): ResponseEntity<LoginResponse>
 }

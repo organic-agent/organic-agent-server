@@ -1,6 +1,7 @@
 package com.soma.wes.admin.impersonation.controller
 
 import com.soma.wes.admin.domain.AdminLoginUser
+import com.soma.wes.admin.impersonation.controller.docs.AdminImpersonationControllerDocs
 import com.soma.wes.admin.impersonation.dto.response.AdminImpersonationResponse
 import com.soma.wes.admin.impersonation.dto.request.StartAdminImpersonationRequest
 import com.soma.wes.admin.impersonation.service.AdminImpersonationService
@@ -22,27 +23,31 @@ import java.util.UUID
 @RequestMapping("/internal/admin/v1/impersonations")
 class AdminImpersonationController(
     private val service: AdminImpersonationService,
-) {
+) : AdminImpersonationControllerDocs {
 
     @PostMapping
-    fun start(
+    override fun start(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @Valid @RequestBody request: StartAdminImpersonationRequest,
         servletRequest: HttpServletRequest,
-    ): ResponseEntity<AdminImpersonationResponse> = ResponseEntity
-        .status(HttpStatus.CREATED)
-        .body(service.start(loginUser, request, servletRequest.remoteAddr))
+    ): ResponseEntity<AdminImpersonationResponse> {
+        return ResponseEntity
+            .status(HttpStatus.CREATED)
+            .body(service.start(loginUser, request, servletRequest.remoteAddr))
+    }
 
     @GetMapping("/current")
-    fun current(
+    override fun current(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         servletRequest: HttpServletRequest,
-    ): ResponseEntity<AdminImpersonationResponse> = ResponseEntity.ok(
-        service.current(loginUser, servletRequest.remoteAddr),
-    )
+    ): ResponseEntity<AdminImpersonationResponse> {
+        return ResponseEntity.ok(
+            service.current(loginUser, servletRequest.remoteAddr),
+        )
+    }
 
     @DeleteMapping("/current")
-    fun endCurrent(
+    override fun endCurrent(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         servletRequest: HttpServletRequest,
     ): ResponseEntity<Void> {
@@ -51,16 +56,18 @@ class AdminImpersonationController(
     }
 
     @GetMapping("/{id}")
-    fun view(
+    override fun view(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable id: UUID,
         servletRequest: HttpServletRequest,
-    ): ResponseEntity<AdminImpersonationResponse> = ResponseEntity.ok(
-        service.view(loginUser, id, servletRequest.remoteAddr),
-    )
+    ): ResponseEntity<AdminImpersonationResponse> {
+        return ResponseEntity.ok(
+            service.view(loginUser, id, servletRequest.remoteAddr),
+        )
+    }
 
     @DeleteMapping("/{id}")
-    fun end(
+    override fun end(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable id: UUID,
         servletRequest: HttpServletRequest,

@@ -1,6 +1,7 @@
 package com.soma.wes.admin.resource.controller
 
 import com.soma.wes.admin.domain.AdminLoginUser
+import com.soma.wes.admin.resource.controller.docs.AdminResourceControllerDocs
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.dto.response.AdminAnalysisFailuresResponse
 import com.soma.wes.admin.resource.dto.request.AdminReprocessRequest
@@ -65,7 +66,7 @@ class AdminResourceController(
     private val childTrashService: AdminChildTrashService,
     private val suspensionService: AdminResourceSuspensionService,
     private val workflowService: AdminWorkflowService,
-) {
+) : AdminResourceControllerDocs {
 
     private companion object {
         val IMMEDIATE_DELETE_TYPES = setOf(
@@ -75,39 +76,49 @@ class AdminResourceController(
     }
 
     @GetMapping("/operations/overview")
-    fun getOperationsOverview(
+    override fun getOperationsOverview(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
-    ): ResponseEntity<AdminOperationsOverviewResponse> = ResponseEntity.ok(operationsOverviewService.get())
+    ): ResponseEntity<AdminOperationsOverviewResponse> {
+        return ResponseEntity.ok(operationsOverviewService.get())
+    }
 
     @GetMapping("/operations/observability-links")
-    fun observabilityLinks(
+    override fun observabilityLinks(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @RequestParam correlationId: String,
-    ): ResponseEntity<AdminObservabilityLinksResponse> = ResponseEntity.ok(
-        observabilityLinkService.links(correlationId),
-    )
+    ): ResponseEntity<AdminObservabilityLinksResponse> {
+        return ResponseEntity.ok(
+            observabilityLinkService.links(correlationId),
+        )
+    }
 
     @GetMapping("/operations/trash")
-    fun listTrash(
+    override fun listTrash(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
-    ): ResponseEntity<List<AdminTrashBatchResponse>> = ResponseEntity.ok(cascadeTrashService.list())
+    ): ResponseEntity<List<AdminTrashBatchResponse>> {
+        return ResponseEntity.ok(cascadeTrashService.list())
+    }
 
     @GetMapping("/operations/trash/children")
-    fun listChildTrash(
+    override fun listChildTrash(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
-    ): ResponseEntity<List<AdminChildTrashResponse>> = ResponseEntity.ok(childTrashService.list())
+    ): ResponseEntity<List<AdminChildTrashResponse>> {
+        return ResponseEntity.ok(childTrashService.list())
+    }
 
     @PostMapping("/operations/trash/{batchId}/restore")
-    fun restoreTrashBatch(
+    override fun restoreTrashBatch(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable batchId: Long,
         servletRequest: HttpServletRequest,
-    ): ResponseEntity<AdminTrashBatchResponse> = ResponseEntity.ok(
-        cascadeTrashService.restoreBatch(loginUser.id, batchId, servletRequest.remoteAddr),
-    )
+    ): ResponseEntity<AdminTrashBatchResponse> {
+        return ResponseEntity.ok(
+            cascadeTrashService.restoreBatch(loginUser.id, batchId, servletRequest.remoteAddr),
+        )
+    }
 
     @GetMapping("/resources")
-    fun search(
+    override fun search(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @RequestParam(required = false) query: String?,
         @RequestParam(required = false) types: Set<AdminResourceType>?,
@@ -120,7 +131,7 @@ class AdminResourceController(
     }
 
     @GetMapping("/resources/{type}/{id}")
-    fun get(
+    override fun get(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable type: AdminResourceType,
         @PathVariable id: Long,
@@ -131,7 +142,7 @@ class AdminResourceController(
     }
 
     @GetMapping("/resources/{type}/{id}/context")
-    fun getContext(
+    override fun getContext(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable type: AdminResourceType,
         @PathVariable id: Long,
@@ -142,58 +153,65 @@ class AdminResourceController(
     }
 
     @PostMapping("/resources/PHOTO/{id}/original-access")
-    fun accessOriginalPhoto(
+    override fun accessOriginalPhoto(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable id: Long,
         @Valid @RequestBody request: AdminPhotoAccessRequest,
         servletRequest: HttpServletRequest,
-    ): ResponseEntity<AdminPhotoAccessResponse> = ResponseEntity.ok(
-        photoAccessService.access(loginUser.id, id, request, servletRequest.remoteAddr),
-    )
+    ): ResponseEntity<AdminPhotoAccessResponse> {
+        return ResponseEntity.ok(
+            photoAccessService.access(loginUser.id, id, request, servletRequest.remoteAddr),
+        )
+    }
 
     @PostMapping("/resources/RETOUCH_REQUEST/{roundId}/items/{retouchPhotoId}/artifacts/{artifactType}/access")
-    fun accessRetouchArtifact(
+    override fun accessRetouchArtifact(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable roundId: Long,
         @PathVariable retouchPhotoId: Long,
         @PathVariable artifactType: AdminRetouchArtifactType,
         @Valid @RequestBody request: AdminRetouchArtifactAccessRequest,
         servletRequest: HttpServletRequest,
-    ): ResponseEntity<AdminRetouchArtifactAccessResponse> = ResponseEntity.ok(
-        retouchArtifactAccessService.access(
-            loginUser.id,
-            roundId,
-            retouchPhotoId,
-            artifactType,
-            request,
-            servletRequest.remoteAddr,
-        ),
-    )
+    ): ResponseEntity<AdminRetouchArtifactAccessResponse> {
+        return ResponseEntity.ok(
+            retouchArtifactAccessService.access(
+                loginUser.id,
+                roundId,
+                retouchPhotoId,
+                artifactType,
+                request,
+                servletRequest.remoteAddr,
+            ),
+        )
+    }
 
     @PostMapping("/resources/{type}")
-    fun create(
+    override fun create(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable type: AdminResourceType,
         @Valid @RequestBody request: CreateAdminResourceRequest,
         servletRequest: HttpServletRequest,
-    ): ResponseEntity<AdminResourceResponse> =
-        ResponseEntity.status(HttpStatus.CREATED).body(
+    ): ResponseEntity<AdminResourceResponse> {
+        return ResponseEntity.status(HttpStatus.CREATED).body(
             resourceService.create(loginUser.id, type, request, servletRequest.remoteAddr),
         )
+    }
 
     @PatchMapping("/resources/{type}/{id}")
-    fun update(
+    override fun update(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable type: AdminResourceType,
         @PathVariable id: Long,
         @Valid @RequestBody request: UpdateAdminResourceRequest,
         servletRequest: HttpServletRequest,
-    ): ResponseEntity<AdminResourceResponse> = ResponseEntity.ok(
-        resourceService.update(loginUser.id, type, id, request, servletRequest.remoteAddr),
-    )
+    ): ResponseEntity<AdminResourceResponse> {
+        return ResponseEntity.ok(
+            resourceService.update(loginUser.id, type, id, request, servletRequest.remoteAddr),
+        )
+    }
 
     @DeleteMapping("/resources/{type}/{id}")
-    fun delete(
+    override fun delete(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable type: AdminResourceType,
         @PathVariable id: Long,
@@ -209,51 +227,59 @@ class AdminResourceController(
     }
 
     @PostMapping("/resources/{type}/{id}/restore")
-    fun restore(
+    override fun restore(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable type: AdminResourceType,
         @PathVariable id: Long,
         @Valid @RequestBody request: ChangeAdminResourceStateRequest,
         servletRequest: HttpServletRequest,
-    ): ResponseEntity<AdminResourceResponse> = ResponseEntity.ok(
-        cascadeTrashService.restoreRoot(loginUser.id, type, id, request, servletRequest.remoteAddr),
-    )
+    ): ResponseEntity<AdminResourceResponse> {
+        return ResponseEntity.ok(
+            cascadeTrashService.restoreRoot(loginUser.id, type, id, request, servletRequest.remoteAddr),
+        )
+    }
 
     @PostMapping("/resources/{type}/{id}/suspend")
-    fun suspend(
+    override fun suspend(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable type: AdminResourceType,
         @PathVariable id: Long,
         @Valid @RequestBody request: ChangeAdminResourceStateRequest,
         servletRequest: HttpServletRequest,
-    ): ResponseEntity<AdminResourceResponse> = ResponseEntity.ok(
-        suspensionService.suspend(loginUser.id, type, id, request, servletRequest.remoteAddr),
-    )
+    ): ResponseEntity<AdminResourceResponse> {
+        return ResponseEntity.ok(
+            suspensionService.suspend(loginUser.id, type, id, request, servletRequest.remoteAddr),
+        )
+    }
 
     @PostMapping("/resources/{type}/{id}/activate")
-    fun activate(
+    override fun activate(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable type: AdminResourceType,
         @PathVariable id: Long,
         @Valid @RequestBody request: ChangeAdminResourceStateRequest,
         servletRequest: HttpServletRequest,
-    ): ResponseEntity<AdminResourceResponse> = ResponseEntity.ok(
-        suspensionService.activate(loginUser.id, type, id, request, servletRequest.remoteAddr),
-    )
+    ): ResponseEntity<AdminResourceResponse> {
+        return ResponseEntity.ok(
+            suspensionService.activate(loginUser.id, type, id, request, servletRequest.remoteAddr),
+        )
+    }
 
     @PostMapping("/resources/{type}/{id}/reprocess")
-    fun reprocess(
+    override fun reprocess(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable type: AdminResourceType,
         @PathVariable id: Long,
         @Valid @RequestBody request: AdminReprocessRequest,
         servletRequest: HttpServletRequest,
-    ): ResponseEntity<AdminReprocessResponse> = ResponseEntity.accepted().body(
-        reprocessService.reprocess(loginUser.id, type, id, request, servletRequest.remoteAddr),
-    )
+    ): ResponseEntity<AdminReprocessResponse> {
+        return ResponseEntity.accepted().body(
+            reprocessService.reprocess(loginUser.id, type, id, request, servletRequest.remoteAddr),
+        )
+    }
 
     @GetMapping("/resources/GALLERY/{id}/analysis-failures")
-    fun getAnalysisFailures(
+    override fun getAnalysisFailures(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable id: Long,
         servletRequest: HttpServletRequest,
@@ -263,7 +289,7 @@ class AdminResourceController(
     }
 
     @PostMapping("/resources/{type}/{id}/workflows")
-    fun executeWorkflow(
+    override fun executeWorkflow(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable type: AdminResourceType,
         @PathVariable id: Long,
@@ -275,7 +301,9 @@ class AdminResourceController(
     }
 
     @GetMapping("/system-settings")
-    fun getSystemSettings(
+    override fun getSystemSettings(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
-    ): ResponseEntity<AdminSystemSettingsResponse> = ResponseEntity.ok(systemSettingsService.get())
+    ): ResponseEntity<AdminSystemSettingsResponse> {
+        return ResponseEntity.ok(systemSettingsService.get())
+    }
 }

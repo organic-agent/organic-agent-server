@@ -1,6 +1,7 @@
 package com.soma.wes.workspace.controller
 
 import com.soma.wes.auth.domain.LoginUser
+import com.soma.wes.workspace.controller.docs.WorkspaceControllerDocs
 import com.soma.wes.workspace.dto.response.WorkspaceResponse
 import com.soma.wes.workspace.service.WorkspaceService
 import org.springframework.http.ResponseEntity
@@ -13,9 +14,10 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/v1/workspaces")
 class WorkspaceController(
     private val workspaceService: WorkspaceService,
-) {
+) : WorkspaceControllerDocs {
+
     @GetMapping
-    fun listMine(
+    override fun listMine(
         @AuthenticationPrincipal loginUser: LoginUser,
     ): ResponseEntity<List<WorkspaceResponse>> {
         return ResponseEntity.ok(workspaceService.listMine(loginUser.id))
