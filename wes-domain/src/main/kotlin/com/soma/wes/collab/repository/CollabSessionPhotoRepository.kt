@@ -25,10 +25,11 @@ interface CollabSessionPhotoRepository : JpaRepository<CollabSessionPhoto, Long>
     fun lockShareablePhotoIds(galleryId: Long, photoIds: Collection<Long>): List<Long>
 
     /**
+     * 컨텍스트를 비우지 않는다 — 호출자가 같은 트랜잭션에서 잠가 둔 세션 엔티티를 이어서 고친다.
      * 한 문장으로 담고 새로 담긴 행 수를 돌려준다. `IDENTITY` 키라 JPA `saveAll`은 묶어 보내지 못하고
      * 한 줄씩 INSERT 한다. 이미 담긴 사진은 건너뛴다.
      */
-    @Modifying(flushAutomatically = true)
+    @Modifying(clearAutomatically = false, flushAutomatically = true)
     @Query(value = """
         INSERT INTO collab_session_photos (collab_session_id, gallery_id, photo_id, version, created_at, updated_at)
         SELECT :sessionId, p.gallery_id, p.id, 0, :now, :now
@@ -59,8 +60,11 @@ interface CollabSessionPhotoRepository : JpaRepository<CollabSessionPhoto, Long>
     """, nativeQuery = true)
     fun findDetailPhotoIds(galleryId: Long, detailFolderIds: Collection<Long>): List<Long>
 
-    /** 호출자가 세션을 잠그고 모든 요청 사진의 스코프를 확인한 뒤에만 제거한다. */
-    @Modifying(flushAutomatically = true)
+    /**
+     * 컨텍스트를 비우지 않는다 — 호출자가 지운 뒤 같은 세션 엔티티에 `photosChanged`를 적는다. 비우면 그 변경이 사라진다.
+     * 호출자가 세션을 잠그고 모든 요청 사진의 스코프를 확인한 뒤에만 제거한다.
+     */
+    @Modifying(clearAutomatically = false, flushAutomatically = true)
     @Query("delete from CollabSessionPhoto p where p.collabSessionId = :sessionId and p.photoId in :photoIds")
     fun deleteMemberships(sessionId: Long, photoIds: Collection<Long>): Int
 

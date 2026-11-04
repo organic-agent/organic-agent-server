@@ -6,7 +6,7 @@ import com.soma.wes.auth.exception.AuthErrorCode
 import com.soma.wes.auth.exception.OAuthException
 import com.soma.wes.auth.service.port.OAuthClient
 import com.soma.wes.auth.strategy.OAuthUserInfoExtractorFactory
-import com.soma.wes.auth.support.OAuthRegistration
+import com.soma.wes.auth.dto.OAuthRegistrationDto
 import com.soma.wes.auth.support.OAuthRegistrations
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
@@ -47,7 +47,7 @@ class OAuthUserInfoService(
             authCode
         }
 
-    private fun exchangeAuthCodeForAccessToken(registration: OAuthRegistration, code: String): String {
+    private fun exchangeAuthCodeForAccessToken(registration: OAuthRegistrationDto, code: String): String {
         val tokenRequest = LinkedMultiValueMap<String, String>().apply {
             add("grant_type", GRANT_TYPE)
             add("client_id", registration.clientId)

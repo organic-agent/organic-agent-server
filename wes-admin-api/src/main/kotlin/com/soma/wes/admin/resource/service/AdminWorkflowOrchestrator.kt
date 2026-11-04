@@ -5,14 +5,17 @@ import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.domain.AdminChildTrashType
 import com.soma.wes.admin.resource.domain.AdminInboxEventType
 import com.soma.wes.admin.resource.domain.AdminResourceType
-import com.soma.wes.admin.resource.dto.AdminRetouchArtifactType
-import com.soma.wes.admin.resource.dto.AdminWorkflowAction
-import com.soma.wes.admin.resource.dto.AdminWorkflowRequest
-import com.soma.wes.admin.resource.dto.AdminWorkflowResponse
+import com.soma.wes.admin.resource.domain.AdminRetouchArtifactType
+import com.soma.wes.admin.resource.domain.AdminWorkflowAction
+import com.soma.wes.admin.resource.dto.PreparedExternalWorkDto
+import com.soma.wes.admin.resource.dto.WorkflowExecutionDto
+import com.soma.wes.admin.resource.dto.request.AdminWorkflowRequest
+import com.soma.wes.admin.resource.dto.response.AdminWorkflowResponse
 import com.soma.wes.admin.resource.repository.AdminNotificationInboxRepository
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
 import com.soma.wes.admin.resource.repository.AdminRetouchArtifactRepository
 import com.soma.wes.admin.resource.repository.AdminWorkflowRepository
+import com.soma.wes.admin.resource.repository.projection.WorkflowProcessingJob
 import com.soma.wes.folder.support.AiFolderMaterializer
 import com.soma.wes.collab.support.CollabLinkResolver
 import com.soma.wes.gallery.domain.GalleryInviteKind
@@ -175,7 +178,7 @@ class AdminWorkflowService(
         type: AdminResourceType,
         id: Long,
         request: AdminWorkflowRequest,
-    ): PreparedExternalWork = when (request.action) {
+    ): PreparedExternalWorkDto = when (request.action) {
         AdminWorkflowAction.ISSUE_PHOTO_REPLACEMENT -> {
             requireType(type, AdminResourceType.PHOTO)
             val fileName = request.text("fileName", 255)
@@ -186,7 +189,7 @@ class AdminWorkflowService(
                 ?: throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
             val storageKey = photoStorage.buildKey(galleryId, fileName)
             val upload = photoStorage.presignUpload(storageKey, contentType)
-            PreparedExternalWork.Upload(storageKey, fileName, contentType, upload.url, upload.expiresAt)
+            PreparedExternalWorkDto.Upload(storageKey, fileName, contentType, upload.url, upload.expiresAt)
         }
         AdminWorkflowAction.COMPLETE_PHOTO_REPLACEMENT -> {
             requireType(type, AdminResourceType.PHOTO)
@@ -195,7 +198,7 @@ class AdminWorkflowService(
                 workflowRepository.pendingPhotoReplacementStorageKey(id, replacementId)
             } ?: throw AdminException(AdminErrorCode.RESOURCE_NOT_FOUND)
             if (!photoStorage.exists(storageKey)) throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-            PreparedExternalWork.VerifiedReplacement(replacementId)
+            PreparedExternalWorkDto.VerifiedReplacement(replacementId)
         }
         AdminWorkflowAction.ISSUE_RETOUCH_ARTIFACT_UPLOAD -> {
             requireType(type, AdminResourceType.RETOUCH_REQUEST)
@@ -215,7 +218,7 @@ class AdminWorkflowService(
                 contentType,
             )
             val upload = photoStorage.presignUpload(storageKey, contentType)
-            PreparedExternalWork.RetouchArtifactUpload(
+            PreparedExternalWorkDto.RetouchArtifactUpload(
                 retouchPhotoId = retouchPhotoId,
                 artifactType = artifactType,
                 storageKey = storageKey,
@@ -235,9 +238,9 @@ class AdminWorkflowService(
             if (!photoStorage.exists(pending.storageKey)) {
                 throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
             }
-            PreparedExternalWork.VerifiedRetouchArtifact(uploadId, retouchPhotoId)
+            PreparedExternalWorkDto.VerifiedRetouchArtifact(uploadId, retouchPhotoId)
         }
-        else -> PreparedExternalWork.None
+        else -> PreparedExternalWorkDto.None
     }
 
     /**
@@ -294,18 +297,18 @@ class AdminWorkflowService(
         type: AdminResourceType,
         id: Long,
         request: AdminWorkflowRequest,
-        prepared: PreparedExternalWork,
-    ): WorkflowExecution = when (request.action) {
+        prepared: PreparedExternalWorkDto,
+    ): WorkflowExecutionDto = when (request.action) {
         AdminWorkflowAction.TERMINATE_USER_SESSIONS -> {
             requireType(type, AdminResourceType.USER)
-            WorkflowExecution(details = mapOf(
+            WorkflowExecutionDto(details = mapOf(
                 "terminatedCount" to workflowRepository.terminateUserSessions(id, request.expectedVersion),
             ))
         }
         AdminWorkflowAction.SET_STUDIO_OWNER -> {
             requireType(type, AdminResourceType.STUDIO)
             val result = workflowRepository.setStudioOwner(id, request.long("userId"), request.expectedVersion)
-            WorkflowExecution(
+            WorkflowExecutionDto(
                 details = mapOf(
                     "previousOwnerId" to result.previousOwnerId,
                     "ownerId" to result.ownerId,
@@ -315,7 +318,7 @@ class AdminWorkflowService(
         AdminWorkflowAction.ADD_STUDIO_MEMBER -> {
             requireType(type, AdminResourceType.STUDIO)
             val result = workflowRepository.addStudioMember(id, request.long("userId"), request.expectedVersion)
-            WorkflowExecution(
+            WorkflowExecutionDto(
                 details = mapOf("memberId" to result.memberId),
             )
         }
@@ -323,18 +326,18 @@ class AdminWorkflowService(
             requireType(type, AdminResourceType.STUDIO)
             val memberId = request.long("memberId")
             workflowRepository.removeStudioMember(id, memberId, request.expectedVersion)
-            WorkflowExecution(details = mapOf("memberId" to memberId))
+            WorkflowExecutionDto(details = mapOf("memberId" to memberId))
         }
         AdminWorkflowAction.ADD_GALLERY_MEMBER -> {
             requireType(type, AdminResourceType.GALLERY)
             val result = workflowRepository.addGalleryMember(id, request.long("userId"), request.expectedVersion)
-            WorkflowExecution(
+            WorkflowExecutionDto(
                 details = mapOf("memberId" to result.memberId),
             )
         }
         AdminWorkflowAction.REMOVE_GALLERY_MEMBER -> {
             requireType(type, AdminResourceType.GALLERY)
-            WorkflowExecution(details = mapOf(
+            WorkflowExecutionDto(details = mapOf(
                 "removedCount" to workflowRepository.removeGalleryMember(id, request.long("memberId"), request.expectedVersion),
             ))
         }
@@ -347,7 +350,7 @@ class AdminWorkflowService(
                 throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
             }
             workflowRepository.updateGalleryStates(id, publicStatus, workflowStatus, deadline, request.expectedVersion)
-            WorkflowExecution(details = mapOf(
+            WorkflowExecutionDto(details = mapOf(
                 "publicStatus" to publicStatus,
                 "workflowStatus" to workflowStatus,
                 "selectionDeadline" to deadline,
@@ -357,7 +360,7 @@ class AdminWorkflowService(
             requireType(type, AdminResourceType.GALLERY)
             val folders = aiFolderMaterializer.materialize(id)
             workflowRepository.bumpResourceVersion(type, id, request.expectedVersion)
-            WorkflowExecution(details = mapOf(
+            WorkflowExecutionDto(details = mapOf(
                 "conceptFolderCount" to folders.size,
                 "detailFolderCount" to folders.sumOf { it.details.size },
                 "assignedPhotoCount" to folders.sumOf { concept -> concept.details.sumOf { it.photoIds.size } },
@@ -381,7 +384,7 @@ class AdminWorkflowService(
             val invite = workflowRepository.reissueGalleryInvite(
                 id, token, kind, maxUses, expiresAt, request.expectedVersion,
             )
-            WorkflowExecution(details = mapOf(
+            WorkflowExecutionDto(details = mapOf(
                 "inviteId" to invite.inviteId,
                 "kind" to invite.kind.name,
                 "maxUses" to invite.maxUses,
@@ -395,7 +398,7 @@ class AdminWorkflowService(
             requireType(type, AdminResourceType.GALLERY)
             val inviteId = request.long("inviteId")
             workflowRepository.revokeGalleryInvite(id, inviteId, request.expectedVersion)
-            WorkflowExecution(details = mapOf("inviteId" to inviteId))
+            WorkflowExecutionDto(details = mapOf("inviteId" to inviteId))
         }
         AdminWorkflowAction.REISSUE_COLLAB_LINK -> {
             requireType(type, AdminResourceType.COLLABORATION)
@@ -404,7 +407,7 @@ class AdminWorkflowService(
             val expiresAt = ZonedDateTime.now(clock).plusSeconds(ttlSeconds).toOffsetDateTime()
             val token = tokenGenerator.generate()
             workflowRepository.reissueCollabLink(id, token, expiresAt, request.expectedVersion)
-            WorkflowExecution(details = mapOf(
+            WorkflowExecutionDto(details = mapOf(
                 "expiresAt" to expiresAt,
                 "collabUrl" to collabLinkResolver.resolve(token),
                 "revealed" to true,
@@ -413,7 +416,7 @@ class AdminWorkflowService(
         AdminWorkflowAction.REVOKE_COLLAB_LINK -> {
             requireType(type, AdminResourceType.COLLABORATION)
             workflowRepository.revokeCollabLink(id, request.expectedVersion)
-            WorkflowExecution()
+            WorkflowExecutionDto()
         }
         AdminWorkflowAction.REOPEN_GALLERY -> reopenGallery(type, id, request)
         AdminWorkflowAction.SUBMIT_GALLERY -> galleryTransition(
@@ -423,7 +426,7 @@ class AdminWorkflowService(
             type, id, request, AdminWorkflowRepository.GalleryTransition.COMPLETE,
         )
         AdminWorkflowAction.ISSUE_PHOTO_REPLACEMENT -> {
-            val upload = prepared as? PreparedExternalWork.Upload
+            val upload = prepared as? PreparedExternalWorkDto.Upload
                 ?: throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
             val replacementId = workflowRepository.createPhotoReplacement(
                 photoId = id,
@@ -434,7 +437,7 @@ class AdminWorkflowService(
                 actorAdminId = actorAdminId,
                 expectedVersion = request.expectedVersion,
             )
-            WorkflowExecution(details = mapOf(
+            WorkflowExecutionDto(details = mapOf(
                 "replacementId" to replacementId,
                 "uploadUrl" to upload.url,
                 "expiresAt" to upload.expiresAt,
@@ -442,7 +445,7 @@ class AdminWorkflowService(
             ))
         }
         AdminWorkflowAction.COMPLETE_PHOTO_REPLACEMENT -> {
-            val verified = prepared as? PreparedExternalWork.VerifiedReplacement
+            val verified = prepared as? PreparedExternalWorkDto.VerifiedReplacement
                 ?: throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
             val result = workflowRepository.completePhotoReplacement(
                 id,
@@ -450,7 +453,7 @@ class AdminWorkflowService(
                 actorAdminId,
                 request.expectedVersion,
             )
-            WorkflowExecution(details = mapOf(
+            WorkflowExecutionDto(details = mapOf(
                 "replacementId" to verified.replacementId,
                 "revisionId" to result.revisionId,
                 "revisionNumber" to result.revisionNumber,
@@ -474,14 +477,14 @@ class AdminWorkflowService(
                 throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
             }
             workflowRepository.bumpResourceVersion(type, id, request.expectedVersion)
-            WorkflowExecution(details = mapOf("jobId" to jobId, "jobStatus" to "CANCELED"))
+            WorkflowExecutionDto(details = mapOf("jobId" to jobId, "jobStatus" to "CANCELED"))
         }
         AdminWorkflowAction.REPLACE_SELECTION_ITEMS -> {
             requireType(type, AdminResourceType.SELECTION)
             val photoCount = workflowRepository.replaceSelectionItems(
                 id, request.longs("photoIds"), request.expectedVersion,
             )
-            WorkflowExecution(details = mapOf("photoCount" to photoCount))
+            WorkflowExecutionDto(details = mapOf("photoCount" to photoCount))
         }
         AdminWorkflowAction.SUBMIT_SELECTION_REVISION -> {
             requireType(type, AdminResourceType.SELECTION)
@@ -490,16 +493,16 @@ class AdminWorkflowService(
                 request.optionalLong("revisionId"),
                 request.expectedVersion,
             )
-            WorkflowExecution(details = mapOf("photoCount" to photoCount))
+            WorkflowExecutionDto(details = mapOf("photoCount" to photoCount))
         }
         AdminWorkflowAction.WITHDRAW_SELECTION -> {
             requireType(type, AdminResourceType.SELECTION)
             workflowRepository.withdrawSelection(id, request.expectedVersion)
-            WorkflowExecution()
+            WorkflowExecutionDto()
         }
         AdminWorkflowAction.CREATE_COLLAB_COMMENT -> {
             requireType(type, AdminResourceType.COLLABORATION)
-            WorkflowExecution(details = mapOf(
+            WorkflowExecutionDto(details = mapOf(
                 "commentId" to workflowRepository.createCollabComment(
                     id,
                     request.long("photoId"),
@@ -519,7 +522,7 @@ class AdminWorkflowService(
                 request.expectedVersion,
                 request.long("commentExpectedVersion"),
             )
-            WorkflowExecution(details = mapOf("commentId" to commentId))
+            WorkflowExecutionDto(details = mapOf("commentId" to commentId))
         }
         AdminWorkflowAction.DELETE_COLLAB_COMMENT,
         AdminWorkflowAction.RESTORE_COLLAB_COMMENT,
@@ -545,7 +548,7 @@ class AdminWorkflowService(
                     expectedChildVersion = commentExpectedVersion,
                 )
             }
-            WorkflowExecution(details = result.workflowDetails() + ("commentId" to commentId))
+            WorkflowExecutionDto(details = result.workflowDetails() + ("commentId" to commentId))
         }
         AdminWorkflowAction.ADD_COLLAB_LIKE -> {
             requireType(type, AdminResourceType.COLLABORATION)
@@ -555,7 +558,7 @@ class AdminWorkflowService(
                 request.long("participantId"),
                 request.expectedVersion,
             )
-            WorkflowExecution(details = mapOf("likeId" to likeId))
+            WorkflowExecutionDto(details = mapOf("likeId" to likeId))
         }
         AdminWorkflowAction.REMOVE_COLLAB_LIKE -> {
             requireType(type, AdminResourceType.COLLABORATION)
@@ -572,7 +575,7 @@ class AdminWorkflowService(
                 expectedParentVersion = request.expectedVersion,
                 expectedChildVersion = request.long("likeExpectedVersion"),
             )
-            WorkflowExecution(details = result.workflowDetails() + ("likeId" to likeId))
+            WorkflowExecutionDto(details = result.workflowDetails() + ("likeId" to likeId))
         }
         AdminWorkflowAction.RESTORE_COLLAB_LIKE -> {
             requireType(type, AdminResourceType.COLLABORATION)
@@ -584,7 +587,7 @@ class AdminWorkflowService(
                 expectedParentVersion = request.expectedVersion,
                 expectedChildVersion = request.long("likeExpectedVersion"),
             )
-            WorkflowExecution(details = result.workflowDetails() + ("likeId" to likeId))
+            WorkflowExecutionDto(details = result.workflowDetails() + ("likeId" to likeId))
         }
         AdminWorkflowAction.CREATE_RETOUCH_ITEM -> {
             requireType(type, AdminResourceType.RETOUCH_REQUEST)
@@ -595,7 +598,7 @@ class AdminWorkflowService(
                 request.optionalMap("structuredAiMetadata"),
                 request.expectedVersion,
             )
-            WorkflowExecution(details = mapOf("retouchPhotoId" to itemId))
+            WorkflowExecutionDto(details = mapOf("retouchPhotoId" to itemId))
         }
         AdminWorkflowAction.UPDATE_RETOUCH_ITEM -> {
             requireType(type, AdminResourceType.RETOUCH_REQUEST)
@@ -607,11 +610,11 @@ class AdminWorkflowService(
                 request.expectedVersion,
                 request.long("retouchPhotoExpectedVersion"),
             )
-            WorkflowExecution(details = mapOf("retouchPhotoId" to retouchPhotoId))
+            WorkflowExecutionDto(details = mapOf("retouchPhotoId" to retouchPhotoId))
         }
         AdminWorkflowAction.ISSUE_RETOUCH_ARTIFACT_UPLOAD -> {
             requireType(type, AdminResourceType.RETOUCH_REQUEST)
-            val upload = prepared as? PreparedExternalWork.RetouchArtifactUpload
+            val upload = prepared as? PreparedExternalWorkDto.RetouchArtifactUpload
                 ?: throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
             val created = retouchArtifactRepository.createUpload(
                 roundId = id,
@@ -625,7 +628,7 @@ class AdminWorkflowService(
                 expectedRoundVersion = request.expectedVersion,
                 expectedPhotoVersion = request.long("retouchPhotoExpectedVersion"),
             )
-            WorkflowExecution(details = mapOf(
+            WorkflowExecutionDto(details = mapOf(
                 "uploadId" to created.uploadId,
                 "retouchPhotoId" to upload.retouchPhotoId,
                 "artifactType" to upload.artifactType.name,
@@ -638,7 +641,7 @@ class AdminWorkflowService(
         }
         AdminWorkflowAction.COMPLETE_RETOUCH_ARTIFACT_UPLOAD -> {
             requireType(type, AdminResourceType.RETOUCH_REQUEST)
-            val verified = prepared as? PreparedExternalWork.VerifiedRetouchArtifact
+            val verified = prepared as? PreparedExternalWorkDto.VerifiedRetouchArtifact
                 ?: throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
             val completed = retouchArtifactRepository.completeUpload(
                 roundId = id,
@@ -647,7 +650,7 @@ class AdminWorkflowService(
                 expectedRoundVersion = request.expectedVersion,
                 expectedPhotoVersion = request.long("retouchPhotoExpectedVersion"),
             )
-            WorkflowExecution(details = mapOf(
+            WorkflowExecutionDto(details = mapOf(
                 "uploadId" to completed.uploadId,
                 "retouchPhotoId" to verified.retouchPhotoId,
                 "artifactType" to completed.artifactType.name,
@@ -668,7 +671,7 @@ class AdminWorkflowService(
                 request.optionalText("deliveryNote", 500),
                 request.expectedVersion,
             )
-            WorkflowExecution()
+            WorkflowExecutionDto()
         }
         AdminWorkflowAction.SET_STUDIO_RETOUCH_CAPABILITY -> {
             requireType(type, AdminResourceType.STUDIO)
@@ -678,7 +681,7 @@ class AdminWorkflowService(
                 request.boolean("enabled"),
                 request.expectedVersion,
             )
-            WorkflowExecution()
+            WorkflowExecutionDto()
         }
         AdminWorkflowAction.RETRY_PROCESSING_JOB -> error("retry is dispatched outside the database action")
     }
@@ -688,10 +691,10 @@ class AdminWorkflowService(
         id: Long,
         request: AdminWorkflowRequest,
         transition: AdminWorkflowRepository.GalleryTransition,
-    ): WorkflowExecution {
+    ): WorkflowExecutionDto {
         requireType(type, AdminResourceType.GALLERY)
         workflowRepository.transitionGallery(id, transition, request.expectedVersion)
-        return WorkflowExecution(details = mapOf(
+        return WorkflowExecutionDto(details = mapOf(
             "publicStatus" to transition.publicStatus,
             "workflowStatus" to transition.workflowStatus,
             "stage" to transition.stage,
@@ -702,7 +705,7 @@ class AdminWorkflowService(
         type: AdminResourceType,
         id: Long,
         request: AdminWorkflowRequest,
-    ): WorkflowExecution {
+    ): WorkflowExecutionDto {
         requireType(type, AdminResourceType.GALLERY)
         val selectionDeadline = request.optionalOffsetDateTime("selectionDeadline")
             ?: throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
@@ -710,7 +713,7 @@ class AdminWorkflowService(
             throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         }
         workflowRepository.reopenGallery(id, selectionDeadline, request.expectedVersion)
-        return WorkflowExecution(details = mapOf(
+        return WorkflowExecutionDto(details = mapOf(
             "publicStatus" to "OPEN",
             "workflowStatus" to "IN_PROGRESS",
             "stage" to "SELECTION_IN_PROGRESS",
@@ -722,7 +725,7 @@ class AdminWorkflowService(
         type: AdminResourceType,
         id: Long,
         request: AdminWorkflowRequest,
-    ): WorkflowExecution {
+    ): WorkflowExecutionDto {
         val jobId = request.long("jobId")
         val job = workflowRepository.findProcessingJob(jobId)
             ?: throw AdminException(AdminErrorCode.RESOURCE_NOT_FOUND)
@@ -731,7 +734,7 @@ class AdminWorkflowService(
             throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         }
         workflowRepository.bumpResourceVersion(type, id, request.expectedVersion)
-        return WorkflowExecution(details = mapOf("jobId" to jobId, "jobStatus" to "CANCELED"))
+        return WorkflowExecutionDto(details = mapOf("jobId" to jobId, "jobStatus" to "CANCELED"))
     }
 
     private fun resendNotification(
@@ -739,7 +742,7 @@ class AdminWorkflowService(
         type: AdminResourceType,
         id: Long,
         request: AdminWorkflowRequest,
-    ): WorkflowExecution {
+    ): WorkflowExecutionDto {
         val eventType = request.inboxEventType()
         val notificationId = notificationInboxRepository.create(
             eventType = eventType,
@@ -751,7 +754,7 @@ class AdminWorkflowService(
             createdByAdminId = actorAdminId,
         )
         workflowRepository.bumpResourceVersion(type, id, request.expectedVersion)
-        return WorkflowExecution(status = "COMPLETED", details = mapOf(
+        return WorkflowExecutionDto(status = "COMPLETED", details = mapOf(
             "notificationId" to notificationId,
             "notificationType" to eventType.name,
             "inboxStatus" to "OPEN",
@@ -764,7 +767,7 @@ class AdminWorkflowService(
         id: Long,
         request: AdminWorkflowRequest,
         previousJobId: Long?,
-    ): WorkflowExecution {
+    ): WorkflowExecutionDto {
         requireType(type, AdminResourceType.SELECTION)
         val result = workflowRepository.createAiSelectionDraft(
             id,
@@ -772,7 +775,7 @@ class AdminWorkflowService(
             request.expectedVersion,
             request.optionalInt("requestedCount"),
         )
-        return WorkflowExecution(status = result.status, details = mapOf(
+        return WorkflowExecutionDto(status = result.status, details = mapOf(
             "previousJobId" to previousJobId,
             "jobId" to result.jobId,
             "jobStatus" to result.status,
@@ -788,7 +791,7 @@ class AdminWorkflowService(
         type: AdminResourceType,
         id: Long,
         request: AdminWorkflowRequest,
-    ): WorkflowExecution {
+    ): WorkflowExecutionDto {
         requireType(type, AdminResourceType.RETOUCH_REQUEST)
         val itemId = request.long("retouchPhotoId")
         val itemExpectedVersion = request.long("retouchPhotoExpectedVersion")
@@ -810,7 +813,7 @@ class AdminWorkflowService(
                 expectedChildVersion = itemExpectedVersion,
             )
         }
-        return WorkflowExecution(details = result.workflowDetails() + ("retouchPhotoId" to itemId))
+        return WorkflowExecutionDto(details = result.workflowDetails() + ("retouchPhotoId" to itemId))
     }
 
     private fun retryProcessingJob(
@@ -878,7 +881,7 @@ class AdminWorkflowService(
     }
 
     private fun requireJobTarget(
-        job: AdminWorkflowRepository.ProcessingJob,
+        job: WorkflowProcessingJob,
         type: AdminResourceType,
         id: Long,
     ) {
@@ -1102,34 +1105,4 @@ class AdminWorkflowService(
             put("structuredAiMetadata", optionalMap("structuredAiMetadata"))
         }
     }
-
-    private sealed interface PreparedExternalWork {
-        data object None : PreparedExternalWork
-        data class Upload(
-            val storageKey: String,
-            val fileName: String,
-            val contentType: String,
-            val url: String,
-            val expiresAt: java.time.Instant,
-        ) : PreparedExternalWork
-        data class VerifiedReplacement(val replacementId: Long) : PreparedExternalWork
-        data class RetouchArtifactUpload(
-            val retouchPhotoId: Long,
-            val artifactType: AdminRetouchArtifactType,
-            val storageKey: String,
-            val fileName: String,
-            val contentType: String,
-            val url: String,
-            val expiresAt: java.time.Instant,
-        ) : PreparedExternalWork
-        data class VerifiedRetouchArtifact(
-            val uploadId: Long,
-            val retouchPhotoId: Long,
-        ) : PreparedExternalWork
-    }
-
-    private data class WorkflowExecution(
-        val status: String = "COMPLETED",
-        val details: Map<String, Any?> = emptyMap(),
-    )
 }

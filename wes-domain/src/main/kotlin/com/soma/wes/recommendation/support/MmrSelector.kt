@@ -1,5 +1,7 @@
 package com.soma.wes.recommendation.support
 
+import com.soma.wes.recommendation.dto.MmrPickDto
+
 /**
  * 폴더 안 선택 — 연사당 1장 남기고 MMR(λ·score − (1−λ)·maxCos)로 n장. AI repo `rerank.select_in_folder`의 자리다.
  * 임베딩은 정규화돼 있다고 본다(내적 = 코사인).
@@ -7,15 +9,6 @@ package com.soma.wes.recommendation.support
 object MmrSelector {
 
     const val LAMBDA = 0.7
-
-    data class Pick(
-        /** 정렬된 분석 행의 인덱스 */
-        val index: Int,
-        /** 폴더 안 점수 순위(연사 dedup 후), 1부터 */
-        val folderRank: Int,
-        /** 그 폴더의 n_f */
-        val quota: Int,
-    )
 
     fun mmrSelect(score: DoubleArray, emb: Array<FloatArray>, k: Int, lambda: Double, candidates: List<Int>): List<Int> {
         if (candidates.isEmpty() || k <= 0) return emptyList()
@@ -53,7 +46,7 @@ object MmrSelector {
         burstIds: IntArray,
         n: Int,
         lambda: Double = LAMBDA,
-    ): List<Pick> {
+    ): List<MmrPickDto> {
         if (members.isEmpty() || n <= 0) return emptyList()
         val bestPerBurst = linkedMapOf<Int, Int>()
         members.forEach { i ->
@@ -64,7 +57,7 @@ object MmrSelector {
         val candidates = bestPerBurst.values.toList()
         val picked = mmrSelect(score, emb, n, lambda, candidates)
         val byScore = candidates.sortedByDescending { score[it] }.withIndex().associate { (rank, i) -> i to rank + 1 }
-        return picked.map { Pick(index = it, folderRank = byScore.getValue(it), quota = n) }.sortedBy { it.folderRank }
+        return picked.map { MmrPickDto(index = it, folderRank = byScore.getValue(it), quota = n) }.sortedBy { it.folderRank }
     }
 
     private fun dot(a: FloatArray, b: FloatArray): Double {

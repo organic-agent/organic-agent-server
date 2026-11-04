@@ -2,7 +2,7 @@ package com.soma.wes.admin.resource.service
 
 import com.soma.wes.admin.config.AdminAuthProperties
 import com.soma.wes.admin.config.AdminObservabilityProperties
-import com.soma.wes.admin.resource.dto.AdminSystemSettingsResponse
+import com.soma.wes.admin.resource.dto.response.AdminSystemSettingsResponse
 import com.soma.wes.analysis.config.LambdaAiTaskProperties
 import com.soma.wes.gallery.config.MockGalleryProperties
 import com.soma.wes.photo.config.StorageProperties

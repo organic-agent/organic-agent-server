@@ -1,8 +1,8 @@
 package com.soma.wes.admin.fixture
 
 import com.soma.wes.admin.resource.domain.AdminResourceType
-import com.soma.wes.admin.resource.dto.CreateAdminResourceRequest
-import com.soma.wes.admin.resource.dto.AdminResourceResponse
+import com.soma.wes.admin.resource.dto.request.CreateAdminResourceRequest
+import com.soma.wes.admin.resource.dto.response.AdminResourceResponse
 import com.soma.wes.admin.resource.service.AdminResourceService
 import com.soma.wes.support.TestSequence
 import org.springframework.stereotype.Component

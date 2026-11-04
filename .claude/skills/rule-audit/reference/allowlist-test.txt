@@ -1,7 +1,4 @@
 # rules: TS-02 TS-04 TS-05 TS-06 TS-07 — 이름·위치가 어긋난 기존 테스트와 ContractTest 밖 MockMvc 테스트(정리 전까지 허용)
-wes-admin-api/src/test/kotlin/com/soma/wes/admin/audit/AdminAuditControllerTest.kt
-wes-admin-api/src/test/kotlin/com/soma/wes/admin/audit/AdminAuditServiceTest.kt
-wes-admin-api/src/test/kotlin/com/soma/wes/admin/audit/AdminResourceRevisionRestoreServiceTest.kt
 wes-admin-api/src/test/kotlin/com/soma/wes/admin/boundary/AdminConfigurationBoundaryTest.kt
 wes-admin-api/src/test/kotlin/com/soma/wes/admin/boundary/AdminRuntimeBoundaryTest.kt
 wes-admin-api/src/test/kotlin/com/soma/wes/admin/controller/AdminAuthControllerTest.kt
@@ -40,7 +37,6 @@ wes-api/src/test/kotlin/com/soma/wes/collab/support/GuestTokenHeaderTest.kt
 wes-api/src/test/kotlin/com/soma/wes/folder/service/FolderCollabIntegrationTest.kt
 wes-api/src/test/kotlin/com/soma/wes/folder/service/FolderGuestEditingTest.kt
 wes-api/src/test/kotlin/com/soma/wes/gallery/service/PersonalMembershipTest.kt
-wes-api/src/test/kotlin/com/soma/wes/gallery/support/MockGalleryCopyPlanTest.kt
 wes-api/src/test/kotlin/com/soma/wes/global/HealthManagementPortTest.kt
 wes-api/src/test/kotlin/com/soma/wes/global/HealthProbeTest.kt
 wes-api/src/test/kotlin/com/soma/wes/global/SchedulerDatabaseHangTest.kt

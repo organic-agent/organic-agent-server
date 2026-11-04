@@ -5,9 +5,9 @@ import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.fixture.AdminAccountFixture
 import com.soma.wes.admin.resource.domain.AdminReprocessScope
 import com.soma.wes.admin.resource.domain.AdminResourceType
-import com.soma.wes.admin.resource.dto.AdminReprocessRequest
-import com.soma.wes.admin.resource.dto.AdminResourceResponse
-import com.soma.wes.admin.resource.dto.CreateAdminResourceRequest
+import com.soma.wes.admin.resource.dto.request.AdminReprocessRequest
+import com.soma.wes.admin.resource.dto.response.AdminResourceResponse
+import com.soma.wes.admin.resource.dto.request.CreateAdminResourceRequest
 import com.soma.wes.admin.resource.service.AdminReprocessService
 import com.soma.wes.admin.resource.service.AdminResourceService
 import com.soma.wes.analysis.domain.AnalysisJob

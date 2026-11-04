@@ -2,8 +2,9 @@ package com.soma.wes.admin.resource.service
 
 import com.soma.wes.admin.resource.config.AdminWorkflowExecutorProperties
 import com.soma.wes.admin.resource.domain.AdminResourceType
+import com.soma.wes.admin.resource.dto.ExactPhotoRequestSeedDto
 import com.soma.wes.admin.resource.repository.AdminWorkflowExecutionRepository
-import com.soma.wes.admin.resource.repository.AdminWorkflowExecutionRepository.ProcessingExecutionJob
+import com.soma.wes.admin.resource.repository.projection.ProcessingExecutionJob
 import com.soma.wes.admin.resource.repository.WorkflowExecutionException
 import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.service.port.AiTaskSender
@@ -59,7 +60,7 @@ class AdminWorkflowExecutor(
         val requestSeed = try {
             if (!aiTaskSender.isAvailable(AiTaskDto.ExactPhoto::class)) throw WorkflowExecutionException("PHOTO_PROCESSING_NOT_CONFIGURED")
             if (job.targetType != AdminResourceType.PHOTO) throw WorkflowExecutionException("PHOTO_TARGET_REQUIRED")
-            ExactPhotoRequestSeed(
+            ExactPhotoRequestSeedDto(
                 galleryId = job.payload.long("galleryId")
                     ?: throw WorkflowExecutionException("GALLERY_ID_REQUIRED"),
                 storageKey = job.payload.string("storageKey")
@@ -243,12 +244,6 @@ class AdminWorkflowExecutor(
         (this[name] as? Number)?.toLong() ?: this[name]?.toString()?.toLongOrNull()
 
     private fun Map<String, Any?>.string(name: String): String? = this[name] as? String
-
-    private data class ExactPhotoRequestSeed(
-        val galleryId: Long,
-        val storageKey: String,
-        val revisionId: Long,
-    )
 
     private class ProcessingClaimLostException(jobId: Long, attemptCount: Int) :
         RuntimeException("processing claim lost: jobId=$jobId attempt=$attemptCount")

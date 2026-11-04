@@ -2,6 +2,7 @@ package com.soma.wes.gallery.support
 
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryStatus
+import com.soma.wes.gallery.dto.MockGalleryCopyPlanDto
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
@@ -12,8 +13,6 @@ import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
-import com.soma.wes.studio.exception.StudioErrorCode
-import com.soma.wes.studio.exception.StudioException
 import com.soma.wes.studio.fixture.StudioFixture
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.IntegrationTest
@@ -202,7 +201,7 @@ class MockGallerySeederTest @Autowired constructor(
             val gallery = mockGallerySeeder.createGallery(photographer.id!!, requestFor(photographer))
             val plans = sources.map { source ->
                 val storageKey = "galleries/${gallery.requiredId}/copy-${TestSequence.next()}.png"
-                MockGalleryCopyPlan(
+                MockGalleryCopyPlanDto(
                     source = source,
                     storageKey = storageKey,
                     previewKey = "previews/${storageKey.substringBeforeLast('.')}.jpg",
@@ -236,7 +235,7 @@ class MockGallerySeederTest @Autowired constructor(
             val source = 임베딩_사진(template.requiredId, displayOrder = 0, withPreview = false)
             val photographer = studioFixture.작가()
             val gallery = mockGallerySeeder.createGallery(photographer.id!!, requestFor(photographer))
-            val plan = MockGalleryCopyPlan(
+            val plan = MockGalleryCopyPlanDto(
                 source = source,
                 storageKey = "galleries/${gallery.requiredId}/copy-${TestSequence.next()}.png",
                 previewKey = null,

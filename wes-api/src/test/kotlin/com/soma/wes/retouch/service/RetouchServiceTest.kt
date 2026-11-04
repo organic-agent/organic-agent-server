@@ -15,7 +15,7 @@ import com.soma.wes.retouch.domain.RetouchPoint
 import com.soma.wes.retouch.domain.RetouchRoundStatus
 import com.soma.wes.retouch.dto.request.AddRetouchPhotosRequest
 import com.soma.wes.retouch.dto.request.CompleteResultsRequest
-import com.soma.wes.retouch.dto.request.RetouchRequestItem
+import com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest.RetouchRequestItem
 import com.soma.wes.retouch.dto.request.UpdateRetouchPhotoRequest
 import com.soma.wes.retouch.dto.request.UpdateRetouchRoundRequest
 import com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest

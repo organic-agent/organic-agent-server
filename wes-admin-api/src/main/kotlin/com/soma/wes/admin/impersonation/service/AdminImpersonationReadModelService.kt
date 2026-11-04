@@ -1,7 +1,8 @@
 package com.soma.wes.admin.impersonation.service
 
-import com.soma.wes.admin.impersonation.dto.AdminImpersonationViewResponse
+import com.soma.wes.admin.impersonation.dto.response.AdminImpersonationViewResponse
 import com.soma.wes.admin.impersonation.repository.AdminImpersonationViewRepository
+import com.soma.wes.admin.impersonation.repository.projection.AdminImpersonationViewerRow
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.folder.service.FolderService
 import com.soma.wes.collab.dto.response.CollabSessionResponse
@@ -45,7 +46,7 @@ class AdminImpersonationReadModelService(
     fun view(
         type: AdminResourceType,
         targetId: Long,
-        viewer: AdminImpersonationViewRepository.Viewer,
+        viewer: AdminImpersonationViewerRow,
     ): AdminImpersonationViewResponse {
         val base = baseRepository.view(type, targetId, viewer)
         val galleries = galleryService.findAllVisibleTo(viewer.userId).filter { gallery ->

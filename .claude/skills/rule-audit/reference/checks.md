@@ -464,7 +464,7 @@ rg -nUP -t kotlin 'val requiredId: Long(?=\s*\n?\s*get\(\) = (?!checkNotNull\(id
 python3 -I .claude/skills/rule-audit/scripts/audit_scan.py orm-kdoc
 
 # RP-02
-rg -n -t kotlin '\b(Named ?Parameter)?JdbcTemplate\b' wes-*/src/main/kotlin | rg -v ':\d+:\s*import|BulkRepository'
+rg -n -t kotlin '\b(Named ?Parameter)?JdbcTemplate\b' wes-*/src/main/kotlin | rg -v ':\d+:\s*import|BulkRepository|JdbcClient\.create\(JdbcTemplate\('
 
 # RP-03
 for f in $(rg --files -t kotlin -g '**/repository/*' wes-*/src/main/kotlin | rg -v 'PurgeObjectKeysSql'); do b=$(basename $f | sed 's/[.]kt$//'); n=$(rg -c '^(interface|abstract class|open class|class) \w*Repository\b' $f); rg -q "^(interface|abstract class|open class|class|object) $b\b" $f || echo "NAME $f"; [ "${n:-0}" -gt 1 ] && echo "MULTI $f $n"; done
@@ -476,7 +476,7 @@ rg -n -t kotlin '^fun \w+Repository\.require' wes-*/src/main/kotlin
 rg -nUP -t kotlin '@Lock\([^\n]*\)\s*\n(?:\s*@[^\n]*\n)*\s*fun (?!\w*WithLock|lock)\w+' wes-*/src/main/kotlin
 
 # RP-06
-rg -n -t kotlin '@Modifying' wes-*/src/main/kotlin | rg -v 'clearAutomatically\s*=\s*true.*flushAutomatically\s*=\s*true|flushAutomatically\s*=\s*true.*clearAutomatically\s*=\s*true'
+rg -n -t kotlin '@Modifying' wes-*/src/main/kotlin | rg -v 'clearAutomatically\s*=\s*(true|false).*flushAutomatically\s*=\s*true|flushAutomatically\s*=\s*true.*clearAutomatically\s*=\s*(true|false)'
 
 # RP-07
 rg -nUP -t kotlin '@Modifying[^\n]*\n(?:(?![^\n]*\bfun \w+\()[^\n]*\n){0,14}[ \t]*fun \w+\((?:[^()]|\([^()]*\))*\)(?!\s*:\s*Int\b)' wes-*/src/main/kotlin

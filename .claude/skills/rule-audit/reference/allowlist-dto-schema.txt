@@ -1,0 +1,20 @@
+# rules: DTO-06 — dto 루트에서 request/response로 옮기며 새로 검사에 걸린 파일(P4a, #363). P4b에서 설명을 채우고 이 파일을 지운다
+# P4a는 위치만 옮긴다 — 설명 문구는 P4b(E3: 요청 + null 허용 응답 필수)에서 쓴다
+wes-admin-api/src/main/kotlin/com/soma/wes/admin/impersonation/dto/request/StartAdminImpersonationRequest.kt
+wes-admin-api/src/main/kotlin/com/soma/wes/admin/impersonation/dto/response/AdminImpersonationResponses.kt
+wes-admin-api/src/main/kotlin/com/soma/wes/admin/resource/dto/request/AdminArtifactAccessRequests.kt
+wes-admin-api/src/main/kotlin/com/soma/wes/admin/resource/dto/request/AdminNotificationReadRequest.kt
+wes-admin-api/src/main/kotlin/com/soma/wes/admin/resource/dto/request/AdminReprocessRequest.kt
+wes-admin-api/src/main/kotlin/com/soma/wes/admin/resource/dto/request/AdminResourceRequests.kt
+wes-admin-api/src/main/kotlin/com/soma/wes/admin/resource/dto/request/AdminWorkflowRequest.kt
+wes-admin-api/src/main/kotlin/com/soma/wes/admin/resource/dto/response/AdminArtifactAccessResponses.kt
+wes-admin-api/src/main/kotlin/com/soma/wes/admin/resource/dto/response/AdminNotificationInboxResponses.kt
+wes-admin-api/src/main/kotlin/com/soma/wes/admin/resource/dto/response/AdminOperationsResponses.kt
+wes-admin-api/src/main/kotlin/com/soma/wes/admin/resource/dto/response/AdminReprocessResponses.kt
+wes-admin-api/src/main/kotlin/com/soma/wes/admin/resource/dto/response/AdminResourceResponses.kt
+wes-admin-api/src/main/kotlin/com/soma/wes/admin/resource/dto/response/AdminTrashResponses.kt
+wes-admin-api/src/main/kotlin/com/soma/wes/admin/resource/dto/response/AdminWorkflowResponse.kt
+wes-domain/src/main/kotlin/com/soma/wes/notification/dto/request/ReadUserNotificationsRequest.kt
+wes-domain/src/main/kotlin/com/soma/wes/notification/dto/request/UpdateUserNotificationSettingsRequest.kt
+wes-domain/src/main/kotlin/com/soma/wes/notification/dto/response/ReadUserNotificationsResponse.kt
+wes-domain/src/main/kotlin/com/soma/wes/notification/dto/response/UserNotificationResponses.kt

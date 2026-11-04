@@ -3,8 +3,8 @@ package com.soma.wes.admin.resource
 import com.soma.wes.admin.fixture.AdminAccountFixture
 import com.soma.wes.admin.resource.config.AdminWorkflowExecutorProperties
 import com.soma.wes.admin.resource.domain.AdminResourceType
-import com.soma.wes.admin.resource.dto.AdminResourceResponse
-import com.soma.wes.admin.resource.dto.CreateAdminResourceRequest
+import com.soma.wes.admin.resource.dto.response.AdminResourceResponse
+import com.soma.wes.admin.resource.dto.request.CreateAdminResourceRequest
 import com.soma.wes.admin.resource.repository.AdminWorkflowExecutionRepository
 import com.soma.wes.admin.resource.repository.AdminWorkflowRepository
 import com.soma.wes.admin.resource.service.AdminResourceService

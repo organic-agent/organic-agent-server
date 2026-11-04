@@ -3,9 +3,9 @@ package com.soma.wes.notification.controller
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.notification.controller.docs.UserNotificationControllerDocs
 import com.soma.wes.notification.domain.UserNotificationScope
-import com.soma.wes.notification.dto.UpdateUserNotificationSettingsRequest
-import com.soma.wes.notification.dto.UserNotificationResponse
-import com.soma.wes.notification.dto.UserNotificationSettingsResponse
+import com.soma.wes.notification.dto.request.UpdateUserNotificationSettingsRequest
+import com.soma.wes.notification.dto.response.UserNotificationResponse
+import com.soma.wes.notification.dto.response.UserNotificationSettingsResponse
 import com.soma.wes.notification.service.UserNotificationService
 import jakarta.validation.Valid
 import org.springframework.http.ResponseEntity
@@ -13,8 +13,8 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.PatchMapping
-import com.soma.wes.notification.dto.ReadUserNotificationsRequest
-import com.soma.wes.notification.dto.ReadUserNotificationsResponse
+import com.soma.wes.notification.dto.request.ReadUserNotificationsRequest
+import com.soma.wes.notification.dto.response.ReadUserNotificationsResponse
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam

@@ -1,5 +1,7 @@
 package com.soma.wes.recommendation.support
 
+import com.soma.wes.recommendation.dto.RecommendationCombinedScoreDto
+import com.soma.wes.recommendation.dto.RecommendationTypeStatDto
 import kotlin.math.sqrt
 
 /**
@@ -26,21 +28,6 @@ object RecommendationScoring {
     const val GROOM = "groom"
     private const val EPS = 1e-12
 
-    data class TypeStat(
-        val poolShare: Double,
-        val deficit: Double,
-        val selectLift: Double,
-        val poolCount: Int,
-        val selCount: Int,
-    )
-
-    data class Combined(
-        val score: DoubleArray,
-        val priorZ: DoubleArray,
-        val balanceZ: DoubleArray,
-        val affinityZ: DoubleArray,
-    )
-
     fun z(values: DoubleArray): DoubleArray {
         if (values.isEmpty()) return values
         val mean = values.average()
@@ -53,7 +40,7 @@ object RecommendationScoring {
         DoubleArray(technicalPct.size) { W_TECHNICAL * technicalPct[it] + W_AESTHETIC * aestheticPct[it] }
 
     /** 유형별 집계 — 갤러리 비율, 부족분(deficit), 선택 lift. 전부 [-1, 1] 안의 비율. */
-    fun typeStats(types: List<String>, selected: BooleanArray): Map<String, TypeStat> {
+    fun typeStats(types: List<String>, selected: BooleanArray): Map<String, RecommendationTypeStatDto> {
         val n = types.size
         val nSel = selected.count { it }
         return types.toSortedSet().associateWith { type ->
@@ -63,7 +50,7 @@ object RecommendationScoring {
             val sel = if (nSel > 0) selCount.toDouble() / nSel else 0.0
             val pSelGivenT = if (idx.isNotEmpty()) selCount.toDouble() / idx.size else 0.0
             val pSel = if (n > 0) nSel.toDouble() / n else 0.0
-            TypeStat(
+            RecommendationTypeStatDto(
                 poolShare = pool,
                 deficit = maxOf(0.0, pool - sel),
                 selectLift = pSelGivenT - pSel,
@@ -73,16 +60,16 @@ object RecommendationScoring {
         }
     }
 
-    fun combine(priorRaw: DoubleArray, types: List<String>?, stats: Map<String, TypeStat>?): Combined {
+    fun combine(priorRaw: DoubleArray, types: List<String>?, stats: Map<String, RecommendationTypeStatDto>?): RecommendationCombinedScoreDto {
         val pz = z(priorRaw)
         val zeros = DoubleArray(pz.size)
-        if (types == null || stats == null) return Combined(pz, pz, zeros, zeros)
+        if (types == null || stats == null) return RecommendationCombinedScoreDto(pz, pz, zeros, zeros)
         val deficit = DoubleArray(types.size) { stats[types[it]]?.deficit ?: 0.0 }
         val lift = DoubleArray(types.size) { stats[types[it]]?.selectLift ?: 0.0 }
         val bz = if (std(deficit) > EPS) z(deficit) else zeros
         val az = if (std(lift) > EPS) z(lift) else zeros
         val score = DoubleArray(pz.size) { pz[it] + W_BALANCE * bz[it] + W_PREF * az[it] }
-        return Combined(score, pz, bz, az)
+        return RecommendationCombinedScoreDto(score, pz, bz, az)
     }
 
     /**

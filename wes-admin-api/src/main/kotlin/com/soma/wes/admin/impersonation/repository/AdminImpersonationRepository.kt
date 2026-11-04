@@ -1,5 +1,6 @@
 package com.soma.wes.admin.impersonation.repository
 
+import com.soma.wes.admin.impersonation.repository.projection.AdminImpersonationSessionRow
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Repository
@@ -13,7 +14,7 @@ class AdminImpersonationRepository(
     private val jdbcClient: JdbcClient,
 ) {
 
-    fun insert(session: Session) {
+    fun insert(session: AdminImpersonationSessionRow) {
         jdbcClient.sql(
             """
             INSERT INTO admin_impersonation_sessions
@@ -42,7 +43,7 @@ class AdminImpersonationRepository(
     }
 
     /** ended_at이 비어 있는 만료 세션만 원자적으로 종료한다. */
-    fun closeExpired(adminSessionId: UUID, now: ZonedDateTime): List<Session> = jdbcClient.sql(
+    fun closeExpired(adminSessionId: UUID, now: ZonedDateTime): List<AdminImpersonationSessionRow> = jdbcClient.sql(
         """
         UPDATE admin_impersonation_sessions
         SET ended_at = :now
@@ -56,12 +57,12 @@ class AdminImpersonationRepository(
     ).param("adminSessionId", adminSessionId).param("now", now.toOffsetDateTime())
         .query { rs, _ -> session(rs) }.list()
 
-    fun findCurrent(adminSessionId: UUID, now: ZonedDateTime): Session? = findOne(
+    fun findCurrent(adminSessionId: UUID, now: ZonedDateTime): AdminImpersonationSessionRow? = findOne(
         "i.admin_session_id = :adminSessionId",
         mapOf("adminSessionId" to adminSessionId, "now" to now.toOffsetDateTime()),
     )
 
-    fun findActive(id: UUID, adminSessionId: UUID, now: ZonedDateTime): Session? = findOne(
+    fun findActive(id: UUID, adminSessionId: UUID, now: ZonedDateTime): AdminImpersonationSessionRow? = findOne(
         "i.id = :id AND i.admin_session_id = :adminSessionId",
         mapOf("id" to id, "adminSessionId" to adminSessionId, "now" to now.toOffsetDateTime()),
     )
@@ -81,7 +82,7 @@ class AdminImpersonationRepository(
         .param("endedAt", endedAt.toOffsetDateTime())
         .update() == 1
 
-    private fun findOne(predicate: String, parameters: Map<String, Any>): Session? {
+    private fun findOne(predicate: String, parameters: Map<String, Any>): AdminImpersonationSessionRow? {
         var statement = jdbcClient.sql(
             """
             SELECT i.id, i.admin_id, i.admin_session_id, i.viewer_user_id, i.viewer_role,
@@ -100,7 +101,7 @@ class AdminImpersonationRepository(
         return statement.query { rs, _ -> session(rs) }.optional().orElse(null)
     }
 
-    private fun session(rs: ResultSet) = Session(
+    private fun session(rs: ResultSet) = AdminImpersonationSessionRow(
         id = rs.getObject("id", UUID::class.java),
         adminId = rs.getLong("admin_id"),
         adminSessionId = rs.getObject("admin_session_id", UUID::class.java),
@@ -113,22 +114,5 @@ class AdminImpersonationRepository(
         correlationId = rs.getString("correlation_id"),
         startedAt = rs.getObject("started_at", OffsetDateTime::class.java).toZonedDateTime(),
         expiresAt = rs.getObject("expires_at", OffsetDateTime::class.java).toZonedDateTime(),
-    )
-
-    data class Session(
-        val id: UUID,
-        val adminId: Long,
-        val adminSessionId: UUID,
-        val viewerUserId: Long,
-        val viewerAccessRole: String,
-        val targetType: AdminResourceType,
-        val targetId: Long,
-        val targetLabel: String,
-
-        val sourceAddress: String?,
-        /** 대리보기 시작 요청의 MDC trace. 생명주기 식별자는 [id]다. */
-        val correlationId: String?,
-        val startedAt: ZonedDateTime,
-        val expiresAt: ZonedDateTime,
     )
 }

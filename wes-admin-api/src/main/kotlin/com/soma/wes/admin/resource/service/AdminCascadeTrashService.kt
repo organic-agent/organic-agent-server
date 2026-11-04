@@ -3,13 +3,13 @@ package com.soma.wes.admin.resource.service
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.domain.AdminResourceType
-import com.soma.wes.admin.resource.dto.AdminResourceResponse
-import com.soma.wes.admin.resource.dto.AdminTrashBatchResponse
-import com.soma.wes.admin.resource.dto.AdminTrashEntryResponse
-import com.soma.wes.admin.resource.dto.ChangeAdminResourceStateRequest
+import com.soma.wes.admin.resource.dto.response.AdminResourceResponse
+import com.soma.wes.admin.resource.dto.response.AdminTrashBatchResponse
+import com.soma.wes.admin.resource.dto.response.AdminTrashEntryResponse
+import com.soma.wes.admin.resource.dto.request.ChangeAdminResourceStateRequest
 import com.soma.wes.admin.resource.repository.AdminCascadeTrashRepository
-import com.soma.wes.admin.resource.repository.AdminCascadeTrashRepository.BatchRow
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
+import com.soma.wes.admin.resource.repository.projection.CascadeTrashBatchRow
 import com.soma.wes.trash.config.TrashProperties
 import com.soma.wes.admin.support.AdminPhotoRestoreQuota
 import org.springframework.dao.DataIntegrityViolationException
@@ -137,7 +137,7 @@ class AdminCascadeTrashService(
         return response(requireNotNull(trashRepository.find(batchId)))
     }
 
-    private fun restore(batch: BatchRow) {
+    private fun restore(batch: CascadeTrashBatchRow) {
         if (batch.status == "PURGING" || !ZonedDateTime.now(clock).isBefore(batch.restoreUntil)) {
             throw AdminException(AdminErrorCode.TRASH_BATCH_EXPIRED)
         }
@@ -180,7 +180,7 @@ class AdminCascadeTrashService(
         if (resource.version != expectedVersion) throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
     }
 
-    private fun response(batch: BatchRow): AdminTrashBatchResponse = AdminTrashBatchResponse(
+    private fun response(batch: CascadeTrashBatchRow): AdminTrashBatchResponse = AdminTrashBatchResponse(
         id = batch.id,
         rootType = batch.rootType,
         rootId = batch.rootId,

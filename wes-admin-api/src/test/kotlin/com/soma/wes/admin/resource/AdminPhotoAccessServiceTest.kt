@@ -1,8 +1,9 @@
 package com.soma.wes.admin.resource
 
-import com.soma.wes.admin.resource.dto.AdminPhotoAccessMode
-import com.soma.wes.admin.resource.dto.AdminPhotoAccessRequest
+import com.soma.wes.admin.resource.domain.AdminPhotoAccessMode
+import com.soma.wes.admin.resource.dto.request.AdminPhotoAccessRequest
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
+import com.soma.wes.admin.resource.repository.projection.AdminPhotoOriginal
 import com.soma.wes.admin.resource.service.AdminPhotoAccessService
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.service.port.PhotoStorage
@@ -39,7 +40,7 @@ class AdminPhotoAccessServiceTest {
     @Test
     fun `원본 다운로드는 attachment 서명 URL을 발급한다`() {
         whenever(repository.findPhotoOriginal(42)).thenReturn(
-            AdminResourceRepository.PhotoOriginal(42, "wedding final.jpg", "galleries/7/photo.jpg"),
+            AdminPhotoOriginal(42, "wedding final.jpg", "galleries/7/photo.jpg"),
         )
         whenever(photoStorage.presignDownload("galleries/7/photo.jpg", "wedding final.jpg"))
             .thenReturn("https://signed.example/download")
@@ -58,7 +59,7 @@ class AdminPhotoAccessServiceTest {
     @Test
     fun `목업 preview는 파생 키만 짧게 서명한다`() {
         whenever(repository.findPhotoOriginal(43)).thenReturn(
-            AdminResourceRepository.PhotoOriginal(
+            AdminPhotoOriginal(
                 43,
                 "wedding preview.jpg",
                 "galleries/7/original.jpg",
