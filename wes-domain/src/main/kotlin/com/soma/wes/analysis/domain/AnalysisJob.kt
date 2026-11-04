@@ -36,7 +36,7 @@ class AnalysisJob(
     val galleryId: Long,
 
     /** 사용자가 기억하는 컨셉 수(선택). categorize 가 촬영 시각 구간을 이 수의 1층으로 묶는다. null 이면 AI 가 정한다. */
-    @Column(name = "concept_count", updatable = false)
+    @Column(name = "concept_count", nullable = true, updatable = false)
     val conceptCount: Int? = null,
 ) : BaseEntity() {
 
@@ -50,7 +50,7 @@ class AnalysisJob(
         protected set
 
     /** categorize EVENT를 마지막으로 보낸 시각. 타임아웃·재전송의 기준이다. */
-    @Column(name = "dispatched_at")
+    @Column(name = "dispatched_at", nullable = true)
     var dispatchedAt: ZonedDateTime? = null
         protected set
 
@@ -59,17 +59,17 @@ class AnalysisJob(
     var attempts: Int = 0
         protected set
 
-    @Column(name = "finished_at")
+    @Column(name = "finished_at", nullable = true)
     var finishedAt: ZonedDateTime? = null
         protected set
 
-    @Column(name = "error")
+    @Column(name = "error", nullable = true)
     var error: String? = null
         protected set
 
     /** FAILED 로 닫힌 이유. 이 컬럼이 생기기 전에 닫힌 잡과 살아 있는 잡은 null 이다. */
     @Enumerated(EnumType.STRING)
-    @Column(name = "error_code", length = 40)
+    @Column(name = "error_code", nullable = true, length = 40)
     var errorCode: AnalysisFailureCode? = null
         protected set
 
@@ -77,16 +77,16 @@ class AnalysisJob(
      * ANALYZING 의 진행 감시 값 — 스윕이 본 갤러리의 진행([com.soma.wes.photo.repository.projection.GalleryAnalysisProgress.progressSignature])과
      * 그 값이 마지막으로 바뀐 시각. 시각이 오래 멈춰 있으면 임베딩·점수가 멈춘 것이다.
      */
-    @Column(name = "progress_count")
+    @Column(name = "progress_count", nullable = true)
     var progressCount: Int? = null
         protected set
 
-    @Column(name = "progress_at")
+    @Column(name = "progress_at", nullable = true)
     var progressAt: ZonedDateTime? = null
         protected set
 
     /** CATEGORIZING 에 들어간 시각. [dispatchedAt]은 다시 보낼 때마다 옮겨지므로 잡 전체 기한은 이 값으로 잰다. */
-    @Column(name = "categorizing_at")
+    @Column(name = "categorizing_at", nullable = true)
     var categorizingAt: ZonedDateTime? = null
         protected set
 
@@ -99,7 +99,7 @@ class AnalysisJob(
      * DONE 뒤 categorize rank 모드(백분위·연사 대표 순위)를 마지막으로 보낸 시각과 횟수(#274 2물결). 폴더는 이미 있고 추천 재료만 채우는 일이라
      * 잡 상태는 DONE 그대로 둔다 — 순위가 늦어도 사용자에게 보이는 잡은 끝난 것이다.
      */
-    @Column(name = "rank_dispatched_at")
+    @Column(name = "rank_dispatched_at", nullable = true)
     var rankDispatchedAt: ZonedDateTime? = null
         protected set
 

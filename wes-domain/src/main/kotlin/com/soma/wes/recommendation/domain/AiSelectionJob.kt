@@ -38,17 +38,17 @@ class AiSelectionJob(
      */
     // [GLOSSARY-1 2026-09-27] folderSetJobId → analysisJobId (용어집: 폴더 세트의 키는 analysis_job_id). 응답 필드는 4단계에서 바꾼다.
     // [GLOSSARY-2 2026-09-27] 컬럼 folder_set_job_id → analysis_job_id (V23)
-    @Column(name = "analysis_job_id", updatable = false)
+    @Column(name = "analysis_job_id", nullable = true, updatable = false)
     val analysisJobId: Long? = null,
 
     /**
      * 이 잡의 범위. null이면 갤러리 전체(모든 세부폴더 + 미분류)를 한 라운드로 계산한다. 값이 있으면 그
      * 세부폴더에 요청 시점에 든 사진만 대상으로 하고, 그 사진들의 기존 추천만 지우고 다시 쓴다.
      */
-    @Column(name = "detail_folder_id", updatable = false)
+    @Column(name = "detail_folder_id", nullable = true, updatable = false)
     val detailFolderId: Long? = null,
 
-    @Column(name = "requested_target_count", updatable = false)
+    @Column(name = "requested_target_count", nullable = true, updatable = false)
     val targetCount: Int? = null,
 
 ) : BaseEntity() {
@@ -58,7 +58,7 @@ class AiSelectionJob(
     val id: Long? = null
 
     /** 이 잡이 만든 추천 라운드 번호. 1단계(추천 INSERT)에서 정해진다 — 그 전에는 null이다. */
-    @Column(name = "round")
+    @Column(name = "round", nullable = true)
     var round: Int? = null
         protected set
 
@@ -67,21 +67,21 @@ class AiSelectionJob(
     var status: AiJobStatus = AiJobStatus.PENDING
         protected set
 
-    @Column(name = "started_at")
+    @Column(name = "started_at", nullable = true)
     var startedAt: ZonedDateTime? = null
         protected set
 
-    @Column(name = "finished_at")
+    @Column(name = "finished_at", nullable = true)
     var finishedAt: ZonedDateTime? = null
         protected set
 
-    @Column(name = "error")
+    @Column(name = "error", nullable = true)
     var error: String? = null
         protected set
 
     /** 끝난 잡의 요약(라운드·장수·폴더별 추천 수·소요). 운영 확인용이고 화면은 읽지 않는다. */
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "result", columnDefinition = "jsonb")
+    @Column(name = "result", nullable = true, columnDefinition = "jsonb")
     var result: Map<String, Any?>? = null
         protected set
 

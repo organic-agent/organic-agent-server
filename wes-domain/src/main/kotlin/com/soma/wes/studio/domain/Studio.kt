@@ -34,7 +34,7 @@ class Studio(
 
     galleryUrl: String,
 
-    @Column(name = "inflow_channel", length = 255)
+    @Column(name = "inflow_channel", nullable = true, length = 255)
     val inflowChannel: String? = null,
 
     contact: String? = null,
@@ -43,7 +43,7 @@ class Studio(
 
 ) : BaseEntity() {
 
-    @Column(nullable = false, length = 255)
+    @Column(name = "name", nullable = false, length = 255)
     var name: String = name
         protected set
 
@@ -51,19 +51,19 @@ class Studio(
     var galleryUrl: String = galleryUrl
         protected set
 
-    @Column(length = 100)
+    @Column(name = "contact", nullable = true, length = 100)
     var contact: String? = contact
         protected set
 
-    @Column(length = 500)
+    @Column(name = "description", nullable = true, length = 500)
     var description: String? = description
         protected set
 
-    @Column(name = "deleted_at")
+    @Column(name = "deleted_at", nullable = true)
     var deletedAt: ZonedDateTime? = null
         protected set
 
-    @Column(name = "suspended_at")
+    @Column(name = "suspended_at", nullable = true)
     var suspendedAt: ZonedDateTime? = null
         protected set
 

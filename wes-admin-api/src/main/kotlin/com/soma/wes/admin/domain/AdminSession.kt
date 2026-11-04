@@ -36,7 +36,7 @@ class AdminSession private constructor(
     var lastActiveAt: ZonedDateTime = lastActiveAt
         protected set
 
-    @Column(name = "revoked_at")
+    @Column(name = "revoked_at", nullable = true)
     var revokedAt: ZonedDateTime? = revokedAt
         protected set
 

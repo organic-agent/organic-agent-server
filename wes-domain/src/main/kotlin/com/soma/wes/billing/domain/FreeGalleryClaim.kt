@@ -1,6 +1,7 @@
 package com.soma.wes.billing.domain
 
 import com.soma.wes.global.BaseEntity
+import jakarta.persistence.AttributeOverride
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.GeneratedValue
@@ -11,6 +12,9 @@ import jakarta.persistence.Table
 /** 갤러리 영구 삭제 후에도 남겨 계정당 무료 이용을 한 번으로 제한한다. */
 @Entity
 @Table(name = "free_gallery_claims")
+// 이 테이블은 감사 시각이 NOT NULL이다. BaseEntity의 공용 정의(NULL 허용)를 이 엔티티에서만 덮는다.
+@AttributeOverride(name = "createdAt", column = Column(name = "created_at", nullable = false, updatable = false))
+@AttributeOverride(name = "updatedAt", column = Column(name = "updated_at", nullable = false))
 class FreeGalleryClaim private constructor(
     @Column(name = "user_id", nullable = false, updatable = false, unique = true)
     val userId: Long,

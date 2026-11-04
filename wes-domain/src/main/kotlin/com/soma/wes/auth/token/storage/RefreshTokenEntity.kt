@@ -15,7 +15,7 @@ import java.time.ZonedDateTime
 class RefreshTokenEntity(
 
     @Id
-    @Column(name = "user_id")
+    @Column(name = "user_id", nullable = false)
     val userId: Long,
 
     token: String,
@@ -24,7 +24,7 @@ class RefreshTokenEntity(
 
 ) : BaseEntity() {
 
-    @Column(nullable = false, length = 512)
+    @Column(name = "token", nullable = false, length = 512)
     var token: String = token
         protected set
 

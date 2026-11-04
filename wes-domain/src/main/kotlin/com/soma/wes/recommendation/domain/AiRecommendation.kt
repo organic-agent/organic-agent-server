@@ -52,7 +52,7 @@ class AiRecommendation(
      * 추천 당시의 세부폴더(재현용). 세트에 안 들어간 사진(미분류 가상 폴더)은 null. 화면 응답의
      * folderId는 이 값이 아니라 사진의 **현재** 배정이다 — 표시는 사진을 따라간다.
      */
-    @Column(name = "folder_id", updatable = false)
+    @Column(name = "folder_id", nullable = true, updatable = false)
     val folderId: Long? = null,
 
     /** 점수·순위·폴더 몫 등 이 추천이 만들어진 근거. 키는 AI repo v3 `score_breakdown`과 같다. */
@@ -67,7 +67,7 @@ class AiRecommendation(
     val id: Long? = null
 
     /** 부부가 이 추천을 거절한 시각. 다음 라운드는 거절된 사진을 후보에서 뺀다. */
-    @Column(name = "rejected_at")
+    @Column(name = "rejected_at", nullable = true)
     val rejectedAt: ZonedDateTime? = null
 
     val requiredId: Long
