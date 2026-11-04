@@ -41,7 +41,7 @@ class RetouchRound(
 
 ) : BaseEntity() {
 
-    @Column(name = "deleted_at")
+    @Column(name = "deleted_at", nullable = true)
     var deletedAt: ZonedDateTime? = null
         protected set
 
@@ -52,17 +52,17 @@ class RetouchRound(
     // allOpen 플러그인이 엔티티를 open으로 만들어 private setter를 쓸 수 없다.
     // 상태 전이는 아래 메서드로만 한다.
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
+    @Column(name = "status", nullable = false, length = 20)
     var status: RetouchRoundStatus = RetouchRoundStatus.DRAFTING
         protected set
 
     /** 부부가 제출한 시각. [status]가 REQUESTED가 되는 순간 채워진다. */
-    @Column(name = "requested_at")
+    @Column(name = "requested_at", nullable = true)
     var requestedAt: ZonedDateTime? = null
         protected set
 
     /** 작가가 회차를 끝낸 시각. */
-    @Column(name = "completed_at")
+    @Column(name = "completed_at", nullable = true)
     var completedAt: ZonedDateTime? = null
         protected set
 
@@ -70,7 +70,7 @@ class RetouchRound(
      * 회차의 모든 사진에 적용되는 요청("전체 톤 밝게"). 사진 단위 요청([RetouchPhoto.requestText])과 별개로
      * 요청서 맨 앞에 실린다. 적지 않았으면 null이다.
      */
-    @Column(name = "request_text")
+    @Column(name = "request_text", nullable = true)
     var requestText: String? = null
         protected set
 

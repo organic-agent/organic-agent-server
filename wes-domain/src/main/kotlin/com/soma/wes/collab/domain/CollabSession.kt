@@ -41,7 +41,7 @@ class CollabSession(
 ) : BaseEntity() {
 
     /** 부부가 링크를 구분하려고 붙인 이름. 하객에게도 첫 화면에 보인다. */
-    @Column(nullable = false, length = MAX_NAME_LENGTH)
+    @Column(name = "name", nullable = false, length = MAX_NAME_LENGTH)
     var name: String = name
         protected set
 
@@ -51,7 +51,7 @@ class CollabSession(
         protected set
 
     /** 부부가 링크를 거둬들인 시각. 링크가 엉뚱한 곳에 퍼졌을 때 쓴다. */
-    @Column(name = "revoked_at")
+    @Column(name = "revoked_at", nullable = true)
     var revokedAt: ZonedDateTime? = revokedAt
         protected set
 
@@ -59,7 +59,7 @@ class CollabSession(
      * 운영자가 재발급한 제한 시간 링크의 만료 시각. `null`은 부부가 직접 만든 일반 링크처럼
      * 만료 기한이 없다는 뜻이다.
      */
-    @Column(name = "expires_at")
+    @Column(name = "expires_at", nullable = true)
     var expiresAt: ZonedDateTime? = expiresAt
         protected set
 
@@ -72,11 +72,11 @@ class CollabSession(
     var includeAllAlbums: Boolean = false
         protected set
 
-    @Column(name = "cover_title", length = MAX_NAME_LENGTH)
+    @Column(name = "cover_title", nullable = true, length = MAX_NAME_LENGTH)
     var coverTitle: String? = null
         protected set
 
-    @Column(name = "cover_author", length = MAX_NAME_LENGTH)
+    @Column(name = "cover_author", nullable = true, length = MAX_NAME_LENGTH)
     var coverAuthor: String? = null
         protected set
 
@@ -85,7 +85,7 @@ class CollabSession(
         if (author != null) coverAuthor = if (author.isBlank()) null else requireValidName(author)
     }
 
-    @Column(name = "deleted_at")
+    @Column(name = "deleted_at", nullable = true)
     var deletedAt: ZonedDateTime? = null
         protected set
 

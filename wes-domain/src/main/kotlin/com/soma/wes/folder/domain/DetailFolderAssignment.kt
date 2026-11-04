@@ -18,7 +18,7 @@ class DetailFolderAssignment(
     val galleryId: Long,
 
     @Id
-    @Column(name = "photo_id", updatable = false)
+    @Column(name = "photo_id", nullable = false, updatable = false)
     val photoId: Long,
 
     detailFolderId: Long,
@@ -32,7 +32,7 @@ class DetailFolderAssignment(
     assignedAt: ZonedDateTime,
 
     /** 이 사진을 폴더에 처음 넣은 분석 잡. 사용자가 직접 넣었으면 null. 사용자가 옮겨도 남는다 — 물질화 재호출이 잡의 결과를 다시 찾는 표식이다. */
-    @Column(name = "analysis_job_id", updatable = false)
+    @Column(name = "analysis_job_id", nullable = true, updatable = false)
     val analysisJobId: Long? = null,
 ) : BaseEntity() {
 
@@ -40,7 +40,7 @@ class DetailFolderAssignment(
     var detailFolderId: Long = detailFolderId
         protected set
 
-    @Column(name = "assigned_by_user_id")
+    @Column(name = "assigned_by_user_id", nullable = true)
     var assignedByUserId: Long? = assignedByUserId
         protected set
 
@@ -49,7 +49,7 @@ class DetailFolderAssignment(
     var assignedSource: FolderSource = assignedSource
         protected set
 
-    @Column
+    @Column(name = "confidence", nullable = true)
     var confidence: Double? = confidence
         protected set
 

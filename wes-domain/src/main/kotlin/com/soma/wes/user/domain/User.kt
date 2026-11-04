@@ -30,10 +30,10 @@ import java.time.ZonedDateTime
 class User(
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, updatable = false)
+    @Column(name = "provider", nullable = false, updatable = false)
     val provider: OAuthProvider,
 
-    @Column(nullable = false, updatable = false)
+    @Column(name = "provider_id", nullable = false, updatable = false)
     val providerId: String,
 
     nickname: String,
@@ -46,11 +46,11 @@ class User(
 
 ) : BaseEntity() {
 
-    @Column(name = "deleted_at")
+    @Column(name = "deleted_at", nullable = true)
     var deletedAt: ZonedDateTime? = null
         protected set
 
-    @Column(name = "suspended_at")
+    @Column(name = "suspended_at", nullable = true)
     var suspendedAt: ZonedDateTime? = null
         protected set
 
@@ -61,20 +61,20 @@ class User(
     val requiredId: Long
         get() = checkNotNull(id) { "저장되지 않은 사용자입니다." }
 
-    @Column(nullable = false, length = 50)
+    @Column(name = "nickname", nullable = false, length = 50)
     var nickname: String = nickname
         protected set
 
-    @Column
+    @Column(name = "email", nullable = true)
     var email: String? = email
         protected set
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
+    @Column(name = "role", nullable = false, length = 20)
     var role: Role = role
         protected set
 
-    @Column(name = "profile_image_url", length = 2048)
+    @Column(name = "profile_image_url", nullable = true, length = 2048)
     var profileImageUrl: String? = profileImageUrl
         protected set
 

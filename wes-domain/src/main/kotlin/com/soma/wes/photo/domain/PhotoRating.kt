@@ -44,7 +44,7 @@ class PhotoRating(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null
 
-    @Column(nullable = false)
+    @Column(name = "score", nullable = false)
     var score: Int = score
         protected set
 

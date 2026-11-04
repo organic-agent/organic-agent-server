@@ -33,7 +33,7 @@ class PhotoSelection(
 
 ) : BaseEntity() {
 
-    @Column(name = "deleted_at")
+    @Column(name = "deleted_at", nullable = true)
     var deletedAt: ZonedDateTime? = null
         protected set
 
@@ -44,17 +44,17 @@ class PhotoSelection(
     // allOpen 플러그인이 엔티티를 open으로 만들어 private setter를 쓸 수 없다.
     // 상태 전이는 아래 메서드로만 한다.
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
+    @Column(name = "status", nullable = false, length = 20)
     var status: PhotoSelectionStatus = PhotoSelectionStatus.SELECTING
         protected set
 
     /** 제출 시각. 되돌리면 다시 null이 된다 — [status]와 늘 같은 방향을 가리킨다. */
-    @Column(name = "submitted_at")
+    @Column(name = "submitted_at", nullable = true)
     var submittedAt: ZonedDateTime? = null
         protected set
 
     /** 마지막 제출을 수행한 사용자. 철회하면 제출 이력과 함께 비운다. */
-    @Column(name = "submitted_by_user_id")
+    @Column(name = "submitted_by_user_id", nullable = true)
     var submittedByUserId: Long? = null
         protected set
 

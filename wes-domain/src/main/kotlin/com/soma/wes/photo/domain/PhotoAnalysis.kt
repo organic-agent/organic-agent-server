@@ -40,12 +40,12 @@ class PhotoAnalysis(
 
     @JdbcTypeCode(SqlTypes.VECTOR)
     @Array(length = EMBEDDING_DIMENSION)
-    @Column(name = "embedding")
+    @Column(name = "embedding", nullable = true)
     var embedding: FloatArray? = null
         protected set
 
     /** 벡터를 만든 모델 id(`facebook/dinov3-vitb16-pretrain-lvd1689m`). 모델을 바꾸면 이 값으로 재계산 대상을 가른다. */
-    @Column(name = "embedding_model", length = 60)
+    @Column(name = "embedding_model", nullable = true, length = 60)
     var embeddingModel: String? = null
         protected set
 
@@ -55,58 +55,58 @@ class PhotoAnalysis(
      */
     @JdbcTypeCode(SqlTypes.VECTOR)
     @Array(length = EMBEDDING_DIMENSION)
-    @Column(name = "clip_embedding")
+    @Column(name = "clip_embedding", nullable = true)
     val clipEmbedding: FloatArray? = null
 
     /**
      * 임베딩 그룹 번호 — DINOv3·CLIP 벡터를 이어 붙인 공간에서 AI가 묶은 사진 덩어리. 갤러리 안에서만 유일하고, -1은 미배정(임베딩 없음)이다.
      * 화면에 나오지 않는 내부 단위다 — 컨셉 배정([ConceptAssignment])과 폴더 상세 정렬이 쓴다.
      */
-    @Column(name = "embed_group_id")
+    @Column(name = "embed_group_id", nullable = true)
     val embedGroupId: Int? = null
 
     /** CLIP zero-shot 피사체(신부/신랑/두 분/단체). 추천이 사진별로 읽는다. */
-    @Column(name = "subjects", length = 20)
+    @Column(name = "subjects", nullable = true, length = 20)
     val subjects: String? = null
 
     /** 갤러리 안 백분위 0~100. 원점수가 아니라 모델마다 단위가 달라도 비교할 수 있다. categorize 단계가 쓴다. */
-    @Column(name = "technical_pct")
+    @Column(name = "technical_pct", nullable = true)
     val technicalPct: Float? = null
 
-    @Column(name = "aesthetic_pct")
+    @Column(name = "aesthetic_pct", nullable = true)
     val aestheticPct: Float? = null
 
     // [GLOSSARY-1 2026-09-27] clusterId → burstId, clusterRank → burstRank (용어집: 연사).
     // [GLOSSARY-2 2026-09-27] 컬럼 cluster_id·cluster_rank → burst_id·burst_rank (V23)
     /** 연사 번호 — 같은 카메라에서 거의 같은 순간 연속으로 찍힌 사진 묶음. 갤러리 안에서만 유일하다. */
-    @Column(name = "burst_id")
+    @Column(name = "burst_id", nullable = true)
     val burstId: Int? = null
 
     /** 연사 안 순위. 0이 연사 대표다. */
-    @Column(name = "burst_rank")
+    @Column(name = "burst_rank", nullable = true)
     val burstRank: Int? = null
 
     // [GLOSSARY-1 2026-09-27] modelVersion → pipelineVersion (용어집 D3: 모델 id가 아니라 파이프라인 버전).
     // [GLOSSARY-2 2026-09-27] 컬럼 model_version → pipeline_version (V23)
     /** 분석 컬럼을 만든 파이프라인 버전(예: `photoselect-v3-a-0.1`). score 단계가 쓴다 — null이면 임베딩만 있고 분석은 아직이다. */
-    @Column(name = "pipeline_version", length = 40)
+    @Column(name = "pipeline_version", nullable = true, length = 40)
     val pipelineVersion: String? = null
 
-    @Column(name = "analyzed_at")
+    @Column(name = "analyzed_at", nullable = true)
     val analyzedAt: ZonedDateTime? = null
 
     /**
      * score 2단계(화질 점수 — ARNIQA·선명도·노출)가 끝난 시각. 계산에 실패해도 찍힌다(점수만 null). [error]에 쓰지 않는 이유는
      * 화질 점수가 추천에만 쓰여서다 — 실패를 [error]에 남기면 그 사진이 폴더에서도 빠진다. 1단계만 끝난 사진은 null 이다.
      */
-    @Column(name = "quality_scored_at")
+    @Column(name = "quality_scored_at", nullable = true)
     val qualityScoredAt: ZonedDateTime? = null
 
     /**
      * 이 사진의 분석이 결정적으로 실패한 이유. 임베더(디코드 불가)·score(미리보기 없음)·이 서버(재시도 상한)가 쓰고,
      * 채워진 사진은 배정·집기·기대 장수에서 빠진다. 사진 상태에 실패 값을 두지 않는 대신 여기 하나로 드러낸다.
      */
-    @Column(name = "error")
+    @Column(name = "error", nullable = true)
     val error: String? = null
 
     /**

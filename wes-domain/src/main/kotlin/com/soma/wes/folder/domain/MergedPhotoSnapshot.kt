@@ -15,14 +15,14 @@ class MergedPhotoSnapshot(
     @Column(name = "photo_id", nullable = false)
     val photoId: Long,
 
-    @Column(name = "assigned_by_user_id")
+    @Column(name = "assigned_by_user_id", nullable = true)
     val assignedByUserId: Long?,
 
     @Enumerated(EnumType.STRING)
     @Column(name = "assigned_source", nullable = false, length = 20)
     val assignedSource: FolderSource,
 
-    @Column(name = "confidence")
+    @Column(name = "confidence", nullable = true)
     val confidence: Double?,
 
     @Column(name = "assigned_at", nullable = false)

@@ -45,7 +45,7 @@ class CollabPhotoLike(
     val id: Long? = null
 
     /** 관리자 7일 휴지통에 든 좋아요는 제품 집계와 하객의 liked 상태에서 제외한다. */
-    @Column(name = "deleted_at")
+    @Column(name = "deleted_at", nullable = true)
     var deletedAt: ZonedDateTime? = null
         protected set
 

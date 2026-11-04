@@ -37,7 +37,7 @@ class AdminAccount private constructor(
 
     lastLoginAt: ZonedDateTime?,
 
-    @Column(name = "created_by_admin_id", updatable = false)
+    @Column(name = "created_by_admin_id", nullable = true, updatable = false)
     val createdByAdminId: Long?,
 
 ) : BaseEntity() {
@@ -70,7 +70,7 @@ class AdminAccount private constructor(
     var failedLoginAttempts: Int = failedLoginAttempts
         protected set
 
-    @Column(name = "locked_until")
+    @Column(name = "locked_until", nullable = true)
     var lockedUntil: ZonedDateTime? = lockedUntil
         protected set
 
@@ -78,7 +78,7 @@ class AdminAccount private constructor(
     var passwordChangedAt: ZonedDateTime = passwordChangedAt
         protected set
 
-    @Column(name = "last_login_at")
+    @Column(name = "last_login_at", nullable = true)
     var lastLoginAt: ZonedDateTime? = lastLoginAt
         protected set
 

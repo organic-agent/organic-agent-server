@@ -33,21 +33,21 @@ class ConceptFolder(
     val createdSource: FolderSource,
 
     /** AI가 만든 컨셉 세트의 분석 잡. 사용자가 직접 만든 컨셉은 null이다. */
-    @Column(name = "analysis_job_id", updatable = false)
+    @Column(name = "analysis_job_id", nullable = true, updatable = false)
     val analysisJobId: Long? = null,
 ) : BaseEntity() {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null
 
-    @Column(name = "deleted_at")
+    @Column(name = "deleted_at", nullable = true)
     var deletedAt: ZonedDateTime? = null
         protected set
 
     val requiredId: Long
         get() = checkNotNull(id) { "저장되지 않은 컨셉폴더입니다." }
 
-    @Column(nullable = false, length = FolderName.MAX_LENGTH)
+    @Column(name = "name", nullable = false, length = FolderName.MAX_LENGTH)
     var name: String = name
         protected set
 

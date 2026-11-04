@@ -24,17 +24,17 @@ abstract class BaseEntity {
      * 일반 사용자 경로에서 일어난 변경도 함께 증가해야 `expectedVersion` 검사가 의미를 갖는다.
      */
     @Version
-    @Column(nullable = false)
+    @Column(name = "version", nullable = false)
     var version: Long = 0
         protected set
 
     @CreatedDate
-    @Column(name = "created_at", updatable = false)
+    @Column(name = "created_at", nullable = true, updatable = false)
     var createdAt: ZonedDateTime? = null
         protected set
 
     @LastModifiedDate
-    @Column(name = "updated_at")
+    @Column(name = "updated_at", nullable = true)
     var updatedAt: ZonedDateTime? = null
         protected set
 }

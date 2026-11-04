@@ -39,14 +39,14 @@ class DetailFolder(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null
 
-    @Column(name = "deleted_at")
+    @Column(name = "deleted_at", nullable = true)
     var deletedAt: ZonedDateTime? = null
         protected set
 
     val requiredId: Long
         get() = checkNotNull(id) { "저장되지 않은 세부폴더입니다." }
 
-    @Column(nullable = false, length = FolderName.MAX_LENGTH)
+    @Column(name = "name", nullable = false, length = FolderName.MAX_LENGTH)
     var name: String = name
         protected set
 

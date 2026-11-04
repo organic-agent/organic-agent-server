@@ -17,11 +17,12 @@ paths:
   `gallery.archiveAfter(days, now)`, `invite.revoke(now)`). Kotlin의 `var`는 public setter를 만들어 서비스가
   `gallery.status = OPEN`처럼 직접 대입할 수 있게 되고, 그러면 상태 전이 검증(`open()`)을 건너뛰고 같은 계산(보관 기한)이
   서비스마다 복제된다. allOpen 플러그인 때문에 `private set`은 쓸 수 없어 `protected set`이 가장 좁다. <!-- DM-11 DM-12 -->
-- **NULL 허용 여부는 Kotlin 타입의 `?`로 표현하고, DB 컬럼의 `NOT NULL`과 반드시 일치시킨다.** `@Column(nullable = …)`은
-  적지 않는다 — 스키마는 Flyway가 만들고, `ddl-auto=validate`는 NULL 허용을 비교하지 않으며, Bean Validation이 있어
-  Hibernate의 저장 전 null 검사도 꺼져 있어서 이 속성은 아무것도 막지 않는다. <!-- DM-s1 --> 실제로 막는 것은 Kotlin 타입(컴파일)과
-  DB 제약(실행) 둘이고, 위험은 둘이 어긋날 때다: Kotlin `String` ↔ DB NULL 허용이면 NULL 행을 읽을 때 엉뚱한 곳에서 NPE,
-  Kotlin `String?` ↔ DB `NOT NULL`이면 저장 순간 DB 오류. <!-- DM-10 -->
+- **NULL 허용 여부는 Kotlin 타입의 `?`, `@Column(nullable = …)`, DB 컬럼의 `NOT NULL` 셋을 반드시 일치시킨다.**
+  `@Column`에는 `nullable`을 항상 적는다 — 엔티티만 읽어도 컬럼의 이름·NULL 허용·길이를 알 수 있게 하려는 것이다. <!-- DM-13 -->
+  이 속성 자체는 아무것도 막지 않는다(스키마는 Flyway가 만들고, `ddl-auto=validate`는 NULL 허용을 비교하지 않으며,
+  Bean Validation이 있어 Hibernate의 저장 전 null 검사도 꺼져 있다). 그래서 셋이 어긋나지 않는지는 `EntityNullabilityGuardTest`가
+  지킨다: Kotlin `String` ↔ DB NULL 허용이면 NULL 행을 읽을 때 엉뚱한 곳에서 NPE, Kotlin `String?` ↔ DB `NOT NULL`이면
+  저장 순간 DB 오류, 어노테이션만 어긋나면 읽는 사람이 틀린 사실을 믿는다. <!-- DM-10 -->
 - **스키마는 Flyway가 소유한다** (`ddl-auto=validate`). 엔티티·컬럼을 추가하면 반드시 마이그레이션을
   함께 쓴다. 버전 번호는 main 병합 시점 기준 최신 +1 — rebase 후 충돌 여부를 확인하라
   (V17 trash / V18 folder 충돌 전례).

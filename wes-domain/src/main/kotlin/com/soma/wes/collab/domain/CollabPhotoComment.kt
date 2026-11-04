@@ -32,12 +32,12 @@ class CollabPhotoComment(
     @Column(name = "participant_id", nullable = false, updatable = false)
     val participantId: Long,
 
-    @Column(nullable = false, length = MAX_CONTENT_LENGTH)
+    @Column(name = "content", nullable = false, length = MAX_CONTENT_LENGTH)
     val content: String,
 
 ) : BaseEntity() {
 
-    @Column(name = "deleted_at")
+    @Column(name = "deleted_at", nullable = true)
     var deletedAt: ZonedDateTime? = null
         protected set
 

@@ -29,10 +29,10 @@ class CollabParticipant(
     @Column(name = "participant_type", nullable = false, updatable = false, length = 20)
     val participantType: CollabParticipantType,
 
-    @Column(name = "user_id", updatable = false)
+    @Column(name = "user_id", nullable = true, updatable = false)
     val userId: Long? = null,
 
-    @Column(name = "guest_token", updatable = false, length = 255)
+    @Column(name = "guest_token", nullable = true, updatable = false, length = 255)
     val guestToken: String? = null,
 
     nickname: String,
@@ -41,14 +41,14 @@ class CollabParticipant(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null
 
-    @Column(name = "deleted_at")
+    @Column(name = "deleted_at", nullable = true)
     var deletedAt: ZonedDateTime? = null
         protected set
 
     val requiredId: Long
         get() = checkNotNull(id) { "저장되지 않은 협업 참여자입니다." }
 
-    @Column(nullable = false, length = MAX_NICKNAME_LENGTH)
+    @Column(name = "nickname", nullable = false, length = MAX_NICKNAME_LENGTH)
     var nickname: String = nickname
         protected set
 

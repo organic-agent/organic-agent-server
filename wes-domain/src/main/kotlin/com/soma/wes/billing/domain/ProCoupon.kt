@@ -3,6 +3,7 @@ package com.soma.wes.billing.domain
 import com.soma.wes.billing.exception.BillingErrorCode
 import com.soma.wes.billing.exception.BillingException
 import com.soma.wes.global.BaseEntity
+import jakarta.persistence.AttributeOverride
 import jakarta.persistence.Column
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
@@ -16,6 +17,9 @@ import java.time.ZonedDateTime
 /** 자동 생성 코드의 원문은 저장하지 않으며, 직접 지정한 공유 코드는 관리자 식별용으로 보관한다. */
 @Entity
 @Table(name = "pro_coupons")
+// 이 테이블은 감사 시각이 NOT NULL이다. BaseEntity의 공용 정의(NULL 허용)를 이 엔티티에서만 덮는다.
+@AttributeOverride(name = "createdAt", column = Column(name = "created_at", nullable = false, updatable = false))
+@AttributeOverride(name = "updatedAt", column = Column(name = "updated_at", nullable = false))
 class ProCoupon private constructor(
     @Column(name = "code_hash", nullable = false, updatable = false, unique = true, length = CODE_HASH_LENGTH)
     val codeHash: String,

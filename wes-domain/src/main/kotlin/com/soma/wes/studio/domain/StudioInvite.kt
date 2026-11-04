@@ -14,17 +14,17 @@ import java.time.ZonedDateTime
 class StudioInvite(
     @Column(name = "workspace_id", nullable = false, updatable = false)
     val workspaceId: Long,
-    @Column(nullable = false, updatable = false, unique = true, length = 255)
+    @Column(name = "token", nullable = false, updatable = false, unique = true, length = 255)
     val token: String,
     @Column(name = "expires_at", nullable = false)
     val expiresAt: ZonedDateTime,
-    @Column(name = "issued_by_user_id", updatable = false)
+    @Column(name = "issued_by_user_id", nullable = true, updatable = false)
     val issuedByUserId: Long? = null,
 ) : BaseEntity() {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null
-    @Column(name = "revoked_at")
+    @Column(name = "revoked_at", nullable = true)
     var revokedAt: ZonedDateTime? = null
         protected set
     @Column(name = "used_count", nullable = false)

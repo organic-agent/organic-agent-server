@@ -25,31 +25,31 @@ class UserNotification(
     val userId: Long,
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, updatable = false, length = 40)
+    @Column(name = "type", nullable = false, updatable = false, length = 40)
     val type: UserNotificationType,
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, updatable = false, length = 20)
+    @Column(name = "scope", nullable = false, updatable = false, length = 20)
     val scope: UserNotificationScope,
 
-    @Column(name = "scope_id", updatable = false)
+    @Column(name = "scope_id", nullable = true, updatable = false)
     val scopeId: Long? = null,
 
     /** 알림 발생 시 스튜디오 소속. 갤러리 삭제 후에도 과거 알림을 모아 보여 준다. */
-    @Column(name = "studio_workspace_id", updatable = false)
+    @Column(name = "studio_workspace_id", nullable = true, updatable = false)
     val studioWorkspaceId: Long? = null,
 
-    @Column(nullable = false, updatable = false, length = 100)
+    @Column(name = "title", nullable = false, updatable = false, length = 100)
     val title: String,
 
-    @Column(nullable = false, updatable = false, length = 500)
+    @Column(name = "message", nullable = false, updatable = false, length = 500)
     val message: String,
 ) : BaseEntity() {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null
 
-    @Column(name = "read_at")
+    @Column(name = "read_at", nullable = true)
     var readAt: ZonedDateTime? = null
         protected set
 
