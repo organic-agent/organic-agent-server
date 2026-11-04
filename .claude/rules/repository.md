@@ -14,7 +14,7 @@ paths:
 엔티티 한두 개를 바꾸는 사용자 요청은 JPA로, 경쟁·대량·소프트 삭제 우회·Postgres 기능이 필요한 일은 SQL로 간다.
 
 - native: Postgres 기능(`ON CONFLICT`·`FOR UPDATE [SKIP LOCKED]`·`RETURNING`·CTE·벡터 연산)이나 `@SQLRestriction`이 숨긴 행이 필요할 때.
-- JDBC: 엔티티가 없는 테이블(`*_activity`·`photo_labels`·`scheduler_leader_lease`), 수천 행 배치, 영속성 컨텍스트를 지나면 안 되는 쓰기.
+- JDBC: 엔티티가 없는 테이블(`*_activity`·`scheduler_leader_lease`), 수천 행 배치, 영속성 컨텍스트를 지나면 안 되는 쓰기.
   새 JDBC 코드는 **`JdbcClient`**로 쓴다 — `JdbcTemplate.batchUpdate`가 필요한 대량 배치만 예외. <!-- RP-02 -->
 - **근거는 KDoc 첫 줄로.** native·JDBC·`clearAutomatically` 없는 `@Modifying`·`EntityManager`를 쓰면 "왜 앞 단계로 안 되는가"를
   그 메서드(또는 클래스) KDoc 첫 줄에 적는다 — 예: "`@SQLRestriction`이 숨긴 합쳐진 폴더를 찾으므로 native". <!-- RP-01 -->
