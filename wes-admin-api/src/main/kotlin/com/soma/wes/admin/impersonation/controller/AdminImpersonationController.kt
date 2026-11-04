@@ -1,8 +1,8 @@
 package com.soma.wes.admin.impersonation.controller
 
 import com.soma.wes.admin.domain.AdminLoginUser
-import com.soma.wes.admin.impersonation.dto.AdminImpersonationResponse
-import com.soma.wes.admin.impersonation.dto.StartAdminImpersonationRequest
+import com.soma.wes.admin.impersonation.dto.response.AdminImpersonationResponse
+import com.soma.wes.admin.impersonation.dto.request.StartAdminImpersonationRequest
 import com.soma.wes.admin.impersonation.service.AdminImpersonationService
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid

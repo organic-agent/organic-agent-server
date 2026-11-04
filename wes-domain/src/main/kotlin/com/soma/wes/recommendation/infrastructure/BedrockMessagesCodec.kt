@@ -1,5 +1,6 @@
 package com.soma.wes.recommendation.infrastructure
 
+import com.soma.wes.recommendation.dto.BedrockDecodedMessageDto
 import com.soma.wes.recommendation.dto.LlmJsonRequestDto
 import com.soma.wes.recommendation.dto.LlmPartDto
 import org.springframework.stereotype.Component
@@ -44,10 +45,10 @@ class BedrockMessagesCodec(
         return objectMapper.writeValueAsString(body)
     }
 
-    fun decode(json: String): Decoded {
+    fun decode(json: String): BedrockDecodedMessageDto {
         val root = objectMapper.readTree(json)
         val text = root.path("content").firstOrNull { it.path("type").asText() == "text" }?.path("text")?.asText()
-        return Decoded(
+        return BedrockDecodedMessageDto(
             stopReason = root.path("stop_reason").asText(null),
             text = text,
             inputTokens = root.path("usage").path("input_tokens").asInt(0),
@@ -56,11 +57,4 @@ class BedrockMessagesCodec(
     }
 
     fun parseJson(text: String): JsonNode = objectMapper.readTree(text)
-
-    data class Decoded(
-        val stopReason: String?,
-        val text: String?,
-        val inputTokens: Int,
-        val outputTokens: Int,
-    )
 }

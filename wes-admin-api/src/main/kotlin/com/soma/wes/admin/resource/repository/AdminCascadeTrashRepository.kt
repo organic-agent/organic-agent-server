@@ -1,6 +1,9 @@
 package com.soma.wes.admin.resource.repository
 
 import com.soma.wes.admin.resource.domain.AdminResourceType
+import com.soma.wes.admin.resource.repository.projection.CascadeSoftTarget
+import com.soma.wes.admin.resource.repository.projection.CascadeTrashBatchRow
+import com.soma.wes.admin.resource.repository.projection.CascadeTrashEntryRow
 import com.soma.wes.trash.repository.purgeObjectKeysSql
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Repository
@@ -56,19 +59,19 @@ class AdminCascadeTrashRepository(
             "retouchStorageMetadataCount",
         )
         private val SOFT_TARGETS = listOf(
-            SoftTarget("USER", "users"),
-            SoftTarget("STUDIO", "studios", "workspace_id"),
-            SoftTarget("WORKSPACE", "workspaces"),
-            SoftTarget("WORKSPACE_MEMBER", "workspace_members"),
-            SoftTarget("GALLERY_MEMBER", "gallery_members"),
-            SoftTarget("GALLERY", "galleries"),
-            SoftTarget("PHOTO", "photos"),
-            SoftTarget("CONCEPT_FOLDER", "concept_folders"),
-            SoftTarget("DETAIL_FOLDER", "detail_folders"),
-            SoftTarget("SELECTION", "photo_selections"),
-            SoftTarget("COLLABORATION", "collab_sessions"),
-            SoftTarget("COLLAB_COMMENT", "collab_photo_comments"),
-            SoftTarget("RETOUCH_REQUEST", "retouch_rounds"),
+            CascadeSoftTarget("USER", "users"),
+            CascadeSoftTarget("STUDIO", "studios", "workspace_id"),
+            CascadeSoftTarget("WORKSPACE", "workspaces"),
+            CascadeSoftTarget("WORKSPACE_MEMBER", "workspace_members"),
+            CascadeSoftTarget("GALLERY_MEMBER", "gallery_members"),
+            CascadeSoftTarget("GALLERY", "galleries"),
+            CascadeSoftTarget("PHOTO", "photos"),
+            CascadeSoftTarget("CONCEPT_FOLDER", "concept_folders"),
+            CascadeSoftTarget("DETAIL_FOLDER", "detail_folders"),
+            CascadeSoftTarget("SELECTION", "photo_selections"),
+            CascadeSoftTarget("COLLABORATION", "collab_sessions"),
+            CascadeSoftTarget("COLLAB_COMMENT", "collab_photo_comments"),
+            CascadeSoftTarget("RETOUCH_REQUEST", "retouch_rounds"),
         )
     }
 
@@ -593,7 +596,7 @@ class AdminCascadeTrashRepository(
             .single()
     }
 
-    fun find(batchId: Long): BatchRow? = jdbcClient.sql(
+    fun find(batchId: Long): CascadeTrashBatchRow? = jdbcClient.sql(
         """
         SELECT id, root_type, root_id, root_label, actor_admin_id, actor_username, reason,
                status, deleted_at, restore_until, restored_at, purged_at,
@@ -607,7 +610,7 @@ class AdminCascadeTrashRepository(
         .optional()
         .orElse(null)
 
-    fun findActiveByRoot(rootType: AdminResourceType, rootId: Long): BatchRow? = jdbcClient.sql(
+    fun findActiveByRoot(rootType: AdminResourceType, rootId: Long): CascadeTrashBatchRow? = jdbcClient.sql(
         """
         SELECT id, root_type, root_id, root_label, actor_admin_id, actor_username, reason,
                status, deleted_at, restore_until, restored_at, purged_at,
@@ -623,7 +626,7 @@ class AdminCascadeTrashRepository(
         .optional()
         .orElse(null)
 
-    fun findActiveContaining(type: AdminResourceType, id: Long): BatchRow? = jdbcClient.sql(
+    fun findActiveContaining(type: AdminResourceType, id: Long): CascadeTrashBatchRow? = jdbcClient.sql(
         """
         SELECT b.id, b.root_type, b.root_id, b.root_label, b.actor_admin_id, b.actor_username, b.reason,
                b.status, b.deleted_at, b.restore_until, b.restored_at, b.purged_at,
@@ -643,7 +646,7 @@ class AdminCascadeTrashRepository(
         .optional()
         .orElse(null)
 
-    fun list(limit: Int = 200): List<BatchRow> = jdbcClient.sql(
+    fun list(limit: Int = 200): List<CascadeTrashBatchRow> = jdbcClient.sql(
         """
         SELECT id, root_type, root_id, root_label, actor_admin_id, actor_username, reason,
                status, deleted_at, restore_until, restored_at, purged_at,
@@ -672,7 +675,7 @@ class AdminCascadeTrashRepository(
         .list()
         .toMap()
 
-    fun entries(batchId: Long): List<TrashEntryRow> = jdbcClient.sql(
+    fun entries(batchId: Long): List<CascadeTrashEntryRow> = jdbcClient.sql(
         """
         SELECT e.resource_type, e.resource_id,
                (e.is_root OR (e.resource_type = b.root_type AND e.resource_id = b.root_id)) AS effective_root,
@@ -691,7 +694,7 @@ class AdminCascadeTrashRepository(
     )
         .param("batchId", batchId)
         .query { rs, _ ->
-            TrashEntryRow(
+            CascadeTrashEntryRow(
                 resourceType = rs.getString("resource_type"),
                 resourceId = rs.getLong("resource_id"),
                 root = rs.getBoolean("effective_root"),
@@ -700,7 +703,7 @@ class AdminCascadeTrashRepository(
         }
         .list()
 
-    fun restore(batch: BatchRow): Int = SOFT_TARGETS.sumOf { target ->
+    fun restore(batch: CascadeTrashBatchRow): Int = SOFT_TARGETS.sumOf { target ->
         jdbcClient.sql(
             """
             UPDATE ${target.table} r
@@ -733,7 +736,7 @@ class AdminCascadeTrashRepository(
     ).param("batchId", batchId).update()
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    fun claimExpired(now: ZonedDateTime, staleBefore: ZonedDateTime, limit: Int = 20): List<BatchRow> =
+    fun claimExpired(now: ZonedDateTime, staleBefore: ZonedDateTime, limit: Int = 20): List<CascadeTrashBatchRow> =
         jdbcClient.sql(
             """
             WITH candidates AS (
@@ -798,7 +801,7 @@ class AdminCascadeTrashRepository(
             .update()
     }
 
-    fun findPurgeObjectKeys(batch: BatchRow): List<String> {
+    fun findPurgeObjectKeys(batch: CascadeTrashBatchRow): List<String> {
         val galleryPredicate = galleryScopePredicate(batch.rootType)
         val photoPredicate = when (batch.rootType) {
             AdminResourceType.PHOTO -> "p.id = :rootId"
@@ -843,7 +846,7 @@ class AdminCascadeTrashRepository(
             .list()
     }
 
-    fun deleteRoot(batch: BatchRow): Int = when (batch.rootType) {
+    fun deleteRoot(batch: CascadeTrashBatchRow): Int = when (batch.rootType) {
         AdminResourceType.USER -> {
             jdbcClient.sql("DELETE FROM refresh_tokens WHERE user_id = :rootId")
                 .param("rootId", batch.rootId).update()
@@ -1019,7 +1022,7 @@ class AdminCascadeTrashRepository(
             .single()
     }
 
-    private fun batch(rs: ResultSet): BatchRow = BatchRow(
+    private fun batch(rs: ResultSet): CascadeTrashBatchRow = CascadeTrashBatchRow(
         id = rs.getLong("id"),
         rootType = AdminResourceType.valueOf(rs.getString("root_type")),
         rootId = rs.getLong("root_id"),
@@ -1167,31 +1170,4 @@ class AdminCascadeTrashRepository(
         AdminResourceType.RETOUCH_REQUEST,
         -> null
     }
-
-    data class BatchRow(
-        val id: Long,
-        val rootType: AdminResourceType,
-        val rootId: Long,
-        val rootLabel: String,
-        val actorAdminId: Long?,
-        val actorUsername: String?,
-        val status: String,
-        val deletedAt: ZonedDateTime,
-        val restoreUntil: ZonedDateTime,
-        val restoredAt: ZonedDateTime?,
-        val purgedAt: ZonedDateTime?,
-        val purgeAttemptCount: Int,
-        val purgeStartedAt: ZonedDateTime?,
-        val failureCode: String?,
-        val relationshipFacts: Map<String, Long>,
-    )
-
-    data class TrashEntryRow(
-        val resourceType: String,
-        val resourceId: Long,
-        val root: Boolean,
-        val relationPath: String,
-    )
-
-    private data class SoftTarget(val type: String, val table: String, val idColumn: String = "id")
 }

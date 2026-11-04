@@ -2,7 +2,8 @@ package com.soma.wes.notification.service
 
 import com.soma.wes.notification.domain.UserNotificationScope
 import com.soma.wes.notification.domain.UserNotificationType
-import com.soma.wes.notification.dto.UpdateUserNotificationSettingsRequest
+import com.soma.wes.notification.dto.request.ReadUserNotificationsRequest
+import com.soma.wes.notification.dto.request.UpdateUserNotificationSettingsRequest
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.user.fixture.UserFixture
 import org.assertj.core.api.Assertions.assertThat
@@ -70,11 +71,11 @@ class UserNotificationServiceTest @Autowired constructor(
         val mine = notificationService.list(user.requiredId, null, null).single()
         val theirs = notificationService.list(other.requiredId, null, null).single()
         org.assertj.core.api.Assertions.assertThatThrownBy {
-            notificationService.read(user.requiredId, com.soma.wes.notification.dto.ReadUserNotificationsRequest(listOf(mine.id, theirs.id)))
+            notificationService.read(user.requiredId, com.soma.wes.notification.dto.request.ReadUserNotificationsRequest(listOf(mine.id, theirs.id)))
         }.isInstanceOf(com.soma.wes.notification.exception.NotificationException::class.java)
             .extracting("errorCode").isEqualTo(com.soma.wes.notification.exception.NotificationErrorCode.NOTIFICATION_NOT_FOUND)
         assertThat(notificationService.list(user.requiredId, null, null).single().readAt).isNull()
-        val request = com.soma.wes.notification.dto.ReadUserNotificationsRequest(listOf(mine.id))
+        val request = com.soma.wes.notification.dto.request.ReadUserNotificationsRequest(listOf(mine.id))
         assertThat(notificationService.read(user.requiredId, request).updatedCount).isEqualTo(1)
         assertThat(notificationService.read(user.requiredId, request).updatedCount).isZero()
         assertThat(notificationService.list(other.requiredId, null, null).single().readAt).isNull()
@@ -88,7 +89,7 @@ class UserNotificationServiceTest @Autowired constructor(
         )
         jdbc.update("update user_notifications set created_at = now() - interval '31 days' where scope_id = 30")
         assertThat(notificationService.list(user.requiredId, null, null)).hasSize(2)
-        val result = notificationService.read(user.requiredId, com.soma.wes.notification.dto.ReadUserNotificationsRequest(
+        val result = notificationService.read(user.requiredId, com.soma.wes.notification.dto.request.ReadUserNotificationsRequest(
             all = true, scope = UserNotificationScope.STUDIO, scopeId = 10L,
         ))
         assertThat(result.updatedCount).isEqualTo(1)
@@ -118,7 +119,7 @@ class UserNotificationServiceTest @Autowired constructor(
             .containsExactly("제출")
         assertThat(notificationService.list(userId, UserNotificationScope.GLOBAL, null).map { it.title })
             .containsExactly("전역")
-        val result = notificationService.read(userId, com.soma.wes.notification.dto.ReadUserNotificationsRequest(
+        val result = notificationService.read(userId, com.soma.wes.notification.dto.request.ReadUserNotificationsRequest(
             all = true, scope = UserNotificationScope.STUDIO, scopeId = workspaceId,
         ))
         assertThat(result.updatedCount).isEqualTo(2)
@@ -139,7 +140,7 @@ class UserNotificationServiceTest @Autowired constructor(
         // when
         val found = notificationService.list(fixture.photographer.requiredId, UserNotificationScope.STUDIO, workspaceId)
         val result = notificationService.read(fixture.photographer.requiredId,
-            com.soma.wes.notification.dto.ReadUserNotificationsRequest(found.map { it.id }, scope = UserNotificationScope.STUDIO, scopeId = workspaceId))
+            com.soma.wes.notification.dto.request.ReadUserNotificationsRequest(found.map { it.id }, scope = UserNotificationScope.STUDIO, scopeId = workspaceId))
 
         // then
         assertThat(found.single().title).isEqualTo("이력")
@@ -160,7 +161,7 @@ class UserNotificationServiceTest @Autowired constructor(
 
         // when & then
         org.assertj.core.api.Assertions.assertThatThrownBy {
-            notificationService.read(a.photographer.requiredId, com.soma.wes.notification.dto.ReadUserNotificationsRequest(
+            notificationService.read(a.photographer.requiredId, com.soma.wes.notification.dto.request.ReadUserNotificationsRequest(
                 ids, scope = UserNotificationScope.STUDIO, scopeId = workspaceId,
             ))
         }.isInstanceOf(com.soma.wes.notification.exception.NotificationException::class.java)

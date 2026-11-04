@@ -37,13 +37,13 @@ interface AiRecommendationRepository : JpaRepository<AiRecommendation, Long> {
     fun findAllBySelectionId(selectionId: Long): List<AiRecommendation>
 
     /**
+     * 컨텍스트를 비우지 않는다 — 같은 트랜잭션에서 먼저 읽어 둔 잡 엔티티가 분리되면 라운드 번호 갱신이 사라진다.
+     * 이 시점에 컨텍스트에 추천 엔티티는 없다.
+     *
      * 잡 범위에 든 사진의 기존 추천을 지운다 — 새 라운드를 적기 전의 리셋. 거절 행은 남긴다(다음 계산이
      * 거절을 빼는 근거이고, 화면은 거절 행을 그리지 않는다).
-     *
-     * 컨텍스트를 비우지 않는다(clearAutomatically=false) — 같은 트랜잭션에서 먼저 읽어 둔 잡 엔티티가
-     * 분리되면 라운드 번호 갱신이 사라진다. 이 시점에 컨텍스트에 추천 엔티티는 없다.
      */
-    @Modifying(flushAutomatically = true)
+    @Modifying(clearAutomatically = false, flushAutomatically = true)
     @Query(
         """
         DELETE FROM AiRecommendation r

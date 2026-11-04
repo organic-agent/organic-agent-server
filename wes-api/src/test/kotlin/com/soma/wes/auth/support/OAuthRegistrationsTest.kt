@@ -17,7 +17,7 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
  * 설정 리더를 public API 경계에서 확인한다.
  *
  * 보는 것은 둘이다: 등록된 provider의 `spring.security.oauth2.client.registration.*` 설정이
- * 도메인 DTO([OAuthRegistration])로 온전히 실려 오는지, 그리고 등록되지 않은 provider를
+ * 도메인 DTO([OAuthRegistrationDto])로 온전히 실려 오는지, 그리고 등록되지 않은 provider를
  * 물었을 때 어떤 실패가 나는지.
  */
 @IntegrationTest

@@ -3,6 +3,22 @@ package com.soma.wes.admin.resource.repository
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.domain.AdminResourceType
+import com.soma.wes.admin.resource.repository.projection.AiSelectionDraftItem
+import com.soma.wes.admin.resource.repository.projection.AiSelectionDraftResult
+import com.soma.wes.admin.resource.repository.projection.GalleryInviteReissueResult
+import com.soma.wes.admin.resource.repository.projection.GalleryMemberResult
+import com.soma.wes.admin.resource.repository.projection.PendingReplacementUpload
+import com.soma.wes.admin.resource.repository.projection.PhotoReplacementResult
+import com.soma.wes.admin.resource.repository.projection.StudioMemberResult
+import com.soma.wes.admin.resource.repository.projection.StudioOwnerResult
+import com.soma.wes.admin.resource.repository.projection.WorkflowAiCandidate
+import com.soma.wes.admin.resource.repository.projection.WorkflowGalleryInvitePolicy
+import com.soma.wes.admin.resource.repository.projection.WorkflowGalleryScope
+import com.soma.wes.admin.resource.repository.projection.WorkflowOperationRow
+import com.soma.wes.admin.resource.repository.projection.WorkflowPendingReplacement
+import com.soma.wes.admin.resource.repository.projection.WorkflowPhotoCurrent
+import com.soma.wes.admin.resource.repository.projection.WorkflowProcessingJob
+import com.soma.wes.admin.resource.repository.projection.WorkflowReservation
 import com.soma.wes.gallery.domain.GalleryInviteKind
 import com.soma.wes.gallery.domain.GalleryMember
 import com.soma.wes.global.filter.HttpLoggingFilter
@@ -342,7 +358,7 @@ class AdminWorkflowRepository(
             FOR UPDATE OF g
             """.trimIndent(),
         ).param("galleryId", galleryId).query { rs, _ ->
-            GalleryInvitePolicy(
+            WorkflowGalleryInvitePolicy(
                 galleryVersion = rs.getLong("version"),
                 workspaceType = rs.getString("workspace_type"),
                 previousKind = rs.getString("previous_kind")?.let(GalleryInviteKind::valueOf),
@@ -545,7 +561,7 @@ class AdminWorkflowRepository(
         )
             .param("replacementId", replacementId)
             .param("photoId", photoId)
-            .query { rs, _ -> PendingReplacement(
+            .query { rs, _ -> WorkflowPendingReplacement(
                 id = rs.getLong("id"),
                 storageKey = rs.getString("storage_key"),
                 originalFileName = rs.getString("original_file_name"),
@@ -562,7 +578,7 @@ class AdminWorkflowRepository(
         )
             .param("photoId", photoId)
             .param("expectedVersion", expectedVersion)
-            .query { rs, _ -> PhotoCurrent(
+            .query { rs, _ -> WorkflowPhotoCurrent(
                 galleryId = rs.getLong("gallery_id"),
                 storageKey = rs.getString("storage_key"),
                 previewKey = rs.getString("preview_key"),
@@ -667,14 +683,14 @@ class AdminWorkflowRepository(
         )
     }
 
-    fun findOperation(operationId: Long): OperationRow? = jdbcClient.sql(
+    fun findOperation(operationId: Long): WorkflowOperationRow? = jdbcClient.sql(
         """
         SELECT id, action, status, target_type, target_id, attempt_count
         FROM admin_idempotency_keys WHERE id = :operationId
         """.trimIndent(),
     )
         .param("operationId", operationId)
-        .query { rs, _ -> OperationRow(
+        .query { rs, _ -> WorkflowOperationRow(
             id = rs.getLong("id"),
             action = rs.getString("action"),
             status = rs.getString("status"),
@@ -752,7 +768,7 @@ class AdminWorkflowRepository(
         .query { rs, _ -> rs.getLong(1) }
         .single()
 
-    fun findProcessingJob(jobId: Long): ProcessingJob? = jdbcClient.sql(
+    fun findProcessingJob(jobId: Long): WorkflowProcessingJob? = jdbcClient.sql(
         """
         SELECT id, job_type, status, target_type, target_id, revision_id,
                payload::TEXT, attempt_count, failure_code
@@ -760,7 +776,7 @@ class AdminWorkflowRepository(
         """.trimIndent(),
     )
         .param("jobId", jobId)
-        .query { rs, _ -> ProcessingJob(
+        .query { rs, _ -> WorkflowProcessingJob(
             id = rs.getLong("id"),
             jobType = rs.getString("job_type"),
             status = rs.getString("status"),
@@ -779,7 +795,7 @@ class AdminWorkflowRepository(
     fun queueProcessingJob(
         jobId: Long,
         actorAdminId: Long,
-    ): ProcessingJob {
+    ): WorkflowProcessingJob {
         val updated = jdbcClient.sql(
             """
             UPDATE admin_processing_jobs
@@ -799,7 +815,7 @@ class AdminWorkflowRepository(
             .param("jobId", jobId)
             .param("actorAdminId", actorAdminId)
             .param("claimedNotSent", AdminWorkflowExecutionRepository.CLAIMED_NOT_SENT)
-            .query { rs, _ -> ProcessingJob(
+            .query { rs, _ -> WorkflowProcessingJob(
                 id = rs.getLong("id"),
                 jobType = rs.getString("job_type"),
                 status = rs.getString("status"),
@@ -901,7 +917,7 @@ class AdminWorkflowRepository(
             """.trimIndent(),
         )
             .param("galleryId", galleryId)
-            .query { rs, _ -> AiCandidate(
+            .query { rs, _ -> WorkflowAiCandidate(
                 photoId = rs.getLong("id"),
                 embedding = parseVector(rs.getString("embedding")),
                 rating = rs.getDouble("rating"),
@@ -921,7 +937,7 @@ class AdminWorkflowRepository(
             return AiSelectionDraftResult(jobId, "FAILED", null, emptyList(), "NO_EMBEDDED_CANDIDATES")
         }
         val photoIds = selectDiverse(candidates, limit)
-        val items = photoIds.mapIndexed { index, photoId -> SelectionItem(photoId, null, index) }
+        val items = photoIds.mapIndexed { index, photoId -> AiSelectionDraftItem(photoId, null, index) }
         val revisionId = insertSelectionRevision(
             selectionId = selectionId,
             source = "AI_DRAFT",
@@ -991,7 +1007,7 @@ class AdminWorkflowRepository(
             loadAiSelectionDraft(selectionId, aiDraftId)
         }
         if (items.isEmpty()) throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-        validatePhotosInGallery(galleryId, items.map(SelectionItem::photoId))
+        validatePhotosInGallery(galleryId, items.map(AiSelectionDraftItem::photoId))
         if (aiDraftId != null) {
             jdbcClient.sql("DELETE FROM photo_selection_items WHERE selection_id = :selectionId")
                 .param("selectionId", selectionId).update()
@@ -1055,7 +1071,7 @@ class AdminWorkflowRepository(
         .optional()
         .orElseThrow { AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT) }
 
-    private fun validatePhotosInGallery(galleryId: Long, photoIds: List<Long>) {
+    private fun validatePhotosInGallery(galleryId: Long, photoIds: Collection<Long>) {
         if (photoIds.isEmpty() || photoIds.size != photoIds.distinct().size) {
             throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         }
@@ -1100,7 +1116,7 @@ class AdminWorkflowRepository(
         selectionId: Long,
         source: String,
         status: String,
-        items: List<SelectionItem>,
+        items: List<AiSelectionDraftItem>,
         actorAdminId: Long,
     ): Long {
         val revisionNumber = jdbcClient.sql(
@@ -1126,21 +1142,21 @@ class AdminWorkflowRepository(
             .single()
     }
 
-    private fun selectionItems(selectionId: Long): List<SelectionItem> = jdbcClient.sql(
+    private fun selectionItems(selectionId: Long): List<AiSelectionDraftItem> = jdbcClient.sql(
         """
         SELECT photo_id, retouch_photo_id
         FROM photo_selection_items WHERE selection_id = :selectionId ORDER BY id
         """.trimIndent(),
     )
         .param("selectionId", selectionId)
-        .query { rs, index -> SelectionItem(
+        .query { rs, index -> AiSelectionDraftItem(
             photoId = rs.getLong("photo_id"),
             retouchPhotoId = rs.getLong("retouch_photo_id").takeUnless { rs.wasNull() },
             sortOrder = index,
         ) }
         .list()
 
-    private fun loadAiSelectionDraft(selectionId: Long, revisionId: Long): List<SelectionItem> {
+    private fun loadAiSelectionDraft(selectionId: Long, revisionId: Long): List<AiSelectionDraftItem> {
         val json = jdbcClient.sql(
             """
             SELECT photo_items::TEXT FROM admin_selection_revisions
@@ -1154,7 +1170,7 @@ class AdminWorkflowRepository(
             .orElseThrow { AdminException(AdminErrorCode.RESOURCE_NOT_FOUND) }
         return objectMapper.readValue(
             json,
-            objectMapper.typeFactory.constructCollectionType(List::class.java, SelectionItem::class.java),
+            objectMapper.typeFactory.constructCollectionType(List::class.java, AiSelectionDraftItem::class.java),
         )
     }
 
@@ -1165,18 +1181,18 @@ class AdminWorkflowRepository(
         .map { component -> component.trim().toDouble() }
         .toDoubleArray()
 
-    private fun selectDiverse(candidates: List<AiCandidate>, limit: Int): List<Long> {
-        val maxPixels = candidates.maxOf(AiCandidate::pixels).coerceAtLeast(1)
+    private fun selectDiverse(candidates: List<WorkflowAiCandidate>, limit: Int): List<Long> {
+        val maxPixels = candidates.maxOf(WorkflowAiCandidate::pixels).coerceAtLeast(1)
         val scored = candidates.map { candidate ->
             val ratingScore = (candidate.rating / 5.0).coerceIn(0.0, 1.0)
             val resolutionScore = kotlin.math.ln1p(candidate.pixels.toDouble()) / kotlin.math.ln1p(maxPixels.toDouble())
             candidate.copy(quality = ratingScore * 0.8 + resolutionScore * 0.2)
         }
         val remaining = scored.toMutableList()
-        val selected = mutableListOf<AiCandidate>()
+        val selected = mutableListOf<WorkflowAiCandidate>()
         while (remaining.isNotEmpty() && selected.size < limit) {
             val next = remaining.maxWithOrNull(
-                compareBy<AiCandidate> { candidate ->
+                compareBy<WorkflowAiCandidate> { candidate ->
                     val diversity = if (selected.isEmpty()) {
                         1.0
                     } else {
@@ -1188,7 +1204,7 @@ class AdminWorkflowRepository(
             selected += next
             remaining.remove(next)
         }
-        return selected.map(AiCandidate::photoId)
+        return selected.map(WorkflowAiCandidate::photoId)
     }
 
     private fun cosineDistance(left: DoubleArray, right: DoubleArray): Double {
@@ -1547,7 +1563,7 @@ class AdminWorkflowRepository(
         if (found != 1L) throw AdminException(AdminErrorCode.RESOURCE_NOT_FOUND)
     }
 
-    private fun lockGalleryScope(galleryId: Long, expectedVersion: Long): GalleryScope {
+    private fun lockGalleryScope(galleryId: Long, expectedVersion: Long): WorkflowGalleryScope {
         val gallery = jdbcClient.sql(
             """
             SELECT g.version, g.workspace_id
@@ -1561,7 +1577,7 @@ class AdminWorkflowRepository(
         )
             .param("galleryId", galleryId)
             .query { rs, _ ->
-                GalleryScope(
+                WorkflowGalleryScope(
                     version = rs.getLong("version"),
                     studioId = rs.getLong("workspace_id"),
                 )
@@ -1584,55 +1600,6 @@ class AdminWorkflowRepository(
             .update()
         if (updated != 1) throw AdminException(AdminErrorCode.RESOURCE_VERSION_CONFLICT)
     }
-
-    data class WorkflowReservation(val requestHash: String?, val status: String?, val resultPayload: String?)
-    data class StudioOwnerResult(
-        val previousOwnerId: Long,
-        val ownerId: Long,
-    )
-    data class StudioMemberResult(val memberId: Long)
-    data class GalleryMemberResult(val memberId: Long)
-    data class GalleryInviteReissueResult(
-        val inviteId: Long,
-        val kind: GalleryInviteKind,
-        val maxUses: Int,
-    )
-    data class PhotoReplacementResult(
-        val revisionId: Long,
-        val revisionNumber: Long,
-        val newStorageKey: String,
-        val galleryId: Long,
-        val jobIds: List<Long>,
-    )
-    data class PendingReplacementUpload(val storageKey: String, val contentType: String)
-    data class AiSelectionDraftResult(
-        val jobId: Long,
-        val status: String,
-        val revisionId: Long?,
-        val photoIds: List<Long>,
-        val failureCode: String?,
-    )
-    data class SelectionItem(val photoId: Long, val retouchPhotoId: Long?, val sortOrder: Int)
-    data class OperationRow(
-        val id: Long,
-        val action: String,
-        val status: String,
-        val targetType: String?,
-        val targetId: String?,
-        val attemptCount: Int,
-    )
-    data class ProcessingJob(
-        val id: Long,
-        val jobType: String,
-        val status: String,
-        val targetType: AdminResourceType,
-        val targetId: Long,
-        val revisionId: Long?,
-        val payload: Map<String, Any?>,
-        val attemptCount: Int,
-        val failureCode: String?,
-    )
-
     enum class GalleryTransition(
         val publicStatus: String,
         val workflowStatus: String,
@@ -1641,39 +1608,4 @@ class AdminWorkflowRepository(
         SUBMIT("CLOSED", "IN_PROGRESS", "SELECTION_COMPLETED"),
         COMPLETE("CLOSED", "COMPLETED", "DELIVERY"),
     }
-
-    private data class GalleryInvitePolicy(
-        val galleryVersion: Long,
-        val workspaceType: String,
-        val previousKind: GalleryInviteKind?,
-        val previousMaxUses: Int?,
-    )
-
-    private data class PendingReplacement(
-        val id: Long,
-        val storageKey: String,
-        val originalFileName: String,
-        val contentType: String,
-    )
-
-    private data class GalleryScope(
-        val version: Long,
-        val studioId: Long,
-    )
-
-    private data class PhotoCurrent(
-        val galleryId: Long,
-        val storageKey: String,
-        val previewKey: String?,
-        val originalFileName: String,
-        val contentType: String,
-    )
-
-    private data class AiCandidate(
-        val photoId: Long,
-        val embedding: DoubleArray,
-        val rating: Double,
-        val pixels: Long,
-        val quality: Double = 0.0,
-    )
 }

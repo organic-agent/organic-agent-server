@@ -2,9 +2,10 @@ package com.soma.wes.admin.impersonation.repository
 
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
-import com.soma.wes.admin.impersonation.dto.AdminImpersonationGalleryViewResponse
-import com.soma.wes.admin.impersonation.dto.AdminImpersonationWorkspaceViewResponse
-import com.soma.wes.admin.impersonation.dto.AdminImpersonationViewResponse
+import com.soma.wes.admin.impersonation.dto.response.AdminImpersonationGalleryViewResponse
+import com.soma.wes.admin.impersonation.dto.response.AdminImpersonationWorkspaceViewResponse
+import com.soma.wes.admin.impersonation.dto.response.AdminImpersonationViewResponse
+import com.soma.wes.admin.impersonation.repository.projection.AdminImpersonationViewerRow
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Repository
@@ -17,11 +18,11 @@ class AdminImpersonationViewRepository(
     private val jdbcClient: JdbcClient,
 ) {
 
-    fun resolveViewer(type: AdminResourceType, targetId: Long, requestedViewerUserId: Long?): Viewer = when (type) {
+    fun resolveViewer(type: AdminResourceType, targetId: Long, requestedViewerUserId: Long?): AdminImpersonationViewerRow = when (type) {
         AdminResourceType.USER -> {
             requireActiveUser(targetId)
             if (requestedViewerUserId != null && requestedViewerUserId != targetId) invalidTarget()
-            Viewer(targetId, "SELF")
+            AdminImpersonationViewerRow(targetId, "SELF")
         }
         AdminResourceType.STUDIO -> {
             val ownerId = jdbcClient.sql(
@@ -36,7 +37,7 @@ class AdminImpersonationViewRepository(
             ).param("id", targetId).query { rs, _ -> rs.getLong(1) }.optional().orElseThrow(::invalidTarget)
             val viewerId = requestedViewerUserId ?: ownerId
             requireActiveUser(viewerId)
-            Viewer(viewerId, workspaceAccessRole(targetId, viewerId) ?: invalidTarget())
+            AdminImpersonationViewerRow(viewerId, workspaceAccessRole(targetId, viewerId) ?: invalidTarget())
         }
         AdminResourceType.GALLERY -> {
             val ownerId = jdbcClient.sql(
@@ -59,7 +60,7 @@ class AdminImpersonationViewRepository(
             val accessRole = workspaceAccessRole(workspaceId, viewerId)
                 ?: galleryMemberAccessRole(targetId, viewerId)
                 ?: invalidTarget()
-            Viewer(viewerId, accessRole)
+            AdminImpersonationViewerRow(viewerId, accessRole)
         }
         AdminResourceType.WORKSPACE,
         AdminResourceType.PHOTO,
@@ -73,7 +74,7 @@ class AdminImpersonationViewRepository(
         -> invalidTarget()
     }
 
-    fun view(type: AdminResourceType, targetId: Long, viewer: Viewer): AdminImpersonationViewResponse {
+    fun view(type: AdminResourceType, targetId: Long, viewer: AdminImpersonationViewerRow): AdminImpersonationViewResponse {
         val resolved = resolveViewer(type, targetId, viewer.userId)
         if (resolved.accessRole != viewer.accessRole) invalidTarget()
         return AdminImpersonationViewResponse(
@@ -239,6 +240,4 @@ class AdminImpersonationViewRepository(
         .query { rs, _ -> rs.getString(1) }.optional().orElse(null)
 
     private fun invalidTarget(): Nothing = throw AdminException(AdminErrorCode.INVALID_IMPERSONATION_TARGET)
-
-    data class Viewer(val userId: Long, val accessRole: String)
 }

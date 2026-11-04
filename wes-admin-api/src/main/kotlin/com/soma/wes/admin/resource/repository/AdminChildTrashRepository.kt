@@ -2,6 +2,9 @@ package com.soma.wes.admin.resource.repository
 
 import com.soma.wes.admin.resource.domain.AdminChildTrashType
 import com.soma.wes.admin.resource.domain.AdminResourceType
+import com.soma.wes.admin.resource.repository.projection.ChildTrashMapping
+import com.soma.wes.admin.resource.repository.projection.ChildTrashParentState
+import com.soma.wes.admin.resource.repository.projection.ChildTrashRow
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Propagation
@@ -53,7 +56,7 @@ class AdminChildTrashRepository(
             .single()
     }
 
-    fun lockParent(type: AdminChildTrashType, parentId: Long): ParentState? {
+    fun lockParent(type: AdminChildTrashType, parentId: Long): ChildTrashParentState? {
         val mapping = mapping(type)
         return jdbcClient.sql(
             """
@@ -64,7 +67,7 @@ class AdminChildTrashRepository(
             """.trimIndent(),
         )
             .param("parentId", parentId)
-            .query { rs, _ -> ParentState(rs.getLong("version"), rs.getBoolean("deleted")) }
+            .query { rs, _ -> ChildTrashParentState(rs.getLong("version"), rs.getBoolean("deleted")) }
             .optional()
             .orElse(null)
     }
@@ -536,47 +539,21 @@ class AdminChildTrashRepository(
         failureCode = rs.getString("failure_code"),
     )
 
-    private fun mapping(type: AdminChildTrashType): Mapping = when (type) {
-        AdminChildTrashType.COLLAB_COMMENT -> Mapping(
+    private fun mapping(type: AdminChildTrashType): ChildTrashMapping = when (type) {
+        AdminChildTrashType.COLLAB_COMMENT -> ChildTrashMapping(
             childTable = "collab_photo_comments",
             parentTable = "collab_sessions",
             childParentPredicate = "r.collab_session_id = :parentId",
         )
-        AdminChildTrashType.COLLAB_LIKE -> Mapping(
+        AdminChildTrashType.COLLAB_LIKE -> ChildTrashMapping(
             childTable = "collab_photo_likes",
             parentTable = "collab_sessions",
             childParentPredicate = "r.collab_session_id = :parentId",
         )
-        AdminChildTrashType.RETOUCH_ITEM -> Mapping(
+        AdminChildTrashType.RETOUCH_ITEM -> ChildTrashMapping(
             childTable = "retouch_photos",
             parentTable = "retouch_rounds",
             childParentPredicate = "r.round_id = :parentId",
         )
     }
-
-    data class ParentState(val version: Long, val deleted: Boolean)
-
-    data class ChildTrashRow(
-        val id: Long,
-        val type: AdminChildTrashType,
-        val resourceId: Long,
-        val parentType: AdminResourceType,
-        val parentId: Long,
-        val actorAdminId: Long?,
-        val actorUsername: String?,
-        val status: String,
-        val deletedAt: ZonedDateTime,
-        val restoreUntil: ZonedDateTime,
-        val restoredAt: ZonedDateTime?,
-        val purgedAt: ZonedDateTime?,
-        val purgeAttemptCount: Int,
-        val purgeStartedAt: ZonedDateTime?,
-        val failureCode: String?,
-    )
-
-    private data class Mapping(
-        val childTable: String,
-        val parentTable: String,
-        val childParentPredicate: String,
-    )
 }

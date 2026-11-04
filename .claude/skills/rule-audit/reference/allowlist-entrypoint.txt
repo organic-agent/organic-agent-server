@@ -1,5 +1,4 @@
 # rules: EP-01 EP-02 EP-04 EP-07 LY-01 — scheduler/listener 밖에 있는 기존 입구 17개(옮기기 전까지 허용)
-wes-admin-api/src/main/kotlin/com/soma/wes/admin/audit/support/AdminRevisionPurgeScheduler.kt
 wes-admin-api/src/main/kotlin/com/soma/wes/admin/resource/service/AdminCascadeTrashPurgeService.kt
 wes-admin-api/src/main/kotlin/com/soma/wes/admin/resource/service/AdminChildTrashService.kt
 wes-admin-api/src/main/kotlin/com/soma/wes/admin/resource/service/AdminWorkflowExecutor.kt

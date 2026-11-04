@@ -4,7 +4,7 @@ import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.retouch.domain.RetouchPhoto
 import com.soma.wes.retouch.domain.RetouchRound
 import com.soma.wes.retouch.domain.RetouchRoundStatus
-import com.soma.wes.retouch.dto.request.RetouchRequestItem
+import com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest.RetouchRequestItem
 import com.soma.wes.retouch.exception.RetouchErrorCode
 import com.soma.wes.retouch.exception.RetouchException
 import com.soma.wes.retouch.repository.RetouchPhotoRepository

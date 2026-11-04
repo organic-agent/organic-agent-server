@@ -1,6 +1,7 @@
 package com.soma.wes.gallery.dto.response
 
 import com.soma.wes.gallery.domain.GalleryMember
+import com.soma.wes.gallery.domain.GalleryParticipantRole
 import com.soma.wes.user.domain.User
 import com.soma.wes.workspace.domain.WorkspaceMember
 import com.soma.wes.workspace.domain.WorkspaceRole

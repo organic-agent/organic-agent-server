@@ -3,8 +3,8 @@ package com.soma.wes.admin.resource.service
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.domain.AdminResourceType
-import com.soma.wes.admin.resource.dto.AdminResourceContextResponse
-import com.soma.wes.admin.resource.dto.AdminResourceSummaryResponse
+import com.soma.wes.admin.resource.dto.response.AdminResourceContextResponse
+import com.soma.wes.admin.resource.dto.response.AdminResourceSummaryResponse
 import com.soma.wes.admin.resource.repository.AdminResourceContextRepository
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
 import com.soma.wes.admin.resource.repository.AdminCascadeTrashRepository

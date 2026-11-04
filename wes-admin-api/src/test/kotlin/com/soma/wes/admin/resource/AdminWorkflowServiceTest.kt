@@ -4,11 +4,11 @@ import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.fixture.AdminAccountFixture
 import com.soma.wes.admin.resource.domain.AdminResourceType
-import com.soma.wes.admin.resource.dto.AdminResourceResponse
-import com.soma.wes.admin.resource.dto.AdminWorkflowAction
-import com.soma.wes.admin.resource.dto.AdminWorkflowRequest
-import com.soma.wes.admin.resource.dto.CreateAdminResourceRequest
-import com.soma.wes.admin.resource.dto.UpdateAdminResourceRequest
+import com.soma.wes.admin.resource.dto.response.AdminResourceResponse
+import com.soma.wes.admin.resource.domain.AdminWorkflowAction
+import com.soma.wes.admin.resource.dto.request.AdminWorkflowRequest
+import com.soma.wes.admin.resource.dto.request.CreateAdminResourceRequest
+import com.soma.wes.admin.resource.dto.request.UpdateAdminResourceRequest
 import com.soma.wes.admin.resource.repository.AdminChildTrashRepository
 import com.soma.wes.admin.resource.service.AdminObservabilityLinkService
 import com.soma.wes.admin.resource.service.AdminOperationsOverviewService

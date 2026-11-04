@@ -3,10 +3,10 @@ package com.soma.wes.admin.resource.service
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.domain.AdminChildTrashType
-import com.soma.wes.admin.resource.domain.AdminResourceType
-import com.soma.wes.admin.resource.dto.AdminChildTrashResponse
+import com.soma.wes.admin.resource.dto.AdminChildTrashResultDto
+import com.soma.wes.admin.resource.dto.response.AdminChildTrashResponse
 import com.soma.wes.admin.resource.repository.AdminChildTrashRepository
-import com.soma.wes.admin.resource.repository.AdminChildTrashRepository.ChildTrashRow
+import com.soma.wes.admin.resource.repository.projection.ChildTrashRow
 import com.soma.wes.photo.service.port.PhotoStorage
 import com.soma.wes.trash.config.TrashProperties
 import java.time.Clock
@@ -37,7 +37,7 @@ class AdminChildTrashService(
         parentId: Long,
         expectedParentVersion: Long,
         expectedChildVersion: Long?,
-    ): AdminChildTrashResult {
+    ): AdminChildTrashResultDto {
         repository.lockProductPurgeCoordination(type, resourceId, parentId)
         val parent = repository.lockParent(type, parentId)
             ?: throw AdminException(AdminErrorCode.RESOURCE_NOT_FOUND)
@@ -114,7 +114,7 @@ class AdminChildTrashService(
         parentId: Long,
         expectedParentVersion: Long,
         expectedChildVersion: Long?,
-    ): AdminChildTrashResult {
+    ): AdminChildTrashResultDto {
         // delete와 같은 순서(coordination -> parent -> trash row)로 잠가 상호 교착을 피한다.
         repository.lockProductPurgeCoordination(type, resourceId, parentId)
         val parent = repository.lockParent(type, parentId)
@@ -176,7 +176,7 @@ class AdminChildTrashService(
         return result(row.copy(status = "RESTORED", restoredAt = now))
     }
 
-    private fun result(row: ChildTrashRow): AdminChildTrashResult = AdminChildTrashResult(
+    private fun result(row: ChildTrashRow): AdminChildTrashResultDto = AdminChildTrashResultDto(
         trashId = row.id,
         resourceType = row.type,
         resourceId = row.resourceId,
@@ -207,34 +207,6 @@ class AdminChildTrashService(
         purgedAt = row.purgedAt,
         purgeAttemptCount = row.purgeAttemptCount,
         failureCode = row.failureCode,
-    )
-}
-
-data class AdminChildTrashResult(
-    val trashId: Long,
-    val resourceType: AdminChildTrashType,
-    val resourceId: Long,
-    val parentType: AdminResourceType,
-    val parentId: Long,
-    val status: String,
-    val deletedAt: ZonedDateTime,
-    val restoreUntil: ZonedDateTime,
-    val purgeEligibleAt: ZonedDateTime,
-    val restoreWindowDays: Long,
-    val restorable: Boolean,
-) {
-    fun workflowDetails(): Map<String, Any?> = linkedMapOf(
-        "childTrashId" to trashId,
-        "resourceType" to resourceType.name,
-        "resourceId" to resourceId,
-        "parentType" to parentType.name,
-        "parentId" to parentId,
-        "trashStatus" to status,
-        "deletedAt" to deletedAt,
-        "restoreUntil" to restoreUntil,
-        "purgeEligibleAt" to purgeEligibleAt,
-        "restoreWindowDays" to restoreWindowDays,
-        "restorable" to restorable,
     )
 }
 

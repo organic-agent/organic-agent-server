@@ -2,7 +2,12 @@ package com.soma.wes.admin.resource.repository
 
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
-import com.soma.wes.admin.resource.dto.AdminRetouchArtifactType
+import com.soma.wes.admin.resource.domain.AdminRetouchArtifactType
+import com.soma.wes.admin.resource.repository.projection.CompletingRetouchArtifactUpload
+import com.soma.wes.admin.resource.repository.projection.PendingRetouchArtifactUpload
+import com.soma.wes.admin.resource.repository.projection.RetouchArtifactAccess
+import com.soma.wes.admin.resource.repository.projection.RetouchArtifactScope
+import com.soma.wes.admin.resource.repository.projection.RetouchArtifactUploadCreated
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Repository
 import java.time.ZonedDateTime
@@ -354,35 +359,16 @@ class AdminRetouchArtifactRepository(
         }
         return "retouch-${retouchPhotoId}-${artifactType.name.lowercase()}.$extension"
     }
-
-    data class RetouchArtifactScope(val galleryId: Long, val roundNo: Int)
-    data class RetouchArtifactUploadCreated(
-        val uploadId: Long,
-        val roundVersion: Long,
-        val retouchPhotoVersion: Long,
-    )
-
     private val AdminRetouchArtifactType.requiredRoundStatus: String
         get() = when (this) {
             AdminRetouchArtifactType.ANNOTATION -> "DRAFTING"
             AdminRetouchArtifactType.RESULT -> "REQUESTED"
         }
-    data class PendingRetouchArtifactUpload(val storageKey: String, val contentType: String)
     data class RetouchArtifactUploadCompleted(
         val uploadId: Long,
         val artifactType: AdminRetouchArtifactType,
         val contentType: String,
         val roundVersion: Long,
         val retouchPhotoVersion: Long,
-    )
-    data class RetouchArtifactAccess(
-        val storageKey: String,
-        val originalFileName: String,
-        val contentType: String,
-    )
-    private data class CompletingRetouchArtifactUpload(
-        val artifactType: AdminRetouchArtifactType,
-        val storageKey: String,
-        val contentType: String,
     )
 }

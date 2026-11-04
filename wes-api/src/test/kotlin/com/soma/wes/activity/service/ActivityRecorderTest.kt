@@ -18,7 +18,7 @@ import com.soma.wes.selection.dto.request.SelectPhotosRequest
 import com.soma.wes.selection.service.PhotoSelectionService
 import com.soma.wes.studio.service.StudioInviteService
 import com.soma.wes.support.IntegrationTest
-import com.soma.wes.user.dto.response.UserWorkspaceKind
+import com.soma.wes.user.domain.UserWorkspaceKind
 import com.soma.wes.user.fixture.UserFixture
 import com.soma.wes.user.service.UserService
 import com.soma.wes.workspace.domain.WorkspaceMember
@@ -150,7 +150,7 @@ class ActivityRecorderTest @Autowired constructor(
                 com.soma.wes.selection.dto.request.SelectPhotosRequest(photoIds = listOf(photoId)))
             selectionService.submit(fixture.galleryId, fixture.member.requiredId,
                 com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest(
-                    listOf(com.soma.wes.retouch.dto.request.RetouchRequestItem(photoId, requestText = "밝게 해주세요")),
+                    listOf(com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest.RetouchRequestItem(photoId, requestText = "밝게 해주세요")),
                 ))
             assertSoftly { softly ->
                 softly.assertThat(activity.findGalleryActivity(listOf(fixture.galleryId)))

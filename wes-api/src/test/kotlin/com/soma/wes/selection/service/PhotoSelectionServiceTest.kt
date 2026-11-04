@@ -22,7 +22,7 @@ import com.soma.wes.selection.repository.PhotoSelectionItemRepository
 import com.soma.wes.selection.repository.PhotoSelectionRepository
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.retouch.domain.RetouchPoint
-import com.soma.wes.retouch.dto.request.RetouchRequestItem
+import com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest.RetouchRequestItem
 import com.soma.wes.retouch.dto.request.SubmitRetouchRequestsRequest
 import com.soma.wes.retouch.service.RetouchService
 import com.soma.wes.retouch.repository.RetouchRoundRepository

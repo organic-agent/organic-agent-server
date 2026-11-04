@@ -3,7 +3,7 @@ package com.soma.wes.admin.resource.service
 import com.soma.wes.admin.config.AdminObservabilityProperties
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
-import com.soma.wes.admin.resource.dto.AdminObservabilityLinksResponse
+import com.soma.wes.admin.resource.dto.response.AdminObservabilityLinksResponse
 import org.springframework.stereotype.Service
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets

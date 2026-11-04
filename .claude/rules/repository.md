@@ -47,7 +47,8 @@ repository는 쿼리 메서드가 계속 붙는 자리라 한 파일에 모이�
 
 - 여러 행을 갱신/삭제하는 경로는 엔티티 루프가 아니라
   `@Modifying(clearAutomatically = true, flushAutomatically = true)` + JPQL `@Query`로 처리한다
-  (`PhotoSelectionItemRepository`의 벌크 삭제). <!-- RP-06 -->
+  (`PhotoSelectionItemRepository`의 벌크 삭제). 같은 트랜잭션에서 앞서 읽어 둔 엔티티를 뒤에서 고치는 호출자가 있으면
+  컨텍스트를 비우면 그 변경이 사라진다 — 그때만 `clearAutomatically = false`를 명시하고 이유를 KDoc 첫 줄에 적는다(RP-01). <!-- RP-06 -->
 - 영향 행 수를 반환해 호출자가 0건을 판정할 수 있게 한다 (0건이면 404로 번역). <!-- RP-07 -->
 - 벌크 쿼리가 전제하는 선행 조건(예: "호출자가 부모를 잠그고 확인했다")은 KDoc에 적는다. <!-- RP-08 -->
 - **수천 행 대량 INSERT는 엔티티를 거치지 않고 JDBC 배치(`JdbcTemplate.batchUpdate`)로 넣는다.**
