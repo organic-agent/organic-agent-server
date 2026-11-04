@@ -144,8 +144,8 @@ class PhotoViewAssemblerCdnTest @Autowired constructor(
 
     /** 업로드된 사진에 임베더가 만든 것처럼 미리보기 키를 붙인다. */
     private fun photoWithPreview(): Photo {
-        val photo = photo(photoFixture.업로드된_사진(fixture.galleryId, count = 1).first())
-        photo.previewKey = "previews/${photo.storageKey}"
-        return photoRepository.saveAndFlush(photo)
+        val photoId = photoFixture.업로드된_사진(fixture.galleryId, count = 1).first()
+        photoFixture.미리보기_붙이기(photoId)
+        return photo(photoId)
     }
 }

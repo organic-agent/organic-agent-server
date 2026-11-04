@@ -35,8 +35,7 @@ class CollabParticipant(
     @Column(name = "guest_token", updatable = false, length = 255)
     val guestToken: String? = null,
 
-    @Column(nullable = false, length = MAX_NICKNAME_LENGTH)
-    var nickname: String,
+    nickname: String,
 ) : BaseEntity() {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -44,9 +43,18 @@ class CollabParticipant(
 
     @Column(name = "deleted_at")
     var deletedAt: ZonedDateTime? = null
+        protected set
 
     val requiredId: Long
         get() = checkNotNull(id) { "저장되지 않은 협업 참여자입니다." }
+
+    @Column(nullable = false, length = MAX_NICKNAME_LENGTH)
+    var nickname: String = nickname
+        protected set
+
+    fun rename(nickname: String) {
+        this.nickname = requireValidNickname(nickname)
+    }
 
     companion object {
         const val MAX_NICKNAME_LENGTH = 50

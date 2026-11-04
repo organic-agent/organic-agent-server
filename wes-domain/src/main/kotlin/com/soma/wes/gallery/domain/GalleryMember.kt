@@ -47,6 +47,7 @@ class GalleryMember(
 
     @Column(name = "deleted_at")
     var deletedAt: ZonedDateTime? = null
+        protected set
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

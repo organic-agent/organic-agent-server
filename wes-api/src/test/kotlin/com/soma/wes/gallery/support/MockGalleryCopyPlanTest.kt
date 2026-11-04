@@ -4,6 +4,7 @@ import com.soma.wes.photo.domain.Photo
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.Test
+import java.time.ZonedDateTime
 
 /**
  * 복제 계획은 로직 없는 값이다. EMBEDDED만 고르는 규칙은 [MockGallerySeeder.loadTemplatePhotos]가,
@@ -53,12 +54,19 @@ class MockGalleryCopyPlanTest {
         assertThat(plan.previewKey).isNull()
     }
 
+    /** 미리보기 키는 임베더가 DB에 쓰는 값이라 엔티티에 쓰는 메서드가 없다. 키를 받는 복제 팩터리로 만든다. */
     private fun 템플릿_사진(previewKey: String?): Photo =
-        Photo(
+        Photo.copyOf(
+            source = Photo(
+                galleryId = 1L,
+                storageKey = "galleries/1/template-0.png",
+                originalFileName = "template-0.png",
+                contentType = "image/png",
+            ),
             galleryId = 1L,
             storageKey = "galleries/1/template-0.png",
-            originalFileName = "template-0.png",
-            contentType = "image/png",
+            previewKey = previewKey,
             displayOrder = 0,
-        ).also { it.previewKey = previewKey }
+            at = ZonedDateTime.parse("2026-01-01T00:00:00+09:00"),
+        )
 }

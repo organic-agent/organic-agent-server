@@ -55,7 +55,7 @@ class GalleryLifecycleService(
             // 개인 플랜 갤러리는 공개 상태로 생성된다. 과거 비공개 행은 일반 상태 전이 규칙을 우회하지 않는다.
             if (gallery.status == GalleryStatus.DRAFT) return
             gallery.close()
-            properties.archivedRetentionDays?.let { gallery.archivedUntil = now.plusDays(it.toLong()) }
+            properties.archivedRetentionDays?.let { gallery.archiveAfter(it, now) }
             publishOnce(
                 gallery, recipients, UserNotificationType.PLAN_EXPIRED,
                 "이용 기간이 종료되었습니다", "이용 기간이 끝나 갤러리가 보관 상태로 전환되었습니다.",

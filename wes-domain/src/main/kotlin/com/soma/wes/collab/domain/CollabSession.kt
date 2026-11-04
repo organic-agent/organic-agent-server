@@ -14,7 +14,6 @@ import jakarta.persistence.UniqueConstraint
 import java.time.ZonedDateTime
 import org.hibernate.annotations.SQLRestriction
 
-
 @Entity
 @SQLRestriction("deleted_at is null")
 @Table(
@@ -31,26 +30,38 @@ class CollabSession(
     @Column(name = "gallery_id", nullable = false, updatable = false)
     val galleryId: Long,
 
+    name: String,
+
+    collabToken: String,
+
+    revokedAt: ZonedDateTime? = null,
+
+    expiresAt: ZonedDateTime? = null,
+
+) : BaseEntity() {
+
     /** 부부가 링크를 구분하려고 붙인 이름. 하객에게도 첫 화면에 보인다. */
     @Column(nullable = false, length = MAX_NAME_LENGTH)
-    var name: String,
+    var name: String = name
+        protected set
 
     /** 링크에 실리는 값. 추측할 수 없어야 하므로 생성은 `SecureTokenGenerator`가 맡는다. */
     @Column(name = "collab_token", nullable = false, length = 255)
-    var collabToken: String,
+    var collabToken: String = collabToken
+        protected set
 
     /** 부부가 링크를 거둬들인 시각. 링크가 엉뚱한 곳에 퍼졌을 때 쓴다. */
     @Column(name = "revoked_at")
-    var revokedAt: ZonedDateTime? = null,
+    var revokedAt: ZonedDateTime? = revokedAt
+        protected set
 
     /**
      * 운영자가 재발급한 제한 시간 링크의 만료 시각. `null`은 부부가 직접 만든 일반 링크처럼
      * 만료 기한이 없다는 뜻이다.
      */
     @Column(name = "expires_at")
-    var expiresAt: ZonedDateTime? = null,
-
-) : BaseEntity() {
+    var expiresAt: ZonedDateTime? = expiresAt
+        protected set
 
     /** 사진 변경도 세션 버전에 반영해 관리자 편집이 오래된 상태를 덮어쓰지 않게 한다. */
     fun photosChanged(at: ZonedDateTime) {
@@ -59,12 +70,15 @@ class CollabSession(
 
     @Column(name = "include_all_albums", nullable = false)
     var includeAllAlbums: Boolean = false
+        protected set
 
     @Column(name = "cover_title", length = MAX_NAME_LENGTH)
     var coverTitle: String? = null
+        protected set
 
     @Column(name = "cover_author", length = MAX_NAME_LENGTH)
     var coverAuthor: String? = null
+        protected set
 
     fun updateCover(title: String?, author: String?) {
         if (title != null) coverTitle = if (title.isBlank()) null else requireValidName(title)
@@ -73,6 +87,7 @@ class CollabSession(
 
     @Column(name = "deleted_at")
     var deletedAt: ZonedDateTime? = null
+        protected set
 
     companion object {
         const val MAX_NAME_LENGTH = 100
@@ -119,6 +134,14 @@ class CollabSession(
         revokedAt = null
         // 부부가 직접 다시 발행한 링크는 일반 제품 링크다. 이전 운영자 발급 TTL을 이어받지 않는다.
         this.expiresAt = expiresAt
+    }
+
+    fun changeExpiresAt(expiresAt: ZonedDateTime?) {
+        this.expiresAt = expiresAt
+    }
+
+    fun changeIncludeAllAlbums(includeAllAlbums: Boolean) {
+        this.includeAllAlbums = includeAllAlbums
     }
 
     fun rename(name: String) {

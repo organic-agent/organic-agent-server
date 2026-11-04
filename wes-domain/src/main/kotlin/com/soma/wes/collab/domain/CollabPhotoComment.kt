@@ -13,7 +13,6 @@ import jakarta.persistence.Table
 import org.hibernate.annotations.SQLRestriction
 import java.time.ZonedDateTime
 
-
 @Entity
 @SQLRestriction("deleted_at is null")
 @Table(
@@ -40,6 +39,7 @@ class CollabPhotoComment(
 
     @Column(name = "deleted_at")
     var deletedAt: ZonedDateTime? = null
+        protected set
 
     companion object {
 

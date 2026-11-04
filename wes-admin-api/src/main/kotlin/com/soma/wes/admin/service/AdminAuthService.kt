@@ -59,7 +59,7 @@ class AdminAuthService(
         }
 
         if (passwordHasher.needsUpgrade(account.passwordHash)) {
-            account.passwordHash = passwordHasher.hash(request.password)
+            account.upgradePasswordHash(passwordHasher.hash(request.password))
         }
         account.recordSuccessfulLogin(now)
 

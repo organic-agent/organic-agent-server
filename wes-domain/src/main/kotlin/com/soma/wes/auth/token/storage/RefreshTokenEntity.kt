@@ -18,13 +18,19 @@ class RefreshTokenEntity(
     @Column(name = "user_id")
     val userId: Long,
 
-    @Column(nullable = false, length = 512)
-    var token: String,
+    token: String,
 
-    @Column(name = "expires_at", nullable = false)
-    var expiresAt: ZonedDateTime,
+    expiresAt: ZonedDateTime,
 
 ) : BaseEntity() {
+
+    @Column(nullable = false, length = 512)
+    var token: String = token
+        protected set
+
+    @Column(name = "expires_at", nullable = false)
+    var expiresAt: ZonedDateTime = expiresAt
+        protected set
 
     fun renew(token: String, expiresAt: ZonedDateTime) {
         this.token = token

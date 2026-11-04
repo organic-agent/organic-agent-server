@@ -487,7 +487,7 @@ class RetouchService(
         val now = ZonedDateTime.now(clock)
         gallery.markRetouchConfirmed(now)
         if (gallery.archivedUntil == null) lifecycleProperties.archivedRetentionDays?.let {
-            gallery.archivedUntil = now.plusDays(it.toLong())
+            gallery.archiveAfter(it, now)
         }
         notificationPublisher.publish(
             userIds = workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId).map { it.userId },

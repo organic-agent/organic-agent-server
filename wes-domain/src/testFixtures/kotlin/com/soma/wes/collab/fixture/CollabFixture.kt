@@ -10,7 +10,9 @@ import com.soma.wes.collab.service.CollabSessionService
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
 import com.soma.wes.photo.fixture.PhotoFixture
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
+import java.time.ZonedDateTime
 
 @Component
 class CollabFixture(
@@ -18,6 +20,7 @@ class CollabFixture(
     private val photoFixture: PhotoFixture,
     private val folderService: FolderService,
     private val sessionService: CollabSessionService,
+    private val jdbcTemplate: JdbcTemplate,
 ) {
     fun 사진이_있는_세션(gallery: OpenGallery = galleryFixture.멤버와_열린_갤러리()): SharedCollab {
         val photoId = photoFixture.업로드된_사진(gallery.galleryId, 1).single()
@@ -43,6 +46,22 @@ class CollabFixture(
             OpenCollabSessionRequest(conceptFolderId = concept.id, name = "본식 의견"),
         )
         return SharedCollab(gallery = gallery, session = session, conceptId = concept.id, detailId = detail.id, photoId = photoId)
+    }
+
+    /** 공유폴더를 휴지통에 넣은 상태. 삭제는 trash 도메인의 SQL이 하는 일이라 엔티티에 쓰는 메서드가 없다. */
+    fun 세션_삭제됨(sessionId: Long, at: ZonedDateTime) {
+        jdbcTemplate.update(
+            "UPDATE collab_sessions SET deleted_at = ?, version = version + 1, updated_at = now() WHERE id = ?",
+            at.toOffsetDateTime(), sessionId,
+        )
+    }
+
+    /** 하객 댓글이 지워진 상태. */
+    fun 댓글_삭제됨(commentId: Long, at: ZonedDateTime) {
+        jdbcTemplate.update(
+            "UPDATE collab_photo_comments SET deleted_at = ?, version = version + 1, updated_at = now() WHERE id = ?",
+            at.toOffsetDateTime(), commentId,
+        )
     }
 }
 

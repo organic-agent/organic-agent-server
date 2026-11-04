@@ -26,9 +26,19 @@ class StudioInvite(
     val id: Long? = null
     @Column(name = "revoked_at")
     var revokedAt: ZonedDateTime? = null
+        protected set
     @Column(name = "used_count", nullable = false)
     var usedCount: Int = 0
+        protected set
 
     val requiredId: Long
         get() = checkNotNull(id) { "아직 저장되지 않은 StudioInvite 다" }
+
+    fun revoke(at: ZonedDateTime) {
+        revokedAt = at
+    }
+
+    fun consume() {
+        usedCount += 1
+    }
 }

@@ -21,30 +21,21 @@ class AdminAccount private constructor(
     @Column(name = "username", nullable = false, updatable = false, length = USERNAME_MAX_LENGTH)
     val username: String,
 
-    @Column(name = "display_name", nullable = false, length = DISPLAY_NAME_MAX_LENGTH)
-    var displayName: String,
+    displayName: String,
 
-    @Column(name = "password_hash", nullable = false, length = 255)
-    var passwordHash: String,
+    passwordHash: String,
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 20)
-    var status: AdminAccountStatus,
+    status: AdminAccountStatus,
 
-    @Column(name = "must_change_password", nullable = false)
-    var mustChangePassword: Boolean,
+    mustChangePassword: Boolean,
 
-    @Column(name = "failed_login_attempts", nullable = false)
-    var failedLoginAttempts: Int,
+    failedLoginAttempts: Int,
 
-    @Column(name = "locked_until")
-    var lockedUntil: ZonedDateTime?,
+    lockedUntil: ZonedDateTime?,
 
-    @Column(name = "password_changed_at", nullable = false)
-    var passwordChangedAt: ZonedDateTime,
+    passwordChangedAt: ZonedDateTime,
 
-    @Column(name = "last_login_at")
-    var lastLoginAt: ZonedDateTime?,
+    lastLoginAt: ZonedDateTime?,
 
     @Column(name = "created_by_admin_id", updatable = false)
     val createdByAdminId: Long?,
@@ -57,6 +48,39 @@ class AdminAccount private constructor(
 
     val requiredId: Long
         get() = checkNotNull(id) { "저장되지 않은 최고 관리자 계정입니다." }
+
+    @Column(name = "display_name", nullable = false, length = DISPLAY_NAME_MAX_LENGTH)
+    var displayName: String = displayName
+        protected set
+
+    @Column(name = "password_hash", nullable = false, length = 255)
+    var passwordHash: String = passwordHash
+        protected set
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    var status: AdminAccountStatus = status
+        protected set
+
+    @Column(name = "must_change_password", nullable = false)
+    var mustChangePassword: Boolean = mustChangePassword
+        protected set
+
+    @Column(name = "failed_login_attempts", nullable = false)
+    var failedLoginAttempts: Int = failedLoginAttempts
+        protected set
+
+    @Column(name = "locked_until")
+    var lockedUntil: ZonedDateTime? = lockedUntil
+        protected set
+
+    @Column(name = "password_changed_at", nullable = false)
+    var passwordChangedAt: ZonedDateTime = passwordChangedAt
+        protected set
+
+    @Column(name = "last_login_at")
+    var lastLoginAt: ZonedDateTime? = lastLoginAt
+        protected set
 
     fun isSuspended(): Boolean = status == AdminAccountStatus.SUSPENDED
 
@@ -82,6 +106,11 @@ class AdminAccount private constructor(
     fun recordSuccessfulLogin(now: ZonedDateTime) {
         unlock()
         lastLoginAt = now
+    }
+
+    /** 같은 비밀번호를 더 강한 해시로 다시 적는다. 사용자가 바꾼 것이 아니라 변경 시각은 그대로 둔다. */
+    fun upgradePasswordHash(passwordHash: String) {
+        this.passwordHash = passwordHash
     }
 
     fun changePassword(

@@ -32,12 +32,11 @@ class WorkspaceMember(
     @Column(name = "user_id", nullable = false, updatable = false)
     val userId: Long,
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    var role: WorkspaceRole,
+    role: WorkspaceRole,
 ) : BaseEntity() {
     @Column(name = "deleted_at")
     var deletedAt: ZonedDateTime? = null
+        protected set
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -45,6 +44,15 @@ class WorkspaceMember(
 
     val requiredId: Long
         get() = checkNotNull(id) { "저장되지 않은 작업공간 구성원입니다." }
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    var role: WorkspaceRole = role
+        protected set
+
+    fun changeRole(role: WorkspaceRole) {
+        this.role = role
+    }
 }
 
 enum class WorkspaceRole {

@@ -21,26 +21,42 @@ class DetailFolderAssignment(
     @Column(name = "photo_id", updatable = false)
     val photoId: Long,
 
-    @Column(name = "detail_folder_id", nullable = false)
-    var detailFolderId: Long,
+    detailFolderId: Long,
 
-    @Column(name = "assigned_by_user_id")
-    var assignedByUserId: Long? = null,
+    assignedByUserId: Long? = null,
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "assigned_source", nullable = false, length = 20)
-    var assignedSource: FolderSource,
+    assignedSource: FolderSource,
 
-    @Column
-    var confidence: Double? = null,
+    confidence: Double? = null,
 
-    @Column(name = "assigned_at", nullable = false)
-    var assignedAt: ZonedDateTime,
+    assignedAt: ZonedDateTime,
 
     /** 이 사진을 폴더에 처음 넣은 분석 잡. 사용자가 직접 넣었으면 null. 사용자가 옮겨도 남는다 — 물질화 재호출이 잡의 결과를 다시 찾는 표식이다. */
     @Column(name = "analysis_job_id", updatable = false)
     val analysisJobId: Long? = null,
 ) : BaseEntity() {
+
+    @Column(name = "detail_folder_id", nullable = false)
+    var detailFolderId: Long = detailFolderId
+        protected set
+
+    @Column(name = "assigned_by_user_id")
+    var assignedByUserId: Long? = assignedByUserId
+        protected set
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "assigned_source", nullable = false, length = 20)
+    var assignedSource: FolderSource = assignedSource
+        protected set
+
+    @Column
+    var confidence: Double? = confidence
+        protected set
+
+    @Column(name = "assigned_at", nullable = false)
+    var assignedAt: ZonedDateTime = assignedAt
+        protected set
+
     fun moveTo(
         detailFolderId: Long,
         userId: Long,

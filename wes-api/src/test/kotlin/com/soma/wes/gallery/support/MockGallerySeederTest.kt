@@ -9,6 +9,7 @@ import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoAnalysis
 import com.soma.wes.photo.domain.PhotoStatus
+import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.studio.exception.StudioErrorCode
@@ -44,6 +45,7 @@ class MockGallerySeederTest @Autowired constructor(
     private val studioRepository: StudioRepository,
     private val galleryRepository: GalleryRepository,
     private val photoRepository: PhotoRepository,
+    private val photoFixture: PhotoFixture,
     private val photoAnalysisRepository: PhotoAnalysisRepository,
 ) {
 
@@ -298,14 +300,13 @@ class MockGallerySeederTest @Autowired constructor(
     )
 
     private fun 임베딩_사진(galleryId: Long, displayOrder: Int, withPreview: Boolean = true): Photo {
-        val photo = photoRepository.save(
-            사진(galleryId, displayOrder).also { photo ->
-                if (withPreview) {
-                    photo.previewKey = "previews/${photo.storageKey.substringBeforeLast('.')}.jpg"
-                }
-                photo.markUploaded(java.time.ZonedDateTime.now())
-            },
+        val saved = photoRepository.save(
+            사진(galleryId, displayOrder).also { photo -> photo.markUploaded(java.time.ZonedDateTime.now()) },
         )
+        if (withPreview) {
+            photoFixture.미리보기_붙이기(saved.requiredId, "previews/${saved.storageKey.substringBeforeLast('.')}.jpg")
+        }
+        val photo = photoRepository.findById(saved.requiredId).orElseThrow()
         photoAnalysisRepository.save(
             PhotoAnalysis.embeddedBy(
                 photoId = photo.requiredId,
