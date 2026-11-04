@@ -10,6 +10,7 @@
 | `pool.sh dev --label L --since … --until …` | 앱 로그 `event=db.pool`(연결 풀 표본) 분 단위 요약 | 아니오 |
 | `fault.sh dev on [--rate 0.02] \| off \| status` | dev 임베더·categorize 의 `FAULT_EXIT_RATE` 켜고 끄기 | Lambda 설정만 |
 | `recovery.sh dev --label L --since … --until …` | 주입한 실패마다 다시 처리 끝까지 걸린 시간 · 잃은 것 | 아니오 |
+| `relocate-previews.sh dev --galleries A-B [--check]` | 복제 갤러리의 미리보기를 갤러리마다 제 경로(`previews/galleries/<id>/`)로 버킷 안 복사 → `photos.preview_key` 갱신 → 검증. 복제본은 원본 갤러리 미리보기를 나눠 써서 CDN 쿠키(자기 갤러리 경로만 엶)에 거부되고 캐시 적중이 부풀려진다. 다시 돌려도 옮긴 행은 건너뜀. 갤러리를 지울 때 사본은 `aws s3 rm` 로 따로 | 예 (버킷 사본·`preview_key`) |
 | `cleanup.sh dev --label L [--users]` | 회차 갤러리 삭제 + VACUUM (사용자는 기본 남김) | 예 |
 | `jfr.sh dev on --label L` · `off` · `status` · `fetch --label L [--since HH:MM --until HH:MM]` | 앱을 JFR 녹화와 함께 다시 띄우고(녹화는 볼륨 `logs/jfr`), 끝나면 원래 설정으로 되돌린 뒤 녹화를 받아 CPU 표본(스레드·라이브러리·기능 입구·우리 코드)·할당·GC 를 요약(`jfr_samples.py`) | 앱 재시작 2번 |
 
