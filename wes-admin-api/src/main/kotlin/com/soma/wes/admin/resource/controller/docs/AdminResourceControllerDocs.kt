@@ -28,7 +28,7 @@ import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.ResponseEntity
 
-@Tag(name = "Admin Resource", description = "최고 관리자의 운영 데이터 조회·변경·휴지통·재처리·워크플로. 변경은 조회한 version을 expectedVersion으로 받아 낙관적으로 막고, 대리보기 중에는 쓰기 요청이 403(ADMIN_403_2)이다.")
+@Tag(name = "Admin Resource", description = "최고 관리자의 운영 데이터 조회·변경·휴지통·재처리·워크플로. 기존 리소스를 바꾸는 요청(수정·삭제·복원·정지·활성화·재처리·워크플로)은 조회한 version을 expectedVersion으로 받아 낙관적으로 막는다. 생성과 휴지통 배치 복원은 version을 받지 않는다. 대리보기 중에는 쓰기 요청이 403(ADMIN_403_2)이다.")
 interface AdminResourceControllerDocs {
     @Operation(summary = "운영 개요", description = "종류별 리소스 수, 운영 이슈, 최근 실패한 작업, 휴지통 대기 수를 한 번에 읽는다. 읽기만 한다.")
     fun getOperationsOverview(loginUser: AdminLoginUser): ResponseEntity<AdminOperationsOverviewResponse>
