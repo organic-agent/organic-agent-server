@@ -1,7 +1,5 @@
-package com.soma.wes.photo.support
+package com.soma.wes.photo.service
 
-import com.soma.wes.global.cluster.SchedulerLeadership
-import com.soma.wes.global.logging.LogContext
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.dto.PendingPhotoDto
 import com.soma.wes.photo.exception.PhotoException
@@ -10,8 +8,7 @@ import com.soma.wes.photo.service.port.PhotoStorage
 import java.time.Clock
 import java.time.ZonedDateTime
 import org.slf4j.LoggerFactory
-import org.springframework.scheduling.annotation.Scheduled
-import org.springframework.stereotype.Component
+import org.springframework.stereotype.Service
 
 /**
  * 완료 통보 없이 남은 PENDING 사진을 서버가 스스로 마무리한다. 프론트가 죽어도 S3에 올라간 원본은 갤러리에 나타나야 하고,
@@ -21,13 +18,12 @@ import org.springframework.stereotype.Component
  * 휴지통으로 보내기 직전에도 HeadObject 를 한 번 더 지나므로 "PUT 은 됐는데 통보만 못 한" 사진이 버려지지 않는다.
  * S3 조회는 트랜잭션 밖에서 하고 상태 갱신은 문장 하나씩이다 — 커넥션을 문 채 네트워크를 기다리지 않는다.
  */
-@Component
-class PendingUploadSweeper(
+@Service
+class PendingUploadSweepService(
     private val photoPipelineRepository: PhotoPipelineRepository,
     private val photoStorage: PhotoStorage,
     private val properties: StorageProperties,
     private val clock: Clock,
-    private val leadership: SchedulerLeadership,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -40,13 +36,8 @@ class PendingUploadSweeper(
         private const val MAX_LOGGED_PHOTO_IDS = 20
     }
 
-    @Scheduled(fixedDelayString = "\${app.storage.pending-sweep-interval:PT5S}")
+    /** 한 걸음: 확인할 때가 된 PENDING을 최대 [BATCH_SIZE]장 집어 올라간 것·기다릴 것·버릴 것으로 가른다. */
     fun sweep() {
-        if (!leadership.isLeader()) return
-        LogContext.sweep { sweepOnce() }
-    }
-
-    private fun sweepOnce() {
         val now = ZonedDateTime.now(clock)
         val candidates = photoPipelineRepository.findPendingToCheck(
             now = now,

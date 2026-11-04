@@ -2,6 +2,7 @@ package com.soma.wes.activity.support
 
 import com.soma.wes.activity.infrastructure.InMemoryActivityBuffer
 import com.soma.wes.activity.repository.ActivityRepository
+import com.soma.wes.activity.scheduler.ActivityFlushScheduler
 import com.soma.wes.activity.service.ActivityFlushService
 import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.activity.service.port.ActivityBuffer

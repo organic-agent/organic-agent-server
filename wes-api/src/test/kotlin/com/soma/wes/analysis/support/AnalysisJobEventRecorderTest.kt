@@ -2,6 +2,7 @@ package com.soma.wes.analysis.support
 
 import com.soma.wes.analysis.domain.AnalysisJobEvent
 import com.soma.wes.analysis.domain.AnalysisJobEventType
+import com.soma.wes.analysis.listener.AnalysisJobEventListener
 import com.soma.wes.analysis.repository.AnalysisJobEventRepository
 import com.soma.wes.analysis.service.AnalysisPipelineService
 import com.soma.wes.analysis.service.AnalysisService

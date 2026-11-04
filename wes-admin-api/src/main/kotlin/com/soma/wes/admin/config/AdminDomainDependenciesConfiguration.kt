@@ -40,7 +40,7 @@ import com.soma.wes.photo.service.PhotoService
 import com.soma.wes.photo.support.PhotoViewAssembler
 import com.soma.wes.photo.support.PreviewDelivery
 import com.soma.wes.notification.service.UserNotificationPublisher
-import com.soma.wes.analysis.support.AnalysisJobEventListener
+import com.soma.wes.analysis.listener.AnalysisJobEventListener
 import com.soma.wes.analysis.support.AnalysisJobEventRecorder
 import com.soma.wes.analysis.support.AnalysisJobEventWriter
 import com.soma.wes.analysis.support.ConceptAssignmentLoader

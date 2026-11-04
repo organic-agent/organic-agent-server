@@ -8,7 +8,7 @@ import com.soma.wes.admin.repository.AdminAccountRepository
 import com.soma.wes.admin.resource.config.AdminWorkflowExecutorProperties
 import com.soma.wes.auth.service.AuthTokenProvider
 import com.soma.wes.auth.support.OAuthRegistrations
-import com.soma.wes.auth.support.OAuthStateCleaner
+import com.soma.wes.auth.scheduler.OAuthStateCleanupScheduler
 import com.soma.wes.auth.token.config.JwtProperties
 import com.soma.wes.folder.repository.ConceptFolderRepository
 import com.soma.wes.folder.service.FolderService
@@ -45,7 +45,7 @@ import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.service.PhotoService
 import com.soma.wes.photo.support.PhotoViewAssembler
-import com.soma.wes.analysis.support.AnalysisJobEventListener
+import com.soma.wes.analysis.listener.AnalysisJobEventListener
 import com.soma.wes.analysis.support.AnalysisJobEventRecorder
 import com.soma.wes.analysis.support.AnalysisJobEventWriter
 import com.soma.wes.analysis.support.ConceptAssignmentLoader
@@ -64,7 +64,7 @@ import com.soma.wes.support.TestcontainersConfiguration
 import com.soma.wes.trash.config.TrashProperties
 import com.soma.wes.trash.repository.ProductChildTrashRepository
 import com.soma.wes.trash.service.ProductChildTrashService
-import com.soma.wes.trash.support.TrashPurgeScheduler
+import com.soma.wes.trash.scheduler.TrashPurgeScheduler
 import org.assertj.core.api.Assertions.assertThat
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.Test
@@ -161,7 +161,7 @@ class AdminApplicationContextBoundaryTest @Autowired constructor(
             RestClientConfig::class.java,
             AuthTokenProvider::class.java,
             OAuthRegistrations::class.java,
-            OAuthStateCleaner::class.java,
+            OAuthStateCleanupScheduler::class.java,
             TrashPurgeScheduler::class.java,
             JwtProperties::class.java,
         )

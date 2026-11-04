@@ -1,6 +1,6 @@
 package com.soma.wes.global.cluster
 
-import com.soma.wes.activity.support.ActivityFlushScheduler
+import com.soma.wes.activity.scheduler.ActivityFlushScheduler
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver
@@ -35,7 +35,7 @@ class ScheduledLeadershipGuardTest {
     @Test
     fun `스캔이 실제 스케줄러들을 찾는다`() {
         assertThat(scheduledClasses().map { it.simpleName })
-            .contains("AnalysisPipelineScheduler", "TrashPurgeScheduler", "ActivityFlushScheduler", "AiSelectionJobRecovery")
+            .contains("AnalysisPipelineScheduler", "TrashPurgeScheduler", "ActivityFlushScheduler", "AiSelectionJobRecoveryScheduler")
     }
 
     /** 클래스 파일을 직접 읽는다 — 컴포넌트 스캔은 `@ConditionalOnProperty`가 꺼진 빈(활동 버퍼 등)을 건너뛰어 검사에서 빠뜨린다. */

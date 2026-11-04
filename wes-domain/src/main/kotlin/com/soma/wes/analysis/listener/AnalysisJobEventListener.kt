@@ -1,6 +1,7 @@
-package com.soma.wes.analysis.support
+package com.soma.wes.analysis.listener
 
 import com.soma.wes.analysis.dto.AnalysisJobEventDto
+import com.soma.wes.analysis.support.AnalysisJobEventWriter
 import com.soma.wes.global.config.AnalysisPoolRoute
 import java.time.Duration
 import java.util.concurrent.atomic.AtomicInteger

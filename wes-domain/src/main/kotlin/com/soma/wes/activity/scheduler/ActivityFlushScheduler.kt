@@ -1,4 +1,4 @@
-package com.soma.wes.activity.support
+package com.soma.wes.activity.scheduler
 
 import com.soma.wes.activity.service.ActivityFlushService
 import jakarta.annotation.PreDestroy

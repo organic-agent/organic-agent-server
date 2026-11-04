@@ -1,4 +1,4 @@
-package com.soma.wes.photo.support
+package com.soma.wes.photo.scheduler
 
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
@@ -6,11 +6,13 @@ import com.soma.wes.global.logging.LogContext
 import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.repository.PhotoRepository
+import com.soma.wes.photo.service.PendingUploadSweepService
 import com.soma.wes.support.CapturedLogs
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.trash.RecordingTrashPhotoStorage
 import com.soma.wes.trash.RecordingTrashPhotoStorageConfig
 import java.sql.Timestamp
+import java.time.Clock
 import java.time.Duration
 import java.time.ZonedDateTime
 import org.assertj.core.api.Assertions.assertThat
@@ -29,13 +31,14 @@ import org.springframework.jdbc.core.JdbcTemplate
  */
 @IntegrationTest
 @Import(RecordingTrashPhotoStorageConfig::class)
-class PendingUploadSweeperTest @Autowired constructor(
-    private val sweeper: PendingUploadSweeper,
+class PendingUploadSweepSchedulerTest @Autowired constructor(
+    private val sweeper: PendingUploadSweepScheduler,
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
     private val photoRepository: PhotoRepository,
     private val photoStorage: RecordingTrashPhotoStorage,
     private val jdbcTemplate: JdbcTemplate,
+    private val clock: Clock,
 ) {
 
     private lateinit var fixture: OpenGallery
@@ -168,7 +171,7 @@ class PendingUploadSweeperTest @Autowired constructor(
             photoStorage.existsAnswer = { key -> key != lostKey }
 
             // when
-            val sweep = CapturedLogs(PendingUploadSweeper::class).use { logs ->
+            val sweep = CapturedLogs(PendingUploadSweepService::class).use { logs ->
                 sweeper.sweep()
                 logs.eventsOf("upload.sweep").single()
             }
@@ -190,7 +193,7 @@ class PendingUploadSweeperTest @Autowired constructor(
             photoStorage.existsAnswer = { false }
 
             // when
-            val sweeps = CapturedLogs(PendingUploadSweeper::class).use { logs ->
+            val sweeps = CapturedLogs(PendingUploadSweepService::class).use { logs ->
                 sweeper.sweep()
                 logs.eventsOf("upload.sweep")
             }
@@ -202,7 +205,7 @@ class PendingUploadSweeperTest @Autowired constructor(
 
     /** 사진을 [ago]만큼 전에 만든 것으로, [lastCheckedAgo]가 있으면 그때 마지막으로 확인한 것으로 옮긴다. */
     private fun age(photoIds: List<Long>, ago: Duration, lastCheckedAgo: Duration? = null) {
-        val now = ZonedDateTime.now()
+        val now = ZonedDateTime.now(clock)
         val createdAt = Timestamp.from(now.minus(ago).toInstant())
         val updatedAt = Timestamp.from(now.minus(lastCheckedAgo ?: ago).toInstant())
         photoIds.forEach { photoId ->
