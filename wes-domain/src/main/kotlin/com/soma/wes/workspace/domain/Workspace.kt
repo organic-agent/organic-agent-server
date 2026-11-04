@@ -27,27 +27,27 @@ import org.hibernate.annotations.SQLRestriction
 )
 class Workspace(
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, updatable = false, length = 20)
+    @Column(name = "type", nullable = false, updatable = false, length = 20)
     val type: WorkspaceType,
 
     name: String,
 
     /** PERSONAL 작업공간을 사용자당 하나로 제한하는 DB 소유 키다. STUDIO면 null이다. */
-    @Column(name = "personal_owner_user_id", updatable = false)
+    @Column(name = "personal_owner_user_id", nullable = true, updatable = false)
     val personalOwnerUserId: Long? = null,
 ) : BaseEntity() {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null
 
-    @Column(name = "deleted_at")
+    @Column(name = "deleted_at", nullable = true)
     var deletedAt: ZonedDateTime? = null
         protected set
 
     val requiredId: Long
         get() = checkNotNull(id) { "저장되지 않은 작업공간입니다." }
 
-    @Column(nullable = false, length = 100)
+    @Column(name = "name", nullable = false, length = 100)
     var name: String = name
         protected set
 

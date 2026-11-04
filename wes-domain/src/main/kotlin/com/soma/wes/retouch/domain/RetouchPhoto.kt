@@ -44,7 +44,7 @@ class RetouchPhoto(
     val id: Long? = null
 
     /** 사진별 보정 요청 텍스트. 담기만 하고 아직 적지 않았으면 null이다. */
-    @Column(name = "request_text")
+    @Column(name = "request_text", nullable = true)
     var requestText: String? = null
         protected set
 
@@ -59,21 +59,21 @@ class RetouchPhoto(
      * 부부가 올리는 경로는 없다 — 관리자 아티팩트 교체(`AdminRetouchArtifactType.ANNOTATION`)만 이 값을 쓴다.
      * 그래서 [writeRequest]는 이 값을 건드리지 않는다: 요청을 다시 제출해도 관리자가 넣은 주석이 지워지지 않는다.
      */
-    @Column(name = "annotation_key", length = 500)
+    @Column(name = "annotation_key", nullable = true, length = 500)
     var annotationKey: String? = null
         protected set
 
     /** 작가가 올린 보정 결과 파일의 storage key. null이면 아직 응답이 없는 항목이다. */
-    @Column(name = "result_key", length = 500)
+    @Column(name = "result_key", nullable = true, length = 500)
     var resultKey: String? = null
         protected set
 
-    @Column(name = "result_content_type", length = 100)
+    @Column(name = "result_content_type", nullable = true, length = 100)
     var resultContentType: String? = null
         protected set
 
     /** 관리자 휴지통에 들어간 항목은 모든 사용자 JPA 조회와 변경 경로에서 즉시 제외한다. */
-    @Column(name = "deleted_at")
+    @Column(name = "deleted_at", nullable = true)
     var deletedAt: ZonedDateTime? = null
         protected set
 

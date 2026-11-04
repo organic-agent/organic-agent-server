@@ -29,11 +29,11 @@ class GalleryInvite(
     val galleryId: Long,
 
     /** 링크에 실리는 값. 추측할 수 없어야 하므로 생성은 `SecureTokenGenerator`가 맡는다. */
-    @Column(nullable = false, updatable = false, length = 255)
+    @Column(name = "token", nullable = false, updatable = false, length = 255)
     val token: String,
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, updatable = false, length = 30)
+    @Column(name = "kind", nullable = false, updatable = false, length = 30)
     val kind: GalleryInviteKind = GalleryInviteKind.GALLERY_MEMBER,
 
     @Column(name = "max_uses", nullable = false, updatable = false)
@@ -46,7 +46,7 @@ class GalleryInvite(
     revokedAt: ZonedDateTime? = null,
 
     /** 실제 발급자. 이전 링크나 탈퇴한 발급자는 null일 수 있다. */
-    @Column(name = "issued_by_user_id", updatable = false)
+    @Column(name = "issued_by_user_id", nullable = true, updatable = false)
     val issuedByUserId: Long? = null,
 
 ) : BaseEntity() {
@@ -67,7 +67,7 @@ class GalleryInvite(
         protected set
 
     /** 작가가 링크를 거둬들인 시각. 링크가 엉뚱한 곳에 퍼졌을 때 쓴다. */
-    @Column(name = "revoked_at")
+    @Column(name = "revoked_at", nullable = true)
     var revokedAt: ZonedDateTime? = revokedAt
         protected set
 

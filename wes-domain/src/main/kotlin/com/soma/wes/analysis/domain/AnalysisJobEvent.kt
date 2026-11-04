@@ -26,12 +26,12 @@ class AnalysisJobEvent(
     val galleryId: Long,
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, updatable = false, length = 40)
+    @Column(name = "type", nullable = false, updatable = false, length = 40)
     val type: AnalysisJobEventType,
 
     /** 종류마다 다른 부가 값(장수·시도 횟수·오류 코드 등). 운영 확인용이고 판단에 쓰지 않는다. */
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb", updatable = false)
+    @Column(name = "detail", nullable = true, columnDefinition = "jsonb", updatable = false)
     val detail: Map<String, Any?>? = null,
 
     @Column(name = "created_at", nullable = false, updatable = false)

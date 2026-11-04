@@ -37,7 +37,7 @@ class PhotoComment(
     val requiredId: Long
         get() = checkNotNull(id) { "저장되지 않은 사진 댓글입니다." }
 
-    @Column(name = "deleted_at")
+    @Column(name = "deleted_at", nullable = true)
     var deletedAt: ZonedDateTime? = null
         protected set
 

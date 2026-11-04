@@ -65,11 +65,11 @@ class Photo(
         protected set
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
+    @Column(name = "status", nullable = false, length = 20)
     var status: PhotoStatus = PhotoStatus.PENDING
         protected set
 
-    @Column(name = "preview_key", length = 500)
+    @Column(name = "preview_key", nullable = true, length = 500)
     var previewKey: String? = null
         protected set
 
@@ -79,7 +79,7 @@ class Photo(
      * 값을 쓰는 곳은 배치 SQL([com.soma.wes.photo.repository.PhotoPipelineRepository])이라 엔티티에는 읽기만 있다 —
      * JPA가 UPDATE에 이 컬럼을 넣으면 오래된 스냅샷이 스윕의 배정을 덮으므로 매핑에서 쓰기를 막는다.
      */
-    @Column(name = "dispatched_at", insertable = false, updatable = false)
+    @Column(name = "dispatched_at", nullable = true, insertable = false, updatable = false)
     val dispatchedAt: ZonedDateTime? = null
 
     /** 임베더에게 보낸 횟수. 상한에 닿으면 [PhotoAnalysis.error]에 실패로 남기고 더 보내지 않는다. 배치 SQL이 올린다. */
@@ -93,12 +93,12 @@ class Photo(
      * DB 행을 지워도 URL 자체는 취소되지 않아, 휴지통의 즉시 삭제는 이 시각 전에는 거절된다
      * (만료 purge는 보관 기간이 TTL보다 훨씬 길어 확인이 필요 없다).
      */
-    @Column(name = "upload_url_expires_at")
+    @Column(name = "upload_url_expires_at", nullable = true)
     var uploadUrlExpiresAt: Instant? = null
         protected set
 
     /** UPLOADED 가 된 시각. 완료 통보([markUploaded])와 서버의 HeadObject 보정(배치 SQL)이 채운다. PENDING 이면 null 이다. */
-    @Column(name = "uploaded_at")
+    @Column(name = "uploaded_at", nullable = true)
     var uploadedAt: ZonedDateTime? = null
         protected set
 
@@ -113,7 +113,7 @@ class Photo(
      * 복원(`deleted_at = NULL`)은 숨은 행을 다뤄야 해서 엔티티가 아니라 trash 도메인의
      * 네이티브 UPDATE가 수행한다.
      */
-    @Column(name = "deleted_at")
+    @Column(name = "deleted_at", nullable = true)
     var deletedAt: ZonedDateTime? = null
         protected set
 

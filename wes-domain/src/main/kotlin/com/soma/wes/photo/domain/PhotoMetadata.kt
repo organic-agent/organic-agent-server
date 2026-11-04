@@ -24,33 +24,33 @@ class PhotoMetadata(
      * 서버 타임존으로 해석해 [java.time.ZonedDateTime]으로 담으면 여행지에서 찍은 사진이
      * 조용히 9시간 옮겨간다. 찍힌 그대로 두고 해석은 화면에 맡긴다.
      */
-    @Column(name = "taken_at")
+    @Column(name = "taken_at", nullable = true)
     val takenAt: LocalDateTime? = null,
 
-    @Column(name = "camera_make", length = 100)
+    @Column(name = "camera_make", nullable = true, length = 100)
     val cameraMake: String? = null,
 
-    @Column(name = "camera_model", length = 100)
+    @Column(name = "camera_model", nullable = true, length = 100)
     val cameraModel: String? = null,
 
     /** `1/200` 같은 유리수 표기 그대로. 초 단위 실수로 바꾸면 화면에 되돌릴 때 오차가 붙는다. */
-    @Column(name = "exposure_time", length = 30)
+    @Column(name = "exposure_time", nullable = true, length = 30)
     val exposureTime: String? = null,
 
-    @Column(name = "f_number")
+    @Column(name = "f_number", nullable = true)
     val fNumber: Double? = null,
 
-    @Column(name = "iso")
+    @Column(name = "iso", nullable = true)
     val iso: Int? = null,
 
     /** EXIF 회전을 반영한 뒤의 가로. 사람이 보는 방향과 같다. */
-    @Column(name = "width")
+    @Column(name = "width", nullable = true)
     val width: Int? = null,
 
-    @Column(name = "height")
+    @Column(name = "height", nullable = true)
     val height: Int? = null,
 
-    @Column(name = "byte_size")
+    @Column(name = "byte_size", nullable = true)
     val byteSize: Long? = null,
 ) {
 

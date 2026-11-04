@@ -29,10 +29,10 @@ class DetailFolderMerge(
     val sourceDetailFolderId: Long,
 
     /** 대상 폴더가 지워지면 null이 된다(FK SET NULL). 기록은 남아 정리 작업이 숨은 원본을 찾게 한다. */
-    @Column(name = "target_detail_folder_id", updatable = false)
+    @Column(name = "target_detail_folder_id", nullable = true, updatable = false)
     val targetDetailFolderId: Long?,
 
-    @Column(name = "merged_by_user_id", updatable = false)
+    @Column(name = "merged_by_user_id", nullable = true, updatable = false)
     val mergedByUserId: Long?,
 
     /** 옮긴 배정의 `assignedAt`도 이 값이다. 되돌릴 때 "그 사이 다시 옮겨졌나"를 이 값과 비교해 판단한다. */
@@ -47,7 +47,7 @@ class DetailFolderMerge(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null
 
-    @Column(name = "undone_at")
+    @Column(name = "undone_at", nullable = true)
     var undoneAt: ZonedDateTime? = null
         protected set
 

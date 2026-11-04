@@ -45,7 +45,7 @@ class GalleryMember(
 
 ) : BaseEntity() {
 
-    @Column(name = "deleted_at")
+    @Column(name = "deleted_at", nullable = true)
     var deletedAt: ZonedDateTime? = null
         protected set
 

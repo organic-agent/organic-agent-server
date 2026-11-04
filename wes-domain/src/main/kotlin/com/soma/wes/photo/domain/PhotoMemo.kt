@@ -42,7 +42,7 @@ class PhotoMemo(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null
 
-    @Column(nullable = false, length = MAX_CONTENT_LENGTH)
+    @Column(name = "content", nullable = false, length = MAX_CONTENT_LENGTH)
     var content: String = content
         protected set
 

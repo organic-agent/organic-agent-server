@@ -34,7 +34,7 @@ class WorkspaceMember(
 
     role: WorkspaceRole,
 ) : BaseEntity() {
-    @Column(name = "deleted_at")
+    @Column(name = "deleted_at", nullable = true)
     var deletedAt: ZonedDateTime? = null
         protected set
 
@@ -46,7 +46,7 @@ class WorkspaceMember(
         get() = checkNotNull(id) { "저장되지 않은 작업공간 구성원입니다." }
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
+    @Column(name = "role", nullable = false, length = 20)
     var role: WorkspaceRole = role
         protected set
 

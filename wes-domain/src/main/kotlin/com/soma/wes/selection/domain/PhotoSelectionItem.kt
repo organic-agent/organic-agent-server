@@ -41,7 +41,7 @@ class PhotoSelectionItem(
     @Column(name = "photo_id", nullable = false, updatable = false)
     val photoId: Long,
 
-    @Column(name = "added_by_user_id", updatable = false)
+    @Column(name = "added_by_user_id", nullable = true, updatable = false)
     val addedByUserId: Long?,
 
     @Column(name = "sort_order", nullable = false)
@@ -51,7 +51,7 @@ class PhotoSelectionItem(
      * 보정본으로 담았으면 그 보정 항목([com.soma.wes.retouch.domain.RetouchPhoto])의 id.
      * 원본으로 담았으면 null이고, 납품 조회는 이 값이 있는 항목을 결과 key로 서명한다.
      */
-    @Column(name = "retouch_photo_id", updatable = false)
+    @Column(name = "retouch_photo_id", nullable = true, updatable = false)
     val retouchPhotoId: Long? = null,
 
 ) : BaseEntity() {

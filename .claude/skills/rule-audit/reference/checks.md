@@ -266,9 +266,10 @@ rg -nUP -t kotlin '@Transactional[^\n]*\n(\s*@[^\n]*\n)*\s*private fun' wes-*/sr
 | DM-07 | rules/domain.md | **J** 마이그레이션의 UK/CHECK 대비 서비스 검증 · 역정규화 컬럼의 KDoc | R | sonnet-b |
 | DM-08 | rules/domain.md | **S** 엔티티·`@Embeddable`·`@MappedSuperclass`의 companion 뒤에 멤버가 더 있다 | H | script |
 | DM-09 | rules/domain.md | **J** 같은 정렬·상수 리터럴이 도메인마다 복제되었는지 | R | sonnet-b |
-| DM-10 | rules/domain.md | **S** `EntityNullabilityGuardTest` — 엔티티 메타데이터(Kotlin 타입의 nullable)와 `information_schema.columns.is_nullable` 비교(Docker 필요) | T | test |
+| DM-10 | rules/domain.md | **S** `EntityNullabilityGuardTest` — 엔티티 메타데이터(Kotlin 타입의 nullable)·`@Column(nullable)`과 `information_schema.columns.is_nullable` 비교(Docker 필요) | T | test |
 | DM-11 | rules/domain.md | **G** `@Entity` 파일의 `var` 본문 프로퍼티 중 다음 줄이 `protected set`이 아닌 것 | H | script |
 | DM-12 | rules/domain.md | **G→J** `x.prop = …` 대입 후보를 읽어 엔티티인지 가른다(엔티티가 아닌 라이브러리 객체 대입은 거른다) | R | sonnet-b |
+| DM-13 | rules/domain.md | **G** `@Column` 중 `nullable =`이 없는 줄(값이 맞는지는 DM-10 테스트) | H | script |
 
 <details><summary>DM 명령 (7)</summary>
 
@@ -293,6 +294,9 @@ rg -l -t kotlin '^@Entity' wes-*/src/main/kotlin | xargs -r rg -nUP '^[ \t]+(?:o
 
 # DM-12
 rg -n -t kotlin -g '**/service/**/*' -g '**/support/**/*' '^\s*[a-z]\w*(\?)?\.[a-z]\w* = [^=]' wes-*/src/main/kotlin | rg -v 'val |\.apply|propagationBehavior|queryTimeout|isDaemon|timeout'
+
+# DM-13
+rg -n -t kotlin '@Column\b' wes-*/src/main/kotlin | rg -v '@Column\(.*nullable\s*='
 
 ```
 
@@ -829,7 +833,6 @@ rg -n '^\s*(source|\.) .*lib/report\.sh' scripts/load/*/*.sh | rg -v 'dirname'
 | CM-s1 | rules/common.md | **J** | R | sonnet-d |
 | CM-s2 | rules/common.md | **J** | R | sonnet-d |
 | MG-s1 | rules/migration.md | **G** | H | script |
-| DM-s1 | rules/domain.md | **G** | H | script |
 
 ```bash
 # KT-s1
@@ -843,9 +846,6 @@ rg -n 'INSERT INTO' wes-admin-api/src/test/kotlin
 
 # MG-s1
 rg -n -t kotlin -g '*.sql' -g '*.sh' 'ai_concept_assignments|ai_analysis_jobs|photo_category_assignments|folder_set_job_id|\bmodel_version\b|\bcluster_(id|size)\b' wes-*/src scripts --glob '!**/db/migration/**' | rg -v 'GLOSSARY-2'
-
-# DM-s1
-rg -n -t kotlin -g '**/domain/*' 'nullable\s*=' wes-*/src/main/kotlin
 
 ```
 

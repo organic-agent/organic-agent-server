@@ -37,7 +37,7 @@ class Gallery(
     @Column(name = "workspace_id", nullable = false, updatable = false)
     val workspaceId: Long,
 
-    @Column(name = "created_by_user_id", updatable = false)
+    @Column(name = "created_by_user_id", nullable = true, updatable = false)
     val createdByUserId: Long? = null,
 
     title: String,
@@ -65,12 +65,12 @@ class Gallery(
     val requiredId: Long
         get() = checkNotNull(id) { "저장되지 않은 갤러리입니다." }
 
-    @Column(nullable = false, length = 100)
+    @Column(name = "title", nullable = false, length = 100)
     var title: String = title
         protected set
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
+    @Column(name = "status", nullable = false, length = 20)
     var status: GalleryStatus = status
         protected set
 
@@ -80,20 +80,20 @@ class Gallery(
         protected set
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
+    @Column(name = "stage", nullable = false, length = 30)
     var stage: GalleryStage = stage
         protected set
 
-    @Column(name = "selection_deadline")
+    @Column(name = "selection_deadline", nullable = true)
     var selectionDeadline: ZonedDateTime? = selectionDeadline
         protected set
 
-    @Column(name = "max_selectable_photo_count")
+    @Column(name = "max_selectable_photo_count", nullable = true)
     var maxSelectablePhotoCount: Int? = maxSelectablePhotoCount
         protected set
 
     /** 계약상 보정 요청 가능 횟수. [maxSelectablePhotoCount]와 같은 이유로 갤러리에 산다. */
-    @Column(name = "max_retouch_round_count")
+    @Column(name = "max_retouch_round_count", nullable = true)
     var maxRetouchRoundCount: Int? = maxRetouchRoundCount
         protected set
 
@@ -104,7 +104,7 @@ class Gallery(
         protected set
 
     /** 휴지통에 들어간 시각. null이면 살아 있는 갤러리다. 자세한 규칙은 클래스 KDoc에. */
-    @Column(name = "deleted_at")
+    @Column(name = "deleted_at", nullable = true)
     var deletedAt: ZonedDateTime? = null
         protected set
 
@@ -188,23 +188,23 @@ class Gallery(
     var photoOrganizationRequired: Boolean = false
         protected set
 
-    @Column(name = "folders_saved_at")
+    @Column(name = "folders_saved_at", nullable = true)
     var foldersSavedAt: ZonedDateTime? = null
         protected set
 
-    @Column(name = "retouch_confirmed_at")
+    @Column(name = "retouch_confirmed_at", nullable = true)
     var retouchConfirmedAt: ZonedDateTime? = null
         protected set
 
-    @Column(name = "archived_until")
+    @Column(name = "archived_until", nullable = true)
     var archivedUntil: ZonedDateTime? = null
         protected set
 
-    @Column(name = "plan_expires_at")
+    @Column(name = "plan_expires_at", nullable = true)
     var planExpiresAt: ZonedDateTime? = null
         protected set
 
-    @Column(name = "plan_max_photo_count")
+    @Column(name = "plan_max_photo_count", nullable = true)
     var planMaxPhotoCount: Int? = null
         protected set
 
