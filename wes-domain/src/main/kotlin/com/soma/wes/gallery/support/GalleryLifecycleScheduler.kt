@@ -16,6 +16,11 @@ class GalleryLifecycleScheduler(
     private val log = LoggerFactory.getLogger(javaClass)
     private var afterId = 0L
 
+    companion object {
+        /** 한 스윕이 DB를 장시간 독점하지 않도록 묶음 수를 제한한다. */
+        private const val MAX_BATCHES = 10
+    }
+
     /** 커서를 다음 실행까지 유지해 큰 작업공간에서도 앞쪽 알림 대상만 반복하지 않는다. */
     @Scheduled(fixedDelayString = "\${app.gallery-lifecycle.sweep-interval:PT1H}", initialDelayString = "PT1M")
     fun sweep() {
@@ -35,10 +40,5 @@ class GalleryLifecycleScheduler(
             }
             afterId = ids.last()
         }
-    }
-
-    companion object {
-        /** 한 스윕이 DB를 장시간 독점하지 않도록 묶음 수를 제한한다. */
-        private const val MAX_BATCHES = 10
     }
 }

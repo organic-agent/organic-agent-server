@@ -17,6 +17,10 @@ import kotlin.math.roundToInt
 @Component
 class JpegResizer {
 
+    companion object {
+        private const val JPEG_QUALITY = 0.8f
+    }
+
     fun resize(source: ByteArray, longEdge: Int): ByteArray = toJpeg(decode(source), longEdge)
 
     /** 이미 디코딩한 이미지를 JPEG로. [longEdge]를 주면 그 크기로 줄인 뒤 인코딩한다. */
@@ -63,9 +67,5 @@ class JpegResizer {
             writer.dispose()
             buffer.toByteArray()
         }
-    }
-
-    companion object {
-        private const val JPEG_QUALITY = 0.8f
     }
 }

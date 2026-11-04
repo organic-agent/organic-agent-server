@@ -30,6 +30,14 @@ class PhotoCommentService(
     private val clock: Clock,
     private val activityRecorder: ActivityRecorder,
 ) {
+    companion object {
+        /** 같은 시각에 작성해도 순서가 바뀌지 않는 대화 순서. */
+        private val COMMENT_ORDER = Sort.by(Sort.Direction.ASC, "id")
+
+        /** 사용자 소프트 삭제로 조회되지 않는 작성자의 표시명. */
+        private const val DELETED_AUTHOR = "탈퇴한 사용자"
+    }
+
     @Transactional(readOnly = true)
     fun list(galleryId: Long, photoId: Long, userId: Long, page: Int, size: Int): PageResponse<PhotoCommentResponse> {
         galleryAccessPolicy.requireParticipantViewer(galleryId, userId)
@@ -74,13 +82,5 @@ class PhotoCommentService(
         if (photo == null || photo.status == PhotoStatus.PENDING) {
             throw PhotoException(PhotoErrorCode.PHOTO_NOT_FOUND)
         }
-    }
-
-    companion object {
-        /** 같은 시각에 작성해도 순서가 바뀌지 않는 대화 순서. */
-        private val COMMENT_ORDER = Sort.by(Sort.Direction.ASC, "id")
-
-        /** 사용자 소프트 삭제로 조회되지 않는 작성자의 표시명. */
-        private const val DELETED_AUTHOR = "탈퇴한 사용자"
     }
 }

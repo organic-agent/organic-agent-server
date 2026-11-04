@@ -96,12 +96,14 @@ def companion(mode):
             hm = hdr[-1]
             ps = max(t.rfind('\n}', 0, hm.start()), t.rfind('\nimport ', 0, hm.start()), t.rfind('{', 0, hm.start()))
             entity = bool(re.search(r'@(Entity|Embeddable|MappedSuperclass)\b', t[max(ps, 0):hm.start()]))
-            funs, props, d = [], [], 0
+            funs, props, d, pd = [], [], 0, 0
             for k in range(b + 1, e):
                 ch = t[k]
                 if ch == '{': d += 1
                 elif ch == '}': d -= 1
-                elif d == 0:
+                elif ch == '(' and d == 0: pd += 1
+                elif ch == ')' and d == 0: pd -= 1
+                elif d == 0 and pd == 0:
                     if word_at(t, k, 'fun '): funs.append(k)
                     elif word_at(t, k, 'val ') or word_at(t, k, 'var '): props.append(k)
             # 몸통 `{`는 이름·상위 타입 뒤 줄바꿈을 넘어 올 수 있다. 다음 선언이 먼저 나오면 몸통 없는 companion이다.

@@ -27,6 +27,21 @@ class RetouchPointImageFactory(
     private val jpegResizer: JpegResizer,
 ) {
 
+    companion object {
+
+        /** 실측이 쓴 크기. 전체 1024px + 크롭 512px이면 입력이 2,500토큰 안팎이다. */
+        private const val FULL_LONG_EDGE = 1024
+        private const val CROP_EDGE = 512
+
+        /** 크롭 한 변 = 짧은 변의 35%. 대상 하나가 크롭을 채우면서 주변 맥락도 조금 남는 비율이다. */
+        private const val CROP_RATIO = 0.35
+
+        private const val FULL_RING_RATIO = 0.025
+        private const val FULL_RING_STROKE = 4f
+        private const val CROP_RING_RATIO = 0.06
+        private const val CROP_RING_STROKE = 3f
+    }
+
     /** [x]·[y]가 null이면 사진 전체 메모다 — 마커도 크롭도 없이 전체 사진만 준다. */
     fun create(previewKey: String, x: Double?, y: Double?): RetouchPointImagesDto {
         val source = jpegResizer.decode(previewImageReader.read(previewKey))
@@ -90,20 +105,5 @@ class RetouchPointImageFactory(
             (radius * 2).roundToInt(),
         )
         graphics.dispose()
-    }
-
-    companion object {
-
-        /** 실측이 쓴 크기. 전체 1024px + 크롭 512px이면 입력이 2,500토큰 안팎이다. */
-        private const val FULL_LONG_EDGE = 1024
-        private const val CROP_EDGE = 512
-
-        /** 크롭 한 변 = 짧은 변의 35%. 대상 하나가 크롭을 채우면서 주변 맥락도 조금 남는 비율이다. */
-        private const val CROP_RATIO = 0.35
-
-        private const val FULL_RING_RATIO = 0.025
-        private const val FULL_RING_STROKE = 4f
-        private const val CROP_RING_RATIO = 0.06
-        private const val CROP_RING_STROKE = 3f
     }
 }

@@ -36,14 +36,6 @@ class CloudFrontPreviewCdn(
      */
     private val privateKey: PrivateKey? = if (properties.enabled) parsePkcs8(properties.privateKey) else null
 
-    companion object {
-        /** 미리보기 키의 머리. 쿠키는 이 아래 갤러리 경로만 연다 — 원본(`galleries/…`)·보정 결과는 범위 밖이다. */
-        private const val PREVIEW_ROOT = "previews/galleries/"
-
-        private const val PEM_BEGIN = "-----BEGIN PRIVATE KEY-----"
-        private const val PEM_END = "-----END PRIVATE KEY-----"
-    }
-
     init {
         if (properties.enabled) {
             check(properties.baseUrl.startsWith("https://")) {
@@ -56,6 +48,14 @@ class CloudFrontPreviewCdn(
 
     override val enabled: Boolean
         get() = properties.enabled
+
+    companion object {
+        /** 미리보기 키의 머리. 쿠키는 이 아래 갤러리 경로만 연다 — 원본(`galleries/…`)·보정 결과는 범위 밖이다. */
+        private const val PREVIEW_ROOT = "previews/galleries/"
+
+        private const val PEM_BEGIN = "-----BEGIN PRIVATE KEY-----"
+        private const val PEM_END = "-----END PRIVATE KEY-----"
+    }
 
     override fun serves(key: String): Boolean = enabled && key.startsWith(PREVIEW_ROOT)
 

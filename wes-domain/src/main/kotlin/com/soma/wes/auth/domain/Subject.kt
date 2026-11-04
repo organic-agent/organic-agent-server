@@ -6,9 +6,9 @@ package com.soma.wes.auth.domain
 @JvmInline
 value class Subject(val value: String) {
 
-    fun toUserId(): Long = value.toLong()
-
     companion object {
         fun from(userId: Long): Subject = Subject(userId.toString())
     }
+
+    fun toUserId(): Long = value.toLong()
 }

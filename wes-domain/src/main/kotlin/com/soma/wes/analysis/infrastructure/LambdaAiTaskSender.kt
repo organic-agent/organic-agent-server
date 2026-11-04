@@ -35,6 +35,19 @@ class LambdaAiTaskSender(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
+    companion object {
+        /** EVENT 호출이 큐에 들어갔을 때 Lambda가 돌려주는 상태 코드. */
+        private const val ACCEPTED = 202
+
+        private fun describe(task: AiTaskDto): String = when (task) {
+            is AiTaskDto.Embed -> "embed gallery=${task.galleryId} photos=${task.photoIds.size}"
+            is AiTaskDto.Score -> "score gallery=${task.galleryId} photos=${task.photoIds.size}"
+            is AiTaskDto.Categorize -> "categorize gallery=${task.galleryId} job=${task.jobId}"
+            is AiTaskDto.Rank -> "categorize-rank gallery=${task.galleryId}"
+            is AiTaskDto.ExactPhoto -> "exact-photo gallery=${task.galleryId} photo=${task.photoId} job=${task.jobId} attempt=${task.attemptCount} type=${task.jobType}"
+        }
+    }
+
     override fun isAvailable(task: KClass<out AiTaskDto>): Boolean = properties.functionNameOf(task).isNotBlank()
 
     override fun send(task: AiTaskDto) {
@@ -60,18 +73,5 @@ class LambdaAiTaskSender(
             throw AnalysisException(AnalysisErrorCode.AI_TASK_SEND_FAILED)
         }
         log.info("분석 Lambda 호출: {} function={}", describe(task), functionName)
-    }
-
-    companion object {
-        /** EVENT 호출이 큐에 들어갔을 때 Lambda가 돌려주는 상태 코드. */
-        private const val ACCEPTED = 202
-
-        private fun describe(task: AiTaskDto): String = when (task) {
-            is AiTaskDto.Embed -> "embed gallery=${task.galleryId} photos=${task.photoIds.size}"
-            is AiTaskDto.Score -> "score gallery=${task.galleryId} photos=${task.photoIds.size}"
-            is AiTaskDto.Categorize -> "categorize gallery=${task.galleryId} job=${task.jobId}"
-            is AiTaskDto.Rank -> "categorize-rank gallery=${task.galleryId}"
-            is AiTaskDto.ExactPhoto -> "exact-photo gallery=${task.galleryId} photo=${task.photoId} job=${task.jobId} attempt=${task.attemptCount} type=${task.jobType}"
-        }
     }
 }

@@ -43,6 +43,17 @@ class PhotoPipelineRepository(
 
     private val jdbcClient: JdbcClient = JdbcClient.create(JdbcTemplate(dataSource).apply { queryTimeout = queryTimeoutSeconds })
 
+    companion object {
+        /** 이 서버가 쓰는 `photo_analysis.error` 값 — 임베더 배정 상한. 임베더·score의 값(디코드 실패 등)과 같은 컬럼을 나눠 쓴다. */
+        const val EMBED_ATTEMPTS_EXCEEDED = "EMBED_ATTEMPTS_EXCEEDED"
+
+        /** 이 서버가 쓰는 `photo_analysis.error` 값 — 진행이 멈춘 잡에서 떼어 낸 사진. */
+        const val ANALYSIS_STALLED = "ANALYSIS_STALLED"
+
+        /** 문장 하나의 실행 제한(초). dev 실측에서 스윕 문장은 20ms 이하·진행 카운트 14ms(7,189장 갤러리) — 그 천 배 이상이다. */
+        const val QUERY_TIMEOUT_SECONDS = 30
+    }
+
     /** 갤러리 하나의 진행 카운트. [liveSince] 이후 만들어진 PENDING이 "아직 올라오는 중"이다. */
     fun progressOf(galleryId: Long, liveSince: ZonedDateTime): GalleryAnalysisProgress = jdbcClient.sql(
         """
@@ -620,15 +631,4 @@ class PhotoPipelineRepository(
             )
         }
         .list()
-
-    companion object {
-        /** 이 서버가 쓰는 `photo_analysis.error` 값 — 임베더 배정 상한. 임베더·score의 값(디코드 실패 등)과 같은 컬럼을 나눠 쓴다. */
-        const val EMBED_ATTEMPTS_EXCEEDED = "EMBED_ATTEMPTS_EXCEEDED"
-
-        /** 이 서버가 쓰는 `photo_analysis.error` 값 — 진행이 멈춘 잡에서 떼어 낸 사진. */
-        const val ANALYSIS_STALLED = "ANALYSIS_STALLED"
-
-        /** 문장 하나의 실행 제한(초). dev 실측에서 스윕 문장은 20ms 이하·진행 카운트 14ms(7,189장 갤러리) — 그 천 배 이상이다. */
-        const val QUERY_TIMEOUT_SECONDS = 30
-    }
 }

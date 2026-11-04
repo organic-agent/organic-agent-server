@@ -8,11 +8,6 @@ enum class GalleryPlan(val planId: String, val displayName: String, val maxPhoto
     PRO("pro", "프로", 10_000),
     ;
 
-    fun expiresAt(startedAt: ZonedDateTime): ZonedDateTime = when (this) {
-        FREE -> startedAt.plusMonths(FREE_DURATION_MONTHS)
-        PRO -> startedAt.plusYears(PRO_DURATION_YEARS)
-    }
-
     companion object {
         /** 무료 갤러리의 생성일부터 한 달 이용 정책. */
         const val FREE_DURATION_MONTHS = 1L
@@ -20,5 +15,10 @@ enum class GalleryPlan(val planId: String, val displayName: String, val maxPhoto
         const val PRO_DURATION_YEARS = 1L
         /** 요금제 API는 달력 기준 1년을 12개월로 표시한다. */
         const val PRO_DURATION_MONTHS = PRO_DURATION_YEARS * 12
+    }
+
+    fun expiresAt(startedAt: ZonedDateTime): ZonedDateTime = when (this) {
+        FREE -> startedAt.plusMonths(FREE_DURATION_MONTHS)
+        PRO -> startedAt.plusYears(PRO_DURATION_YEARS)
     }
 }

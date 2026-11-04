@@ -33,6 +33,11 @@ class CollabSessionQueryService(
     private val urlResolver: CollabLinkResolver,
     private val membership: CollabPhotoMembership,
 ) {
+    companion object {
+        /** 삭제된 참여자의 댓글에 표시하는 익명 이름. */
+        private const val UNKNOWN_NICKNAME = "알 수 없음"
+    }
+
     @Transactional(readOnly = true)
     fun list(galleryId: Long, userId: Long): List<CollabSessionResponse> {
         galleryAccessPolicy.requireParticipantViewer(galleryId, userId)
@@ -140,9 +145,4 @@ class CollabSessionQueryService(
         photoViewAssembler.count(session),
         participantRepository.countByCollabSessionId(session.requiredId),
     )
-
-    companion object {
-        /** 삭제된 참여자의 댓글에 표시하는 익명 이름. */
-        private const val UNKNOWN_NICKNAME = "알 수 없음"
-    }
 }

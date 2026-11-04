@@ -89,24 +89,6 @@ class CollabSession(
     var deletedAt: ZonedDateTime? = null
         protected set
 
-    companion object {
-        const val MAX_NAME_LENGTH = 100
-
-        fun requireValidName(name: String): String {
-            val trimmed = name.trim()
-            if (trimmed.isEmpty() || trimmed.length > MAX_NAME_LENGTH) {
-                throw CollabException(CollabErrorCode.INVALID_SESSION_NAME)
-            }
-            return trimmed
-        }
-
-        fun of(galleryId: Long, name: String, collabToken: String) = CollabSession(
-            galleryId = galleryId,
-            name = requireValidName(name),
-            collabToken = collabToken,
-        )
-    }
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null
@@ -146,5 +128,23 @@ class CollabSession(
 
     fun rename(name: String) {
         this.name = requireValidName(name)
+    }
+
+    companion object {
+        const val MAX_NAME_LENGTH = 100
+
+        fun requireValidName(name: String): String {
+            val trimmed = name.trim()
+            if (trimmed.isEmpty() || trimmed.length > MAX_NAME_LENGTH) {
+                throw CollabException(CollabErrorCode.INVALID_SESSION_NAME)
+            }
+            return trimmed
+        }
+
+        fun of(galleryId: Long, name: String, collabToken: String) = CollabSession(
+            galleryId = galleryId,
+            name = requireValidName(name),
+            collabToken = collabToken,
+        )
     }
 }

@@ -20,6 +20,15 @@ class AdminWorkflowRepository(
     private val resourceRepository: AdminResourceRepository,
 ) {
 
+    companion object {
+        private val TRACE_ID = Regex("^[a-f0-9]{16}$")
+        private const val QUALITY_WEIGHT = 0.65
+        private const val DIVERSITY_WEIGHT = 0.35
+        private val PUBLIC_STATUSES = setOf("DRAFT", "OPEN", "CLOSED")
+        private val WORKFLOW_STATUSES = setOf("DRAFT", "IN_PROGRESS", "COMPLETED", "ARCHIVED")
+        private const val DEFAULT_GALLERY_INVITE_MAX_USES = 2
+    }
+
     fun reserveWorkflow(
         action: String,
         idempotencyKey: String,
@@ -1667,13 +1676,4 @@ class AdminWorkflowRepository(
         val pixels: Long,
         val quality: Double = 0.0,
     )
-
-    companion object {
-        private val TRACE_ID = Regex("^[a-f0-9]{16}$")
-        private const val QUALITY_WEIGHT = 0.65
-        private const val DIVERSITY_WEIGHT = 0.35
-        private val PUBLIC_STATUSES = setOf("DRAFT", "OPEN", "CLOSED")
-        private val WORKFLOW_STATUSES = setOf("DRAFT", "IN_PROGRESS", "COMPLETED", "ARCHIVED")
-        private const val DEFAULT_GALLERY_INVITE_MAX_USES = 2
-    }
 }

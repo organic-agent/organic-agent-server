@@ -29,6 +29,16 @@ class AdminImpersonationService(
     private val clock: Clock,
 ) {
 
+    companion object {
+        private val REQUEST_TRACE = Regex("[0-9a-f]{16}")
+        private val SESSION_TTL = Duration.ofMinutes(30)
+        private val SUPPORTED_TARGETS = setOf(
+            AdminResourceType.USER,
+            AdminResourceType.STUDIO,
+            AdminResourceType.GALLERY,
+        )
+    }
+
     @Transactional
     fun start(
         actor: AdminLoginUser,
@@ -149,15 +159,5 @@ class AdminImpersonationService(
 
     private fun requireSupportedTarget(targetType: AdminResourceType) {
         if (targetType !in SUPPORTED_TARGETS) throw AdminException(AdminErrorCode.INVALID_IMPERSONATION_TARGET)
-    }
-
-    companion object {
-        private val REQUEST_TRACE = Regex("[0-9a-f]{16}")
-        private val SESSION_TTL = Duration.ofMinutes(30)
-        private val SUPPORTED_TARGETS = setOf(
-            AdminResourceType.USER,
-            AdminResourceType.STUDIO,
-            AdminResourceType.GALLERY,
-        )
     }
 }

@@ -32,6 +32,14 @@ class PendingUploadSweeper(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
+    companion object {
+        /** 한 걸음에서 확인하는 최대 장수. 500장 발급이 한 번에 만료돼도 스윕 두 걸음 안에 지난다. */
+        private const val BATCH_SIZE = 300
+
+        /** 로그 한 줄에 싣는 사진 id 상한. 전체 수는 `uploaded=`·`trashed=`로 따로 찍는다. */
+        private const val MAX_LOGGED_PHOTO_IDS = 20
+    }
+
     @Scheduled(fixedDelayString = "\${app.storage.pending-sweep-interval:PT5S}")
     fun sweep() {
         if (!leadership.isLeader()) return
@@ -75,13 +83,5 @@ class PendingUploadSweeper(
     } catch (e: PhotoException) {
         log.warn("pending sweep storage check failed photoId={} code={}", photo.photoId, e.errorCode.code)
         null
-    }
-
-    companion object {
-        /** 한 걸음에서 확인하는 최대 장수. 500장 발급이 한 번에 만료돼도 스윕 두 걸음 안에 지난다. */
-        private const val BATCH_SIZE = 300
-
-        /** 로그 한 줄에 싣는 사진 id 상한. 전체 수는 `uploaded=`·`trashed=`로 따로 찍는다. */
-        private const val MAX_LOGGED_PHOTO_IDS = 20
     }
 }

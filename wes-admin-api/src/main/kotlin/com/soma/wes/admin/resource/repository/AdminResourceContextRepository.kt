@@ -12,6 +12,18 @@ class AdminResourceContextRepository(
     private val clock: Clock,
 ) {
 
+    private companion object {
+        val USER_NOTIFICATION_CONTEXT_TYPES = setOf(
+            AdminResourceType.USER,
+            AdminResourceType.STUDIO,
+            AdminResourceType.GALLERY,
+        )
+        val USER_NOTIFICATION_SECTION_NAMES = setOf(
+            "userNotifications",
+            "userNotificationSettings",
+        )
+    }
+
     fun findRelations(type: AdminResourceType, id: Long): Set<ResourceReference> = when (type) {
         AdminResourceType.USER -> linkedSetOf<ResourceReference>().apply {
             addAll(references(AdminResourceType.WORKSPACE, "SELECT workspace_id AS id FROM workspace_members WHERE user_id = :id AND deleted_at IS NULL", id))
@@ -1110,18 +1122,6 @@ class AdminResourceContextRepository(
         .param("id", id)
         .query { rs, _ -> mapper(rs) }
         .list()
-
-    private companion object {
-        val USER_NOTIFICATION_CONTEXT_TYPES = setOf(
-            AdminResourceType.USER,
-            AdminResourceType.STUDIO,
-            AdminResourceType.GALLERY,
-        )
-        val USER_NOTIFICATION_SECTION_NAMES = setOf(
-            "userNotifications",
-            "userNotificationSettings",
-        )
-    }
 
     data class ResourceReference(val type: AdminResourceType, val id: Long)
 }

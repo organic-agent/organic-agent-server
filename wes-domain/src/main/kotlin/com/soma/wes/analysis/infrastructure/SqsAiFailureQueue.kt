@@ -41,6 +41,17 @@ class SqsAiFailureQueue(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
+    companion object {
+        /** SQS 한 번에 받는 메시지 상한. */
+        private const val MAX_MESSAGES = 10
+
+        /** 기록에 남기는 오류 문구 길이. 스택이 실려 오는 경우가 있다. */
+        private const val MAX_ERROR_MESSAGE = 500
+
+        /** 읽을 수 없는 메시지를 로그에 남기는 길이. */
+        private const val MAX_LOGGED_BODY = 300
+    }
+
     override fun receive(): List<AiFailureMessageDto> {
         val response = try {
             sqsClient.receiveMessage(
@@ -102,16 +113,5 @@ class SqsAiFailureQueue(
             else -> return null
         }
         return objectMapper.treeToValue(payload, type.java)
-    }
-
-    companion object {
-        /** SQS 한 번에 받는 메시지 상한. */
-        private const val MAX_MESSAGES = 10
-
-        /** 기록에 남기는 오류 문구 길이. 스택이 실려 오는 경우가 있다. */
-        private const val MAX_ERROR_MESSAGE = 500
-
-        /** 읽을 수 없는 메시지를 로그에 남기는 길이. */
-        private const val MAX_LOGGED_BODY = 300
     }
 }

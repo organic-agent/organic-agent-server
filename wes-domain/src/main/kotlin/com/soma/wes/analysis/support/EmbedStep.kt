@@ -38,6 +38,17 @@ class EmbedStep(
     @Volatile
     private var releasedUntil: ZonedDateTime? = null
 
+    companion object {
+        /** 로그 한 줄에 싣는 사진 id 상한. 전체 수는 `photos=`로 따로 찍는다. */
+        private const val MAX_LOGGED_PHOTO_IDS = 20
+
+        /**
+         * 이어 볼 때 지난 경계보다 이만큼 앞에서 시작한다. 배정 시각은 DB 시계, 경계는 앱 시계라 둘의 어긋남과 배정 커밋의 지연을
+         * 덮는다 — 겹친 구간을 두 번 봐도 이미 되돌린 행은 다시 걸리지 않는다.
+         */
+        private val RELEASE_OVERLAP: Duration = Duration.ofMinutes(1)
+    }
+
     /** 보낸 배치 수를 돌려준다. 실행기가 없으면(로컬·테스트) 아무것도 하지 않는다. */
     fun advance(): Int {
         if (!aiTaskSender.isAvailable(AiTaskDto.Embed::class)) return 0
@@ -99,16 +110,5 @@ class EmbedStep(
         photoPipelineRepository.releaseClaim(task.photoIds)
         log.warn("embed dispatch failed — 배정을 되돌리고 다음 스윕에 다시 보낸다: gallery={} photos={} code={}", task.galleryId, task.photoIds.size, e.errorCode.code)
         false
-    }
-
-    companion object {
-        /** 로그 한 줄에 싣는 사진 id 상한. 전체 수는 `photos=`로 따로 찍는다. */
-        private const val MAX_LOGGED_PHOTO_IDS = 20
-
-        /**
-         * 이어 볼 때 지난 경계보다 이만큼 앞에서 시작한다. 배정 시각은 DB 시계, 경계는 앱 시계라 둘의 어긋남과 배정 커밋의 지연을
-         * 덮는다 — 겹친 구간을 두 번 봐도 이미 되돌린 행은 다시 걸리지 않는다.
-         */
-        private val RELEASE_OVERLAP: Duration = Duration.ofMinutes(1)
     }
 }

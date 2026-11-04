@@ -14,6 +14,13 @@ class AdminWorkflowExecutionRepository(
     private val objectMapper: ObjectMapper,
 ) {
 
+    companion object {
+        const val CLAIMED_NOT_SENT = "CLAIMED_NOT_SENT"
+        const val DISPATCH_OUTCOME_UNKNOWN = "DISPATCH_OUTCOME_UNKNOWN"
+        const val MAX_ATTEMPTS_EXHAUSTED = "MAX_ATTEMPTS_EXHAUSTED"
+        const val DISPATCH_RESULT_TIMEOUT = "DISPATCH_RESULT_TIMEOUT"
+    }
+
     @Transactional
     fun claimProcessingJobs(
         limit: Int,
@@ -284,13 +291,6 @@ class AdminWorkflowExecutionRepository(
         val actorAdminId: Long?,
         val reason: String,
     )
-
-    companion object {
-        const val CLAIMED_NOT_SENT = "CLAIMED_NOT_SENT"
-        const val DISPATCH_OUTCOME_UNKNOWN = "DISPATCH_OUTCOME_UNKNOWN"
-        const val MAX_ATTEMPTS_EXHAUSTED = "MAX_ATTEMPTS_EXHAUSTED"
-        const val DISPATCH_RESULT_TIMEOUT = "DISPATCH_RESULT_TIMEOUT"
-    }
 
     private fun targetTable(type: AdminResourceType): String = when (type) {
         AdminResourceType.USER -> "users"

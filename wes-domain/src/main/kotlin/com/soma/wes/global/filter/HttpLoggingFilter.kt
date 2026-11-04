@@ -23,6 +23,8 @@ import java.util.UUID
  */
 class HttpLoggingFilter : OncePerRequestFilter() {
 
+    private val log = LoggerFactory.getLogger(HttpLoggingFilter::class.java)
+
     companion object {
         /** logback 패턴의 `%X{traceId}`와 같아야 한다. */
         const val TRACE_ID_KEY = LogContext.TRACE_ID
@@ -65,8 +67,6 @@ class HttpLoggingFilter : OncePerRequestFilter() {
             "/v3/api-docs/**",
         ).map(PATH_PATTERN_PARSER::parse)
     }
-
-    private val log = LoggerFactory.getLogger(HttpLoggingFilter::class.java)
 
     override fun doFilterInternal(
         request: HttpServletRequest,

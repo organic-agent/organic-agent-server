@@ -32,6 +32,11 @@ class AdminCouponService(
     private val codes: CouponCodes,
     private val clock: Clock,
 ) {
+    companion object {
+        /** 화면의 식별자·이름 검색에 필요한 입력 상한. */
+        private const val MAX_QUERY_LENGTH = 80
+    }
+
     /** 관리자가 코드 한 개를 발급한다. 원문은 이 응답에서만 제공한다. */
     @Transactional
     fun issue(actorAdminId: Long, request: IssueProCouponRequest): IssueProCouponResponse {
@@ -102,10 +107,5 @@ class AdminCouponService(
     private fun requireActiveAdmin(actorAdminId: Long) {
         val admin = accounts.findByIdOrNull(actorAdminId) ?: throw AdminException(AdminErrorCode.ACCOUNT_NOT_FOUND)
         if (admin.isSuspended()) throw AdminException(AdminErrorCode.ACCOUNT_SUSPENDED)
-    }
-
-    companion object {
-        /** 화면의 식별자·이름 검색에 필요한 입력 상한. */
-        private const val MAX_QUERY_LENGTH = 80
     }
 }
