@@ -177,12 +177,36 @@ def test_names(mode):
 
 
 def dto_schema():
+    """요청 DTO의 모든 필드, 응답 DTO의 null 허용 필드에 @field:Schema 가 있어야 한다(필드 단위)."""
+    def field_type(line):
+        m = re.search(r'\bval \w+\s*:\s*', line)
+        if not m: return ''
+        t, d = [], 0
+        for ch in line[m.end():]:
+            if ch in '<(': d += 1
+            elif ch in '>)': d -= 1
+            elif d == 0 and ch in '=,': break
+            t.append(ch)
+        return ''.join(t).strip()
     for f in files('wes-*/src/main/kotlin/**/dto/request/*.kt') + files('wes-*/src/main/kotlin/**/dto/response/*.kt'):
-        s = read(f)
-        val = len(re.findall(r'^\s+(?:@field:\w+(?:\(.*\))?\s+)*val \w+', s, re.M))
-        sch = len(re.findall(r'@field:Schema', s))
-        if val > sch:
-            print(f'{rel(f)}:1: 필드 {val}개 중 @field:Schema {sch}개 (부족 {val - sch})')
+        request = '/dto/request/' in f
+        lines = read(f).split('\n')
+        seen = False
+        comp = 0  # companion object 블록 안의 깊이(0이면 밖) — 그 안의 val 은 필드가 아니라 상수다
+        for i, l in enumerate(lines):
+            if comp:
+                comp += l.count('{') - l.count('}')
+                continue
+            if re.match(r'\s*companion object', l):
+                comp = max(l.count('{') - l.count('}'), 0)
+                continue
+            if '@field:Schema' in l: seen = True
+            m = re.match(r'^\s+(?:@\S+(?:\(.*\))?\s+)*val (\w+)\b', l)
+            if m:
+                if not seen and (request or field_type(l).endswith('?')):
+                    print(f'{rel(f)}:{i + 1}: {m.group(1)} 에 @field:Schema 가 없다')
+                seen = False
+            elif re.search(r'\b(class|object)\b', l): seen = False
 
 
 def ctrl_param_order():
@@ -217,7 +241,16 @@ def orm_kdoc():
                     break
         for i, l in enumerate(lines):
             if re.search(r'\b[eE]ntityManager\.', l) and not re.match(r'\s*(//|\*)', l):
-                print(f'{rel(f)}:{i + 1}: EntityManager 사용 — 근거 KDoc 확인')
+                # 감싸는 함수의 KDoc 이 EntityManager 를 쓰는 까닭을 말하면 통과
+                k = i
+                while k >= 0 and not re.match(r'\s*(?:(?:private|internal|public|override|open) )*fun ', lines[k]): k -= 1
+                j = k - 1
+                while j >= 0 and lines[j].strip().startswith('@'): j -= 1
+                doc_end = j
+                while j >= 0 and not lines[j].strip().startswith('/**'): j -= 1
+                doc = '\n'.join(lines[j:doc_end + 1]) if k >= 0 and doc_end >= 0 and lines[doc_end].strip().endswith('*/') else ''
+                if 'EntityManager' not in doc:
+                    print(f'{rel(f)}:{i + 1}: EntityManager 사용 — 감싸는 함수 KDoc 에 근거가 없다')
 
 
 def truncate_list():

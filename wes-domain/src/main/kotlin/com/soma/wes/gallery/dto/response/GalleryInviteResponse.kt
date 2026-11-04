@@ -25,6 +25,7 @@ data class GalleryInviteResponse(
     @field:Schema(description = "작가가 거둬들인 시각. 폐기하지 않았으면 null이다.")
     val revokedAt: ZonedDateTime?,
 
+    @field:Schema(description = "링크를 발급한 시각. 저장할 때 서버가 채운다.", example = "2026-11-02T09:30:00+09:00")
     val createdAt: ZonedDateTime?,
 ) {
 

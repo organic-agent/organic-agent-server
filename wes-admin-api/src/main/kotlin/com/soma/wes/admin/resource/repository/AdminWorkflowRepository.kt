@@ -29,6 +29,7 @@ import tools.jackson.databind.ObjectMapper
 import java.time.OffsetDateTime
 import java.time.ZonedDateTime
 
+/** 관리자 작업을 조건부 UPDATE·`FOR UPDATE`·`ON CONFLICT`로 정확히 한 번만 적용해야 해서 JDBC. */
 @Repository
 class AdminWorkflowRepository(
     private val jdbcClient: JdbcClient,

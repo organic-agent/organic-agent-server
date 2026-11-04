@@ -21,8 +21,10 @@ data class UpdateStudioRequest(
     val galleryUrl: String,
 
     @field:Size(max = 100)
+    @field:Schema(description = "스튜디오 연락처. 100자까지이며, null이면 저장된 연락처를 지운다.", example = "010-1234-5678")
     val contact: String? = null,
 
     @field:Size(max = 500)
+    @field:Schema(description = "스튜디오 소개. 500자까지이며, null이면 저장된 소개를 지운다.", example = "자연광 웨딩 스냅 전문 스튜디오입니다.")
     val description: String? = null,
 )

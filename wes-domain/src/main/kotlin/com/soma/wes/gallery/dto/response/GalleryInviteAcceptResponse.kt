@@ -10,6 +10,10 @@ import io.swagger.v3.oas.annotations.media.Schema
  */
 @Schema(description = "초대 수락 결과")
 data class GalleryInviteAcceptResponse(
+    @field:Schema(
+        description = "수락 뒤 보낼 갤러리 id. 갤러리 없이 스튜디오 초대 링크로 스튜디오에 합류했으면 null이다.",
+        example = "1",
+    )
     val galleryId: Long?,
 
     val workspaceId: Long,

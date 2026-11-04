@@ -313,7 +313,7 @@ rg -n -t kotlin '@Column\b' wes-*/src/main/kotlin | rg -v '@Column\(.*nullable\s
 | DTO-03 | rules/dto.md | **S** `dto/*`(루트) 파일의 최상위 타입 수 > 1 | H | script |
 | DTO-04 | rules/dto.md | **G** `service/`·`support/`·`infrastructure/` 안의 `data class` 선언 + 들여쓴 `sealed`/`enum` | H | script |
 | DTO-05 | rules/dto.md | **G** `dto/request`·`dto/response` 최상위 타입 이름 접미사 | H | script |
-| DTO-06 | rules/dto.md | **S** `dto/request\|response` 파일별 `val` 수 > `@field:Schema` 수 | H | script |
+| DTO-06 | rules/dto.md | **S** 요청 DTO의 필드·응답 DTO의 `?` 필드 중 바로 위에 `@field:Schema`가 없는 것(필드 단위) | H | script |
 | DTO-07 | rules/dto.md | **J** 요청 DTO의 필드 검증 애노테이션 유무, 서비스의 2차 방어(`EMPTY_PHOTO_IDS` 류) | R | sonnet-b |
 | DTO-08 | rules/dto.md | **G→J** `@field:Size(max = 숫자)` 리터럴이 도메인 상수와 같은 값인지 | R | sonnet-b |
 | DTO-09 | rules/dto.md | **G** `dto/response`의 `val x: <엔티티·값객체>` | T | script |

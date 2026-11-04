@@ -5,20 +5,20 @@ import io.swagger.v3.oas.annotations.media.Schema
 import java.time.LocalDateTime
 
 @Schema(
-    description = "사진의 촬영 정보(EXIF). 임베딩 Lambda가 원본을 디코딩할 때 함께 읽어 채운다. " +
-        "필드마다 null일 수 있다 — 촬영 정보를 남기지 않는 파일(스크린샷·편집본)이 있고, " +
-        "그때도 가로·세로와 바이트 크기는 채워진다.",
+    description = "사진의 촬영 정보(EXIF). 임베딩 Lambda가 원본을 디코딩할 때 함께 읽어 채운다. 필드마다 null일 수 있다 — 촬영 정보를 남기지 않는 파일(스크린샷·편집본)이 있고, 그때도 가로·세로와 바이트 크기는 채워진다.",
 )
 data class PhotoMetadataResponse(
 
     @field:Schema(
-        description = "촬영 시각. 타임존이 없다 — EXIF에 오프셋이 없어서, 카메라가 적은 벽시계 그대로다. " +
-            "업로드 시각(createdAt)과 달리 지역 시간으로 읽어야 한다.",
+        description = "촬영 시각. 타임존이 없다 — EXIF에 오프셋이 없어서, 카메라가 적은 벽시계 그대로다. 업로드 시각(createdAt)과 달리 지역 시간으로 읽어야 한다.",
         example = "2026-05-16T14:32:10",
     )
     val takenAt: LocalDateTime?,
 
+    @field:Schema(description = "카메라 제조사. EXIF 표기 그대로이며 원본에 없으면 null이다.", example = "SONY")
     val cameraMake: String?,
+
+    @field:Schema(description = "카메라 모델명. EXIF 표기 그대로이며 원본에 없으면 null이다.", example = "ILCE-7M4")
     val cameraModel: String?,
 
     @field:Schema(description = "셔터 속도. `1/200` 처럼 EXIF 표기 그대로다", example = "1/200")
@@ -27,11 +27,13 @@ data class PhotoMetadataResponse(
     @field:Schema(description = "조리개값. 화면에는 f/ 를 붙여 쓴다", example = "2.8")
     val fNumber: Double?,
 
+    @field:Schema(description = "ISO 감도. 원본 EXIF에 없으면 null이다.", example = "400")
     val iso: Int?,
 
     @field:Schema(description = "원본의 가로 픽셀. EXIF 회전을 반영한, 사람이 보는 방향의 값이다")
     val width: Int?,
 
+    @field:Schema(description = "원본의 세로 픽셀. width와 같이 사람이 보는 방향 기준이며, EXIF가 없는 파일도 채워진다.", example = "4000")
     val height: Int?,
 
     @field:Schema(description = "원본 파일 크기(바이트)")

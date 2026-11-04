@@ -50,9 +50,12 @@ paths:
 
 ## 문서화
 
-- 요청·응답 필드에는 `@field:Schema(description, example)`를 붙인다. description에는 타입 설명이
-  아니라 **정책과 사용 흐름**을 적는다 (`MoveFolderPhotosRequest.targetDetailFolderId`: "null이면
-  논리적 미분류 상태로 옮긴다"). <!-- DTO-06 -->
+- **요청 DTO의 모든 필드와 응답 DTO의 null 허용(`?`) 필드**에는 `@field:Schema(description, example)`를 붙인다.
+  클라이언트가 문서에서 알아야 하는 것은 "무엇을 보내야 하나"(상한·형식·생략하면 어떻게 되나)와
+  "비어 있으면 무슨 뜻인가"이기 때문이다. 응답의 null 아닌 필드는 이름이 곧 설명이면 생략하고,
+  정책(단위·계산 기준·상태의 뜻)이 있을 때만 단다 — 이름을 되풀이하는 설명("관리자 아이디")은 쓰지 않는다.
+  description에는 타입 설명이 아니라 **정책과 사용 흐름**을 적는다 (`MoveFolderPhotosRequest.targetDetailFolderId`:
+  "null이면 논리적 미분류 상태로 옮긴다"). <!-- DTO-06 -->
 
 ## 조립
 

@@ -5,6 +5,7 @@ import com.soma.wes.auth.dto.requireActive
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Repository
 
+/** `User`의 `@SQLRestriction`이 탈퇴한 행을 숨기므로 JDBC — 탈퇴·정지 여부를 그 행에서 직접 읽어야 한다. */
 @Repository
 class AuthAccessStatusRepository(
     private val jdbcClient: JdbcClient,

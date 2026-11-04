@@ -13,6 +13,7 @@ import java.sql.ResultSet
 import java.time.OffsetDateTime
 import java.time.ZonedDateTime
 
+/** 하위 자원 휴지통 기록(`admin_child_trash_records`, 엔티티 없음)과 숨은 행을 `FOR UPDATE`로 잠그며 다루므로 JDBC. */
 @Repository
 class AdminChildTrashRepository(
     private val jdbcClient: JdbcClient,

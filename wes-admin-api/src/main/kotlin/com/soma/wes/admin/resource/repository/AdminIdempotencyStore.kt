@@ -12,6 +12,7 @@ import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 
+/** 멱등 키를 `ON CONFLICT`로 선점해야 해서 JDBC — 엔티티 저장으로는 동시에 들어온 같은 요청 중 하나만 이기게 할 수 없다. */
 @Repository
 class AdminIdempotencyStore(
     private val jdbcClient: JdbcClient,

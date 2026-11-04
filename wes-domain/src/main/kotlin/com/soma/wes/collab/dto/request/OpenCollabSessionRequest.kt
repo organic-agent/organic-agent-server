@@ -6,31 +6,35 @@ import io.swagger.v3.oas.annotations.media.Schema
 data class OpenCollabSessionRequest(
 
     @field:Schema(
-        description = "옛 요청 모양. scope의 CONCEPT_FOLDERS에 컨셉 하나를 보낸 것과 같다 — 그 컨셉의 지금 사진을 담고, " +
-            "이후 컨셉이 바뀌어도 따라가지 않는다.",
+        description = "옛 요청 모양. scope의 CONCEPT_FOLDERS에 컨셉 하나를 보낸 것과 같다 — 그 컨셉의 지금 사진을 담고, 이후 컨셉이 바뀌어도 따라가지 않는다.",
         deprecated = true,
     )
     val conceptFolderId: Long? = null,
 
     @field:Schema(
-        description = "부부가 링크를 구분하려고 붙이는 이름. 하객 첫 화면에도 보인다. " +
-            "같은 컨셉으로 다시 열면 기존 세션의 이름이 이 값으로 갱신된다.",
+        description = "부부가 링크를 구분하려고 붙이는 이름. 하객 첫 화면에도 보인다. 같은 컨셉으로 다시 열면 기존 세션의 이름이 이 값으로 갱신된다.",
         example = "본식 후보",
     )
     val name: String,
+    @field:Schema(
+        description = "하객 첫 화면 표지에 보일 제목. 앞뒤 공백을 빼고 100자 이하다. 생략하거나 빈 문자열이면 표지 제목 없이 열리고, 하객 화면은 name을 제목으로 쓴다.",
+        example = "민지 ♥ 준호의 본식",
+    )
     val coverTitle: String? = null,
+    @field:Schema(description = "표지에 제목과 함께 보일 작성자 표기. 앞뒤 공백을 빼고 100자 이하다. 생략하거나 빈 문자열이면 비워 둔다.", example = "민지·준호")
     val coverAuthor: String? = null,
+    @field:Schema(
+        description = "true면 하객 첫 화면에 같은 갤러리의 다른 공유폴더(거둬들였거나 만료된 것은 빼고)도 앨범 목록으로 함께 보인다. 생략하면 false로 이 폴더만 보인다.",
+        example = "false",
+    )
     val includeAllAlbums: Boolean? = null,
     @field:Schema(
-        description = "수동 공유폴더에 처음 담을 사진 id. 갤러리 최대 사진 수까지 한 번에 보낼 수 있다. " +
-            "생략하면 빈 폴더를 만든다. conceptFolderId·scope와 함께 지정할 수 없다.",
+        description = "수동 공유폴더에 처음 담을 사진 id. 갤러리 최대 사진 수까지 한 번에 보낼 수 있다. 생략하면 빈 폴더를 만든다. conceptFolderId·scope와 함께 지정할 수 없다.",
     )
     val photoIds: List<Long> = emptyList(),
 
     @field:Schema(
-        description = "사진 id 대신 범위로 담는다. 서버가 만드는 순간의 사진을 골라 한 번에 담는다. " +
-            "공유폴더는 원본 폴더와 따로 살아서, 이후 그 폴더의 사진이 옮겨지거나 폴더가 지워져도 따라가지 않는다. " +
-            "conceptFolderId·photoIds와 함께 지정할 수 없다.",
+        description = "사진 id 대신 범위로 담는다. 서버가 만드는 순간의 사진을 골라 한 번에 담는다. 공유폴더는 원본 폴더와 따로 살아서, 이후 그 폴더의 사진이 옮겨지거나 폴더가 지워져도 따라가지 않는다. conceptFolderId·photoIds와 함께 지정할 수 없다.",
     )
     val scope: PhotoScope? = null,
 ) {
@@ -38,8 +42,7 @@ data class OpenCollabSessionRequest(
     @Schema(description = "공유폴더에 담을 사진 범위. 휴지통 사진과 업로드가 끝나지 않은 사진은 빠진다.")
     data class PhotoScope(
         @field:Schema(
-            description = "ALL: 갤러리의 모든 사진, CONCEPT_FOLDERS: 컨셉 폴더(대분류)들의 사진, " +
-                "DETAIL_FOLDERS: 세부 폴더(소분류)들의 사진, SESSIONS: 공유폴더들이 지금 보여 주는 사진",
+            description = "ALL: 갤러리의 모든 사진, CONCEPT_FOLDERS: 컨셉 폴더(대분류)들의 사진, DETAIL_FOLDERS: 세부 폴더(소분류)들의 사진, SESSIONS: 공유폴더들이 지금 보여 주는 사진",
         )
         val type: Type,
 

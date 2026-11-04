@@ -12,6 +12,7 @@ import org.springframework.stereotype.Repository
 import java.sql.ResultSet
 import java.time.OffsetDateTime
 
+/** 엔티티가 없는 관리자 알림함 테이블과 읽음 표시를 `ON CONFLICT` UPSERT로 다루므로 JDBC. */
 @Repository
 class AdminNotificationInboxRepository(
     private val jdbcClient: JdbcClient,

@@ -13,6 +13,7 @@ import java.sql.ResultSet
 import java.time.OffsetDateTime
 import java.time.ZonedDateTime
 
+/** 쿠폰 상태(발급·등록·사용)를 CTE로 계산해 목록과 검색을 만드는 관리자 조회라 JDBC — 엔티티 하나로 나타나지 않는 집계다. */
 @Repository
 class AdminProCouponRepository(private val jdbc: JdbcClient) {
     companion object {
