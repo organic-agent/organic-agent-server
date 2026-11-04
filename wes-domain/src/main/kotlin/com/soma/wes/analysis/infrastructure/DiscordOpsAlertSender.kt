@@ -24,6 +24,14 @@ class DiscordOpsAlertSender(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
+    companion object {
+        /** 디스코드 메시지 `content`의 최대 글자 수. 넘으면 웹훅이 400 으로 거절한다. */
+        private const val MAX_CONTENT_LENGTH = 2000
+
+        /** 디스코드 앞단(Cloudflare)은 기본 Java·Python User-Agent 요청을 막기도 한다. 보내는 쪽이 누구인지 밝힌다. */
+        private const val USER_AGENT = "wes-ops-alert"
+    }
+
     override fun isAvailable(): Boolean = properties.isConfigured
 
     override fun send(alert: OpsAlertDto) {
@@ -45,12 +53,4 @@ class DiscordOpsAlertSender(
 
     private fun render(alert: OpsAlertDto): String =
         (listOf("**${alert.title}**") + alert.lines).joinToString("\n").take(MAX_CONTENT_LENGTH)
-
-    companion object {
-        /** 디스코드 메시지 `content`의 최대 글자 수. 넘으면 웹훅이 400 으로 거절한다. */
-        private const val MAX_CONTENT_LENGTH = 2000
-
-        /** 디스코드 앞단(Cloudflare)은 기본 Java·Python User-Agent 요청을 막기도 한다. 보내는 쪽이 누구인지 밝힌다. */
-        private const val USER_AGENT = "wes-ops-alert"
-    }
 }

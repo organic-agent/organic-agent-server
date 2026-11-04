@@ -22,6 +22,11 @@ class InMemoryAccessCache(
 
     private val entries = ConcurrentHashMap<AccessCacheKeyDto, Entry>()
 
+    companion object {
+        /** 담는 키 수 상한. 키 하나가 수십 바이트라 이만큼도 수 MB다 — 448MB 힙에서 상한 없는 맵을 두지 않으려는 것. */
+        private const val MAX_ENTRIES = 100_000
+    }
+
     override fun <T> get(key: AccessCacheKeyDto, load: () -> T): T {
         val now = clock.instant()
         val cached = entries[key]
@@ -50,9 +55,4 @@ class InMemoryAccessCache(
         val value: Any?,
         val expiresAt: Instant,
     )
-
-    companion object {
-        /** 담는 키 수 상한. 키 하나가 수십 바이트라 이만큼도 수 MB다 — 448MB 힙에서 상한 없는 맵을 두지 않으려는 것. */
-        private const val MAX_ENTRIES = 100_000
-    }
 }

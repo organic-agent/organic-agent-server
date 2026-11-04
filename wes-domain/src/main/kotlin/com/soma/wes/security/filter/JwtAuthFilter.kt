@@ -21,12 +21,12 @@ class JwtAuthFilter(
     private val authenticationEntryPoint: CustomAuthenticationEntryPoint,
 ) : OncePerRequestFilter() {
 
+    private val pathMatcher = AntPathMatcher()
+
     companion object {
         private const val AUTHORIZATION_HEADER = "Authorization"
         private const val BEARER_PREFIX = "Bearer "
     }
-
-    private val pathMatcher = AntPathMatcher()
 
     override fun doFilterInternal(
         request: HttpServletRequest,

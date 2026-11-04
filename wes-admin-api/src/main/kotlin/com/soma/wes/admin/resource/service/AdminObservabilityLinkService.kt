@@ -13,6 +13,10 @@ class AdminObservabilityLinkService(
     private val properties: AdminObservabilityProperties,
 ) {
 
+    companion object {
+        private val CORRELATION_ID = Regex("^[a-f0-9]{16}$")
+    }
+
     fun links(correlationId: String): AdminObservabilityLinksResponse {
         val normalized = correlationId.trim()
         if (!CORRELATION_ID.matches(normalized)) {
@@ -37,8 +41,4 @@ class AdminObservabilityLinkService(
 
     private fun encode(value: String): String =
         URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20")
-
-    companion object {
-        private val CORRELATION_ID = Regex("^[a-f0-9]{16}$")
-    }
 }

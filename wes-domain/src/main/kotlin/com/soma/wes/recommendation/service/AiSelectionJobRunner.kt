@@ -61,6 +61,21 @@ class AiSelectionJobRunner(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
+    companion object {
+        /** 목표 장수 폴백 — galleries.max_selectable_photo_count가 없을 때. */
+        const val DEFAULT_TARGET = 30
+        private const val SUBJECTS_TRUSTED = true
+        private const val PREF_MIN_SELECTED = 5
+        private const val UNFILED = "미분류"
+        private const val UNKNOWN = "unknown"
+
+        /** 단체 사진은 폴더 추천에서 뺀다 — 고를 대상이 아니라는 판단(2026-10-04). */
+        private const val GROUP = "group"
+
+        /** 범위 밖 행의 벡터 자리. 조회 조건이 벡터 있는 행만 고르므로 범위 안 사진에는 오지 않는다. */
+        private val NO_EMBEDDING = FloatArray(0)
+    }
+
     fun run(jobId: Long) {
         val claimed = inTransaction { aiSelectionJobRepository.claim(jobId, ZonedDateTime.now(clock)) }
         if (claimed == 0) {
@@ -501,19 +516,4 @@ class AiSelectionJobRunner(
         /** 폴더 범위 잡의 연사 조각·상한·제외 수. 전체 라운드는 null. */
         val coverage: Map<String, Int>?,
     )
-
-    companion object {
-        /** 목표 장수 폴백 — galleries.max_selectable_photo_count가 없을 때. */
-        const val DEFAULT_TARGET = 30
-        private const val SUBJECTS_TRUSTED = true
-        private const val PREF_MIN_SELECTED = 5
-        private const val UNFILED = "미분류"
-        private const val UNKNOWN = "unknown"
-
-        /** 단체 사진은 폴더 추천에서 뺀다 — 고를 대상이 아니라는 판단(2026-10-04). */
-        private const val GROUP = "group"
-
-        /** 범위 밖 행의 벡터 자리. 조회 조건이 벡터 있는 행만 고르므로 범위 안 사진에는 오지 않는다. */
-        private val NO_EMBEDDING = FloatArray(0)
-    }
 }

@@ -25,6 +25,13 @@ class UserNotificationService(
     private val settingRepository: UserNotificationSettingRepository,
     private val clock: Clock,
 ) : UserNotificationPublisher {
+    companion object {
+        /** 알림 드롭다운에서 보여 주는 기간이다. */
+        const val RECENT_DAYS = 30L
+        /** 개별 읽음 요청의 최대 개수다. */
+        const val MAX_READ_BATCH = 200
+    }
+
     @Transactional(readOnly = true)
     fun list(userId: Long, scope: UserNotificationScope?, scopeId: Long?): List<UserNotificationResponse> {
         return recent(userId, scope, scopeId).map(UserNotificationResponse::from)
@@ -60,13 +67,6 @@ class UserNotificationService(
             updatedCount = unread.size,
             unreadCount = recent(userId, null, null).count { it.readAt == null }.toLong(),
         )
-    }
-
-    companion object {
-        /** 알림 드롭다운에서 보여 주는 기간이다. */
-        const val RECENT_DAYS = 30L
-        /** 개별 읽음 요청의 최대 개수다. */
-        const val MAX_READ_BATCH = 200
     }
 
     @Transactional(readOnly = true)

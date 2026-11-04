@@ -32,6 +32,12 @@ class BedrockStructuredLlmClient(
 
     override val isEnabled: Boolean = true
 
+    companion object {
+        private const val STOP_REFUSAL = "refusal"
+        private const val STOP_MAX_TOKENS = "max_tokens"
+        private const val THROTTLE_BACKOFF_MILLIS = 500L
+    }
+
     override fun completeJson(request: LlmJsonRequestDto): JsonNode {
         val body = codec.encode(request)
         val invoke = InvokeModelRequest.builder()
@@ -79,11 +85,5 @@ class BedrockStructuredLlmClient(
             log.warn("Bedrock 응답이 JSON이 아님: {}", decoded.text.take(200))
             throw RecommendationException(RecommendationErrorCode.LLM_CALL_FAILED)
         }
-    }
-
-    companion object {
-        private const val STOP_REFUSAL = "refusal"
-        private const val STOP_MAX_TOKENS = "max_tokens"
-        private const val THROTTLE_BACKOFF_MILLIS = 500L
     }
 }

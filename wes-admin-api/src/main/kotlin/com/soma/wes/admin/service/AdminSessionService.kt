@@ -31,6 +31,11 @@ class AdminSessionService(
     private val clock: Clock,
 ) {
 
+    companion object {
+        private const val ROLE_SUPER_ADMIN = "ROLE_SUPER_ADMIN"
+        private const val ROLE_PASSWORD_CHANGE = "ROLE_ADMIN_PASSWORD_CHANGE"
+    }
+
     @Transactional
     fun create(account: AdminAccount): AdminLoginResultDto {
         val now = ZonedDateTime.now(clock)
@@ -107,10 +112,5 @@ class AdminSessionService(
         val now = ZonedDateTime.now(clock)
         adminSessionRepository.findAllByAdminIdAndRevokedAtIsNull(adminId)
             .forEach { it.revoke(now) }
-    }
-
-    companion object {
-        private const val ROLE_SUPER_ADMIN = "ROLE_SUPER_ADMIN"
-        private const val ROLE_PASSWORD_CHANGE = "ROLE_ADMIN_PASSWORD_CHANGE"
     }
 }

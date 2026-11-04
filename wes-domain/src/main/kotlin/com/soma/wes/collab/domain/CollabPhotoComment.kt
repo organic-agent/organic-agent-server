@@ -41,6 +41,15 @@ class CollabPhotoComment(
     var deletedAt: ZonedDateTime? = null
         protected set
 
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    val id: Long? = null
+
+    val requiredId: Long
+        get() = checkNotNull(id) { "저장되지 않은 댓글입니다." }
+
+    fun isWrittenBy(participantId: Long): Boolean = this.participantId == participantId
+
     companion object {
 
         const val MAX_CONTENT_LENGTH = 500
@@ -53,13 +62,4 @@ class CollabPhotoComment(
             return trimmed
         }
     }
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    val id: Long? = null
-
-    val requiredId: Long
-        get() = checkNotNull(id) { "저장되지 않은 댓글입니다." }
-
-    fun isWrittenBy(participantId: Long): Boolean = this.participantId == participantId
 }

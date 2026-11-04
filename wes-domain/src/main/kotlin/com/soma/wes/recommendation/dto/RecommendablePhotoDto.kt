@@ -19,8 +19,6 @@ data class RecommendablePhotoDto(
     val takenAt: LocalDateTime? = null,
 ) {
 
-    fun subScore(key: SubScoreKey): Double? = (subScores[key.key] as? Number)?.toDouble()
-
     companion object {
 
         /** [summary]는 분석이 끝난 행이어야 한다 — 조회 쿼리가 백분위 없는 행을 거른다. */
@@ -35,4 +33,6 @@ data class RecommendablePhotoDto(
             takenAt = takenAt,
         )
     }
+
+    fun subScore(key: SubScoreKey): Double? = (subScores[key.key] as? Number)?.toDouble()
 }

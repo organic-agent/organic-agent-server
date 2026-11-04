@@ -11,6 +11,13 @@ class AdminMutationHeaderFilter(
     private val accessDeniedHandler: CustomAccessDeniedHandler,
 ) : OncePerRequestFilter() {
 
+    companion object {
+        const val HEADER_NAME = "X-WES-Admin-Request"
+        const val HEADER_VALUE = "1"
+
+        private val SAFE_METHODS = setOf("GET", "HEAD", "OPTIONS")
+    }
+
     override fun doFilterInternal(
         request: HttpServletRequest,
         response: HttpServletResponse,
@@ -22,12 +29,5 @@ class AdminMutationHeaderFilter(
         }
 
         accessDeniedHandler.handle(request, response, AccessDeniedException("관리자 요청 헤더가 없습니다."))
-    }
-
-    companion object {
-        const val HEADER_NAME = "X-WES-Admin-Request"
-        const val HEADER_VALUE = "1"
-
-        private val SAFE_METHODS = setOf("GET", "HEAD", "OPTIONS")
     }
 }

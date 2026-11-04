@@ -16,6 +16,10 @@ class BedrockMessagesCodec(
     private val objectMapper: ObjectMapper,
 ) {
 
+    companion object {
+        const val ANTHROPIC_VERSION = "bedrock-2023-05-31"
+    }
+
     fun encode(request: LlmJsonRequestDto): String {
         val body = objectMapper.createObjectNode()
         body.put("anthropic_version", ANTHROPIC_VERSION)
@@ -59,8 +63,4 @@ class BedrockMessagesCodec(
         val inputTokens: Int,
         val outputTokens: Int,
     )
-
-    companion object {
-        const val ANTHROPIC_VERSION = "bedrock-2023-05-31"
-    }
 }

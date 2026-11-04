@@ -67,6 +67,13 @@ class AdminResourceController(
     private val workflowService: AdminWorkflowService,
 ) {
 
+    private companion object {
+        val IMMEDIATE_DELETE_TYPES = setOf(
+            AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
+            AdminResourceType.PHOTO_RATING,
+        )
+    }
+
     @GetMapping("/operations/overview")
     fun getOperationsOverview(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
@@ -271,11 +278,4 @@ class AdminResourceController(
     fun getSystemSettings(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
     ): ResponseEntity<AdminSystemSettingsResponse> = ResponseEntity.ok(systemSettingsService.get())
-
-    private companion object {
-        val IMMEDIATE_DELETE_TYPES = setOf(
-            AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
-            AdminResourceType.PHOTO_RATING,
-        )
-    }
 }

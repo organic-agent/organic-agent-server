@@ -37,6 +37,10 @@ class AdminImpersonationReadModelService(
         isReadOnly = true
     }
 
+    companion object {
+        private const val SECTION_LIMIT = 200
+    }
+
     @Transactional(readOnly = true)
     fun view(
         type: AdminResourceType,
@@ -206,9 +210,5 @@ class AdminImpersonationReadModelService(
     } catch (_: BusinessException) {
         // 사용자 API가 금지한 section은 관리자 대리보기에서도 우회 노출하지 않는다.
         null
-    }
-
-    companion object {
-        private const val SECTION_LIMIT = 200
     }
 }

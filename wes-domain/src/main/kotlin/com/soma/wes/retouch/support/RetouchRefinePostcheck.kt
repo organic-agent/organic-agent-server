@@ -13,6 +13,24 @@ import org.springframework.stereotype.Component
 @Component
 class RetouchRefinePostcheck {
 
+    companion object {
+
+        /**
+         * 신체·얼굴 어휘. 원문에도 탭한 대상에도 이것이 없는데 선택지가 신체 보정을 제안하면 버린다 —
+         * 되묻기가 부부에게 외모 보정을 권하는 통로가 되지 않게 하는 규칙이다.
+         *
+         * 짧은 낱말(눈·목·배·살·점·코·키…)은 다른 말에 묻혀 오탐한다. 실측에서 '눈에 띄게'·'병목'·'배경'·
+         * '살짝'·'지점'에 걸려 정상 선택지 85개를 버렸다. 그래서 다른 말에 잘 묻히지 않는 형태만 남겼다.
+         * 정확한 판정은 선택지가 `region`을 함께 내야 가능하고, 그건 프롬프트 개정(연구 쪽)이 먼저다.
+         */
+        private val BODY_WORDS = listOf(
+            "얼굴", "이목구비", "눈썹", "눈가", "눈밑", "눈 밑", "쌍꺼풀", "콧볼", "코끝", "입술", "입꼬리",
+            "치아", "이마", "볼살", "턱살", "턱선", "이중턱", "피부", "잡티", "주근깨", "여드름",
+            "팔뚝", "팔목", "손목", "허리", "뱃살", "가슴", "어깨", "승모근", "목주름", "다리", "종아리",
+            "몸매", "체형", "잔머리", "헤어라인",
+        )
+    }
+
     fun apply(response: RefineRetouchResponse, originalText: String): RefineRetouchResponse {
         if (response.status == RetouchRefineStatus.NOT_A_REQUEST) {
             return response.copy(refinedText = null, question = "", options = emptyList(), items = emptyList())
@@ -38,22 +56,4 @@ class RetouchRefinePostcheck {
     private fun mentionsBody(text: String) = BODY_WORDS.any { it in text }
 
     private fun squash(text: String) = text.filterNot { it.isWhitespace() }
-
-    companion object {
-
-        /**
-         * 신체·얼굴 어휘. 원문에도 탭한 대상에도 이것이 없는데 선택지가 신체 보정을 제안하면 버린다 —
-         * 되묻기가 부부에게 외모 보정을 권하는 통로가 되지 않게 하는 규칙이다.
-         *
-         * 짧은 낱말(눈·목·배·살·점·코·키…)은 다른 말에 묻혀 오탐한다. 실측에서 '눈에 띄게'·'병목'·'배경'·
-         * '살짝'·'지점'에 걸려 정상 선택지 85개를 버렸다. 그래서 다른 말에 잘 묻히지 않는 형태만 남겼다.
-         * 정확한 판정은 선택지가 `region`을 함께 내야 가능하고, 그건 프롬프트 개정(연구 쪽)이 먼저다.
-         */
-        private val BODY_WORDS = listOf(
-            "얼굴", "이목구비", "눈썹", "눈가", "눈밑", "눈 밑", "쌍꺼풀", "콧볼", "코끝", "입술", "입꼬리",
-            "치아", "이마", "볼살", "턱살", "턱선", "이중턱", "피부", "잡티", "주근깨", "여드름",
-            "팔뚝", "팔목", "손목", "허리", "뱃살", "가슴", "어깨", "승모근", "목주름", "다리", "종아리",
-            "몸매", "체형", "잔머리", "헤어라인",
-        )
-    }
 }

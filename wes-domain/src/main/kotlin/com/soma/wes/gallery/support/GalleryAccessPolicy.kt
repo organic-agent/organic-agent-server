@@ -43,6 +43,10 @@ class GalleryAccessPolicy(
     private val accessCache: AccessCache?,
 ) {
 
+    companion object {
+        private val ACTIVE_WORKSPACE_ROLES = WorkspaceRole.entries
+    }
+
     /** 갤러리 상태 전이·계약 장수·업로드 URL 발급·임베딩 실행·초대 발급/폐기·제출 철회. */
     @Transactional(readOnly = true)
     fun requireManager(galleryId: Long, userId: Long): Gallery {
@@ -308,9 +312,5 @@ class GalleryAccessPolicy(
         if (gallery.status != GalleryStatus.OPEN) {
             throw GalleryException(GalleryErrorCode.GALLERY_NOT_OPEN)
         }
-    }
-
-    companion object {
-        private val ACTIVE_WORKSPACE_ROLES = WorkspaceRole.entries
     }
 }

@@ -20,6 +20,10 @@ class AdminResourceService(
     private val photoRestoreQuota: AdminPhotoRestoreQuota,
 ) {
 
+    companion object {
+        private const val MAX_PAGE_SIZE = 100
+    }
+
     @Transactional(readOnly = true)
     fun search(
         query: String?,
@@ -116,8 +120,4 @@ class AdminResourceService(
         } catch (_: DataIntegrityViolationException) {
             throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         }
-
-    companion object {
-        private const val MAX_PAGE_SIZE = 100
-    }
 }

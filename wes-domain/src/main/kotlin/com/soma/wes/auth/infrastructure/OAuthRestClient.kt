@@ -19,11 +19,11 @@ class OAuthRestClient(
     private val restClient: RestClient,
 ) : OAuthClient {
 
+    private val log = LoggerFactory.getLogger(javaClass)
+
     companion object {
         private val MAP_TYPE = object : ParameterizedTypeReference<Map<String, Any>>() {}
     }
-
-    private val log = LoggerFactory.getLogger(javaClass)
 
     override fun getAccessTokenResponse(
         tokenUri: String,

@@ -34,6 +34,12 @@ class GalleryLifecycleService(
     private val properties: GalleryLifecycleProperties,
     private val clock: Clock,
 ) {
+    companion object {
+        /** 선택 마감(개인 갤러리는 목표일)과 개인 플랜 만료를 3일 전에 안내한다. */
+        const val REMINDER_DAYS = 3L
+        private val DISPLAY_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+    }
+
     @Transactional(readOnly = true)
     fun nextBatch(afterId: Long): List<Long> {
         val now = ZonedDateTime.now(clock)
@@ -105,11 +111,5 @@ class GalleryLifecycleService(
             title = title,
             message = message,
         )
-    }
-
-    companion object {
-        /** 선택 마감(개인 갤러리는 목표일)과 개인 플랜 만료를 3일 전에 안내한다. */
-        const val REMINDER_DAYS = 3L
-        private val DISPLAY_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
     }
 }

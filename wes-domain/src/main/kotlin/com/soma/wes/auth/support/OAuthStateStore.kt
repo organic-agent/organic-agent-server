@@ -24,6 +24,10 @@ class OAuthStateStore(
     private val clock: Clock,
 ) {
 
+    private val log = LoggerFactory.getLogger(javaClass)
+
+    private val random = SecureRandom()
+
     companion object {
         /**
          * provider 동의 화면에 머무는 시간만 버티면 된다. 길게 잡을수록 탈취된 state를 쓸 수
@@ -35,10 +39,6 @@ class OAuthStateStore(
 
         private val ENCODER: Base64.Encoder = Base64.getUrlEncoder().withoutPadding()
     }
-
-    private val log = LoggerFactory.getLogger(javaClass)
-
-    private val random = SecureRandom()
 
     /**
      * @param inviteToken 로그인을 마친 뒤 이어서 수락할 초대. 초대와 무관한 로그인이면 null.

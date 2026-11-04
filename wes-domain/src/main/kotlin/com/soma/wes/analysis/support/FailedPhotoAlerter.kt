@@ -37,12 +37,12 @@ class FailedPhotoAlerter(
     private val clock: Clock,
 ) {
 
+    private val log = LoggerFactory.getLogger(javaClass)
+
     companion object {
         /** 직전에 끝난 잡이 없을 때의 기준 시각 — 갤러리의 실패를 전부 센다. */
         private val BEGINNING: ZonedDateTime = ZonedDateTime.ofInstant(Instant.EPOCH, ZoneOffset.UTC)
     }
-
-    private val log = LoggerFactory.getLogger(javaClass)
 
     /** @param finishedAt 이 잡을 DONE 으로 닫은 시각 — 닫은 쪽이 쓴 값 그대로다. 커밋 뒤에 잡을 다시 읽으면 영속성 컨텍스트의 옛 값이 나올 수 있다. */
     fun alertIfAny(job: AnalysisJob, finishedAt: ZonedDateTime) {
