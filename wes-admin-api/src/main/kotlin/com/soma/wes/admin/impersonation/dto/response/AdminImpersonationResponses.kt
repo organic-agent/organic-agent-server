@@ -13,7 +13,10 @@ data class AdminImpersonationAdminResponse(
 
 data class AdminImpersonationResponse(
     val id: UUID,
-    /** 이 응답을 만든 현재 HTTP 요청의 16자리 trace. 대리보기 세션 식별자는 [id]다. */
+    @field:Schema(
+        description = "이 응답을 만든 현재 HTTP 요청의 16자리 trace. 대리보기 세션 식별자는 id다. 요청 trace가 16자리 소문자 hex가 아니면 null이다.",
+        example = "3f9a1c2b4d5e6f70",
+    )
     val correlationId: String?,
     val admin: AdminImpersonationAdminResponse,
     val targetType: AdminResourceType,
@@ -64,6 +67,10 @@ data class AdminImpersonationWorkspaceViewResponse(
     val workspaceType: String,
     val name: String,
     val accessRole: String,
+    @field:Schema(
+        description = "스튜디오 공개 주소 식별자. 개인 작업공간은 스튜디오가 없어 null이다.",
+        example = "organic-studio",
+    )
     val galleryUrl: String?,
     @field:Schema(description = "스튜디오 연락처. 개인 작업공간은 null", maxLength = 100)
     val contact: String?,
@@ -75,6 +82,10 @@ data class AdminImpersonationGalleryViewResponse(
     val id: Long,
     val workspaceId: Long,
     val workspaceType: String,
+    @field:Schema(
+        description = "갤러리를 만든 사용자 id. 그 사용자가 삭제되면 null이다(FK ON DELETE SET NULL).",
+        example = "7",
+    )
     val createdByUserId: Long?,
     val title: String,
     val publicStatus: String,
@@ -91,9 +102,17 @@ data class AdminImpersonationGalleryViewResponse(
         ],
     )
     val stage: String,
+    @field:Schema(
+        description = "사진 선택 마감 기한. 기한 없이 열어 둔 갤러리면 null이다.",
+        example = "2026-09-30T23:59:59+09:00",
+    )
     val selectionDeadline: ZonedDateTime?,
     val accessRole: String,
     val photoCount: Long,
+    @field:Schema(
+        description = "갤러리 셀렉 상태(SELECTING·SUBMITTED). 살아 있는 셀렉 행이 없으면 null이다.",
+        example = "SUBMITTED",
+    )
     val selectionStatus: String?,
     val collaborationCount: Long,
     val commentCount: Long,

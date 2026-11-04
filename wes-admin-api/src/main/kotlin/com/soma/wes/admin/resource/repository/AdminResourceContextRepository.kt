@@ -7,6 +7,7 @@ import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Repository
 import java.sql.ResultSet
 
+/** 자원 하나의 관련 정보를 여러 테이블에서 모아 읽는 관리자 화면 조회라 JDBC — 테이블들이 엔티티 연관 없이 id로만 이어져 있다. */
 @Repository
 class AdminResourceContextRepository(
     private val jdbcClient: JdbcClient,

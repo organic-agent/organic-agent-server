@@ -14,6 +14,7 @@ import java.time.OffsetDateTime
 import java.time.ZonedDateTime
 import tools.jackson.databind.ObjectMapper
 
+/** `@SQLRestriction`이 숨긴 휴지통 행을 읽고 여러 테이블을 한 번에 소프트 삭제·복원(`RETURNING`)하므로 JDBC. 관리자 휴지통 묶음과 항목(엔티티 없음)도 여기서 다룬다. */
 @Repository
 class AdminCascadeTrashRepository(
     private val jdbcClient: JdbcClient,

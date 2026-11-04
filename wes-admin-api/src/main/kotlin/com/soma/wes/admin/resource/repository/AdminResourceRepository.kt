@@ -24,6 +24,9 @@ import java.time.ZonedDateTime
 import java.util.Locale
 import tools.jackson.databind.ObjectMapper
 
+/**
+ * 자원 종류마다 테이블·컬럼 정의(`AdminResourceDefinition`)로 SQL을 만들어 읽고 쓰는 범용 관리자 CRUD라 JDBC — 엔티티마다 repository를 두면 종류마다 같은 코드가 복제된다.
+ */
 @Repository
 class AdminResourceRepository(
     private val jdbcClient: JdbcClient,

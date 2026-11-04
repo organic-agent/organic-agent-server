@@ -9,6 +9,7 @@ import java.time.OffsetDateTime
 import java.time.ZonedDateTime
 import java.util.UUID
 
+/** 엔티티가 없는 관리자 전용 테이블(`admin_impersonation_sessions`)이라 JDBC. 가장 세션의 시작·조회·종료를 맡는다. */
 @Repository
 class AdminImpersonationRepository(
     private val jdbcClient: JdbcClient,

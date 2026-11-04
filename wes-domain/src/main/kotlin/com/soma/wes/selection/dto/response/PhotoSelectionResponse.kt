@@ -22,8 +22,10 @@ data class PhotoSelectionResponse(
     )
     val remainingCount: Int?,
 
+    @field:Schema(description = "작가에게 넘긴(SUBMITTED) 시각. 아직 고르는 중이거나 작가가 제출을 되돌렸으면 null이다.", example = "2026-11-04T10:15:30+09:00")
     val submittedAt: ZonedDateTime?,
 
+    @field:Schema(description = "마지막으로 제출한 사용자 id. 제출 전·되돌린 뒤이거나 그 계정이 삭제됐으면 null이다.", example = "7")
     val submittedByUserId: Long?,
 
     @field:Schema(description = "고른 항목. 갤러리에서 정한 노출 순서를 따르고, 보정본으로 담은 항목은 결과 URL을 함께 든다")

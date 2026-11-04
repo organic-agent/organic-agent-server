@@ -10,6 +10,7 @@ data class SelectedPhotoResponse(
 
     val galleryId: Long,
 
+    @field:Schema(description = "이 사진을 앨범에 담은 사용자 id. 담은 계정이 삭제됐으면 null이다.", example = "7")
     val addedByUserId: Long?,
 
     val sortOrder: Int,
@@ -21,8 +22,7 @@ data class SelectedPhotoResponse(
     val retouchPhotoId: Long?,
 
     @field:Schema(
-        description = "보정본의 서명된 조회 URL. 원본으로 담은 항목은 null이다 — " +
-            "그때는 photo.viewUrl을 그린다.",
+        description = "보정본의 서명된 조회 URL. 원본으로 담은 항목은 null이다 — 그때는 photo.viewUrl을 그린다.",
     )
     val resultUrl: String?,
 )

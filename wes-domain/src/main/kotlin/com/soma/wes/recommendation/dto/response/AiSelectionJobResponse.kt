@@ -31,19 +31,26 @@ data class AiSelectionJobResponse(
     @field:Schema(description = "이 잡이 만든 추천 라운드 번호. 끝나기 전에는 null.")
     val round: Int?,
 
+    @field:Schema(
+        description = "실행기가 잡을 집어 RUNNING이 된 시각. PENDING이면 null이고, 집은 서버가 멈춰 잡이 PENDING으로 되돌아가면 다시 null이 된다.",
+        example = "2026-11-04T10:15:31+09:00",
+    )
     val startedAt: ZonedDateTime?,
 
+    @field:Schema(description = "잡이 DONE 또는 FAILED로 닫힌 시각. 끝나기 전에는 null이다.", example = "2026-11-04T10:15:40+09:00")
     val finishedAt: ZonedDateTime?,
 
     @field:Schema(description = "FAILED일 때 워커가 남긴 오류. 그 외에는 null.")
     val error: String?,
 
+    @field:Schema(description = "추천을 요청해 잡이 만들어진 시각. 저장된 잡이면 늘 채워진다.", example = "2026-11-04T10:15:30+09:00")
     val createdAt: ZonedDateTime?,
 
     @field:Schema(description = "요청한 추천 장수. null이면 계약 장수 기반 폴더 쿼터를 썼다.")
     val targetCount: Int? = null,
     @field:Schema(description = "완료된 이번 잡의 추천 수. targetCount보다 후보가 적을 수 있다.")
     val recommendedCount: Int? = null,
+    @field:Schema(description = "요청한 장수(targetCount)에서 모자란 추천 수(0 이상). targetCount 없이 요청했거나 잡이 끝나기 전이면 null이다.", example = "2")
     val shortfallCount: Int? = null,
 ) {
 

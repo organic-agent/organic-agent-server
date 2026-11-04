@@ -14,6 +14,7 @@ data class PhotoCommentResponse(
     val nickname: String,
 
     val content: String,
+    @field:Schema(description = "댓글을 쓴 시각. 저장할 때 서버가 채운다.", example = "2026-11-02T09:30:00+09:00")
     val createdAt: ZonedDateTime?,
 
     @field:Schema(description = "현재 로그인 사용자의 댓글이면 true. 본인 댓글만 삭제할 수 있다.")

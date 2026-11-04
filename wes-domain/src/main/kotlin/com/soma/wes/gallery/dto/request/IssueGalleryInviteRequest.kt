@@ -12,6 +12,10 @@ data class IssueGalleryInviteRequest(
 
     @field:Min(1)
     @field:Max(100)
+    @field:Schema(
+        description = "이 링크로 들어올 수 있는 사람 수. 1~100이며 생략하면 2명이다. 갤러리 정원이 차면 남은 횟수와 상관없이 수락을 거절한다.",
+        example = "2",
+    )
     val maxUses: Int = 2,
 
     @field:Schema(description = "만료 시각. 생략하면 발급 시점부터 7일")

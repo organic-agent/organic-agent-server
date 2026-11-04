@@ -5,6 +5,7 @@ import org.springframework.stereotype.Repository
 import java.time.OffsetDateTime
 import java.time.ZonedDateTime
 
+/** 엔티티가 없는 활동 시각 테이블(`gallery_activity`·`workspace_activity`)을 `ON CONFLICT` UPSERT로 올리므로 JDBC. */
 @Repository
 class ActivityRepository(private val jdbcClient: JdbcClient) {
     fun recordGallery(galleryId: Long, at: ZonedDateTime) {

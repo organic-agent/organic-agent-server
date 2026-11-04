@@ -10,7 +10,15 @@ data class AdminResourceSummaryResponse(
     val version: Long,
     val label: String,
     val deleted: Boolean,
+    @field:Schema(
+        description = "리소스 생성 시각. 테이블 컬럼이 nullable이라 기록이 없으면 null이다.",
+        example = "2026-10-01T12:00:00+09:00",
+    )
     val createdAt: ZonedDateTime?,
+    @field:Schema(
+        description = "마지막 수정 시각. 검색 결과는 이 값의 최신순(null은 뒤)이며 기록이 없으면 null이다.",
+        example = "2026-11-04T10:00:00+09:00",
+    )
     val updatedAt: ZonedDateTime?,
 )
 
@@ -32,7 +40,15 @@ data class AdminResourceResponse(
         description = "리소스별 필드. STUDIO는 contact/description과 읽기 전용 inflowChannel, GALLERY는 status/workflowStatus와 분리된 읽기 전용 stage(UPLOAD/SELECTION_IN_PROGRESS/SELECTION_COMPLETED/RETOUCH/DELIVERY/ARCHIVED)를 포함한다.",
     )
     val fields: Map<String, Any?>,
+    @field:Schema(
+        description = "리소스 생성 시각. 테이블 컬럼이 nullable이라 기록이 없으면 null이다.",
+        example = "2026-10-01T12:00:00+09:00",
+    )
     val createdAt: ZonedDateTime?,
+    @field:Schema(
+        description = "마지막 수정 시각. 테이블 컬럼이 nullable이라 기록이 없으면 null이다.",
+        example = "2026-11-04T10:00:00+09:00",
+    )
     val updatedAt: ZonedDateTime?,
 )
 
