@@ -1,6 +1,7 @@
 package com.soma.wes.global
 
-import com.soma.wes.analysis.support.PipelineHeartbeat
+import com.soma.wes.analysis.scheduler.PipelineHeartbeatScheduler
+import com.soma.wes.analysis.service.PipelineHeartbeatService
 import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.support.CapturedLogs
 import com.soma.wes.support.IntegrationTest
@@ -28,13 +29,13 @@ import javax.sql.DataSource
  * "응답은 없는데 연결은 열린" DB는 컨테이너 일시 정지(`docker pause`)로 만든다 — 끝나면 반드시 푼다.
  *
  * 세 층을 따로 본다: 치료(모든 쿼리 120초 안전망 · 스윕 쿼리 30초) → 격벽(스케줄러 스레드 4개).
- * 감지(하트비트의 멈춤 알림)는 `PipelineHeartbeatTest`가 본다.
+ * 감지(하트비트의 멈춤 알림)는 `PipelineHeartbeatSchedulerTest`가 본다.
  */
 @IntegrationTest
 class SchedulerDatabaseHangTest @Autowired constructor(
     private val dataSource: DataSource,
     private val taskScheduler: TaskScheduler,
-    private val heartbeat: PipelineHeartbeat,
+    private val heartbeat: PipelineHeartbeatScheduler,
 ) {
 
     companion object {
@@ -115,7 +116,7 @@ class SchedulerDatabaseHangTest @Autowired constructor(
             // given — 분석 스윕이 DB에서, 매시 정리 작업이 잠금에서 기다리듯 스케줄러 스레드 둘을 붙잡는다
             repeat(2) { taskScheduler.schedule({ release.await() }, Instant.now()) }
 
-            CapturedLogs(PipelineHeartbeat::class).use { logs ->
+            CapturedLogs(PipelineHeartbeatService::class).use { logs ->
                 // when
                 taskScheduler.schedule({ heartbeat.beat().also { beaten.countDown() } }, Instant.now().plusMillis(200))
 

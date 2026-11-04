@@ -1,6 +1,9 @@
-package com.soma.wes.analysis.support
+package com.soma.wes.analysis.scheduler
 
 import com.soma.wes.analysis.service.AnalysisService
+import com.soma.wes.analysis.support.AnalysisJobCloser
+import com.soma.wes.analysis.support.CategorizeStep
+import com.soma.wes.analysis.support.EmbedStep
 import com.soma.wes.folder.support.AiFolderMaterializer
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery

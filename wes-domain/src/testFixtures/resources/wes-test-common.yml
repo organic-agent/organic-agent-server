@@ -120,7 +120,7 @@ app:
     sweep-interval: PT1H
     # 폴더 단계만 도는 짧은 주기도 같은 이유로 끈다 — 테스트는 FolderStep·파이프라인을 직접 부른다.
     folder-interval: PT1H
-    # 하트비트도 같은 이유로 백그라운드에서 돌지 않게 한다 — 테스트는 PipelineHeartbeat.beat 를 직접 부른다.
+    # 하트비트도 같은 이유로 백그라운드에서 돌지 않게 한다 — 테스트는 PipelineHeartbeatScheduler.beat 를 직접 부른다.
     heartbeat-interval: PT1H
   cluster:
     # 운영과 같은 번들을 쓴다 — 평가 하네스가 이 값을 그대로 측정하므로 여기가 어긋나면

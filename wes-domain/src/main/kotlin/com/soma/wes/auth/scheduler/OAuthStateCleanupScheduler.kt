@@ -1,5 +1,6 @@
-package com.soma.wes.auth.support
+package com.soma.wes.auth.scheduler
 
+import com.soma.wes.auth.support.OAuthStateStore
 import com.soma.wes.global.cluster.SchedulerLeadership
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
@@ -9,7 +10,7 @@ import org.springframework.stereotype.Component
  * 소비되지 않고 만료된 `oauth_states` 행을 주기적으로 걷어낸다.
  */
 @Component
-class OAuthStateCleaner(
+class OAuthStateCleanupScheduler(
     private val oAuthStateStore: OAuthStateStore,
     private val leadership: SchedulerLeadership,
 ) {

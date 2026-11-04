@@ -1,4 +1,4 @@
-package com.soma.wes.auth.support
+package com.soma.wes.auth.scheduler
 
 import com.soma.wes.auth.domain.OAuthState
 import com.soma.wes.auth.repository.OAuthStateRepository
@@ -10,12 +10,12 @@ import java.time.Clock
 import java.time.ZonedDateTime
 
 /**
- * 스케줄러가 부르는 것과 같은 public 메서드([OAuthStateCleaner.purge])를 직접 불러,
+ * 스케줄러가 부르는 것과 같은 public 메서드([OAuthStateCleanupScheduler.purge])를 직접 불러,
  * 소비되지 않고 만료된 행만 걷어내는지 확인한다.
  */
 @IntegrationTest
-class OAuthStateCleanerTest @Autowired constructor(
-    private val oAuthStateCleaner: OAuthStateCleaner,
+class OAuthStateCleanupSchedulerTest @Autowired constructor(
+    private val oAuthStateCleaner: OAuthStateCleanupScheduler,
     private val oAuthStateRepository: OAuthStateRepository,
     private val clock: Clock,
 ) {

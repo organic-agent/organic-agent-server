@@ -1,4 +1,4 @@
-package com.soma.wes.folder.support
+package com.soma.wes.folder.scheduler
 
 import com.soma.wes.folder.service.DetailFolderMergePurgeService
 import com.soma.wes.global.cluster.SchedulerLeadership

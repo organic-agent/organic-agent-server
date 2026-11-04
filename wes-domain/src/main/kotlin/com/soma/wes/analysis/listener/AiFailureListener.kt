@@ -1,4 +1,4 @@
-package com.soma.wes.analysis.support
+package com.soma.wes.analysis.listener
 
 import com.soma.wes.analysis.dto.AiFailureMessageDto
 import com.soma.wes.analysis.exception.AnalysisException

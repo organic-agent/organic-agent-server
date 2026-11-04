@@ -1,9 +1,9 @@
 package com.soma.wes.admin.boundary
 
 import com.soma.wes.admin.resource.service.AdminCascadeTrashPurgeService
-import com.soma.wes.auth.support.OAuthStateCleaner
+import com.soma.wes.auth.scheduler.OAuthStateCleanupScheduler
 import com.soma.wes.support.IntegrationTest
-import com.soma.wes.trash.support.TrashPurgeScheduler
+import com.soma.wes.trash.scheduler.TrashPurgeScheduler
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.context.ApplicationContext
@@ -15,7 +15,7 @@ class AdminComponentBoundaryTest(
 
     @Test
     fun `admin runtime schedules only admin maintenance jobs`() {
-        assertThat(applicationContext.getBeansOfType(OAuthStateCleaner::class.java)).isEmpty()
+        assertThat(applicationContext.getBeansOfType(OAuthStateCleanupScheduler::class.java)).isEmpty()
         assertThat(applicationContext.getBeansOfType(TrashPurgeScheduler::class.java)).isEmpty()
         assertThat(applicationContext.getBeansOfType(AdminCascadeTrashPurgeService::class.java)).hasSize(1)
     }

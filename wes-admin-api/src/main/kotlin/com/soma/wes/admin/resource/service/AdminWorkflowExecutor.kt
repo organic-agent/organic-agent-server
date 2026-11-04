@@ -10,7 +10,6 @@ import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.service.port.AiTaskSender
 import com.soma.wes.global.exception.BusinessException
 import org.slf4j.LoggerFactory
-import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import org.springframework.transaction.support.TransactionTemplate
 
@@ -24,13 +23,7 @@ class AdminWorkflowExecutor(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
-    @Scheduled(fixedDelayString = "\${app.admin.workflow-executor.fixed-delay:10s}")
-    fun scheduledRun() {
-        if (!properties.enabled) return
-        runOnce()
-    }
-
-    /** 테스트와 운영자 진단에서 스케줄 활성화 여부와 무관하게 한 batch만 명시 실행한다. */
+    /** batch 하나를 실행한다. 스케줄은 `AdminWorkflowExecutorScheduler`가 걸고, 테스트와 운영자 진단은 활성화 여부와 무관하게 직접 부른다. */
     fun runOnce() {
         reapStaleExactPhotoJobs()
         repository.claimProcessingJobs(

@@ -22,8 +22,6 @@ paths:
 - 이름은 깨우는 것을 드러낸다: `~Scheduler`, `~Listener`, `~Runner`. <!-- EP-03 -->
 - service 클래스 안에 `@Scheduled`·`@EventListener` 메서드를 두지 않는다 — 입구가 service 안에 숨으면 "누가 이 유스케이스를
   부르나"가 패키지로 안 보인다. <!-- EP-01 -->
-- 기존 위치(`support/`의 스케줄러·리스너 14개, admin service 안의 `@Scheduled` 3개 — `rule-audit/reference/allowlist-entrypoint.txt`)는
-  옮기기 전까지 규칙 검토의 허용 목록이다.
 - 무엇이 깨우는가로 가른다: SQS를 읽는 `SmartLifecycle`(`AiFailureListener`)은 이벤트 입구다. 리더 임대처럼 서버 생명주기에
   붙은 인프라(`LeasedSchedulerLeadership`)는 입구가 아니다. 이름이 `~Runner`라도 다른 서비스가 부르는 클래스(`AiSelectionJobRunner`)는 service다.
 - 새로 만드는 입구는 위 자리에 둔다.

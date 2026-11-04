@@ -9,7 +9,7 @@ import com.soma.wes.analysis.dto.AiFailureDto
 import com.soma.wes.analysis.dto.AiTaskDto
 import com.soma.wes.analysis.repository.AnalysisJobEventRepository
 import com.soma.wes.analysis.repository.AnalysisJobRepository
-import com.soma.wes.analysis.support.AnalysisJobEventListener
+import com.soma.wes.analysis.listener.AnalysisJobEventListener
 import com.soma.wes.analysis.support.EmbedStep
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery

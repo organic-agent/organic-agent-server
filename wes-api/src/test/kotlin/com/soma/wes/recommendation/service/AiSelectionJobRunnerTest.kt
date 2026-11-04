@@ -14,7 +14,7 @@ import com.soma.wes.recommendation.exception.RecommendationException
 import com.soma.wes.recommendation.fixture.RecommendationFixture
 import com.soma.wes.recommendation.repository.AiRecommendationRepository
 import com.soma.wes.recommendation.repository.AiSelectionJobRepository
-import com.soma.wes.recommendation.support.AiSelectionJobRecovery
+import com.soma.wes.recommendation.listener.AiSelectionJobRecoveryListener
 import com.soma.wes.selection.dto.request.DeselectPhotosRequest
 import com.soma.wes.selection.dto.request.SelectPhotosRequest
 import com.soma.wes.selection.fixture.SelectionFixture
@@ -34,7 +34,7 @@ import org.springframework.jdbc.core.JdbcTemplate
 @IntegrationTest
 class AiSelectionJobRunnerTest @Autowired constructor(
     private val runner: AiSelectionJobRunner,
-    private val recovery: AiSelectionJobRecovery,
+    private val recovery: AiSelectionJobRecoveryListener,
     private val aiRecommendationService: AiRecommendationService,
     // [REFACTOR-SUPPORT 2026-09-27] folder/service/AiFolderMaterializeService → folder/support/AiFolderMaterializer
     private val aiFolderMaterializer: AiFolderMaterializer,

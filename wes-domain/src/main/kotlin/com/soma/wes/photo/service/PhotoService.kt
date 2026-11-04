@@ -217,7 +217,7 @@ class PhotoService(
     /**
      * 업로드 2단계. S3 PUT을 마친 사진들을 통보받아 [UPLOADED][PhotoStatus.UPLOADED]로 옮긴다. 여기까지 온 사진을
      * 스윕이 임베더에게 보낸다. 분석 행은 임베더가 만들므로 여기서 미리 만들지 않는다. 재통보는 멱등이다.
-     * 통보가 오지 않은 사진은 [com.soma.wes.photo.support.PendingUploadSweeper]가 S3를 직접 확인해 같은 상태로 옮긴다.
+     * 통보가 오지 않은 사진은 [PendingUploadSweepService]가 S3를 직접 확인해 같은 상태로 옮긴다.
      */
     @Transactional
     fun completeUpload(galleryId: Long, userId: Long, request: CompleteUploadRequest): PhotoCountResponse {

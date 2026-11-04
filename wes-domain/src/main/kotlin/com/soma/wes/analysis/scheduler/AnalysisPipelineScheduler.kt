@@ -1,6 +1,7 @@
-package com.soma.wes.analysis.support
+package com.soma.wes.analysis.scheduler
 
 import com.soma.wes.analysis.service.AnalysisPipelineService
+import com.soma.wes.analysis.support.AnalysisSweepWatch
 import com.soma.wes.global.cluster.SchedulerLeadership
 import com.soma.wes.global.logging.LogContext
 import org.springframework.scheduling.annotation.Scheduled

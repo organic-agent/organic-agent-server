@@ -1,4 +1,4 @@
-package com.soma.wes.gallery.support
+package com.soma.wes.gallery.scheduler
 
 import com.soma.wes.gallery.service.GalleryLifecycleService
 import com.soma.wes.global.cluster.SchedulerLeadership

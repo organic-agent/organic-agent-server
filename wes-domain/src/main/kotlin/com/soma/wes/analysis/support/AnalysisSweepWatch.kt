@@ -3,18 +3,17 @@ package com.soma.wes.analysis.support
 import com.soma.wes.analysis.config.AnalysisProperties
 import com.soma.wes.analysis.dto.OpsAlertDto
 import com.soma.wes.analysis.service.port.OpsAlertSender
-import com.soma.wes.global.cluster.SchedulerLeadershipAcquiredEvent
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.time.ZonedDateTime
 import org.slf4j.LoggerFactory
-import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 
 /**
  * 분석 스윕이 멈췄는지 지켜본다(#275). 스윕은 회차가 끝날 때마다 [completed]로 시각을 남기고, 하트비트가 1분마다 [check]로
  * 그 시각이 [AnalysisProperties.sweepStallAfter]보다 오래됐는지 본다. 멈추면 한 번, 다시 돌면 한 번 운영 알림을 보낸다.
+ * 리더가 되면 그 시각에서 다시 잰다(`AnalysisSweepWatchListener`).
  *
  * DB를 읽지 않는다 — 2026-10-08 사고처럼 DB가 응답을 멈춘 때가 바로 알려야 할 때다. 시각은 메모리에만 있어 앱이 죽으면 함께
  * 사라진다. 앱 자체가 멈춘 것은 바깥 감시(하트비트 줄이 끊기면 알리는 Grafana 규칙, organic-agent-infra#82)가 맡는다.
@@ -39,15 +38,6 @@ class AnalysisSweepWatch(
     /** 스윕 회차 하나가 끝났다. [at]은 테스트가 오래전에 끝난 것처럼 꾸밀 때만 넘긴다. */
     fun completed(at: Instant = clock.instant()) {
         lastCompletedAt = at
-    }
-
-    /**
-     * 방금 리더가 됐다(#313) — 리더가 아닌 동안 스윕을 돌리지 않아 마지막 완료 시각이 낡았다. 그대로 두면 첫 하트비트가 멈춤을 잘못 알린다.
-     * 리더가 된 시각에서 다시 잰다.
-     */
-    @EventListener(SchedulerLeadershipAcquiredEvent::class)
-    fun restartOnLeadership() {
-        completed()
     }
 
     /** 멈춤·회복이 바뀐 때만 알린다. 같은 상태가 이어지면 아무것도 하지 않는다. */
