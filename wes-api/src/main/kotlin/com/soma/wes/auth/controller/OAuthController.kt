@@ -7,6 +7,7 @@ import com.soma.wes.auth.dto.response.LoginResponse
 import com.soma.wes.auth.dto.response.LoginUrlResponse
 import com.soma.wes.auth.service.oauth.OAuthLoginService
 import com.soma.wes.auth.service.oauth.OAuthLoginUrlService
+import jakarta.validation.Valid
 import org.springframework.http.CacheControl
 import org.springframework.http.HttpHeaders
 import org.springframework.http.ResponseEntity
@@ -37,8 +38,8 @@ class OAuthController(
     @PostMapping("/{provider}")
     override fun login(
         @PathVariable provider: String,
-        @RequestBody request: AuthCodeRequest,
         @RequestHeader(HttpHeaders.ORIGIN, required = false) origin: String?,
+        @Valid @RequestBody request: AuthCodeRequest,
     ): ResponseEntity<LoginResponse> {
         val result = oAuthLoginService.login(provider, request, origin)
 

@@ -5,6 +5,7 @@ import com.soma.wes.auth.dto.request.ReissueRequest
 import com.soma.wes.auth.dto.response.ReissueResponse
 import com.soma.wes.auth.service.AuthTokenService
 import com.soma.wes.auth.domain.LoginUser
+import jakarta.validation.Valid
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.PostMapping
@@ -26,7 +27,7 @@ class AuthController(
      */
     @PostMapping("/reissue")
     override fun reissue(
-        @RequestBody request: ReissueRequest,
+        @Valid @RequestBody request: ReissueRequest,
     ): ResponseEntity<ReissueResponse> {
         val result = authTokenService.reissue(request)
 

@@ -86,6 +86,7 @@ class GalleryInviteController(
     override fun preview(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable token: String,
-    ): ResponseEntity<GalleryInvitePreviewResponse> =
-        ResponseEntity.ok(galleryInviteService.preview(token, loginUser.id))
+    ): ResponseEntity<GalleryInvitePreviewResponse> {
+        return ResponseEntity.ok(galleryInviteService.preview(token, loginUser.id))
+    }
 }

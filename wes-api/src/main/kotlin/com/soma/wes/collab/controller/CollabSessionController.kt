@@ -37,30 +37,36 @@ class CollabSessionController(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
         @Valid @RequestBody request: OpenCollabSessionRequest,
-    ): ResponseEntity<CollabSessionResponse> =
-        ResponseEntity.status(HttpStatus.CREATED).body(service.open(galleryId, loginUser.id, request))
+    ): ResponseEntity<CollabSessionResponse> {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.open(galleryId, loginUser.id, request))
+    }
 
     @GetMapping
     override fun list(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
-    ): ResponseEntity<List<CollabSessionResponse>> = ResponseEntity.ok(queryService.list(galleryId, loginUser.id))
+    ): ResponseEntity<List<CollabSessionResponse>> {
+        return ResponseEntity.ok(queryService.list(galleryId, loginUser.id))
+    }
 
     @GetMapping("/{sessionId}")
     override fun get(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
         @PathVariable sessionId: Long,
-    ): ResponseEntity<CollabSessionResponse> = ResponseEntity.ok(queryService.get(galleryId, sessionId, loginUser.id))
+    ): ResponseEntity<CollabSessionResponse> {
+        return ResponseEntity.ok(queryService.get(galleryId, sessionId, loginUser.id))
+    }
 
     @PatchMapping("/{sessionId}")
     override fun rename(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
         @PathVariable sessionId: Long,
-        @RequestBody request: RenameCollabSessionRequest,
-    ): ResponseEntity<CollabSessionResponse> =
-        ResponseEntity.ok(service.rename(galleryId, sessionId, loginUser.id, request))
+        @Valid @RequestBody request: RenameCollabSessionRequest,
+    ): ResponseEntity<CollabSessionResponse> {
+        return ResponseEntity.ok(service.rename(galleryId, sessionId, loginUser.id, request))
+    }
 
     @DeleteMapping("/{sessionId}")
     override fun revoke(
@@ -77,8 +83,9 @@ class CollabSessionController(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
         @PathVariable sessionId: Long,
-    ): ResponseEntity<CollabSessionResponse> =
-        ResponseEntity.ok(service.republish(galleryId, sessionId, loginUser.id))
+    ): ResponseEntity<CollabSessionResponse> {
+        return ResponseEntity.ok(service.republish(galleryId, sessionId, loginUser.id))
+    }
 
     @PostMapping("/{sessionId}/photos")
     override fun addPhotos(
@@ -105,8 +112,9 @@ class CollabSessionController(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
         @PathVariable sessionId: Long,
-    ): ResponseEntity<List<CollabParticipantResponse>> =
-        ResponseEntity.ok(queryService.listParticipants(galleryId, sessionId, loginUser.id))
+    ): ResponseEntity<List<CollabParticipantResponse>> {
+        return ResponseEntity.ok(queryService.listParticipants(galleryId, sessionId, loginUser.id))
+    }
 
     @GetMapping("/{sessionId}/photos")
     override fun listPhotos(
@@ -115,8 +123,9 @@ class CollabSessionController(
         @PathVariable sessionId: Long,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "200") size: Int,
-    ): ResponseEntity<CollabPhotoPageResponse> =
-        ResponseEntity.ok(queryService.listPhotos(galleryId, sessionId, loginUser.id, page, size))
+    ): ResponseEntity<CollabPhotoPageResponse> {
+        return ResponseEntity.ok(queryService.listPhotos(galleryId, sessionId, loginUser.id, page, size))
+    }
 
     @DeleteMapping("/{sessionId}/comments/{commentId}")
     override fun deleteComment(
