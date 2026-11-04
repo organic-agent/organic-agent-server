@@ -14,9 +14,6 @@ import org.springframework.stereotype.Component
 @Component
 class RetouchRequestTextGate {
 
-    /** 한글 음절이나 영문자가 하나라도 있으면 보낸다 — `"팔 보정해주세요ㅠㅠ"`, `"123번 사진 밝게"`는 통과한다. */
-    fun isWorthRefining(text: String): Boolean = LETTER.containsMatchIn(text)
-
     companion object {
 
         /**
@@ -27,4 +24,7 @@ class RetouchRequestTextGate {
          */
         private val LETTER = Regex("[가-힣A-Za-z]")
     }
+
+    /** 한글 음절이나 영문자가 하나라도 있으면 보낸다 — `"팔 보정해주세요ㅠㅠ"`, `"123번 사진 밝게"`는 통과한다. */
+    fun isWorthRefining(text: String): Boolean = LETTER.containsMatchIn(text)
 }

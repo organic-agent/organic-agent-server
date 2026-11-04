@@ -41,6 +41,11 @@ class StudioInviteService(
     private val userRepository: com.soma.wes.user.repository.UserRepository,
     private val activityRecorder: ActivityRecorder,
 ) {
+    companion object {
+        /** 와이어프레임에서 확정한 초대 유효 기간이다. */
+        const val VALID_DAYS = 7L
+    }
+
     @Transactional
     fun issue(workspaceId: Long, userId: Long): StudioInviteResponse {
         requireMember(workspaceId, userId)
@@ -149,10 +154,5 @@ class StudioInviteService(
             )
         }
         return GalleryInviteAcceptResponse.workspace(null, invite.workspaceId, GalleryInviteKind.STUDIO_MEMBER)
-    }
-
-    companion object {
-        /** 와이어프레임에서 확정한 초대 유효 기간이다. */
-        const val VALID_DAYS = 7L
     }
 }

@@ -28,6 +28,21 @@ class AdminCascadeTrashService(
     private val photoRestoreQuota: AdminPhotoRestoreQuota,
 ) {
 
+    companion object {
+        private val CASCADE_TRASH_ROOT_TYPES = setOf(
+            AdminResourceType.USER,
+            AdminResourceType.STUDIO,
+            AdminResourceType.GALLERY,
+            AdminResourceType.PHOTO,
+            AdminResourceType.CONCEPT_FOLDER,
+            AdminResourceType.DETAIL_FOLDER,
+            AdminResourceType.SELECTION,
+            AdminResourceType.COLLABORATION,
+            AdminResourceType.RETOUCH_REQUEST,
+        )
+        private val LEGACY_TRASH_TYPES = setOf(AdminResourceType.GALLERY, AdminResourceType.PHOTO)
+    }
+
     @Transactional(readOnly = true)
     fun list(): List<AdminTrashBatchResponse> = trashRepository.list().map(::response)
 
@@ -192,19 +207,4 @@ class AdminCascadeTrashService(
             )
         },
     )
-
-    companion object {
-        private val CASCADE_TRASH_ROOT_TYPES = setOf(
-            AdminResourceType.USER,
-            AdminResourceType.STUDIO,
-            AdminResourceType.GALLERY,
-            AdminResourceType.PHOTO,
-            AdminResourceType.CONCEPT_FOLDER,
-            AdminResourceType.DETAIL_FOLDER,
-            AdminResourceType.SELECTION,
-            AdminResourceType.COLLABORATION,
-            AdminResourceType.RETOUCH_REQUEST,
-        )
-        private val LEGACY_TRASH_TYPES = setOf(AdminResourceType.GALLERY, AdminResourceType.PHOTO)
-    }
 }

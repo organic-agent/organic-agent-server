@@ -58,6 +58,45 @@ class AdminWorkflowService(
     private val clock: Clock,
 ) {
 
+    companion object {
+        private val ALLOWED_IMAGE_TYPES = setOf("image/jpeg", "image/png", "image/webp", "image/heic", "image/heif")
+        private val IDEMPOTENCY_KEY = Regex("^[A-Za-z0-9._:-]{8,128}$")
+        private val INBOX_CORRELATION_ID = Regex("^[0-9a-f]{16}$")
+        private const val DEFAULT_COLLAB_TTL_SECONDS = 7L * 24 * 60 * 60
+        private const val MAX_COLLAB_TTL_SECONDS = 90L * 24 * 60 * 60
+        private val CHILD_RESTORE_ACTIONS = setOf(
+            AdminWorkflowAction.RESTORE_COLLAB_COMMENT,
+            AdminWorkflowAction.RESTORE_COLLAB_LIKE,
+            AdminWorkflowAction.RESTORE_RETOUCH_ITEM,
+        )
+        private val ONE_TIME_REVEAL_ACTIONS = setOf(
+            AdminWorkflowAction.REISSUE_GALLERY_INVITE,
+            AdminWorkflowAction.REISSUE_COLLAB_LINK,
+            AdminWorkflowAction.ISSUE_PHOTO_REPLACEMENT,
+        )
+        private val RETOUCH_RESULT_CONTENT_TYPES = setOf(
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/heic",
+            "image/heif",
+        )
+        private val RETOUCH_CONTENT_TYPE_EXTENSIONS = mapOf(
+            "image/jpeg" to "jpg",
+            "image/png" to "png",
+            "image/webp" to "webp",
+            "image/heic" to "heic",
+            "image/heif" to "heif",
+        )
+        private val RETOUCH_UPLOAD_DURABLE_DETAIL_KEYS = setOf(
+            "uploadId",
+            "retouchPhotoId",
+            "artifactType",
+            "roundVersion",
+            "retouchPhotoVersion",
+        )
+    }
+
     fun execute(
         actorAdminId: Long,
         type: AdminResourceType,
@@ -1093,43 +1132,4 @@ class AdminWorkflowService(
         val status: String = "COMPLETED",
         val details: Map<String, Any?> = emptyMap(),
     )
-
-    companion object {
-        private val ALLOWED_IMAGE_TYPES = setOf("image/jpeg", "image/png", "image/webp", "image/heic", "image/heif")
-        private val IDEMPOTENCY_KEY = Regex("^[A-Za-z0-9._:-]{8,128}$")
-        private val INBOX_CORRELATION_ID = Regex("^[0-9a-f]{16}$")
-        private const val DEFAULT_COLLAB_TTL_SECONDS = 7L * 24 * 60 * 60
-        private const val MAX_COLLAB_TTL_SECONDS = 90L * 24 * 60 * 60
-        private val CHILD_RESTORE_ACTIONS = setOf(
-            AdminWorkflowAction.RESTORE_COLLAB_COMMENT,
-            AdminWorkflowAction.RESTORE_COLLAB_LIKE,
-            AdminWorkflowAction.RESTORE_RETOUCH_ITEM,
-        )
-        private val ONE_TIME_REVEAL_ACTIONS = setOf(
-            AdminWorkflowAction.REISSUE_GALLERY_INVITE,
-            AdminWorkflowAction.REISSUE_COLLAB_LINK,
-            AdminWorkflowAction.ISSUE_PHOTO_REPLACEMENT,
-        )
-        private val RETOUCH_RESULT_CONTENT_TYPES = setOf(
-            "image/jpeg",
-            "image/png",
-            "image/webp",
-            "image/heic",
-            "image/heif",
-        )
-        private val RETOUCH_CONTENT_TYPE_EXTENSIONS = mapOf(
-            "image/jpeg" to "jpg",
-            "image/png" to "png",
-            "image/webp" to "webp",
-            "image/heic" to "heic",
-            "image/heif" to "heif",
-        )
-        private val RETOUCH_UPLOAD_DURABLE_DETAIL_KEYS = setOf(
-            "uploadId",
-            "retouchPhotoId",
-            "artifactType",
-            "roundVersion",
-            "retouchPhotoVersion",
-        )
-    }
 }

@@ -247,6 +247,12 @@ class AdminChildTrashPurgeService(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
+    companion object {
+        private val STALE_PURGE_TIMEOUT: Duration = Duration.ofHours(2)
+        private val INITIAL_RETRY_DELAY: Duration = Duration.ofMinutes(5)
+        private const val MAX_PURGE_ATTEMPTS: Int = 5
+    }
+
     @Scheduled(cron = "0 45 * * * *")
     fun purgeExpired() {
         val now = ZonedDateTime.now(clock)
@@ -279,12 +285,6 @@ class AdminChildTrashPurgeService(
     private fun retryDelay(attempt: Int): Duration {
         val exponent = (attempt - 1).coerceIn(0, MAX_PURGE_ATTEMPTS - 2)
         return INITIAL_RETRY_DELAY.multipliedBy(1L shl exponent)
-    }
-
-    companion object {
-        private val STALE_PURGE_TIMEOUT: Duration = Duration.ofHours(2)
-        private val INITIAL_RETRY_DELAY: Duration = Duration.ofMinutes(5)
-        private const val MAX_PURGE_ATTEMPTS: Int = 5
     }
 }
 

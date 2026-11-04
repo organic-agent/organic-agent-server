@@ -17,6 +17,61 @@ class AdminCascadeTrashRepository(
     private val objectMapper: ObjectMapper,
 ) {
 
+    companion object {
+        private const val USER_OWNED_WORKSPACES_SQL = """
+            SELECT w.id
+            FROM workspaces w
+            WHERE (w.type = 'PERSONAL' AND w.personal_owner_user_id = :rootId)
+               OR (w.type = 'STUDIO'
+                   AND EXISTS (
+                       SELECT 1 FROM workspace_members owner_member
+                       WHERE owner_member.workspace_id = w.id
+                         AND owner_member.user_id = :rootId
+                         AND owner_member.role = 'OWNER'
+                         AND (
+                             owner_member.deleted_at IS NULL
+                             OR EXISTS (
+                                 SELECT 1 FROM studios owned_studio
+                                 WHERE owned_studio.workspace_id = w.id
+                                   AND owned_studio.deleted_at IS NOT NULL
+                             )
+                         )
+                   )
+                   AND NOT EXISTS (
+                       SELECT 1 FROM workspace_members other_owner
+                       WHERE other_owner.workspace_id = w.id
+                         AND other_owner.user_id <> :rootId
+                         AND other_owner.role = 'OWNER'
+                         AND other_owner.deleted_at IS NULL
+                   ))
+        """
+
+        private val FACT_NAMES = listOf(
+            "entryCount",
+            "rootEntryCount",
+            "commentCount",
+            "photoRevisionCount",
+            "selectionRevisionCount",
+            "photoStorageMetadataCount",
+            "retouchStorageMetadataCount",
+        )
+        private val SOFT_TARGETS = listOf(
+            SoftTarget("USER", "users"),
+            SoftTarget("STUDIO", "studios", "workspace_id"),
+            SoftTarget("WORKSPACE", "workspaces"),
+            SoftTarget("WORKSPACE_MEMBER", "workspace_members"),
+            SoftTarget("GALLERY_MEMBER", "gallery_members"),
+            SoftTarget("GALLERY", "galleries"),
+            SoftTarget("PHOTO", "photos"),
+            SoftTarget("CONCEPT_FOLDER", "concept_folders"),
+            SoftTarget("DETAIL_FOLDER", "detail_folders"),
+            SoftTarget("SELECTION", "photo_selections"),
+            SoftTarget("COLLABORATION", "collab_sessions"),
+            SoftTarget("COLLAB_COMMENT", "collab_photo_comments"),
+            SoftTarget("RETOUCH_REQUEST", "retouch_rounds"),
+        )
+    }
+
     fun isLastOwnerOfAnyStudio(userId: Long): Boolean {
         val owners = jdbcClient.sql(
             """
@@ -1139,59 +1194,4 @@ class AdminCascadeTrashRepository(
     )
 
     private data class SoftTarget(val type: String, val table: String, val idColumn: String = "id")
-
-    companion object {
-        private const val USER_OWNED_WORKSPACES_SQL = """
-            SELECT w.id
-            FROM workspaces w
-            WHERE (w.type = 'PERSONAL' AND w.personal_owner_user_id = :rootId)
-               OR (w.type = 'STUDIO'
-                   AND EXISTS (
-                       SELECT 1 FROM workspace_members owner_member
-                       WHERE owner_member.workspace_id = w.id
-                         AND owner_member.user_id = :rootId
-                         AND owner_member.role = 'OWNER'
-                         AND (
-                             owner_member.deleted_at IS NULL
-                             OR EXISTS (
-                                 SELECT 1 FROM studios owned_studio
-                                 WHERE owned_studio.workspace_id = w.id
-                                   AND owned_studio.deleted_at IS NOT NULL
-                             )
-                         )
-                   )
-                   AND NOT EXISTS (
-                       SELECT 1 FROM workspace_members other_owner
-                       WHERE other_owner.workspace_id = w.id
-                         AND other_owner.user_id <> :rootId
-                         AND other_owner.role = 'OWNER'
-                         AND other_owner.deleted_at IS NULL
-                   ))
-        """
-
-        private val FACT_NAMES = listOf(
-            "entryCount",
-            "rootEntryCount",
-            "commentCount",
-            "photoRevisionCount",
-            "selectionRevisionCount",
-            "photoStorageMetadataCount",
-            "retouchStorageMetadataCount",
-        )
-        private val SOFT_TARGETS = listOf(
-            SoftTarget("USER", "users"),
-            SoftTarget("STUDIO", "studios", "workspace_id"),
-            SoftTarget("WORKSPACE", "workspaces"),
-            SoftTarget("WORKSPACE_MEMBER", "workspace_members"),
-            SoftTarget("GALLERY_MEMBER", "gallery_members"),
-            SoftTarget("GALLERY", "galleries"),
-            SoftTarget("PHOTO", "photos"),
-            SoftTarget("CONCEPT_FOLDER", "concept_folders"),
-            SoftTarget("DETAIL_FOLDER", "detail_folders"),
-            SoftTarget("SELECTION", "photo_selections"),
-            SoftTarget("COLLABORATION", "collab_sessions"),
-            SoftTarget("COLLAB_COMMENT", "collab_photo_comments"),
-            SoftTarget("RETOUCH_REQUEST", "retouch_rounds"),
-        )
-    }
 }

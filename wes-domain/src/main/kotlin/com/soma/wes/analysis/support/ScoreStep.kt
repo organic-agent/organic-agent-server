@@ -81,6 +81,9 @@ class ScoreStep(
     /** score 폴백을 갤러리마다 보낸 횟수. 미점수 사진이 없어진 갤러리는 지운다 — 다음에 올라온 사진은 처음부터 센다. */
     private val fallbackCount = ConcurrentHashMap<Long, Int>()
 
+    private val isWorkerPoolActive: Boolean
+        get() = properties.gpu.enabled && scoreWorkerPool.isAvailable
+
     companion object {
         /** 늘리기로 켠 뒤 다시 늘리기 전 기다림 — 켜기 직후 인스턴스가 PENDING 으로 보이기까지의 몇 초를 넉넉히 덮는다. */
         private val SCALE_OUT_GUARD: Duration = Duration.ofMinutes(1)
@@ -116,9 +119,6 @@ class ScoreStep(
 
     private fun countQualityBacklog(): Long =
         if (properties.qualityStage.enabled) photoPipelineRepository.countQualityBacklog() else 0L
-
-    private val isWorkerPoolActive: Boolean
-        get() = properties.gpu.enabled && scoreWorkerPool.isAvailable
 
     /** 워커의 일 전체(1·2단계)가 움직였나 — 안전망 끄기의 기준. */
     private fun observeProgress(workerBacklog: Long, now: ZonedDateTime) {

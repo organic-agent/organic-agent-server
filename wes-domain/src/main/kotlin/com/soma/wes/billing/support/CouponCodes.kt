@@ -13,6 +13,13 @@ import java.util.Locale
 class CouponCodes {
     private val random = SecureRandom()
 
+    companion object {
+        /** 자동 생성 쿠폰 코드에 128비트 난수로 추측 불가능한 값을 넣는다. */
+        private const val CODE_BYTES = 16
+        private const val CODE_PREFIX = "WES-"
+        private val CODE_FORMAT = Regex("[A-Z0-9][A-Z0-9_-]*")
+    }
+
     fun generate(): String {
         val bytes = ByteArray(CODE_BYTES)
         random.nextBytes(bytes)
@@ -29,12 +36,5 @@ class CouponCodes {
         val normalized = code.trim().uppercase(Locale.ROOT)
         if (!CODE_FORMAT.matches(normalized)) throw BillingException(BillingErrorCode.INVALID_COUPON_CODE)
         return normalized
-    }
-
-    companion object {
-        /** 자동 생성 쿠폰 코드에 128비트 난수로 추측 불가능한 값을 넣는다. */
-        private const val CODE_BYTES = 16
-        private const val CODE_PREFIX = "WES-"
-        private val CODE_FORMAT = Regex("[A-Z0-9][A-Z0-9_-]*")
     }
 }

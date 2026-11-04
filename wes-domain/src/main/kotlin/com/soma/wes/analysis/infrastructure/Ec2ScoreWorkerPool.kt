@@ -36,6 +36,18 @@ class Ec2ScoreWorkerPool(
     override val isAvailable: Boolean
         get() = properties.gpu.enabled && properties.gpu.tag.isNotBlank()
 
+    companion object {
+        /** EC2 DescribeInstances 의 태그 필터 이름 — `tag:<키>`. 인프라가 워커에 `Name` 태그를 붙인다. */
+        const val NAME_TAG_FILTER = "tag:Name"
+
+        fun stateOf(name: InstanceStateName?): ScoreWorkerStateDto = when (name) {
+            InstanceStateName.PENDING -> ScoreWorkerStateDto.PENDING
+            InstanceStateName.RUNNING -> ScoreWorkerStateDto.RUNNING
+            InstanceStateName.STOPPING -> ScoreWorkerStateDto.STOPPING
+            else -> ScoreWorkerStateDto.STOPPED
+        }
+    }
+
     override fun snapshot(): List<ScoreWorkerDto> = describe().map { instance ->
         ScoreWorkerDto(
             instanceId = instance.instanceId(),
@@ -73,17 +85,5 @@ class Ec2ScoreWorkerPool(
         // 계산 실패가 아니라 호출 실패다(권한·API). 스윕이 잡아 다음 걸음에 다시 본다.
         log.error("EC2 {} 실패: target={}", operation, target, e)
         throw AnalysisException(AnalysisErrorCode.SCORE_WORKER_CONTROL_FAILED)
-    }
-
-    companion object {
-        /** EC2 DescribeInstances 의 태그 필터 이름 — `tag:<키>`. 인프라가 워커에 `Name` 태그를 붙인다. */
-        const val NAME_TAG_FILTER = "tag:Name"
-
-        fun stateOf(name: InstanceStateName?): ScoreWorkerStateDto = when (name) {
-            InstanceStateName.PENDING -> ScoreWorkerStateDto.PENDING
-            InstanceStateName.RUNNING -> ScoreWorkerStateDto.RUNNING
-            InstanceStateName.STOPPING -> ScoreWorkerStateDto.STOPPING
-            else -> ScoreWorkerStateDto.STOPPED
-        }
     }
 }

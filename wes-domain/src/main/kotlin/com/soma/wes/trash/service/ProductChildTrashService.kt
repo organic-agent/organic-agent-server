@@ -21,6 +21,23 @@ class ProductChildTrashService(
     private val clock: Clock,
 ) {
 
+    private companion object {
+        const val RESOURCE_COMMENT = "COLLAB_COMMENT"
+        const val RESOURCE_LIKE = "COLLAB_LIKE"
+        const val RESOURCE_RETOUCH_ITEM = "RETOUCH_ITEM"
+        const val PARENT_COLLABORATION = "COLLABORATION"
+        const val PARENT_RETOUCH_REQUEST = "RETOUCH_REQUEST"
+
+        // 제품 행위자는 admin_accounts FK 대상이 아니므로 actor_admin_id는 NULL이다.
+        // 토큰·닉네임·사용자 이름·본문 대신 불변의 비식별 코드만 남긴다.
+        const val ACTOR_PARTICIPANT = "PRODUCT_PARTICIPANT"
+        const val ACTOR_USER = "PRODUCT_USER"
+        const val REASON_PARTICIPANT_COMMENT_DELETE = "PRODUCT_PARTICIPANT_SELF_DELETE"
+        const val REASON_USER_COMMENT_DELETE = "PRODUCT_USER_COMMENT_MODERATION"
+        const val REASON_PARTICIPANT_LIKE_CANCEL = "PRODUCT_PARTICIPANT_LIKE_CANCEL"
+        const val REASON_USER_RETOUCH_REMOVE = "PRODUCT_USER_RETOUCH_REMOVE"
+    }
+
     @Transactional(propagation = Propagation.MANDATORY)
     fun deleteParticipantComment(sessionId: Long, commentId: Long, participantId: Long): Boolean =
         deleteCollabComment(
@@ -130,22 +147,5 @@ class ProductChildTrashService(
             deletedAt = deletedAt,
             restoreUntil = deletedAt.plus(trashProperties.retention),
         )
-    }
-
-    private companion object {
-        const val RESOURCE_COMMENT = "COLLAB_COMMENT"
-        const val RESOURCE_LIKE = "COLLAB_LIKE"
-        const val RESOURCE_RETOUCH_ITEM = "RETOUCH_ITEM"
-        const val PARENT_COLLABORATION = "COLLABORATION"
-        const val PARENT_RETOUCH_REQUEST = "RETOUCH_REQUEST"
-
-        // 제품 행위자는 admin_accounts FK 대상이 아니므로 actor_admin_id는 NULL이다.
-        // 토큰·닉네임·사용자 이름·본문 대신 불변의 비식별 코드만 남긴다.
-        const val ACTOR_PARTICIPANT = "PRODUCT_PARTICIPANT"
-        const val ACTOR_USER = "PRODUCT_USER"
-        const val REASON_PARTICIPANT_COMMENT_DELETE = "PRODUCT_PARTICIPANT_SELF_DELETE"
-        const val REASON_USER_COMMENT_DELETE = "PRODUCT_USER_COMMENT_MODERATION"
-        const val REASON_PARTICIPANT_LIKE_CANCEL = "PRODUCT_PARTICIPANT_LIKE_CANCEL"
-        const val REASON_USER_RETOUCH_REMOVE = "PRODUCT_USER_RETOUCH_REMOVE"
     }
 }

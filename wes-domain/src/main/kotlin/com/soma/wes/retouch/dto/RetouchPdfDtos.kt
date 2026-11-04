@@ -24,9 +24,6 @@ data class RetouchPdfBlockDto(val number: Int?, val lines: List<String>)
 
 /** PDF의 실제 표시 이미지 영역. 웹의 왼쪽 위 원점을 PDF의 왼쪽 아래 원점으로 바꾼다. */
 data class RetouchPdfImageRectDto(val x: Float, val y: Float, val width: Float, val height: Float) {
-    fun pin(point: RetouchPoint): Pair<Float, Float> =
-        (x + point.x.toFloat() * width) to (y + (1f - point.y.toFloat()) * height)
-
     companion object {
         fun contain(width: Int, height: Int, box: RetouchPdfImageRectDto): RetouchPdfImageRectDto {
             require(width > 0 && height > 0)
@@ -41,6 +38,9 @@ data class RetouchPdfImageRectDto(val x: Float, val y: Float, val width: Float, 
             )
         }
     }
+
+    fun pin(point: RetouchPoint): Pair<Float, Float> =
+        (x + point.x.toFloat() * width) to (y + (1f - point.y.toFloat()) * height)
 }
 
 /** 다운로드 모달에서 고르는 사진 범위. 저장된 회차 상태를 바꾸지 않는다. */

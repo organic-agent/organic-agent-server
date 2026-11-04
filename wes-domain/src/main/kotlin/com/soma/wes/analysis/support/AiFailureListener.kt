@@ -34,6 +34,16 @@ class AiFailureListener(
 
     private var thread: Thread? = null
 
+    companion object {
+        private const val THREAD_NAME = "ai-failure-listener"
+
+        /** 큐를 못 읽었을 때 쉬는 시간. 권한·네트워크 문제가 이어져도 로그가 초당 쏟아지지 않게. */
+        private const val ERROR_PAUSE_MILLIS = 5_000L
+
+        /** 종료 때 읽던 요청이 끝나기를 기다리는 시간(롱 폴링 10초 + 여유). */
+        private const val STOP_WAIT_MILLIS = 15_000L
+    }
+
     override fun start() {
         running = true
         thread = Thread(::listen, THREAD_NAME).apply {
@@ -89,15 +99,5 @@ class AiFailureListener(
         } catch (_: InterruptedException) {
             // stop()이 깨운 것이다 — 플래그를 되살리지 않는다. 되살리면 다음 읽기·쉬기가 곧바로 끊겨 헛돈다. 루프가 running 을 보고 끝난다.
         }
-    }
-
-    companion object {
-        private const val THREAD_NAME = "ai-failure-listener"
-
-        /** 큐를 못 읽었을 때 쉬는 시간. 권한·네트워크 문제가 이어져도 로그가 초당 쏟아지지 않게. */
-        private const val ERROR_PAUSE_MILLIS = 5_000L
-
-        /** 종료 때 읽던 요청이 끝나기를 기다리는 시간(롱 폴링 10초 + 여유). */
-        private const val STOP_WAIT_MILLIS = 15_000L
     }
 }

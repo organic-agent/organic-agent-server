@@ -93,13 +93,12 @@ class User(
         this.profileImageUrl = profileImageUrl
     }
 
-    companion object {
-        /** 사용자 프로필 이름 컬럼과 같은 상한이다. */
-        const val MAX_NICKNAME_LENGTH = 50
-    }
-
     fun changeRole(role: Role) {
         this.role = role
     }
 
+    companion object {
+        /** 사용자 프로필 이름 컬럼과 같은 상한이다. */
+        const val MAX_NICKNAME_LENGTH = 50
+    }
 }

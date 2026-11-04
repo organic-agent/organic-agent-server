@@ -18,6 +18,12 @@ class AdminImpersonationReadOnlyFilter(
     private val accessDeniedHandler: CustomAccessDeniedHandler,
 ) : OncePerRequestFilter() {
 
+    companion object {
+        /** 하위 호환용 상수일 뿐, 보안 판단은 서버측 로그인 세션 상태로만 한다. */
+        const val HEADER_NAME = "X-WES-Admin-Impersonation"
+        private val SAFE_METHODS = setOf("GET", "HEAD", "OPTIONS")
+    }
+
     override fun doFilterInternal(
         request: HttpServletRequest,
         response: HttpServletResponse,
@@ -49,10 +55,4 @@ class AdminImpersonationReadOnlyFilter(
                 request.requestURI == "/internal/admin/v1/impersonations/${session.id}"
             )) ||
             (request.method == "POST" && request.requestURI == "/internal/admin/v1/auth/logout")
-
-    companion object {
-        /** 하위 호환용 상수일 뿐, 보안 판단은 서버측 로그인 세션 상태로만 한다. */
-        const val HEADER_NAME = "X-WES-Admin-Impersonation"
-        private val SAFE_METHODS = setOf("GET", "HEAD", "OPTIONS")
-    }
 }

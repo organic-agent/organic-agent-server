@@ -19,6 +19,10 @@ class AdminSessionAuthFilter(
     private val authenticationEntryPoint: CustomAuthenticationEntryPoint,
 ) : OncePerRequestFilter() {
 
+    companion object {
+        private const val LOGIN_PATH = "/internal/admin/v1/auth/login"
+    }
+
     override fun doFilterInternal(
         request: HttpServletRequest,
         response: HttpServletResponse,
@@ -51,8 +55,4 @@ class AdminSessionAuthFilter(
 
     override fun shouldNotFilter(request: HttpServletRequest): Boolean =
         request.requestURI == LOGIN_PATH
-
-    companion object {
-        private const val LOGIN_PATH = "/internal/admin/v1/auth/login"
-    }
 }

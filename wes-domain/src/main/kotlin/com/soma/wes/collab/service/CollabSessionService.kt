@@ -45,6 +45,11 @@ class CollabSessionService(
     private val activityRecorder: ActivityRecorder,
     private val participants: CollabParticipantRepository,
 ) {
+    companion object {
+        /** 와이어프레임의 게스트 링크 유효기간. */
+        private const val LINK_TTL_DAYS = 7L
+    }
+
     @Transactional
     fun open(galleryId: Long, userId: Long, request: OpenCollabSessionRequest): CollabSessionResponse {
         galleryAccessPolicy.requireCollabManager(galleryId, userId, writable = true)
@@ -215,8 +220,4 @@ class CollabSessionService(
         photoMembership.count(session),
         participants.countByCollabSessionId(session.requiredId),
     )
-    companion object {
-        /** 와이어프레임의 게스트 링크 유효기간. */
-        private const val LINK_TTL_DAYS = 7L
-    }
 }

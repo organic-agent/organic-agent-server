@@ -46,6 +46,11 @@ class AdminReprocessService(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
+    companion object {
+        private const val ACTION = "GALLERY_EMBEDDING"
+        private val IDEMPOTENCY_KEY = Regex("^[A-Za-z0-9._:-]{8,128}$")
+    }
+
     /** 멱등성 저장소는 자기 트랜잭션(REQUIRES_NEW)이라 이 메서드는 트랜잭션이 없고, 리셋과 잡 생성만 하나로 묶는다. */
     fun reprocess(
         actorAdminId: Long,
@@ -184,9 +189,4 @@ class AdminReprocessService(
         MessageDigest.getInstance("SHA-256")
             .digest(value.toByteArray(StandardCharsets.UTF_8))
             .let(HexFormat.of()::formatHex)
-
-    companion object {
-        private const val ACTION = "GALLERY_EMBEDDING"
-        private val IDEMPOTENCY_KEY = Regex("^[A-Za-z0-9._:-]{8,128}$")
-    }
 }

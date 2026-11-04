@@ -23,17 +23,17 @@ class ThreadPoolAiJobExecutor : AiJobExecutor, DisposableBean {
         initialize()
     }
 
+    companion object {
+        private const val THREADS = 2
+        private const val QUEUE_CAPACITY = 100
+        private const val AWAIT_TERMINATION_SECONDS = 30
+    }
+
     override fun submit(task: Runnable) {
         executor.execute(task)
     }
 
     override fun destroy() {
         executor.shutdown()
-    }
-
-    companion object {
-        private const val THREADS = 2
-        private const val QUEUE_CAPACITY = 100
-        private const val AWAIT_TERMINATION_SECONDS = 30
     }
 }

@@ -41,6 +41,12 @@ class LocalScoreWorkerPool(
     override val isAvailable: Boolean
         get() = properties.gpu.enabled && localProcessProperties.isConfigured && script.canExecute()
 
+    companion object {
+        const val INSTANCE_ID = "local"
+        /** `scripts/lambda`(Lambda 대역) 옆의 `scripts/gpu`. 운영의 EC2 워커 한 대에 해당한다. */
+        const val SCRIPT_NAME = "score-worker.sh"
+    }
+
     override fun snapshot(): List<ScoreWorkerDto> {
         val alive = process?.isAlive == true
         return listOf(
@@ -73,11 +79,5 @@ class LocalScoreWorkerPool(
             it.destroy()
             log.info("로컬 score 워커 종료: pid={}", it.pid())
         }
-    }
-
-    companion object {
-        const val INSTANCE_ID = "local"
-        /** `scripts/lambda`(Lambda 대역) 옆의 `scripts/gpu`. 운영의 EC2 워커 한 대에 해당한다. */
-        const val SCRIPT_NAME = "score-worker.sh"
     }
 }

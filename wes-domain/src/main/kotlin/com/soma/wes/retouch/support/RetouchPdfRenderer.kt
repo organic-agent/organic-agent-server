@@ -26,6 +26,72 @@ class RetouchPdfRenderer(
     private val photos: PreviewImageReader,
     private val properties: RetouchPdfProperties,
 ) {
+    companion object {
+        /** 검증한 A4 가로 PDF 레이아웃. 길이와 위치는 point 단위다. */
+        private const val REQUEST_TOP = 447f
+        private const val TITLE_SPACE = 24f
+        private const val LIST_PIN_X = 502f
+        private const val LIST_TITLE_X = 522f
+        private const val REQUEST_X = 493f
+        private const val CONTENT_RIGHT = 806f
+        private const val BLOCK_TITLE_SPACE = 26f
+        private const val BLOCK_BOTTOM_SPACE = 15f
+        private const val SEPARATOR_GAP = 18f
+        private const val REQUEST_WIDTH = 306f
+        /** 전체 요청 페이지는 사진이 없어 본문이 좌우 여백 사이를 다 쓴다(CONTENT_RIGHT - MARGIN_X). */
+        private const val ROUND_REQUEST_WIDTH = 770f
+        private const val IMAGE_BOX_WIDTH = 396f
+        private const val IMAGE_BOX_HEIGHT = 404f
+        private const val IMAGE_BOX_X = 50f
+        private const val IMAGE_BOX_Y = 63f
+        private const val MARGIN_X = 36f
+        private const val HEADER_Y = 548f
+        private const val SUBTITLE_X = 37f
+        private const val SUBTITLE_Y = 525f
+        private const val COUNTER_X = 746f
+        private const val COUNTER_Y = 550f
+        private const val HEADER_LINE_Y = 508f
+        private const val CAPTION_Y = 486f
+        private const val FOOTER_X = 656f
+        private const val FOOTER_Y = 32f
+        private const val FILENAME_WIDTH = 418f
+        private const val SUBTITLE_WIDTH = 600f
+        private const val BEZIER_CIRCLE = 0.55228475f
+        private const val PIN_BORDER_WIDTH = 1.6f
+        private const val PIN_BASELINE = 0.36f
+        private const val SMALL_PIN_FONT_SIZE = 7.5f
+        private const val LIST_PIN_RADIUS = 9f
+        private const val PIN_RADIUS = 10f
+        private const val LABEL_SIZE = 11f
+        private const val CAPTION_SIZE = 12f
+        private const val COUNTER_SIZE = 17f
+        private const val SEPARATOR_WIDTH = 0.5f
+        private const val TITLE_BASELINE_OFFSET = 4f
+        private const val LIST_PIN_OFFSET = 1f
+        private const val SEPARATOR_OFFSET = 5f
+        /** PDF footer 글자 크기(point). */
+        private const val FOOTER_SIZE = 8.5f
+        /** PDF 폰트 폭의 기준 단위(1000 glyph units). */
+        private const val FONT_UNITS = 1000
+        /** 세 자리 핀 번호는 원 안에 맞추어 글자를 줄인다. */
+        private const val THREE_DIGIT_PIN = 100
+        /** Unicode 제어 문자 경계. */
+        private const val LINE_FEED = 10
+        private const val TAB = 9
+        private const val FIRST_PRINTABLE = 32
+
+        private val PAGE_SIZE = PDRectangle(PDRectangle.A4.height, PDRectangle.A4.width)
+        private val IMAGE_BOX = RetouchPdfImageRectDto(x = IMAGE_BOX_X, y = IMAGE_BOX_Y, width = IMAGE_BOX_WIDTH, height = IMAGE_BOX_HEIGHT)
+        private val INK = Color(36, 39, 47)
+        private val MUTED = Color(114, 119, 130)
+        private val ACCENT = Color(110, 77, 175)
+        private val BORDER = Color(226, 228, 235)
+        private val PANEL = Color(247, 247, 250)
+        private const val BODY_SIZE = 11f
+        private const val LEADING = 17f
+        private const val BODY_BOTTOM = 67f
+    }
+
     fun render(round: RetouchPdfSnapshotDto): ByteArray {
         val items = round.photos
         val started = System.nanoTime()
@@ -232,71 +298,5 @@ class RetouchPdfRenderer(
         true
     } catch (_: IllegalArgumentException) {
         false
-    }
-
-    companion object {
-        /** 검증한 A4 가로 PDF 레이아웃. 길이와 위치는 point 단위다. */
-        private const val REQUEST_TOP = 447f
-        private const val TITLE_SPACE = 24f
-        private const val LIST_PIN_X = 502f
-        private const val LIST_TITLE_X = 522f
-        private const val REQUEST_X = 493f
-        private const val CONTENT_RIGHT = 806f
-        private const val BLOCK_TITLE_SPACE = 26f
-        private const val BLOCK_BOTTOM_SPACE = 15f
-        private const val SEPARATOR_GAP = 18f
-        private const val REQUEST_WIDTH = 306f
-        /** 전체 요청 페이지는 사진이 없어 본문이 좌우 여백 사이를 다 쓴다(CONTENT_RIGHT - MARGIN_X). */
-        private const val ROUND_REQUEST_WIDTH = 770f
-        private const val IMAGE_BOX_WIDTH = 396f
-        private const val IMAGE_BOX_HEIGHT = 404f
-        private const val IMAGE_BOX_X = 50f
-        private const val IMAGE_BOX_Y = 63f
-        private const val MARGIN_X = 36f
-        private const val HEADER_Y = 548f
-        private const val SUBTITLE_X = 37f
-        private const val SUBTITLE_Y = 525f
-        private const val COUNTER_X = 746f
-        private const val COUNTER_Y = 550f
-        private const val HEADER_LINE_Y = 508f
-        private const val CAPTION_Y = 486f
-        private const val FOOTER_X = 656f
-        private const val FOOTER_Y = 32f
-        private const val FILENAME_WIDTH = 418f
-        private const val SUBTITLE_WIDTH = 600f
-        private const val BEZIER_CIRCLE = 0.55228475f
-        private const val PIN_BORDER_WIDTH = 1.6f
-        private const val PIN_BASELINE = 0.36f
-        private const val SMALL_PIN_FONT_SIZE = 7.5f
-        private const val LIST_PIN_RADIUS = 9f
-        private const val PIN_RADIUS = 10f
-        private const val LABEL_SIZE = 11f
-        private const val CAPTION_SIZE = 12f
-        private const val COUNTER_SIZE = 17f
-        private const val SEPARATOR_WIDTH = 0.5f
-        private const val TITLE_BASELINE_OFFSET = 4f
-        private const val LIST_PIN_OFFSET = 1f
-        private const val SEPARATOR_OFFSET = 5f
-        /** PDF footer 글자 크기(point). */
-        private const val FOOTER_SIZE = 8.5f
-        /** PDF 폰트 폭의 기준 단위(1000 glyph units). */
-        private const val FONT_UNITS = 1000
-        /** 세 자리 핀 번호는 원 안에 맞추어 글자를 줄인다. */
-        private const val THREE_DIGIT_PIN = 100
-        /** Unicode 제어 문자 경계. */
-        private const val LINE_FEED = 10
-        private const val TAB = 9
-        private const val FIRST_PRINTABLE = 32
-
-        private val PAGE_SIZE = PDRectangle(PDRectangle.A4.height, PDRectangle.A4.width)
-        private val IMAGE_BOX = RetouchPdfImageRectDto(x = IMAGE_BOX_X, y = IMAGE_BOX_Y, width = IMAGE_BOX_WIDTH, height = IMAGE_BOX_HEIGHT)
-        private val INK = Color(36, 39, 47)
-        private val MUTED = Color(114, 119, 130)
-        private val ACCENT = Color(110, 77, 175)
-        private val BORDER = Color(226, 228, 235)
-        private val PANEL = Color(247, 247, 250)
-        private const val BODY_SIZE = 11f
-        private const val LEADING = 17f
-        private const val BODY_BOTTOM = 67f
     }
 }

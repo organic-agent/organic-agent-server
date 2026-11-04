@@ -11,6 +11,11 @@ class AdminPasswordHasher {
     private val encoder = Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8()
     private val dummyHash = encoder.encode("wes-admin-password-timing-guard")
 
+    companion object {
+        const val MIN_LENGTH = 12
+        const val MAX_LENGTH = 128
+    }
+
     fun hash(rawPassword: String): String {
         validate(rawPassword)
         return encoder.encode(rawPassword)
@@ -32,10 +37,5 @@ class AdminPasswordHasher {
         if (rawPassword.length !in MIN_LENGTH..MAX_LENGTH) {
             throw AdminException(AdminErrorCode.PASSWORD_POLICY_VIOLATION)
         }
-    }
-
-    companion object {
-        const val MIN_LENGTH = 12
-        const val MAX_LENGTH = 128
     }
 }

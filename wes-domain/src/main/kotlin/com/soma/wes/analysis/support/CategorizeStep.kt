@@ -38,6 +38,14 @@ class CategorizeStep(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
+    companion object {
+        /** 대상이 적은 갤러리에서도 이만큼은 떼어 낼 수 있다 — 20장 갤러리의 한 장이 잡을 닫지 않게 한다. */
+        private const val MIN_DETACHABLE_PHOTOS = 1L
+
+        /** 로그 한 줄에 싣는 사진 id 상한. 전체 수는 `stalledPhotos=`로 따로 찍는다. */
+        private const val MAX_LOGGED_PHOTO_IDS = 20
+    }
+
     fun advance() {
         for (job in analysisJobRepository.findAllByStatusOrderByIdAsc(AnalysisStatus.ANALYZING)) {
             try {
@@ -134,13 +142,5 @@ class CategorizeStep(
             eventRecorder.record(job.requiredId, job.galleryId, AnalysisJobEventType.CATEGORIZE_SEND_FAILED, mapOf("code" to e.errorCode.code))
             analysisJobRepository.clearDispatchedAt(job.requiredId, now)
         }
-    }
-
-    companion object {
-        /** 대상이 적은 갤러리에서도 이만큼은 떼어 낼 수 있다 — 20장 갤러리의 한 장이 잡을 닫지 않게 한다. */
-        private const val MIN_DETACHABLE_PHOTOS = 1L
-
-        /** 로그 한 줄에 싣는 사진 id 상한. 전체 수는 `stalledPhotos=`로 따로 찍는다. */
-        private const val MAX_LOGGED_PHOTO_IDS = 20
     }
 }

@@ -13,6 +13,10 @@ import org.springframework.transaction.annotation.Transactional
 class AdminResourceSuspensionService(
     private val repository: AdminResourceRepository,
 ) {
+    companion object {
+        private val SUPPORTED_TYPES = setOf(AdminResourceType.USER, AdminResourceType.STUDIO)
+    }
+
     @Transactional
     fun suspend(
         actorAdminId: Long,
@@ -51,9 +55,5 @@ class AdminResourceSuspensionService(
         if (suspended) repository.affectedUserIds(type, id).forEach(repository::revokeRefreshToken)
         val after = repository.find(type, id) ?: throw AdminException(AdminErrorCode.RESOURCE_NOT_FOUND)
         return after
-    }
-
-    companion object {
-        private val SUPPORTED_TYPES = setOf(AdminResourceType.USER, AdminResourceType.STUDIO)
     }
 }

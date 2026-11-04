@@ -39,6 +39,11 @@ class AiFailureService(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
+    companion object {
+        /** 로그 한 줄에 싣는 오류 문구 길이. 전체(500자)는 잡 이력에 남는다. */
+        private const val MAX_LOGGED_ERROR = 200
+    }
+
     fun handle(failure: AiFailureDto) {
         val now = ZonedDateTime.now(clock)
         when (val task = failure.task) {
@@ -141,10 +146,5 @@ class AiFailureService(
             "event=ai.failed function={} gallery={} condition={} errorType={} action={}{} error=\"{}\"",
             failure.functionName, galleryId, failure.condition, failure.errorType, action, extra, failure.errorMessage?.take(MAX_LOGGED_ERROR),
         )
-    }
-
-    companion object {
-        /** 로그 한 줄에 싣는 오류 문구 길이. 전체(500자)는 잡 이력에 남는다. */
-        private const val MAX_LOGGED_ERROR = 200
     }
 }

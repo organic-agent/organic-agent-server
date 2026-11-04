@@ -41,6 +41,11 @@ class AnalysisJobCloser(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
+    companion object {
+        const val TITLE = "AI 분석이 완료되었습니다"
+        const val MESSAGE = "AI 폴더가 만들어졌습니다. 폴더를 확인해 주세요."
+    }
+
     @Transactional
     fun close(job: AnalysisJob, outcome: MaterializeOutcomeDto) {
         val now = ZonedDateTime.now(clock)
@@ -123,9 +128,4 @@ class AnalysisJobCloser(
 
     private fun secondsSince(from: ZonedDateTime?, now: ZonedDateTime): Long =
         from?.let { Duration.between(it, now).seconds } ?: 0
-
-    companion object {
-        const val TITLE = "AI 분석이 완료되었습니다"
-        const val MESSAGE = "AI 폴더가 만들어졌습니다. 폴더를 확인해 주세요."
-    }
 }
