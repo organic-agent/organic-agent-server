@@ -555,7 +555,7 @@ rg -n -t kotlin '"previews/|"galleries/' wes-*/src/main/kotlin | rg -v 'S3PhotoS
 |---|---|---|---|---|
 | MG-01 | rules/migration.md | **G** `ddl-auto`가 `validate`가 아닌 설정 (`*BoundaryTest` 제외) | H | script |
 | MG-02 | rules/migration.md | **S** `WesApplicationTests` — `ddl-auto=validate` 컨텍스트 로딩이 대조해 준다 (Docker 필요) | T | test |
-| MG-03 | rules/migration.md | **S** 버전 번호가 1부터 연속인지 · 파일명 형식 | T | script |
+| MG-03 | rules/migration.md | **S** 버전 번호가 1부터 연속인지(V 파일만 — 반복 `R__`는 번호가 없다) · 파일명 형식 | T | script |
 | MG-04 | rules/migration.md | **S** git 이력에서 마이그레이션 파일이 수정(M)된 적 있는지 | H | script |
 | MG-05 | rules/migration.md | **G** 그 밖의 `V*__*.sql` | H | script |
 | MG-06 | rules/migration.md | **G** compose·Testcontainers·CI의 `postgres` 이미지 | H | script |
@@ -571,7 +571,7 @@ rg -n -t kotlin '"previews/|"galleries/' wes-*/src/main/kotlin | rg -v 'S3PhotoS
 rg -nP 'ddl-auto\s*[:=]\s*(?!validate)\w+' wes-*/src wes-domain/src/testFixtures docker-compose*.yml | rg -v 'BoundaryTest'
 
 # MG-03
-ls wes-api/src/main/resources/db/migration | sed -E 's/^V([0-9]+)__.*/\1/' | sort -n | awk '$1!=NR {print "gap/dup at position " NR ": V" $1}'; ls wes-api/src/main/resources/db/migration | rg -v '^V[0-9]+__[a-z0-9_]+\.sql$'
+ls wes-api/src/main/resources/db/migration | rg '^V' | sed -E 's/^V([0-9]+)__.*/\1/' | sort -n | awk '$1!=NR {print "gap/dup at position " NR ": V" $1}'; ls wes-api/src/main/resources/db/migration | rg -v '^(V[0-9]+|R)__[a-z0-9_]+\.sql$'
 
 # MG-04
 git log --diff-filter=M --format= --name-only -- wes-api/src/main/resources/db/migration | sort -u
