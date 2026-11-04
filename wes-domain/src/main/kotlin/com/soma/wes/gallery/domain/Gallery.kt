@@ -40,35 +40,21 @@ class Gallery(
     @Column(name = "created_by_user_id", updatable = false)
     val createdByUserId: Long? = null,
 
-    @Column(nullable = false, length = 100)
-    var title: String,
+    title: String,
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    var status: GalleryStatus = GalleryStatus.DRAFT,
+    status: GalleryStatus = GalleryStatus.DRAFT,
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "workflow_status", nullable = false, length = 20)
-    var workflowStatus: GalleryWorkflowStatus = GalleryWorkflowStatus.DRAFT,
+    workflowStatus: GalleryWorkflowStatus = GalleryWorkflowStatus.DRAFT,
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
-    var stage: GalleryStage = GalleryStage.UPLOAD,
+    stage: GalleryStage = GalleryStage.UPLOAD,
 
-    @Column(name = "selection_deadline")
-    var selectionDeadline: ZonedDateTime? = null,
+    selectionDeadline: ZonedDateTime? = null,
 
-    @Column(name = "max_selectable_photo_count")
-    var maxSelectablePhotoCount: Int? = null,
+    maxSelectablePhotoCount: Int? = null,
 
-    /** 계약상 보정 요청 가능 횟수. [maxSelectablePhotoCount]와 같은 이유로 갤러리에 산다. */
-    @Column(name = "max_retouch_round_count")
-    var maxRetouchRoundCount: Int? = null,
+    maxRetouchRoundCount: Int? = null,
 
-    /** 촬영 종류. AI 폴더의 컨셉 목록을 고르는 키다 ([ShootType] 참조). */
-    @Enumerated(EnumType.STRING)
-    @Column(name = "shoot_type", nullable = false, length = 20)
-    var shootType: ShootType = ShootType.REHEARSAL,
+    shootType: ShootType = ShootType.REHEARSAL,
 
 ) : BaseEntity() {
 
@@ -78,6 +64,44 @@ class Gallery(
 
     val requiredId: Long
         get() = checkNotNull(id) { "저장되지 않은 갤러리입니다." }
+
+    @Column(nullable = false, length = 100)
+    var title: String = title
+        protected set
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    var status: GalleryStatus = status
+        protected set
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "workflow_status", nullable = false, length = 20)
+    var workflowStatus: GalleryWorkflowStatus = workflowStatus
+        protected set
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
+    var stage: GalleryStage = stage
+        protected set
+
+    @Column(name = "selection_deadline")
+    var selectionDeadline: ZonedDateTime? = selectionDeadline
+        protected set
+
+    @Column(name = "max_selectable_photo_count")
+    var maxSelectablePhotoCount: Int? = maxSelectablePhotoCount
+        protected set
+
+    /** 계약상 보정 요청 가능 횟수. [maxSelectablePhotoCount]와 같은 이유로 갤러리에 산다. */
+    @Column(name = "max_retouch_round_count")
+    var maxRetouchRoundCount: Int? = maxRetouchRoundCount
+        protected set
+
+    /** 촬영 종류. AI 폴더의 컨셉 목록을 고르는 키다 ([ShootType] 참조). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "shoot_type", nullable = false, length = 20)
+    var shootType: ShootType = shootType
+        protected set
 
     /** 휴지통에 들어간 시각. null이면 살아 있는 갤러리다. 자세한 규칙은 클래스 KDoc에. */
     @Column(name = "deleted_at")
@@ -162,25 +186,45 @@ class Gallery(
 
     @Column(name = "photo_organization_required", nullable = false)
     var photoOrganizationRequired: Boolean = false
+        protected set
 
     @Column(name = "folders_saved_at")
     var foldersSavedAt: ZonedDateTime? = null
+        protected set
 
     @Column(name = "retouch_confirmed_at")
     var retouchConfirmedAt: ZonedDateTime? = null
+        protected set
 
     @Column(name = "archived_until")
     var archivedUntil: ZonedDateTime? = null
+        protected set
 
     @Column(name = "plan_expires_at")
     var planExpiresAt: ZonedDateTime? = null
+        protected set
 
     @Column(name = "plan_max_photo_count")
     var planMaxPhotoCount: Int? = null
+        protected set
 
     @Enumerated(EnumType.STRING)
     @Column(name = "plan_type", nullable = true, length = 10, updatable = false)
     var planType: GalleryPlan? = null
+        protected set
+
+    /** 보관 갤러리를 [at]부터 [days]일 동안 남긴다. 그 뒤 정리 작업이 지운다. */
+    fun archiveAfter(days: Int, at: ZonedDateTime) {
+        archivedUntil = at.plusDays(days.toLong())
+    }
+
+    /** 개인 이용권으로 만든 갤러리는 초안 없이 공개 상태로 시작하고, 이용권의 플랜 값을 그대로 갖는다. */
+    fun applyPass(plan: GalleryPlan?, expiresAt: ZonedDateTime, maxPhotoCount: Int) {
+        status = GalleryStatus.OPEN
+        planExpiresAt = expiresAt
+        planMaxPhotoCount = maxPhotoCount
+        planType = plan
+    }
 
     fun markFoldersSaved(at: ZonedDateTime) {
         if (foldersSavedAt != null) throw GalleryException(GalleryErrorCode.FOLDERS_ALREADY_SAVED)

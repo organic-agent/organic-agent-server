@@ -34,18 +34,24 @@ class PhotoRating(
     @Column(name = "photo_id", nullable = false, updatable = false)
     val photoId: Long,
 
-    @Column(nullable = false)
-    var score: Int,
+    score: Int,
 
-    /** 마지막으로 점수를 매긴 사람. 감사용이라 조회 조건으로 쓰지 않는다. */
-    @Column(name = "rated_by", nullable = false)
-    var ratedBy: Long,
+    ratedBy: Long,
 
 ) : BaseEntity() {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null
+
+    @Column(nullable = false)
+    var score: Int = score
+        protected set
+
+    /** 마지막으로 점수를 매긴 사람. 감사용이라 조회 조건으로 쓰지 않는다. */
+    @Column(name = "rated_by", nullable = false)
+    var ratedBy: Long = ratedBy
+        protected set
 
     /** 같은 사진에 다시 매기면 덮어쓴다. 행이 늘지 않는 것이 이 도메인의 전부다. */
     fun rate(score: Int, ratedBy: Long) {

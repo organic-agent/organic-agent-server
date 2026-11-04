@@ -19,6 +19,7 @@ import com.soma.wes.support.IntegrationTest
 import com.soma.wes.user.fixture.UserFixture
 import com.soma.wes.workspace.domain.WorkspaceMember
 import com.soma.wes.workspace.domain.WorkspaceRole
+import com.soma.wes.workspace.fixture.WorkspaceFixture
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository
 import org.assertj.core.api.Assertions.assertThat
@@ -49,6 +50,7 @@ class CouponServiceTest @Autowired constructor(
     private val galleryFixture: GalleryFixture,
     private val workspaces: WorkspaceRepository,
     private val workspaceMembers: WorkspaceMemberRepository,
+    private val workspaceFixture: WorkspaceFixture,
 ) {
     @Nested
     @DisplayName("쿠폰 링크를 조회할 때")
@@ -154,7 +156,7 @@ class CouponServiceTest @Autowired constructor(
                 request = CreatePersonalGalleryRequest(title = "함께 고르는 갤러리", planId = "pro", couponId = issued.id),
             )
             val workspace = workspaces.findByPersonalOwnerUserId(owner.requiredId)!!
-            val membership = workspaceMembers.saveAndFlush(
+            workspaceMembers.saveAndFlush(
                 WorkspaceMember(workspaceId = workspace.requiredId, userId = partner.requiredId, role = WorkspaceRole.MEMBER),
             )
             val invited = galleryFixture.멤버(gallery.id)
@@ -164,8 +166,7 @@ class CouponServiceTest @Autowired constructor(
                 assertThat(target.resolve(userId, ResolveProCouponRequest(issued.code)).galleryId).isEqualTo(gallery.id)
                 assertThat(galleryAccess.requireMetadataViewer(gallery.id, userId).requiredId).isEqualTo(gallery.id)
             }
-            membership.deletedAt = ZonedDateTime.now(clock)
-            workspaceMembers.saveAndFlush(membership)
+            workspaceFixture.멤버_탈퇴(workspace.requiredId, partner.requiredId, ZonedDateTime.now(clock))
             assertThat(target.resolve(partner.requiredId, ResolveProCouponRequest(issued.code)).galleryId).isNull()
             assertThat(coupons.findById(issued.id).orElseThrow().userId).isEqualTo(owner.requiredId)
             jdbc.update("UPDATE workspace_members SET deleted_at = now() WHERE workspace_id = ? AND user_id = ?", workspace.requiredId, owner.requiredId)

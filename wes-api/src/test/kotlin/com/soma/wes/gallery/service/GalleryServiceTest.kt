@@ -14,6 +14,7 @@ import com.soma.wes.support.IntegrationTest
 import com.soma.wes.user.fixture.UserFixture
 import com.soma.wes.workspace.domain.WorkspaceMember
 import com.soma.wes.workspace.domain.WorkspaceRole
+import com.soma.wes.workspace.fixture.WorkspaceFixture
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository
 import org.assertj.core.api.Assertions.assertThat
@@ -29,6 +30,7 @@ class GalleryServiceTest @Autowired constructor(
     private val userFixture: UserFixture,
     private val workspaceRepository: WorkspaceRepository,
     private val workspaceMemberRepository: WorkspaceMemberRepository,
+    private val workspaceFixture: WorkspaceFixture,
 ) {
     @Test
     fun `PERSONAL 작업공간은 일반 생성 API로 결제를 우회할 수 없다`() {
@@ -48,9 +50,7 @@ class GalleryServiceTest @Autowired constructor(
     fun `삭제된 작업공간은 이전 멤버십이 남아 있어도 갤러리를 생성할 수 없다`() {
         val owner = studioFixture.작가()
         val studio = studioFixture.소유_스튜디오(owner)
-        val workspace = workspaceRepository.findById(studio.workspaceId).orElseThrow()
-        workspace.deletedAt = java.time.ZonedDateTime.now()
-        workspaceRepository.saveAndFlush(workspace)
+        workspaceFixture.삭제됨(studio.workspaceId, java.time.ZonedDateTime.now())
 
         assertThatThrownBy {
             galleryService.create(owner.requiredId, CreateGalleryRequest(studio.workspaceId, "새 갤러리"))

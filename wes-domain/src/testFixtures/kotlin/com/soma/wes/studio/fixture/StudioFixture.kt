@@ -10,7 +10,9 @@ import com.soma.wes.workspace.domain.WorkspaceMember
 import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
+import java.time.ZonedDateTime
 
 @Component
 class StudioFixture(
@@ -18,6 +20,7 @@ class StudioFixture(
     private val userFixture: UserFixture,
     private val workspaceRepository: WorkspaceRepository,
     private val workspaceMemberRepository: WorkspaceMemberRepository,
+    private val jdbcTemplate: JdbcTemplate,
 ) {
 
     /** 스튜디오를 가진 사용자. 갤러리 생성 API는 스튜디오가 있어야 지나간다. */
@@ -49,4 +52,12 @@ class StudioFixture(
         .asSequence()
         .mapNotNull { studioRepository.findById(it.workspaceId).orElse(null) }
         .first()
+
+    /** 운영 정지된 스튜디오로 만든다. 정지는 관리자 앱이 SQL로 거는 상태라 공개 앱 엔티티에는 쓰는 메서드가 없다. */
+    fun 정지(studioId: Long, at: ZonedDateTime) {
+        jdbcTemplate.update(
+            "UPDATE studios SET suspended_at = ?, version = version + 1, updated_at = now() WHERE workspace_id = ?",
+            at.toOffsetDateTime(), studioId,
+        )
+    }
 }

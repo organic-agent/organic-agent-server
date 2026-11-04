@@ -4,6 +4,7 @@ import com.soma.wes.retouch.domain.RetouchPhoto
 import com.soma.wes.retouch.domain.RetouchRound
 import com.soma.wes.retouch.repository.RetouchPhotoRepository
 import com.soma.wes.retouch.repository.RetouchRoundRepository
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
 import java.time.ZonedDateTime
 
@@ -15,6 +16,7 @@ import java.time.ZonedDateTime
 class RetouchFixture(
     private val retouchRoundRepository: RetouchRoundRepository,
     private val retouchPhotoRepository: RetouchPhotoRepository,
+    private val jdbcTemplate: JdbcTemplate,
 ) {
 
     /** 아직 제출하지 않은 초안 회차. 지금은 셀렉 제출을 되돌렸을 때만 생기는 상태다. */
@@ -64,8 +66,13 @@ class RetouchFixture(
 
     /** 항목들에 주석 key를 채운다(관리자 아티팩트 교체가 넣는 값). 삭제 경로가 주석 파일까지 걷는지 볼 때 쓴다. */
     fun 주석_추가(items: List<RetouchPhoto>): List<RetouchPhoto> {
-        items.forEach { it.annotationKey = "galleries/${it.galleryId}/retouch/annotations/${it.photoId}.png" }
-        return retouchPhotoRepository.saveAllAndFlush(items)
+        for (item in items) {
+            jdbcTemplate.update(
+                "UPDATE retouch_photos SET annotation_key = ?, version = version + 1, updated_at = now() WHERE id = ?",
+                "galleries/${item.galleryId}/retouch/annotations/${item.photoId}.png", item.requiredId,
+            )
+        }
+        return items.map { retouchPhotoRepository.findById(it.requiredId).orElseThrow() }
     }
 
     private fun 담기(round: RetouchRound, photoIds: List<Long>) {

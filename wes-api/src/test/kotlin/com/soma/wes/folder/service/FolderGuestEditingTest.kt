@@ -131,9 +131,7 @@ class FolderGuestEditingTest @Autowired constructor(
         fun `열리지 않은 갤러리 고객은 모든 변경을 할 수 없다`(status: GalleryStatus) {
             // given
             val fixture = galleryFixture.멤버와_열린_갤러리()
-            val gallery = galleryRepository.findById(fixture.galleryId).orElseThrow()
-            gallery.status = status
-            galleryRepository.saveAndFlush(gallery)
+            galleryFixture.상태_변경(fixture.galleryId, status)
 
             // when & then
             assertAllMutationsDenied(fixture.galleryId, fixture.member.requiredId, GalleryException::class.java, GalleryErrorCode.GALLERY_NOT_OPEN)

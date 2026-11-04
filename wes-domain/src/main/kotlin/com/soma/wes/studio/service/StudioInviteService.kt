@@ -48,7 +48,7 @@ class StudioInviteService(
             ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
         val now = ZonedDateTime.now(clock)
         inviteRepository.findByWorkspaceIdAndRevokedAtIsNull(workspaceId)?.let {
-            it.revokedAt = now
+            it.revoke(now)
             inviteRepository.flush()
         }
         val invite = inviteRepository.save(StudioInvite(
@@ -137,7 +137,7 @@ class StudioInviteService(
                 userId = userId,
                 role = WorkspaceRole.MEMBER,
             ))
-            invite.usedCount += 1
+            invite.consume()
             activityRecorder.recordWorkspace(invite.workspaceId)
             notificationPublisher.publish(
                 userIds = recipients,

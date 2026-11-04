@@ -36,26 +36,23 @@ class User(
     @Column(nullable = false, updatable = false)
     val providerId: String,
 
-    @Column(nullable = false, length = 50)
-    var nickname: String,
+    nickname: String,
 
-    @Column
-    var email: String? = null,
+    email: String? = null,
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    var role: Role = Role.USER,
+    role: Role = Role.USER,
 
-    @Column(name = "profile_image_url", length = 2048)
-    var profileImageUrl: String? = null,
+    profileImageUrl: String? = null,
 
 ) : BaseEntity() {
 
     @Column(name = "deleted_at")
     var deletedAt: ZonedDateTime? = null
+        protected set
 
     @Column(name = "suspended_at")
     var suspendedAt: ZonedDateTime? = null
+        protected set
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -63,6 +60,23 @@ class User(
 
     val requiredId: Long
         get() = checkNotNull(id) { "저장되지 않은 사용자입니다." }
+
+    @Column(nullable = false, length = 50)
+    var nickname: String = nickname
+        protected set
+
+    @Column
+    var email: String? = email
+        protected set
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    var role: Role = role
+        protected set
+
+    @Column(name = "profile_image_url", length = 2048)
+    var profileImageUrl: String? = profileImageUrl
+        protected set
 
     fun updateProfile(nickname: String, email: String?) {
         this.nickname = nickname

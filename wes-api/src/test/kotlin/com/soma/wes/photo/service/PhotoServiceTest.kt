@@ -15,7 +15,6 @@ import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.PersonalGalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
-import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.global.page.PageRequests
 import com.soma.wes.photo.domain.PhotoAnalysis
 import com.soma.wes.photo.domain.PhotoMetadata
@@ -67,7 +66,6 @@ class PhotoServiceTest @Autowired constructor(
     private val userFixture: UserFixture,
     private val photoRepository: PhotoRepository,
     private val photoAnalysisRepository: PhotoAnalysisRepository,
-    private val galleryRepository: GalleryRepository,
     private val personalGalleryService: PersonalGalleryService,
     private val personalGalleryFixture: PersonalGalleryFixture,
     private val billing: BillingFixture,
@@ -477,9 +475,7 @@ class PhotoServiceTest @Autowired constructor(
             val photoId = photoFixture.업로드된_사진(fixture.galleryId, count = 1).first()
 
             val photo = photoRepository.findById(photoId).orElseThrow()
-            val previewKey = "previews/${photo.storageKey.substringBeforeLast('.')}.jpg"
-            photo.previewKey = previewKey
-            photoRepository.saveAndFlush(photo)
+            val previewKey = photoFixture.미리보기_붙이기(photoId, "previews/${photo.storageKey.substringBeforeLast('.')}.jpg")
 
             // when
             val result = list(fixture.photographer.id!!)
@@ -552,9 +548,7 @@ class PhotoServiceTest @Autowired constructor(
             // 작가가 사진을 올리고 정리하는 동안은 부부에게 이 갤러리가 없는 것과 같다.
             // given
             // 픽스처는 열린 갤러리를 만든다. 필요한 것은 아직 열리지 않은 상태라 필드를 직접 되돌린다.
-            val gallery = galleryRepository.findById(fixture.galleryId).orElseThrow()
-            gallery.status = GalleryStatus.DRAFT
-            galleryRepository.saveAndFlush(gallery)
+            galleryFixture.상태_변경(fixture.galleryId, GalleryStatus.DRAFT)
 
             // when & then
             assertThatThrownBy { list(fixture.member.id!!) }
@@ -799,9 +793,7 @@ class PhotoServiceTest @Autowired constructor(
             // given
             val owner = userFixture.사용자()
             val gallery = personalGalleryService.create(owner.requiredId, CreatePersonalGalleryRequest(title = "만료할 무료"))
-            val stored = galleryRepository.findById(gallery.id).orElseThrow()
-            stored.planExpiresAt = ZonedDateTime.now(clock).minusSeconds(1)
-            galleryRepository.saveAndFlush(stored)
+            galleryFixture.이용_기한(gallery.id, ZonedDateTime.now(clock).minusSeconds(1))
 
             // when & then
             assertThatThrownBy { photoService.issueUploadUrls(gallery.id, owner.requiredId, singlePhotoRequest()) }
@@ -852,9 +844,7 @@ class PhotoServiceTest @Autowired constructor(
         @Test
         fun `삭제한 자리에 새 사진을 올렸으면 기존 사진을 복원해 한도를 넘을 수 없다`() {
             // given
-            val gallery = galleryRepository.findById(fixture.galleryId).orElseThrow()
-            gallery.planMaxPhotoCount = 1
-            galleryRepository.saveAndFlush(gallery)
+            galleryFixture.사진_한도(fixture.galleryId, 1)
             val deleted = issueUploadUrls(1).single()
             photoService.moveToTrash(fixture.galleryId, fixture.photographer.requiredId, DeletePhotosRequest(listOf(deleted)))
             val replacement = issueUploadUrls(1).single()
@@ -871,9 +861,7 @@ class PhotoServiceTest @Autowired constructor(
         @Test
         fun `남은 한 장을 동시에 업로드해도 하나만 발급된다`() {
             // given
-            val gallery = galleryRepository.findById(fixture.galleryId).orElseThrow()
-            gallery.planMaxPhotoCount = 1
-            galleryRepository.saveAndFlush(gallery)
+            galleryFixture.사진_한도(fixture.galleryId, 1)
             val start = CountDownLatch(1)
 
             // when
@@ -972,9 +960,7 @@ class PhotoServiceTest @Autowired constructor(
         }
 
         private fun limitPhotosTo(count: Int) {
-            val gallery = galleryRepository.findById(fixture.galleryId).orElseThrow()
-            gallery.planMaxPhotoCount = count
-            galleryRepository.saveAndFlush(gallery)
+            galleryFixture.사진_한도(fixture.galleryId, count)
         }
 
         private fun expireUploadUrl(photoId: Long) {
@@ -1002,10 +988,8 @@ class PhotoServiceTest @Autowired constructor(
      * 파생본 키 규칙(`previews/{원본 키}`)은 Lambda의 `images.preview_key_for`가 정한다.
      */
     private fun attachPreview(photoId: Long): String {
-        val photo = photoRepository.findById(photoId).orElseThrow()
-        photo.previewKey = "previews/${photo.storageKey}"
-        photoRepository.saveAndFlush(photo)
-        return photo.storageKey
+        photoFixture.미리보기_붙이기(photoId)
+        return photoRepository.findById(photoId).orElseThrow().storageKey
     }
 
     /** presigned URL 의 `X-Amz-SignedHeaders` — 브라우저가 PUT 때 똑같이 보내야 하는 헤더 목록. */

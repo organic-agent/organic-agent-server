@@ -61,9 +61,9 @@ class CollabSessionService(
         val name = CollabSession.requireValidName(request.name)
         val now = ZonedDateTime.now(clock)
         val session = CollabSession.of(galleryId, name, tokenGenerator.generate()).apply {
-            expiresAt = now.plusDays(LINK_TTL_DAYS)
+            changeExpiresAt(now.plusDays(LINK_TTL_DAYS))
             updateCover(request.coverTitle, request.coverAuthor)
-            request.includeAllAlbums?.let { includeAllAlbums = it }
+            request.includeAllAlbums?.let(::changeIncludeAllAlbums)
         }
         sessionRepository.saveAndFlush(session)
         saveMemberships(session, photoIds, now)
@@ -176,7 +176,7 @@ class CollabSessionService(
         val session = lockSession(galleryId, sessionId)
         request.name?.let(session::rename)
         session.updateCover(request.coverTitle, request.coverAuthor)
-        request.includeAllAlbums?.let { session.includeAllAlbums = it }
+        request.includeAllAlbums?.let(session::changeIncludeAllAlbums)
         activityRecorder.recordGallery(galleryId)
         return toResponse(session)
     }

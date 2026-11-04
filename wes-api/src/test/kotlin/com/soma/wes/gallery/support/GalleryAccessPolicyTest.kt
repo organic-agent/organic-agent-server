@@ -8,7 +8,6 @@ import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.PersonalGalleryFixture
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.studio.fixture.StudioFixture
-import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.user.fixture.UserFixture
 import com.soma.wes.workspace.domain.WorkspaceMember
@@ -29,7 +28,6 @@ class GalleryAccessPolicyTest @Autowired constructor(
     private val studioFixture: StudioFixture,
     private val userFixture: UserFixture,
     private val galleryRepository: GalleryRepository,
-    private val studioRepository: StudioRepository,
     private val workspaceRepository: WorkspaceRepository,
     private val workspaceMemberRepository: WorkspaceMemberRepository,
 ) {
@@ -89,9 +87,7 @@ class GalleryAccessPolicyTest @Autowired constructor(
     @Test
     fun `PERSONAL 갤러리도 이용 기간이 끝나면 고를 수 없다`() {
         val personal = personalGalleryFixture.파트너와_개인_갤러리()
-        val gallery = galleryRepository.findById(personal.galleryId).orElseThrow()
-        gallery.planExpiresAt = ZonedDateTime.now().minusMinutes(1)
-        galleryRepository.saveAndFlush(gallery)
+        galleryFixture.이용_기한(personal.galleryId, ZonedDateTime.now().minusMinutes(1))
 
         assertThatThrownBy { policy.requireSelectionEditor(personal.galleryId, personal.partnerId) }
             .isInstanceOf(GalleryException::class.java)
@@ -121,8 +117,7 @@ class GalleryAccessPolicyTest @Autowired constructor(
         val gallery = galleryRepository.save(
             Gallery(studio.workspaceId, owner.requiredId, "본식", GalleryStatus.OPEN),
         )
-        studio.suspendedAt = ZonedDateTime.now()
-        studioRepository.saveAndFlush(studio)
+        studioFixture.정지(studio.workspaceId, ZonedDateTime.now())
 
         assertThatThrownBy { policy.requireManager(gallery.requiredId, owner.requiredId) }
             .isInstanceOf(GalleryException::class.java)

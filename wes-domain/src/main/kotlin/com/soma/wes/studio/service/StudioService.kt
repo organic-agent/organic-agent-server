@@ -117,7 +117,7 @@ class StudioService(
         validateGalleryUrlChange(studio, normalizedGalleryUrl)
 
         studio.update(request.name, normalizedGalleryUrl, request.contact, request.description)
-        workspaceRepository.findWithLockById(studio.workspaceId)?.name = request.name
+        workspaceRepository.findWithLockById(studio.workspaceId)?.rename(request.name)
         return StudioResponse.from(studio, WorkspaceRole.OWNER)
     }
 
@@ -136,7 +136,7 @@ class StudioService(
         val normalizedGalleryUrl = Studio.validateGalleryUrl(request.galleryUrl)
         validateGalleryUrlChange(studio, normalizedGalleryUrl)
         studio.update(request.name, normalizedGalleryUrl, request.contact, request.description)
-        workspaceRepository.findWithLockById(studio.workspaceId)?.name = request.name
+        workspaceRepository.findWithLockById(studio.workspaceId)?.rename(request.name)
 
         return StudioResponse.from(studio, WorkspaceRole.OWNER)
     }
@@ -209,7 +209,7 @@ class StudioService(
         ) {
             throw StudioException(StudioErrorCode.LAST_OWNER_PROTECTED)
         }
-        target.role = request.role
+        target.changeRole(request.role)
         activityRecorder.recordWorkspace(workspaceId)
         return StudioMemberResponse.from(target, userRepository.requireById(target.userId))
     }

@@ -95,8 +95,7 @@ class GalleryPasses(
             }
             null -> {
                 val checkout = checkNotNull(pass.checkout) { "기존 이용권에는 결제 기록이 있어야 한다." }
-                checkout.galleryId = galleryId
-                checkout.consumedAt = at
+                checkout.consume(galleryId = galleryId, at = at)
             }
         }
     }

@@ -91,9 +91,21 @@ class PhotoFixture(
      */
     fun 미리보기_있는_사진(galleryId: Long): Photo {
         val photoId = 업로드된_사진(galleryId, 1).first()
-        val photo = photoRepository.findById(photoId).orElseThrow()
-        photo.previewKey = "previews/${photo.storageKey}"
-        return photoRepository.saveAndFlush(photo)
+        미리보기_붙이기(photoId)
+        return photoRepository.findById(photoId).orElseThrow()
+    }
+
+    /**
+     * 임베더가 미리보기를 올리고 키를 적은 상태로 만들고 그 키를 돌려준다. 운영에서는 Lambda가 DB에 직접 쓰는
+     * 값이라 서버 엔티티에는 쓰는 메서드가 없다. 키를 주지 않으면 Lambda 규칙(`previews/{원본 키}`)을 따른다.
+     */
+    fun 미리보기_붙이기(photoId: Long, previewKey: String? = null): String {
+        jdbcTemplate.update(
+            "UPDATE photos SET preview_key = COALESCE(?, 'previews/' || storage_key), version = version + 1, updated_at = now() " +
+                "WHERE id = ?",
+            previewKey, photoId,
+        )
+        return checkNotNull(photoRepository.findById(photoId).orElseThrow().previewKey)
     }
 
     /** 임베더·score 가 사진 단위 결정적 실패를 남긴 것을 흉내 낸다. 이 사진은 기대 장수에서 빠진다. */

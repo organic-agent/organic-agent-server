@@ -196,7 +196,7 @@ class GalleryService(
 
         gallery.close()
         if (gallery.archivedUntil == null) lifecycleProperties.archivedRetentionDays?.let {
-            gallery.archivedUntil = ZonedDateTime.now(clock).plusDays(it.toLong())
+            gallery.archiveAfter(it, ZonedDateTime.now(clock))
         }
         activityRecorder.recordGallery(gallery.requiredId)
         return GalleryResponse.from(gallery)

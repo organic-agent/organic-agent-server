@@ -15,7 +15,6 @@ import com.soma.wes.gallery.domain.GalleryStatus
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.fixture.GalleryFixture
-import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.user.fixture.UserFixture
@@ -40,7 +39,6 @@ class CollabSessionServiceTest @Autowired constructor(
     private val galleryFixture: GalleryFixture,
     private val userFixture: UserFixture,
     private val galleryRepository: GalleryRepository,
-    private val memberRepository: GalleryMemberRepository,
 ) {
     private lateinit var shared: SharedCollab
 
@@ -150,9 +148,7 @@ class CollabSessionServiceTest @Autowired constructor(
         fun `외부 사용자와 제거된 부부 멤버는 관리할 수 없다`() {
             // given
             val stranger = userFixture.사용자()
-            val member = memberRepository.findByGalleryIdAndUserId(shared.galleryId, shared.gallery.member.requiredId)!!
-            member.deletedAt = ZonedDateTime.now()
-            memberRepository.saveAndFlush(member)
+            galleryFixture.멤버_제거(shared.galleryId, shared.gallery.member.requiredId, ZonedDateTime.now())
 
             // when & then
             listOf(stranger.requiredId, shared.gallery.member.requiredId).forEach { userId ->
@@ -163,9 +159,7 @@ class CollabSessionServiceTest @Autowired constructor(
         @Test
         fun `DRAFT 갤러리의 부부는 관리할 수 없다`() {
             // given
-            val gallery = galleryRepository.findById(shared.galleryId).orElseThrow()
-            gallery.status = GalleryStatus.DRAFT
-            galleryRepository.saveAndFlush(gallery)
+            galleryFixture.상태_변경(shared.galleryId, GalleryStatus.DRAFT)
             val userId = shared.gallery.member.requiredId
 
             // when & then

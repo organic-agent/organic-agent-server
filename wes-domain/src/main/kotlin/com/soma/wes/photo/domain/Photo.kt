@@ -51,9 +51,7 @@ class Photo(
     @Column(name = "content_type", nullable = false, updatable = false, length = 100)
     val contentType: String,
 
-    /** 갤러리 안에서의 노출 순서. 작가가 정렬을 바꿀 수 있다. */
-    @Column(name = "display_order", nullable = false)
-    var displayOrder: Int = 0,
+    displayOrder: Int = 0,
 
 ) : BaseEntity() {
 
@@ -61,12 +59,19 @@ class Photo(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null
 
+    /** 갤러리 안에서의 노출 순서. 작가가 정렬을 바꿀 수 있다. */
+    @Column(name = "display_order", nullable = false)
+    var displayOrder: Int = displayOrder
+        protected set
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     var status: PhotoStatus = PhotoStatus.PENDING
+        protected set
 
     @Column(name = "preview_key", length = 500)
     var previewKey: String? = null
+        protected set
 
     /**
      * 임베더에게 이 사진을 보낸 시각. 스윕이 UPLOADED·벡터 없음·null 인 사진을 배치로 집을 때 찍고,
@@ -99,6 +104,7 @@ class Photo(
 
     @Embedded
     var metadata: PhotoMetadata? = null
+        protected set
 
     /**
      * 휴지통에 들어간 시각. null이면 살아 있는 사진이다.

@@ -13,6 +13,7 @@ import com.soma.wes.photo.domain.PhotoStatus
 import com.soma.wes.photo.dto.PresignedUploadDto
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
+import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.service.port.PhotoStorage
@@ -58,6 +59,7 @@ class MockGalleryServiceTest @Autowired constructor(
     private val studioRepository: StudioRepository,
     private val galleryRepository: GalleryRepository,
     private val photoRepository: PhotoRepository,
+    private val photoFixture: PhotoFixture,
     private val photoAnalysisRepository: PhotoAnalysisRepository,
     private val jdbcTemplate: JdbcTemplate,
     private val photoStorage: RecordingPhotoStorage,
@@ -233,12 +235,16 @@ class MockGalleryServiceTest @Autowired constructor(
             operator.requiredId,
         )
         return (0 until photoCount).map { index ->
-            val photo = photoRepository.save(
-                templatePhoto(index, withPreview).also { photo ->
+            val saved = photoRepository.save(
+                templatePhoto(index).also { photo ->
                     photo.applyMetadata(PhotoMetadata(cameraMake = "Canon", width = 1024, height = 768))
                     photo.markUploaded(java.time.ZonedDateTime.now())
                 },
             )
+            if (withPreview) {
+                photoFixture.미리보기_붙이기(saved.requiredId, "previews/galleries/$TEMPLATE_GALLERY_ID/template-$index.jpg")
+            }
+            val photo = photoRepository.findById(saved.requiredId).orElseThrow()
             photoAnalysisRepository.save(
                 PhotoAnalysis.embeddedBy(
                     photoId = photo.requiredId,
@@ -258,18 +264,14 @@ class MockGalleryServiceTest @Autowired constructor(
     private fun vectorOf(photo: Photo): FloatArray? =
         photoAnalysisRepository.findById(photo.requiredId).orElseThrow().embedding
 
-    private fun templatePhoto(index: Int, withPreview: Boolean = false): Photo =
+    private fun templatePhoto(index: Int): Photo =
         Photo(
             galleryId = TEMPLATE_GALLERY_ID,
             storageKey = "galleries/$TEMPLATE_GALLERY_ID/template-$index.png",
             originalFileName = "template-$index.png",
             contentType = "image/png",
             displayOrder = index,
-        ).also { photo ->
-            if (withPreview) {
-                photo.previewKey = "previews/galleries/$TEMPLATE_GALLERY_ID/template-$index.jpg"
-            }
-        }
+        )
 
     companion object {
         /** `app.mock-gallery.template-gallery-id` 프로퍼티와 같은 값. */
