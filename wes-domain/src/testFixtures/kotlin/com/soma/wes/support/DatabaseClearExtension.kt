@@ -1,6 +1,6 @@
 package com.soma.wes.support
 
-import com.soma.wes.analysis.support.AnalysisJobEventListener
+import com.soma.wes.analysis.listener.AnalysisJobEventListener
 import org.junit.jupiter.api.extension.BeforeEachCallback
 import org.junit.jupiter.api.extension.ExtensionContext
 import org.springframework.test.context.junit.jupiter.SpringExtension

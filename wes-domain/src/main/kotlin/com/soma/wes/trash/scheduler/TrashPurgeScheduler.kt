@@ -1,6 +1,7 @@
-package com.soma.wes.trash.support
+package com.soma.wes.trash.scheduler
 
 import com.soma.wes.global.cluster.SchedulerLeadership
+import com.soma.wes.trash.support.TrashEraser
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 
@@ -17,7 +18,7 @@ class TrashPurgeScheduler(
     private val leadership: SchedulerLeadership,
 ) {
 
-    /** 매시 30분. OAuthStateCleaner(정각)와 분만 어긋나게 둔다. 이 청소가 급할 이유는 없다. */
+    /** 매시 30분. OAuthStateCleanupScheduler(정각)와 분만 어긋나게 둔다. 이 청소가 급할 이유는 없다. */
     @Scheduled(cron = "0 30 * * * *")
     fun purge() {
         if (!leadership.isLeader()) return

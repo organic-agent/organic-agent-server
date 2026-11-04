@@ -1,4 +1,4 @@
-package com.soma.wes.analysis.support
+package com.soma.wes.analysis.listener
 
 import com.soma.wes.analysis.dto.AiFailureDto
 import com.soma.wes.analysis.dto.AiFailureMessageDto
@@ -27,7 +27,7 @@ class AiFailureListenerUnitTest {
         condition = "RetriesExhausted",
         errorType = "RuntimeError",
         errorMessage = "boom",
-        failedAt = ZonedDateTime.now(),
+        failedAt = ZonedDateTime.parse("2026-11-05T10:00:00+09:00[Asia/Seoul]"),
     )
 
     @Test

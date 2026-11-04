@@ -1,4 +1,4 @@
-package com.soma.wes.trash.support
+package com.soma.wes.trash.scheduler
 
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.repository.GalleryRepository
@@ -7,6 +7,7 @@ import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.IntegrationTest
+import com.soma.wes.support.TestSequence
 import com.soma.wes.trash.RecordingTrashPhotoStorage
 import com.soma.wes.trash.RecordingTrashPhotoStorageConfig
 import com.soma.wes.trash.config.TrashProperties
@@ -19,8 +20,8 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.context.annotation.Import
 import org.springframework.jdbc.core.JdbcTemplate
+import java.time.Clock
 import java.time.ZonedDateTime
-import java.util.concurrent.atomic.AtomicLong
 
 /**
  * 스케줄러 진입점([TrashPurgeScheduler.purge])이 [TrashEraser.purgeExpired]로 이어지는지만
@@ -39,9 +40,8 @@ class TrashPurgeSchedulerTest @Autowired constructor(
     private val photoStorage: RecordingTrashPhotoStorage,
     private val trashProperties: TrashProperties,
     private val workspaceRepository: WorkspaceRepository,
+    private val clock: Clock,
 ) {
-
-    private val sequence = AtomicLong(System.nanoTime())
 
     @BeforeEach
     fun resetStorage() {
@@ -58,7 +58,7 @@ class TrashPurgeSchedulerTest @Autowired constructor(
 
         val freshGalleryId = createGallery()
         val freshPhoto = savePhoto(freshGalleryId)
-        freshPhoto.moveToTrash(ZonedDateTime.now().minusDays(1))
+        freshPhoto.moveToTrash(ZonedDateTime.now(clock).minusDays(1))
         photoRepository.saveAndFlush(freshPhoto)
 
         // when
@@ -78,7 +78,7 @@ class TrashPurgeSchedulerTest @Autowired constructor(
             Studio(
                 userId = workspace.requiredId,
                 name = "테스트 스튜디오",
-                galleryUrl = "purge-scheduler-${sequence.incrementAndGet()}",
+                galleryUrl = "purge-scheduler-${TestSequence.next()}",
             ),
         )
         return checkNotNull(galleryRepository.save(Gallery(workspaceId = studio.id, title = "본식")).id)
@@ -88,7 +88,7 @@ class TrashPurgeSchedulerTest @Autowired constructor(
         photoRepository.saveAndFlush(
             Photo(
                 galleryId = galleryId,
-                storageKey = "galleries/$galleryId/photo-${sequence.incrementAndGet()}.jpg",
+                storageKey = "galleries/$galleryId/photo-${TestSequence.next()}.jpg",
                 originalFileName = "photo.jpg",
                 contentType = "image/jpeg",
                 displayOrder = 0,
@@ -105,5 +105,5 @@ class TrashPurgeSchedulerTest @Autowired constructor(
         checkNotNull(jdbcTemplate.queryForObject("SELECT count(*) FROM galleries WHERE id = ?", Long::class.java, galleryId))
 
     private fun expiredAt(): ZonedDateTime =
-        ZonedDateTime.now().minus(trashProperties.retention).minusHours(1)
+        ZonedDateTime.now(clock).minus(trashProperties.retention).minusHours(1)
 }

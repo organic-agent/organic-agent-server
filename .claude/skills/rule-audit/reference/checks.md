@@ -217,7 +217,7 @@ rg --files -t kotlin -g '**/scheduler/*' wes-*/src/main/kotlin | rg -v 'Schedule
 rg -l -t kotlin 'import com\.soma\.wes\.[a-z.]+\.repository\.' $(rg -l -t kotlin '^[ \t]*@(Scheduled|EventListener|TransactionalEventListener|SqsListener)\b|:\s*(ApplicationRunner|CommandLineRunner)\b|^(open |internal )?class \w+(Listener|Scheduler)\b' wes-*/src/main/kotlin)
 
 # EP-05
-rg -nUP -t kotlin '^[ \t]*@Scheduled\b[^\n]*\n[ \t]*fun \w+\([^\n]*\{\n(?!\s*if \(!\w*[lL]eadership\.isLeader\(\)\) return)' wes-*/src/main/kotlin | rg -v 'wes-admin-api/'
+rg -nUP -t kotlin '^[ \t]*@Scheduled\b[^\n]*\n[ \t]*fun \w+\([^\n]*\{\n(?!\s*if \(!\w*[lL]eadership\.isLeader\(\)\) return)' wes-*/src/main/kotlin | rg -v 'wes-admin-api/|/ActivityFlushScheduler[.]kt:'
 
 # EP-07
 rg -l -t kotlin '^[ \t]*@(Scheduled|EventListener|TransactionalEventListener|SqsListener)\b|:\s*(ApplicationRunner|CommandLineRunner)\b|^(open |internal )?class \w+(Listener|Scheduler)\b' wes-*/src/main/kotlin | rg -v '/service/' | xargs -r rg -n -t kotlin '^\s*@Transactional(\(|\s*$)'

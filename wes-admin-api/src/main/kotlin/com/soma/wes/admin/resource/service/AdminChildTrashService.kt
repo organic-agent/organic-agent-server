@@ -14,7 +14,6 @@ import java.time.Duration
 import java.time.ZonedDateTime
 import org.slf4j.LoggerFactory
 import org.springframework.dao.DataIntegrityViolationException
-import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
@@ -225,7 +224,6 @@ class AdminChildTrashPurgeService(
         private const val MAX_PURGE_ATTEMPTS: Int = 5
     }
 
-    @Scheduled(cron = "0 45 * * * *")
     fun purgeExpired() {
         val now = ZonedDateTime.now(clock)
         while (true) {

@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component
 
 /**
  * 추천 잡 전용 스레드풀. 인스턴스 한 대라 스레드 둘이면 동시 갤러리 둘까지 돌고 나머지는 줄을 선다 —
- * 큐가 차서 거부되면 잡은 PENDING으로 남고 스윕([AiSelectionJobRecovery])이 다시 집는다.
+ * 큐가 차서 거부되면 잡은 PENDING으로 남고 스윕([com.soma.wes.recommendation.service.AiSelectionJobRecoveryService])이 다시 집는다.
  * 종료 시 30초 안에 도는 라운드를 기다린다. 못 끝내면 RUNNING 고아가 되고 기동 복구가 PENDING으로 되돌린다.
  */
 @Component

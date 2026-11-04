@@ -114,7 +114,7 @@ data class AnalysisProperties(
 
     /**
      * 분석 Lambda 실패 큐(#286 (c) ②). Lambda 가 끝내 실패한 호출을 OnFailure 로 넣은 SQS 큐를 전용 스레드가 읽어, 그 작업의 재전송 대기를
-     * 앞당기고 실패를 기록한다([com.soma.wes.analysis.support.AiFailureListener]). [queueUrl]이 비어 있으면 읽지 않는다 — 로컬·테스트·큐가 없는
+     * 앞당기고 실패를 기록한다([com.soma.wes.analysis.listener.AiFailureListener]). [queueUrl]이 비어 있으면 읽지 않는다 — 로컬·테스트·큐가 없는
      * 환경은 지금처럼 시간 기반 재전송(임베더 [embedRedispatchAfter] · categorize [categorizeTimeout] · rank [QualityStage.rankTimeout])만 쓴다.
      * 큐 주소는 인프라가 Parameter Store(`app.analysis.failure-queue.queue-url`)에 둔다.
      */

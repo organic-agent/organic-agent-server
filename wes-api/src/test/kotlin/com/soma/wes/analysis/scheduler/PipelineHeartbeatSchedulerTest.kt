@@ -1,6 +1,9 @@
-package com.soma.wes.analysis.support
+package com.soma.wes.analysis.scheduler
 
 import com.soma.wes.analysis.service.AnalysisService
+import com.soma.wes.analysis.service.PipelineHeartbeatService
+import com.soma.wes.analysis.support.AnalysisSweepWatch
+import com.soma.wes.analysis.support.EmbedStep
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.global.logging.LogContext
 import com.soma.wes.photo.fixture.PhotoFixture
@@ -26,8 +29,8 @@ import kotlin.concurrent.thread
  * 하트비트의 두 가지 일 — 대기량 한 줄(대시보드와 바깥 감시가 이벤트 이름·필드를 그대로 읽는다)과 분석 스윕 멈춤 알림(#275).
  */
 @IntegrationTest
-class PipelineHeartbeatTest @Autowired constructor(
-    private val heartbeat: PipelineHeartbeat,
+class PipelineHeartbeatSchedulerTest @Autowired constructor(
+    private val heartbeat: PipelineHeartbeatScheduler,
     private val sweepWatch: AnalysisSweepWatch,
     private val embedStep: EmbedStep,
     private val analysisService: AnalysisService,
@@ -65,7 +68,7 @@ class PipelineHeartbeatTest @Autowired constructor(
         @Test
         fun `일이 없어도 한 줄을 남긴다`() {
             // when
-            val beat = CapturedLogs(PipelineHeartbeat::class).use { logs ->
+            val beat = CapturedLogs(PipelineHeartbeatService::class).use { logs ->
                 heartbeat.beat()
                 logs.eventsOf("sweep.heartbeat").single()
             }
@@ -88,7 +91,7 @@ class PipelineHeartbeatTest @Autowired constructor(
             embedStep.advance()
 
             // when
-            val beat = CapturedLogs(PipelineHeartbeat::class).use { logs ->
+            val beat = CapturedLogs(PipelineHeartbeatService::class).use { logs ->
                 heartbeat.beat()
                 logs.eventsOf("sweep.heartbeat").single()
             }
@@ -112,7 +115,7 @@ class PipelineHeartbeatTest @Autowired constructor(
             dispatch(scored + failed + stale, ago = "1 hour")
 
             // when
-            val beat = CapturedLogs(PipelineHeartbeat::class).use { logs ->
+            val beat = CapturedLogs(PipelineHeartbeatService::class).use { logs ->
                 heartbeat.beat()
                 logs.eventsOf("sweep.heartbeat").single()
             }
@@ -197,8 +200,9 @@ class PipelineHeartbeatTest @Autowired constructor(
         }
 
         private fun awaitAlert() {
-            val deadline = Instant.now().plus(ALERT_WAIT)
-            while (opsAlertSender.alerts.isEmpty() && Instant.now().isBefore(deadline)) {
+            // 실제로 흐른 시간을 잰다 — 공용 시계는 테스트가 움직여 벽시계와 다를 수 있다
+            val deadline = System.nanoTime() + ALERT_WAIT.toNanos()
+            while (opsAlertSender.alerts.isEmpty() && System.nanoTime() < deadline) {
                 Thread.sleep(POLL_MILLIS)
             }
         }
