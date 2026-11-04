@@ -1,9 +1,9 @@
 package com.soma.wes.admin.resource.service
 
-import com.soma.wes.admin.resource.dto.AdminRetouchArtifactAccessMode
-import com.soma.wes.admin.resource.dto.AdminRetouchArtifactAccessRequest
-import com.soma.wes.admin.resource.dto.AdminRetouchArtifactAccessResponse
-import com.soma.wes.admin.resource.dto.AdminRetouchArtifactType
+import com.soma.wes.admin.resource.domain.AdminRetouchArtifactAccessMode
+import com.soma.wes.admin.resource.dto.request.AdminRetouchArtifactAccessRequest
+import com.soma.wes.admin.resource.dto.response.AdminRetouchArtifactAccessResponse
+import com.soma.wes.admin.resource.domain.AdminRetouchArtifactType
 import com.soma.wes.admin.resource.repository.AdminRetouchArtifactRepository
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.service.port.PhotoStorage

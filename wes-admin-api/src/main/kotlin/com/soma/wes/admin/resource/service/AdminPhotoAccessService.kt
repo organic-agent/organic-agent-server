@@ -2,9 +2,9 @@ package com.soma.wes.admin.resource.service
 
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
-import com.soma.wes.admin.resource.dto.AdminPhotoAccessMode
-import com.soma.wes.admin.resource.dto.AdminPhotoAccessRequest
-import com.soma.wes.admin.resource.dto.AdminPhotoAccessResponse
+import com.soma.wes.admin.resource.domain.AdminPhotoAccessMode
+import com.soma.wes.admin.resource.dto.request.AdminPhotoAccessRequest
+import com.soma.wes.admin.resource.dto.response.AdminPhotoAccessResponse
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.service.port.PhotoStorage

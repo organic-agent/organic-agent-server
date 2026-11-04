@@ -12,7 +12,7 @@ import com.soma.wes.notification.service.UserNotificationPublisher
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.user.dto.request.UpdateUserRequest
 import com.soma.wes.user.dto.response.UserResponse
-import com.soma.wes.user.dto.response.UserWorkspaceKind
+import com.soma.wes.user.domain.UserWorkspaceKind
 import com.soma.wes.user.dto.response.UserWorkspaceResponse
 import com.soma.wes.user.repository.UserRepository
 import com.soma.wes.user.repository.requireById

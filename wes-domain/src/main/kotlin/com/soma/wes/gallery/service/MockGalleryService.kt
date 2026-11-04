@@ -5,7 +5,7 @@ import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.dto.response.GalleryResponse
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
-import com.soma.wes.gallery.support.MockGalleryCopyPlan
+import com.soma.wes.gallery.dto.MockGalleryCopyPlanDto
 import com.soma.wes.gallery.support.MockGallerySeeder
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.service.port.PhotoStorage
@@ -56,10 +56,10 @@ class MockGalleryService(
         return GalleryResponse.from(gallery)
     }
 
-    private fun buildPlans(galleryId: Long, templates: List<Photo>): List<MockGalleryCopyPlan> =
+    private fun buildPlans(galleryId: Long, templates: List<Photo>): List<MockGalleryCopyPlanDto> =
         templates.map { source ->
             val storageKey = photoStorage.buildKey(galleryId, source.originalFileName)
-            MockGalleryCopyPlan(
+            MockGalleryCopyPlanDto(
                 source = source,
                 storageKey = storageKey,
                 // 파생본 위치는 원본 키에서 파생되는 고정 규칙이다. 휴지통 물리 삭제의
@@ -71,7 +71,7 @@ class MockGalleryService(
             )
         }
 
-    private fun copyObjects(plans: List<MockGalleryCopyPlan>, copiedKeys: MutableList<String>) {
+    private fun copyObjects(plans: List<MockGalleryCopyPlanDto>, copiedKeys: MutableList<String>) {
         plans.forEach { plan ->
             photoStorage.copy(plan.source.storageKey, plan.storageKey)
             copiedKeys += plan.storageKey

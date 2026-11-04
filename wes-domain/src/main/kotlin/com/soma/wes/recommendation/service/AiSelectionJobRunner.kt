@@ -9,7 +9,9 @@ import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.recommendation.domain.AiRecommendation
 import com.soma.wes.recommendation.domain.AiSelectionJob
 import com.soma.wes.recommendation.domain.AiSelectionMode
+import com.soma.wes.recommendation.dto.MmrPickDto
 import com.soma.wes.recommendation.dto.RecommendablePhotoDto
+import com.soma.wes.recommendation.dto.SavedAiSelectionRoundDto
 import com.soma.wes.recommendation.repository.AiRecommendationRepository
 import com.soma.wes.recommendation.repository.AiSelectionJobRepository
 import com.soma.wes.recommendation.support.ExactRecommendationQuota
@@ -116,7 +118,7 @@ class AiSelectionJobRunner(
      * 추천을 저장한 뒤 닫기 전에 죽은 잡의 복구. 이미 제시한 추천은 다시 계산하지 않는다 — 그사이 선택·분류가
      * 바뀌었어도 저장된 라운드를 그대로 두고 요약만 남겨 닫는다. 거절했거나 휴지통에 들어간 사진은 장수에서 뺀다.
      */
-    private fun loadSavedRound(jobId: Long): SavedRound? {
+    private fun loadSavedRound(jobId: Long): SavedAiSelectionRoundDto? {
         val job = requireJob(jobId)
         val round = job.round ?: return null
         val selection = requireSelection(job.selectionId)
@@ -125,7 +127,7 @@ class AiSelectionJobRunner(
         val livePhotoIds = photoRepository.findAllByGalleryIdAndIdInAndExcludedAtIsNull(selection.galleryId, notRejected.map { it.photoId })
             .mapTo(mutableSetOf()) { it.requiredId }
         val recommendations = notRejected.filter { it.photoId in livePhotoIds }
-        return SavedRound(
+        return SavedAiSelectionRoundDto(
             jobId = jobId,
             galleryId = selection.galleryId,
             round = round,
@@ -136,7 +138,7 @@ class AiSelectionJobRunner(
         )
     }
 
-    private fun finishSavedRound(saved: SavedRound, timing: StageTiming) {
+    private fun finishSavedRound(saved: SavedAiSelectionRoundDto, timing: StageTiming) {
         val k = saved.folderOfPicks.size
         val summary = saved.summary + mapOf(
             "gallery" to saved.galleryId, "pipeline" to "v3", "round" to saved.round,
@@ -329,7 +331,7 @@ class AiSelectionJobRunner(
                 coverage.merge("nearDuplicates", result.nearDuplicates, Int::plus)
                 coverage.merge("cap", cap, Int::plus)
                 coverage.merge("groupExcluded", groupShots.size, Int::plus)
-                result.picks.mapIndexed { rank, i -> MmrSelector.Pick(index = i, folderRank = rank + 1, quota = cap) }
+                result.picks.mapIndexed { rank, i -> MmrPickDto(index = i, folderRank = rank + 1, quota = cap) }
             } else {
                 MmrSelector.selectInFolder(score, world.embeddings, membersByFolder.getValue(folder.folderId), burstIds, quota.getValue(folder.folderId))
             }
@@ -439,17 +441,6 @@ class AiSelectionJobRunner(
     private fun round4(v: Double) = round(v * 10000) / 10000
 
     private class JobRef(val id: Long, val mode: AiSelectionMode, val round: Int?)
-
-    private data class SavedRound(
-        val jobId: Long,
-        val galleryId: Long,
-        val round: Int,
-        val requestedCount: Int?,
-        val scopeFolderIds: List<Long>?,
-        /** 거절되지 않은 추천마다 추천 당시 폴더 이름. 잡 요약의 장수·폴더별 수를 다시 센다. */
-        val folderOfPicks: List<String>,
-        val summary: Map<String, Any?>,
-    )
 
     /**
      * 단계별 소요를 잡 result에 남기기 위한 초시계. 운영에서 "어디가 느린가"를 로그 시각을 맞춰 보지 않고

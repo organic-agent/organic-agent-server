@@ -3,7 +3,7 @@ package com.soma.wes.security.filter
 import com.soma.wes.admin.domain.AdminLoginUser
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
-import com.soma.wes.admin.impersonation.repository.AdminImpersonationRepository
+import com.soma.wes.admin.impersonation.repository.projection.AdminImpersonationSessionRow
 import com.soma.wes.admin.impersonation.service.AdminImpersonationService
 import com.soma.wes.security.exception.CustomAccessDeniedHandler
 import jakarta.servlet.FilterChain
@@ -48,7 +48,7 @@ class AdminImpersonationReadOnlyFilter(
 
     private fun isAllowedWrite(
         request: HttpServletRequest,
-        session: AdminImpersonationRepository.Session,
+        session: AdminImpersonationSessionRow,
     ): Boolean =
         (request.method == "DELETE" && (
             request.requestURI == "/internal/admin/v1/impersonations/current" ||

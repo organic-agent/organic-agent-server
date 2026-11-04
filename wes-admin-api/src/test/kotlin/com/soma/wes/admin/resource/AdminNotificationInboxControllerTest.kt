@@ -4,7 +4,7 @@ import com.soma.wes.admin.dto.request.AdminLoginRequest
 import com.soma.wes.admin.dto.request.ChangeAdminPasswordRequest
 import com.soma.wes.admin.fixture.AdminAccountFixture
 import com.soma.wes.admin.resource.domain.AdminResourceType
-import com.soma.wes.admin.resource.dto.CreateAdminResourceRequest
+import com.soma.wes.admin.resource.dto.request.CreateAdminResourceRequest
 import com.soma.wes.admin.resource.service.AdminResourceService
 import com.soma.wes.admin.service.AdminAuthService
 import com.soma.wes.admin.support.AdminSessionCookie

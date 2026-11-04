@@ -5,15 +5,12 @@ import com.soma.wes.gallery.domain.GalleryInviteKind
 import com.soma.wes.gallery.domain.GalleryInviteStatus
 import com.soma.wes.gallery.domain.GalleryStatus
 import com.soma.wes.gallery.dto.request.IssueGalleryInviteRequest
-import com.soma.wes.gallery.dto.response.GalleryParticipantRole
+import com.soma.wes.gallery.domain.GalleryParticipantRole
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.user.fixture.UserFixture
-import com.soma.wes.workspace.domain.Workspace
-import com.soma.wes.workspace.domain.WorkspaceMember
-import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository
 import org.assertj.core.api.Assertions.assertThat

@@ -1,7 +1,7 @@
 package com.soma.wes.gallery.support
 
 import com.soma.wes.gallery.domain.Gallery
-import com.soma.wes.gallery.domain.ShootType
+import com.soma.wes.gallery.dto.MockGalleryCopyPlanDto
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
@@ -90,7 +90,7 @@ class MockGallerySeeder(
      * 번호라 갤러리를 바꾸면 의미가 달라진다 — 새 갤러리에서 AI 분석을 다시 돌리는 것이 맞다.
      */
     @Transactional
-    fun persistPhotos(gallery: Gallery, plans: List<MockGalleryCopyPlan>) {
+    fun persistPhotos(gallery: Gallery, plans: List<MockGalleryCopyPlanDto>) {
         val now = ZonedDateTime.now(clock)
         val copies = photoRepository.saveAll(
             plans.mapIndexed { index, plan ->

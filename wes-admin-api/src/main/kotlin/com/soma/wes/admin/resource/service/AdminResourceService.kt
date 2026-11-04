@@ -3,11 +3,11 @@ package com.soma.wes.admin.resource.service
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.domain.AdminResourceType
-import com.soma.wes.admin.resource.dto.AdminResourcePageResponse
-import com.soma.wes.admin.resource.dto.AdminResourceResponse
-import com.soma.wes.admin.resource.dto.ChangeAdminResourceStateRequest
-import com.soma.wes.admin.resource.dto.CreateAdminResourceRequest
-import com.soma.wes.admin.resource.dto.UpdateAdminResourceRequest
+import com.soma.wes.admin.resource.dto.response.AdminResourcePageResponse
+import com.soma.wes.admin.resource.dto.response.AdminResourceResponse
+import com.soma.wes.admin.resource.dto.request.ChangeAdminResourceStateRequest
+import com.soma.wes.admin.resource.dto.request.CreateAdminResourceRequest
+import com.soma.wes.admin.resource.dto.request.UpdateAdminResourceRequest
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
 import com.soma.wes.admin.support.AdminPhotoRestoreQuota
 import org.springframework.dao.DataIntegrityViolationException

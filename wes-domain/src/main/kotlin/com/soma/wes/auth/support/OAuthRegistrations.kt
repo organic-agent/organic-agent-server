@@ -1,6 +1,7 @@
 package com.soma.wes.auth.support
 
 import com.soma.wes.auth.domain.OAuthProvider
+import com.soma.wes.auth.dto.OAuthRegistrationDto
 import com.soma.wes.auth.exception.AuthErrorCode
 import com.soma.wes.auth.exception.OAuthException
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository
@@ -19,12 +20,12 @@ class OAuthRegistrations(
 ) {
 
 
-    fun of(provider: OAuthProvider, requestOrigin: String? = null): OAuthRegistration {
+    fun of(provider: OAuthProvider, requestOrigin: String? = null): OAuthRegistrationDto {
         val registration = clientRegistrationRepository.findByRegistrationId(provider.key)
             ?: throw OAuthException(AuthErrorCode.PROVIDER_NOT_SUPPORTED)
         val details = registration.providerDetails
 
-        return OAuthRegistration(
+        return OAuthRegistrationDto(
             clientId = registration.clientId,
             clientSecret = registration.clientSecret.orMisconfigured(),
             redirectUri = redirectUriResolver.resolve(registration.redirectUri.orMisconfigured(), requestOrigin),
@@ -39,13 +40,3 @@ class OAuthRegistrations(
         if (isNullOrBlank()) throw OAuthException(AuthErrorCode.OAUTH_MISCONFIGURED) else this
 }
 
-
-data class OAuthRegistration(
-    val clientId: String,
-    val clientSecret: String,
-    val redirectUri: String,
-    val authorizationUri: String,
-    val tokenUri: String,
-    val userInfoUri: String,
-    val scopes: Set<String>,
-)

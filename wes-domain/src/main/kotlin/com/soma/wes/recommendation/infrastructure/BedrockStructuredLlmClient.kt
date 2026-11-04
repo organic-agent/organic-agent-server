@@ -1,6 +1,7 @@
 package com.soma.wes.recommendation.infrastructure
 
 import com.soma.wes.recommendation.config.LlmProperties
+import com.soma.wes.recommendation.dto.BedrockDecodedMessageDto
 import com.soma.wes.recommendation.dto.LlmJsonRequestDto
 import com.soma.wes.recommendation.exception.RecommendationErrorCode
 import com.soma.wes.recommendation.exception.RecommendationException
@@ -70,7 +71,7 @@ class BedrockStructuredLlmClient(
         }
     }
 
-    private fun parse(decoded: BedrockMessagesCodec.Decoded): JsonNode {
+    private fun parse(decoded: BedrockDecodedMessageDto): JsonNode {
         log.info(
             "bedrock {} · in {} / out {} tokens · stop={}",
             properties.modelId, decoded.inputTokens, decoded.outputTokens, decoded.stopReason,

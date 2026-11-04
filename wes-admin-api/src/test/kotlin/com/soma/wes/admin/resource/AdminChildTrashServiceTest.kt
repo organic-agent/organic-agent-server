@@ -5,8 +5,9 @@ import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.fixture.AdminAccountFixture
 import com.soma.wes.admin.resource.domain.AdminChildTrashType
 import com.soma.wes.admin.resource.domain.AdminResourceType
-import com.soma.wes.admin.resource.dto.ChangeAdminResourceStateRequest
-import com.soma.wes.admin.resource.dto.CreateAdminResourceRequest
+import com.soma.wes.admin.resource.dto.request.ChangeAdminResourceStateRequest
+import com.soma.wes.admin.resource.dto.request.CreateAdminResourceRequest
+import com.soma.wes.admin.resource.dto.response.AdminResourceResponse
 import com.soma.wes.admin.resource.repository.AdminChildTrashRepository
 import com.soma.wes.admin.resource.service.AdminCascadeTrashService
 import com.soma.wes.admin.resource.service.AdminChildTrashPurgeService
@@ -667,7 +668,7 @@ class AdminChildTrashServiceTest @Autowired constructor(
         return false
     }
 
-    private fun create(actorId: Long, type: AdminResourceType, fields: Map<String, Any?>): com.soma.wes.admin.resource.dto.AdminResourceResponse {
+    private fun create(actorId: Long, type: AdminResourceType, fields: Map<String, Any?>): com.soma.wes.admin.resource.dto.response.AdminResourceResponse {
         val normalized = fields
         return resourceService.create(
             actorId,

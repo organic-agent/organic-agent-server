@@ -2,8 +2,8 @@ package com.soma.wes.admin.resource.service
 
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
-import com.soma.wes.admin.resource.dto.AdminNotificationInboxItemResponse
-import com.soma.wes.admin.resource.dto.AdminNotificationInboxPageResponse
+import com.soma.wes.admin.resource.dto.response.AdminNotificationInboxItemResponse
+import com.soma.wes.admin.resource.dto.response.AdminNotificationInboxPageResponse
 import com.soma.wes.admin.resource.repository.AdminNotificationInboxRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional

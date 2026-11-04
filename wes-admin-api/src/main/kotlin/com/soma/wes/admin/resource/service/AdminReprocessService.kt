@@ -4,9 +4,9 @@ import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.domain.AdminReprocessScope
 import com.soma.wes.admin.resource.domain.AdminResourceType
-import com.soma.wes.admin.resource.dto.AdminAnalysisFailuresResponse
-import com.soma.wes.admin.resource.dto.AdminReprocessRequest
-import com.soma.wes.admin.resource.dto.AdminReprocessResponse
+import com.soma.wes.admin.resource.dto.response.AdminAnalysisFailuresResponse
+import com.soma.wes.admin.resource.dto.request.AdminReprocessRequest
+import com.soma.wes.admin.resource.dto.response.AdminReprocessResponse
 import com.soma.wes.admin.resource.repository.AdminIdempotencyStore
 import com.soma.wes.admin.resource.repository.AdminResourceRepository
 import com.soma.wes.analysis.domain.AnalysisJob

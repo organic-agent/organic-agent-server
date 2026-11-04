@@ -3,14 +3,18 @@ package com.soma.wes.admin.resource.repository
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.domain.AdminResourceType
-import com.soma.wes.admin.resource.dto.AdminOperationRecordResponse
-import com.soma.wes.admin.resource.dto.AdminOperationalIssueResponse
-import com.soma.wes.admin.resource.dto.AdminResourceCountResponse
-import com.soma.wes.admin.resource.dto.AdminResourcePageResponse
-import com.soma.wes.admin.resource.dto.AdminResourceResponse
-import com.soma.wes.admin.resource.dto.AdminResourceSummaryResponse
+import com.soma.wes.admin.resource.dto.response.AdminOperationRecordResponse
+import com.soma.wes.admin.resource.dto.response.AdminOperationalIssueResponse
+import com.soma.wes.admin.resource.dto.response.AdminResourceCountResponse
+import com.soma.wes.admin.resource.dto.response.AdminResourcePageResponse
+import com.soma.wes.admin.resource.dto.response.AdminResourceResponse
+import com.soma.wes.admin.resource.dto.response.AdminResourceSummaryResponse
+import com.soma.wes.admin.resource.repository.projection.AdminPhotoOriginal
+import com.soma.wes.admin.resource.repository.projection.AdminResourceCreateResult
+import com.soma.wes.admin.resource.repository.projection.AdminResourceDefinition
+import com.soma.wes.admin.resource.repository.projection.AdminResourceFieldDefinition
+import com.soma.wes.admin.resource.repository.projection.AdminResourceFieldKind
 import com.soma.wes.global.SecureTokenGenerator
-import com.soma.wes.studio.domain.Studio
 import java.time.Clock
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Repository
@@ -29,8 +33,6 @@ class AdminResourceRepository(
 ) {
 
     companion object {
-
-        private val EMAIL = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
         private val LEGACY_DIRECT_TRASH_TYPES = setOf(
             AdminResourceType.GALLERY,
             AdminResourceType.PHOTO,
@@ -40,118 +42,118 @@ class AdminResourceRepository(
             AdminResourceType.PHOTO_RATING,
         )
         private val DEFINITIONS = listOf(
-            ResourceDefinition(
+            AdminResourceDefinition(
                 type = AdminResourceType.USER,
                 table = "users",
                 labelExpression = "nickname",
                 searchExpression = "CONCAT_WS(' ', nickname, email, provider)",
                 fields = listOf(
-                    FieldDefinition("provider", "provider", FieldKind.ENUM, requiredOnCreate = true, updateAllowed = false, allowedValues = setOf("GOOGLE", "NAVER", "KAKAO")),
-                    FieldDefinition("providerId", "provider_id", FieldKind.STRING, requiredOnCreate = true, updateAllowed = false, maxLength = 255),
-                    FieldDefinition("nickname", "nickname", FieldKind.STRING, requiredOnCreate = true, maxLength = 50),
-                    FieldDefinition("email", "email", FieldKind.EMAIL, nullable = true, maxLength = 255),
-                    FieldDefinition("suspendedAt", "suspended_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
-                    FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
+                    AdminResourceFieldDefinition("provider", "provider", AdminResourceFieldKind.ENUM, requiredOnCreate = true, updateAllowed = false, allowedValues = setOf("GOOGLE", "NAVER", "KAKAO")),
+                    AdminResourceFieldDefinition("providerId", "provider_id", AdminResourceFieldKind.STRING, requiredOnCreate = true, updateAllowed = false, maxLength = 255),
+                    AdminResourceFieldDefinition("nickname", "nickname", AdminResourceFieldKind.STRING, requiredOnCreate = true, maxLength = 50),
+                    AdminResourceFieldDefinition("email", "email", AdminResourceFieldKind.EMAIL, nullable = true, maxLength = 255),
+                    AdminResourceFieldDefinition("suspendedAt", "suspended_at", AdminResourceFieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
+                    AdminResourceFieldDefinition("deletedAt", "deleted_at", AdminResourceFieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                 ),
                 softDeleteColumn = "deleted_at",
             ),
-            ResourceDefinition(
+            AdminResourceDefinition(
                 type = AdminResourceType.WORKSPACE,
                 table = "workspaces",
                 labelExpression = "name",
                 searchExpression = "CONCAT_WS(' ', name, type, personal_owner_user_id)",
                 fields = listOf(
-                    FieldDefinition(
+                    AdminResourceFieldDefinition(
                         "type",
                         "type",
-                        FieldKind.ENUM,
+                        AdminResourceFieldKind.ENUM,
                         createAllowed = false,
                         updateAllowed = false,
                         allowedValues = setOf("PERSONAL", "STUDIO"),
                     ),
-                    FieldDefinition("name", "name", FieldKind.STRING, createAllowed = false, maxLength = 100),
-                    FieldDefinition(
+                    AdminResourceFieldDefinition("name", "name", AdminResourceFieldKind.STRING, createAllowed = false, maxLength = 100),
+                    AdminResourceFieldDefinition(
                         "personalOwnerUserId",
                         "personal_owner_user_id",
-                        FieldKind.LONG,
+                        AdminResourceFieldKind.LONG,
                         createAllowed = false,
                         updateAllowed = false,
                         nullable = true,
                         minNumber = 1,
                     ),
-                    FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
+                    AdminResourceFieldDefinition("deletedAt", "deleted_at", AdminResourceFieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                 ),
                 softDeleteColumn = "deleted_at",
                 createSupported = false,
             ),
-            ResourceDefinition(
+            AdminResourceDefinition(
                 type = AdminResourceType.STUDIO,
                 table = "studios",
                 idColumn = "workspace_id",
                 labelExpression = "name",
                 searchExpression = "CONCAT_WS(' ', name, gallery_url, inflow_channel, contact, description, workspace_id)",
                 fields = listOf(
-                    FieldDefinition("workspaceId", "workspace_id", FieldKind.LONG, createAllowed = false, updateAllowed = false, minNumber = 1),
-                    FieldDefinition(
+                    AdminResourceFieldDefinition("workspaceId", "workspace_id", AdminResourceFieldKind.LONG, createAllowed = false, updateAllowed = false, minNumber = 1),
+                    AdminResourceFieldDefinition(
                         "ownerUserId",
                         "owner_user_id",
-                        FieldKind.LONG,
+                        AdminResourceFieldKind.LONG,
                         requiredOnCreate = true,
                         updateAllowed = false,
                         minNumber = 1,
                         readExpression = "(SELECT wm.user_id FROM workspace_members wm WHERE wm.workspace_id = studios.workspace_id AND wm.role = 'OWNER' AND wm.deleted_at IS NULL ORDER BY wm.id LIMIT 1) AS owner_user_id",
                     ),
-                    FieldDefinition("name", "name", FieldKind.STRING, requiredOnCreate = true, maxLength = 255),
-                    FieldDefinition("galleryUrl", "gallery_url", FieldKind.GALLERY_URL, requiredOnCreate = true, maxLength = 255),
+                    AdminResourceFieldDefinition("name", "name", AdminResourceFieldKind.STRING, requiredOnCreate = true, maxLength = 255),
+                    AdminResourceFieldDefinition("galleryUrl", "gallery_url", AdminResourceFieldKind.GALLERY_URL, requiredOnCreate = true, maxLength = 255),
                     // 기존 유입 경로는 과거 데이터 확인용이며 BackOffice에서 새로 기록하거나 고치지 않는다.
-                    FieldDefinition(
+                    AdminResourceFieldDefinition(
                         "inflowChannel",
                         "inflow_channel",
-                        FieldKind.STRING,
+                        AdminResourceFieldKind.STRING,
                         createAllowed = false,
                         updateAllowed = false,
                         nullable = true,
                         maxLength = 255,
                     ),
-                    FieldDefinition("contact", "contact", FieldKind.STRING, nullable = true, maxLength = 100),
-                    FieldDefinition("description", "description", FieldKind.STRING, nullable = true, maxLength = 500),
-                    FieldDefinition("suspendedAt", "suspended_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
-                    FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
+                    AdminResourceFieldDefinition("contact", "contact", AdminResourceFieldKind.STRING, nullable = true, maxLength = 100),
+                    AdminResourceFieldDefinition("description", "description", AdminResourceFieldKind.STRING, nullable = true, maxLength = 500),
+                    AdminResourceFieldDefinition("suspendedAt", "suspended_at", AdminResourceFieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
+                    AdminResourceFieldDefinition("deletedAt", "deleted_at", AdminResourceFieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                 ),
                 softDeleteColumn = "deleted_at",
                 defaults = mapOf("contact" to null, "description" to null),
             ),
-            ResourceDefinition(
+            AdminResourceDefinition(
                 type = AdminResourceType.GALLERY,
                 table = "galleries",
                 labelExpression = "title",
                 searchExpression = "CONCAT_WS(' ', title, status, workflow_status, stage, workspace_id)",
                 fields = listOf(
-                    FieldDefinition("workspaceId", "workspace_id", FieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
-                    FieldDefinition("createdByUserId", "created_by_user_id", FieldKind.LONG, updateAllowed = false, nullable = true, minNumber = 1),
-                    FieldDefinition("title", "title", FieldKind.STRING, requiredOnCreate = true, maxLength = 100),
+                    AdminResourceFieldDefinition("workspaceId", "workspace_id", AdminResourceFieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
+                    AdminResourceFieldDefinition("createdByUserId", "created_by_user_id", AdminResourceFieldKind.LONG, updateAllowed = false, nullable = true, minNumber = 1),
+                    AdminResourceFieldDefinition("title", "title", AdminResourceFieldKind.STRING, requiredOnCreate = true, maxLength = 100),
                     // 기존 status는 외부 공개 상태다. 운영 workflowStatus와 의도적으로 분리한다.
-                    FieldDefinition(
+                    AdminResourceFieldDefinition(
                         "status",
                         "status",
-                        FieldKind.ENUM,
+                        AdminResourceFieldKind.ENUM,
                         createAllowed = false,
                         updateAllowed = false,
                         allowedValues = setOf("DRAFT", "OPEN", "CLOSED"),
                     ),
-                    FieldDefinition(
+                    AdminResourceFieldDefinition(
                         "workflowStatus",
                         "workflow_status",
-                        FieldKind.ENUM,
+                        AdminResourceFieldKind.ENUM,
                         createAllowed = false,
                         updateAllowed = false,
                         allowedValues = setOf("DRAFT", "IN_PROGRESS", "COMPLETED", "ARCHIVED"),
                     ),
                     // 제품 workflow만 전이시키는 6단계 화면 상태다. 일반 관리자 CRUD에는 열지 않는다.
-                    FieldDefinition(
+                    AdminResourceFieldDefinition(
                         "stage",
                         "stage",
-                        FieldKind.ENUM,
+                        AdminResourceFieldKind.ENUM,
                         createAllowed = false,
                         updateAllowed = false,
                         allowedValues = setOf(
@@ -163,17 +165,17 @@ class AdminResourceRepository(
                             "ARCHIVED",
                         ),
                     ),
-                    FieldDefinition(
+                    AdminResourceFieldDefinition(
                         "selectionDeadline",
                         "selection_deadline",
-                        FieldKind.DATE_TIME,
+                        AdminResourceFieldKind.DATE_TIME,
                         createAllowed = false,
                         updateAllowed = false,
                         nullable = true,
                     ),
-                    FieldDefinition("maxSelectablePhotoCount", "max_selectable_photo_count", FieldKind.INT, nullable = true, minNumber = 1),
-                    FieldDefinition("maxRetouchRoundCount", "max_retouch_round_count", FieldKind.INT, nullable = true, minNumber = 1),
-                    FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
+                    AdminResourceFieldDefinition("maxSelectablePhotoCount", "max_selectable_photo_count", AdminResourceFieldKind.INT, nullable = true, minNumber = 1),
+                    AdminResourceFieldDefinition("maxRetouchRoundCount", "max_retouch_round_count", AdminResourceFieldKind.INT, nullable = true, minNumber = 1),
+                    AdminResourceFieldDefinition("deletedAt", "deleted_at", AdminResourceFieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                 ),
                 softDeleteColumn = "deleted_at",
                 defaults = mapOf(
@@ -186,205 +188,205 @@ class AdminResourceRepository(
                     "createdByUserId" to null,
                 ),
             ),
-            ResourceDefinition(
+            AdminResourceDefinition(
                 type = AdminResourceType.PHOTO,
                 table = "photos",
                 labelExpression = "original_file_name",
                 searchExpression = "CONCAT_WS(' ', original_file_name, status, gallery_id, content_type)",
                 fields = listOf(
-                    FieldDefinition("galleryId", "gallery_id", FieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
-                    FieldDefinition("storageKey", "storage_key", FieldKind.STRING, requiredOnCreate = true, updateAllowed = false, maxLength = 500),
-                    FieldDefinition("originalFileName", "original_file_name", FieldKind.STRING, requiredOnCreate = true, updateAllowed = false, maxLength = 255),
-                    FieldDefinition("contentType", "content_type", FieldKind.STRING, requiredOnCreate = true, updateAllowed = false, maxLength = 100),
-                    FieldDefinition("displayOrder", "display_order", FieldKind.INT, minNumber = 0),
-                    FieldDefinition("status", "status", FieldKind.ENUM, allowedValues = setOf("PENDING", "UPLOADED")),
-                    FieldDefinition("previewKey", "preview_key", FieldKind.STRING, createAllowed = false, updateAllowed = false, nullable = true),
-                    FieldDefinition("uploadUrlExpiresAt", "upload_url_expires_at", FieldKind.DATE_TIME, nullable = true),
-                    FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
+                    AdminResourceFieldDefinition("galleryId", "gallery_id", AdminResourceFieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
+                    AdminResourceFieldDefinition("storageKey", "storage_key", AdminResourceFieldKind.STRING, requiredOnCreate = true, updateAllowed = false, maxLength = 500),
+                    AdminResourceFieldDefinition("originalFileName", "original_file_name", AdminResourceFieldKind.STRING, requiredOnCreate = true, updateAllowed = false, maxLength = 255),
+                    AdminResourceFieldDefinition("contentType", "content_type", AdminResourceFieldKind.STRING, requiredOnCreate = true, updateAllowed = false, maxLength = 100),
+                    AdminResourceFieldDefinition("displayOrder", "display_order", AdminResourceFieldKind.INT, minNumber = 0),
+                    AdminResourceFieldDefinition("status", "status", AdminResourceFieldKind.ENUM, allowedValues = setOf("PENDING", "UPLOADED")),
+                    AdminResourceFieldDefinition("previewKey", "preview_key", AdminResourceFieldKind.STRING, createAllowed = false, updateAllowed = false, nullable = true),
+                    AdminResourceFieldDefinition("uploadUrlExpiresAt", "upload_url_expires_at", AdminResourceFieldKind.DATE_TIME, nullable = true),
+                    AdminResourceFieldDefinition("deletedAt", "deleted_at", AdminResourceFieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                 ),
                 softDeleteColumn = "deleted_at",
                 defaults = mapOf("displayOrder" to 0, "status" to "PENDING", "uploadUrlExpiresAt" to null),
             ),
-            ResourceDefinition(
+            AdminResourceDefinition(
                 type = AdminResourceType.CONCEPT_FOLDER,
                 table = "concept_folders",
                 labelExpression = "name",
                 searchExpression = "CONCAT_WS(' ', name, gallery_id, created_source)",
                 fields = listOf(
-                    FieldDefinition("galleryId", "gallery_id", FieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
-                    FieldDefinition("name", "name", FieldKind.STRING, requiredOnCreate = true, maxLength = 100),
-                    FieldDefinition("sortOrder", "sort_order", FieldKind.INT, requiredOnCreate = true, minNumber = 0),
-                    FieldDefinition(
+                    AdminResourceFieldDefinition("galleryId", "gallery_id", AdminResourceFieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
+                    AdminResourceFieldDefinition("name", "name", AdminResourceFieldKind.STRING, requiredOnCreate = true, maxLength = 100),
+                    AdminResourceFieldDefinition("sortOrder", "sort_order", AdminResourceFieldKind.INT, requiredOnCreate = true, minNumber = 0),
+                    AdminResourceFieldDefinition(
                         "createdSource",
                         "created_source",
-                        FieldKind.ENUM,
+                        AdminResourceFieldKind.ENUM,
                         createAllowed = false,
                         updateAllowed = false,
                         allowedValues = setOf("AI", "USER"),
                     ),
-                    FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
+                    AdminResourceFieldDefinition("deletedAt", "deleted_at", AdminResourceFieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                 ),
                 softDeleteColumn = "deleted_at",
                 defaults = mapOf("createdSource" to "USER"),
             ),
-            ResourceDefinition(
+            AdminResourceDefinition(
                 type = AdminResourceType.DETAIL_FOLDER,
                 table = "detail_folders",
                 labelExpression = "name",
                 searchExpression = "CONCAT_WS(' ', name, concept_folder_id, created_source)",
                 fields = listOf(
-                    FieldDefinition("galleryId", "gallery_id", FieldKind.LONG, createAllowed = false, updateAllowed = false, minNumber = 1),
-                    FieldDefinition("conceptFolderId", "concept_folder_id", FieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
-                    FieldDefinition("name", "name", FieldKind.STRING, requiredOnCreate = true, maxLength = 100),
-                    FieldDefinition("sortOrder", "sort_order", FieldKind.INT, requiredOnCreate = true, minNumber = 0),
-                    FieldDefinition(
+                    AdminResourceFieldDefinition("galleryId", "gallery_id", AdminResourceFieldKind.LONG, createAllowed = false, updateAllowed = false, minNumber = 1),
+                    AdminResourceFieldDefinition("conceptFolderId", "concept_folder_id", AdminResourceFieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
+                    AdminResourceFieldDefinition("name", "name", AdminResourceFieldKind.STRING, requiredOnCreate = true, maxLength = 100),
+                    AdminResourceFieldDefinition("sortOrder", "sort_order", AdminResourceFieldKind.INT, requiredOnCreate = true, minNumber = 0),
+                    AdminResourceFieldDefinition(
                         "createdSource",
                         "created_source",
-                        FieldKind.ENUM,
+                        AdminResourceFieldKind.ENUM,
                         createAllowed = false,
                         updateAllowed = false,
                         allowedValues = setOf("AI", "USER"),
                     ),
-                    FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
+                    AdminResourceFieldDefinition("deletedAt", "deleted_at", AdminResourceFieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                 ),
                 softDeleteColumn = "deleted_at",
                 defaults = mapOf("createdSource" to "USER"),
             ),
-            ResourceDefinition(
+            AdminResourceDefinition(
                 type = AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT,
                 table = "detail_folder_assignments",
                 idColumn = "photo_id",
                 labelExpression = "'photo #' || photo_id || ' category'",
                 searchExpression = "CONCAT_WS(' ', photo_id, detail_folder_id, assigned_by_user_id, assigned_source)",
                 fields = listOf(
-                    FieldDefinition("galleryId", "gallery_id", FieldKind.LONG, createAllowed = false, updateAllowed = false, minNumber = 1),
-                    FieldDefinition("photoId", "photo_id", FieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
-                    FieldDefinition("detailFolderId", "detail_folder_id", FieldKind.LONG, requiredOnCreate = true, minNumber = 1),
-                    FieldDefinition("assignedByUserId", "assigned_by_user_id", FieldKind.LONG, requiredOnCreate = true, minNumber = 1),
-                    FieldDefinition(
+                    AdminResourceFieldDefinition("galleryId", "gallery_id", AdminResourceFieldKind.LONG, createAllowed = false, updateAllowed = false, minNumber = 1),
+                    AdminResourceFieldDefinition("photoId", "photo_id", AdminResourceFieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
+                    AdminResourceFieldDefinition("detailFolderId", "detail_folder_id", AdminResourceFieldKind.LONG, requiredOnCreate = true, minNumber = 1),
+                    AdminResourceFieldDefinition("assignedByUserId", "assigned_by_user_id", AdminResourceFieldKind.LONG, requiredOnCreate = true, minNumber = 1),
+                    AdminResourceFieldDefinition(
                         "assignedSource",
                         "assigned_source",
-                        FieldKind.ENUM,
+                        AdminResourceFieldKind.ENUM,
                         createAllowed = false,
                         updateAllowed = false,
                         allowedValues = setOf("AI", "USER"),
                     ),
-                    FieldDefinition("confidence", "confidence", FieldKind.DECIMAL, createAllowed = false, updateAllowed = false, nullable = true),
-                    FieldDefinition("assignedAt", "assigned_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false),
+                    AdminResourceFieldDefinition("confidence", "confidence", AdminResourceFieldKind.DECIMAL, createAllowed = false, updateAllowed = false, nullable = true),
+                    AdminResourceFieldDefinition("assignedAt", "assigned_at", AdminResourceFieldKind.DATE_TIME, createAllowed = false, updateAllowed = false),
                 ),
                 defaults = mapOf("assignedSource" to "USER"),
             ),
-            ResourceDefinition(
+            AdminResourceDefinition(
                 type = AdminResourceType.PHOTO_RATING,
                 table = "photo_ratings",
                 idColumn = "photo_id",
                 labelExpression = "'photo #' || photo_id || ' / ' || score || ' stars'",
                 searchExpression = "CONCAT_WS(' ', photo_id, score, rated_by)",
                 fields = listOf(
-                    FieldDefinition("photoId", "photo_id", FieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
-                    FieldDefinition("score", "score", FieldKind.INT, requiredOnCreate = true, minNumber = 1, maxNumber = 5),
-                    FieldDefinition("ratedByUserId", "rated_by", FieldKind.LONG, requiredOnCreate = true, minNumber = 1),
+                    AdminResourceFieldDefinition("photoId", "photo_id", AdminResourceFieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
+                    AdminResourceFieldDefinition("score", "score", AdminResourceFieldKind.INT, requiredOnCreate = true, minNumber = 1, maxNumber = 5),
+                    AdminResourceFieldDefinition("ratedByUserId", "rated_by", AdminResourceFieldKind.LONG, requiredOnCreate = true, minNumber = 1),
                 ),
             ),
-            ResourceDefinition(
+            AdminResourceDefinition(
                 type = AdminResourceType.SELECTION,
                 table = "photo_selections",
                 labelExpression = "'selection #' || id",
                 searchExpression = "CONCAT_WS(' ', gallery_id, status)",
                 fields = listOf(
-                    FieldDefinition("galleryId", "gallery_id", FieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
-                    FieldDefinition(
+                    AdminResourceFieldDefinition("galleryId", "gallery_id", AdminResourceFieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
+                    AdminResourceFieldDefinition(
                         "status",
                         "status",
-                        FieldKind.ENUM,
+                        AdminResourceFieldKind.ENUM,
                         createAllowed = false,
                         updateAllowed = false,
                         allowedValues = setOf("SELECTING", "SUBMITTED"),
                     ),
-                    FieldDefinition(
+                    AdminResourceFieldDefinition(
                         "submittedAt",
                         "submitted_at",
-                        FieldKind.DATE_TIME,
+                        AdminResourceFieldKind.DATE_TIME,
                         createAllowed = false,
                         updateAllowed = false,
                         nullable = true,
                     ),
-                    FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
+                    AdminResourceFieldDefinition("deletedAt", "deleted_at", AdminResourceFieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                 ),
                 softDeleteColumn = "deleted_at",
                 defaults = mapOf("status" to "SELECTING", "submittedAt" to null),
                 createSupported = false,
             ),
-            ResourceDefinition(
+            AdminResourceDefinition(
                 type = AdminResourceType.COLLABORATION,
                 table = "collab_sessions",
                 labelExpression = "name",
                 searchExpression = "CONCAT_WS(' ', name, gallery_id)",
                 fields = listOf(
-                    FieldDefinition("galleryId", "gallery_id", FieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
-                    FieldDefinition("name", "name", FieldKind.STRING, requiredOnCreate = true, maxLength = 100),
-                    FieldDefinition("collabToken", "collab_token", FieldKind.STRING, createAllowed = false, updateAllowed = false, maxLength = 255),
-                    FieldDefinition(
+                    AdminResourceFieldDefinition("galleryId", "gallery_id", AdminResourceFieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
+                    AdminResourceFieldDefinition("name", "name", AdminResourceFieldKind.STRING, requiredOnCreate = true, maxLength = 100),
+                    AdminResourceFieldDefinition("collabToken", "collab_token", AdminResourceFieldKind.STRING, createAllowed = false, updateAllowed = false, maxLength = 255),
+                    AdminResourceFieldDefinition(
                         "revoked",
                         "revoked_at",
-                        FieldKind.REVOKED,
+                        AdminResourceFieldKind.REVOKED,
                         createAllowed = false,
                         updateAllowed = false,
                         nullable = true,
                     ),
-                    FieldDefinition(
+                    AdminResourceFieldDefinition(
                         "expiresAt",
                         "expires_at",
-                        FieldKind.DATE_TIME,
+                        AdminResourceFieldKind.DATE_TIME,
                         createAllowed = false,
                         updateAllowed = false,
                         nullable = true,
                     ),
-                    FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
+                    AdminResourceFieldDefinition("deletedAt", "deleted_at", AdminResourceFieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                 ),
                 softDeleteColumn = "deleted_at",
                 generatedSecretField = "collabToken",
             ),
-            ResourceDefinition(
+            AdminResourceDefinition(
                 type = AdminResourceType.RETOUCH_REQUEST,
                 table = "retouch_rounds",
                 labelExpression = "'retouch #' || id || ' / round ' || round_no",
                 searchExpression = "CONCAT_WS(' ', gallery_id, round_no, status)",
                 fields = listOf(
-                    FieldDefinition("galleryId", "gallery_id", FieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
-                    FieldDefinition("roundNo", "round_no", FieldKind.INT, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
-                    FieldDefinition(
+                    AdminResourceFieldDefinition("galleryId", "gallery_id", AdminResourceFieldKind.LONG, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
+                    AdminResourceFieldDefinition("roundNo", "round_no", AdminResourceFieldKind.INT, requiredOnCreate = true, updateAllowed = false, minNumber = 1),
+                    AdminResourceFieldDefinition(
                         "status",
                         "status",
-                        FieldKind.ENUM,
+                        AdminResourceFieldKind.ENUM,
                         createAllowed = false,
                         allowedValues = setOf("DRAFTING", "REQUESTED", "COMPLETED"),
                     ),
-                    FieldDefinition(
+                    AdminResourceFieldDefinition(
                         "requestedAt",
                         "requested_at",
-                        FieldKind.DATE_TIME,
+                        AdminResourceFieldKind.DATE_TIME,
                         createAllowed = false,
                         updateAllowed = false,
                         nullable = true,
                     ),
-                    FieldDefinition(
+                    AdminResourceFieldDefinition(
                         "completedAt",
                         "completed_at",
-                        FieldKind.DATE_TIME,
+                        AdminResourceFieldKind.DATE_TIME,
                         createAllowed = false,
                         updateAllowed = false,
                         nullable = true,
                     ),
-                    FieldDefinition("deletedAt", "deleted_at", FieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
+                    AdminResourceFieldDefinition("deletedAt", "deleted_at", AdminResourceFieldKind.DATE_TIME, createAllowed = false, updateAllowed = false, nullable = true),
                 ),
                 softDeleteColumn = "deleted_at",
                 defaults = mapOf("status" to "DRAFTING", "requestedAt" to null, "completedAt" to null),
             ),
-        ).associateBy(ResourceDefinition::type)
+        ).associateBy(AdminResourceDefinition::type)
     }
 
-    fun findPhotoOriginal(photoId: Long): PhotoOriginal? = jdbcClient.sql(
+    fun findPhotoOriginal(photoId: Long): AdminPhotoOriginal? = jdbcClient.sql(
         """
             SELECT id, original_file_name, storage_key, preview_key
             FROM photos
@@ -393,7 +395,7 @@ class AdminResourceRepository(
     )
         .param("photoId", photoId)
         .query { rs, _ ->
-            PhotoOriginal(
+            AdminPhotoOriginal(
                 id = rs.getLong("id"),
                 originalFileName = rs.getString("original_file_name"),
                 storageKey = rs.getString("storage_key"),
@@ -578,7 +580,7 @@ class AdminResourceRepository(
             .orElse(null)
     }
 
-    fun create(type: AdminResourceType, fields: Map<String, Any?>): ResourceCreateResult {
+    fun create(type: AdminResourceType, fields: Map<String, Any?>): AdminResourceCreateResult {
         val definition = definition(type)
         if (!definition.createSupported) {
             throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
@@ -630,10 +632,10 @@ class AdminResourceRepository(
                 }
             }
         }
-        return ResourceCreateResult(id)
+        return AdminResourceCreateResult(id)
     }
 
-    private fun insertResource(definition: ResourceDefinition, normalized: Map<String, Any?>): Long {
+    private fun insertResource(definition: AdminResourceDefinition, normalized: Map<String, Any?>): Long {
         val columns = normalized.keys.map { definition.field(it).column }
         val parameters = normalized.keys.map { ":$it" }
         val sql = """
@@ -990,7 +992,7 @@ class AdminResourceRepository(
     }
 
     private fun normalizeFields(
-        definition: ResourceDefinition,
+        definition: AdminResourceDefinition,
         fields: Map<String, Any?>,
         creating: Boolean,
     ): Map<String, Any?> {
@@ -1018,7 +1020,7 @@ class AdminResourceRepository(
             updatedAt = zonedDateTime(rs, "updated_at"),
         )
 
-    private fun detail(definition: ResourceDefinition, rs: ResultSet): AdminResourceResponse =
+    private fun detail(definition: AdminResourceDefinition, rs: ResultSet): AdminResourceResponse =
         AdminResourceResponse(
             type = definition.type,
             id = rs.getLong("id"),
@@ -1033,148 +1035,6 @@ class AdminResourceRepository(
     private fun zonedDateTime(rs: ResultSet, column: String): ZonedDateTime? =
         rs.getObject(column, OffsetDateTime::class.java)?.toZonedDateTime()
 
-    private fun definition(type: AdminResourceType): ResourceDefinition = DEFINITIONS.getValue(type)
-
-    private data class ResourceDefinition(
-        val type: AdminResourceType,
-        val table: String,
-        val idColumn: String = "id",
-        val labelExpression: String,
-        val searchExpression: String,
-        val fields: List<FieldDefinition>,
-        val softDeleteColumn: String? = null,
-        val defaults: Map<String, Any?> = emptyMap(),
-        val generatedSecretField: String? = null,
-        val createSupported: Boolean = true,
-        val updateSupported: Boolean = true,
-    ) {
-        val responseFields: List<FieldDefinition> = fields.filterNot { it.name == "collabToken" }
-
-        val summarySql: String = """
-            SELECT '${type.name}' AS resource_type,
-                   $idColumn AS id,
-                   version,
-                   COALESCE(($labelExpression)::TEXT, '${type.name.lowercase()} #' || $idColumn) AS label,
-                   ${softDeleteColumn?.let { "$it IS NOT NULL" } ?: "FALSE"} AS deleted,
-                   created_at,
-                   updated_at,
-                   CONCAT_WS(' ', $idColumn::TEXT, $searchExpression) AS search_text
-            FROM $table
-        """.trimIndent()
-
-        val detailSql: String = """
-            SELECT $idColumn AS id,
-                   version,
-                   COALESCE(($labelExpression)::TEXT, '${type.name.lowercase()} #' || $idColumn) AS label,
-                   ${softDeleteColumn?.let { "$it IS NOT NULL" } ?: "FALSE"} AS deleted,
-                   created_at,
-                   updated_at,
-                   ${responseFields.joinToString { it.selectExpression }}
-            FROM $table
-            WHERE $idColumn = :id
-        """.trimIndent()
-
-        fun field(name: String): FieldDefinition =
-            fields.find { it.name == name } ?: throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-    }
-
-    private data class FieldDefinition(
-        val name: String,
-        val column: String,
-        val kind: FieldKind,
-        val requiredOnCreate: Boolean = false,
-        val createAllowed: Boolean = true,
-        val updateAllowed: Boolean = true,
-        val nullable: Boolean = false,
-        val maxLength: Int? = null,
-        val minNumber: Long? = null,
-        val maxNumber: Long? = null,
-        val allowedValues: Set<String> = emptySet(),
-        val readExpression: String? = null,
-        val readColumn: String = column,
-    ) {
-        val selectExpression: String
-            get() = readExpression ?: column
-
-        fun read(rs: ResultSet, objectMapper: ObjectMapper): Any? {
-            val raw = rs.getObject(readColumn)
-            return when (kind) {
-                FieldKind.REVOKED -> raw != null
-                FieldKind.DATE_TIME -> raw?.let { rs.getObject(readColumn, OffsetDateTime::class.java) }
-                FieldKind.JSON -> raw?.let {
-                    objectMapper.readValue(rs.getString(readColumn), Map::class.java).entries
-                        .associate { (key, value) -> key.toString() to value }
-                }
-                FieldKind.STRING,
-                FieldKind.EMAIL,
-                FieldKind.GALLERY_URL,
-                FieldKind.ENUM,
-                FieldKind.LONG,
-                FieldKind.INT,
-                FieldKind.DECIMAL,
-                FieldKind.BOOLEAN,
-                -> raw
-            }
-        }
-
-        fun normalize(value: Any?, now: OffsetDateTime): Any? {
-            if (value == null) {
-                if (!nullable) throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-                return null
-            }
-            return try {
-                when (kind) {
-                    FieldKind.STRING -> value.toString().trim().also {
-                        if (it.isEmpty() || (maxLength != null && it.length > maxLength)) invalid()
-                    }
-                    FieldKind.EMAIL -> value.toString().trim().also {
-                        if (it.length > (maxLength ?: Int.MAX_VALUE) || !EMAIL.matches(it)) invalid()
-                    }
-                    FieldKind.GALLERY_URL -> Studio.validateGalleryUrl(value.toString())
-                    FieldKind.ENUM -> value.toString().uppercase(Locale.ROOT).also {
-                        if (it !in allowedValues) invalid()
-                    }
-                    FieldKind.LONG -> number(value).toLong().also {
-                        if ((minNumber != null && it < minNumber) || (maxNumber != null && it > maxNumber)) invalid()
-                    }
-                    FieldKind.INT -> number(value).toInt().also {
-                        if ((minNumber != null && it < minNumber) || (maxNumber != null && it > maxNumber)) invalid()
-                    }
-                    FieldKind.DECIMAL -> invalid()
-                    FieldKind.BOOLEAN -> when (value) {
-                        is Boolean -> value
-                        is String -> value.toBooleanStrict()
-                        else -> invalid()
-                    }
-                    FieldKind.DATE_TIME -> OffsetDateTime.parse(value.toString())
-                    FieldKind.JSON -> invalid()
-                    FieldKind.REVOKED -> when (value) {
-                        is Boolean -> if (value) now else null
-                        is String -> if (value.toBooleanStrict()) now else null
-                        else -> invalid()
-                    }
-                }
-            } catch (_: RuntimeException) {
-                invalid()
-            }
-        }
-
-        private fun number(value: Any): Number = value as? Number ?: value.toString().toLong()
-
-        private fun invalid(): Nothing = throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
-    }
-
-    private enum class FieldKind { STRING, EMAIL, GALLERY_URL, ENUM, LONG, INT, DECIMAL, BOOLEAN, DATE_TIME, JSON, REVOKED }
-
-    data class ResourceCreateResult(
-        val id: Long,
-    )
-
-    data class PhotoOriginal(
-        val id: Long,
-        val originalFileName: String,
-        val storageKey: String,
-        val previewKey: String? = null,
-    )
+    private fun definition(type: AdminResourceType): AdminResourceDefinition = DEFINITIONS.getValue(type)
 
 }

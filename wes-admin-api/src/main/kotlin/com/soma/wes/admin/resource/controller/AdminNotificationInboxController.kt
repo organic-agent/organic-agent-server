@@ -1,9 +1,9 @@
 package com.soma.wes.admin.resource.controller
 
 import com.soma.wes.admin.domain.AdminLoginUser
-import com.soma.wes.admin.resource.dto.AdminNotificationInboxItemResponse
-import com.soma.wes.admin.resource.dto.AdminNotificationInboxPageResponse
-import com.soma.wes.admin.resource.dto.AdminNotificationReadRequest
+import com.soma.wes.admin.resource.dto.response.AdminNotificationInboxItemResponse
+import com.soma.wes.admin.resource.dto.response.AdminNotificationInboxPageResponse
+import com.soma.wes.admin.resource.dto.request.AdminNotificationReadRequest
 import com.soma.wes.admin.resource.service.AdminNotificationInboxService
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid

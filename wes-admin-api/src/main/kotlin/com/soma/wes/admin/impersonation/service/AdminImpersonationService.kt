@@ -3,12 +3,14 @@ package com.soma.wes.admin.impersonation.service
 import com.soma.wes.admin.domain.AdminLoginUser
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
-import com.soma.wes.admin.impersonation.dto.AdminImpersonationAdminResponse
-import com.soma.wes.admin.impersonation.dto.AdminImpersonationResponse
-import com.soma.wes.admin.impersonation.dto.AdminImpersonationViewerResponse
-import com.soma.wes.admin.impersonation.dto.StartAdminImpersonationRequest
+import com.soma.wes.admin.impersonation.dto.response.AdminImpersonationAdminResponse
+import com.soma.wes.admin.impersonation.dto.response.AdminImpersonationResponse
+import com.soma.wes.admin.impersonation.dto.response.AdminImpersonationViewerResponse
+import com.soma.wes.admin.impersonation.dto.request.StartAdminImpersonationRequest
 import com.soma.wes.admin.impersonation.repository.AdminImpersonationRepository
 import com.soma.wes.admin.impersonation.repository.AdminImpersonationViewRepository
+import com.soma.wes.admin.impersonation.repository.projection.AdminImpersonationSessionRow
+import com.soma.wes.admin.impersonation.repository.projection.AdminImpersonationViewerRow
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.global.filter.HttpLoggingFilter
 import org.slf4j.MDC
@@ -54,7 +56,7 @@ class AdminImpersonationService(
 
         val viewer = viewRepository.resolveViewer(request.targetType, request.targetId, request.viewerUserId)
         val sessionId = UUID.randomUUID()
-        val session = AdminImpersonationRepository.Session(
+        val session = AdminImpersonationSessionRow(
             id = sessionId,
             adminId = actor.id,
             adminSessionId = actor.adminSessionId,
@@ -111,18 +113,18 @@ class AdminImpersonationService(
 
     /** Security filter용 조회. 로그인 세션 결속을 확인한다. */
     @Transactional(readOnly = true)
-    fun findCurrent(adminSessionId: UUID): AdminImpersonationRepository.Session? {
+    fun findCurrent(adminSessionId: UUID): AdminImpersonationSessionRow? {
         val now = ZonedDateTime.now(clock)
         expiryService.closeExpired(adminSessionId, now)
         return repository.findCurrent(adminSessionId, now)
     }
 
     @Transactional(readOnly = true)
-    fun requireCurrent(adminSessionId: UUID): AdminImpersonationRepository.Session =
+    fun requireCurrent(adminSessionId: UUID): AdminImpersonationSessionRow =
         findCurrent(adminSessionId) ?: throw AdminException(AdminErrorCode.IMPERSONATION_NOT_FOUND)
 
     @Transactional(readOnly = true)
-    fun requireActive(sessionId: UUID, adminSessionId: UUID): AdminImpersonationRepository.Session {
+    fun requireActive(sessionId: UUID, adminSessionId: UUID): AdminImpersonationSessionRow {
         val now = ZonedDateTime.now(clock)
         expiryService.closeExpired(adminSessionId, now)
         return repository.findActive(sessionId, adminSessionId, now)
@@ -131,7 +133,7 @@ class AdminImpersonationService(
 
     private fun endSession(
         actor: AdminLoginUser,
-        session: AdminImpersonationRepository.Session,
+        session: AdminImpersonationSessionRow,
         sourceAddress: String?,
     ) {
         if (!repository.end(session.id, actor.adminSessionId, ZonedDateTime.now(clock))) {
@@ -139,8 +141,8 @@ class AdminImpersonationService(
         }
     }
 
-    private fun AdminImpersonationRepository.Session.toResponse(actor: AdminLoginUser): AdminImpersonationResponse {
-        val viewer = AdminImpersonationViewRepository.Viewer(viewerUserId, viewerAccessRole)
+    private fun AdminImpersonationSessionRow.toResponse(actor: AdminLoginUser): AdminImpersonationResponse {
+        val viewer = AdminImpersonationViewerRow(viewerUserId, viewerAccessRole)
         return AdminImpersonationResponse(
             id = id,
             correlationId = currentRequestCorrelationId(),

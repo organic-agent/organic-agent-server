@@ -3,7 +3,7 @@ package com.soma.wes.admin.resource.service
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.resource.repository.AdminCascadeTrashRepository
-import com.soma.wes.admin.resource.repository.AdminCascadeTrashRepository.BatchRow
+import com.soma.wes.admin.resource.repository.projection.CascadeTrashBatchRow
 import com.soma.wes.photo.service.port.PhotoStorage
 import java.time.Clock
 import java.time.Duration
@@ -69,7 +69,7 @@ class AdminCascadeTrashPurgeFinalizer(
     private val repository: AdminCascadeTrashRepository,
 ) {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    fun finalize(claimed: BatchRow) {
+    fun finalize(claimed: CascadeTrashBatchRow) {
         val current = repository.find(claimed.id) ?: throw AdminException(AdminErrorCode.TRASH_BATCH_NOT_FOUND)
         if (current.status != "PURGING") throw AdminException(AdminErrorCode.TRASH_BATCH_CONFLICT)
         repository.deleteOperationalPayloads(current.id)

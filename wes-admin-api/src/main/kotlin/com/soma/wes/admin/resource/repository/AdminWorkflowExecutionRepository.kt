@@ -1,6 +1,7 @@
 package com.soma.wes.admin.resource.repository
 
 import com.soma.wes.admin.resource.domain.AdminResourceType
+import com.soma.wes.admin.resource.repository.projection.ProcessingExecutionJob
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
@@ -279,18 +280,6 @@ class AdminWorkflowExecutionRepository(
     private fun jsonMap(value: String): Map<String, Any?> =
         objectMapper.readValue(value, Map::class.java).entries
             .associate { it.key.toString() to it.value }
-
-    data class ProcessingExecutionJob(
-        val id: Long,
-        val jobType: String,
-        val targetType: AdminResourceType,
-        val targetId: Long,
-        val revisionId: Long?,
-        val payload: Map<String, Any?>,
-        val attemptCount: Int,
-        val actorAdminId: Long?,
-        val reason: String,
-    )
 
     private fun targetTable(type: AdminResourceType): String = when (type) {
         AdminResourceType.USER -> "users"

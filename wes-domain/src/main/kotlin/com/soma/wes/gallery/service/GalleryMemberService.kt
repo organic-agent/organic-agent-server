@@ -45,7 +45,7 @@ class GalleryMemberService(
             val members = workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId)
             val users = userRepository.findAllById(members.map { it.userId }).associateBy { it.requiredId }
             return members.mapNotNull { member -> users[member.userId]?.let { GalleryMemberResponse.personal(member, it) } }
-                .sortedBy { it.role != com.soma.wes.gallery.dto.response.GalleryParticipantRole.OWNER }
+                .sortedBy { it.role != com.soma.wes.gallery.domain.GalleryParticipantRole.OWNER }
         }
 
         val members = galleryMemberRepository.findAllByGalleryId(galleryId)

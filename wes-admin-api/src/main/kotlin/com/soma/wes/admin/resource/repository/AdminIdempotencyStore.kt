@@ -3,6 +3,8 @@ package com.soma.wes.admin.resource.repository
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
+import com.soma.wes.admin.resource.repository.projection.IdempotencyRecord
+import com.soma.wes.admin.resource.repository.projection.IdempotencyReservation
 import com.soma.wes.global.filter.HttpLoggingFilter
 import org.slf4j.MDC
 import org.springframework.jdbc.core.simple.JdbcClient
@@ -22,7 +24,7 @@ class AdminIdempotencyStore(
         requestHash: String,
         targetType: AdminResourceType,
         targetId: String,
-    ): Reservation {
+    ): IdempotencyReservation {
         val inserted = jdbcClient.sql(
             """
                 INSERT INTO admin_idempotency_keys
@@ -48,10 +50,10 @@ class AdminIdempotencyStore(
             if (existing.requestHash != requestHash) {
                 throw AdminException(AdminErrorCode.IDEMPOTENCY_KEY_REUSED)
             }
-            return Reservation(existing = existing)
+            return IdempotencyReservation(existing = existing)
         }
 
-        return Reservation(existing = null)
+        return IdempotencyReservation(existing = null)
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -103,12 +105,4 @@ class AdminIdempotencyStore(
             }
             .optional()
             .orElse(null)
-
-    data class Reservation(val existing: IdempotencyRecord?)
-
-    data class IdempotencyRecord(
-        val requestHash: String,
-        val status: String,
-        val resultPayload: String?,
-    )
 }

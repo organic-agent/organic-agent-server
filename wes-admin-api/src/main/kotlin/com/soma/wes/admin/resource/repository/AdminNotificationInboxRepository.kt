@@ -2,9 +2,9 @@ package com.soma.wes.admin.resource.repository
 
 import com.soma.wes.admin.resource.domain.AdminInboxEventType
 import com.soma.wes.admin.resource.domain.AdminResourceType
-import com.soma.wes.admin.resource.dto.AdminInboxWorkStatus
-import com.soma.wes.admin.resource.dto.AdminNotificationInboxItemResponse
-import com.soma.wes.admin.resource.dto.AdminNotificationInboxPageResponse
+import com.soma.wes.admin.resource.domain.AdminInboxWorkStatus
+import com.soma.wes.admin.resource.dto.response.AdminNotificationInboxItemResponse
+import com.soma.wes.admin.resource.dto.response.AdminNotificationInboxPageResponse
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import org.springframework.jdbc.core.simple.JdbcClient

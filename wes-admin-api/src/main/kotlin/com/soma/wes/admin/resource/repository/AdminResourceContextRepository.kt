@@ -1,6 +1,7 @@
 package com.soma.wes.admin.resource.repository
 
 import com.soma.wes.admin.resource.domain.AdminResourceType
+import com.soma.wes.admin.resource.repository.projection.AdminResourceReference
 import java.time.Clock
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Repository
@@ -24,23 +25,23 @@ class AdminResourceContextRepository(
         )
     }
 
-    fun findRelations(type: AdminResourceType, id: Long): Set<ResourceReference> = when (type) {
-        AdminResourceType.USER -> linkedSetOf<ResourceReference>().apply {
+    fun findRelations(type: AdminResourceType, id: Long): Set<AdminResourceReference> = when (type) {
+        AdminResourceType.USER -> linkedSetOf<AdminResourceReference>().apply {
             addAll(references(AdminResourceType.WORKSPACE, "SELECT workspace_id AS id FROM workspace_members WHERE user_id = :id AND deleted_at IS NULL", id))
             addAll(references(AdminResourceType.STUDIO, "SELECT wm.workspace_id AS id FROM workspace_members wm JOIN studios s ON s.workspace_id = wm.workspace_id WHERE wm.user_id = :id AND wm.deleted_at IS NULL", id))
             addAll(references(AdminResourceType.GALLERY, "SELECT gallery_id AS id FROM gallery_members WHERE user_id = :id AND deleted_at IS NULL", id))
         }
-        AdminResourceType.WORKSPACE -> linkedSetOf<ResourceReference>().apply {
+        AdminResourceType.WORKSPACE -> linkedSetOf<AdminResourceReference>().apply {
             addAll(references(AdminResourceType.USER, "SELECT user_id AS id FROM workspace_members WHERE workspace_id = :id AND deleted_at IS NULL", id))
             addAll(references(AdminResourceType.STUDIO, "SELECT workspace_id AS id FROM studios WHERE workspace_id = :id", id))
             addAll(references(AdminResourceType.GALLERY, "SELECT id FROM galleries WHERE workspace_id = :id", id))
         }
-        AdminResourceType.STUDIO -> linkedSetOf<ResourceReference>().apply {
-            add(ResourceReference(AdminResourceType.WORKSPACE, id))
+        AdminResourceType.STUDIO -> linkedSetOf<AdminResourceReference>().apply {
+            add(AdminResourceReference(AdminResourceType.WORKSPACE, id))
             addAll(references(AdminResourceType.USER, "SELECT user_id AS id FROM workspace_members WHERE workspace_id = :id AND deleted_at IS NULL", id))
             addAll(references(AdminResourceType.GALLERY, "SELECT id FROM galleries WHERE workspace_id = :id", id))
         }
-        AdminResourceType.GALLERY -> linkedSetOf<ResourceReference>().apply {
+        AdminResourceType.GALLERY -> linkedSetOf<AdminResourceReference>().apply {
             addAll(references(AdminResourceType.WORKSPACE, "SELECT workspace_id AS id FROM galleries WHERE id = :id", id))
             addAll(references(AdminResourceType.STUDIO, "SELECT workspace_id AS id FROM galleries WHERE id = :id AND EXISTS (SELECT 1 FROM studios WHERE workspace_id = galleries.workspace_id)", id))
             addAll(references(AdminResourceType.USER, "SELECT user_id AS id FROM gallery_members WHERE gallery_id = :id AND deleted_at IS NULL", id))
@@ -50,40 +51,40 @@ class AdminResourceContextRepository(
             addAll(references(AdminResourceType.RETOUCH_REQUEST, "SELECT id FROM retouch_rounds WHERE gallery_id = :id", id))
             addAll(references(AdminResourceType.CONCEPT_FOLDER, "SELECT id FROM concept_folders WHERE gallery_id = :id", id))
         }
-        AdminResourceType.PHOTO -> linkedSetOf<ResourceReference>().apply {
+        AdminResourceType.PHOTO -> linkedSetOf<AdminResourceReference>().apply {
             addAll(references(AdminResourceType.GALLERY, "SELECT gallery_id AS id FROM photos WHERE id = :id", id))
             addAll(references(AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT, "SELECT photo_id AS id FROM detail_folder_assignments WHERE photo_id = :id", id))
             addAll(references(AdminResourceType.PHOTO_RATING, "SELECT photo_id AS id FROM photo_ratings WHERE photo_id = :id", id))
         }
-        AdminResourceType.CONCEPT_FOLDER -> linkedSetOf<ResourceReference>().apply {
+        AdminResourceType.CONCEPT_FOLDER -> linkedSetOf<AdminResourceReference>().apply {
             addAll(references(AdminResourceType.GALLERY, "SELECT gallery_id AS id FROM concept_folders WHERE id = :id", id))
             addAll(references(AdminResourceType.DETAIL_FOLDER, "SELECT id FROM detail_folders WHERE concept_folder_id = :id", id))
         }
-        AdminResourceType.DETAIL_FOLDER -> linkedSetOf<ResourceReference>().apply {
+        AdminResourceType.DETAIL_FOLDER -> linkedSetOf<AdminResourceReference>().apply {
             addAll(references(AdminResourceType.CONCEPT_FOLDER, "SELECT concept_folder_id AS id FROM detail_folders WHERE id = :id", id))
             addAll(references(AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT, "SELECT photo_id AS id FROM detail_folder_assignments WHERE detail_folder_id = :id", id))
             addAll(references(AdminResourceType.PHOTO, "SELECT photo_id AS id FROM detail_folder_assignments WHERE detail_folder_id = :id", id))
         }
-        AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT -> linkedSetOf<ResourceReference>().apply {
-            add(ResourceReference(AdminResourceType.PHOTO, id))
+        AdminResourceType.PHOTO_CATEGORY_ASSIGNMENT -> linkedSetOf<AdminResourceReference>().apply {
+            add(AdminResourceReference(AdminResourceType.PHOTO, id))
             addAll(references(AdminResourceType.DETAIL_FOLDER, "SELECT detail_folder_id AS id FROM detail_folder_assignments WHERE photo_id = :id", id))
             addAll(references(AdminResourceType.USER, "SELECT assigned_by_user_id AS id FROM detail_folder_assignments WHERE photo_id = :id AND assigned_by_user_id IS NOT NULL", id))
         }
-        AdminResourceType.PHOTO_RATING -> linkedSetOf<ResourceReference>().apply {
-            add(ResourceReference(AdminResourceType.PHOTO, id))
+        AdminResourceType.PHOTO_RATING -> linkedSetOf<AdminResourceReference>().apply {
+            add(AdminResourceReference(AdminResourceType.PHOTO, id))
             addAll(references(AdminResourceType.USER, "SELECT rated_by AS id FROM photo_ratings WHERE photo_id = :id", id))
         }
-        AdminResourceType.SELECTION -> linkedSetOf<ResourceReference>().apply {
+        AdminResourceType.SELECTION -> linkedSetOf<AdminResourceReference>().apply {
             addAll(references(AdminResourceType.GALLERY, "SELECT gallery_id AS id FROM photo_selections WHERE id = :id", id))
             addAll(references(AdminResourceType.PHOTO, "SELECT photo_id AS id FROM photo_selection_items WHERE selection_id = :id", id))
         }
-        AdminResourceType.COLLABORATION -> linkedSetOf<ResourceReference>().apply {
+        AdminResourceType.COLLABORATION -> linkedSetOf<AdminResourceReference>().apply {
             addAll(references(AdminResourceType.GALLERY, "SELECT gallery_id AS id FROM collab_sessions WHERE id = :id", id))
             addAll(references(AdminResourceType.PHOTO, """
                 SELECT shared.photo_id AS id FROM (${sharedPhotosSql()}) shared
             """.trimIndent(), id))
         }
-        AdminResourceType.RETOUCH_REQUEST -> linkedSetOf<ResourceReference>().apply {
+        AdminResourceType.RETOUCH_REQUEST -> linkedSetOf<AdminResourceReference>().apply {
             addAll(references(AdminResourceType.GALLERY, "SELECT gallery_id AS id FROM retouch_rounds WHERE id = :id", id))
             addAll(references(AdminResourceType.PHOTO, "SELECT photo_id AS id FROM retouch_photos WHERE round_id = :id", id))
         }
@@ -1098,10 +1099,10 @@ class AdminResourceContextRepository(
         WHERE s.id = :id
     """.trimIndent()
 
-    private fun references(type: AdminResourceType, sql: String, id: Long): List<ResourceReference> =
+    private fun references(type: AdminResourceType, sql: String, id: Long): List<AdminResourceReference> =
         jdbcClient.sql(sql)
             .param("id", id)
-            .query { rs, _ -> ResourceReference(type, rs.getLong("id")) }
+            .query { rs, _ -> AdminResourceReference(type, rs.getLong("id")) }
             .list()
 
     private fun singleFacts(
@@ -1122,6 +1123,4 @@ class AdminResourceContextRepository(
         .param("id", id)
         .query { rs, _ -> mapper(rs) }
         .list()
-
-    data class ResourceReference(val type: AdminResourceType, val id: Long)
 }

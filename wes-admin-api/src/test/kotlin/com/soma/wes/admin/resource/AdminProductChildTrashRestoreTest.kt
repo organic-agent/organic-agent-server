@@ -3,7 +3,7 @@ package com.soma.wes.admin.resource
 import com.soma.wes.admin.fixture.AdminAccountFixture
 import com.soma.wes.admin.resource.domain.AdminChildTrashType
 import com.soma.wes.admin.resource.domain.AdminResourceType
-import com.soma.wes.admin.resource.dto.CreateAdminResourceRequest
+import com.soma.wes.admin.resource.dto.request.CreateAdminResourceRequest
 import com.soma.wes.admin.resource.service.AdminChildTrashService
 import com.soma.wes.admin.resource.service.AdminResourceService
 import com.soma.wes.support.IntegrationTest

@@ -2,11 +2,11 @@ package com.soma.wes.notification.controller.docs
 
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.notification.domain.UserNotificationScope
-import com.soma.wes.notification.dto.UpdateUserNotificationSettingsRequest
-import com.soma.wes.notification.dto.UserNotificationResponse
-import com.soma.wes.notification.dto.UserNotificationSettingsResponse
-import com.soma.wes.notification.dto.ReadUserNotificationsRequest
-import com.soma.wes.notification.dto.ReadUserNotificationsResponse
+import com.soma.wes.notification.dto.request.UpdateUserNotificationSettingsRequest
+import com.soma.wes.notification.dto.response.UserNotificationResponse
+import com.soma.wes.notification.dto.response.UserNotificationSettingsResponse
+import com.soma.wes.notification.dto.request.ReadUserNotificationsRequest
+import com.soma.wes.notification.dto.response.ReadUserNotificationsResponse
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.http.ResponseEntity
