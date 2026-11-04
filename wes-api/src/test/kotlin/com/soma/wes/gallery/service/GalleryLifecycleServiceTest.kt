@@ -3,6 +3,7 @@ package com.soma.wes.gallery.service
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryStage
 import com.soma.wes.gallery.domain.GalleryStatus
+import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.notification.domain.UserNotificationType
 import com.soma.wes.notification.service.UserNotificationService
@@ -26,6 +27,7 @@ class GalleryLifecycleServiceTest @Autowired constructor(
     private val workspaces: WorkspaceRepository,
     private val members: WorkspaceMemberRepository,
     private val users: UserFixture,
+    private val galleryFixture: GalleryFixture,
     private val notifications: UserNotificationService,
     private val clock: Clock,
 ) {
@@ -37,9 +39,12 @@ class GalleryLifecycleServiceTest @Autowired constructor(
         for ((user, role) in listOf(partner to WorkspaceRole.MEMBER)) {
             members.save(WorkspaceMember(workspace.requiredId, user.requiredId, role))
         }
-        val gallery = galleries.save(Gallery(workspace.requiredId, owner.requiredId, "기간 종료", status = GalleryStatus.OPEN).apply {
-            planExpiresAt = ZonedDateTime.now(clock).minusMinutes(1)
-        })
+        val gallery = galleries.save(
+            Gallery(
+                workspace.requiredId, owner.requiredId, "기간 종료", status = GalleryStatus.OPEN,
+            ),
+        )
+        galleryFixture.이용_기한(gallery.requiredId, ZonedDateTime.now(clock).minusMinutes(1))
         assertThat(lifecycle.nextBatch(0)).contains(gallery.requiredId)
         lifecycle.process(gallery.requiredId)
         lifecycle.process(gallery.requiredId)
@@ -60,17 +65,20 @@ class GalleryLifecycleServiceTest @Autowired constructor(
         val owner = users.사용자()
         val workspace = workspaces.findByPersonalOwnerUserId(owner.requiredId)!!
         val now = ZonedDateTime.now(clock)
-        val gallery = galleries.save(Gallery(workspace.requiredId, owner.requiredId, "마감 임박", status = GalleryStatus.OPEN).apply {
-            stage = GalleryStage.SELECTION_IN_PROGRESS
-            selectionDeadline = now.plusDays(1)
-            planExpiresAt = now.plusDays(2)
-        })
+        val gallery = galleries.save(
+            Gallery(
+                workspace.requiredId, owner.requiredId, "마감 임박", status = GalleryStatus.OPEN,
+                stage = GalleryStage.SELECTION_IN_PROGRESS,
+                selectionDeadline = now.plusDays(1),
+            ),
+        )
+        galleryFixture.이용_기한(gallery.requiredId, now.plusDays(2))
         lifecycle.process(gallery.requiredId)
         lifecycle.process(gallery.requiredId)
         assertThat(notifications.list(owner.requiredId, null, null).map { it.type })
             .containsExactlyInAnyOrder(UserNotificationType.DEADLINE_REMINDER, UserNotificationType.PLAN_EXPIRY_REMINDER)
         val changed = galleries.findById(gallery.requiredId).orElseThrow()
-        changed.selectionDeadline = now.plusHours(12)
+        changed.changeSelectionDeadline(now.plusHours(12), now)
         galleries.save(changed)
         lifecycle.process(gallery.requiredId)
         assertThat(notifications.list(owner.requiredId, null, null).filter { it.type == UserNotificationType.DEADLINE_REMINDER })
@@ -82,11 +90,14 @@ class GalleryLifecycleServiceTest @Autowired constructor(
         val owner = users.사용자()
         val workspace = workspaces.findByPersonalOwnerUserId(owner.requiredId)!!
         val now = ZonedDateTime.now(clock)
-        val gallery = galleries.save(Gallery(workspace.requiredId, owner.requiredId, "목표일 임박", status = GalleryStatus.OPEN).apply {
-            stage = GalleryStage.SELECTION_IN_PROGRESS
-            selectionDeadline = now.plusDays(1)
-            planExpiresAt = now.plusDays(30)
-        })
+        val gallery = galleries.save(
+            Gallery(
+                workspace.requiredId, owner.requiredId, "목표일 임박", status = GalleryStatus.OPEN,
+                stage = GalleryStage.SELECTION_IN_PROGRESS,
+                selectionDeadline = now.plusDays(1),
+            ),
+        )
+        galleryFixture.이용_기한(gallery.requiredId, now.plusDays(30))
 
         lifecycle.process(gallery.requiredId)
 
@@ -101,11 +112,14 @@ class GalleryLifecycleServiceTest @Autowired constructor(
         val owner = users.사용자()
         val workspace = workspaces.findByPersonalOwnerUserId(owner.requiredId)!!
         val expiry = ZonedDateTime.now(clock).plusDays(2)
-        val gallery = galleries.save(Gallery(workspace.requiredId, owner.requiredId, "목표일 미지정", status = GalleryStatus.OPEN).apply {
-            stage = GalleryStage.SELECTION_IN_PROGRESS
-            selectionDeadline = expiry
-            planExpiresAt = expiry
-        })
+        val gallery = galleries.save(
+            Gallery(
+                workspace.requiredId, owner.requiredId, "목표일 미지정", status = GalleryStatus.OPEN,
+                stage = GalleryStage.SELECTION_IN_PROGRESS,
+                selectionDeadline = expiry,
+            ),
+        )
+        galleryFixture.이용_기한(gallery.requiredId, expiry)
 
         lifecycle.process(gallery.requiredId)
 
@@ -118,10 +132,13 @@ class GalleryLifecycleServiceTest @Autowired constructor(
         val owner = users.사용자()
         val workspace = workspaces.save(Workspace.studio("스튜디오"))
         members.save(WorkspaceMember(workspace.requiredId, owner.requiredId, WorkspaceRole.OWNER))
-        val gallery = galleries.save(Gallery(workspace.requiredId, owner.requiredId, "스튜디오 마감 임박", status = GalleryStatus.OPEN).apply {
-            stage = GalleryStage.SELECTION_IN_PROGRESS
-            selectionDeadline = ZonedDateTime.now(clock).plusDays(1)
-        })
+        val gallery = galleries.save(
+            Gallery(
+                workspace.requiredId, owner.requiredId, "스튜디오 마감 임박", status = GalleryStatus.OPEN,
+                stage = GalleryStage.SELECTION_IN_PROGRESS,
+                selectionDeadline = ZonedDateTime.now(clock).plusDays(1),
+            ),
+        )
 
         lifecycle.process(gallery.requiredId)
 
@@ -133,11 +150,14 @@ class GalleryLifecycleServiceTest @Autowired constructor(
         val owner = users.사용자()
         val workspace = workspaces.save(Workspace.studio("스튜디오"))
         members.save(WorkspaceMember(workspace.requiredId, owner.requiredId, WorkspaceRole.OWNER))
-        val gallery = galleries.save(Gallery(workspace.requiredId, owner.requiredId, "스튜디오 갤러리", status = GalleryStatus.OPEN).apply {
-            stage = GalleryStage.SELECTION_IN_PROGRESS
-            selectionDeadline = ZonedDateTime.now(clock).plusDays(4)
-            planExpiresAt = ZonedDateTime.now(clock).minusDays(1)
-        })
+        val gallery = galleries.save(
+            Gallery(
+                workspace.requiredId, owner.requiredId, "스튜디오 갤러리", status = GalleryStatus.OPEN,
+                stage = GalleryStage.SELECTION_IN_PROGRESS,
+                selectionDeadline = ZonedDateTime.now(clock).plusDays(4),
+            ),
+        )
+        galleryFixture.이용_기한(gallery.requiredId, ZonedDateTime.now(clock).minusDays(1))
         lifecycle.process(gallery.requiredId)
         assertThat(galleries.findById(gallery.requiredId).orElseThrow().stage).isEqualTo(GalleryStage.SELECTION_IN_PROGRESS)
         assertThat(notifications.list(owner.requiredId, null, null)).isEmpty()

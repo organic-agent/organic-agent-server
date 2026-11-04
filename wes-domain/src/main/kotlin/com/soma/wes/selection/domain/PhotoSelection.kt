@@ -35,6 +35,7 @@ class PhotoSelection(
 
     @Column(name = "deleted_at")
     var deletedAt: ZonedDateTime? = null
+        protected set
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -45,14 +46,17 @@ class PhotoSelection(
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     var status: PhotoSelectionStatus = PhotoSelectionStatus.SELECTING
+        protected set
 
     /** 제출 시각. 되돌리면 다시 null이 된다 — [status]와 늘 같은 방향을 가리킨다. */
     @Column(name = "submitted_at")
     var submittedAt: ZonedDateTime? = null
+        protected set
 
     /** 마지막 제출을 수행한 사용자. 철회하면 제출 이력과 함께 비운다. */
     @Column(name = "submitted_by_user_id")
     var submittedByUserId: Long? = null
+        protected set
 
     val requiredId: Long
         get() = checkNotNull(id) { "아직 저장되지 않은 PhotoSelection 이다" }

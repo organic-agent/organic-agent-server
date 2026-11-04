@@ -13,20 +13,34 @@ import java.util.UUID
 @Table(name = "test_checkouts")
 class TestCheckout(
     @Id
-    @Column(length = 36)
+    @Column(name = "id", length = 36)
     val id: String = UUID.randomUUID().toString(),
-    @Column(nullable = false, updatable = false)
+    @Column(name = "user_id", updatable = false)
     val userId: Long,
-    @Column(nullable = false, length = 100, updatable = false)
+    @Column(name = "plan_id", length = 100, updatable = false)
     val planId: String,
-    @Column(nullable = false, updatable = false)
+    @Column(name = "amount", updatable = false)
     val amount: Long,
-    @Column(nullable = false, length = 3, updatable = false)
+    @Column(name = "currency", length = 3, updatable = false)
     val currency: String,
-    @Column(nullable = false, updatable = false)
+    @Column(name = "max_photo_count", updatable = false)
     val maxPhotoCount: Int,
-    @Column(nullable = false, updatable = false)
+    @Column(name = "expires_at", updatable = false)
     val expiresAt: ZonedDateTime,
-    var galleryId: Long? = null,
-    var consumedAt: ZonedDateTime? = null,
-) : BaseEntity()
+    galleryId: Long? = null,
+    consumedAt: ZonedDateTime? = null,
+) : BaseEntity() {
+
+    @Column(name = "gallery_id")
+    var galleryId: Long? = galleryId
+        protected set
+
+    @Column(name = "consumed_at")
+    var consumedAt: ZonedDateTime? = consumedAt
+        protected set
+
+    fun consume(galleryId: Long, at: ZonedDateTime) {
+        this.galleryId = galleryId
+        consumedAt = at
+    }
+}

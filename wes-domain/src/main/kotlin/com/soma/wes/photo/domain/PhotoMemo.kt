@@ -32,18 +32,24 @@ class PhotoMemo(
     @Column(name = "photo_id", nullable = false, updatable = false)
     val photoId: Long,
 
-    @Column(nullable = false, length = MAX_CONTENT_LENGTH)
-    var content: String,
+    content: String,
 
-    /** 마지막으로 메모를 고친 사람. */
-    @Column(name = "updated_by", nullable = false)
-    var updatedBy: Long,
+    updatedBy: Long,
 
 ) : BaseEntity() {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null
+
+    @Column(nullable = false, length = MAX_CONTENT_LENGTH)
+    var content: String = content
+        protected set
+
+    /** 마지막으로 메모를 고친 사람. */
+    @Column(name = "updated_by", nullable = false)
+    var updatedBy: Long = updatedBy
+        protected set
 
     /** 같은 사진에 다시 쓰면 덮어쓴다. */
     fun write(content: String, updatedBy: Long) {

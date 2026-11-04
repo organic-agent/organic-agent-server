@@ -123,7 +123,7 @@ class CollabSessionAccessTest @Autowired constructor(
             // given
             val session = openSession()
             val entity = collabSessionRepository.findById(session.sessionId).orElseThrow()
-            entity.expiresAt = ZonedDateTime.now(clock).minusSeconds(1)
+            entity.changeExpiresAt(ZonedDateTime.now(clock).minusSeconds(1))
             collabSessionRepository.saveAndFlush(entity)
 
             // when & then
@@ -142,7 +142,7 @@ class CollabSessionAccessTest @Autowired constructor(
             // given
             val session = openSession()
             val entity = collabSessionRepository.findById(session.sessionId).orElseThrow()
-            entity.expiresAt = ZonedDateTime.now(clock).plusMinutes(5)
+            entity.changeExpiresAt(ZonedDateTime.now(clock).plusMinutes(5))
             collabSessionRepository.saveAndFlush(entity)
 
             // when & then
@@ -157,9 +157,7 @@ class CollabSessionAccessTest @Autowired constructor(
             // 않도록 막는 문이라 상태를 직접 되돌려 확인한다.
             // given
             val session = openSession()
-            val gallery = galleryRepository.findById(fixture.galleryId).orElseThrow()
-            gallery.status = GalleryStatus.DRAFT
-            galleryRepository.saveAndFlush(gallery)
+            galleryFixture.상태_변경(fixture.galleryId, GalleryStatus.DRAFT)
 
             // when & then
             assertThatThrownBy { collabSessionAccess.requireReadable(session.collabToken) }

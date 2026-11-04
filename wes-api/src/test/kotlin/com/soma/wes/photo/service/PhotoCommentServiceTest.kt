@@ -31,13 +31,14 @@ import com.soma.wes.photo.repository.PhotoCommentRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.selection.fixture.SelectionFixture
 import com.soma.wes.selection.service.PhotoSelectionService
-import com.soma.wes.studio.repository.StudioRepository
+import com.soma.wes.studio.fixture.StudioFixture
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.trash.dto.request.RestorePhotosRequest
 import com.soma.wes.trash.service.TrashService
 import com.soma.wes.user.fixture.UserFixture
 import com.soma.wes.workspace.domain.WorkspaceMember
 import com.soma.wes.workspace.domain.WorkspaceRole
+import com.soma.wes.workspace.fixture.WorkspaceFixture
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository
 import org.assertj.core.api.Assertions.assertThat
@@ -60,6 +61,8 @@ class PhotoCommentServiceTest @Autowired constructor(
     private val photoCommentService: PhotoCommentService,
     private val photoCommentRepository: PhotoCommentRepository,
     private val galleryFixture: GalleryFixture,
+    private val studioFixture: StudioFixture,
+    private val workspaceFixture: WorkspaceFixture,
     private val photoFixture: PhotoFixture,
     private val userFixture: UserFixture,
     private val selectionFixture: SelectionFixture,
@@ -69,7 +72,6 @@ class PhotoCommentServiceTest @Autowired constructor(
     private val galleryRepository: GalleryRepository,
     private val workspaceRepository: WorkspaceRepository,
     private val workspaceMemberRepository: WorkspaceMemberRepository,
-    private val studioRepository: StudioRepository,
     private val photoRepository: PhotoRepository,
     private val photoService: PhotoService,
     private val photoSelectionService: PhotoSelectionService,
@@ -264,9 +266,7 @@ class PhotoCommentServiceTest @Autowired constructor(
             val existing = photoCommentService.write(
                 fixture.galleryId, photoId, fixture.member.requiredId, WritePhotoCommentRequest("부부의 대화"),
             )
-            val studio = studioRepository.findById(gallery.workspaceId).orElseThrow()
-            studio.suspendedAt = ZonedDateTime.now()
-            studioRepository.saveAndFlush(studio)
+            studioFixture.정지(gallery.workspaceId, ZonedDateTime.now())
             // 운영 정지는 기존 관리 권한을 닫지만, 구성원 신분까지 부부로 바꾸지는 않는다.
             galleryInviteService.accept(token, actor.requiredId)
 
@@ -295,11 +295,7 @@ class PhotoCommentServiceTest @Autowired constructor(
             val comment = photoCommentService.write(
                 gallery.requiredId, ownPhoto, owner.requiredId, WritePhotoCommentRequest("접근 종료 전 대화"),
             )
-            val membership = checkNotNull(
-                workspaceMemberRepository.findByWorkspaceIdAndUserId(workspace.requiredId, owner.requiredId),
-            )
-            membership.deletedAt = ZonedDateTime.now()
-            workspaceMemberRepository.saveAndFlush(membership)
+            workspaceFixture.멤버_탈퇴(workspace.requiredId, owner.requiredId, ZonedDateTime.now())
 
             // when & then
             assertGalleryDenied { photoCommentService.list(gallery.requiredId, ownPhoto, owner.requiredId, 0, 20) }
@@ -535,9 +531,7 @@ class PhotoCommentServiceTest @Autowired constructor(
             val comment = photoCommentService.write(
                 fixture.galleryId, photoId, fixture.member.requiredId, WritePhotoCommentRequest("이전 대화"),
             )
-            val gallery = galleryRepository.findById(fixture.galleryId).orElseThrow()
-            gallery.status = GalleryStatus.DRAFT
-            galleryRepository.saveAndFlush(gallery)
+            galleryFixture.상태_변경(fixture.galleryId, GalleryStatus.DRAFT)
 
             // when & then
             assertGalleryDenied { photoCommentService.list(fixture.galleryId, photoId, fixture.member.requiredId, 0, 20) }

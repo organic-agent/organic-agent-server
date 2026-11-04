@@ -23,16 +23,22 @@ class AdminSession private constructor(
     @Column(name = "admin_id", nullable = false, updatable = false)
     val adminId: Long,
 
-    @Column(name = "last_active_at", nullable = false)
-    var lastActiveAt: ZonedDateTime,
+    lastActiveAt: ZonedDateTime,
 
     @Column(name = "absolute_expires_at", nullable = false, updatable = false)
     val absoluteExpiresAt: ZonedDateTime,
 
-    @Column(name = "revoked_at")
-    var revokedAt: ZonedDateTime?,
+    revokedAt: ZonedDateTime?,
 
 ) : BaseEntity() {
+
+    @Column(name = "last_active_at", nullable = false)
+    var lastActiveAt: ZonedDateTime = lastActiveAt
+        protected set
+
+    @Column(name = "revoked_at")
+    var revokedAt: ZonedDateTime? = revokedAt
+        protected set
 
     fun isUsable(
         now: ZonedDateTime,

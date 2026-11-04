@@ -54,7 +54,7 @@ class UserNotificationService(
         }
         val unread = targets.filter { it.readAt == null }
         val now = ZonedDateTime.now(clock)
-        unread.forEach { it.readAt = now }
+        unread.forEach { it.markRead(now) }
         notificationRepository.flush()
         return ReadUserNotificationsResponse(
             updatedCount = unread.size,

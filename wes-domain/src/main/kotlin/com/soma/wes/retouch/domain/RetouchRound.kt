@@ -43,6 +43,7 @@ class RetouchRound(
 
     @Column(name = "deleted_at")
     var deletedAt: ZonedDateTime? = null
+        protected set
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -53,14 +54,17 @@ class RetouchRound(
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     var status: RetouchRoundStatus = RetouchRoundStatus.DRAFTING
+        protected set
 
     /** 부부가 제출한 시각. [status]가 REQUESTED가 되는 순간 채워진다. */
     @Column(name = "requested_at")
     var requestedAt: ZonedDateTime? = null
+        protected set
 
     /** 작가가 회차를 끝낸 시각. */
     @Column(name = "completed_at")
     var completedAt: ZonedDateTime? = null
+        protected set
 
     /**
      * 회차의 모든 사진에 적용되는 요청("전체 톤 밝게"). 사진 단위 요청([RetouchPhoto.requestText])과 별개로
@@ -68,6 +72,7 @@ class RetouchRound(
      */
     @Column(name = "request_text")
     var requestText: String? = null
+        protected set
 
     val requiredId: Long
         get() = checkNotNull(id) { "아직 저장되지 않은 RetouchRound 다" }

@@ -2,7 +2,6 @@ package com.soma.wes.gallery.service
 
 import com.soma.wes.billing.support.GalleryPasses
 import com.soma.wes.gallery.domain.Gallery
-import com.soma.wes.gallery.domain.GalleryStatus
 import com.soma.wes.gallery.dto.request.CreatePersonalGalleryRequest
 import com.soma.wes.gallery.dto.request.UpdatePersonalGalleryRequest
 import com.soma.wes.gallery.dto.response.GalleryResponse
@@ -50,10 +49,7 @@ class PersonalGalleryService(
             selectionDeadline = deadline, maxSelectablePhotoCount = request.maxSelectablePhotoCount,
             maxRetouchRoundCount = null, shootType = request.shootType, at = now,
         )
-        gallery.status = GalleryStatus.OPEN
-        gallery.planExpiresAt = pass.expiresAt
-        gallery.planMaxPhotoCount = pass.maxPhotoCount
-        gallery.planType = pass.plan
+        gallery.applyPass(plan = pass.plan, expiresAt = pass.expiresAt, maxPhotoCount = pass.maxPhotoCount)
         galleryRepository.save(gallery)
         selectionRepository.save(PhotoSelection(galleryId = gallery.requiredId))
         galleryPasses.consume(userId = userId, galleryId = gallery.requiredId, pass = pass, at = now)

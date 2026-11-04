@@ -46,10 +46,12 @@ class RetouchPhoto(
     /** 사진별 보정 요청 텍스트. 담기만 하고 아직 적지 않았으면 null이다. */
     @Column(name = "request_text")
     var requestText: String? = null
+        protected set
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "request_points", nullable = false, columnDefinition = "jsonb")
     var points: List<RetouchPoint> = emptyList()
+        protected set
 
     /**
      * 사진 위에 겹쳐 그린 주석 레이어 PNG의 storage key.
@@ -59,13 +61,16 @@ class RetouchPhoto(
      */
     @Column(name = "annotation_key", length = 500)
     var annotationKey: String? = null
+        protected set
 
     /** 작가가 올린 보정 결과 파일의 storage key. null이면 아직 응답이 없는 항목이다. */
     @Column(name = "result_key", length = 500)
     var resultKey: String? = null
+        protected set
 
     @Column(name = "result_content_type", length = 100)
     var resultContentType: String? = null
+        protected set
 
     /** 관리자 휴지통에 들어간 항목은 모든 사용자 JPA 조회와 변경 경로에서 즉시 제외한다. */
     @Column(name = "deleted_at")

@@ -85,7 +85,7 @@ class CollabGuestWorkflowTest @Autowired constructor(
     fun `만료된 링크를 재발행하면 새 토큰을 주고 이전 토큰은 더이상 열리지 않는다`() {
         val shared = fixtures.사진이_있는_세션()
         sessions.saveAndFlush(sessions.findById(shared.session.sessionId).orElseThrow().apply {
-            expiresAt = ZonedDateTime.now(clock).minusSeconds(1)
+            changeExpiresAt(ZonedDateTime.now(clock).minusSeconds(1))
         })
         assertThatThrownBy { guestQuery.getLanding(shared.token) }
             .isInstanceOf(CollabException::class.java).extracting("errorCode").isEqualTo(CollabErrorCode.SESSION_EXPIRED)
@@ -192,7 +192,7 @@ class CollabGuestWorkflowTest @Autowired constructor(
         val otherGallery = fixtures.사진이_있는_세션()
         sessionService.revoke(shared.galleryId, revoked.session.sessionId, shared.gallery.member.requiredId)
         sessions.saveAndFlush(sessions.findById(expired.session.sessionId).orElseThrow().apply {
-            expiresAt = ZonedDateTime.now(clock).minusSeconds(1)
+            changeExpiresAt(ZonedDateTime.now(clock).minusSeconds(1))
         })
         sessionService.rename(shared.galleryId, shared.session.sessionId, shared.gallery.member.requiredId,
             RenameCollabSessionRequest(name = "공유 앨범 전체", includeAllAlbums = true))

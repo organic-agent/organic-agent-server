@@ -1,6 +1,6 @@
 package com.soma.wes.collab.service
 
-import com.soma.wes.folder.repository.ConceptFolderRepository
+import com.soma.wes.folder.fixture.FolderFixture
 import com.soma.wes.folder.repository.DetailFolderRepository
 import com.soma.wes.collab.domain.CollabParticipantType
 import com.soma.wes.collab.dto.request.EnterCollabRequest
@@ -10,8 +10,6 @@ import com.soma.wes.collab.exception.CollabErrorCode
 import com.soma.wes.collab.exception.CollabException
 import com.soma.wes.collab.fixture.CollabFixture
 import com.soma.wes.collab.fixture.SharedCollab
-import com.soma.wes.collab.repository.CollabPhotoCommentRepository
-import com.soma.wes.collab.repository.CollabSessionRepository
 import com.soma.wes.gallery.domain.GalleryStatus
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
@@ -41,13 +39,11 @@ class CollabSessionQueryServiceTest @Autowired constructor(
     private val collabFixture: CollabFixture,
     private val galleryFixture: GalleryFixture,
     private val photoFixture: PhotoFixture,
+    private val folderFixture: FolderFixture,
     private val userFixture: UserFixture,
     private val galleryRepository: GalleryRepository,
-    private val sessionRepository: CollabSessionRepository,
     private val photoRepository: PhotoRepository,
-    private val conceptRepository: ConceptFolderRepository,
     private val detailRepository: DetailFolderRepository,
-    private val commentRepository: CollabPhotoCommentRepository,
 ) {
     private lateinit var shared: SharedCollab
 
@@ -106,9 +102,7 @@ class CollabSessionQueryServiceTest @Autowired constructor(
             guestService.writeComment(
                 shared.token, shared.photoId, null, guest.guestToken, WriteCollabCommentRequest(content = "남은 의견"),
             )
-            val gallery = galleryRepository.findById(shared.galleryId).orElseThrow()
-            gallery.status = GalleryStatus.CLOSED
-            galleryRepository.saveAndFlush(gallery)
+            galleryFixture.상태_변경(shared.galleryId, GalleryStatus.CLOSED)
             galleryFixture.마감_지남(shared.galleryId)
             sessionService.revoke(shared.galleryId, shared.session.sessionId, shared.gallery.member.requiredId)
 
@@ -128,9 +122,7 @@ class CollabSessionQueryServiceTest @Autowired constructor(
             val response = guestService.writeComment(
                 shared.token, shared.photoId, null, guest.guestToken, WriteCollabCommentRequest(content = "삭제한 의견"),
             )
-            val comment = commentRepository.findById(response.commentId).orElseThrow()
-            comment.deletedAt = ZonedDateTime.now()
-            commentRepository.saveAndFlush(comment)
+            collabFixture.댓글_삭제됨(response.commentId, ZonedDateTime.now())
 
             // when
             val result = queryService.listPhotoComments(
@@ -211,9 +203,7 @@ class CollabSessionQueryServiceTest @Autowired constructor(
                 TrashedResource.GALLERY -> galleryRepository.saveAndFlush(
                     galleryRepository.findById(shared.galleryId).orElseThrow().also { it.moveToTrash(now) },
                 )
-                TrashedResource.SESSION -> sessionRepository.saveAndFlush(
-                    sessionRepository.findById(shared.session.sessionId).orElseThrow().also { it.deletedAt = now },
-                )
+                TrashedResource.SESSION -> collabFixture.세션_삭제됨(shared.session.sessionId, now)
                 TrashedResource.PHOTO -> photoRepository.saveAndFlush(
                     photoRepository.findById(shared.photoId).orElseThrow().also { it.moveToTrash(now) },
                 )
@@ -292,8 +282,8 @@ class CollabSessionQueryServiceTest @Autowired constructor(
         val now = ZonedDateTime.now()
         val guest = guestService.enter(shared.token, EnterCollabRequest(nickname = "친구"))
         guestService.writeComment(shared.token, shared.photoId, null, guest.guestToken, WriteCollabCommentRequest(content = "좋아요"))
-        detailRepository.saveAndFlush(detailRepository.findById(shared.detailId).orElseThrow().also { it.deletedAt = now })
-        conceptRepository.saveAndFlush(conceptRepository.findById(shared.conceptId).orElseThrow().also { it.deletedAt = now })
+        detailRepository.saveAndFlush(detailRepository.findById(shared.detailId).orElseThrow().also { it.hide(now) })
+        folderFixture.컨셉_삭제됨(shared.conceptId, now)
 
         // when
         val comments = queryService.listPhotoComments(

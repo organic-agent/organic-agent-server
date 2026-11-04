@@ -46,7 +46,7 @@ class CollabGuestService(
     fun renameGuest(collabToken: String, guestToken: String?, request: EnterCollabRequest): CollabGuestResponse {
         val access = sessionAccess.requireReadable(collabToken)
         val guest = sessionAccess.requireGuest(access, guestToken)
-        guest.nickname = CollabParticipant.requireValidNickname(request.nickname)
+        guest.rename(request.nickname)
         activityRecorder.recordGallery(access.session.galleryId)
         return CollabGuestResponse.from(guest)
     }

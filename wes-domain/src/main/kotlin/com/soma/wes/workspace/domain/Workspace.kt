@@ -30,8 +30,7 @@ class Workspace(
     @Column(nullable = false, updatable = false, length = 20)
     val type: WorkspaceType,
 
-    @Column(nullable = false, length = 100)
-    var name: String,
+    name: String,
 
     /** PERSONAL 작업공간을 사용자당 하나로 제한하는 DB 소유 키다. STUDIO면 null이다. */
     @Column(name = "personal_owner_user_id", updatable = false)
@@ -43,9 +42,18 @@ class Workspace(
 
     @Column(name = "deleted_at")
     var deletedAt: ZonedDateTime? = null
+        protected set
 
     val requiredId: Long
         get() = checkNotNull(id) { "저장되지 않은 작업공간입니다." }
+
+    @Column(nullable = false, length = 100)
+    var name: String = name
+        protected set
+
+    fun rename(name: String) {
+        this.name = name
+    }
 
     companion object {
         fun personal(userId: Long, name: String) = Workspace(

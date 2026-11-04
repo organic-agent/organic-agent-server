@@ -51,6 +51,11 @@ class UserNotification(
 
     @Column(name = "read_at")
     var readAt: ZonedDateTime? = null
+        protected set
+
+    fun markRead(at: ZonedDateTime) {
+        readAt = at
+    }
 
     val requiredId: Long
         get() = checkNotNull(id) { "저장되지 않은 알림입니다." }

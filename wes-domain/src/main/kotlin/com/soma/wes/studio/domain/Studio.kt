@@ -12,7 +12,6 @@ import org.hibernate.annotations.SQLRestriction
 import java.time.ZonedDateTime
 import java.util.Locale
 
-
 @Entity
 @SQLRestriction("deleted_at is null")
 @Table(
@@ -31,28 +30,42 @@ class Studio(
     @Column(name = "workspace_id", nullable = false, updatable = false)
     val userId: Long,
 
-    @Column(nullable = false, length = 255)
-    var name: String,
+    name: String,
 
-    @Column(name = "gallery_url", nullable = false, length = 255)
-    var galleryUrl: String,
+    galleryUrl: String,
 
     @Column(name = "inflow_channel", length = 255)
-    var inflowChannel: String? = null,
+    val inflowChannel: String? = null,
 
-    @Column(length = 100)
-    var contact: String? = null,
+    contact: String? = null,
 
-    @Column(length = 500)
-    var description: String? = null,
+    description: String? = null,
 
 ) : BaseEntity() {
 
+    @Column(nullable = false, length = 255)
+    var name: String = name
+        protected set
+
+    @Column(name = "gallery_url", nullable = false, length = 255)
+    var galleryUrl: String = galleryUrl
+        protected set
+
+    @Column(length = 100)
+    var contact: String? = contact
+        protected set
+
+    @Column(length = 500)
+    var description: String? = description
+        protected set
+
     @Column(name = "deleted_at")
     var deletedAt: ZonedDateTime? = null
+        protected set
 
     @Column(name = "suspended_at")
     var suspendedAt: ZonedDateTime? = null
+        protected set
 
     val workspaceId: Long
         get() = userId

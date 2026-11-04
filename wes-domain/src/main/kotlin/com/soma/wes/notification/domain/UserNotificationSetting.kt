@@ -13,12 +13,19 @@ class UserNotificationSetting(
     @Column(name = "user_id", nullable = false, updatable = false)
     val userId: Long,
 
+    emailEnabled: Boolean = true,
+
+    browserEnabled: Boolean = true,
+) : BaseEntity() {
+
     @Column(name = "email_enabled", nullable = false)
-    var emailEnabled: Boolean = true,
+    var emailEnabled: Boolean = emailEnabled
+        protected set
 
     @Column(name = "browser_enabled", nullable = false)
-    var browserEnabled: Boolean = true,
-) : BaseEntity() {
+    var browserEnabled: Boolean = browserEnabled
+        protected set
+
     fun update(emailEnabled: Boolean, browserEnabled: Boolean) {
         this.emailEnabled = emailEnabled
         this.browserEnabled = browserEnabled

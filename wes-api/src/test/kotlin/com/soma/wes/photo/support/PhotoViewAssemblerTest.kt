@@ -233,10 +233,5 @@ class PhotoViewAssemblerTest @Autowired constructor(
      *
      * 파생본 키 규칙(`previews/{원본 키}`)은 Lambda의 `images.preview_key_for`가 정한다.
      */
-    private fun attachPreview(photoId: Long): String {
-        val photo = photoRepository.findById(photoId).orElseThrow()
-        photo.previewKey = "previews/${photo.storageKey}"
-        photoRepository.saveAndFlush(photo)
-        return photo.previewKey!!
-    }
+    private fun attachPreview(photoId: Long): String = photoFixture.미리보기_붙이기(photoId)
 }

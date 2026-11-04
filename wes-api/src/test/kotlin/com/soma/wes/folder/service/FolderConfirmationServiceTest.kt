@@ -33,9 +33,7 @@ class FolderConfirmationServiceTest @Autowired constructor(
     fun `폴더를 한 번 저장한 뒤에만 신규 갤러리에서 선택할 수 있다`() {
         // given
         val fixture = galleries.멤버와_열린_갤러리()
-        val gallery = galleryRepository.findById(fixture.galleryId).orElseThrow()
-        gallery.photoOrganizationRequired = true
-        galleryRepository.saveAndFlush(gallery)
+        galleries.폴더_정리_필수(fixture.galleryId)
         val concept = folderService.createConcept(fixture.galleryId, fixture.photographer.requiredId, CreateConceptFolderRequest("한복"))
         val ids = photos.업로드된_사진(fixture.galleryId, count = 1)
         assertThatThrownBy { selectionService.select(fixture.galleryId, fixture.member.requiredId, SelectPhotosRequest(photoIds = ids)) }
