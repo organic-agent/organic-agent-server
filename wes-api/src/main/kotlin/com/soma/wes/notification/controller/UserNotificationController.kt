@@ -30,8 +30,9 @@ class UserNotificationController(
         @AuthenticationPrincipal loginUser: LoginUser,
         @RequestParam(required = false) scope: UserNotificationScope?,
         @RequestParam(required = false) scopeId: Long?,
-    ): ResponseEntity<List<UserNotificationResponse>> =
-        ResponseEntity.ok(notificationService.list(loginUser.id, scope, scopeId))
+    ): ResponseEntity<List<UserNotificationResponse>> {
+        return ResponseEntity.ok(notificationService.list(loginUser.id, scope, scopeId))
+    }
 
     @PatchMapping("/read")
     override fun read(
@@ -44,13 +45,15 @@ class UserNotificationController(
     @GetMapping("/settings")
     override fun getSettings(
         @AuthenticationPrincipal loginUser: LoginUser,
-    ): ResponseEntity<UserNotificationSettingsResponse> =
-        ResponseEntity.ok(notificationService.getSettings(loginUser.id))
+    ): ResponseEntity<UserNotificationSettingsResponse> {
+        return ResponseEntity.ok(notificationService.getSettings(loginUser.id))
+    }
 
     @PutMapping("/settings")
     override fun updateSettings(
         @AuthenticationPrincipal loginUser: LoginUser,
         @Valid @RequestBody request: UpdateUserNotificationSettingsRequest,
-    ): ResponseEntity<UserNotificationSettingsResponse> =
-        ResponseEntity.ok(notificationService.updateSettings(loginUser.id, request))
+    ): ResponseEntity<UserNotificationSettingsResponse> {
+        return ResponseEntity.ok(notificationService.updateSettings(loginUser.id, request))
+    }
 }

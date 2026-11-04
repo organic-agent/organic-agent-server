@@ -167,7 +167,7 @@ class GalleryController(
     override fun reopen(
         @AuthenticationPrincipal loginUser: LoginUser,
         @PathVariable galleryId: Long,
-        @RequestBody request: ReopenGalleryRequest,
+        @Valid @RequestBody request: ReopenGalleryRequest,
     ): ResponseEntity<GalleryResponse> {
         val result = galleryService.reopen(galleryId, loginUser.id, request)
 

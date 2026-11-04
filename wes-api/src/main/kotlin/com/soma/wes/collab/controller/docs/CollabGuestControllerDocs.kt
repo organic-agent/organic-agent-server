@@ -29,25 +29,59 @@ interface CollabGuestControllerDocs {
 
     @Operation(summary = "공유 사진 목록", description = "토큰이 가리키는 폴더만 조회한다. 클라이언트의 별점은 포함하지 않는다.")
     @SecurityRequirements
-    fun listPhotos(collabToken: String, loginUser: LoginUser?, guestToken: String?, page: Int, size: Int): ResponseEntity<CollabPhotoPageResponse>
+    fun listPhotos(
+        loginUser: LoginUser?,
+        collabToken: String,
+        guestToken: String?,
+        page: Int,
+        size: Int,
+    ): ResponseEntity<CollabPhotoPageResponse>
 
     @Operation(summary = "사진 댓글 목록", description = "다른 게스트의 댓글과 자신의 댓글 여부를 함께 반환한다.")
     @SecurityRequirements
-    fun listComments(collabToken: String, photoId: Long, loginUser: LoginUser?, guestToken: String?, page: Int, size: Int): ResponseEntity<PageResponse<CollabCommentResponse>>
+    fun listComments(
+        loginUser: LoginUser?,
+        collabToken: String,
+        photoId: Long,
+        guestToken: String?,
+        page: Int,
+        size: Int,
+    ): ResponseEntity<PageResponse<CollabCommentResponse>>
 
     @Operation(summary = "사진 댓글 작성", description = "게스트 이름과 함께 기록한다. 공유된 사진에만 작성할 수 있다.")
     @SecurityRequirements
-    fun writeComment(collabToken: String, photoId: Long, loginUser: LoginUser?, guestToken: String?, request: WriteCollabCommentRequest): ResponseEntity<CollabCommentResponse>
+    fun writeComment(
+        loginUser: LoginUser?,
+        collabToken: String,
+        photoId: Long,
+        guestToken: String?,
+        request: WriteCollabCommentRequest,
+    ): ResponseEntity<CollabCommentResponse>
 
     @Operation(summary = "본인 댓글 삭제", description = "게스트는 본인의 댓글만 삭제한다. 클라이언트의 전체 댓글 삭제는 인증된 collab-sessions 경로를 사용한다.")
     @SecurityRequirements
-    fun deleteComment(collabToken: String, commentId: Long, loginUser: LoginUser?, guestToken: String?): ResponseEntity<Unit>
+    fun deleteComment(
+        loginUser: LoginUser?,
+        collabToken: String,
+        commentId: Long,
+        guestToken: String?,
+    ): ResponseEntity<Unit>
 
     @Operation(summary = "사진 좋아요", description = "이름을 가진 참여자당 한 표로 멱등 저장한다. 댓글과 달리 선택 마감이 지나도 누를 수 있고, 갤러리가 보관되거나 이용 기간이 끝나면 403 COLLAB_403_2다.")
     @SecurityRequirements
-    fun like(collabToken: String, photoId: Long, loginUser: LoginUser?, guestToken: String?): ResponseEntity<Unit>
+    fun like(
+        loginUser: LoginUser?,
+        collabToken: String,
+        photoId: Long,
+        guestToken: String?,
+    ): ResponseEntity<Unit>
 
     @Operation(summary = "사진 좋아요 취소", description = "좋아요와 같은 기준으로 열린다. 선택 마감이 지나도 취소할 수 있다.")
     @SecurityRequirements
-    fun cancelLike(collabToken: String, photoId: Long, loginUser: LoginUser?, guestToken: String?): ResponseEntity<Unit>
+    fun cancelLike(
+        loginUser: LoginUser?,
+        collabToken: String,
+        photoId: Long,
+        guestToken: String?,
+    ): ResponseEntity<Unit>
 }

@@ -1,6 +1,7 @@
 package com.soma.wes.admin.resource.controller
 
 import com.soma.wes.admin.domain.AdminLoginUser
+import com.soma.wes.admin.resource.controller.docs.AdminNotificationInboxControllerDocs
 import com.soma.wes.admin.resource.dto.response.AdminNotificationInboxItemResponse
 import com.soma.wes.admin.resource.dto.response.AdminNotificationInboxPageResponse
 import com.soma.wes.admin.resource.dto.request.AdminNotificationReadRequest
@@ -21,23 +22,26 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/internal/admin/v1/notifications")
 class AdminNotificationInboxController(
     private val service: AdminNotificationInboxService,
-) {
+) : AdminNotificationInboxControllerDocs {
 
     @GetMapping
-    fun list(
+    override fun list(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "50") size: Int,
-    ): ResponseEntity<AdminNotificationInboxPageResponse> =
-        ResponseEntity.ok(service.list(loginUser.id, page, size))
+    ): ResponseEntity<AdminNotificationInboxPageResponse> {
+        return ResponseEntity.ok(service.list(loginUser.id, page, size))
+    }
 
     @PostMapping("/{notificationId}/read")
-    fun markRead(
+    override fun markRead(
         @AuthenticationPrincipal loginUser: AdminLoginUser,
         @PathVariable notificationId: Long,
         @Valid @RequestBody request: AdminNotificationReadRequest,
         servletRequest: HttpServletRequest,
-    ): ResponseEntity<AdminNotificationInboxItemResponse> = ResponseEntity.ok(
-        service.markRead(loginUser.id, notificationId, request.expectedVersion, servletRequest.remoteAddr),
-    )
+    ): ResponseEntity<AdminNotificationInboxItemResponse> {
+        return ResponseEntity.ok(
+            service.markRead(loginUser.id, notificationId, request.expectedVersion, servletRequest.remoteAddr),
+        )
+    }
 }

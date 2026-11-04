@@ -37,13 +37,16 @@ class UserController(
     override fun updateMe(
         @AuthenticationPrincipal loginUser: LoginUser,
         @Valid @RequestBody request: UpdateUserRequest,
-    ): ResponseEntity<UserResponse> = ResponseEntity.ok(userService.update(loginUser.id, request))
+    ): ResponseEntity<UserResponse> {
+        return ResponseEntity.ok(userService.update(loginUser.id, request))
+    }
 
     @GetMapping("/me/workspaces")
     override fun listMyWorkspaces(
         @AuthenticationPrincipal loginUser: LoginUser,
-    ): ResponseEntity<List<UserWorkspaceResponse>> =
-        ResponseEntity.ok(userService.listWorkspaces(loginUser.id))
+    ): ResponseEntity<List<UserWorkspaceResponse>> {
+        return ResponseEntity.ok(userService.listWorkspaces(loginUser.id))
+    }
 
     @DeleteMapping("/me")
     override fun deleteMe(
