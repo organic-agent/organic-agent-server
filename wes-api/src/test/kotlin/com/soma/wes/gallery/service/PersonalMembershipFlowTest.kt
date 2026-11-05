@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 
 @IntegrationTest
-class PersonalMembershipTest @Autowired constructor(
+class PersonalMembershipFlowTest @Autowired constructor(
     private val users: UserFixture,
     private val workspaces: WorkspaceRepository,
     private val members: WorkspaceMemberRepository,

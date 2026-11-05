@@ -7,13 +7,10 @@ import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
-import com.soma.wes.gallery.support.GalleryAccessPolicy
-import com.soma.wes.global.config.TimeConfig
-import com.soma.wes.notification.service.UserNotificationService
 import com.soma.wes.notification.repository.UserNotificationRepository
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
-import com.soma.wes.support.TestcontainersConfiguration
+import com.soma.wes.support.IntegrationTest
 import com.soma.wes.user.fixture.UserFixture
 import com.soma.wes.user.repository.UserRepository
 import com.soma.wes.workspace.domain.Workspace
@@ -29,20 +26,8 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
-import org.springframework.context.annotation.Import
 
-@DataJpaTest
-@Import(
-    com.soma.wes.activity.support.ActivityRecorder::class,
-    com.soma.wes.activity.repository.ActivityRepository::class,
-    TestcontainersConfiguration::class,
-    TimeConfig::class,
-    GalleryAccessPolicy::class,
-    GalleryMemberService::class,
-    UserNotificationService::class,
-    UserFixture::class,
-)
+@IntegrationTest
 class GalleryMemberServiceTest @Autowired constructor(
     private val galleryMemberService: GalleryMemberService,
     private val galleryMemberRepository: GalleryMemberRepository,

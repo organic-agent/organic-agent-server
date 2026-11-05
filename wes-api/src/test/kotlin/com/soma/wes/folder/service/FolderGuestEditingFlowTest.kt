@@ -39,7 +39,7 @@ import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 
 @IntegrationTest
-class FolderGuestEditingTest @Autowired constructor(
+class FolderGuestEditingFlowTest @Autowired constructor(
     private val folderService: FolderService,
     private val selectionService: PhotoSelectionService,
     private val galleryFixture: GalleryFixture,

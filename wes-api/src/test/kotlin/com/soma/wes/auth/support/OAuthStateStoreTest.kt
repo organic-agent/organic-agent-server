@@ -2,25 +2,17 @@ package com.soma.wes.auth.support
 
 import com.soma.wes.auth.domain.OAuthState
 import com.soma.wes.auth.repository.OAuthStateRepository
-import com.soma.wes.global.config.TimeConfig
-import com.soma.wes.support.TestcontainersConfiguration
+import com.soma.wes.support.IntegrationTest
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
-import org.springframework.context.annotation.Import
 import java.time.Clock
 import java.time.ZonedDateTime
 
-@DataJpaTest
-@Import(
-    TestcontainersConfiguration::class,
-    TimeConfig::class,
-    OAuthStateStore::class,
-)
+@IntegrationTest
 class OAuthStateStoreTest @Autowired constructor(
     private val oAuthStateStore: OAuthStateStore,
     private val oAuthStateRepository: OAuthStateRepository,

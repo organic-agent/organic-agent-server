@@ -31,7 +31,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 
 @IntegrationTest
-class CollabGuestWorkflowTest @Autowired constructor(
+class CollabGuestFlowTest @Autowired constructor(
     private val fixtures: CollabFixture,
     private val personalFixtures: PersonalGalleryFixture,
     private val sessionService: CollabSessionService,

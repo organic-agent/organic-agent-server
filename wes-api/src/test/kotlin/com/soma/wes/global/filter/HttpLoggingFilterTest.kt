@@ -6,6 +6,7 @@ import ch.qos.logback.core.read.ListAppender
 import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.auth.service.AuthTokenProvider
 import com.soma.wes.global.logging.LogContext
+import com.soma.wes.support.DatabaseClearExtension
 import com.soma.wes.support.TestSequence
 import com.soma.wes.support.TestcontainersConfiguration
 import com.soma.wes.user.domain.User
@@ -15,6 +16,7 @@ import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -33,6 +35,7 @@ import java.time.Duration
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(TestcontainersConfiguration::class)
+@ExtendWith(DatabaseClearExtension::class)
 class HttpLoggingFilterTest @Autowired constructor(
     private val authTokenProvider: AuthTokenProvider,
     private val userRepository: UserRepository,

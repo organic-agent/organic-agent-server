@@ -7,7 +7,7 @@ import com.soma.wes.auth.domain.RefreshToken
 import com.soma.wes.auth.dto.request.ReissueRequest
 import com.soma.wes.auth.exception.AuthErrorCode
 import com.soma.wes.auth.exception.TokenException
-import com.soma.wes.support.TestcontainersConfiguration
+import com.soma.wes.support.IntegrationTest
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
 import org.assertj.core.api.Assertions.assertThat
@@ -16,11 +16,8 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.context.annotation.Import
 
-@SpringBootTest
-@Import(TestcontainersConfiguration::class)
+@IntegrationTest
 class AuthTokenServiceTest @Autowired constructor(
     private val authTokenService: AuthTokenService,
     private val authTokenProvider: AuthTokenProvider,

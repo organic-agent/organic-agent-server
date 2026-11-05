@@ -31,7 +31,7 @@ class ErrorContractTest @Autowired constructor(
 
     @Test
     fun `provider는 대소문자를 가리지 않고 받는다`() {
-        // 문서가 광고하는 표기는 소문자 하나뿐이지만(SwaggerDocsTest), 받아줄 때까지 깐깐할 이유는 없다.
+        // 문서가 광고하는 표기는 소문자 하나뿐이지만(SwaggerDocsContractTest), 받아줄 때까지 깐깐할 이유는 없다.
         // 어느 표기로 들어오든 OAuthProvider로 정규화되므로 클라이언트가 쓴 철자는 경계를 넘지 못한다.
         // when & then
         listOf("naver", "NAVER", "Naver").forEach { provider ->

@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test
 import java.time.Duration
 import java.time.Instant
 
-class InMemoryAccessCacheTest {
+class InMemoryAccessCacheUnitTest {
 
     private val clock = TestClock(Instant.parse("2026-10-13T12:00:00Z"))
     private val cache = InMemoryAccessCache(AccessCacheProperties(enabled = true, ttl = Duration.ofSeconds(30)), clock)

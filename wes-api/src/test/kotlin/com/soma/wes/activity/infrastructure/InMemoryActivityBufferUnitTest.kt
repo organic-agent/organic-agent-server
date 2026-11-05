@@ -5,7 +5,7 @@ import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.Test
 import java.time.ZonedDateTime
 
-class InMemoryActivityBufferTest {
+class InMemoryActivityBufferUnitTest {
 
     private val buffer = InMemoryActivityBuffer()
     private val early = ZonedDateTime.parse("2026-10-13T12:00:00+09:00")

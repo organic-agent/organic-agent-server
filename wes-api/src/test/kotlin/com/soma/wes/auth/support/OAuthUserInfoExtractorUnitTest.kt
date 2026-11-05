@@ -3,7 +3,7 @@ package com.soma.wes.auth.support
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
-class OAuthProfileImageTest {
+class OAuthUserInfoExtractorUnitTest {
     @Test
     fun `각 소셜 공급자의 실제 응답 필드에서 사진을 읽는다`() {
         // given

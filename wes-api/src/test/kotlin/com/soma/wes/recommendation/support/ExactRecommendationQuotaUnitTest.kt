@@ -1,10 +1,9 @@
-package com.soma.wes.recommendation.service
+package com.soma.wes.recommendation.support
 
-import com.soma.wes.recommendation.support.ExactRecommendationQuota
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
-class ExactRecommendationQuotaTest {
+class ExactRecommendationQuotaUnitTest {
     @Test
     fun `명시한 장수를 초과하지 않고 후보가 충분하면 정확히 채운다`() {
         // given

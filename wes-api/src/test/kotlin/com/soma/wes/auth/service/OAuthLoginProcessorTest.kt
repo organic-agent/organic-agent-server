@@ -2,15 +2,13 @@ package com.soma.wes.auth.service
 
 import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.auth.dto.OAuthUserInfoDto
+import com.soma.wes.support.IntegrationTest
 import com.soma.wes.support.TestSequence
-import com.soma.wes.support.TestcontainersConfiguration
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.context.annotation.Import
 
 /**
  * 소셜 로그인이 사용자 정보를 실제로 DB에 반영하는지 확인한다.
@@ -20,8 +18,7 @@ import org.springframework.context.annotation.Import
  * 거치지 않아 `@Transactional`이 조용히 무시됐고 이 갱신이 통째로 유실됐다.
  * 로그인은 성공하고 예외도 없어서 아무도 눈치채지 못했다.
  */
-@SpringBootTest
-@Import(TestcontainersConfiguration::class)
+@IntegrationTest
 class OAuthLoginProcessorTest @Autowired constructor(
     private val oAuthLoginProcessor: OAuthLoginProcessor,
     private val userRepository: UserRepository,
