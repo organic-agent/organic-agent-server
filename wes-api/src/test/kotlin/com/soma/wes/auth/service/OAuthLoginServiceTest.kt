@@ -1,7 +1,8 @@
-package com.soma.wes.auth.service.oauth
+package com.soma.wes.auth.service
 
+import com.soma.wes.auth.StubOAuthClient
+import com.soma.wes.auth.StubOAuthClientConfig
 import com.soma.wes.auth.domain.OAuthProvider
-import com.soma.wes.auth.dto.OAuthUserInfoDto
 import com.soma.wes.auth.dto.request.AuthCodeRequest
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryInvite
@@ -11,7 +12,8 @@ import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
-import com.soma.wes.support.TestcontainersConfiguration
+import com.soma.wes.support.IntegrationTest
+import com.soma.wes.support.TestSequence
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
 import com.soma.wes.workspace.domain.Workspace
@@ -19,21 +21,15 @@ import com.soma.wes.workspace.domain.WorkspaceMember
 import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository
+import java.time.Clock
 import java.time.ZonedDateTime
-import java.util.concurrent.atomic.AtomicLong
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
-import org.mockito.kotlin.any
-import org.mockito.kotlin.anyOrNull
-import org.mockito.kotlin.eq
-import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
-import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.web.util.UriComponentsBuilder
 
 /**
@@ -45,10 +41,10 @@ import org.springframework.web.util.UriComponentsBuilder
  * 못하고 통째로 유실됐다 — 로그인은 성공하고 예외도 없어서 드러나지 않았다.
  *
  * 그래서 `process()`를 직접 부르는 테스트로는 이 회귀를 잡을 수 없다. 반드시 [login]을 통해야 한다.
- * provider 왕복만 대역으로 세운다.
+ * provider 왕복만 대역([StubOAuthClient])으로 세운다.
  */
-@SpringBootTest
-@Import(TestcontainersConfiguration::class)
+@IntegrationTest
+@Import(StubOAuthClientConfig::class)
 class OAuthLoginServiceTest @Autowired constructor(
     private val oAuthLoginService: OAuthLoginService,
     private val oAuthLoginUrlService: OAuthLoginUrlService,
@@ -59,12 +55,9 @@ class OAuthLoginServiceTest @Autowired constructor(
     private val galleryMemberRepository: GalleryMemberRepository,
     private val workspaceRepository: WorkspaceRepository,
     private val workspaceMemberRepository: WorkspaceMemberRepository,
+    private val stubOAuthClient: StubOAuthClient,
+    private val clock: Clock,
 ) {
-
-    @MockitoBean
-    private lateinit var oAuthUserInfoService: OAuthUserInfoService
-
-    private val sequence = AtomicLong(System.nanoTime())
 
     @Nested
     @DisplayName("로그인할 때")
@@ -73,7 +66,7 @@ class OAuthLoginServiceTest @Autowired constructor(
         @Test
         fun `로그인하면 사용자 닉네임은 유지하고 소셜 이메일만 저장한다`() {
             // given
-            val providerId = "oauth-login-${sequence.incrementAndGet()}"
+            val providerId = "oauth-login-${TestSequence.next()}"
             userRepository.save(
                 User(
                     provider = OAuthProvider.KAKAO,
@@ -83,14 +76,7 @@ class OAuthLoginServiceTest @Autowired constructor(
                 ),
             )
 
-            whenever(oAuthUserInfoService.getUserInfo(eq(OAuthProvider.KAKAO), any(), anyOrNull())).thenReturn(
-                OAuthUserInfoDto(
-                    provider = OAuthProvider.KAKAO,
-                    providerId = providerId,
-                    nickname = "새 닉네임",
-                    email = "new@example.com",
-                ),
-            )
+            stubOAuthClient.givenKakaoUser(providerId = providerId, nickname = "새 닉네임", email = "new@example.com")
 
             // when
             oAuthLoginService.login("kakao", AuthCodeRequest("auth-code"), "http://localhost:3000")
@@ -104,15 +90,8 @@ class OAuthLoginServiceTest @Autowired constructor(
         @Test
         fun `첫 로그인이면 가입시키고 토큰을 준다`() {
             // given
-            val providerId = "oauth-login-new-${sequence.incrementAndGet()}"
-            whenever(oAuthUserInfoService.getUserInfo(eq(OAuthProvider.KAKAO), any(), anyOrNull())).thenReturn(
-                OAuthUserInfoDto(
-                    provider = OAuthProvider.KAKAO,
-                    providerId = providerId,
-                    nickname = "새 사용자",
-                    email = "new@example.com",
-                ),
-            )
+            val providerId = "oauth-login-new-${TestSequence.next()}"
+            stubOAuthClient.givenKakaoUser(providerId = providerId, nickname = "새 사용자", email = "new@example.com")
 
             // when
             val response = oAuthLoginService.login("kakao", AuthCodeRequest("auth-code"), null)
@@ -192,7 +171,7 @@ class OAuthLoginServiceTest @Autowired constructor(
         fun `만료된 초대여도 로그인은 성공한다`() {
             // 링크 하나가 방금 만든 계정까지 되돌리면 안 된다. 수락만 조용히 실패시킨다.
             // given
-            saveGalleryWithInvite("invite-expired", expiresAt = ZonedDateTime.now().minusDays(1))
+            saveGalleryWithInvite("invite-expired", expiresAt = ZonedDateTime.now(clock).minusDays(1))
             val providerId = stubNewUser("oauth-expired")
 
             // when
@@ -227,23 +206,16 @@ class OAuthLoginServiceTest @Autowired constructor(
 
     /** provider 왕복을 대역으로 세우고, 그 사용자의 providerId를 돌려준다. */
     private fun stubNewUser(prefix: String): String {
-        val providerId = "$prefix-${sequence.incrementAndGet()}"
-        whenever(oAuthUserInfoService.getUserInfo(eq(OAuthProvider.KAKAO), any(), anyOrNull())).thenReturn(
-            OAuthUserInfoDto(
-                provider = OAuthProvider.KAKAO,
-                providerId = providerId,
-                nickname = "예비 부부",
-                email = "$providerId@example.com",
-            ),
-        )
+        val providerId = "$prefix-${TestSequence.next()}"
+        stubOAuthClient.givenKakaoUser(providerId = providerId, nickname = "예비 부부", email = "$providerId@example.com")
         return providerId
     }
 
     private fun saveGalleryWithInvite(
         token: String,
-        expiresAt: ZonedDateTime = ZonedDateTime.now().plusDays(7),
+        expiresAt: ZonedDateTime = ZonedDateTime.now(clock).plusDays(7),
     ): Gallery {
-        val suffix = sequence.incrementAndGet()
+        val suffix = TestSequence.next()
         val photographer = userRepository.save(
             User(
                 provider = OAuthProvider.KAKAO,

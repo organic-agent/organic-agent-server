@@ -1,6 +1,6 @@
 package com.soma.wes.auth.domain
 
-import com.soma.wes.auth.token.TokenType
+import com.soma.wes.auth.domain.TokenType
 
 /**
  * 발급된 JWT. 토큰 문자열과 그 용도를 함께 나른다.

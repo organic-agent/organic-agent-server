@@ -4,7 +4,7 @@ import com.soma.wes.activity.service.ActivityRecorder
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.notification.domain.UserNotificationScope
 import com.soma.wes.notification.domain.UserNotificationType
-import com.soma.wes.notification.service.UserNotificationPublisher
+import com.soma.wes.notification.service.port.UserNotificationPublisher
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.studio.dto.request.CreateStudioRequest

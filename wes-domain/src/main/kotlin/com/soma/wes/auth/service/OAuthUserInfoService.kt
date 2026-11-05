@@ -1,18 +1,17 @@
-package com.soma.wes.auth.service.oauth
+package com.soma.wes.auth.service
 
 import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.auth.dto.OAuthUserInfoDto
 import com.soma.wes.auth.exception.AuthErrorCode
 import com.soma.wes.auth.exception.OAuthException
 import com.soma.wes.auth.service.port.OAuthClient
-import com.soma.wes.auth.strategy.OAuthUserInfoExtractorFactory
+import com.soma.wes.auth.support.OAuthUserInfoExtractorFactory
 import com.soma.wes.auth.dto.OAuthRegistrationDto
 import com.soma.wes.auth.support.OAuthRegistrations
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import org.springframework.stereotype.Service
 import org.springframework.util.LinkedMultiValueMap
-
 
 @Service
 class OAuthUserInfoService(

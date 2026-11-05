@@ -1,11 +1,10 @@
-package com.soma.wes.auth.service.oauth
+package com.soma.wes.auth.service
 
 import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.auth.dto.request.AuthCodeRequest
 import com.soma.wes.auth.dto.response.LoginResponse
 import com.soma.wes.auth.support.OAuthStateStore
 import org.springframework.stereotype.Service
-
 
 @Service
 class OAuthLoginService(

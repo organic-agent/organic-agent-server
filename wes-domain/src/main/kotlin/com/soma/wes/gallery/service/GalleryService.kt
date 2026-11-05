@@ -7,7 +7,7 @@ import com.soma.wes.gallery.dto.request.RequestSelectionIncreaseRequest
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.repository.requireWithLockById
-import com.soma.wes.notification.service.UserNotificationPublisher
+import com.soma.wes.notification.service.port.UserNotificationPublisher
 import com.soma.wes.notification.domain.UserNotificationType
 import com.soma.wes.notification.domain.UserNotificationScope
 import com.soma.wes.workspace.repository.WorkspaceRepository

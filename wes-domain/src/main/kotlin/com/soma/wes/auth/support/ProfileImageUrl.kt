@@ -1,4 +1,4 @@
-package com.soma.wes.auth.strategy
+package com.soma.wes.auth.support
 
 import java.net.URI
 

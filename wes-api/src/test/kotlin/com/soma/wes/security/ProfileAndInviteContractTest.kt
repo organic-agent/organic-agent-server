@@ -3,7 +3,7 @@ package com.soma.wes.security
 import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.auth.dto.OAuthUserInfoDto
 import com.soma.wes.auth.service.AuthTokenProvider
-import com.soma.wes.auth.service.oauth.OAuthLoginProcessor
+import com.soma.wes.auth.service.OAuthLoginProcessor
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryInvite
 import com.soma.wes.gallery.domain.GalleryInviteKind

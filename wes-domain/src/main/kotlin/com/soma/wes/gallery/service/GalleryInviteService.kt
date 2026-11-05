@@ -23,7 +23,7 @@ import com.soma.wes.gallery.support.GalleryInviteUrlResolver
 import com.soma.wes.global.SecureTokenGenerator
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.studio.service.StudioInviteService
-import com.soma.wes.notification.service.UserNotificationPublisher
+import com.soma.wes.notification.service.port.UserNotificationPublisher
 import com.soma.wes.notification.domain.UserNotificationScope
 import com.soma.wes.notification.domain.UserNotificationType
 import com.soma.wes.workspace.domain.Workspace
