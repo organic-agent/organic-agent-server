@@ -10,7 +10,6 @@ import java.time.Clock
 import java.util.concurrent.CompletableFuture
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
-import org.junit.jupiter.api.Assertions.assertTimeoutPreemptively
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.dao.DataAccessException
@@ -76,10 +75,11 @@ class SchedulerDatabaseHangTest @Autowired constructor(
             pauseDatabase()
             try {
                 // when & then — 무한 대기가 아니라 포기 시간 뒤 SQLException
-                assertTimeoutPreemptively(Duration.ofMillis(SHORT_SOCKET_TIMEOUT_MILLIS * 5L)) {
+                val attempt = CompletableFuture.runAsync {
                     assertThatThrownBy { connection.createStatement().use { it.execute("SELECT 1") } }
                         .isInstanceOf(SQLException::class.java)
                 }
+                assertThat(attempt).succeedsWithin(Duration.ofMillis(SHORT_SOCKET_TIMEOUT_MILLIS * 5L))
             } finally {
                 unpauseDatabase()
             }
@@ -101,10 +101,11 @@ class SchedulerDatabaseHangTest @Autowired constructor(
             locker.createStatement().use { it.execute("LOCK TABLE photos IN ACCESS EXCLUSIVE MODE") }
             try {
                 // when & then
-                assertTimeoutPreemptively(SWEEP_QUERY_GIVE_UP) {
+                val attempt = CompletableFuture.runAsync {
                     assertThatThrownBy { photoPipelineRepository.countPending() }
                         .isInstanceOf(DataAccessException::class.java)
                 }
+                assertThat(attempt).succeedsWithin(SWEEP_QUERY_GIVE_UP)
             } finally {
                 locker.rollback()
             }

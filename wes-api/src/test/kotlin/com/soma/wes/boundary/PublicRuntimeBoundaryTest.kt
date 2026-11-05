@@ -1,8 +1,8 @@
 package com.soma.wes.boundary
 
 import com.soma.wes.WesApplication
-import kotlin.test.Test
-import kotlin.test.assertFailsWith
+import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.jupiter.api.Test
 
 class PublicRuntimeBoundaryTest {
 
@@ -25,8 +25,7 @@ class PublicRuntimeBoundaryTest {
     }
 
     private fun assertClassIsAbsent(className: String) {
-        assertFailsWith<ClassNotFoundException> {
-            Class.forName(className, false, javaClass.classLoader)
-        }
+        assertThatThrownBy { Class.forName(className, false, javaClass.classLoader) }
+            .isInstanceOf(ClassNotFoundException::class.java)
     }
 }

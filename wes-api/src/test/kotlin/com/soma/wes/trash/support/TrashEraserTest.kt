@@ -8,6 +8,7 @@ import com.soma.wes.retouch.fixture.RetouchFixture
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.IntegrationTest
+import com.soma.wes.support.TestSequence
 import com.soma.wes.trash.RecordingTrashPhotoStorage
 import com.soma.wes.trash.RecordingTrashPhotoStorageConfig
 import com.soma.wes.trash.config.TrashProperties
@@ -28,7 +29,6 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
-import java.util.concurrent.atomic.AtomicLong
 import java.util.UUID
 
 /**
@@ -54,7 +54,6 @@ class TrashEraserTest @Autowired constructor(
     private val clock: Clock,
 ) {
 
-    private val sequence = AtomicLong(System.nanoTime())
 
     @BeforeEach
     fun resetStorage() {
@@ -449,7 +448,7 @@ class TrashEraserTest @Autowired constructor(
             Studio(
                 userId = workspace.requiredId,
                 name = "테스트 스튜디오",
-                galleryUrl = "eraser-${sequence.incrementAndGet()}",
+                galleryUrl = "eraser-${TestSequence.next()}",
             ),
         )
         return checkNotNull(galleryRepository.save(Gallery(workspaceId = studio.id, title = "본식")).id)
@@ -459,7 +458,7 @@ class TrashEraserTest @Autowired constructor(
         photoRepository.saveAndFlush(
             Photo(
                 galleryId = galleryId,
-                storageKey = "galleries/$galleryId/photo-${sequence.incrementAndGet()}.jpg",
+                storageKey = "galleries/$galleryId/photo-${TestSequence.next()}.jpg",
                 originalFileName = "photo.jpg",
                 contentType = "image/jpeg",
                 displayOrder = 0,
@@ -489,7 +488,7 @@ class TrashEraserTest @Autowired constructor(
             Long::class.java,
             galleryId,
             suffix,
-            "token-$suffix-${sequence.incrementAndGet()}",
+            "token-$suffix-${TestSequence.next()}",
         ),
     )
 

@@ -193,6 +193,8 @@ class AccessCacheFlowTest @Autowired constructor(
             repeat(2) {
                 assertThatThrownBy { cachedPolicy.requireManager(gallery.galleryId, memberId) }
                     .isInstanceOf(GalleryException::class.java)
+                    .extracting("errorCode")
+                    .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
                 assertThatCode { cachedPolicy.requireViewer(gallery.galleryId, memberId) }.doesNotThrowAnyException()
             }
         }

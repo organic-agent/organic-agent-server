@@ -295,7 +295,10 @@ class S3PhotoStorageTest {
             val keys = (1..1001).map { "galleries/1/$it.jpg" }
 
             // when
-            assertThatThrownBy { storage.deleteAll(keys) }.isInstanceOf(PhotoException::class.java)
+            assertThatThrownBy { storage.deleteAll(keys) }
+                .isInstanceOf(PhotoException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(PhotoErrorCode.STORAGE_DELETE_FAILED)
             storage.deleteAll(keys)
 
             // then

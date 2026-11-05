@@ -12,6 +12,7 @@ import com.soma.wes.user.domain.Role
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.exception.UserErrorCode
 import com.soma.wes.user.exception.UserException
+import com.soma.wes.user.fixture.UserFixture
 import com.soma.wes.user.repository.UserRepository
 import com.soma.wes.workspace.domain.Workspace
 import com.soma.wes.workspace.domain.WorkspaceMember
@@ -35,6 +36,7 @@ class UserServiceTest @Autowired constructor(
     private val workspaceMemberRepository: WorkspaceMemberRepository,
     private val studioRepository: StudioRepository,
     private val galleryRepository: GalleryRepository,
+    private val userFixture: UserFixture,
 ) {
 
     @Test
@@ -73,7 +75,7 @@ class UserServiceTest @Autowired constructor(
 
     @Test
     fun `내 작업공간은 빈 개인 공간을 숨기고 실제 스튜디오와 갤러리만 준다`() {
-        val user = saveUser("workspace-owner")
+        val user = userFixture.계정만("workspace-owner")
         val personal = workspaceRepository.save(Workspace.personal(user.requiredId, "빈 개인 공간"))
         workspaceMemberRepository.save(WorkspaceMember(personal.requiredId, user.requiredId, WorkspaceRole.OWNER))
         val studioWorkspace = workspaceRepository.save(Workspace.studio("스튜디오"))
@@ -94,8 +96,8 @@ class UserServiceTest @Autowired constructor(
 
     @Test
     fun `다른 OWNER가 있으면 회원 탈퇴해도 스튜디오와 갤러리는 유지한다`() {
-        val owner = saveUser("delete-owner")
-        val otherOwner = saveUser("remaining-owner")
+        val owner = userFixture.계정만("delete-owner")
+        val otherOwner = userFixture.계정만("remaining-owner")
         val workspace = workspaceRepository.save(Workspace.studio("유지될 스튜디오"))
         workspaceMemberRepository.save(WorkspaceMember(workspace.requiredId, owner.requiredId, WorkspaceRole.OWNER))
         workspaceMemberRepository.save(WorkspaceMember(workspace.requiredId, otherOwner.requiredId, WorkspaceRole.OWNER))
@@ -114,7 +116,7 @@ class UserServiceTest @Autowired constructor(
 
     @Test
     fun `유일한 스튜디오 OWNER가 탈퇴하면 소유 스튜디오를 함께 삭제한다`() {
-        val owner = saveUser("last-owner")
+        val owner = userFixture.계정만("last-owner")
         val workspace = workspaceRepository.save(Workspace.studio("마지막 OWNER 스튜디오"))
         workspaceMemberRepository.save(WorkspaceMember(workspace.requiredId, owner.requiredId, WorkspaceRole.OWNER))
         studioRepository.save(Studio(workspace.requiredId, "마지막 OWNER 스튜디오", "last-owner-studio"))
@@ -129,19 +131,10 @@ class UserServiceTest @Autowired constructor(
 
     @Test
     fun `닉네임 수정은 공백을 정리하고 빈 이름은 거절한다`() {
-        val user = saveUser("nickname-validation")
+        val user = userFixture.계정만("nickname-validation")
         assertThat(userService.update(user.requiredId, com.soma.wes.user.dto.request.UpdateUserRequest(" 새 이름 ")).nickname)
             .isEqualTo("새 이름")
         assertThatThrownBy { userService.update(user.requiredId, com.soma.wes.user.dto.request.UpdateUserRequest("  ")) }
             .isInstanceOf(UserException::class.java).extracting("errorCode").isEqualTo(UserErrorCode.INVALID_NICKNAME)
     }
-
-    private fun saveUser(providerId: String): User = userRepository.save(
-        User(
-            provider = OAuthProvider.GOOGLE,
-            providerId = providerId,
-            nickname = providerId,
-            email = "$providerId@example.com",
-        ),
-    )
 }

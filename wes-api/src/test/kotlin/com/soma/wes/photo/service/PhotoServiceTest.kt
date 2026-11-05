@@ -410,7 +410,10 @@ class PhotoServiceTest @Autowired constructor(
                             ),
                         ),
                     )
-                }.isInstanceOf(PhotoException::class.java)
+                }
+                    .isInstanceOf(PhotoException::class.java)
+                    .extracting("errorCode")
+                    .isEqualTo(PhotoErrorCode.UNSUPPORTED_CONTENT_TYPE)
                 logs.eventsOf("upload.rejected") to logs.eventsOf("upload.issue")
             }
 

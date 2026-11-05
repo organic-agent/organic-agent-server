@@ -1,6 +1,5 @@
 package com.soma.wes.gallery.service
 
-import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryMember
 import com.soma.wes.gallery.domain.GalleryStatus
@@ -15,7 +14,7 @@ import com.soma.wes.notification.repository.UserNotificationRepository
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.TestcontainersConfiguration
-import com.soma.wes.user.domain.User
+import com.soma.wes.user.fixture.UserFixture
 import com.soma.wes.user.repository.UserRepository
 import com.soma.wes.workspace.domain.Workspace
 import com.soma.wes.workspace.domain.WorkspaceMember
@@ -42,6 +41,7 @@ import org.springframework.context.annotation.Import
     GalleryAccessPolicy::class,
     GalleryMemberService::class,
     UserNotificationService::class,
+    UserFixture::class,
 )
 class GalleryMemberServiceTest @Autowired constructor(
     private val galleryMemberService: GalleryMemberService,
@@ -52,6 +52,7 @@ class GalleryMemberServiceTest @Autowired constructor(
     private val workspaceRepository: WorkspaceRepository,
     private val workspaceMemberRepository: WorkspaceMemberRepository,
     private val notificationRepository: UserNotificationRepository,
+    private val userFixture: UserFixture,
 ) {
 
     private var photographerId = 0L
@@ -60,19 +61,10 @@ class GalleryMemberServiceTest @Autowired constructor(
 
     @BeforeEach
     fun setUpUsers() {
-        photographerId = saveUser("photographer")
-        groomId = saveUser("groom")
-        brideId = saveUser("bride")
+        photographerId = userFixture.계정만("photographer").requiredId
+        groomId = userFixture.계정만("groom", email = "groom@example.com").requiredId
+        brideId = userFixture.계정만("bride").requiredId
     }
-
-    private fun saveUser(providerId: String): Long = userRepository.save(
-        User(
-            provider = OAuthProvider.KAKAO,
-            providerId = providerId,
-            nickname = providerId,
-            email = "$providerId@example.com",
-        ),
-    ).requiredId
 
     private fun saveGallery(ownerUserId: Long = photographerId): Long {
         val workspace = workspaceRepository.save(Workspace.studio("스튜디오"))
@@ -166,7 +158,7 @@ class GalleryMemberServiceTest @Autowired constructor(
             // 링크가 엉뚱한 사람에게 갔을 때 되돌리는 것이 이 기능의 목적이다.
             // given
             val galleryId = saveGallery()
-            val strangerMemberId = join(galleryId, saveUser("stranger"))
+            val strangerMemberId = join(galleryId, userFixture.계정만("stranger").requiredId)
             join(galleryId, groomId)
 
             // when
@@ -198,7 +190,7 @@ class GalleryMemberServiceTest @Autowired constructor(
             // 자기 갤러리 권한으로 남의 갤러리를 건드리지 못하게 한다.
             // given
             val myGalleryId = saveGallery()
-            val otherGalleryId = saveGallery(saveUser("other-photographer"))
+            val otherGalleryId = saveGallery(userFixture.계정만("other-photographer").requiredId)
             val otherMemberId = join(otherGalleryId, groomId)
 
             // when & then
