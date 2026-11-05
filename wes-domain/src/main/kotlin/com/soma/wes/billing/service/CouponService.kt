@@ -46,7 +46,7 @@ class CouponService(
         val status = ProCouponResponse.status(coupon = coupon, used = consumed, at = ZonedDateTime.now(clock))
         val usedGalleryId = if (coupon.reusable) usage?.galleryId else coupon.galleryId
         val galleryId = usedGalleryId?.takeIf {
-            status == "USED" && galleryAccess.canViewMetadata(galleryId = it, userId = userId)
+            status == "USED" && galleryAccess.isMetadataViewer(galleryId = it, userId = userId)
         }
         return ProCouponLinkResponse.of(status = status, galleryId = galleryId)
     }
