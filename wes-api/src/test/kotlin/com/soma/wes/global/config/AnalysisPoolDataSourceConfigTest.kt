@@ -2,6 +2,7 @@ package com.soma.wes.global.config
 
 import com.soma.wes.support.IntegrationTest
 import com.zaxxer.hikari.HikariDataSource
+import java.time.Clock
 import java.time.Instant
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
@@ -24,6 +25,7 @@ class AnalysisPoolDataSourceConfigTest @Autowired constructor(
     private val taskScheduler: TaskScheduler,
     @Qualifier("userDataSource") private val userDataSource: HikariDataSource,
     @Qualifier("analysisDataSource") private val analysisDataSource: HikariDataSource,
+    private val clock: Clock,
 ) {
 
     @Nested
@@ -56,7 +58,7 @@ class AnalysisPoolDataSourceConfigTest @Autowired constructor(
             val pool = CompletableFuture<String>()
 
             // when
-            taskScheduler.schedule({ pool.complete(poolOfConnection()) }, Instant.now())
+            taskScheduler.schedule({ pool.complete(poolOfConnection()) }, clock.instant())
 
             // then
             assertThat(pool.get(10, TimeUnit.SECONDS)).isEqualTo(AnalysisPoolDataSourceConfig.ANALYSIS_POOL)

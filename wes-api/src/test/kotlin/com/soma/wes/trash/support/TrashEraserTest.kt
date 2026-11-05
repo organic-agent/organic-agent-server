@@ -8,12 +8,14 @@ import com.soma.wes.retouch.fixture.RetouchFixture
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.IntegrationTest
+import com.soma.wes.support.TestSequence
 import com.soma.wes.trash.RecordingTrashPhotoStorage
 import com.soma.wes.trash.RecordingTrashPhotoStorageConfig
 import com.soma.wes.trash.config.TrashProperties
 import com.soma.wes.trash.repository.TrashRepository
 import com.soma.wes.workspace.domain.Workspace
 import com.soma.wes.workspace.repository.WorkspaceRepository
+import java.time.Clock
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.BeforeEach
@@ -27,7 +29,6 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
-import java.util.concurrent.atomic.AtomicLong
 import java.util.UUID
 
 /**
@@ -50,9 +51,9 @@ class TrashEraserTest @Autowired constructor(
     private val photoStorage: RecordingTrashPhotoStorage,
     private val trashProperties: TrashProperties,
     private val workspaceRepository: WorkspaceRepository,
+    private val clock: Clock,
 ) {
 
-    private val sequence = AtomicLong(System.nanoTime())
 
     @BeforeEach
     fun resetStorage() {
@@ -69,7 +70,7 @@ class TrashEraserTest @Autowired constructor(
 
         val freshGalleryId = createGallery()
         val freshPhoto = savePhoto(freshGalleryId)
-        freshPhoto.moveToTrash(ZonedDateTime.now().minusDays(1))
+        freshPhoto.moveToTrash(ZonedDateTime.now(clock).minusDays(1))
         photoRepository.saveAndFlush(freshPhoto)
 
         // when
@@ -358,7 +359,7 @@ class TrashEraserTest @Autowired constructor(
         trashGallery(galleryId, expiredAt())
         val first = UUID.randomUUID()
         val second = UUID.randomUUID()
-        val firstNow = ZonedDateTime.now()
+        val firstNow = ZonedDateTime.now(clock)
         transactionTemplate.executeWithoutResult {
             trashRepository.lockPurgeCoordinationForGallery(galleryId)
             assertThat(trashRepository.lockGalleryPurgeScope(galleryId)).isTrue()
@@ -376,7 +377,7 @@ class TrashEraserTest @Autowired constructor(
         transactionTemplate.executeWithoutResult {
             trashRepository.lockPurgeCoordinationForGallery(galleryId)
             assertThat(trashRepository.lockGalleryPurgeScope(galleryId)).isTrue()
-            val takeoverAt = ZonedDateTime.now()
+            val takeoverAt = ZonedDateTime.now(clock)
             assertThat(
                 trashRepository.tryAcquirePurgeClaim(
                     "GALLERY", galleryId, second, takeoverAt, takeoverAt.plusMinutes(15),
@@ -447,7 +448,7 @@ class TrashEraserTest @Autowired constructor(
             Studio(
                 userId = workspace.requiredId,
                 name = "테스트 스튜디오",
-                galleryUrl = "eraser-${sequence.incrementAndGet()}",
+                galleryUrl = "eraser-${TestSequence.next()}",
             ),
         )
         return checkNotNull(galleryRepository.save(Gallery(workspaceId = studio.id, title = "본식")).id)
@@ -457,7 +458,7 @@ class TrashEraserTest @Autowired constructor(
         photoRepository.saveAndFlush(
             Photo(
                 galleryId = galleryId,
-                storageKey = "galleries/$galleryId/photo-${sequence.incrementAndGet()}.jpg",
+                storageKey = "galleries/$galleryId/photo-${TestSequence.next()}.jpg",
                 originalFileName = "photo.jpg",
                 contentType = "image/jpeg",
                 displayOrder = 0,
@@ -487,7 +488,7 @@ class TrashEraserTest @Autowired constructor(
             Long::class.java,
             galleryId,
             suffix,
-            "token-$suffix-${sequence.incrementAndGet()}",
+            "token-$suffix-${TestSequence.next()}",
         ),
     )
 
@@ -632,6 +633,6 @@ class TrashEraserTest @Autowired constructor(
     }
 
     private fun expiredAt(): ZonedDateTime =
-        ZonedDateTime.now().minus(trashProperties.retention).minusHours(1)
+        ZonedDateTime.now(clock).minus(trashProperties.retention).minusHours(1)
 
 }

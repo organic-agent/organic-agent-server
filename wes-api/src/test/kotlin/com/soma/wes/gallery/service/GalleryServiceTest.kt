@@ -17,6 +17,8 @@ import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.fixture.WorkspaceFixture
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository
+import java.time.Clock
+import java.time.ZonedDateTime
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -31,12 +33,15 @@ class GalleryServiceTest @Autowired constructor(
     private val workspaceRepository: WorkspaceRepository,
     private val workspaceMemberRepository: WorkspaceMemberRepository,
     private val workspaceFixture: WorkspaceFixture,
+    private val clock: Clock,
 ) {
     @Test
     fun `PERSONAL 작업공간은 일반 생성 API로 결제를 우회할 수 없다`() {
+        // given
         val user = userFixture.사용자()
         val personal = workspaceRepository.findByPersonalOwnerUserId(user.requiredId)!!
 
+        // when & then
         assertThatThrownBy {
             galleryService.create(
                 user.requiredId,
@@ -48,10 +53,12 @@ class GalleryServiceTest @Autowired constructor(
 
     @Test
     fun `삭제된 작업공간은 이전 멤버십이 남아 있어도 갤러리를 생성할 수 없다`() {
+        // given
         val owner = studioFixture.작가()
         val studio = studioFixture.소유_스튜디오(owner)
-        workspaceFixture.삭제됨(studio.workspaceId, java.time.ZonedDateTime.now())
+        workspaceFixture.삭제됨(studio.workspaceId, ZonedDateTime.now(clock))
 
+        // when & then
         assertThatThrownBy {
             galleryService.create(owner.requiredId, CreateGalleryRequest(studio.workspaceId, "새 갤러리"))
         }.isInstanceOf(com.soma.wes.studio.exception.StudioException::class.java)
@@ -60,12 +67,14 @@ class GalleryServiceTest @Autowired constructor(
 
     @Test
     fun `갤러리 목록은 6단계 진행 상태로 필터링한다`() {
+        // given
         val owner = studioFixture.작가()
         val studio = studioFixture.소유_스튜디오(owner)
         val upload = galleryService.create(owner.requiredId, CreateGalleryRequest(studio.workspaceId, "업로드"))
         val selecting = galleryService.create(owner.requiredId, CreateGalleryRequest(studio.workspaceId, "선택"))
         galleryService.open(selecting.id, owner.requiredId)
 
+        // when & then
         assertThat(galleryService.findAllVisibleTo(owner.requiredId, GalleryStage.UPLOAD).map { it.id })
             .containsExactly(upload.id)
         assertThat(galleryService.findAllVisibleTo(owner.requiredId, GalleryStage.SELECTION_IN_PROGRESS).map { it.id })
@@ -74,6 +83,7 @@ class GalleryServiceTest @Autowired constructor(
 
     @Test
     fun `STUDIO 멤버는 명시한 작업공간에 갤러리를 만들고 관리한다`() {
+        // given
         val owner = studioFixture.작가()
         val studio = studioFixture.소유_스튜디오(owner)
         val member = userFixture.사용자()
@@ -81,6 +91,7 @@ class GalleryServiceTest @Autowired constructor(
             WorkspaceMember(studio.workspaceId, member.requiredId, WorkspaceRole.MEMBER),
         )
 
+        // when
         val created = galleryService.create(
             member.requiredId,
             CreateGalleryRequest(studio.workspaceId, "멤버가 생성"),
@@ -91,16 +102,19 @@ class GalleryServiceTest @Autowired constructor(
             RenameGalleryRequest("멤버가 수정"),
         )
 
+        // then
         assertThat(created.workspaceId).isEqualTo(studio.workspaceId)
         assertThat(renamed.title).isEqualTo("멤버가 수정")
     }
 
     @Test
     fun `소속되지 않은 작업공간을 소유자가 다르다는 이유로 사용할 수 없다`() {
+        // given
         val firstOwner = studioFixture.작가()
         val secondOwner = studioFixture.작가()
         val secondStudio = studioFixture.소유_스튜디오(secondOwner)
 
+        // when & then
         assertThatThrownBy {
             galleryService.create(
                 firstOwner.requiredId,
@@ -111,22 +125,27 @@ class GalleryServiceTest @Autowired constructor(
 
     @Test
     fun `고객 노출 상태와 제작 워크플로 상태는 독립적이다`() {
+        // given
         val fixture = galleryFixture.멤버와_열린_갤러리()
 
+        // when
         val changed = galleryService.changeWorkflowStatus(
             fixture.galleryId,
             fixture.photographer.requiredId,
             ChangeWorkflowStatusRequest(GalleryWorkflowStatus.IN_PROGRESS),
         )
 
+        // then
         assertThat(changed.status).isEqualTo(GalleryStatus.OPEN)
         assertThat(changed.workflowStatus).isEqualTo(GalleryWorkflowStatus.IN_PROGRESS)
     }
 
     @Test
     fun `초대 멤버는 갤러리 관리 정보를 바꾸지 못한다`() {
+        // given
         val fixture = galleryFixture.멤버와_열린_갤러리()
 
+        // when & then
         assertThatThrownBy {
             galleryService.rename(fixture.galleryId, fixture.member.requiredId, RenameGalleryRequest("고객 수정"))
         }.isInstanceOf(GalleryException::class.java)

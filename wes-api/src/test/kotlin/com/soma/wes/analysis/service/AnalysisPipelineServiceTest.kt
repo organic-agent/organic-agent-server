@@ -16,6 +16,7 @@ import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.recommendation.fixture.RecommendationFixture
 import com.soma.wes.support.FakeAiTaskSender
 import com.soma.wes.support.IntegrationTest
+import java.time.Clock
 import java.time.ZonedDateTime
 import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.Executors
@@ -46,6 +47,7 @@ class AnalysisPipelineServiceTest @Autowired constructor(
     private val aiTaskSender: FakeAiTaskSender,
     private val jdbcTemplate: JdbcTemplate,
     private val notifications: UserNotificationService,
+    private val clock: Clock,
 ) {
 
     private lateinit var fixture: OpenGallery
@@ -512,7 +514,7 @@ class AnalysisPipelineServiceTest @Autowired constructor(
             assertSoftly { softly ->
                 softly.assertThat(job(jobId).status).isEqualTo(AnalysisStatus.ANALYZING)
                 softly.assertThat(listOf(lagging, late).map { analysisErrorOf(it) }).containsOnlyNulls()
-                softly.assertThat(job(jobId).progressAt).isAfter(ZonedDateTime.now().minusMinutes(5))
+                softly.assertThat(job(jobId).progressAt).isAfter(ZonedDateTime.now(clock).minusMinutes(5))
             }
         }
 

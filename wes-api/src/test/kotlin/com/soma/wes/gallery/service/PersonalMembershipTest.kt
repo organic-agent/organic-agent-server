@@ -29,6 +29,7 @@ class PersonalMembershipTest @Autowired constructor(
 ) {
     @Test
     fun `개인 파트너는 소유자 포함 두 명까지만 합류하고 역할 조회와 나가기를 지원한다`() {
+        // given
         val owner = users.사용자()
         val partner = users.사용자()
         val outsider = users.사용자()
@@ -38,6 +39,8 @@ class PersonalMembershipTest @Autowired constructor(
         val token = invites.issue(gallery.requiredId, owner.requiredId, request).inviteUrl.substringAfterLast('/')
         invites.acceptPartner(token, partner.requiredId)
         val renewed = invites.issue(gallery.requiredId, owner.requiredId, request).inviteUrl.substringAfterLast('/')
+
+        // when & then
         assertThat(invites.preview(renewed, outsider.requiredId).status).isEqualTo(GalleryInviteStatus.FULL)
         assertThatThrownBy { invites.acceptPartner(renewed, outsider.requiredId) }
             .isInstanceOf(GalleryException::class.java).extracting("errorCode").isEqualTo(GalleryErrorCode.INVITE_FULL)

@@ -19,6 +19,7 @@ import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.user.fixture.UserFixture
+import java.time.Clock
 import java.time.ZonedDateTime
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -44,6 +45,7 @@ class CollabSessionQueryServiceTest @Autowired constructor(
     private val galleryRepository: GalleryRepository,
     private val photoRepository: PhotoRepository,
     private val detailRepository: DetailFolderRepository,
+    private val clock: Clock,
 ) {
     private lateinit var shared: SharedCollab
 
@@ -122,7 +124,7 @@ class CollabSessionQueryServiceTest @Autowired constructor(
             val response = guestService.writeComment(
                 shared.token, shared.photoId, null, guest.guestToken, WriteCollabCommentRequest(content = "삭제한 의견"),
             )
-            collabFixture.댓글_삭제됨(response.commentId, ZonedDateTime.now())
+            collabFixture.댓글_삭제됨(response.commentId, ZonedDateTime.now(clock))
 
             // when
             val result = queryService.listPhotoComments(
@@ -198,7 +200,7 @@ class CollabSessionQueryServiceTest @Autowired constructor(
         @EnumSource(TrashedResource::class)
         fun `휴지통의 갤러리·공유폴더·사진은 조회할 수 없다`(resource: TrashedResource) {
             // given
-            val now = ZonedDateTime.now()
+            val now = ZonedDateTime.now(clock)
             when (resource) {
                 TrashedResource.GALLERY -> galleryRepository.saveAndFlush(
                     galleryRepository.findById(shared.galleryId).orElseThrow().also { it.moveToTrash(now) },
@@ -279,7 +281,7 @@ class CollabSessionQueryServiceTest @Autowired constructor(
     @Test
     fun `원본 컨셉과 세부 폴더가 휴지통에 가도 공유폴더 댓글은 읽힌다`() {
         // given
-        val now = ZonedDateTime.now()
+        val now = ZonedDateTime.now(clock)
         val guest = guestService.enter(shared.token, EnterCollabRequest(nickname = "친구"))
         guestService.writeComment(shared.token, shared.photoId, null, guest.guestToken, WriteCollabCommentRequest(content = "좋아요"))
         detailRepository.saveAndFlush(detailRepository.findById(shared.detailId).orElseThrow().also { it.hide(now) })

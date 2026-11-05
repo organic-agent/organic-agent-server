@@ -30,11 +30,14 @@ class StudioInviteServiceTest @Autowired constructor(
 ) {
     @Test
     fun `갤러리 없는 스튜디오에 합류하고 재수락은 소속과 알림을 중복 생성하지 않는다`() {
+        // given
         val owner = users.사용자()
         val member = users.사용자()
         val studio = studioService.create(owner.requiredId, CreateStudioRequest("초대 스튜디오", "invite-studio"))
         val invite = inviteService.issue(studio.workspaceId, owner.requiredId)
         val token = invite.inviteUrl.substringAfterLast('/')
+
+        // when & then
         val preview = commonInviteService.preview(token, member.requiredId)
         assertThat(preview.galleryId).isNull()
         assertThat(preview.kind).isEqualTo(GalleryInviteKind.STUDIO_MEMBER)
@@ -53,11 +56,14 @@ class StudioInviteServiceTest @Autowired constructor(
 
     @Test
     fun `초대 재발급은 이전 링크를 폐기하고 외부인의 발급을 거절한다`() {
+        // given
         val owner = users.사용자()
         val outsider = users.사용자()
         val studio = studioService.create(owner.requiredId, CreateStudioRequest("갱신 스튜디오", "renew-studio"))
         val old = inviteService.issue(studio.workspaceId, owner.requiredId).inviteUrl.substringAfterLast('/')
         inviteService.issue(studio.workspaceId, owner.requiredId)
+
+        // when & then
         assertThat(commonInviteService.preview(old, outsider.requiredId).status).isEqualTo(GalleryInviteStatus.REVOKED)
         assertThatThrownBy { commonInviteService.accept(old, outsider.requiredId) }
             .isInstanceOf(GalleryException::class.java).extracting("errorCode").isEqualTo(GalleryErrorCode.INVITE_REVOKED)
@@ -67,12 +73,15 @@ class StudioInviteServiceTest @Autowired constructor(
 
     @Test
     fun `초대 작가의 소유자 전용 작업은 거절하고 소유자는 작가를 내보낼 수 있다`() {
+        // given
         val owner = users.사용자()
         val member = users.사용자()
         val studio = studioService.create(owner.requiredId, CreateStudioRequest("권한 스튜디오", "roles-studio"))
         val token = inviteService.issue(studio.workspaceId, owner.requiredId).inviteUrl.substringAfterLast('/')
         commonInviteService.accept(token, member.requiredId)
         val membership = memberRepository.findByWorkspaceIdAndUserId(studio.workspaceId, member.requiredId)!!
+
+        // when & then
         assertThatThrownBy { studioService.delete(studio.workspaceId, member.requiredId) }
             .isInstanceOf(StudioException::class.java).extracting("errorCode").isEqualTo(StudioErrorCode.NOT_STUDIO_OWNER)
         assertThatThrownBy { studioService.removeMember(studio.workspaceId, membership.requiredId, member.requiredId) }
@@ -83,12 +92,15 @@ class StudioInviteServiceTest @Autowired constructor(
     }
     @Test
     fun `만료된 작가 초대는 미리보기와 수락 모두 만료로 판정한다`() {
+        // given
         val owner = users.사용자()
         val member = users.사용자()
         val studio = studioService.create(owner.requiredId, CreateStudioRequest("만료 스튜디오", "expired-studio"))
         val invite = inviteService.issue(studio.workspaceId, owner.requiredId)
         val token = invite.inviteUrl.substringAfterLast('/')
         jdbc.update("update studio_invites set expires_at = now() - interval '1 minute' where id = ?", invite.id)
+
+        // when & then
         assertThat(commonInviteService.preview(token, member.requiredId).status).isEqualTo(GalleryInviteStatus.EXPIRED)
         assertThatThrownBy { commonInviteService.accept(token, member.requiredId) }
             .isInstanceOf(GalleryException::class.java).extracting("errorCode").isEqualTo(GalleryErrorCode.INVITE_EXPIRED)

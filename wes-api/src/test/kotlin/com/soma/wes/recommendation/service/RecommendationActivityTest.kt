@@ -60,7 +60,10 @@ class RecommendationActivityTest @Autowired constructor(
 
     @Test
     fun `분석 결과의 자동 물질화는 기록하지만 같은 결과 재조회는 기록하지 않는다`() {
+        // given
         val fixture = prepared()
+
+        // when & then
         aiFolders.materialize(fixture.galleryId)
         assertRecorded(fixture)
         clearActivity(fixture)
@@ -72,6 +75,7 @@ class RecommendationActivityTest @Autowired constructor(
 
     @Test
     fun `추가 사진의 새 분석 결과를 물질화하면 활동을 다시 기록한다`() {
+        // given
         val fixture = prepared()
         aiFolders.materialize(fixture.galleryId)
         clearActivity(fixture)
@@ -82,29 +86,39 @@ class RecommendationActivityTest @Autowired constructor(
         val jobId = recommendations.분석_잡(fixture.galleryId)
         recommendations.컨셉_배정(jobId, fixture.galleryId, embedGroupId = 2, conceptName = "야외 정원·건물", detailName = "정원")
 
+        // when
         val folders = aiFolders.materialize(fixture.galleryId)
 
+        // then
         assertRecorded(fixture)
         assertThat(folders.flatMap { it.details }.flatMap { it.photoIds }).containsExactlyInAnyOrderElementsOf(photoIds)
     }
 
     @Test
     fun `이미 만든 폴더를 확정하면 스튜디오 최근 활동에도 반영한다`() {
+        // given
         val fixture = prepared()
         aiFolders.materialize(fixture.galleryId)
         clearActivity(fixture)
+
+        // when
         // [REFACTOR-CONFIRM 2026-09-27] FolderConfirmationService.save → confirm
         confirmation.confirm(fixture.galleryId, fixture.member.requiredId)
+
+        // then
         assertRecorded(fixture)
     }
 
     @Test
     fun `추천 접수는 기록하지만 조회와 비동기 적재는 접수 시각을 바꾸지 않는다`() {
+        // given
         val fixture = prepared()
         aiFolders.materialize(fixture.galleryId)
         clearActivity(fixture)
         llm.reset()
         llm.isEnabled = false
+
+        // when & then
         val job = service.request(fixture.galleryId, fixture.member.requiredId, AiRecommendationRequest())
         assertRecorded(fixture)
         val accepted = activity.findGalleryActivity(listOf(fixture.galleryId))
@@ -117,13 +131,18 @@ class RecommendationActivityTest @Autowired constructor(
 
     @Test
     fun `폴더 저장과 추천 접수가 롤백되면 활동도 남지 않는다`() {
+        // given
         val fixture = prepared()
+
+        // when
         TransactionTemplate(transactions).executeWithoutResult { tx ->
             aiFolders.materialize(fixture.galleryId)
             service.request(fixture.galleryId, fixture.member.requiredId, AiRecommendationRequest())
             assertRecorded(fixture)
             tx.setRollbackOnly()
         }
+
+        // then
         assertThat(activity.findGalleryActivity(listOf(fixture.galleryId))).isEmpty()
         assertThat(activity.findWorkspaceActivity(listOf(workspaceId(fixture)))).isEmpty()
         assertThat(jdbc.queryForObject("SELECT count(*) FROM concept_folders WHERE gallery_id = ?", Long::class.java, fixture.galleryId)).isZero()

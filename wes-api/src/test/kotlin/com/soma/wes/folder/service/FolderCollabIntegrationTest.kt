@@ -81,7 +81,7 @@ class FolderCollabIntegrationTest @Autowired constructor(
         // 다시 만들면 그때의 사진으로 새 공유폴더가 생긴다.
         assertThat(reopened.sessionId).isNotEqualTo(first.sessionId)
         assertThat(reopened.photoCount).isEqualTo(1)
-        assertThat(sessionRepository.count()).isEqualTo(2)
+        assertThat(sessionRepository.count()).isEqualTo(2L)
     }
 
     @Test
@@ -118,8 +118,8 @@ class FolderCollabIntegrationTest @Autowired constructor(
 
         // then
         assertThat(assignmentRepository.findById(photoId)).isEmpty()
-        assertThat(likeRepository.count()).isEqualTo(1)
-        assertThat(commentRepository.count()).isEqualTo(1)
+        assertThat(likeRepository.count()).isEqualTo(1L)
+        assertThat(commentRepository.count()).isEqualTo(1L)
         assertThat(collabGuestQueryService.listPhotos(token, null, guest.guestToken, 0, 20).contents.single().liked).isTrue()
     }
 }

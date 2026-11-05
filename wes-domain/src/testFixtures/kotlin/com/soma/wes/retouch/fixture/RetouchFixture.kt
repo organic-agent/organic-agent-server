@@ -4,6 +4,7 @@ import com.soma.wes.retouch.domain.RetouchPhoto
 import com.soma.wes.retouch.domain.RetouchRound
 import com.soma.wes.retouch.repository.RetouchPhotoRepository
 import com.soma.wes.retouch.repository.RetouchRoundRepository
+import java.time.Clock
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
 import java.time.ZonedDateTime
@@ -17,6 +18,7 @@ class RetouchFixture(
     private val retouchRoundRepository: RetouchRoundRepository,
     private val retouchPhotoRepository: RetouchPhotoRepository,
     private val jdbcTemplate: JdbcTemplate,
+    private val clock: Clock,
 ) {
 
     /** 아직 제출하지 않은 초안 회차. 지금은 셀렉 제출을 되돌렸을 때만 생기는 상태다. */
@@ -30,14 +32,14 @@ class RetouchFixture(
     fun 제출된_회차(galleryId: Long, roundNo: Int = 1, photoIds: List<Long> = emptyList()): RetouchRound {
         val round = retouchRoundRepository.save(RetouchRound(galleryId = galleryId, roundNo = roundNo))
         담기(round, photoIds)
-        round.submit(ZonedDateTime.now())
+        round.submit(ZonedDateTime.now(clock))
         return retouchRoundRepository.saveAndFlush(round)
     }
 
     /** 작가가 끝낸 회차. 다음 회차를 시작할 수 있는 상태다. */
     fun 완료된_회차(galleryId: Long, roundNo: Int = 1, photoIds: List<Long> = emptyList()): RetouchRound {
         val round = 제출된_회차(galleryId, roundNo, photoIds)
-        round.complete(ZonedDateTime.now())
+        round.complete(ZonedDateTime.now(clock))
         return retouchRoundRepository.saveAndFlush(round)
     }
 
@@ -53,7 +55,7 @@ class RetouchFixture(
         }
         val persistedItems = retouchPhotoRepository.saveAllAndFlush(items)
 
-        round.complete(ZonedDateTime.now())
+        round.complete(ZonedDateTime.now(clock))
         retouchRoundRepository.saveAndFlush(round)
         return persistedItems
     }

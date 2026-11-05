@@ -14,10 +14,9 @@ import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.recommendation.fixture.RecommendationFixture
 import com.soma.wes.support.FakeAiTaskSender
 import com.soma.wes.support.IntegrationTest
+import com.soma.wes.support.TestClock
 import java.time.Clock
 import java.time.Duration
-import java.time.Instant
-import java.time.ZoneId
 import java.time.ZonedDateTime
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.SoftAssertions.assertSoftly
@@ -42,16 +41,17 @@ class RankStepTest @Autowired constructor(
     private val photoFixture: PhotoFixture,
     private val recommendationFixture: RecommendationFixture,
     private val aiTaskSender: FakeAiTaskSender,
+    private val systemClock: Clock,
 ) {
 
     private lateinit var fixture: OpenGallery
-    private lateinit var clock: MutableClock
+    private lateinit var clock: TestClock
 
     @BeforeEach
     fun setUpBaseData() {
         aiTaskSender.reset()
         fixture = galleryFixture.멤버와_열린_갤러리()
-        clock = MutableClock(ZonedDateTime.now())
+        clock = TestClock(ZonedDateTime.now(systemClock))
     }
 
     private fun step(enabled: Boolean = true) = RankStep(
@@ -226,16 +226,4 @@ class RankStepTest @Autowired constructor(
     }
 
     private fun job(jobId: Long): AnalysisJob = analysisJobRepository.findById(jobId).orElseThrow()
-
-    private class MutableClock(private var now: ZonedDateTime) : Clock() {
-        fun advance(duration: Duration) {
-            now = now.plus(duration)
-        }
-
-        override fun getZone(): ZoneId = now.zone
-
-        override fun withZone(zone: ZoneId): Clock = this
-
-        override fun instant(): Instant = now.toInstant()
-    }
 }

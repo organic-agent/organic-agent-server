@@ -50,17 +50,24 @@ class CollabGuestWorkflowTest @Autowired constructor(
 ) {
     @Test
     fun `신규 링크는 칠일 뒤 만료하고 표지 변경은 랜딩과 관리 조회에 유지된다`() {
+        // given
         val before = ZonedDateTime.now(clock)
         val shared = fixtures.사진이_있는_세션()
         assertThat(shared.session.expiresAt).isAfterOrEqualTo(before.plusDays(7))
             .isBeforeOrEqualTo(ZonedDateTime.now(clock).plusDays(7))
+
+        // when
         sessionService.rename(shared.galleryId, shared.session.sessionId, shared.gallery.member.requiredId,
             RenameCollabSessionRequest(name = "가족 앨범", coverTitle = "함께 고르는 사진", coverAuthor = "예비 부부"))
+
+        // then
         val landing = guestQuery.getLanding(shared.token)
         assertThat(landing.coverTitle).isEqualTo("함께 고르는 사진")
         assertThat(landing.coverAuthor).isEqualTo("예비 부부")
         assertThat(queryService.get(shared.galleryId, shared.session.sessionId, shared.gallery.member.requiredId).coverTitle)
             .isEqualTo("함께 고르는 사진")
+
+        // when & then
         sessionService.rename(shared.galleryId, shared.session.sessionId, shared.gallery.member.requiredId,
             RenameCollabSessionRequest(name = "이름만 변경"))
         assertThat(guestQuery.getLanding(shared.token).coverAuthor).isEqualTo("예비 부부")
@@ -68,13 +75,16 @@ class CollabGuestWorkflowTest @Autowired constructor(
 
     @Test
     fun `참여자가 아닌 계정으로 로그인한 하객도 게스트 토큰으로 반응하고 내 반응을 본다`() {
+        // given
         val shared = fixtures.사진이_있는_세션()
         val guestToken = guestService.enter(shared.token, EnterCollabRequest("작가 계정 하객")).guestToken
         val outsider = users.사용자().requiredId
 
+        // when
         guestService.like(shared.token, shared.photoId, outsider, guestToken)
         guestService.writeComment(shared.token, shared.photoId, outsider, guestToken, WriteCollabCommentRequest("잘 나왔어요"))
 
+        // then
         assertThat(guestQuery.listPhotos(shared.token, outsider, guestToken, 0, 20).contents.single().liked).isTrue()
         val comment = guestQuery.listComments(shared.token, shared.photoId, outsider, guestToken, 0, 20).contents.single()
         assertThat(comment.nickname).isEqualTo("작가 계정 하객")
@@ -83,13 +93,20 @@ class CollabGuestWorkflowTest @Autowired constructor(
 
     @Test
     fun `만료된 링크를 재발행하면 새 토큰을 주고 이전 토큰은 더이상 열리지 않는다`() {
+        // given
         val shared = fixtures.사진이_있는_세션()
         sessions.saveAndFlush(sessions.findById(shared.session.sessionId).orElseThrow().apply {
             changeExpiresAt(ZonedDateTime.now(clock).minusSeconds(1))
         })
+
+        // when & then
         assertThatThrownBy { guestQuery.getLanding(shared.token) }
             .isInstanceOf(CollabException::class.java).extracting("errorCode").isEqualTo(CollabErrorCode.SESSION_EXPIRED)
+
+        // when
         val renewed = sessionService.republish(shared.galleryId, shared.session.sessionId, shared.gallery.member.requiredId)
+
+        // then
         assertThat(renewed.sessionId).isEqualTo(shared.session.sessionId)
         assertThat(renewed.collabUrl).isNotEqualTo(shared.session.collabUrl)
         assertThat(renewed.expiresAt).isAfter(ZonedDateTime.now(clock).plusDays(6))
@@ -100,11 +117,16 @@ class CollabGuestWorkflowTest @Autowired constructor(
 
     @Test
     fun `이름을 바꿔도 게스트 토큰과 댓글 좋아요의 참여자는 그대로다`() {
+        // given
         val shared = fixtures.사진이_있는_세션()
         val guest = guestService.enter(shared.token, EnterCollabRequest("이전 이름"))
         val comment = guestService.writeComment(shared.token, shared.photoId, null, guest.guestToken, WriteCollabCommentRequest("의견"))
         guestService.like(shared.token, shared.photoId, null, guest.guestToken)
+
+        // when
         val renamed = guestService.renameGuest(shared.token, guest.guestToken, EnterCollabRequest(" 새 이름 "))
+
+        // then
         assertThat(renamed.guestToken).isEqualTo(guest.guestToken)
         assertThat(renamed.participantId).isEqualTo(guest.participantId)
         assertThat(renamed.nickname).isEqualTo("새 이름")
@@ -115,6 +137,8 @@ class CollabGuestWorkflowTest @Autowired constructor(
         assertThat(listedComment.nickname).isEqualTo("새 이름")
         assertThat(listedComment.mine).isTrue()
         assertThat(guestQuery.listPhotos(shared.token, null, guest.guestToken, 0, 20).contents.single().liked).isTrue()
+
+        // when & then
         guestService.cancelLike(shared.token, shared.photoId, null, guest.guestToken)
         guestService.deleteComment(shared.token, comment.commentId, null, guest.guestToken)
         assertThat(guestQuery.listPhotos(shared.token, null, guest.guestToken, 0, 20).contents.single().likeCount).isZero()
@@ -123,9 +147,12 @@ class CollabGuestWorkflowTest @Autowired constructor(
 
     @Test
     fun `다른 링크의 게스트 토큰과 미입장 요청은 이름을 바꿀 수 없다`() {
+        // given
         val shared = fixtures.사진이_있는_세션()
         val other = fixtures.사진이_있는_세션()
         val foreign = guestService.enter(other.token, EnterCollabRequest("다른 게스트"))
+
+        // when & then
         for (token in listOf(null, foreign.guestToken)) {
             assertThatThrownBy { guestService.renameGuest(shared.token, token, EnterCollabRequest("잘못된 변경")) }
                 .isInstanceOf(CollabException::class.java).extracting("errorCode").isEqualTo(CollabErrorCode.GUEST_NOT_IDENTIFIED)
@@ -134,13 +161,18 @@ class CollabGuestWorkflowTest @Autowired constructor(
 
     @Test
     fun `게스트 사진 정보는 파일과 EXIF를 제공하고 클라이언트 별점은 숨긴다`() {
+        // given
         val shared = fixtures.사진이_있는_세션()
         val taken = LocalDateTime.of(2026, 9, 1, 14, 30)
         photos.saveAndFlush(photos.findById(shared.photoId).orElseThrow().apply {
             applyMetadata(PhotoMetadata(takenAt = taken, width = 4000, height = 6000, byteSize = 12_000_000L))
         })
         ratings.rate(shared.galleryId, shared.photoId, shared.gallery.member.requiredId, RatePhotoRequest(4))
+
+        // when
         val photo = guestQuery.listPhotos(shared.token, null, null, 0, 20).contents.single()
+
+        // then
         assertThat(photo.photo.originalFileName).isEqualTo("1.jpg")
         assertThat(photo.photo.contentType).isEqualTo("image/jpeg")
         assertThat(photo.metadata?.takenAt).isEqualTo(taken)
@@ -152,8 +184,11 @@ class CollabGuestWorkflowTest @Autowired constructor(
 
     @Test
     fun `작가는 추측한 갤러리 세션 id로 비공개 공유 결과를 조회할 수 없다`() {
+        // given
         val shared = fixtures.사진이_있는_세션()
         val userId = shared.gallery.photographer.requiredId
+
+        // when & then
         listOf<() -> Any>(
             { queryService.list(shared.galleryId, userId) },
             { queryService.get(shared.galleryId, shared.session.sessionId, userId) },
@@ -167,9 +202,14 @@ class CollabGuestWorkflowTest @Autowired constructor(
 
     @Test
     fun `개인 파트너는 소유자와 같은 공유 링크를 관리하고 로그인 참여자가 된다`() {
+        // given
         val personal = personalFixtures.파트너와_개인_갤러리()
         val concept = categories.createConcept(personal.galleryId, personal.ownerId, CreateConceptFolderRequest("공유 앨범"))
+
+        // when
         val session = sessionService.open(personal.galleryId, personal.partnerId, OpenCollabSessionRequest(concept.id, "파트너 공유"))
+
+        // then
         assertThat(queryService.get(personal.galleryId, session.sessionId, personal.ownerId).name).isEqualTo("파트너 공유")
         assertThat(queryService.list(personal.galleryId, personal.partnerId)).hasSize(1)
         val accessDto = access.requireReadable(session.collabUrl.substringAfterLast('/'))
@@ -177,14 +217,18 @@ class CollabGuestWorkflowTest @Autowired constructor(
     }
     @Test
     fun `기본 공유 링크는 같은 갤러리에 다른 공유 앨범이 있어도 자기 앨범만 보여준다`() {
+        // given
         val shared = fixtures.사진이_있는_세션()
         fixtures.사진이_있는_세션(shared.gallery)
+
+        // when & then
         assertThat(guestQuery.getLanding(shared.token).albums.map { it.sessionId })
             .containsExactly(shared.session.sessionId)
     }
 
     @Test
     fun `전체 앨범 링크는 같은 갤러리의 유효하게 공유된 앨범만 보여준다`() {
+        // given
         val shared = fixtures.사진이_있는_세션()
         val active = fixtures.사진이_있는_세션(shared.gallery)
         val revoked = fixtures.사진이_있는_세션(shared.gallery)
@@ -196,7 +240,11 @@ class CollabGuestWorkflowTest @Autowired constructor(
         })
         sessionService.rename(shared.galleryId, shared.session.sessionId, shared.gallery.member.requiredId,
             RenameCollabSessionRequest(name = "공유 앨범 전체", includeAllAlbums = true))
+
+        // when
         val albums = guestQuery.getLanding(shared.token).albums
+
+        // then
         assertThat(albums.map { it.sessionId })
             .containsExactlyInAnyOrder(shared.session.sessionId, active.session.sessionId)
             .doesNotContain(revoked.session.sessionId, expired.session.sessionId, otherGallery.session.sessionId)

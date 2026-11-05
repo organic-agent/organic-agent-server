@@ -33,6 +33,7 @@ class GalleryLifecycleServiceTest @Autowired constructor(
 ) {
     @Test
     fun `만료된 개인 플랜은 보관 상태로 옮기고 모든 참여자에게 한 번만 알린다`() {
+        // given
         val owner = users.사용자()
         val partner = users.사용자()
         val workspace = workspaces.findByPersonalOwnerUserId(owner.requiredId)!!
@@ -46,8 +47,12 @@ class GalleryLifecycleServiceTest @Autowired constructor(
         )
         galleryFixture.이용_기한(gallery.requiredId, ZonedDateTime.now(clock).minusMinutes(1))
         assertThat(lifecycle.nextBatch(0)).contains(gallery.requiredId)
+
+        // when
         lifecycle.process(gallery.requiredId)
         lifecycle.process(gallery.requiredId)
+
+        // then
         val archived = galleries.findById(gallery.requiredId).orElseThrow()
         assertThat(archived.stage).isEqualTo(GalleryStage.ARCHIVED)
         assertThat(archived.status).isEqualTo(GalleryStatus.CLOSED)
@@ -62,6 +67,7 @@ class GalleryLifecycleServiceTest @Autowired constructor(
 
     @Test
     fun `목표일과 플랜 만료 알림은 기한별로 한 번씩 보내고 기한 변경은 새 알림을 보낸다`() {
+        // given
         val owner = users.사용자()
         val workspace = workspaces.findByPersonalOwnerUserId(owner.requiredId)!!
         val now = ZonedDateTime.now(clock)
@@ -73,6 +79,8 @@ class GalleryLifecycleServiceTest @Autowired constructor(
             ),
         )
         galleryFixture.이용_기한(gallery.requiredId, now.plusDays(2))
+
+        // when & then
         lifecycle.process(gallery.requiredId)
         lifecycle.process(gallery.requiredId)
         assertThat(notifications.list(owner.requiredId, null, null).map { it.type })
@@ -87,6 +95,7 @@ class GalleryLifecycleServiceTest @Autowired constructor(
 
     @Test
     fun `개인 갤러리 목표일 알림은 마감이 아니라 목표일로 안내한다`() {
+        // given
         val owner = users.사용자()
         val workspace = workspaces.findByPersonalOwnerUserId(owner.requiredId)!!
         val now = ZonedDateTime.now(clock)
@@ -99,8 +108,10 @@ class GalleryLifecycleServiceTest @Autowired constructor(
         )
         galleryFixture.이용_기한(gallery.requiredId, now.plusDays(30))
 
+        // when
         lifecycle.process(gallery.requiredId)
 
+        // then
         val reminder = notifications.list(owner.requiredId, null, null).single()
         assertThat(reminder.type).isEqualTo(UserNotificationType.DEADLINE_REMINDER)
         assertThat(reminder.title).isEqualTo("목표일이 다가옵니다")
@@ -109,6 +120,7 @@ class GalleryLifecycleServiceTest @Autowired constructor(
 
     @Test
     fun `개인 갤러리 목표일이 이용 기간 만료와 같으면 이용 기간 알림만 보낸다`() {
+        // given
         val owner = users.사용자()
         val workspace = workspaces.findByPersonalOwnerUserId(owner.requiredId)!!
         val expiry = ZonedDateTime.now(clock).plusDays(2)
@@ -121,14 +133,17 @@ class GalleryLifecycleServiceTest @Autowired constructor(
         )
         galleryFixture.이용_기한(gallery.requiredId, expiry)
 
+        // when
         lifecycle.process(gallery.requiredId)
 
+        // then
         assertThat(notifications.list(owner.requiredId, null, null).map { it.type })
             .containsExactly(UserNotificationType.PLAN_EXPIRY_REMINDER)
     }
 
     @Test
     fun `스튜디오 갤러리는 선택 마감으로 안내한다`() {
+        // given
         val owner = users.사용자()
         val workspace = workspaces.save(Workspace.studio("스튜디오"))
         members.save(WorkspaceMember(workspace.requiredId, owner.requiredId, WorkspaceRole.OWNER))
@@ -140,13 +155,16 @@ class GalleryLifecycleServiceTest @Autowired constructor(
             ),
         )
 
+        // when
         lifecycle.process(gallery.requiredId)
 
+        // then
         assertThat(notifications.list(owner.requiredId, null, null).single().title).isEqualTo("선택 마감이 다가옵니다")
     }
 
     @Test
     fun `스튜디오는 개인 플랜 만료 규칙으로 보관하지 않고 삼일 밖의 마감은 알리지 않는다`() {
+        // given
         val owner = users.사용자()
         val workspace = workspaces.save(Workspace.studio("스튜디오"))
         members.save(WorkspaceMember(workspace.requiredId, owner.requiredId, WorkspaceRole.OWNER))
@@ -158,7 +176,11 @@ class GalleryLifecycleServiceTest @Autowired constructor(
             ),
         )
         galleryFixture.이용_기한(gallery.requiredId, ZonedDateTime.now(clock).minusDays(1))
+
+        // when
         lifecycle.process(gallery.requiredId)
+
+        // then
         assertThat(galleries.findById(gallery.requiredId).orElseThrow().stage).isEqualTo(GalleryStage.SELECTION_IN_PROGRESS)
         assertThat(notifications.list(owner.requiredId, null, null)).isEmpty()
         assertThat(lifecycle.nextBatch(0)).doesNotContain(gallery.requiredId)

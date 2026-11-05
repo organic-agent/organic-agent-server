@@ -27,15 +27,7 @@ class UserFixture(
 ) {
 
     fun 사용자(nickname: String = "테스터"): User {
-        val suffix = TestSequence.next()
-        val user = userRepository.save(
-            User(
-                provider = OAuthProvider.KAKAO,
-                providerId = "fixture-$suffix",
-                nickname = nickname,
-                email = "fixture-$suffix@example.com",
-            ),
-        )
+        val user = 계정만(nickname)
         val workspace = workspaceRepository.save(
             Workspace.personal(user.requiredId, "${user.nickname}의 작업공간"),
         )
@@ -47,5 +39,18 @@ class UserFixture(
             ),
         )
         return user
+    }
+
+    /** 개인 작업공간 없이 사용자 행만 만든다. 작업공간·멤버십 수를 세는 테스트가 쓴다. */
+    fun 계정만(nickname: String = "테스터", email: String? = null): User {
+        val suffix = TestSequence.next()
+        return userRepository.save(
+            User(
+                provider = OAuthProvider.KAKAO,
+                providerId = "fixture-$suffix",
+                nickname = nickname,
+                email = email ?: "fixture-$suffix@example.com",
+            ),
+        )
     }
 }

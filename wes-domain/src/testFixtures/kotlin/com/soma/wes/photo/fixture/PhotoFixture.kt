@@ -5,6 +5,8 @@ import com.soma.wes.photo.domain.PhotoAnalysis
 import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.support.TestSequence
+import java.time.Clock
+import java.time.ZonedDateTime
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
 
@@ -13,6 +15,7 @@ class PhotoFixture(
     private val photoRepository: PhotoRepository,
     private val photoAnalysisRepository: PhotoAnalysisRepository,
     private val jdbcTemplate: JdbcTemplate,
+    private val clock: Clock,
 ) {
 
     fun 업로드된_사진(galleryId: Long, count: Int): List<Long> = 사진(galleryId, count, uploaded = true)
@@ -130,7 +133,7 @@ class PhotoFixture(
                 displayOrder = index,
             )
             if (uploaded) {
-                photo.markUploaded(java.time.ZonedDateTime.now())
+                photo.markUploaded(ZonedDateTime.now(clock))
             }
             photoRepository.save(photo).requiredId
         }

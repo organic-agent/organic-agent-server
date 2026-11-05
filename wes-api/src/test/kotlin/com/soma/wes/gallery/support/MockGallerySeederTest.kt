@@ -18,6 +18,7 @@ import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.support.TestSequence
 import com.soma.wes.user.fixture.UserFixture
+import java.time.Clock
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatCode
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -46,6 +47,7 @@ class MockGallerySeederTest @Autowired constructor(
     private val photoRepository: PhotoRepository,
     private val photoFixture: PhotoFixture,
     private val photoAnalysisRepository: PhotoAnalysisRepository,
+    private val clock: Clock,
 ) {
 
     @Nested
@@ -61,7 +63,7 @@ class MockGallerySeederTest @Autowired constructor(
             val second = 임베딩_사진(template.requiredId, displayOrder = 5)
             val first = 임베딩_사진(template.requiredId, displayOrder = 2)
             photoRepository.save(사진(template.requiredId, displayOrder = 0)) // PENDING
-            photoRepository.save(사진(template.requiredId, displayOrder = 1).also { it.markUploaded(java.time.ZonedDateTime.now()) })
+            photoRepository.save(사진(template.requiredId, displayOrder = 1).also { it.markUploaded(ZonedDateTime.now(clock)) })
 
             // when
             val templates = mockGallerySeeder.loadTemplatePhotos(template.requiredId)
@@ -127,7 +129,7 @@ class MockGallerySeederTest @Autowired constructor(
         fun `요청이 있으면 요청 값 그대로 만든다`() {
             // given
             val photographer = studioFixture.작가()
-            val deadline = ZonedDateTime.now().plusDays(7)
+            val deadline = ZonedDateTime.now(clock).plusDays(7)
             val request = CreateGalleryRequest(
                 workspaceId = studioFixture.소유_스튜디오(photographer).workspaceId,
                 title = "체험 갤러리",
@@ -170,7 +172,7 @@ class MockGallerySeederTest @Autowired constructor(
             val request = CreateGalleryRequest(
                 workspaceId = studioFixture.소유_스튜디오(photographer).workspaceId,
                 title = "체험 갤러리",
-                selectionDeadline = ZonedDateTime.now().minusDays(1),
+                selectionDeadline = ZonedDateTime.now(clock).minusDays(1),
             )
 
             // when & then
@@ -300,7 +302,7 @@ class MockGallerySeederTest @Autowired constructor(
 
     private fun 임베딩_사진(galleryId: Long, displayOrder: Int, withPreview: Boolean = true): Photo {
         val saved = photoRepository.save(
-            사진(galleryId, displayOrder).also { photo -> photo.markUploaded(java.time.ZonedDateTime.now()) },
+            사진(galleryId, displayOrder).also { photo -> photo.markUploaded(ZonedDateTime.now(clock)) },
         )
         if (withPreview) {
             photoFixture.미리보기_붙이기(saved.requiredId, "previews/${saved.storageKey.substringBeforeLast('.')}.jpg")

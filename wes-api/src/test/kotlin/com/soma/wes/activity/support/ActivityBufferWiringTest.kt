@@ -27,6 +27,7 @@ class ActivityBufferWiringTest {
 
     @Test
     fun `켜면 메모장과 주기 플러시가 생긴다`() {
+        // when & then
         runner.withPropertyValues("app.activity.buffer.enabled=true").run { context ->
             assertThat(context).hasSingleBean(ActivityBuffer::class.java)
             assertThat(context).hasSingleBean(ActivityFlushScheduler::class.java)
@@ -36,6 +37,7 @@ class ActivityBufferWiringTest {
 
     @Test
     fun `끄면 메모장 없이 기록기만 남아 바로 쓴다`() {
+        // when & then
         runner.run { context ->
             assertThat(context).doesNotHaveBean(ActivityBuffer::class.java)
             assertThat(context).doesNotHaveBean(ActivityFlushScheduler::class.java)
