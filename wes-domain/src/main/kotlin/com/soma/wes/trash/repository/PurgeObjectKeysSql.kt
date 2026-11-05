@@ -3,6 +3,7 @@ package com.soma.wes.trash.repository
 /**
  * 삭제 대상 행이 가리키는 S3 key 중 다른 DB 행이 공유하지 않는 key만 고른다.
  * predicate는 이 패키지의 고정 쿼리 조각만 전달하며 각각 photos p, retouch_photos rp를 쓴다.
+ * 원본 키 → 미리보기 키(`'previews/' || …`)는 `PhotoStorage.previewKeyOf`와 같은 규칙이다 — 대량 삭제라 DB 안에서 계산한다.
  */
 fun purgeObjectKeysSql(
     photoPredicate: String,

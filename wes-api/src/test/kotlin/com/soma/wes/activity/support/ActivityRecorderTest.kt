@@ -1,4 +1,4 @@
-package com.soma.wes.activity.service
+package com.soma.wes.activity.support
 
 import com.soma.wes.activity.repository.ActivityRepository
 import com.soma.wes.gallery.domain.GalleryMember

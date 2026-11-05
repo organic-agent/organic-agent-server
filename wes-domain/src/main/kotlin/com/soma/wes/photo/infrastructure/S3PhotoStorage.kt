@@ -45,6 +45,9 @@ class S3PhotoStorage(
         return "${galleryPrefix(galleryId)}${UUID.randomUUID()}$suffix"
     }
 
+    override fun previewKeyOf(storageKey: String): String =
+        "previews/${storageKey.substringBeforeLast('.', storageKey)}.jpg"
+
     override fun presignUpload(
         key: String,
         contentType: String,

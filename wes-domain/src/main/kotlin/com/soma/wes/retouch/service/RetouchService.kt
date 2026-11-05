@@ -1,6 +1,6 @@
 package com.soma.wes.retouch.service
 
-import com.soma.wes.activity.service.ActivityRecorder
+import com.soma.wes.activity.support.ActivityRecorder
 import com.soma.wes.gallery.config.GalleryLifecycleProperties
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryStage
@@ -230,7 +230,7 @@ class RetouchService(
             photos = retouchViewAssembler.toDetailResponses(
                 galleryId, items,
                 includeResults = round.status == RetouchRoundStatus.COMPLETED ||
-                    galleryAccessPolicy.canInspectRetouchDrafts(galleryId, userId),
+                    galleryAccessPolicy.isRetouchProcessor(galleryId, userId),
             ).map { if (hideRating) it.copy(photo = it.photo.copy(score = null, ratedBy = null, ratedAt = null)) else it },
             viewUrlTtlSeconds = properties.viewUrlTtl.seconds,
             hideDraft = hideRating,
@@ -520,7 +520,7 @@ class RetouchService(
             .associate { it.roundId to it.photoCount }
 
         val hideRating = galleryAccessPolicy.isStudioManager(galleryId, userId)
-        val inspectDrafts = galleryAccessPolicy.canInspectRetouchDrafts(galleryId, userId)
+        val inspectDrafts = galleryAccessPolicy.isRetouchProcessor(galleryId, userId)
         val currentRound = rounds.lastOrNull { it.status != RetouchRoundStatus.COMPLETED }
         val currentItems = currentRound
             ?.takeUnless { it.isDrafting && hideRating }

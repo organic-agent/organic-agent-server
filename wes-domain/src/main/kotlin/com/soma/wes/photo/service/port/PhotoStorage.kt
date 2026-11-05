@@ -15,6 +15,13 @@ interface PhotoStorage {
     fun buildKey(galleryId: Long, originalFileName: String): String
 
     /**
+     * 원본 키에서 파생되는 미리보기의 고정 위치(`galleries/1/a.heic` → `previews/galleries/1/a.jpg`).
+     * 미리보기는 임베딩 Lambda가 AI 저장소 `preview_key_for`로 같은 키에 올리므로 두 규칙이 어긋나면 삭제·복제가 미리보기를 놓친다.
+     * 대량 삭제 SQL(`PurgeObjectKeysSql`)도 같은 규칙을 SQL로 계산한다.
+     */
+    fun previewKeyOf(storageKey: String): String
+
+    /**
      * 프론트가 직접 PUT 할 URL.
      * [contentType]이 서명에 포함되므로 업로드할 때 같은 값을 보내야 서명이 맞는다. [contentLength]를 주면 그 바이트 수도
      * 서명에 들어가 다른 크기의 객체는 S3가 거절한다 — 서버가 객체를 받지 않고도 크기 상한을 지키는 유일한 길이다(presigned PUT에는

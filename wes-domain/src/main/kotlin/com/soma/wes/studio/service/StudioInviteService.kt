@@ -1,6 +1,6 @@
 package com.soma.wes.studio.service
 
-import com.soma.wes.activity.service.ActivityRecorder
+import com.soma.wes.activity.support.ActivityRecorder
 import com.soma.wes.gallery.domain.GalleryInviteKind
 import com.soma.wes.gallery.domain.GalleryInviteStatus
 import com.soma.wes.gallery.dto.response.GalleryInviteAcceptResponse

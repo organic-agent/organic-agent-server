@@ -1,6 +1,6 @@
 package com.soma.wes.folder.service
 
-import com.soma.wes.activity.service.ActivityRecorder
+import com.soma.wes.activity.support.ActivityRecorder
 import com.soma.wes.folder.dto.response.ConceptFolderResponse
 import com.soma.wes.folder.repository.ConceptFolderRepository
 import com.soma.wes.folder.support.AiFolderMaterializer
