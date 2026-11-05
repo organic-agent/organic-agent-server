@@ -29,7 +29,7 @@ import org.springframework.test.web.servlet.post
 
 /** JWT 인증과 하객 토큰의 경계는 서비스 직접 호출로 검증할 수 없어 HTTP 회귀 가드로 둔다. */
 @IntegrationTest
-class PhotoCommentAuthenticationTest @Autowired constructor(
+class PhotoCommentAuthenticationContractTest @Autowired constructor(
     private val mockMvc: MockMvc,
     private val authTokenProvider: AuthTokenProvider,
     private val galleryFixture: GalleryFixture,

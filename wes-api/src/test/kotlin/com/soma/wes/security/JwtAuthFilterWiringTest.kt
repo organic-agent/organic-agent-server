@@ -35,7 +35,7 @@ import java.net.http.HttpResponse
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(TestcontainersConfiguration::class)
-class JwtAuthFilterRegistrationTest @Autowired constructor(
+class JwtAuthFilterWiringTest @Autowired constructor(
     private val servletContext: ServletContext,
     private val authTokenProvider: AuthTokenProvider,
     private val userRepository: UserRepository,

@@ -16,7 +16,7 @@ import java.util.concurrent.Executors
 
 /** 임대를 `scheduler_leader_lease` 행(V45)에 둘 때의 리더 계약(#336 ADR-0002). Flyway가 만든 테이블에 붙는다. */
 @IntegrationTest
-class PostgresLeaderLeaseTest @Autowired constructor(
+class PostgresLeaderLeaseStoreTest @Autowired constructor(
     private val jdbcClient: JdbcClient,
 ) : LeaderLeaseContract() {
 

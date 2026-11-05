@@ -22,7 +22,7 @@ import java.net.http.HttpResponse
     properties = ["management.server.port=0"],
 )
 @Import(TestcontainersConfiguration::class)
-class HealthManagementPortTest {
+class HealthManagementPortContractTest {
 
     @LocalServerPort
     private var serverPort: Int = 0

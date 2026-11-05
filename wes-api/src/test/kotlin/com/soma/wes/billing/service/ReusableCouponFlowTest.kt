@@ -28,7 +28,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 @IntegrationTest
-class ReusableCouponServiceTest @Autowired constructor(
+class ReusableCouponFlowTest @Autowired constructor(
     private val target: CouponService,
     private val users: UserFixture,
     private val billing: BillingFixture,

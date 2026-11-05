@@ -162,7 +162,7 @@ def test_names(mode):
     types = declared_types()
     for f in files(TEST):
         b = os.path.basename(f)[:-3]
-        if not b.endswith('Test') or b.endswith('ContractTest'): continue
+        if not b.endswith('Test') or b.endswith(('ContractTest', 'FlowTest')): continue
         s = read(f)
         pkg = re.search(r'^package ([\w.]+)', s, re.M).group(1)
         base = re.sub(r'(UnitTest|Test)$', '', b)

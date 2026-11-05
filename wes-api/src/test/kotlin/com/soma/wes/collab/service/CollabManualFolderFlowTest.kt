@@ -44,7 +44,7 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.transaction.support.TransactionTemplate
 
 @IntegrationTest
-class CollabManualFolderServiceTest @Autowired constructor(
+class CollabManualFolderFlowTest @Autowired constructor(
     private val service: CollabSessionService,
     private val query: CollabSessionQueryService,
     private val guest: CollabGuestService,
