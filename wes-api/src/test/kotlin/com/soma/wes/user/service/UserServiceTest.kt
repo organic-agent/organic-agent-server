@@ -4,10 +4,8 @@ import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.studio.domain.Studio
-import com.soma.wes.studio.exception.StudioErrorCode
-import com.soma.wes.studio.exception.StudioException
 import com.soma.wes.studio.repository.StudioRepository
-import com.soma.wes.support.TestcontainersConfiguration
+import com.soma.wes.support.IntegrationTest
 import com.soma.wes.user.domain.Role
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.exception.UserErrorCode
@@ -24,11 +22,8 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.context.annotation.Import
 
-@SpringBootTest
-@Import(TestcontainersConfiguration::class)
+@IntegrationTest
 class UserServiceTest @Autowired constructor(
     private val userService: UserService,
     private val userRepository: UserRepository,

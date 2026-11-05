@@ -1,8 +1,10 @@
 package com.soma.wes.global
 
+import com.soma.wes.support.DatabaseClearExtension
 import com.soma.wes.support.TestcontainersConfiguration
 import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.web.server.LocalManagementPort
 import org.springframework.boot.test.web.server.LocalServerPort
@@ -22,6 +24,7 @@ import java.net.http.HttpResponse
     properties = ["management.server.port=0"],
 )
 @Import(TestcontainersConfiguration::class)
+@ExtendWith(DatabaseClearExtension::class)
 class HealthManagementPortContractTest {
 
     @LocalServerPort

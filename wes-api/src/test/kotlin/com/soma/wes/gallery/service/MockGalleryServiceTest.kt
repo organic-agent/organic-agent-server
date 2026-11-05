@@ -1,16 +1,16 @@
 package com.soma.wes.gallery.service
 
+import com.soma.wes.gallery.RecordingPhotoStorage
+import com.soma.wes.gallery.RecordingPhotoStorageConfig
 import com.soma.wes.gallery.domain.GalleryStatus
 import com.soma.wes.gallery.dto.request.CreateGalleryRequest
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.repository.GalleryRepository
-import com.soma.wes.gallery.support.MockGallerySeeder
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoAnalysis
 import com.soma.wes.photo.domain.PhotoMetadata
 import com.soma.wes.photo.domain.PhotoStatus
-import com.soma.wes.photo.dto.PresignedUploadDto
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
 import com.soma.wes.photo.fixture.PhotoFixture
@@ -22,9 +22,7 @@ import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.DatabaseClearExtension
 import com.soma.wes.support.TestcontainersConfiguration
 import java.time.Clock
-import java.time.Instant
 import java.time.ZonedDateTime
-import java.util.UUID
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.assertj.core.api.SoftAssertions.assertSoftly
@@ -35,8 +33,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.test.context.TestConfiguration
-import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
 import org.springframework.jdbc.core.JdbcTemplate
@@ -53,7 +49,7 @@ import org.springframework.jdbc.core.JdbcTemplate
  * (rules/test.md의 예외 규정). 어차피 `@Primary` 빈 교체로 전용 컨텍스트를 띄우는 파일이다.
  */
 @SpringBootTest(properties = ["app.mock-gallery.template-gallery-id=777001"])
-@Import(TestcontainersConfiguration::class, MockGalleryServiceTest.RecordingStorageConfig::class)
+@Import(TestcontainersConfiguration::class, RecordingPhotoStorageConfig::class)
 @ExtendWith(DatabaseClearExtension::class)
 class MockGalleryServiceTest @Autowired constructor(
     private val mockGalleryService: MockGalleryService,
@@ -279,67 +275,5 @@ class MockGalleryServiceTest @Autowired constructor(
     companion object {
         /** `app.mock-gallery.template-gallery-id` 프로퍼티와 같은 값. */
         const val TEMPLATE_GALLERY_ID = 777001L
-    }
-
-    @TestConfiguration(proxyBeanMethods = false)
-    class RecordingStorageConfig {
-
-        @Bean
-        @Primary
-        fun recordingPhotoStorage(clock: Clock): RecordingPhotoStorage = RecordingPhotoStorage(clock)
-    }
-}
-
-/**
- * 호출을 기록하는 [PhotoStorage]. `buildKey`·`previewKeyOf`는 실제 구현과 같은 규칙을 쓴다 —
- * 키 모양(`galleries/{id}/{uuid}.{ext}`)이 곧 검증 대상이라 임의 문자열로 대체할 수 없다.
- */
-class RecordingPhotoStorage(
-    private val clock: Clock,
-) : PhotoStorage {
-
-    val copies = mutableListOf<Pair<String, String>>()
-    val deleted = mutableListOf<String>()
-
-    /** 이만큼 복사한 뒤부터는 실패를 주입한다. null이면 항상 성공. */
-    var failCopyAfter: Int? = null
-
-    fun reset() {
-        copies.clear()
-        deleted.clear()
-        failCopyAfter = null
-    }
-
-    override fun galleryPrefix(galleryId: Long): String = "galleries/$galleryId/"
-
-    override fun buildKey(galleryId: Long, originalFileName: String): String {
-        val extension = originalFileName.substringAfterLast('.', "").lowercase()
-        val suffix = if (extension.isBlank()) "" else ".$extension"
-        return "${galleryPrefix(galleryId)}${UUID.randomUUID()}$suffix"
-    }
-
-    override fun previewKeyOf(storageKey: String): String =
-        "previews/${storageKey.substringBeforeLast('.', storageKey)}.jpg"
-
-    override fun presignUpload(key: String, contentType: String, contentLength: Long?, crc32c: String?): PresignedUploadDto =
-        PresignedUploadDto(url = "https://storage.test/upload/$key", expiresAt = clock.instant().plusSeconds(1800))
-
-    override fun presignView(key: String): String = "https://storage.test/view/$key"
-
-    override fun presignOriginal(key: String): String = "https://storage.test/original/$key"
-
-    override fun exists(key: String): Boolean = true
-
-    override fun deleteAll(keys: Collection<String>) {
-        deleted += keys
-    }
-
-    override fun copy(sourceKey: String, targetKey: String) {
-        failCopyAfter?.let { limit ->
-            if (copies.size >= limit) {
-                throw PhotoException(PhotoErrorCode.STORAGE_COPY_FAILED)
-            }
-        }
-        copies += sourceKey to targetKey
     }
 }

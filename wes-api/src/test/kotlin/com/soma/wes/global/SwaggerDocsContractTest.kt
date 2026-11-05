@@ -2,13 +2,10 @@ package com.soma.wes.global
 
 import com.soma.wes.auth.controller.docs.OAuthControllerDocs
 import com.soma.wes.auth.domain.OAuthProvider
+import com.soma.wes.support.IntegrationTest
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import com.soma.wes.support.TestcontainersConfiguration
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
-import org.springframework.context.annotation.Import
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 
@@ -16,10 +13,8 @@ import org.springframework.test.web.servlet.get
  * API 문서가 인증 없이 열려 있고, 컨트롤러가 실제로 문서에 잡히는지 확인한다.
  * PublicPaths에서 문서 경로가 빠지면 401이 나므로 여기서 걸린다.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@Import(TestcontainersConfiguration::class)
-class SwaggerDocsTest @Autowired constructor(
+@IntegrationTest
+class SwaggerDocsContractTest @Autowired constructor(
     private val mockMvc: MockMvc,
 ) {
 

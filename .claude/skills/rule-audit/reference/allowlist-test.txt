@@ -16,4 +16,3 @@ wes-admin-api/src/test/kotlin/com/soma/wes/admin/resource/AdminRetouchArtifactSe
 wes-admin-api/src/test/kotlin/com/soma/wes/admin/resource/AdminWorkflowControllerTest.kt
 wes-admin-api/src/test/kotlin/com/soma/wes/admin/resource/AdminWorkflowExecutorTest.kt
 wes-admin-api/src/test/kotlin/com/soma/wes/admin/resource/AdminWorkflowServiceTest.kt
-wes-api/src/test/kotlin/com/soma/wes/global/SwaggerDocsTest.kt

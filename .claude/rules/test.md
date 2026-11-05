@@ -18,7 +18,7 @@ paths:
   같은 분기는 서비스 테스트가 더 가볍게 덮는다. 위치는 `security/`·`global/`(공통 에러 응답) 또는 그 기능 도메인의 `controller/`. <!-- TS-03 -->
 - 그 밖의 예외는 특정 계층이 소유한 규약을 지키는 회귀 가드뿐이다 — 코드베이스 전체 규약(`*GuardTest`:
   `ScheduledLeadershipGuardTest`·`EntityNullabilityGuardTest`), `ErrorCodeFormatTest`,
-  어댑터 테스트(`S3PhotoStorageUnitTest`), 빈·모듈 경계(`*BoundaryTest`), 빈 조립(`*WiringTest`), 문서 노출(`SwaggerDocsTest`).
+  어댑터 테스트(`S3PhotoStorageUnitTest`), 빈·모듈 경계(`*BoundaryTest`), 빈 조립(`*WiringTest`), 문서 노출(`SwaggerDocsContractTest`).
 - 테스트 이름의 대상 클래스는 main에 실제로 있어야 한다(`{대상}Test`·`{대상}UnitTest`). 기능 이름을 쓰는 것은 `~ContractTest`와
   여러 서비스를 엮은 시나리오 `{기능}FlowTest`(`CollabGuestFlowTest`: 하객 링크 → 고르기 → 작가 화면)뿐이다. 클래스 하나의 한 측면은
   새 파일 대신 그 클래스 테스트의 `@Nested`로 둔다. <!-- TS-04 -->

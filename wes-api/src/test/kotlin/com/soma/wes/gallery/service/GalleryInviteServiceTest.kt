@@ -1,6 +1,5 @@
 package com.soma.wes.gallery.service
 
-import com.soma.wes.gallery.config.GalleryInviteProperties
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryInvite
 import com.soma.wes.gallery.domain.GalleryInviteKind
@@ -13,13 +12,9 @@ import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.repository.GalleryInviteRepository
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
-import com.soma.wes.gallery.support.GalleryAccessPolicy
-import com.soma.wes.gallery.support.GalleryInviteUrlResolver
-import com.soma.wes.global.SecureTokenGenerator
-import com.soma.wes.global.config.TimeConfig
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
-import com.soma.wes.support.TestcontainersConfiguration
+import com.soma.wes.support.IntegrationTest
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.fixture.UserFixture
 import com.soma.wes.user.repository.UserRepository
@@ -36,27 +31,10 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.context.properties.EnableConfigurationProperties
-import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
-import org.springframework.context.annotation.Import
 import java.time.Clock
 import java.time.ZonedDateTime
 
-@DataJpaTest
-@Import(
-    com.soma.wes.activity.support.ActivityRecorder::class,
-    com.soma.wes.activity.repository.ActivityRepository::class,
-    TestcontainersConfiguration::class,
-    TimeConfig::class,
-    GalleryAccessPolicy::class,
-    GalleryInviteService::class,
-    com.soma.wes.studio.service.StudioInviteService::class,
-    com.soma.wes.notification.service.UserNotificationService::class,
-    SecureTokenGenerator::class,
-    GalleryInviteUrlResolver::class,
-    UserFixture::class,
-)
-@EnableConfigurationProperties(GalleryInviteProperties::class)
+@IntegrationTest
 class GalleryInviteServiceTest @Autowired constructor(
     private val galleryInviteService: GalleryInviteService,
     private val galleryInviteRepository: GalleryInviteRepository,
