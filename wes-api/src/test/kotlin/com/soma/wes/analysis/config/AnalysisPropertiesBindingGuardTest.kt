@@ -4,7 +4,6 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.Test
 import org.springframework.boot.context.properties.EnableConfigurationProperties
-import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
 import java.time.Duration
 
@@ -12,9 +11,8 @@ import java.time.Duration
  * 분석 설정 세 클래스가 같은 prefix `app.analysis`를 나눠 가진다(#201). 키는 Parameter Store(`/wes/prod/app.analysis.*`)와의
  * 계약이라, 클래스를 나눠도 기존 키가 각자 제자리에 들어가야 한다.
  */
-class AnalysisPropertiesBindingUnitTest {
+class AnalysisPropertiesBindingGuardTest {
 
-    @TestConfiguration
     @EnableConfigurationProperties(
         AnalysisProperties::class,
         LambdaAiTaskProperties::class,

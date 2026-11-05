@@ -1,20 +1,19 @@
 package com.soma.wes.global
 
 import com.soma.wes.auth.domain.OAuthProvider
-import com.soma.wes.global.config.TimeConfig
-import com.soma.wes.support.TestcontainersConfiguration
+import com.soma.wes.support.IntegrationTest
 import com.soma.wes.user.domain.User
-import jakarta.persistence.EntityManager
+import com.soma.wes.user.repository.UserRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
-import org.springframework.context.annotation.Import
+import org.springframework.data.repository.findByIdOrNull
+import org.springframework.transaction.support.TransactionTemplate
 
-@DataJpaTest
-@Import(TestcontainersConfiguration::class, TimeConfig::class)
+@IntegrationTest
 class BaseEntityTest @Autowired constructor(
-    private val em: EntityManager,
+    private val userRepository: UserRepository,
+    private val transactionTemplate: TransactionTemplate,
 ) {
 
     private fun newUser() = User(
@@ -30,8 +29,7 @@ class BaseEntityTest @Autowired constructor(
         assertThat(user.createdAt).isNull()
 
         // when
-        em.persist(user)
-        em.flush()
+        userRepository.saveAndFlush(user)
 
         // then
         assertThat(user.createdAt).isNotNull()
@@ -41,18 +39,18 @@ class BaseEntityTest @Autowired constructor(
     @Test
     fun `수정하면 updatedAt만 갱신된다`() {
         // given
-        val user = newUser()
-        em.persist(user)
-        em.flush()
-        val createdAt = user.createdAt
-        val firstUpdatedAt = user.updatedAt
+        val saved = userRepository.saveAndFlush(newUser())
+        val createdAt = checkNotNull(saved.createdAt)
+        val firstUpdatedAt = checkNotNull(saved.updatedAt)
 
         // when
-        user.updateProfile(nickname = "수정된 이름", email = null)
-        em.flush()
+        transactionTemplate.executeWithoutResult {
+            checkNotNull(userRepository.findByIdOrNull(saved.requiredId)).updateProfile(nickname = "수정된 이름", email = null)
+        }
 
         // then
-        assertThat(user.createdAt).isEqualTo(createdAt)
-        assertThat(user.updatedAt!!).isAfter(firstUpdatedAt!!)
+        val updated = checkNotNull(userRepository.findByIdOrNull(saved.requiredId))
+        assertThat(updated.createdAt).isEqualTo(createdAt)
+        assertThat(checkNotNull(updated.updatedAt)).isAfter(firstUpdatedAt)
     }
 }

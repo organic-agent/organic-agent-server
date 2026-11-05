@@ -2,19 +2,12 @@ package com.soma.wes.auth.support
 
 import com.soma.wes.auth.domain.RefreshToken
 import com.soma.wes.auth.domain.Subject
-import com.soma.wes.auth.config.JwtProperties
-import com.soma.wes.global.config.TimeConfig
-import com.soma.wes.support.TestcontainersConfiguration
+import com.soma.wes.support.IntegrationTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.context.properties.EnableConfigurationProperties
-import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
-import org.springframework.context.annotation.Import
 
-@DataJpaTest
-@Import(TestcontainersConfiguration::class, RefreshTokenStore::class, TimeConfig::class)
-@EnableConfigurationProperties(JwtProperties::class)
+@IntegrationTest
 class RefreshTokenStoreTest @Autowired constructor(
     private val refreshTokenStore: RefreshTokenStore,
 ) {

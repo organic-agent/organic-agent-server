@@ -12,7 +12,7 @@ import org.mockito.kotlin.whenever
 import org.springframework.dao.QueryTimeoutException
 import java.time.ZonedDateTime
 
-class ActivityFlushServiceTest {
+class ActivityFlushServiceUnitTest {
 
     private val buffer = InMemoryActivityBuffer()
     private val repository = mock<ActivityRepository>()

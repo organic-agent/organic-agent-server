@@ -20,7 +20,7 @@ import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 
 @IntegrationTest
-class RecommendationActivityTest @Autowired constructor(
+class RecommendationActivityFlowTest @Autowired constructor(
     private val activity: ActivityRepository,
     private val galleries: GalleryFixture,
     private val galleryRepository: GalleryRepository,

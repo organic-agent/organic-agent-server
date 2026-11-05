@@ -16,11 +16,11 @@ import org.junit.jupiter.api.Test
  * 그 패턴은 prod 프로필의 파일 appender 만 쓴다(local·test 콘솔은 스프링 부트 기본 패턴). 그래서 출력을 잡는 대신
  * 설정 파일에서 패턴 문자열을 읽어 logback 의 레이아웃에 직접 먹인다.
  */
-class LogPatternUnitTest {
+class LogPatternGuardTest {
 
     private val context = LoggerContext()
     private val layout = PatternLayout().apply {
-        context = this@LogPatternUnitTest.context
+        context = this@LogPatternGuardTest.context
         pattern = readLogPattern()
         start()
     }

@@ -33,7 +33,7 @@ import javax.sql.DataSource
  * 감지(하트비트의 멈춤 알림)는 `PipelineHeartbeatSchedulerTest`가 본다.
  */
 @IntegrationTest
-class SchedulerDatabaseHangTest @Autowired constructor(
+class SchedulerDatabaseHangGuardTest @Autowired constructor(
     private val dataSource: DataSource,
     private val taskScheduler: TaskScheduler,
     private val heartbeat: PipelineHeartbeatScheduler,

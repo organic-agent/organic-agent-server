@@ -26,7 +26,7 @@ import org.springframework.beans.factory.annotation.Autowired
  * 만든 뒤 폴더에서 일어나는 일(이동·합치기·되돌리기·삭제)은 공유폴더의 사진과 하객 반응에 닿지 않는다.
  */
 @IntegrationTest
-class FolderCollabIntegrationTest @Autowired constructor(
+class FolderCollabFlowTest @Autowired constructor(
     private val folderService: FolderService,
     private val collabSessionService: CollabSessionService,
     private val collabGuestService: CollabGuestService,

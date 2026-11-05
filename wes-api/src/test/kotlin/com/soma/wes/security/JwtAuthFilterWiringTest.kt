@@ -7,12 +7,14 @@ import ch.qos.logback.core.read.ListAppender
 import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.auth.service.AuthTokenProvider
 import com.soma.wes.security.filter.JwtAuthFilter
+import com.soma.wes.support.DatabaseClearExtension
 import com.soma.wes.support.TestcontainersConfiguration
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
 import jakarta.servlet.ServletContext
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -35,7 +37,8 @@ import java.net.http.HttpResponse
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(TestcontainersConfiguration::class)
-class JwtAuthFilterRegistrationTest @Autowired constructor(
+@ExtendWith(DatabaseClearExtension::class)
+class JwtAuthFilterWiringTest @Autowired constructor(
     private val servletContext: ServletContext,
     private val authTokenProvider: AuthTokenProvider,
     private val userRepository: UserRepository,

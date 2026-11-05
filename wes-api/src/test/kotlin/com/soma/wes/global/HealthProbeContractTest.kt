@@ -13,7 +13,7 @@ import org.springframework.test.web.servlet.get
  * 서버가 다 같이 빠지고 ASG 가 멀쩡한 서버를 갈아 치운다. PublicPaths 에서 프로브 경로가 빠지면 401 이라 여기서 걸린다.
  */
 @IntegrationTest
-class HealthProbeTest @Autowired constructor(
+class HealthProbeContractTest @Autowired constructor(
     private val mockMvc: MockMvc,
     private val healthGroups: HealthEndpointGroups,
 ) {

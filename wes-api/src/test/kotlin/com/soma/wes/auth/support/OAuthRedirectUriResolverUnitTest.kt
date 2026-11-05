@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test
  * 인가 URL을 만들 때와 인가 코드를 교환할 때의 값이 어긋나면 provider가 redirect_uri_mismatch로
  * 거절하는데, 그 에러만으로는 원인을 찾기 어렵다.
  */
-class OAuthRedirectUriResolverTest {
+class OAuthRedirectUriResolverUnitTest {
 
     companion object {
         private const val CONFIGURED = "https://easyselect.vercel.app/login/oauth2/code/google"
