@@ -274,8 +274,11 @@ def errorcode_assert():
     # errorCode를 가진 우리 예외만 본다 — JDK·라이브러리 예외(ClassNotFoundException·SQLException…)에는 단언할 errorCode가 없다.
     coded = set()
     for f in files(MAIN):
-        for m in re.finditer(r'class (\w+Exception)\s*\(([^)]*)\)', read(f)):
-            if 'errorCode' in m.group(2): coded.add(m.group(1))
+        src = read(f)
+        for m in re.finditer(r'class (\w+Exception)\b', src):
+            # 선언 머리(본문 `{` 전까지)를 본다 — 괄호 든 기본값·`private constructor(errorCode: …)`도 잡힌다.
+            head = src[m.end():m.end() + 800].split('{', 1)[0]
+            if 'errorCode' in head: coded.add(m.group(1))
     for f in files(TEST):
         s = read(f)
         for m in re.finditer(r'isInstanceOf\(\s*([A-Z]\w*Exception)::class', s):
