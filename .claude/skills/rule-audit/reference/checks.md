@@ -172,7 +172,7 @@ find wes-*/src/main/kotlin/com/soma/wes -maxdepth 1 -name infrastructure
 find wes-*/src/main/kotlin -type d | rg '/[^/]*[A-Z_-][^/]*$'
 
 # LY-08
-find wes-*/src/main/kotlin/com/soma/wes -mindepth 2 -maxdepth 3 -type d | sed -E 's#.*/com/soma/wes/##' | rg -v '^(global|security)/' | rg -v '^[a-z]+/(domain|repository|service|support|controller|scheduler|listener|dto|exception|config|infrastructure)$' | rg -v '^[a-z]+/(repository/projection|service/port|controller/docs|dto/request|dto/response)$' | rg -v '^admin/(audit|impersonation|resource)/(domain|repository|service|support|controller|dto|exception|config)$' | sort -u
+find wes-*/src/main/kotlin/com/soma/wes -mindepth 2 -maxdepth 3 -type d | sed -E 's#.*/com/soma/wes/##' | rg -v '^(global|security)/' | rg -v '^[a-z]+/(domain|repository|service|support|controller|scheduler|listener|dto|exception|config|infrastructure)$' | rg -v '^[a-z]+/(repository/projection|service/port|controller/docs|dto/request|dto/response)$' | rg -v '^admin/(audit|impersonation|resource)(/(domain|repository|service|support|controller|dto|exception|config))?$' | sort -u
 
 # LY-09
 find wes-domain/src/main wes-api/src/main -type d -path '*/com/soma/wes/admin*'; find wes-domain/src/main -type d -name controller; find wes-domain/src/main -name '*Application.k?'
