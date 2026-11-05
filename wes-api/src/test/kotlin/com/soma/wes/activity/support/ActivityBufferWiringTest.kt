@@ -4,7 +4,7 @@ import com.soma.wes.activity.infrastructure.InMemoryActivityBuffer
 import com.soma.wes.activity.repository.ActivityRepository
 import com.soma.wes.activity.scheduler.ActivityFlushScheduler
 import com.soma.wes.activity.service.ActivityFlushService
-import com.soma.wes.activity.service.ActivityRecorder
+import com.soma.wes.activity.support.ActivityRecorder
 import com.soma.wes.activity.service.port.ActivityBuffer
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test

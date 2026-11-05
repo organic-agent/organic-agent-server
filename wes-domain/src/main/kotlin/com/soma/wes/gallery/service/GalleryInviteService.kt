@@ -1,6 +1,6 @@
 package com.soma.wes.gallery.service
 
-import com.soma.wes.activity.service.ActivityRecorder
+import com.soma.wes.activity.support.ActivityRecorder
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryInvite
 import com.soma.wes.gallery.domain.GalleryInviteKind

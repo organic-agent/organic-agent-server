@@ -1,6 +1,6 @@
 package com.soma.wes.folder.support
 
-import com.soma.wes.activity.service.ActivityRecorder
+import com.soma.wes.activity.support.ActivityRecorder
 import com.soma.wes.analysis.domain.AnalysisJobEventType
 import com.soma.wes.analysis.support.AnalysisJobEventRecorder
 import com.soma.wes.analysis.support.ConceptAssignmentLoader

@@ -37,7 +37,7 @@ class RetouchPdfSnapshotLoader(
             throw RetouchException(RetouchErrorCode.EMPTY_PDF)
         }
         val includeResults = round.status == RetouchRoundStatus.COMPLETED ||
-            access.canInspectRetouchDrafts(galleryId, userId)
+            access.isRetouchProcessor(galleryId, userId)
         val targets = items.findAllByRoundId(round.requiredId).filter { item ->
             when (selectedScope) {
                 RetouchPdfScopeDto.MEMO -> !item.requestText.isNullOrBlank() || item.points.isNotEmpty()

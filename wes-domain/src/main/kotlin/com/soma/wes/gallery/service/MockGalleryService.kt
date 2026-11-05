@@ -62,12 +62,8 @@ class MockGalleryService(
             MockGalleryCopyPlanDto(
                 source = source,
                 storageKey = storageKey,
-                // 파생본 위치는 원본 키에서 파생되는 고정 규칙이다. 휴지통 물리 삭제의
-                // TrashEraser.expectedPreviewKeyOf, 임베딩 Lambda의 preview_key_for와
-                // 같아야 물리 삭제가 이 복사본의 미리보기를 찾아 지운다.
-                previewKey = source.previewKey?.let {
-                    "previews/${storageKey.substringBeforeLast('.', storageKey)}.jpg"
-                },
+                // 물리 삭제가 이 복사본의 미리보기를 찾아 지우려면 원본 키에서 파생되는 고정 위치여야 한다.
+                previewKey = source.previewKey?.let { photoStorage.previewKeyOf(storageKey) },
             )
         }
 

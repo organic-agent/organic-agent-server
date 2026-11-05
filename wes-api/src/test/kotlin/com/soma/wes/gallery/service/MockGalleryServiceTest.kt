@@ -288,7 +288,7 @@ class MockGalleryServiceTest @Autowired constructor(
 }
 
 /**
- * 호출을 기록하는 [PhotoStorage]. `buildKey`는 실제 구현과 같은 규칙을 쓴다 —
+ * 호출을 기록하는 [PhotoStorage]. `buildKey`·`previewKeyOf`는 실제 구현과 같은 규칙을 쓴다 —
  * 키 모양(`galleries/{id}/{uuid}.{ext}`)이 곧 검증 대상이라 임의 문자열로 대체할 수 없다.
  */
 class RecordingPhotoStorage : PhotoStorage {
@@ -312,6 +312,9 @@ class RecordingPhotoStorage : PhotoStorage {
         val suffix = if (extension.isBlank()) "" else ".$extension"
         return "${galleryPrefix(galleryId)}${UUID.randomUUID()}$suffix"
     }
+
+    override fun previewKeyOf(storageKey: String): String =
+        "previews/${storageKey.substringBeforeLast('.', storageKey)}.jpg"
 
     override fun presignUpload(key: String, contentType: String, contentLength: Long?, crc32c: String?): PresignedUploadDto =
         PresignedUploadDto(url = "https://storage.test/upload/$key", expiresAt = Instant.now().plusSeconds(1800))

@@ -2,9 +2,13 @@ package com.soma.wes.activity.service
 
 import com.soma.wes.activity.infrastructure.InMemoryActivityBuffer
 import com.soma.wes.activity.repository.ActivityRepository
+import com.soma.wes.activity.support.ActivityRecorder
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.support.IntegrationTest
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneId
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.assertj.core.api.SoftAssertions.assertSoftly
@@ -12,9 +16,6 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.transaction.support.TransactionTemplate
-import java.time.Clock
-import java.time.Instant
-import java.time.ZoneId
 
 /**
  * 모아 쓰기(#286 (f))의 흐름 — 커밋한 활동만 메모장에 남고, 플러시가 그 시각을 쓴다.

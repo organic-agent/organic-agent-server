@@ -1,6 +1,6 @@
 package com.soma.wes.collab.service
 
-import com.soma.wes.activity.service.ActivityRecorder
+import com.soma.wes.activity.support.ActivityRecorder
 import com.soma.wes.collab.domain.CollabSession
 import com.soma.wes.collab.domain.CollabParticipant
 import com.soma.wes.collab.domain.CollabPhotoComment

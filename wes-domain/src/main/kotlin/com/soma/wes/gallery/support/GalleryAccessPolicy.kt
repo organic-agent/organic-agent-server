@@ -119,8 +119,12 @@ class GalleryAccessPolicy(
         return gallery
     }
 
+    /**
+     * [requireRetouchProcessor]와 같은 조건을 막지 않고 묻는다(쓰기 가능 여부는 보지 않는다).
+     * 보정 회차 상세·PDF가 완료 전 결과물(초안)을 함께 보여 줄지 정할 때 쓴다.
+     */
     @Transactional(readOnly = true)
-    fun canInspectRetouchDrafts(galleryId: Long, userId: Long): Boolean {
+    fun isRetouchProcessor(galleryId: Long, userId: Long): Boolean {
         val gallery = galleryRepository.requireById(galleryId)
         return isManager(gallery, userId) || isPersonalParticipant(gallery, userId)
     }
@@ -142,20 +146,23 @@ class GalleryAccessPolicy(
     @Transactional(readOnly = true)
     fun requireMetadataViewer(galleryId: Long, userId: Long): Gallery {
         val gallery = galleryRepository.requireById(galleryId)
-        if (!isMetadataViewer(gallery, userId)) {
+        if (!hasMetadataAccess(gallery, userId)) {
             throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
         }
         return gallery
     }
 
-    /** 쿠폰 링크는 갤러리 상세와 같은 권한으로 연결하고, 삭제·권한 없음은 등록 화면으로 돌린다. */
+    /**
+     * [requireMetadataViewer]와 같은 조건을 막지 않고 묻는다. 갤러리가 없으면 false.
+     * 쿠폰 목록이 사용된 쿠폰을 갤러리 상세로 연결할지 정할 때 쓴다 — 삭제·권한 없음은 등록 화면으로 돌린다.
+     */
     @Transactional(readOnly = true)
-    fun canViewMetadata(galleryId: Long, userId: Long): Boolean {
+    fun isMetadataViewer(galleryId: Long, userId: Long): Boolean {
         val gallery = galleryRepository.findByIdOrNull(galleryId) ?: return false
-        return isMetadataViewer(gallery, userId)
+        return hasMetadataAccess(gallery, userId)
     }
 
-    private fun isMetadataViewer(gallery: Gallery, userId: Long): Boolean =
+    private fun hasMetadataAccess(gallery: Gallery, userId: Long): Boolean =
         isManager(gallery, userId) || isPersonalParticipant(gallery, userId) ||
             galleryMemberRepository.findByGalleryIdAndUserId(gallery.requiredId, userId) != null
 

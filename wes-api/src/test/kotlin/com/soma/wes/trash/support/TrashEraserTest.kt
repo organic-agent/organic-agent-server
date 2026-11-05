@@ -199,9 +199,9 @@ class TrashEraserTest @Autowired constructor(
         assertThat(countGalleryRows(unrelatedGalleryId)).isOne()
         assertThat(photoStorage.deletedKeys()).doesNotContain(
             sharedStorageKey,
-            TrashEraser.expectedPreviewKeyOf(sharedStorageKey),
+            photoStorage.previewKeyOf(sharedStorageKey),
             unrelatedPreviewCollisionKey,
-            TrashEraser.expectedPreviewKeyOf(targetPreviewCollisionKey),
+            photoStorage.previewKeyOf(targetPreviewCollisionKey),
         )
         assertThat(photoStorage.deletedKeys()).contains(targetPreviewCollisionKey)
     }
@@ -586,9 +586,9 @@ class TrashEraserTest @Autowired constructor(
         return setOf(
             revisionStorageKey,
             revisionPreviewKey,
-            TrashEraser.expectedPreviewKeyOf(revisionStorageKey),
+            photoStorage.previewKeyOf(revisionStorageKey),
             replacementStorageKey,
-            TrashEraser.expectedPreviewKeyOf(replacementStorageKey),
+            photoStorage.previewKeyOf(replacementStorageKey),
         )
     }
 

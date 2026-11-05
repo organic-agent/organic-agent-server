@@ -6,12 +6,10 @@ import com.soma.wes.auth.exception.AuthErrorCode
 import com.soma.wes.auth.exception.OAuthException
 import com.soma.wes.auth.service.port.OAuthClient
 import com.soma.wes.auth.support.OAuthUserInfoExtractorFactory
-import com.soma.wes.auth.dto.OAuthRegistrationDto
 import com.soma.wes.auth.support.OAuthRegistrations
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import org.springframework.stereotype.Service
-import org.springframework.util.LinkedMultiValueMap
 
 @Service
 class OAuthUserInfoService(
@@ -21,8 +19,6 @@ class OAuthUserInfoService(
 ) {
 
     companion object {
-        private const val GRANT_TYPE = "authorization_code"
-
         // %XX 형태의 퍼센트 이스케이프가 실제로 있을 때만 디코딩 대상으로 본다.
         private val PERCENT_ESCAPE = Regex("%[0-9A-Fa-f]{2}")
     }
@@ -33,8 +29,8 @@ class OAuthUserInfoService(
         }
         val registration = registrations.of(provider, requestOrigin)
 
-        val accessToken = exchangeAuthCodeForAccessToken(registration, normalizeAuthCode(authCode))
-        val attributes = oAuthClient.getUserInfoWithAccessToken(registration.userInfoUri, accessToken)
+        val accessToken = oAuthClient.exchangeCode(registration, normalizeAuthCode(authCode))
+        val attributes = oAuthClient.fetchUserAttributes(registration, accessToken)
 
         return extractorFactory.resolve(provider).extract(attributes)
     }
@@ -45,19 +41,4 @@ class OAuthUserInfoService(
         } else {
             authCode
         }
-
-    private fun exchangeAuthCodeForAccessToken(registration: OAuthRegistrationDto, code: String): String {
-        val tokenRequest = LinkedMultiValueMap<String, String>().apply {
-            add("grant_type", GRANT_TYPE)
-            add("client_id", registration.clientId)
-            add("client_secret", registration.clientSecret)
-            add("redirect_uri", registration.redirectUri)
-            add("code", code)
-        }
-
-        val tokenResponse = oAuthClient.getAccessTokenResponse(registration.tokenUri, tokenRequest)
-
-        return tokenResponse["access_token"] as? String
-            ?: throw OAuthException(AuthErrorCode.OAUTH_RESPONSE_INVALID)
-    }
 }

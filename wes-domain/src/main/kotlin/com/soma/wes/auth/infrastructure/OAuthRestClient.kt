@@ -1,5 +1,6 @@
 package com.soma.wes.auth.infrastructure
 
+import com.soma.wes.auth.dto.OAuthRegistrationDto
 import com.soma.wes.auth.exception.AuthErrorCode
 import com.soma.wes.auth.exception.OAuthException
 import com.soma.wes.auth.service.port.OAuthClient
@@ -8,7 +9,7 @@ import org.springframework.core.ParameterizedTypeReference
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Component
-import org.springframework.util.MultiValueMap
+import org.springframework.util.LinkedMultiValueMap
 import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.ResourceAccessException
 import org.springframework.web.client.RestClient
@@ -23,26 +24,36 @@ class OAuthRestClient(
 
     companion object {
         private val MAP_TYPE = object : ParameterizedTypeReference<Map<String, Any>>() {}
+        private const val GRANT_TYPE = "authorization_code"
     }
 
-    override fun getAccessTokenResponse(
-        tokenUri: String,
-        tokenRequest: MultiValueMap<String, String>,
-    ): Map<String, Any> = execute(AuthErrorCode.AUTH_CODE_INVALID) {
-        restClient.post()
-            .uri(tokenUri)
-            .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-            .body(tokenRequest)
-            .retrieve()
-            .body(MAP_TYPE)
+    override fun exchangeCode(registration: OAuthRegistrationDto, code: String): String {
+        val tokenRequest = LinkedMultiValueMap<String, String>().apply {
+            add("grant_type", GRANT_TYPE)
+            add("client_id", registration.clientId)
+            add("client_secret", registration.clientSecret)
+            add("redirect_uri", registration.redirectUri)
+            add("code", code)
+        }
+        val tokenResponse = execute(AuthErrorCode.AUTH_CODE_INVALID) {
+            restClient.post()
+                .uri(registration.tokenUri)
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(tokenRequest)
+                .retrieve()
+                .body(MAP_TYPE)
+        }
+
+        return tokenResponse["access_token"] as? String
+            ?: throw OAuthException(AuthErrorCode.OAUTH_RESPONSE_INVALID)
     }
 
-    override fun getUserInfoWithAccessToken(
-        userInfoUri: String,
+    override fun fetchUserAttributes(
+        registration: OAuthRegistrationDto,
         accessToken: String,
     ): Map<String, Any> = execute(AuthErrorCode.OAUTH_ACCESS_TOKEN_INVALID) {
         restClient.get()
-            .uri(userInfoUri)
+            .uri(registration.userInfoUri)
             .header(HttpHeaders.AUTHORIZATION, "Bearer $accessToken")
             .retrieve()
             .body(MAP_TYPE)
