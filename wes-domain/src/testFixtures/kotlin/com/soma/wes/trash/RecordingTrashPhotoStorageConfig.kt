@@ -1,5 +1,6 @@
 package com.soma.wes.trash
 
+import java.time.Clock
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Primary
@@ -9,5 +10,5 @@ class RecordingTrashPhotoStorageConfig {
 
     @Bean
     @Primary
-    fun recordingTrashPhotoStorage(): RecordingTrashPhotoStorage = RecordingTrashPhotoStorage()
+    fun recordingTrashPhotoStorage(clock: Clock): RecordingTrashPhotoStorage = RecordingTrashPhotoStorage(clock)
 }

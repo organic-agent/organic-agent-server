@@ -1,14 +1,12 @@
 package com.soma.wes.global.cluster
 
 import com.soma.wes.global.config.ClusterLeaderProperties
+import com.soma.wes.support.TestClock
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.Test
 import org.springframework.context.ApplicationEventPublisher
-import java.time.Clock
-import java.time.Duration
 import java.time.Instant
-import java.time.ZoneId
 
 /**
  * 리더 임대의 계약(#313 ADR-0002) — 한 번에 한 서버만 리더이고, 리더가 내려가거나 임대가 끝나면 다른 서버가 이어받으며, 갱신이 끊긴 리더는
@@ -27,7 +25,7 @@ abstract class LeaderLeaseContract {
     /** 리더가 멈춰 갱신하지 못하는 사이 임대가 끝난 상태를 만든다(엔진의 만료는 실제 시간이라 시계로 못 당긴다). */
     protected abstract fun expireLease()
 
-    private val clock = MutableClock()
+    private val clock = TestClock(Instant.parse("2026-10-15T12:00:00Z"))
     private val events = mutableListOf<Any>()
 
     @Test
@@ -130,17 +128,4 @@ abstract class LeaderLeaseContract {
 
     private fun server(leaseStore: LeaderLeaseStore = store) =
         LeasedSchedulerLeadership(leaseStore, properties, ApplicationEventPublisher { events += it }, clock)
-
-    /** 앞으로 돌릴 수 있는 시계. 엔진의 임대 만료는 실제 시간이라 이 시계와 무관하다. */
-    private class MutableClock : Clock() {
-        private var instant: Instant = Instant.parse("2026-10-15T12:00:00Z")
-
-        fun advance(duration: Duration) {
-            instant = instant.plus(duration)
-        }
-
-        override fun getZone(): ZoneId = ZoneId.of("Asia/Seoul")
-        override fun withZone(zone: ZoneId): Clock = this
-        override fun instant(): Instant = instant
-    }
 }

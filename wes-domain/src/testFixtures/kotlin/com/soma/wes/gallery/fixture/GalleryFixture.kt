@@ -8,6 +8,7 @@ import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.studio.fixture.StudioFixture
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.fixture.UserFixture
+import java.time.Clock
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
 import java.time.ZonedDateTime
@@ -19,6 +20,7 @@ class GalleryFixture(
     private val studioFixture: StudioFixture,
     private val userFixture: UserFixture,
     private val jdbcTemplate: JdbcTemplate,
+    private val clock: Clock,
 ) {
 
     /** 열린 갤러리와 양쪽 사람. 부부의 쓰기가 도는 상태가 대부분 테스트의 출발점이다. */
@@ -74,7 +76,7 @@ class GalleryFixture(
     fun 마감_지남(galleryId: Long) {
         jdbcTemplate.update(
             "UPDATE galleries SET selection_deadline = ?, version = version + 1, updated_at = now() WHERE id = ?",
-            ZonedDateTime.now().minusDays(1).toOffsetDateTime(), galleryId,
+            ZonedDateTime.now(clock).minusDays(1).toOffsetDateTime(), galleryId,
         )
     }
 

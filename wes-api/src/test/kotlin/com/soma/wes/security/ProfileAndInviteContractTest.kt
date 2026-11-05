@@ -22,6 +22,7 @@ import com.soma.wes.workspace.domain.WorkspaceMember
 import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository
+import java.time.Clock
 import java.time.ZonedDateTime
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -44,6 +45,7 @@ class ProfileAndInviteContractTest @Autowired constructor(
     private val inviteRepository: GalleryInviteRepository,
     private val studios: StudioFixture,
     private val studioInvites: StudioInviteService,
+    private val clock: Clock,
 ) {
     @Test
     fun `가입과 재로그인 사진이 저장되고 내 정보 API에 반영된다`() {
@@ -104,7 +106,9 @@ class ProfileAndInviteContractTest @Autowired constructor(
         val workspace = workspaces.findByPersonalOwnerUserId(owner.requiredId)!!
         val gallery = galleries.save(Gallery(workspace.requiredId, owner.requiredId, "우리 사진", status = GalleryStatus.OPEN))
         val legacy = inviteRepository.save(GalleryInvite(gallery.requiredId, "legacy-${TestSequence.next()}",
-            kind = GalleryInviteKind.PERSONAL_PARTNER, expiresAt = ZonedDateTime.now().plusDays(7)))
+            kind = GalleryInviteKind.PERSONAL_PARTNER, expiresAt = ZonedDateTime.now(clock).plusDays(7)))
+
+        // when & then
         assertThat(invites.preview(legacy.token, guest.requiredId).inviterNickname).isEqualTo("기존 개인 소유자")
     }
 

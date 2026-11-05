@@ -8,10 +8,9 @@ import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.support.FakeAiTaskSender
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.support.ManualScoreWorkerPool
+import com.soma.wes.support.TestClock
 import java.time.Clock
 import java.time.Duration
-import java.time.Instant
-import java.time.ZoneId
 import java.time.ZonedDateTime
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.SoftAssertions.assertSoftly
@@ -33,16 +32,17 @@ class ScoreStepTest @Autowired constructor(
     private val aiTaskSender: FakeAiTaskSender,
     private val eventRecorder: AnalysisJobEventRecorder,
     private val pool: ManualScoreWorkerPool,
+    private val systemClock: Clock,
 ) {
 
     private var galleryId: Long = 0
-    private lateinit var clock: MutableClock
+    private lateinit var clock: TestClock
 
     @BeforeEach
     fun setUpBaseData() {
         aiTaskSender.reset()
         pool.reset()
-        clock = MutableClock(ZonedDateTime.now())
+        clock = TestClock(ZonedDateTime.now(systemClock))
         pool.now = { ZonedDateTime.now(clock) }
         galleryId = galleryFixture.멤버와_열린_갤러리().galleryId
     }
@@ -438,19 +438,5 @@ class ScoreStepTest @Autowired constructor(
             // then
             assertThat(aiTaskSender.scoreTasks.single().photoIds).containsExactlyElementsOf(photos)
         }
-    }
-
-    /** 걸음마다 앞으로 돌릴 수 있는 시계. */
-    private class MutableClock(start: ZonedDateTime) : Clock() {
-        private var instant: Instant = start.toInstant()
-        private val zone: ZoneId = start.zone
-
-        fun advance(duration: Duration) {
-            instant = instant.plus(duration)
-        }
-
-        override fun getZone(): ZoneId = zone
-        override fun withZone(zone: ZoneId): Clock = this
-        override fun instant(): Instant = instant
     }
 }

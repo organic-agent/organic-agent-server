@@ -6,6 +6,8 @@ import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.support.CapturedLogs
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.support.SharedPostgres
+import java.time.Clock
+import java.util.concurrent.CompletableFuture
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Assertions.assertTimeoutPreemptively
@@ -36,6 +38,7 @@ class SchedulerDatabaseHangTest @Autowired constructor(
     private val dataSource: DataSource,
     private val taskScheduler: TaskScheduler,
     private val heartbeat: PipelineHeartbeatScheduler,
+    private val clock: Clock,
 ) {
 
     companion object {
@@ -114,11 +117,11 @@ class SchedulerDatabaseHangTest @Autowired constructor(
         val beaten = CountDownLatch(1)
         try {
             // given — 분석 스윕이 DB에서, 매시 정리 작업이 잠금에서 기다리듯 스케줄러 스레드 둘을 붙잡는다
-            repeat(2) { taskScheduler.schedule({ release.await() }, Instant.now()) }
+            repeat(2) { taskScheduler.schedule({ release.await() }, clock.instant()) }
 
             CapturedLogs(PipelineHeartbeatService::class).use { logs ->
                 // when
-                taskScheduler.schedule({ heartbeat.beat().also { beaten.countDown() } }, Instant.now().plusMillis(200))
+                taskScheduler.schedule({ heartbeat.beat().also { beaten.countDown() } }, clock.instant().plusMillis(200))
 
                 // then
                 assertThat(beaten.await(HEARTBEAT_WAIT_SECONDS, TimeUnit.SECONDS)).isTrue()

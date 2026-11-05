@@ -17,6 +17,8 @@ import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.fixture.WorkspaceFixture
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository
+import java.time.Clock
+import java.time.ZonedDateTime
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -31,6 +33,7 @@ class GalleryServiceTest @Autowired constructor(
     private val workspaceRepository: WorkspaceRepository,
     private val workspaceMemberRepository: WorkspaceMemberRepository,
     private val workspaceFixture: WorkspaceFixture,
+    private val clock: Clock,
 ) {
     @Test
     fun `PERSONAL 작업공간은 일반 생성 API로 결제를 우회할 수 없다`() {
@@ -50,7 +53,7 @@ class GalleryServiceTest @Autowired constructor(
     fun `삭제된 작업공간은 이전 멤버십이 남아 있어도 갤러리를 생성할 수 없다`() {
         val owner = studioFixture.작가()
         val studio = studioFixture.소유_스튜디오(owner)
-        workspaceFixture.삭제됨(studio.workspaceId, java.time.ZonedDateTime.now())
+        workspaceFixture.삭제됨(studio.workspaceId, ZonedDateTime.now(clock))
 
         assertThatThrownBy {
             galleryService.create(owner.requiredId, CreateGalleryRequest(studio.workspaceId, "새 갤러리"))

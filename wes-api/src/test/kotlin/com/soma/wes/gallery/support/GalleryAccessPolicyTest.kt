@@ -14,6 +14,7 @@ import com.soma.wes.workspace.domain.WorkspaceMember
 import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository
+import java.time.Clock
 import java.time.ZonedDateTime
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -30,6 +31,7 @@ class GalleryAccessPolicyTest @Autowired constructor(
     private val galleryRepository: GalleryRepository,
     private val workspaceRepository: WorkspaceRepository,
     private val workspaceMemberRepository: WorkspaceMemberRepository,
+    private val clock: Clock,
 ) {
     @Test
     fun `STUDIO OWNER와 MEMBER는 갤러리 관리자다`() {
@@ -87,7 +89,7 @@ class GalleryAccessPolicyTest @Autowired constructor(
     @Test
     fun `PERSONAL 갤러리도 이용 기간이 끝나면 고를 수 없다`() {
         val personal = personalGalleryFixture.파트너와_개인_갤러리()
-        galleryFixture.이용_기한(personal.galleryId, ZonedDateTime.now().minusMinutes(1))
+        galleryFixture.이용_기한(personal.galleryId, ZonedDateTime.now(clock).minusMinutes(1))
 
         assertThatThrownBy { policy.requireSelectionEditor(personal.galleryId, personal.partnerId) }
             .isInstanceOf(GalleryException::class.java)
@@ -117,7 +119,7 @@ class GalleryAccessPolicyTest @Autowired constructor(
         val gallery = galleryRepository.save(
             Gallery(studio.workspaceId, owner.requiredId, "본식", GalleryStatus.OPEN),
         )
-        studioFixture.정지(studio.workspaceId, ZonedDateTime.now())
+        studioFixture.정지(studio.workspaceId, ZonedDateTime.now(clock))
 
         assertThatThrownBy { policy.requireManager(gallery.requiredId, owner.requiredId) }
             .isInstanceOf(GalleryException::class.java)

@@ -21,7 +21,9 @@ import com.soma.wes.studio.fixture.StudioFixture
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.DatabaseClearExtension
 import com.soma.wes.support.TestcontainersConfiguration
+import java.time.Clock
 import java.time.Instant
+import java.time.ZonedDateTime
 import java.util.UUID
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -63,6 +65,7 @@ class MockGalleryServiceTest @Autowired constructor(
     private val photoAnalysisRepository: PhotoAnalysisRepository,
     private val jdbcTemplate: JdbcTemplate,
     private val photoStorage: RecordingPhotoStorage,
+    private val clock: Clock,
 ) {
 
     @BeforeEach
@@ -131,7 +134,7 @@ class MockGalleryServiceTest @Autowired constructor(
             // given
             seedTemplate(photoCount = 1)
             photoRepository.save(templatePhoto(index = 9))                             // PENDING
-            photoRepository.save(templatePhoto(index = 10).also { it.markUploaded(java.time.ZonedDateTime.now()) }) // UPLOADED
+            photoRepository.save(templatePhoto(index = 10).also { it.markUploaded(ZonedDateTime.now(clock)) }) // UPLOADED
             val photographer = studioFixture.작가()
 
             // when
@@ -238,7 +241,7 @@ class MockGalleryServiceTest @Autowired constructor(
             val saved = photoRepository.save(
                 templatePhoto(index).also { photo ->
                     photo.applyMetadata(PhotoMetadata(cameraMake = "Canon", width = 1024, height = 768))
-                    photo.markUploaded(java.time.ZonedDateTime.now())
+                    photo.markUploaded(ZonedDateTime.now(clock))
                 },
             )
             if (withPreview) {
@@ -283,7 +286,7 @@ class MockGalleryServiceTest @Autowired constructor(
 
         @Bean
         @Primary
-        fun recordingPhotoStorage(): RecordingPhotoStorage = RecordingPhotoStorage()
+        fun recordingPhotoStorage(clock: Clock): RecordingPhotoStorage = RecordingPhotoStorage(clock)
     }
 }
 
@@ -291,7 +294,9 @@ class MockGalleryServiceTest @Autowired constructor(
  * 호출을 기록하는 [PhotoStorage]. `buildKey`·`previewKeyOf`는 실제 구현과 같은 규칙을 쓴다 —
  * 키 모양(`galleries/{id}/{uuid}.{ext}`)이 곧 검증 대상이라 임의 문자열로 대체할 수 없다.
  */
-class RecordingPhotoStorage : PhotoStorage {
+class RecordingPhotoStorage(
+    private val clock: Clock,
+) : PhotoStorage {
 
     val copies = mutableListOf<Pair<String, String>>()
     val deleted = mutableListOf<String>()
@@ -317,7 +322,7 @@ class RecordingPhotoStorage : PhotoStorage {
         "previews/${storageKey.substringBeforeLast('.', storageKey)}.jpg"
 
     override fun presignUpload(key: String, contentType: String, contentLength: Long?, crc32c: String?): PresignedUploadDto =
-        PresignedUploadDto(url = "https://storage.test/upload/$key", expiresAt = Instant.now().plusSeconds(1800))
+        PresignedUploadDto(url = "https://storage.test/upload/$key", expiresAt = clock.instant().plusSeconds(1800))
 
     override fun presignView(key: String): String = "https://storage.test/view/$key"
 

@@ -18,6 +18,7 @@ import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.user.fixture.UserFixture
+import java.time.Clock
 import java.time.ZonedDateTime
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -39,6 +40,7 @@ class CollabSessionServiceTest @Autowired constructor(
     private val galleryFixture: GalleryFixture,
     private val userFixture: UserFixture,
     private val galleryRepository: GalleryRepository,
+    private val clock: Clock,
 ) {
     private lateinit var shared: SharedCollab
 
@@ -148,7 +150,7 @@ class CollabSessionServiceTest @Autowired constructor(
         fun `외부 사용자와 제거된 부부 멤버는 관리할 수 없다`() {
             // given
             val stranger = userFixture.사용자()
-            galleryFixture.멤버_제거(shared.galleryId, shared.gallery.member.requiredId, ZonedDateTime.now())
+            galleryFixture.멤버_제거(shared.galleryId, shared.gallery.member.requiredId, ZonedDateTime.now(clock))
 
             // when & then
             listOf(stranger.requiredId, shared.gallery.member.requiredId).forEach { userId ->

@@ -113,7 +113,7 @@ class PhotoServiceTest @Autowired constructor(
             val expirations = photoRepository.findAll().map { photo ->
                 checkNotNull(photo.uploadUrlExpiresAt)
             }
-            assertThat(expirations.all { it.isAfter(Instant.now()) }).isTrue()
+            assertThat(expirations.all { it.isAfter(clock.instant()) }).isTrue()
         }
 
         @Test

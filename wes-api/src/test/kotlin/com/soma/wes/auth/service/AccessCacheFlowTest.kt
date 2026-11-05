@@ -20,6 +20,7 @@ import com.soma.wes.notification.service.port.UserNotificationPublisher
 import com.soma.wes.selection.repository.PhotoSelectionRepository
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.IntegrationTest
+import com.soma.wes.support.TestClock
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
 import com.soma.wes.user.service.UserService
@@ -36,8 +37,6 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.Clock
 import java.time.Duration
-import java.time.Instant
-import java.time.ZoneId
 
 /**
  * 권한 확인 캐시가 켜졌을 때(wes-api, #286 (k))의 반영 지연. 통합 테스트 컨텍스트는 캐시가 꺼진 쪽이라, 같은 빈들로 캐시를 넣은
@@ -65,7 +64,7 @@ class AccessCacheFlowTest @Autowired constructor(
     private val clock: Clock,
 ) {
 
-    private val cacheClock = MutableClock()
+    private val cacheClock = TestClock(clock.instant())
     private val cache = InMemoryAccessCache(AccessCacheProperties(enabled = true, ttl = TTL), cacheClock)
 
     private val cachedTokenProvider = AuthTokenProvider(
@@ -197,19 +196,6 @@ class AccessCacheFlowTest @Autowired constructor(
                 assertThatCode { cachedPolicy.requireViewer(gallery.galleryId, memberId) }.doesNotThrowAnyException()
             }
         }
-    }
-
-    /** 앞으로 돌릴 수 있는 시계 — 캐시의 TTL만 돌린다. */
-    private class MutableClock : Clock() {
-        private var instant: Instant = Instant.now()
-
-        fun advance(duration: Duration) {
-            instant = instant.plus(duration)
-        }
-
-        override fun getZone(): ZoneId = ZoneId.of("Asia/Seoul")
-        override fun withZone(zone: ZoneId): Clock = this
-        override fun instant(): Instant = instant
     }
 
     companion object {
