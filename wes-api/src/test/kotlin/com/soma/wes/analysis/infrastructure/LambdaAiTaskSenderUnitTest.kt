@@ -33,11 +33,14 @@ class LambdaAiTaskSenderUnitTest {
 
     @Test
     fun `호출 종류마다 함수와 페이로드 계약이 다르다`() {
+        // given
         whenever(lambdaClient.invoke(any<InvokeRequest>())).thenReturn(InvokeResponse.builder().statusCode(202).build())
 
+        // when
         sender.send(AiTaskDto.Embed(galleryId = 3, photoIds = listOf(10, 11, 12)))
         sender.send(AiTaskDto.Score(galleryId = 3, photoIds = listOf(10)))
 
+        // then
         val requests = argumentCaptor<InvokeRequest>()
         verify(lambdaClient, times(2)).invoke(requests.capture())
         val embed = requests.firstValue
@@ -62,10 +65,13 @@ class LambdaAiTaskSenderUnitTest {
 
     @Test
     fun `임베더 배치에 원본 위치가 있으면 같은 순서로 싣는다`() {
+        // given
         whenever(lambdaClient.invoke(any<InvokeRequest>())).thenReturn(InvokeResponse.builder().statusCode(202).build())
 
+        // when
         sender.send(AiTaskDto.Embed(galleryId = 3, photoIds = listOf(10, 11), storageKeys = listOf("galleries/3/a.jpg", "galleries/3/b.jpg")))
 
+        // then
         val request = argumentCaptor<InvokeRequest>()
         verify(lambdaClient).invoke(request.capture())
         val payload = objectMapper.readTree(request.firstValue.payload().asUtf8String())
@@ -77,6 +83,7 @@ class LambdaAiTaskSenderUnitTest {
 
     @Test
     fun `관리자 사진 교체 함수가 따로 있으면 그 함수로 보낸다`() {
+        // given
         whenever(lambdaClient.invoke(any<InvokeRequest>())).thenReturn(InvokeResponse.builder().statusCode(202).build())
         val split = LambdaAiTaskSender(
             lambdaClient,
@@ -84,8 +91,10 @@ class LambdaAiTaskSenderUnitTest {
             objectMapper,
         )
 
+        // when
         split.send(AiTaskDto.ExactPhoto(jobId = 1, attemptCount = 1, jobType = "PHOTO_REPLACE", photoId = 2, galleryId = 3, storageKey = "k", revisionId = 4))
 
+        // then
         val request = argumentCaptor<InvokeRequest>()
         verify(lambdaClient).invoke(request.capture())
         assertThat(request.firstValue.functionName()).isEqualTo("wes-embedder-admin")
@@ -93,11 +102,14 @@ class LambdaAiTaskSenderUnitTest {
 
     @Test
     fun `categorize 페이로드는 갤러리와 잡 id다`() {
+        // given
         whenever(lambdaClient.invoke(any<InvokeRequest>())).thenReturn(InvokeResponse.builder().statusCode(202).build())
         val configured = LambdaAiTaskSender(lambdaClient, LambdaAiTaskProperties(categorizeFunctionName = "wes-categorize"), objectMapper)
 
+        // when
         configured.send(AiTaskDto.Categorize(galleryId = 8, jobId = 13))
 
+        // then
         val request = argumentCaptor<InvokeRequest>()
         verify(lambdaClient).invoke(request.capture())
         val payload = objectMapper.readTree(request.firstValue.payload().asUtf8String())
@@ -113,11 +125,14 @@ class LambdaAiTaskSenderUnitTest {
 
     @Test
     fun `컨셉 수가 있으면 categorize 페이로드에 conceptCount 로 실린다`() {
+        // given
         whenever(lambdaClient.invoke(any<InvokeRequest>())).thenReturn(InvokeResponse.builder().statusCode(202).build())
         val configured = LambdaAiTaskSender(lambdaClient, LambdaAiTaskProperties(categorizeFunctionName = "wes-categorize"), objectMapper)
 
+        // when
         configured.send(AiTaskDto.Categorize(galleryId = 8, jobId = 13, conceptCount = 4))
 
+        // then
         val request = argumentCaptor<InvokeRequest>()
         verify(lambdaClient).invoke(request.capture())
         val payload = objectMapper.readTree(request.firstValue.payload().asUtf8String())
@@ -130,8 +145,10 @@ class LambdaAiTaskSenderUnitTest {
 
     @Test
     fun `exact photo 는 임베더 함수로 관리자 사진 교체 계약 그대로 간다`() {
+        // given
         whenever(lambdaClient.invoke(any<InvokeRequest>())).thenReturn(InvokeResponse.builder().statusCode(202).build())
 
+        // when
         sender.send(
             AiTaskDto.ExactPhoto(
                 jobId = 11,
@@ -144,6 +161,7 @@ class LambdaAiTaskSenderUnitTest {
             ),
         )
 
+        // then
         val request = argumentCaptor<InvokeRequest>()
         verify(lambdaClient).invoke(request.capture())
         val payload = objectMapper.readTree(request.firstValue.payload().asUtf8String())
@@ -164,6 +182,7 @@ class LambdaAiTaskSenderUnitTest {
 
     @Test
     fun `함수 이름이 비어 있는 호출은 사용할 수 없다`() {
+        // when & then
         assertSoftly { softly ->
             softly.assertThat(sender.isAvailable(AiTaskDto.Embed::class)).isTrue()
             softly.assertThat(sender.isAvailable(AiTaskDto.Score::class)).isTrue()
@@ -176,13 +195,19 @@ class LambdaAiTaskSenderUnitTest {
 
     @Test
     fun `SDK 예외와 202가 아닌 응답은 호출 실패 코드다`() {
+        // given
         whenever(lambdaClient.invoke(any<InvokeRequest>())).thenThrow(SdkClientException.create("no credentials"))
+
+        // when & then
         assertThatThrownBy { sender.send(AiTaskDto.Score(galleryId = 1, photoIds = listOf(1))) }
             .isInstanceOf(AnalysisException::class.java)
             .extracting("errorCode")
             .isEqualTo(AnalysisErrorCode.AI_TASK_SEND_FAILED)
 
+        // given
         whenever(lambdaClient.invoke(any<InvokeRequest>())).thenReturn(InvokeResponse.builder().statusCode(500).build())
+
+        // when & then
         assertThatThrownBy { sender.send(AiTaskDto.Score(galleryId = 1, photoIds = listOf(1))) }
             .isInstanceOf(AnalysisException::class.java)
             .extracting("errorCode")

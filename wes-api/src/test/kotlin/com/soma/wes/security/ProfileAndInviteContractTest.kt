@@ -49,9 +49,12 @@ class ProfileAndInviteContractTest @Autowired constructor(
 ) {
     @Test
     fun `가입과 재로그인 사진이 저장되고 내 정보 API에 반영된다`() {
+        // given
         val providerId = "profile-${TestSequence.next()}"
         val first = OAuthUserInfoDto(OAuthProvider.GOOGLE, providerId, "내 별명", "user@example.com",
             "https://images.example.com/first.jpg")
+
+        // when & then
         login.process(first)
         val user = userRepository.findByProviderAndProviderId(OAuthProvider.GOOGLE, providerId)!!
         val token = tokens.generateAccessToken(user).value
@@ -75,6 +78,7 @@ class ProfileAndInviteContractTest @Autowired constructor(
 
     @Test
     fun `초대 수락 전 발급자 이름만 읽고 수락 전까지 갤러리 접근은 닫혀 있다`() {
+        // given
         val owner = users.사용자("초대한 수민")
         val guest = users.사용자("초대받은 사람")
         val workspace = workspaces.findByPersonalOwnerUserId(owner.requiredId)!!
@@ -83,6 +87,8 @@ class ProfileAndInviteContractTest @Autowired constructor(
             IssueGalleryInviteRequest(kind = GalleryInviteKind.PERSONAL_PARTNER))
         val invite = inviteRepository.findById(response.id).orElseThrow()
         val access = tokens.generateAccessToken(guest).value
+
+        // when & then
         mvc.get("/api/v1/invites/${invite.token}") { header("Authorization", "Bearer $access") }.andExpect {
             status { isOk() }
             jsonPath("$.inviterNickname") { value("초대한 수민") }
@@ -101,6 +107,7 @@ class ProfileAndInviteContractTest @Autowired constructor(
 
     @Test
     fun `기존 개인 초대는 소유자 이름으로 표시한다`() {
+        // given
         val owner = users.사용자("기존 개인 소유자")
         val guest = users.사용자()
         val workspace = workspaces.findByPersonalOwnerUserId(owner.requiredId)!!
@@ -114,6 +121,7 @@ class ProfileAndInviteContractTest @Autowired constructor(
 
     @Test
     fun `스튜디오 초대와 갤러리 초대는 생성자가 아닌 실제 발급자 이름을 반환한다`() {
+        // given
         val owner = users.사용자("스튜디오 대표")
         val issuer = users.사용자("링크를 발급한 작가")
         val guest = users.사용자()
@@ -123,6 +131,8 @@ class ProfileAndInviteContractTest @Autowired constructor(
         val galleryInvite = invites.issue(gallery.requiredId, issuer.requiredId)
         val galleryToken = inviteRepository.findById(galleryInvite.id).orElseThrow().token
         val studioToken = studioInvites.issue(studio.userId, issuer.requiredId).inviteUrl.substringAfterLast('/')
+
+        // when & then
         assertThat(invites.preview(galleryToken, guest.requiredId).inviterNickname).isEqualTo(issuer.nickname)
         assertThat(invites.preview(studioToken, guest.requiredId).inviterNickname).isEqualTo(issuer.nickname)
         // 발급자가 탈퇴해도 기존 초대의 조회가 깨지거나 대표 이름으로 둔갑하지 않는다.

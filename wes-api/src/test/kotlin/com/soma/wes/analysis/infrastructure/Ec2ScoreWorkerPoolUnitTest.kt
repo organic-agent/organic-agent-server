@@ -52,6 +52,7 @@ class Ec2ScoreWorkerPoolUnitTest {
 
     @Test
     fun `Name 태그로 찾은 인스턴스를 네 상태로 접어 돌려준다`() {
+        // given
         val launched = Instant.parse("2026-09-08T00:00:00Z")
         describes(
             instance("i-run", InstanceStateName.RUNNING, launched, zone = "ap-northeast-2c"),
@@ -59,8 +60,10 @@ class Ec2ScoreWorkerPoolUnitTest {
             instance("i-gone", InstanceStateName.TERMINATED),
         )
 
+        // when
         val snapshot = pool.snapshot()
 
+        // then
         val request = argumentCaptor<DescribeInstancesRequest>()
         verify(ec2Client).describeInstances(request.capture())
         assertSoftly { softly ->
@@ -79,10 +82,13 @@ class Ec2ScoreWorkerPoolUnitTest {
 
     @Test
     fun `켜기는 지정한 인스턴스만 켜고 재고 부족 같은 실패는 도메인 예외다`() {
+        // given
         whenever(ec2Client.startInstances(any<StartInstancesRequest>())).thenReturn(StartInstancesResponse.builder().build())
 
+        // when
         pool.start("i-b")
 
+        // then
         val request = argumentCaptor<StartInstancesRequest>()
         verify(ec2Client).startInstances(request.capture())
         assertThat(request.firstValue.instanceIds()).containsExactly("i-b")
@@ -97,10 +103,13 @@ class Ec2ScoreWorkerPoolUnitTest {
 
     @Test
     fun `끄기는 지정한 인스턴스만 끈다`() {
+        // given
         whenever(ec2Client.stopInstances(any<StopInstancesRequest>())).thenReturn(StopInstancesResponse.builder().build())
 
+        // when
         pool.stop("i-run")
 
+        // then
         val request = argumentCaptor<StopInstancesRequest>()
         verify(ec2Client).stopInstances(request.capture())
         assertThat(request.firstValue.instanceIds()).containsExactly("i-run")
@@ -109,6 +118,7 @@ class Ec2ScoreWorkerPoolUnitTest {
 
     @Test
     fun `설정이 꺼져 있으면 풀이 없고 SDK 예외는 도메인 예외다`() {
+        // when & then
         assertThat(Ec2ScoreWorkerPool(ec2Client, AnalysisProperties()).isAvailable).isFalse()
         assertThat(pool.isAvailable).isTrue()
 

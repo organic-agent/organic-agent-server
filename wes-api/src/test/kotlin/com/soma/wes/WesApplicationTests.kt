@@ -9,5 +9,4 @@ class WesApplicationTests {
     @Test
     fun contextLoads() {
     }
-
 }

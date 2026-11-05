@@ -24,6 +24,7 @@ class AnalysisPropertiesBindingUnitTest {
 
     @Test
     fun `기존 app analysis 키가 공통·Lambda·로컬 설정에 각자 바인딩된다`() {
+        // when & then
         ApplicationContextRunner()
             .withUserConfiguration(AnalysisConfig::class.java)
             .withPropertyValues(
@@ -54,6 +55,7 @@ class AnalysisPropertiesBindingUnitTest {
 
     @Test
     fun `백오피스 주소가 있으면 갤러리 링크를 만들고 비어 있으면 만들지 않는다`() {
+        // when & then
         assertSoftly { softly ->
             softly.assertThat(AnalysisProperties(backofficeBaseUrl = "https://admin.easyselect.kr/").backofficeGalleryUrl(7))
                 .isEqualTo("https://admin.easyselect.kr/resources?type=GALLERY&id=7")

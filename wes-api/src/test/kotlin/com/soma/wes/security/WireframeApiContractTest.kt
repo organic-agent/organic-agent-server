@@ -32,6 +32,7 @@ class WireframeApiContractTest @Autowired constructor(
 ) {
     @Test
     fun `기본 환경은 인증 뒤에도 실결제를 열지 않는다`() {
+        // when & then
         mvc.get("/api/v1/plans").andExpect { status { isUnauthorized() } }
         val token = tokens.generateAccessToken(users.사용자()).value
         mvc.get("/api/v1/plans") {
@@ -62,9 +63,12 @@ class WireframeApiContractTest @Autowired constructor(
 
     @Test
     fun `개인 온보딩은 무료 요금제로 한 번만 개설하고 설정을 저장한다`() {
+        // given
         val owner = users.사용자()
         val token = tokens.generateAccessToken(owner).value
         val body = """{"planId":"free","title":"우리의 사진","maxSelectablePhotoCount":20}"""
+
+        // when & then
         mvc.post("/api/v1/galleries/personal") {
             header("Authorization", "Bearer $token")
             contentType = MediaType.APPLICATION_JSON
@@ -99,11 +103,14 @@ class WireframeApiContractTest @Autowired constructor(
 
     @Test
     fun `선택 제출의 지점 요청은 HTTP 입력과 JSONB 저장을 지나 작가에게 전달된다`() {
+        // given
         val fixture = galleryFixture.멤버와_열린_갤러리(maxSelectablePhotoCount = 1)
         val photoId = photos.업로드된_사진(fixture.galleryId, 1).single()
         selection.select(fixture.galleryId, fixture.member.requiredId, SelectPhotosRequest(photoIds = listOf(photoId)))
         val clientToken = tokens.generateAccessToken(fixture.member).value
         val managerToken = tokens.generateAccessToken(fixture.photographer).value
+
+        // when & then
         mvc.post("/api/v1/galleries/${fixture.galleryId}/photo-selection/submit") {
             header("Authorization", "Bearer $clientToken")
             contentType = MediaType.APPLICATION_JSON

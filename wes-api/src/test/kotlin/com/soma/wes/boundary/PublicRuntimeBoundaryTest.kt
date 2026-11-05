@@ -8,6 +8,7 @@ class PublicRuntimeBoundaryTest {
 
     @Test
     fun `public runtime excludes every private admin boundary`() {
+        // when & then
         assertClassIsPresent(WesApplication::class.java.name)
         assertClassIsPresent("com.soma.wes.photo.controller.PhotoController")
         assertClassIsPresent("com.soma.wes.security.config.SecurityConfig")
