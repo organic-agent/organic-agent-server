@@ -2,6 +2,7 @@ package com.soma.wes.auth.infrastructure
 
 import com.soma.wes.auth.dto.OAuthRegistrationDto
 import com.soma.wes.auth.exception.AuthErrorCode
+import com.soma.wes.auth.exception.OAuthException
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
@@ -71,6 +72,20 @@ class OAuthRestClientUnitTest {
 
             // when & then
             assertThatThrownBy { client.exchangeCode(registration, "auth-code") }
+                .isInstanceOf(OAuthException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(AuthErrorCode.OAUTH_RESPONSE_INVALID)
+        }
+
+        @Test
+        fun `access token이 문자열이 아니면 응답 오류로 막는다`() {
+            // given
+            server.expect(requestTo("https://social.test/token"))
+                .andRespond(withSuccess("""{"access_token":123}""", MediaType.APPLICATION_JSON))
+
+            // when & then
+            assertThatThrownBy { client.exchangeCode(registration, "auth-code") }
+                .isInstanceOf(OAuthException::class.java)
                 .extracting("errorCode")
                 .isEqualTo(AuthErrorCode.OAUTH_RESPONSE_INVALID)
         }
@@ -83,6 +98,7 @@ class OAuthRestClientUnitTest {
 
             // when & then
             assertThatThrownBy { client.exchangeCode(registration, "auth-code") }
+                .isInstanceOf(OAuthException::class.java)
                 .extracting("errorCode")
                 .isEqualTo(AuthErrorCode.AUTH_CODE_INVALID)
         }
@@ -98,13 +114,26 @@ class OAuthRestClientUnitTest {
             server.expect(requestTo("https://social.test/me"))
                 .andExpect(method(HttpMethod.GET))
                 .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer social-token"))
-                .andRespond(withSuccess("""{"id":"42"}""", MediaType.APPLICATION_JSON))
+                .andRespond(
+                    withSuccess(
+                        """{"id":"42","kakao_account":{"email":"user@test.com","profile":{"nickname":"tester"}}}""",
+                        MediaType.APPLICATION_JSON,
+                    ),
+                )
 
             // when
             val attributes = client.fetchUserAttributes(registration, "social-token")
 
             // then
-            assertThat(attributes).containsEntry("id", "42")
+            assertThat(attributes).isEqualTo(
+                mapOf(
+                    "id" to "42",
+                    "kakao_account" to mapOf(
+                        "email" to "user@test.com",
+                        "profile" to mapOf("nickname" to "tester"),
+                    ),
+                ),
+            )
             server.verify()
         }
     }

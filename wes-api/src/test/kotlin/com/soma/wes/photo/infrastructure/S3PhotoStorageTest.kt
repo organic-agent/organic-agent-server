@@ -76,6 +76,15 @@ class S3PhotoStorageTest {
             // then
             assertThat(previewKey).isEqualTo("previews/galleries/7/abc.jpg")
         }
+
+        @Test
+        fun `확장자 없는 원본 키도 같은 경로에 jpg로 둔다`() {
+            // when
+            val previewKey = storage.previewKeyOf("galleries/7/abc")
+
+            // then
+            assertThat(previewKey).isEqualTo("previews/galleries/7/abc.jpg")
+        }
     }
 
     @Nested
