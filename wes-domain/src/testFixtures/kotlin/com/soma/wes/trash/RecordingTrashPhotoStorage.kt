@@ -8,7 +8,7 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * 호출을 기록하는 [PhotoStorage]. `buildKey`는 실제 구현과 같은 규칙을 쓴다 —
+ * 호출을 기록하는 [PhotoStorage]. `buildKey`·`previewKeyOf`는 실제 구현과 같은 규칙을 쓴다 —
  * 지워진 키가 곧 검증 대상이라 임의 문자열로 대체할 수 없다. [TrashEraserTest]·`PendingUploadSweepSchedulerTest`·`TrashServiceTest`·`TrashPurgeSchedulerTest`가 같이 쓴다 — 같은 import라 컨텍스트 하나를 나눈다.
  */
 class RecordingTrashPhotoStorage : PhotoStorage {
@@ -40,6 +40,9 @@ class RecordingTrashPhotoStorage : PhotoStorage {
         val suffix = if (extension.isBlank()) "" else ".$extension"
         return "${galleryPrefix(galleryId)}${UUID.randomUUID()}$suffix"
     }
+
+    override fun previewKeyOf(storageKey: String): String =
+        "previews/${storageKey.substringBeforeLast('.', storageKey)}.jpg"
 
     override fun presignUpload(key: String, contentType: String, contentLength: Long?, crc32c: String?): PresignedUploadDto =
         PresignedUploadDto(url = "https://storage.test/upload/$key", expiresAt = Instant.now().plusSeconds(1800))

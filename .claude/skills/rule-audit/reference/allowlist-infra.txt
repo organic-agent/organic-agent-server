@@ -1,0 +1,3 @@
+# rules: INF-11 — 키 리터럴을 S3PhotoStorage 밖에 둘 수 있는 곳(까닭을 줄 위에)
+# CDN이 맡는 경로(`previews/galleries/`)와 서명 쿠키 범위다. 키를 만들지 않고 인프라 repo CloudFront 경로 패턴에 맞춘 어댑터 고유 값이며, 어댑터가 다른 포트를 주입받지 않게 여기 둔다(#363 E16).
+wes-domain/src/main/kotlin/com/soma/wes/photo/infrastructure/CloudFrontPreviewCdn.kt

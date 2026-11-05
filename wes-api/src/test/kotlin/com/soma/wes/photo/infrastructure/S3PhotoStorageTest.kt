@@ -67,6 +67,15 @@ class S3PhotoStorageTest {
             assertThat(storage.galleryPrefix(7)).isEqualTo("galleries/7/")
             assertThat(key).startsWith("galleries/7/").endsWith(".jpg")
         }
+
+        @Test
+        fun `미리보기 키는 previews 아래 같은 경로에 jpg로 둔다`() {
+            // when
+            val previewKey = storage.previewKeyOf("galleries/7/abc.heic")
+
+            // then
+            assertThat(previewKey).isEqualTo("previews/galleries/7/abc.jpg")
+        }
     }
 
     @Nested

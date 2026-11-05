@@ -41,16 +41,6 @@ class TrashEraser(
         private const val GALLERY = "GALLERY"
         private const val PHOTO = "PHOTO"
         private val CLAIM_LEASE: Duration = Duration.ofMinutes(15)
-
-        /**
-         * 원본 키에서 파생되는 미리보기의 고정 위치. 임베딩 Lambda의 `preview_key_for`,
-         * Mock 갤러리 복제의 `MockGalleryService.buildPlans`와 같은 규칙이어야 한다.
-         *
-         * `previewKey` 컬럼과 별개로 이것까지 지우는 이유: 미리보기 업로드와 컬럼 UPDATE
-         * 사이에 삭제가 끼어들면, 컬럼은 null인데 객체는 이미 올라가 있을 수 있다.
-         */
-        fun expectedPreviewKeyOf(storageKey: String): String =
-            "previews/${storageKey.substringBeforeLast('.', storageKey)}.jpg"
     }
 
     /**
