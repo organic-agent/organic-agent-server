@@ -1,4 +1,4 @@
-package com.soma.wes.auth.strategy
+package com.soma.wes.auth.support
 
 import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.auth.dto.OAuthUserInfoDto

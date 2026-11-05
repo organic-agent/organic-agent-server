@@ -8,7 +8,7 @@ import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.notification.domain.UserNotificationScope
 import com.soma.wes.notification.domain.UserNotificationType
-import com.soma.wes.notification.service.UserNotificationPublisher
+import com.soma.wes.notification.service.port.UserNotificationPublisher
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.user.dto.request.UpdateUserRequest
 import com.soma.wes.user.dto.response.UserResponse

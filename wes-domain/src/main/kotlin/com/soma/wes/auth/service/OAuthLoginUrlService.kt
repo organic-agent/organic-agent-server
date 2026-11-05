@@ -1,4 +1,4 @@
-package com.soma.wes.auth.service.oauth
+package com.soma.wes.auth.service
 
 import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.auth.dto.response.LoginUrlResponse
@@ -6,7 +6,6 @@ import com.soma.wes.auth.support.OAuthRegistrations
 import com.soma.wes.auth.support.OAuthStateStore
 import org.springframework.stereotype.Service
 import org.springframework.web.util.UriComponentsBuilder
-
 
 @Service
 class OAuthLoginUrlService(

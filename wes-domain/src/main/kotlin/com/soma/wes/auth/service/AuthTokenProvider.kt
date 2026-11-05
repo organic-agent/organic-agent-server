@@ -7,18 +7,18 @@ import com.soma.wes.user.domain.Role
 import com.soma.wes.auth.domain.Subject
 import com.soma.wes.auth.domain.Token
 import com.soma.wes.auth.dto.AccessCacheKeyDto
+import com.soma.wes.auth.dto.TokenClaimsDto
 import com.soma.wes.auth.dto.requireActive
 import com.soma.wes.auth.exception.AuthErrorCode
 import com.soma.wes.auth.exception.TokenException
 import com.soma.wes.auth.repository.AuthAccessStatusRepository
 import com.soma.wes.auth.service.port.AccessCache
-import com.soma.wes.auth.token.JwtProvider
-import com.soma.wes.auth.token.TokenStorage
-import com.soma.wes.auth.token.TokenType
-import com.soma.wes.auth.token.config.JwtProperties
+import com.soma.wes.auth.service.port.TokenSigner
+import com.soma.wes.auth.support.RefreshTokenStore
+import com.soma.wes.auth.domain.TokenType
+import com.soma.wes.auth.config.JwtProperties
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
-import io.jsonwebtoken.Claims
 import org.slf4j.LoggerFactory
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
@@ -29,14 +29,14 @@ import org.springframework.stereotype.Service
 /**
  * 토큰 정책을 담당한다.
  *
- * [JwtProvider]가 "JWT를 어떻게 서명하고 파싱하는가"를 안다면, 이 클래스는 그 도구를 써서
+ * [TokenSigner]가 "JWT를 어떻게 서명하고 검증하는가"를 안다면, 이 클래스는 그 도구를 써서
  * "access와 refresh를 어떻게 구분하고, 얼마나 살려두고, 무엇을 담고, 무엇을 저장할 것인가"를 정한다.
  */
 @Service
 class AuthTokenProvider(
-    private val jwtProvider: JwtProvider,
+    private val tokenSigner: TokenSigner,
     private val jwtProperties: JwtProperties,
-    private val tokenStorage: TokenStorage,
+    private val refreshTokenStore: RefreshTokenStore,
     private val userRepository: UserRepository,
     private val accessStatusRepository: AuthAccessStatusRepository,
     private val accessCache: AccessCache?,
@@ -53,7 +53,7 @@ class AuthTokenProvider(
     fun generateAccessToken(user: User): AccessToken {
         accessStatusRepository.requireActive(user.requiredId)
         return AccessToken(
-            jwtProvider.generateToken(
+            tokenSigner.sign(
                 subject = Subject.from(user.requiredId),
                 expiresIn = jwtProperties.accessTokenExpiration,
                 claims = mapOf(
@@ -74,13 +74,13 @@ class AuthTokenProvider(
         accessStatusRepository.requireActive(user.requiredId)
         val subject = Subject.from(user.requiredId)
         val refreshToken = RefreshToken(
-            jwtProvider.generateToken(
+            tokenSigner.sign(
                 subject = subject,
                 expiresIn = jwtProperties.refreshTokenExpiration,
                 claims = mapOf(TOKEN_TYPE_CLAIM to TokenType.REFRESH.name),
             ),
         )
-        return tokenStorage.save(subject, refreshToken)
+        return refreshTokenStore.save(subject, refreshToken)
     }
 
     /**
@@ -94,7 +94,7 @@ class AuthTokenProvider(
             log.debug("유효하지 않은 refresh token: {}", e.message)
             return false
         }
-        return tokenStorage.find(subject) == requestedRefreshToken
+        return refreshTokenStore.find(subject) == requestedRefreshToken
     }
 
     /**
@@ -102,14 +102,14 @@ class AuthTokenProvider(
      */
     fun getAuthUser(accessToken: AccessToken): Authentication {
         val claims = verifiedClaims(accessToken)
-        requireActiveForRequest(Subject(claims.subject).toUserId())
+        requireActiveForRequest(claims.verifiedSubject().toUserId())
 
         val role = runCatching { Role.valueOf(claims.requireString(ROLE_CLAIM)) }
             .getOrElse { throw TokenException(AuthErrorCode.TOKEN_INVALID) }
         val authorities = listOf(SimpleGrantedAuthority(role.authority))
 
         val loginUser = LoginUser(
-            id = Subject(claims.subject).toUserId(),
+            id = claims.verifiedSubject().toUserId(),
             providerId = claims.requireString(PROVIDER_ID_CLAIM),
             authorities = authorities,
         )
@@ -129,7 +129,7 @@ class AuthTokenProvider(
      * [getAuthUser]가 쓴다. 우리가 발급한 토큰이라면 반드시 있어야 하는 클레임이다.
      * 없다면 위조됐거나 형식이 바뀐 토큰이므로, 500이 아니라 401로 돌려보낸다.
      */
-    private fun Claims.requireString(key: String): String =
+    private fun TokenClaimsDto.requireString(key: String): String =
         this[key] as? String ?: throw TokenException(AuthErrorCode.TOKEN_INVALID)
 
     // UserRepository.requireById를 쓰지 않는다. 토큰은 유효한데 주인이 사라진 것이라,
@@ -141,11 +141,11 @@ class AuthTokenProvider(
             ?: throw TokenException(AuthErrorCode.TOKEN_OWNER_NOT_FOUND)
     }
 
-    fun parseSubject(token: Token): Subject = Subject(verifiedClaims(token).subject)
+    fun parseSubject(token: Token): Subject = verifiedClaims(token).verifiedSubject()
 
     /** [getAuthUser]와 [parseSubject]가 쓴다. */
-    private fun verifiedClaims(token: Token): Claims {
-        val claims = jwtProvider.parseClaims(token.value)
+    private fun verifiedClaims(token: Token): TokenClaimsDto {
+        val claims = tokenSigner.verify(token.value)
 
         // refresh token으로 API를 호출하거나 access token으로 재발급을 시도하는 오용을 막는다.
         if (claims[TOKEN_TYPE_CLAIM] != token.type.name) {
@@ -158,7 +158,11 @@ class AuthTokenProvider(
         return claims
     }
 
+    /** [verifiedClaims]를 지난 클레임의 subject. 거기서 이미 검사했으므로 null이면 위조된 토큰이다. */
+    private fun TokenClaimsDto.verifiedSubject(): Subject =
+        Subject(subject ?: throw TokenException(AuthErrorCode.TOKEN_INVALID))
+
     fun logout(user: User) {
-        tokenStorage.delete(Subject.from(user.requiredId))
+        refreshTokenStore.delete(Subject.from(user.requiredId))
     }
 }

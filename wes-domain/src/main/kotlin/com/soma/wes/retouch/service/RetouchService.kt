@@ -10,7 +10,7 @@ import com.soma.wes.gallery.repository.requireWithLockById
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.notification.domain.UserNotificationScope
 import com.soma.wes.notification.domain.UserNotificationType
-import com.soma.wes.notification.service.UserNotificationPublisher
+import com.soma.wes.notification.service.port.UserNotificationPublisher
 import com.soma.wes.photo.config.StorageProperties
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.photo.service.port.PhotoStorage

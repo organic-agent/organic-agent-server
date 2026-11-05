@@ -1,4 +1,4 @@
-package com.soma.wes.auth.token.storage
+package com.soma.wes.auth.domain
 
 import com.soma.wes.global.BaseEntity
 import jakarta.persistence.Column

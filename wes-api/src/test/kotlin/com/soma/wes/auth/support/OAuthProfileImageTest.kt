@@ -1,4 +1,4 @@
-package com.soma.wes.auth.strategy
+package com.soma.wes.auth.support
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -6,7 +6,10 @@ import org.junit.jupiter.api.Test
 class OAuthProfileImageTest {
     @Test
     fun `각 소셜 공급자의 실제 응답 필드에서 사진을 읽는다`() {
+        // given
         val image = "https://images.example.com/avatar.jpg"
+
+        // when & then
         assertThat(GoogleUserInfoExtractor().extract(mapOf("sub" to "google", "picture" to image)).profileImageUrl)
             .isEqualTo(image)
         assertThat(KakaoUserInfoExtractor().extract(mapOf(
@@ -19,6 +22,7 @@ class OAuthProfileImageTest {
 
     @Test
     fun `사진 제공에 동의하지 않은 사용자도 로그인 정보를 읽을 수 있다`() {
+        // when & then
         assertThat(GoogleUserInfoExtractor().extract(mapOf("sub" to "google")).profileImageUrl).isNull()
         assertThat(KakaoUserInfoExtractor().extract(mapOf("id" to 123)).profileImageUrl).isNull()
         assertThat(NaverUserInfoExtractor().extract(mapOf("response" to mapOf("id" to "naver"))).profileImageUrl).isNull()
@@ -26,6 +30,7 @@ class OAuthProfileImageTest {
 
     @Test
     fun `비정상 사진 값은 로그인 전체를 실패시키지 않고 제외한다`() {
+        // when & then
         listOf("", "  ", "javascript:alert(1)", "file:///tmp/photo.jpg", "//images.example.com/p.jpg",
             "https://user:password@example.com/p.jpg", "https://example.com/" + "x".repeat(2048), 123)
             .forEach { invalid ->

@@ -7,16 +7,16 @@ import com.soma.wes.auth.exception.AuthErrorCode
 import com.soma.wes.auth.exception.TokenException
 import com.soma.wes.auth.infrastructure.InMemoryAccessCache
 import com.soma.wes.auth.repository.AuthAccessStatusRepository
-import com.soma.wes.auth.token.JwtProvider
-import com.soma.wes.auth.token.TokenStorage
-import com.soma.wes.auth.token.config.JwtProperties
+import com.soma.wes.auth.service.port.TokenSigner
+import com.soma.wes.auth.support.RefreshTokenStore
+import com.soma.wes.auth.config.JwtProperties
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.support.GalleryAccessPolicy
-import com.soma.wes.notification.service.UserNotificationPublisher
+import com.soma.wes.notification.service.port.UserNotificationPublisher
 import com.soma.wes.selection.repository.PhotoSelectionRepository
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.IntegrationTest
@@ -46,9 +46,9 @@ import java.time.ZoneId
 @IntegrationTest
 class AccessCacheFlowTest @Autowired constructor(
     private val authTokenProvider: AuthTokenProvider,
-    private val jwtProvider: JwtProvider,
+    private val tokenSigner: TokenSigner,
     private val jwtProperties: JwtProperties,
-    private val tokenStorage: TokenStorage,
+    private val refreshTokenStore: RefreshTokenStore,
     private val userRepository: UserRepository,
     private val accessStatusRepository: AuthAccessStatusRepository,
     private val galleryRepository: GalleryRepository,
@@ -69,9 +69,9 @@ class AccessCacheFlowTest @Autowired constructor(
     private val cache = InMemoryAccessCache(AccessCacheProperties(enabled = true, ttl = TTL), cacheClock)
 
     private val cachedTokenProvider = AuthTokenProvider(
-        jwtProvider = jwtProvider,
+        tokenSigner = tokenSigner,
         jwtProperties = jwtProperties,
-        tokenStorage = tokenStorage,
+        refreshTokenStore = refreshTokenStore,
         userRepository = userRepository,
         accessStatusRepository = accessStatusRepository,
         accessCache = cache,

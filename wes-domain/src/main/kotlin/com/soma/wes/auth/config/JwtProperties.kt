@@ -1,4 +1,4 @@
-package com.soma.wes.auth.token.config
+package com.soma.wes.auth.config
 
 import org.springframework.boot.context.properties.ConfigurationProperties
 import java.time.Duration

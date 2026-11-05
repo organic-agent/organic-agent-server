@@ -27,7 +27,7 @@ wes-api/src/test/kotlin/com/soma/wes/analysis/config/AnalysisPropertiesBindingUn
 wes-api/src/test/kotlin/com/soma/wes/auth/infrastructure/AccessCacheWiringTest.kt
 wes-api/src/test/kotlin/com/soma/wes/auth/infrastructure/InMemoryAccessCacheTest.kt
 wes-api/src/test/kotlin/com/soma/wes/auth/service/AccessCacheFlowTest.kt
-wes-api/src/test/kotlin/com/soma/wes/auth/strategy/OAuthProfileImageTest.kt
+wes-api/src/test/kotlin/com/soma/wes/auth/support/OAuthProfileImageTest.kt
 wes-api/src/test/kotlin/com/soma/wes/auth/support/OAuthRedirectUriResolverTest.kt
 wes-api/src/test/kotlin/com/soma/wes/billing/service/ReusableCouponServiceTest.kt
 wes-api/src/test/kotlin/com/soma/wes/boundary/PublicRuntimeBoundaryTest.kt
