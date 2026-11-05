@@ -51,7 +51,7 @@ class PersonalGalleryServiceTest @Autowired constructor(
 ) {
     private fun checkout(userId: Long, expired: Boolean = false): TestCheckout = checkoutRepository.save(TestCheckout(
         userId = userId, planId = "test-plan", amount = 0, currency = "KRW", maxPhotoCount = 100,
-        expiresAt = if (expired) ZonedDateTime.now().minusDays(1) else ZonedDateTime.now().plusDays(30),
+        expiresAt = if (expired) ZonedDateTime.now(clock).minusDays(1) else ZonedDateTime.now(clock).plusDays(30),
     ))
 
     @Test

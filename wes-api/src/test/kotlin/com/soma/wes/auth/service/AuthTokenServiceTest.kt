@@ -115,6 +115,8 @@ class AuthTokenServiceTest @Autowired constructor(
             // when & then
             assertThatThrownBy { authTokenService.reissue(ReissueRequest(accessToken.value)) }
                 .isInstanceOf(TokenException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(AuthErrorCode.REFRESH_TOKEN_INVALID)
         }
 
         @Test
@@ -122,6 +124,8 @@ class AuthTokenServiceTest @Autowired constructor(
             // when & then
             assertThatThrownBy { authTokenService.reissue(ReissueRequest("not-a-jwt")) }
                 .isInstanceOf(TokenException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(AuthErrorCode.REFRESH_TOKEN_INVALID)
         }
     }
 }

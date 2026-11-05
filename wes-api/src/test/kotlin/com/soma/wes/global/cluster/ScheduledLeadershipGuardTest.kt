@@ -25,15 +25,18 @@ class ScheduledLeadershipGuardTest {
 
     @Test
     fun `주기 작업은 리더 임대를 확인하거나 서버마다 도는 까닭이 적혀 있다`() {
+        // when
         val unguarded = scheduledClasses()
             .filterNot { it in EVERY_SERVER }
             .filterNot { type -> type.declaredConstructors.any { SchedulerLeadership::class.java in it.parameterTypes } }
 
+        // then
         assertThat(unguarded.map { it.name }).isEmpty()
     }
 
     @Test
     fun `스캔이 실제 스케줄러들을 찾는다`() {
+        // when & then
         assertThat(scheduledClasses().map { it.simpleName })
             .contains("AnalysisPipelineScheduler", "TrashPurgeScheduler", "ActivityFlushScheduler", "AiSelectionJobRecoveryScheduler")
     }

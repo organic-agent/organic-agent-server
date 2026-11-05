@@ -6,9 +6,10 @@ import com.soma.wes.photo.repository.PhotoPipelineRepository
 import com.soma.wes.support.CapturedLogs
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.support.SharedPostgres
+import java.time.Clock
+import java.util.concurrent.CompletableFuture
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
-import org.junit.jupiter.api.Assertions.assertTimeoutPreemptively
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.dao.DataAccessException
@@ -36,6 +37,7 @@ class SchedulerDatabaseHangTest @Autowired constructor(
     private val dataSource: DataSource,
     private val taskScheduler: TaskScheduler,
     private val heartbeat: PipelineHeartbeatScheduler,
+    private val clock: Clock,
 ) {
 
     companion object {
@@ -73,10 +75,11 @@ class SchedulerDatabaseHangTest @Autowired constructor(
             pauseDatabase()
             try {
                 // when & then — 무한 대기가 아니라 포기 시간 뒤 SQLException
-                assertTimeoutPreemptively(Duration.ofMillis(SHORT_SOCKET_TIMEOUT_MILLIS * 5L)) {
+                val attempt = CompletableFuture.runAsync {
                     assertThatThrownBy { connection.createStatement().use { it.execute("SELECT 1") } }
                         .isInstanceOf(SQLException::class.java)
                 }
+                assertThat(attempt).succeedsWithin(Duration.ofMillis(SHORT_SOCKET_TIMEOUT_MILLIS * 5L))
             } finally {
                 unpauseDatabase()
             }
@@ -98,10 +101,11 @@ class SchedulerDatabaseHangTest @Autowired constructor(
             locker.createStatement().use { it.execute("LOCK TABLE photos IN ACCESS EXCLUSIVE MODE") }
             try {
                 // when & then
-                assertTimeoutPreemptively(SWEEP_QUERY_GIVE_UP) {
+                val attempt = CompletableFuture.runAsync {
                     assertThatThrownBy { photoPipelineRepository.countPending() }
                         .isInstanceOf(DataAccessException::class.java)
                 }
+                assertThat(attempt).succeedsWithin(SWEEP_QUERY_GIVE_UP)
             } finally {
                 locker.rollback()
             }
@@ -114,11 +118,11 @@ class SchedulerDatabaseHangTest @Autowired constructor(
         val beaten = CountDownLatch(1)
         try {
             // given — 분석 스윕이 DB에서, 매시 정리 작업이 잠금에서 기다리듯 스케줄러 스레드 둘을 붙잡는다
-            repeat(2) { taskScheduler.schedule({ release.await() }, Instant.now()) }
+            repeat(2) { taskScheduler.schedule({ release.await() }, clock.instant()) }
 
             CapturedLogs(PipelineHeartbeatService::class).use { logs ->
                 // when
-                taskScheduler.schedule({ heartbeat.beat().also { beaten.countDown() } }, Instant.now().plusMillis(200))
+                taskScheduler.schedule({ heartbeat.beat().also { beaten.countDown() } }, clock.instant().plusMillis(200))
 
                 // then
                 assertThat(beaten.await(HEARTBEAT_WAIT_SECONDS, TimeUnit.SECONDS)).isTrue()

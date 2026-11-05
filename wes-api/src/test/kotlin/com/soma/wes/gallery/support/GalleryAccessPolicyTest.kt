@@ -14,6 +14,7 @@ import com.soma.wes.workspace.domain.WorkspaceMember
 import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository
+import java.time.Clock
 import java.time.ZonedDateTime
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -30,9 +31,11 @@ class GalleryAccessPolicyTest @Autowired constructor(
     private val galleryRepository: GalleryRepository,
     private val workspaceRepository: WorkspaceRepository,
     private val workspaceMemberRepository: WorkspaceMemberRepository,
+    private val clock: Clock,
 ) {
     @Test
     fun `STUDIO OWNER와 MEMBER는 갤러리 관리자다`() {
+        // given
         val owner = studioFixture.작가()
         val studio = studioFixture.소유_스튜디오(owner)
         val member = userFixture.사용자()
@@ -43,14 +46,17 @@ class GalleryAccessPolicyTest @Autowired constructor(
             Gallery(studio.workspaceId, owner.requiredId, "본식", GalleryStatus.OPEN),
         )
 
+        // when & then
         assertThat(policy.requireManager(gallery.requiredId, owner.requiredId).requiredId).isEqualTo(gallery.requiredId)
         assertThat(policy.requireManager(gallery.requiredId, member.requiredId).requiredId).isEqualTo(gallery.requiredId)
     }
 
     @Test
     fun `STUDIO 관리자는 초대 멤버가 아니면 선택 편집자가 아니다`() {
+        // given
         val fixture = galleryFixture.멤버와_열린_갤러리()
 
+        // when & then
         assertThatThrownBy {
             policy.requireSelectionEditor(fixture.galleryId, fixture.photographer.requiredId)
         }.isInstanceOf(GalleryException::class.java)
@@ -62,12 +68,14 @@ class GalleryAccessPolicyTest @Autowired constructor(
 
     @Test
     fun `PERSONAL 소유자는 관리자이자 선택 편집자다`() {
+        // given
         val owner = userFixture.사용자()
         val personal = workspaceRepository.findByPersonalOwnerUserId(owner.requiredId)!!
         val gallery = galleryRepository.save(
             Gallery(personal.requiredId, owner.requiredId, "개인 본식", GalleryStatus.OPEN),
         )
 
+        // when & then
         assertThat(policy.requireManager(gallery.requiredId, owner.requiredId).requiredId).isEqualTo(gallery.requiredId)
         assertThat(policy.requireSelectionEditor(gallery.requiredId, owner.requiredId).requiredId)
             .isEqualTo(gallery.requiredId)
@@ -75,9 +83,11 @@ class GalleryAccessPolicyTest @Autowired constructor(
 
     @Test
     fun `PERSONAL 갤러리는 목표일이 지나도 두 참여자가 계속 고르고 댓글을 쓴다`() {
+        // given
         val personal = personalGalleryFixture.파트너와_개인_갤러리()
         galleryFixture.마감_지남(personal.galleryId)
 
+        // when & then
         for (userId in listOf(personal.ownerId, personal.partnerId)) {
             assertThat(policy.requireSelectionEditor(personal.galleryId, userId).requiredId).isEqualTo(personal.galleryId)
             assertThat(policy.requireParticipantWriter(personal.galleryId, userId).requiredId).isEqualTo(personal.galleryId)
@@ -86,9 +96,11 @@ class GalleryAccessPolicyTest @Autowired constructor(
 
     @Test
     fun `PERSONAL 갤러리도 이용 기간이 끝나면 고를 수 없다`() {
+        // given
         val personal = personalGalleryFixture.파트너와_개인_갤러리()
-        galleryFixture.이용_기한(personal.galleryId, ZonedDateTime.now().minusMinutes(1))
+        galleryFixture.이용_기한(personal.galleryId, ZonedDateTime.now(clock).minusMinutes(1))
 
+        // when & then
         assertThatThrownBy { policy.requireSelectionEditor(personal.galleryId, personal.partnerId) }
             .isInstanceOf(GalleryException::class.java)
             .extracting("errorCode")
@@ -97,9 +109,11 @@ class GalleryAccessPolicyTest @Autowired constructor(
 
     @Test
     fun `STUDIO 갤러리는 선택 마감이 지나면 초대 멤버가 고를 수 없다`() {
+        // given
         val fixture = galleryFixture.멤버와_열린_갤러리()
         galleryFixture.마감_지남(fixture.galleryId)
 
+        // when & then
         assertThatThrownBy { policy.requireSelectionEditor(fixture.galleryId, fixture.member.requiredId) }
             .isInstanceOf(GalleryException::class.java)
             .extracting("errorCode")
@@ -112,13 +126,15 @@ class GalleryAccessPolicyTest @Autowired constructor(
 
     @Test
     fun `정지된 STUDIO의 멤버십은 갤러리 관리 권한을 주지 않는다`() {
+        // given
         val owner = studioFixture.작가()
         val studio = studioFixture.소유_스튜디오(owner)
         val gallery = galleryRepository.save(
             Gallery(studio.workspaceId, owner.requiredId, "본식", GalleryStatus.OPEN),
         )
-        studioFixture.정지(studio.workspaceId, ZonedDateTime.now())
+        studioFixture.정지(studio.workspaceId, ZonedDateTime.now(clock))
 
+        // when & then
         assertThatThrownBy { policy.requireManager(gallery.requiredId, owner.requiredId) }
             .isInstanceOf(GalleryException::class.java)
             .extracting("errorCode")

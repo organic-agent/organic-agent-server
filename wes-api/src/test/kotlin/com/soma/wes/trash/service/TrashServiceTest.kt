@@ -29,6 +29,7 @@ import com.soma.wes.trash.dto.request.RestorePhotosRequest
 import com.soma.wes.trash.exception.TrashErrorCode
 import com.soma.wes.trash.exception.TrashException
 import com.soma.wes.trash.repository.TrashRepository
+import java.time.Clock
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.assertj.core.api.SoftAssertions.assertSoftly
@@ -67,6 +68,7 @@ class TrashServiceTest @Autowired constructor(
     private val trashRepository: TrashRepository,
     private val jdbcTemplate: JdbcTemplate,
     private val photoStorage: RecordingTrashPhotoStorage,
+    private val clock: Clock,
 ) {
 
     private lateinit var fixture: OpenGallery
@@ -518,7 +520,7 @@ class TrashServiceTest @Autowired constructor(
     /** 발급 시각 기준 30분짜리 URL을 이미 지난 것으로 만든다. 즉시 삭제의 409 가드를 지나기 위해서다. */
     private fun expireUploadUrls(photoIds: List<Long>) {
         val photos = photoRepository.findAllById(photoIds)
-        photos.forEach { it.recordUploadUrlExpiration(Instant.now().minusSeconds(60)) }
+        photos.forEach { it.recordUploadUrlExpiration(clock.instant().minusSeconds(60)) }
         photoRepository.saveAllAndFlush(photos)
     }
 

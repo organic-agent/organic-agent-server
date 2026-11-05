@@ -2,17 +2,16 @@ package com.soma.wes.auth.infrastructure
 
 import com.soma.wes.auth.config.AccessCacheProperties
 import com.soma.wes.auth.dto.AccessCacheKeyDto
+import com.soma.wes.support.TestClock
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.SoftAssertions.assertSoftly
 import org.junit.jupiter.api.Test
-import java.time.Clock
 import java.time.Duration
 import java.time.Instant
-import java.time.ZoneId
 
 class InMemoryAccessCacheTest {
 
-    private val clock = MutableClock()
+    private val clock = TestClock(Instant.parse("2026-10-13T12:00:00Z"))
     private val cache = InMemoryAccessCache(AccessCacheProperties(enabled = true, ttl = Duration.ofSeconds(30)), clock)
     private val key = AccessCacheKeyDto.userStatus(1)
 
@@ -77,18 +76,5 @@ class InMemoryAccessCacheTest {
 
         // then
         assertThat(cache.get(AccessCacheKeyDto.studioActive(7)) { "스튜디오" }).isEqualTo("스튜디오")
-    }
-
-    /** 앞으로 돌릴 수 있는 시계. */
-    private class MutableClock : Clock() {
-        private var instant: Instant = Instant.parse("2026-10-13T12:00:00Z")
-
-        fun advance(duration: Duration) {
-            instant = instant.plus(duration)
-        }
-
-        override fun getZone(): ZoneId = ZoneId.of("Asia/Seoul")
-        override fun withZone(zone: ZoneId): Clock = this
-        override fun instant(): Instant = instant
     }
 }

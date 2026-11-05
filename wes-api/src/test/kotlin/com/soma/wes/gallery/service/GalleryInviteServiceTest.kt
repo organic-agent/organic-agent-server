@@ -1,6 +1,5 @@
 package com.soma.wes.gallery.service
 
-import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.gallery.config.GalleryInviteProperties
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryInvite
@@ -22,6 +21,7 @@ import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.TestcontainersConfiguration
 import com.soma.wes.user.domain.User
+import com.soma.wes.user.fixture.UserFixture
 import com.soma.wes.user.repository.UserRepository
 import com.soma.wes.workspace.domain.Workspace
 import com.soma.wes.workspace.domain.WorkspaceMember
@@ -54,6 +54,7 @@ import java.time.ZonedDateTime
     com.soma.wes.notification.service.UserNotificationService::class,
     SecureTokenGenerator::class,
     GalleryInviteUrlResolver::class,
+    UserFixture::class,
 )
 @EnableConfigurationProperties(GalleryInviteProperties::class)
 class GalleryInviteServiceTest @Autowired constructor(
@@ -66,6 +67,7 @@ class GalleryInviteServiceTest @Autowired constructor(
     private val workspaceRepository: WorkspaceRepository,
     private val workspaceMemberRepository: WorkspaceMemberRepository,
     private val clock: Clock,
+    private val userFixture: UserFixture,
 ) {
 
     private val now: ZonedDateTime get() = ZonedDateTime.now(clock)
@@ -78,19 +80,10 @@ class GalleryInviteServiceTest @Autowired constructor(
 
     @BeforeEach
     fun setUpUsers() {
-        photographerId = saveUser("photographer").let(::requiredId)
-        groomId = saveUser("groom").let(::requiredId)
-        brideId = saveUser("bride").let(::requiredId)
+        photographerId = userFixture.계정만("photographer").let(::requiredId)
+        groomId = userFixture.계정만("groom").let(::requiredId)
+        brideId = userFixture.계정만("bride").let(::requiredId)
     }
-
-    private fun saveUser(providerId: String): User = userRepository.save(
-        User(
-            provider = OAuthProvider.KAKAO,
-            providerId = providerId,
-            nickname = providerId,
-            email = "$providerId@example.com",
-        ),
-    )
 
     private fun requiredId(user: User): Long = checkNotNull(user.id)
 
@@ -289,7 +282,7 @@ class GalleryInviteServiceTest @Autowired constructor(
             val otherGallery = saveGallery()
             val invite = galleryInviteService.issue(galleryId(otherGallery), photographerId)
 
-            val guestPhotographerId = requiredId(saveUser("guest-photographer"))
+            val guestPhotographerId = requiredId(userFixture.계정만("guest-photographer"))
 
             // when
             galleryInviteService.accept(tokenOf(invite), guestPhotographerId)
@@ -408,7 +401,7 @@ class GalleryInviteServiceTest @Autowired constructor(
         fun `다른 갤러리의 초대를 자기 갤러리 권한으로 폐기할 수 없다`() {
             // given
             val mine = saveGallery(ownerUserId = photographerId)
-            val otherOwnerId = requiredId(saveUser("other-owner"))
+            val otherOwnerId = requiredId(userFixture.계정만("other-owner"))
             val other = saveGallery(ownerUserId = otherOwnerId)
             val otherInvite = galleryInviteService.issue(galleryId(other), userId = otherOwnerId)
 
@@ -428,6 +421,8 @@ class GalleryInviteServiceTest @Autowired constructor(
             // when & then
             assertThatThrownBy { galleryInviteService.revoke(galleryId(gallery), invite.id, userId = 999L) }
                 .isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
         }
     }
 
@@ -543,7 +538,7 @@ class GalleryInviteServiceTest @Autowired constructor(
             val token = tokenOf(galleryInviteService.issue(galleryId(gallery), photographerId))
             galleryInviteService.accept(token, groomId)
             galleryInviteService.accept(token, brideId)
-            val stranger = requiredId(saveUser("stranger"))
+            val stranger = requiredId(userFixture.계정만("stranger"))
 
             // when & then
             assertThatThrownBy { galleryInviteService.accept(token, stranger) }

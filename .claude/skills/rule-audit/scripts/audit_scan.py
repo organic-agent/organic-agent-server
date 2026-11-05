@@ -271,10 +271,18 @@ def truncate_list():
 
 
 def errorcode_assert():
+    # errorCode를 가진 우리 예외만 본다 — JDK·라이브러리 예외(ClassNotFoundException·SQLException…)에는 단언할 errorCode가 없다.
+    coded = set()
+    for f in files(MAIN):
+        src = read(f)
+        for m in re.finditer(r'class (\w+Exception)\b', src):
+            # 선언 머리(본문 `{` 전까지)를 본다 — 괄호 든 기본값·`private constructor(errorCode: …)`도 잡힌다.
+            head = src[m.end():m.end() + 800].split('{', 1)[0]
+            if 'errorCode' in head: coded.add(m.group(1))
     for f in files(TEST):
         s = read(f)
         for m in re.finditer(r'isInstanceOf\(\s*([A-Z]\w*Exception)::class', s):
-            if m.group(1).startswith(('SQL', 'DataAccess', 'DataIntegrity', 'Timeout', 'Illegal', 'Runtime')): continue
+            if m.group(1) not in coded: continue
             tail = s[m.end():m.end() + 160].split('\n')[:3]
             if not any('errorCode' in x for x in tail):
                 print(f'{rel(f)}:{line_of(s, m.start())}: {m.group(1)} 를 타입만 단언한다(errorCode 없음)')

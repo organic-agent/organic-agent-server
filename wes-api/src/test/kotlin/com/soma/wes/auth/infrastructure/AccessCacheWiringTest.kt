@@ -17,6 +17,7 @@ class AccessCacheWiringTest {
 
     @Test
     fun `켜면 앱 메모리 캐시가 생긴다`() {
+        // when & then
         runner.withPropertyValues("app.access-cache.enabled=true").run { context ->
             assertThat(context).hasSingleBean(AccessCache::class.java)
         }
@@ -24,6 +25,7 @@ class AccessCacheWiringTest {
 
     @Test
     fun `끄면 캐시가 없어 호출자가 매번 DB를 본다`() {
+        // when & then
         runner.run { context ->
             assertThat(context).doesNotHaveBean(AccessCache::class.java)
         }

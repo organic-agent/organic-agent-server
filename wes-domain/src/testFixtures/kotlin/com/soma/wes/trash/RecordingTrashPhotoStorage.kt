@@ -4,14 +4,16 @@ import com.soma.wes.photo.dto.PresignedUploadDto
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
 import com.soma.wes.photo.service.port.PhotoStorage
-import java.time.Instant
+import java.time.Clock
 import java.util.UUID
 
 /**
  * 호출을 기록하는 [PhotoStorage]. `buildKey`·`previewKeyOf`는 실제 구현과 같은 규칙을 쓴다 —
  * 지워진 키가 곧 검증 대상이라 임의 문자열로 대체할 수 없다. [TrashEraserTest]·`PendingUploadSweepSchedulerTest`·`TrashServiceTest`·`TrashPurgeSchedulerTest`가 같이 쓴다 — 같은 import라 컨텍스트 하나를 나눈다.
  */
-class RecordingTrashPhotoStorage : PhotoStorage {
+class RecordingTrashPhotoStorage(
+    private val clock: Clock,
+) : PhotoStorage {
 
     val deletedBatches = mutableListOf<List<String>>()
 
@@ -45,7 +47,7 @@ class RecordingTrashPhotoStorage : PhotoStorage {
         "previews/${storageKey.substringBeforeLast('.', storageKey)}.jpg"
 
     override fun presignUpload(key: String, contentType: String, contentLength: Long?, crc32c: String?): PresignedUploadDto =
-        PresignedUploadDto(url = "https://storage.test/upload/$key", expiresAt = Instant.now().plusSeconds(1800))
+        PresignedUploadDto(url = "https://storage.test/upload/$key", expiresAt = clock.instant().plusSeconds(1800))
 
     override fun presignView(key: String): String = "https://storage.test/view/$key"
 

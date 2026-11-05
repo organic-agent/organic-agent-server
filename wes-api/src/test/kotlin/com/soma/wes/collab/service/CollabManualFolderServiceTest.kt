@@ -26,6 +26,8 @@ import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.photo.fixture.PhotoFixture
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.support.IntegrationTest
+import java.time.Clock
+import java.time.ZonedDateTime
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
@@ -58,6 +60,7 @@ class CollabManualFolderServiceTest @Autowired constructor(
     private val galleries: GalleryRepository,
     private val jdbc: JdbcTemplate,
     private val transactionTemplate: TransactionTemplate,
+    private val clock: Clock,
 ) {
     private fun assertCode(code: CollabErrorCode, call: () -> Any) {
         assertThatThrownBy { call() }.isInstanceOf(CollabException::class.java).extracting("errorCode").isEqualTo(code)
@@ -266,7 +269,7 @@ class CollabManualFolderServiceTest @Autowired constructor(
             categories.movePhotos(shared.galleryId, photographer,
                 MoveFolderPhotosRequest(photoIds = listOf(trashedPhoto), targetDetailFolderId = shared.detailId))
             jdbc.update("UPDATE detail_folders SET deleted_at = now() WHERE id = ?", trashedDetail)
-            photos.saveAndFlush(photos.findById(trashedPhoto).orElseThrow().also { it.moveToTrash(java.time.ZonedDateTime.now()) })
+            photos.saveAndFlush(photos.findById(trashedPhoto).orElseThrow().also { it.moveToTrash(ZonedDateTime.now(clock)) })
             // 옛 컨셉 연결 공유폴더를 그대로 만든다 — V37이 지운 컬럼을 잠시 되살려 사진 목록 없이 컨셉만 가리키게 한다.
             jdbc.execute("ALTER TABLE collab_sessions ADD COLUMN concept_folder_id bigint")
             try {
@@ -431,7 +434,7 @@ class CollabManualFolderServiceTest @Autowired constructor(
             photoFixture.대량_업로드된_사진(fixture.galleryId, CollabPhotoIdsRequest.MAX_BATCH_SIZE)
             photoFixture.대기중_사진(fixture.galleryId, 1)
             val trashed = photoFixture.업로드된_사진(fixture.galleryId, 1).single()
-            photos.saveAndFlush(photos.findById(trashed).orElseThrow().also { it.moveToTrash(java.time.ZonedDateTime.now()) })
+            photos.saveAndFlush(photos.findById(trashed).orElseThrow().also { it.moveToTrash(ZonedDateTime.now(clock)) })
 
             // when
             val session = timed("ALL ${CollabPhotoIdsRequest.MAX_BATCH_SIZE}") {

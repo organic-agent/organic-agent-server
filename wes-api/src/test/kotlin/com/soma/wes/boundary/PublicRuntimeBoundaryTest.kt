@@ -1,13 +1,14 @@
 package com.soma.wes.boundary
 
 import com.soma.wes.WesApplication
-import kotlin.test.Test
-import kotlin.test.assertFailsWith
+import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.jupiter.api.Test
 
 class PublicRuntimeBoundaryTest {
 
     @Test
     fun `public runtime excludes every private admin boundary`() {
+        // when & then
         assertClassIsPresent(WesApplication::class.java.name)
         assertClassIsPresent("com.soma.wes.photo.controller.PhotoController")
         assertClassIsPresent("com.soma.wes.security.config.SecurityConfig")
@@ -24,8 +25,7 @@ class PublicRuntimeBoundaryTest {
     }
 
     private fun assertClassIsAbsent(className: String) {
-        assertFailsWith<ClassNotFoundException> {
-            Class.forName(className, false, javaClass.classLoader)
-        }
+        assertThatThrownBy { Class.forName(className, false, javaClass.classLoader) }
+            .isInstanceOf(ClassNotFoundException::class.java)
     }
 }

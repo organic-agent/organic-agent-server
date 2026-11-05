@@ -41,6 +41,7 @@ import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.fixture.WorkspaceFixture
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository
+import java.time.Clock
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.assertj.core.api.SoftAssertions.assertSoftly
@@ -81,6 +82,7 @@ class PhotoCommentServiceTest @Autowired constructor(
     private val collabGuestService: CollabGuestService,
     private val collabGuestQueryService: CollabGuestQueryService,
     private val jdbcTemplate: JdbcTemplate,
+    private val clock: Clock,
 ) {
 
     private lateinit var fixture: OpenGallery
@@ -266,7 +268,7 @@ class PhotoCommentServiceTest @Autowired constructor(
             val existing = photoCommentService.write(
                 fixture.galleryId, photoId, fixture.member.requiredId, WritePhotoCommentRequest("부부의 대화"),
             )
-            studioFixture.정지(gallery.workspaceId, ZonedDateTime.now())
+            studioFixture.정지(gallery.workspaceId, ZonedDateTime.now(clock))
             // 운영 정지는 기존 관리 권한을 닫지만, 구성원 신분까지 부부로 바꾸지는 않는다.
             galleryInviteService.accept(token, actor.requiredId)
 
@@ -295,7 +297,7 @@ class PhotoCommentServiceTest @Autowired constructor(
             val comment = photoCommentService.write(
                 gallery.requiredId, ownPhoto, owner.requiredId, WritePhotoCommentRequest("접근 종료 전 대화"),
             )
-            workspaceFixture.멤버_탈퇴(workspace.requiredId, owner.requiredId, ZonedDateTime.now())
+            workspaceFixture.멤버_탈퇴(workspace.requiredId, owner.requiredId, ZonedDateTime.now(clock))
 
             // when & then
             assertGalleryDenied { photoCommentService.list(gallery.requiredId, ownPhoto, owner.requiredId, 0, 20) }

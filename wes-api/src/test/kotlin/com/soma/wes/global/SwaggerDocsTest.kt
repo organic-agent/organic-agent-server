@@ -25,6 +25,7 @@ class SwaggerDocsTest @Autowired constructor(
 
     @Test
     fun `api-docs는 인증 없이 열리고 컨트롤러가 문서에 잡힌다`() {
+        // when & then
         mockMvc.get("/v3/api-docs")
             .andExpect {
                 status { isOk() }
@@ -58,8 +59,10 @@ class SwaggerDocsTest @Autowired constructor(
         // 태그 이름은 @Tag에서 읽어온다. 확인할 것은 표기법(`[OAuth]` 같은 대괄호는 Swagger UI 가독성용이라
         // 언제든 바뀐다)이 아니라 docs 인터페이스의 태그가 문서까지 실려 오느냐이므로, 리터럴로 적어두면
         // 표기를 손볼 때마다 멀쩡한 문서를 두고 테스트만 깨진다.
+        // given
         val oauthTag = OAuthControllerDocs::class.java.getAnnotation(Tag::class.java).name
 
+        // when & then
         mockMvc.get("/v3/api-docs")
             .andExpect {
                 status { isOk() }
@@ -85,6 +88,7 @@ class SwaggerDocsTest @Autowired constructor(
     fun `로그인 전에 부르는 API는 문서가 토큰을 요구하지 않는다`() {
         // SwaggerConfig가 모든 API에 bearerAuth를 걸어두므로, 로그인·재발급처럼 토큰이 있을 리 없는
         // API는 @SecurityRequirements로 꺼야 한다. 안 그러면 Swagger UI에서 자물쇠가 걸려 시험해볼 수 없다.
+        // when & then
         mockMvc.get("/v3/api-docs")
             .andExpect {
                 status { isOk() }
@@ -99,6 +103,7 @@ class SwaggerDocsTest @Autowired constructor(
 
     @Test
     fun `JWT bearer 인증 스킴이 문서에 등록된다`() {
+        // when & then
         mockMvc.get("/v3/api-docs")
             .andExpect {
                 status { isOk() }
@@ -112,8 +117,10 @@ class SwaggerDocsTest @Autowired constructor(
         // 문서가 enum 이름(NAVER)을 광고하면 프론트는 그걸 그대로 보내고 400을 받는다.
         // 경로 파라미터와 응답 본문 모두 실제 계약인 OAuthProvider.key여야 한다.
         // 컨트롤러의 allowableValues는 손으로 적은 목록이라, provider를 추가하고 빠뜨리면 여기서 걸린다.
+        // given
         val keys = OAuthProvider.entries.map { it.key }
 
+        // when & then
         mockMvc.get("/v3/api-docs")
             .andExpect {
                 status { isOk() }
@@ -124,6 +131,7 @@ class SwaggerDocsTest @Autowired constructor(
 
     @Test
     fun `설정한 서버 주소가 문서에 실린다`() {
+        // when & then
         mockMvc.get("/v3/api-docs")
             .andExpect {
                 status { isOk() }
@@ -133,6 +141,7 @@ class SwaggerDocsTest @Autowired constructor(
 
     @Test
     fun `swagger-ui는 인증 없이 열린다`() {
+        // when & then
         mockMvc.get("/swagger-ui/index.html")
             .andExpect { status { isOk() } }
     }

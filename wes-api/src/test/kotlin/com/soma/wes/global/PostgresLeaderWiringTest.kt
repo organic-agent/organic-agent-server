@@ -37,6 +37,7 @@ class PostgresLeaderWiringTest @Autowired constructor(
 
     @Test
     fun `리더 임대를 Postgres 로 고르면 임대 행 저장소가 꽂히고 혼자 뜬 서버는 곧 리더가 된다`() {
+        // when & then
         assertThat(leadership).isInstanceOf(LeasedSchedulerLeadership::class.java)
         assertThat(store).isInstanceOf(PostgresLeaderLeaseStore::class.java)
         assertThat(becomesLeader()).isTrue()
