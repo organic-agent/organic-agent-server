@@ -171,8 +171,8 @@ def test_names(mode):
             print(f'{rel(f)}:1: 대상 클래스 {base} 가 main 에 없다')
         elif mode == 'test-nomirror' and base in types and pkg not in types[base]:
             print(f'{rel(f)}:1: 패키지가 대상({sorted(types[base])[0]})을 미러링하지 않는다')
-        elif mode == 'test-nonspring' and not b.endswith('UnitTest') \
-                and not re.search(r'@(IntegrationTest|SpringBootTest|DataJpaTest|WebMvcTest)', s):
+        elif mode == 'test-nonspring' and not b.endswith('UnitTest') and not guard \
+                and not re.search(r'@(IntegrationTest|SpringBootTest|DataJpaTest|WebMvcTest)|ApplicationContextRunner', s):
             print(f'{rel(f)}:1: Spring 없는 테스트인데 UnitTest 이름이 아니다')
 
 

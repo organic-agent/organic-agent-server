@@ -3,7 +3,7 @@ package com.soma.wes.global
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
-class SecureTokenGeneratorTest {
+class SecureTokenGeneratorUnitTest {
 
     private val generator = SecureTokenGenerator()
 

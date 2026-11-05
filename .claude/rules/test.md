@@ -18,13 +18,14 @@ paths:
   같은 분기는 서비스 테스트가 더 가볍게 덮는다. 위치는 `security/`·`global/`(공통 에러 응답) 또는 그 기능 도메인의 `controller/`. <!-- TS-03 -->
 - 그 밖의 예외는 특정 계층이 소유한 규약을 지키는 회귀 가드뿐이다 — 코드베이스 전체 규약(`*GuardTest`:
   `ScheduledLeadershipGuardTest`·`EntityNullabilityGuardTest`), `ErrorCodeFormatTest`,
-  어댑터 테스트(`S3PhotoStorageTest`), 빈·모듈 경계(`*BoundaryTest`), 빈 조립(`*WiringTest`), 문서 노출(`SwaggerDocsTest`).
+  어댑터 테스트(`S3PhotoStorageUnitTest`), 빈·모듈 경계(`*BoundaryTest`), 빈 조립(`*WiringTest`), 문서 노출(`SwaggerDocsTest`).
 - 테스트 이름의 대상 클래스는 main에 실제로 있어야 한다(`{대상}Test`·`{대상}UnitTest`). 기능 이름을 쓰는 것은 `~ContractTest`뿐이다. <!-- TS-04 -->
   (2026-10-31 기준 이름이 어긋난 기존 파일과 업무 분기를 HTTP로 보는 admin 컨트롤러 테스트는 정리 전까지 규칙 검토의 허용 목록이다.)
 - 위치와 이름은 대상 클래스를 따른다: `{domain}/service/{Service}Test`,
   `{domain}/support/{Support}Test`. <!-- TS-05 --> **"Integration" 접미사를 붙이지 마라** — 이 저장소의
   기본 테스트가 곧 통합 테스트라 수식어가 정보가 아니다. <!-- TS-06 --> 나중에 스프링 없이 도는 순수
-  단위 테스트가 필요해지면 그쪽에 `{대상}UnitTest`를 붙여 구별한다. <!-- TS-07 -->
+  단위 테스트가 필요해지면 그쪽에 `{대상}UnitTest`를 붙여 구별한다. 회귀 가드(`*GuardTest`·`*BoundaryTest`·`*WiringTest`)는
+  스프링 없이 돌아도 그 종류 이름을 쓴다. `ApplicationContextRunner`로 빈을 조립하는 테스트는 스프링을 쓰는 쪽이다. <!-- TS-07 -->
 - HTTP 상태 검증은 예외 검증으로 표현된다: 4xx 시나리오는
   `assertThatThrownBy { ... }.extracting("errorCode")`로, 응답 본문 검증은 서비스가 돌려준
   DTO 필드 단언으로. 컨트롤러 bean validation(`@Valid`)은 서비스 직접 호출에서 돌지 않으니,

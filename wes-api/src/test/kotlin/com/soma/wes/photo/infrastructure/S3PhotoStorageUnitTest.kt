@@ -32,7 +32,7 @@ import java.time.Duration
 import java.time.Instant
 import java.util.function.Consumer
 
-class S3PhotoStorageTest {
+class S3PhotoStorageUnitTest {
 
     private val s3Client = mock<S3Client>()
     private val s3Presigner = mock<S3Presigner>()

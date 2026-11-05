@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test
 /**
  * 하객 토큰 헤더 이름을 잠그는 회귀 가드. 상수 하나라 스프링 없이 돈다.
  */
-class GuestTokenHeaderTest {
+class GuestTokenHeaderUnitTest {
 
     @Test
     fun `하객 토큰 헤더 이름은 X-Guest-Token이다`() {
