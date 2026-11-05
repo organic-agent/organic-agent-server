@@ -162,14 +162,15 @@ def test_names(mode):
     types = declared_types()
     for f in files(TEST):
         b = os.path.basename(f)[:-3]
-        if not b.endswith('Test') or b.endswith(('ContractTest', 'FlowTest')): continue
+        if not b.endswith('Test') or b.endswith('ContractTest'): continue
         s = read(f)
         pkg = re.search(r'^package ([\w.]+)', s, re.M).group(1)
         base = re.sub(r'(UnitTest|Test)$', '', b)
         guard = re.search(r'(BoundaryTest|WiringTest|GuardTest)$', b) or b == 'ErrorCodeFormatTest'
-        if mode == 'test-noclass' and base not in types and not guard:
+        flow = b.endswith('FlowTest')  # 기능 이름이 허용된 종류 — 이름 검사(대상·미러링)만 건너뛰고 TS-07은 본다
+        if mode == 'test-noclass' and base not in types and not guard and not flow:
             print(f'{rel(f)}:1: 대상 클래스 {base} 가 main 에 없다')
-        elif mode == 'test-nomirror' and base in types and pkg not in types[base]:
+        elif mode == 'test-nomirror' and base in types and pkg not in types[base] and not flow:
             print(f'{rel(f)}:1: 패키지가 대상({sorted(types[base])[0]})을 미러링하지 않는다')
         elif mode == 'test-nonspring' and not b.endswith('UnitTest') and not guard \
                 and not re.search(r'@(IntegrationTest|SpringBootTest|DataJpaTest|WebMvcTest)|ApplicationContextRunner', s):
