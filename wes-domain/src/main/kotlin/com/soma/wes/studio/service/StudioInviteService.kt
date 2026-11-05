@@ -11,7 +11,7 @@ import com.soma.wes.gallery.support.GalleryInviteUrlResolver
 import com.soma.wes.global.SecureTokenGenerator
 import com.soma.wes.notification.domain.UserNotificationScope
 import com.soma.wes.notification.domain.UserNotificationType
-import com.soma.wes.notification.service.UserNotificationPublisher
+import com.soma.wes.notification.service.port.UserNotificationPublisher
 import com.soma.wes.studio.domain.StudioInvite
 import com.soma.wes.studio.dto.response.StudioInviteResponse
 import com.soma.wes.studio.exception.StudioErrorCode

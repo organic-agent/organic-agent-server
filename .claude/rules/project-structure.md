@@ -51,6 +51,9 @@ paths:
 └── infrastructure/  # 외부 시스템 어댑터 (→ rules/infrastructure.md)
 ```
 
+- **`admin`만 한 단계 아래에 하위 도메인을 둔다** — `admin/resource`(갤러리·사진 운영)·`admin/impersonation`(사용자 화면 대신 보기)·
+  `admin/audit`. `admin`은 관리자 계정·리소스 운영·대신 보기라는 서로 다른 도메인의 묶음이라, 펼치면 `admin/service`에 관련 없는
+  기능이 섞인다. 하위 도메인 안은 다시 위 구조를 따른다. 다른 도메인(`auth` 포함)에는 이 예외가 없다. <!-- LY-08 -->
 - **최상위 `infrastructure` 패키지는 없다.** 외부 시스템 어댑터는 그것을 쓰는 도메인 안에 산다. <!-- LY-06 -->
   모든 벤더 클래스를 한 바구니에 모으면 각 도메인이 둘로 쪼개진다.
 - 도메인 공용 클라이언트 빈은 두 번째 도메인이 필요로 하는 날에만 `global/config`로 올린다.

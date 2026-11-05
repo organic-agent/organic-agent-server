@@ -9,7 +9,7 @@ import com.soma.wes.admin.resource.config.AdminWorkflowExecutorProperties
 import com.soma.wes.auth.service.AuthTokenProvider
 import com.soma.wes.auth.support.OAuthRegistrations
 import com.soma.wes.auth.scheduler.OAuthStateCleanupScheduler
-import com.soma.wes.auth.token.config.JwtProperties
+import com.soma.wes.auth.config.JwtProperties
 import com.soma.wes.folder.repository.ConceptFolderRepository
 import com.soma.wes.folder.service.FolderService
 import com.soma.wes.folder.config.FolderProperties

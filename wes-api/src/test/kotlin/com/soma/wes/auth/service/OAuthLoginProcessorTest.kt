@@ -1,11 +1,11 @@
-package com.soma.wes.auth.service.oauth
+package com.soma.wes.auth.service
 
 import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.auth.dto.OAuthUserInfoDto
+import com.soma.wes.support.TestSequence
 import com.soma.wes.support.TestcontainersConfiguration
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
-import java.util.concurrent.atomic.AtomicLong
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -27,8 +27,6 @@ class OAuthLoginProcessorTest @Autowired constructor(
     private val userRepository: UserRepository,
 ) {
 
-    private val sequence = AtomicLong(System.nanoTime())
-
     private fun userInfo(providerId: String, nickname: String, email: String?) = OAuthUserInfoDto(
         provider = OAuthProvider.KAKAO,
         providerId = providerId,
@@ -39,7 +37,7 @@ class OAuthLoginProcessorTest @Autowired constructor(
     @Test
     fun `첫 로그인이면 가입시킨다`() {
         // given
-        val providerId = "oauth-signup-${sequence.incrementAndGet()}"
+        val providerId = "oauth-signup-${TestSequence.next()}"
 
         // when
         val result = oAuthLoginProcessor.process(userInfo(providerId, "새 사용자", "new@example.com"))
@@ -55,7 +53,7 @@ class OAuthLoginProcessorTest @Autowired constructor(
     @Test
     fun `다시 로그인하면 사용자 닉네임은 유지하고 소셜 이메일만 동기화한다`() {
         // given
-        val providerId = "oauth-refresh-${sequence.incrementAndGet()}"
+        val providerId = "oauth-refresh-${TestSequence.next()}"
         userRepository.save(
             User(
                 provider = OAuthProvider.KAKAO,
@@ -77,7 +75,7 @@ class OAuthLoginProcessorTest @Autowired constructor(
     @Test
     fun `다시 로그인해도 사용자는 하나다`() {
         // given
-        val providerId = "oauth-single-${sequence.incrementAndGet()}"
+        val providerId = "oauth-single-${TestSequence.next()}"
 
         // when
         oAuthLoginProcessor.process(userInfo(providerId, "사용자", "a@example.com"))

@@ -1,4 +1,4 @@
-package com.soma.wes.auth.strategy
+package com.soma.wes.auth.support
 
 import com.soma.wes.auth.exception.AuthErrorCode
 import com.soma.wes.auth.exception.OAuthException

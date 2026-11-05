@@ -10,7 +10,7 @@ import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.notification.domain.UserNotificationScope
 import com.soma.wes.notification.domain.UserNotificationType
 import com.soma.wes.notification.repository.UserNotificationRepository
-import com.soma.wes.notification.service.UserNotificationPublisher
+import com.soma.wes.notification.service.port.UserNotificationPublisher
 import com.soma.wes.workspace.domain.WorkspaceType
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository

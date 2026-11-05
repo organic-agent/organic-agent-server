@@ -1,6 +1,6 @@
 package com.soma.wes.auth.domain
 
-import com.soma.wes.auth.token.TokenType
+import com.soma.wes.auth.domain.TokenType
 
 @JvmInline
 value class RefreshToken(override val value: String) : Token {

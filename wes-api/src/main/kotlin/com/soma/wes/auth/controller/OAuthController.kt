@@ -5,8 +5,8 @@ import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.auth.dto.request.AuthCodeRequest
 import com.soma.wes.auth.dto.response.LoginResponse
 import com.soma.wes.auth.dto.response.LoginUrlResponse
-import com.soma.wes.auth.service.oauth.OAuthLoginService
-import com.soma.wes.auth.service.oauth.OAuthLoginUrlService
+import com.soma.wes.auth.service.OAuthLoginService
+import com.soma.wes.auth.service.OAuthLoginUrlService
 import jakarta.validation.Valid
 import org.springframework.http.CacheControl
 import org.springframework.http.HttpHeaders

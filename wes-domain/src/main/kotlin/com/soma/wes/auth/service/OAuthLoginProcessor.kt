@@ -1,4 +1,4 @@
-package com.soma.wes.auth.service.oauth
+package com.soma.wes.auth.service
 
 import com.soma.wes.auth.dto.OAuthLoginResultDto
 import com.soma.wes.auth.dto.OAuthUserInfoDto
@@ -10,7 +10,6 @@ import com.soma.wes.workspace.service.WorkspaceService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-
 
 @Service
 class OAuthLoginProcessor(

@@ -1,4 +1,4 @@
-package com.soma.wes.notification.service
+package com.soma.wes.notification.service.port
 
 import com.soma.wes.notification.domain.UserNotificationScope
 import com.soma.wes.notification.domain.UserNotificationType
