@@ -1,4 +1,4 @@
-package com.soma.wes.activity.service
+package com.soma.wes.activity.support
 
 import com.soma.wes.activity.repository.ActivityRepository
 import com.soma.wes.activity.service.port.ActivityBuffer
@@ -22,7 +22,7 @@ import java.time.ZonedDateTime
  * 기존 값과 `greatest()`로 합치는 UPSERT라 한 트랜잭션에서 여러 번 불려도 결과가 같다 — 호출자가 중복을 피하려 분기하지 않는다.
  *
  * [buffer]가 있으면(wes-api, `app.activity.buffer.enabled`) 바로 쓰지 않고 커밋 뒤에 메모장에 남긴다(#286 (f)) — 한 스튜디오의
- * 갤러리 여럿에서 동시에 쓰면 모든 쓰기가 작업공간 한 행을 기다렸다. 그때 시각은 [ActivityFlushService]가 몇 초 뒤에 쓴다.
+ * 갤러리 여럿에서 동시에 쓰면 모든 쓰기가 작업공간 한 행을 기다렸다. 그때 시각은 `ActivityFlushService`가 몇 초 뒤에 쓴다.
  */
 @Service
 class ActivityRecorder(

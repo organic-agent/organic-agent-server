@@ -1,6 +1,6 @@
 package com.soma.wes.gallery.service
 
-import com.soma.wes.activity.service.ActivityRecorder
+import com.soma.wes.activity.support.ActivityRecorder
 import com.soma.wes.gallery.config.GalleryLifecycleProperties
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.dto.request.RequestSelectionIncreaseRequest

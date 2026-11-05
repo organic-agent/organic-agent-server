@@ -1,6 +1,6 @@
 package com.soma.wes.photo.service
 
-import com.soma.wes.activity.service.ActivityRecorder
+import com.soma.wes.activity.support.ActivityRecorder
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.domain.PhotoRating
 import com.soma.wes.photo.dto.request.RatePhotoRequest

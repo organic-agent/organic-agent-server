@@ -1,7 +1,7 @@
 package com.soma.wes.admin.config
 
 import com.soma.wes.activity.repository.ActivityRepository
-import com.soma.wes.activity.service.ActivityRecorder
+import com.soma.wes.activity.support.ActivityRecorder
 import com.soma.wes.billing.support.CouponCodes
 import com.soma.wes.gallery.support.GalleryPhotoQuota
 import com.soma.wes.admin.resource.config.AdminWorkflowExecutorProperties
