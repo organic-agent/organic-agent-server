@@ -179,6 +179,11 @@ class CollabSessionAccess(
         return findGuest(access, guestToken)
     }
 
+    /**
+     * 게스트 토큰으로만 참여자를 찾는다 — 계정 참여자는 계정 닉네임으로 들어오므로 여기서 찾지 않는다.
+     *
+     * 게스트 닉네임 바꾸기(`CollabGuestService.renameGuest`).
+     */
     fun requireGuest(access: CollabAccessDto, guestToken: String?): CollabParticipant =
         findGuest(access, guestToken) ?: throw CollabException(CollabErrorCode.GUEST_NOT_IDENTIFIED)
 

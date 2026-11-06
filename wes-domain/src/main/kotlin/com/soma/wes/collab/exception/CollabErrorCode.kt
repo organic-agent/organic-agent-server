@@ -10,6 +10,10 @@ enum class CollabErrorCode(
 ) : ErrorCode {
 
     INVALID_PHOTO_IDS(HttpStatus.BAD_REQUEST, "COLLAB_400_10", "사진 id는 1~10,000개의 양수로 지정해 주세요."),
+    /**
+     * 협업 세션을 열 때 사진을 정하는 방법(conceptFolderId·photoIds·scope)을 둘 이상 보낸 경우.
+     * 서버가 하나를 골라 쓰거나 합치면 요청자가 기대한 사진 묶음과 달라질 수 있어 거절한다. 셋 다 비우면 빈 세션으로 연다.
+     */
     INVALID_SELECTION_SOURCE(HttpStatus.BAD_REQUEST, "COLLAB_400_11", "컨셉 폴더 연결, 사진 직접 지정, 사진 범위 중 하나만 지정해 주세요."),
 
     /** 범위 종류와 함께 보낸 폴더 목록이 맞지 않는 경우. CONCEPT_FOLDERS에 컨셉 id가 없거나 ALL에 목록이 붙은 식이다. */

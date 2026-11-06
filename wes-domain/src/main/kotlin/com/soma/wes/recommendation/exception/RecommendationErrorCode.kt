@@ -40,6 +40,7 @@ enum class RecommendationErrorCode(
     FOLDER_SET_NOT_FOUND(HttpStatus.NOT_FOUND, "RECOMMENDATION_404_2", "요청한 AI 폴더 세트를 찾을 수 없습니다."),
     DETAIL_FOLDER_NOT_FOUND(HttpStatus.NOT_FOUND, "RECOMMENDATION_404_4", "추천할 세부폴더를 찾을 수 없습니다."),
 
+    /** 추천 요청의 targetCount가 1~500 밖인 경우. 생략은 허용된다 — 그때는 계약 장수 기반 폴더 쿼터로 계산한다. */
     INVALID_QUERY(HttpStatus.BAD_REQUEST, "RECOMMENDATION_400_2", "추천 장수는 1~500이어야 합니다."),
 
     /**

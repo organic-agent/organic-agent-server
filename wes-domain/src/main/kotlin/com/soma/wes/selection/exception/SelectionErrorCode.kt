@@ -42,6 +42,10 @@ enum class SelectionErrorCode(
     /** 한 장도 고르지 않은 앨범을 제출하려는 경우. */
     EMPTY_SELECTION(HttpStatus.BAD_REQUEST, "SELECTION_400_6", "고른 사진이 없어 제출할 수 없습니다."),
 
+    /**
+     * 계약 장수(`maxSelectablePhotoCount`)가 정해진 갤러리에서 담긴 사진 수가 그 장수와 다를 때 제출·요청서 내보내기를 막는다.
+     * 담기는 넘치는 것만 막으므로([MAX_SELECTABLE_PHOTO_COUNT_EXCEEDED]) 모자란 채로 넘기는 것은 여기서 걸린다. 계약 장수가 없으면 보지 않는다.
+     */
     EXACT_TARGET_REQUIRED(HttpStatus.BAD_REQUEST, "SELECTION_400_7", "정확히 목표 장수를 선택해야 전달하거나 내보낼 수 있습니다."),
     PERSONAL_EXPORT_REQUIRED(HttpStatus.CONFLICT, "SELECTION_409_6", "개인 갤러리는 제출 대신 요청서를 내보내야 합니다."),
     SELECTION_ALREADY_EXPORTED(HttpStatus.CONFLICT, "SELECTION_409_5", "요청서를 내보낸 선택 목록은 변경할 수 없습니다."),

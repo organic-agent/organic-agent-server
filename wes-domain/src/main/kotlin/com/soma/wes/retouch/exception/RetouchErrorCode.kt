@@ -79,9 +79,18 @@ enum class RetouchErrorCode(
     /** 아직 작가의 결과가 없는 보정 항목을 선택 앨범에 담으려는 경우. */
     RESULT_NOT_UPLOADED(HttpStatus.BAD_REQUEST, "RETOUCH_400_14", "아직 결과가 없는 보정 항목은 담을 수 없습니다."),
 
+    /**
+     * 보정 요청 정제에서 LLM이 응답은 했지만 약속한 모양이 아닌 경우 — 알 수 없는 status, 또는 READY인데 정리문이 비었거나
+     * 요청문 최대 길이를 넘을 때. 요청이 아니라 상류 모델의 잘못이라 502다. LLM이 꺼져 있거나 미리보기를 읽지 못한 경우는
+     * 이 오류가 아니라 정제를 건너뛴 정상 응답(available = false)이다.
+     */
     REFINEMENT_FAILED(HttpStatus.BAD_GATEWAY, "RETOUCH_502_1", "보정 요청 정제 응답이 올바르지 않습니다."),
 
     INVALID_POINT(HttpStatus.BAD_REQUEST, "RETOUCH_400_15", "보정 지점의 좌표나 요청 내용이 올바르지 않습니다."),
+    /**
+     * 보정 결과 확정(`completeResults`)에 보낸 resultKey 중 S3에 아직 객체가 없는 것이 있는 경우.
+     * PUT이 끝나기 전에 확정을 부르거나 업로드가 실패한 경우다 — 없는 키를 항목에 기록하면 받을 수 없는 보정본이 생긴다.
+     */
     RESULT_UPLOAD_INCOMPLETE(HttpStatus.BAD_REQUEST, "RETOUCH_400_16", "실제 업로드가 완료되지 않은 보정본입니다."),
     PHOTO_NOT_SELECTED(HttpStatus.BAD_REQUEST, "RETOUCH_400_17", "선택 목록에 있는 사진만 보정을 요청할 수 있습니다."),
     DUPLICATE_RESULT(HttpStatus.BAD_REQUEST, "RETOUCH_400_18", "중복된 사진이나 결과 파일이 포함되어 있습니다."),
