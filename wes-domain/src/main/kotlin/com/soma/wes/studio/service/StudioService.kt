@@ -23,6 +23,7 @@ import com.soma.wes.workspace.domain.WorkspaceMember
 import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -56,7 +57,7 @@ class StudioService(
             ),
         )
 
-        val studio = studioRepository.save(
+        val studio = saveUnique(
             Studio.create(
                 userId = workspace.requiredId,
                 name = request.name,
@@ -67,6 +68,17 @@ class StudioService(
         )
         return StudioResponse.from(studio, WorkspaceRole.OWNER)
     }
+
+    /**
+     * 주소 중복의 마지막 문은 유니크 제약(`uk_studios_gallery_url`)이다. 아직 없는 주소라 잠글 행이 없어서,
+     * 동시에 온 같은 주소는 [validateStudio]를 둘 다 지난다. 그 자리에서 바로 INSERT 해 늦은 쪽도 409로 돌려보낸다.
+     */
+    private fun saveUnique(studio: Studio): Studio =
+        try {
+            studioRepository.saveAndFlush(studio)
+        } catch (e: DataIntegrityViolationException) {
+            throw StudioException(StudioErrorCode.GALLERY_URL_DUPLICATED)
+        }
 
     private fun validateStudio(normalizedGalleryUrl: String) {
         if (studioRepository.existsByGalleryUrl(normalizedGalleryUrl)) {
