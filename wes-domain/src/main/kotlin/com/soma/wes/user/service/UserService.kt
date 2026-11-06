@@ -10,7 +10,11 @@ import com.soma.wes.notification.domain.UserNotificationScope
 import com.soma.wes.notification.domain.UserNotificationType
 import com.soma.wes.notification.service.port.UserNotificationPublisher
 import com.soma.wes.studio.repository.StudioRepository
+import com.soma.wes.user.domain.UserColor
+import com.soma.wes.user.dto.request.ChangeUserColorRequest
 import com.soma.wes.user.dto.request.UpdateUserRequest
+import com.soma.wes.user.exception.UserErrorCode
+import com.soma.wes.user.exception.UserException
 import com.soma.wes.user.dto.response.UserResponse
 import com.soma.wes.user.domain.UserWorkspaceKind
 import com.soma.wes.user.dto.response.UserWorkspaceResponse
@@ -47,6 +51,20 @@ class UserService(
     fun update(id: Long, request: UpdateUserRequest): UserResponse {
         val user = userRepository.requireById(id)
         user.updateNickname(request.nickname.trim())
+        return UserResponse.from(user).copy(workspaces = buildWorkspaces(id))
+    }
+
+    /**
+     * 부부 화면의 내 색을 바꾼다. 기기마다 따로 두면 상대 화면과 내 다른 기기에서 안 보이므로 계정에 둔다.
+     * null은 지우기다. 닉네임 수정(PATCH)과 경로를 나눈 것은 "안 보냄"과 "지움"을 가리지 않아도 되게 하려는 것이다.
+     */
+    @Transactional
+    fun changeColor(id: Long, request: ChangeUserColorRequest): UserResponse {
+        val color = request.color?.let { key -> UserColor.fromKey(key) ?: throw UserException(UserErrorCode.INVALID_COLOR) }
+
+        val user = userRepository.requireById(id)
+        user.changeColor(color)
+
         return UserResponse.from(user).copy(workspaces = buildWorkspaces(id))
     }
 

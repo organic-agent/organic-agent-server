@@ -5,14 +5,17 @@ import com.soma.wes.gallery.domain.GalleryMember
 import com.soma.wes.gallery.domain.GalleryStatus
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
+import com.soma.wes.gallery.fixture.PersonalGalleryFixture
 import com.soma.wes.gallery.repository.GalleryMemberRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.notification.repository.UserNotificationRepository
 import com.soma.wes.studio.domain.Studio
 import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.IntegrationTest
+import com.soma.wes.user.dto.request.ChangeUserColorRequest
 import com.soma.wes.user.fixture.UserFixture
 import com.soma.wes.user.repository.UserRepository
+import com.soma.wes.user.service.UserService
 import com.soma.wes.workspace.domain.Workspace
 import com.soma.wes.workspace.domain.WorkspaceMember
 import com.soma.wes.workspace.domain.WorkspaceRole
@@ -38,6 +41,8 @@ class GalleryMemberServiceTest @Autowired constructor(
     private val workspaceMemberRepository: WorkspaceMemberRepository,
     private val notificationRepository: UserNotificationRepository,
     private val userFixture: UserFixture,
+    private val personalGalleryFixture: PersonalGalleryFixture,
+    private val userService: UserService,
 ) {
 
     private var photographerId = 0L
@@ -107,6 +112,34 @@ class GalleryMemberServiceTest @Autowired constructor(
 
             // then
             assertThat(members.map { it.userId }.toSet()).isEqualTo(setOf(groomId, brideId))
+        }
+
+        @Test
+        fun `개인 갤러리 멤버마다 고른 색이 오고 안 고른 사람은 null이다`() {
+            // 상대 색을 읽는 기준이다. null이면 웹이 들어온 순서로 기본 색을 준다.
+            // given
+            val personal = personalGalleryFixture.파트너와_개인_갤러리()
+            userService.changeColor(personal.partnerId, ChangeUserColorRequest(color = "lemon"))
+
+            // when
+            val colorByUser = galleryMemberService.list(personal.galleryId, personal.ownerId).associate { it.userId to it.color }
+
+            // then
+            assertThat(colorByUser).isEqualTo(mapOf(personal.ownerId to null, personal.partnerId to "lemon"))
+        }
+
+        @Test
+        fun `스튜디오 초대 부부도 색이 함께 온다`() {
+            // given
+            val galleryId = saveGallery()
+            join(galleryId, groomId)
+            userService.changeColor(groomId, ChangeUserColorRequest(color = "sage"))
+
+            // when
+            val member = galleryMemberService.list(galleryId, photographerId).single()
+
+            // then
+            assertThat(member.color).isEqualTo("sage")
         }
     }
 

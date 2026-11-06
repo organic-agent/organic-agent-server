@@ -24,6 +24,12 @@ data class UserResponse(
         example = "https://lh3.googleusercontent.com/a/ACg8ocJ_example=s96-c",
     )
     val profileImageUrl: String? = null,
+    @field:Schema(
+        description = "부부 화면에서 이 사람을 칠하는 색 키(소문자). 아직 고르지 않았으면 null이고, 웹이 들어온 순서로 기본 색을 준다.",
+        example = "sky",
+        allowableValues = ["sky", "coral", "apricot", "lemon", "sage", "mint", "rose"],
+    )
+    val color: String? = null,
 ) {
 
     companion object {
@@ -35,6 +41,7 @@ data class UserResponse(
             role = user.role,
             createdAt = user.createdAt,
             profileImageUrl = user.profileImageUrl,
+            color = user.color?.key,
         )
     }
 }

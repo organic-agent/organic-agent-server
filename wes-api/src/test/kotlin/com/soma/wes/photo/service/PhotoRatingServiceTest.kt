@@ -10,7 +10,9 @@ import com.soma.wes.photo.dto.request.RatePhotoRequest
 import com.soma.wes.photo.exception.PhotoErrorCode
 import com.soma.wes.photo.exception.PhotoException
 import com.soma.wes.photo.fixture.PhotoFixture
+import com.soma.wes.photo.repository.PhotoRatingHistoryRepository
 import com.soma.wes.photo.repository.PhotoRatingRepository
+import com.soma.wes.user.service.UserService
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.domain.WorkspaceMember
@@ -45,6 +47,8 @@ class PhotoRatingServiceTest @Autowired constructor(
     private val galleries: GalleryRepository,
     private val workspaceMembers: WorkspaceMemberRepository,
     private val jdbc: JdbcTemplate,
+    private val photoRatingHistoryRepository: PhotoRatingHistoryRepository,
+    private val userService: UserService,
 ) {
 
     private lateinit var fixture: OpenGallery
@@ -324,6 +328,131 @@ class PhotoRatingServiceTest @Autowired constructor(
         verifyPrivacy()
         jdbc.update("update studios set suspended_at = now() where workspace_id = ?", gallery.workspaceId)
         verifyPrivacy()
+    }
+
+    @Nested
+    @DisplayName("별점 기록을 남기고 읽을 때")
+    inner class History {
+
+        @Test
+        fun `별점 행이 실제로 바뀐 때만 한 줄씩 최신순으로 남는다`() {
+            // given
+            val personal = personalGalleryFixture.파트너와_개인_갤러리()
+            val photoId = photoFixture.업로드된_사진(personal.galleryId, count = 1).single()
+            fun rateAs(userId: Long, score: Int) = photoRatingService.rate(personal.galleryId, photoId, userId, RatePhotoRequest(score = score))
+
+            // when
+            rateAs(personal.ownerId, 4) // 처음 매김 → 남김
+            rateAs(personal.ownerId, 5) // 점수 변경 → 남김
+            rateAs(personal.ownerId, 5) // 같은 사람 같은 점수 → 안 남김
+            rateAs(personal.partnerId, 5) // 같은 점수, 사람만 바뀜 → 남김
+            photoRatingService.clear(personal.galleryId, photoId, personal.ownerId) // 지움 → 남김(지운 사람)
+            photoRatingService.clear(personal.galleryId, photoId, personal.ownerId) // 없는 별점 지움 → 안 남김
+            val history = photoRatingService.history(personal.galleryId, photoId, personal.partnerId)
+
+            // then
+            assertThat(history.map { it.score to it.ratedBy }).containsExactly(
+                null to personal.ownerId,
+                5 to personal.partnerId,
+                5 to personal.ownerId,
+                4 to personal.ownerId,
+            )
+            assertThat(history.map { it.id }).isSortedAccordingTo(Comparator.reverseOrder())
+        }
+
+        @Test
+        fun `기록 한 줄마다 별점 변경 번호가 하나 오르고 기록이 없으면 그대로다`() {
+            // 웹은 ratingRevision이 바뀔 때만 열린 사진의 기록을 다시 읽는다. 둘이 어긋나면 기록을 놓친다.
+            // given
+            val photoId = photoFixture.업로드된_사진(fixture.galleryId, count = 1).single()
+            val memberId = fixture.member.requiredId
+            val steps: List<() -> Unit> = listOf(
+                { rate(photoId, score = 3) },
+                { rate(photoId, score = 3) },
+                { rate(photoId, score = 1) },
+                { photoRatingService.clear(fixture.galleryId, photoId, memberId) },
+                { photoRatingService.clear(fixture.galleryId, photoId, memberId) },
+            )
+
+            // when
+            val deltas = steps.map { step ->
+                val revisionBefore = ratingRevision(fixture.galleryId)
+                val historyBefore = photoRatingHistoryRepository.count()
+                step()
+                (ratingRevision(fixture.galleryId) - revisionBefore) to (photoRatingHistoryRepository.count() - historyBefore)
+            }
+
+            // then
+            assertThat(deltas).containsExactly(1L to 1L, 0L to 0L, 1L to 1L, 1L to 1L, 0L to 0L)
+        }
+
+        @Test
+        fun `최신 50건까지만 준다`() {
+            // given
+            val photoId = photoFixture.업로드된_사진(fixture.galleryId, count = 1).single()
+            for (i in 0 until 51) rate(photoId, score = i % 5 + 1)
+
+            // when
+            val history = photoRatingService.history(fixture.galleryId, photoId, fixture.member.requiredId)
+
+            // then
+            assertThat(photoRatingHistoryRepository.count()).isEqualTo(51L)
+            assertThat(history).hasSize(50)
+            assertThat(history.first().score).isEqualTo(50 % 5 + 1)
+        }
+
+        @Test
+        fun `사진을 영구 삭제하거나 매긴 사람이 탈퇴하면 기록도 사라진다`() {
+            // given
+            val personal = personalGalleryFixture.파트너와_개인_갤러리()
+            val (deletedPhotoId, keptPhotoId) = photoFixture.업로드된_사진(personal.galleryId, count = 2)
+            photoRatingService.rate(personal.galleryId, deletedPhotoId, personal.ownerId, RatePhotoRequest(score = 4))
+            photoRatingService.rate(personal.galleryId, keptPhotoId, personal.ownerId, RatePhotoRequest(score = 2))
+            photoRatingService.rate(personal.galleryId, keptPhotoId, personal.partnerId, RatePhotoRequest(score = 5))
+
+            // when
+            jdbc.update("delete from photos where id = ?", deletedPhotoId)
+            userService.delete(personal.partnerId)
+
+            // then
+            val remaining = photoRatingHistoryRepository.findAll()
+            assertThat(remaining.map { it.photoId to it.ratedBy }).containsExactly(keptPhotoId to personal.ownerId)
+        }
+
+        @Test
+        fun `작가와 관계없는 사용자는 기록을 읽을 수 없다`() {
+            // given
+            val photoId = photoFixture.업로드된_사진(fixture.galleryId, count = 1).single()
+            val stranger = userFixture.사용자()
+
+            // when & then
+            for (userId in listOf(fixture.photographer.requiredId, stranger.requiredId)) {
+                assertThatThrownBy { photoRatingService.history(fixture.galleryId, photoId, userId) }
+                    .isInstanceOf(GalleryException::class.java)
+                    .extracting("errorCode").isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+            }
+        }
+
+        @Test
+        fun `다른 갤러리의 사진과 휴지통 사진은 없는 사진이다`() {
+            // given
+            val trashedId = photoFixture.업로드된_사진(fixture.galleryId, count = 1).single()
+            rate(trashedId, score = 4)
+            jdbc.update("update photos set deleted_at = current_timestamp where id = ?", trashedId)
+            val other = galleryFixture.멤버와_열린_갤러리()
+            val otherPhotoId = photoFixture.업로드된_사진(other.galleryId, count = 1).single()
+
+            // when & then
+            for (photoId in listOf(trashedId, otherPhotoId)) {
+                assertThatThrownBy { photoRatingService.history(fixture.galleryId, photoId, fixture.member.requiredId) }
+                    .isInstanceOf(PhotoException::class.java)
+                    .extracting("errorCode").isEqualTo(PhotoErrorCode.PHOTO_NOT_FOUND)
+            }
+        }
+
+        private fun ratingRevision(galleryId: Long): Long =
+            jdbc.queryForList("select rating_revision from gallery_selection_sync where gallery_id = ?", Long::class.java, galleryId)
+                .firstOrNull() ?: 0L
     }
 
     @Nested

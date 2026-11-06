@@ -43,6 +43,12 @@ class SwaggerDocsContractTest @Autowired constructor(
                 jsonPath("$.paths['/api/v1/galleries/{galleryId}/photo-ratings'].get.summary") { value("갤러리 별점 전체 목록") }
                 jsonPath("$.components.schemas.PhotoResponse.properties.ratedBy.example") { exists() }
                 jsonPath("$.components.schemas.PhotoResponse.properties.ratedAt.example") { exists() }
+                jsonPath("$.paths['/api/v1/users/me/color'].put.summary") { value("내 색 바꾸기") }
+                jsonPath("$.paths['/api/v1/galleries/{galleryId}/photos/{photoId}/rating-history'].get.summary") { value("사진 별점 기록") }
+                jsonPath("$.components.schemas.ChangeUserColorRequest.properties.color.enum.length()") { value(7) }
+                jsonPath("$.components.schemas.UserResponse.properties.color.example") { value("sky") }
+                jsonPath("$.components.schemas.GalleryMemberResponse.properties.color.example") { value("coral") }
+                jsonPath("$.components.schemas.PhotoRatingHistoryResponse.properties.score.example") { exists() }
             }
     }
 
