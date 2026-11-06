@@ -37,6 +37,6 @@ class FolderConfirmationService(
         }
         gallery.markSelectionInProgress()
         activityRecorder.recordGallery(galleryId)
-        return result
+        return viewAssembler.withoutExcluded(galleryId, result)
     }
 }

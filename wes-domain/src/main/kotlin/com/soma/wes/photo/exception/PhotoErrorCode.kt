@@ -42,6 +42,15 @@ enum class PhotoErrorCode(
     /** URL 재발급은 아직 올라오지 않은(PENDING) 사진에만 뜻이 있다. 이미 올라온 사진에 새 PUT URL을 주면 원본이 덮인다. */
     PHOTO_ALREADY_UPLOADED(HttpStatus.CONFLICT, "PHOTO_409_1", "이미 업로드가 끝난 사진입니다."),
 
+    /** 셀렉 제외·복원 요청이 비어 있는 경우. */
+    EMPTY_EXCLUSION_IDS(HttpStatus.BAD_REQUEST, "PHOTO_400_10", "사진을 하나 이상 지정해야 합니다."),
+
+    /** 업로드가 끝나지 않은 사진은 셀렉 제외 대상으로 삼지 않는다. */
+    EXCLUSION_NOT_UPLOADED(HttpStatus.BAD_REQUEST, "PHOTO_400_11", "업로드가 끝난 사진만 제외하거나 복원할 수 있습니다."),
+
+    /** 선택 확정 이후에는 기존 재선택 절차를 먼저 거쳐야 한다. */
+    EXCLUSIONS_LOCKED(HttpStatus.CONFLICT, "PHOTO_409_2", "선택을 다시 연 뒤 사진을 제외하거나 복원할 수 있습니다."),
+
     // PHOTO_400_5는 페이지 번호 검증용이었으나 com.soma.wes.global.page.PageRequests가
     // 거절 대신 절삭하도록 바뀌며 사라졌다. 뒤 번호를 당기면 살아 있는 코드의 계약이
     // 바뀌므로 구멍을 그대로 둔다.

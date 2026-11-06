@@ -3,15 +3,52 @@ package com.soma.wes.photo.repository
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoStatus
 import java.time.Instant
+import java.time.ZonedDateTime
 import jakarta.persistence.LockModeType
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Lock
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 
 interface PhotoRepository : JpaRepository<Photo, Long> {
+
+    @Query("select p.id from Photo p where p.galleryId = :galleryId and p.excludedAt is null")
+    fun findVisibleIdsByGalleryId(galleryId: Long): List<Long>
+
+    fun findAllByGalleryIdAndExcludedAtIsNull(galleryId: Long, pageable: Pageable): Page<Photo>
+
+    fun findAllByGalleryIdAndStatusAndExcludedAtIsNull(galleryId: Long, status: PhotoStatus, pageable: Pageable): Page<Photo>
+
+    fun findAllByGalleryIdAndExcludedAtIsNotNull(galleryId: Long, pageable: Pageable): Page<Photo>
+
+    fun findAllByGalleryIdAndExcludedAtIsNullOrderByDisplayOrderAsc(galleryId: Long): List<Photo>
+
+    fun findAllByGalleryIdAndIdInAndExcludedAtIsNull(galleryId: Long, ids: Collection<Long>): List<Photo>
+
+    /** 갤러리 잠금 뒤 id 순서로 사진도 잠가 공유 추가·실제 삭제와의 경쟁을 직렬화한다. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Photo p where p.galleryId = :galleryId and p.id in :ids order by p.id")
+    fun findAllWithLockByGalleryIdAndIdIn(galleryId: Long, ids: Collection<Long>): List<Photo>
+
+    /** 호출자가 갤러리·사진을 잠그고 전체 배치를 검증한 뒤 호출한다. */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        update Photo p set p.excludedAt = :at, p.excludedBy = :userId, p.updatedAt = :at, p.version = p.version + 1
+        where p.galleryId = :galleryId and p.id in :ids and p.excludedAt is null
+    """)
+    fun exclude(galleryId: Long, ids: Collection<Long>, userId: Long, at: ZonedDateTime): Int
+
+    /** 호출자가 갤러리·사진을 잠그고 검증한다. 이미 복원된 행은 갱신하지 않아 변경 번호도 유지한다. */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        update Photo p set p.excludedAt = null, p.excludedBy = null, p.updatedAt = :at, p.version = p.version + 1
+        where p.galleryId = :galleryId and p.id in :ids and p.excludedAt is not null
+    """)
+    fun restoreExclusions(galleryId: Long, ids: Collection<Long>, at: ZonedDateTime): Int
+
 
     fun findAllByGalleryIdOrderByDisplayOrderAsc(galleryId: Long): List<Photo>
 
@@ -33,11 +70,13 @@ interface PhotoRepository : JpaRepository<Photo, Long> {
         value = """
             SELECT p FROM Photo p
             WHERE p.galleryId = :galleryId
+              AND p.excludedAt IS NULL
               AND EXISTS (SELECT 1 FROM PhotoRating r WHERE r.photoId = p.id AND r.score >= :minScore)
         """,
         countQuery = """
             SELECT COUNT(p) FROM Photo p
             WHERE p.galleryId = :galleryId
+              AND p.excludedAt IS NULL
               AND EXISTS (SELECT 1 FROM PhotoRating r WHERE r.photoId = p.id AND r.score >= :minScore)
         """,
     )
@@ -53,12 +92,14 @@ interface PhotoRepository : JpaRepository<Photo, Long> {
             SELECT p FROM Photo p
             WHERE p.galleryId = :galleryId
               AND p.status = :status
+              AND p.excludedAt IS NULL
               AND EXISTS (SELECT 1 FROM PhotoRating r WHERE r.photoId = p.id AND r.score >= :minScore)
         """,
         countQuery = """
             SELECT COUNT(p) FROM Photo p
             WHERE p.galleryId = :galleryId
               AND p.status = :status
+              AND p.excludedAt IS NULL
               AND EXISTS (SELECT 1 FROM PhotoRating r WHERE r.photoId = p.id AND r.score >= :minScore)
         """,
     )

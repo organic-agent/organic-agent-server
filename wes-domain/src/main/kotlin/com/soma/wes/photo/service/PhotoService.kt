@@ -348,10 +348,10 @@ class PhotoService(
         status != null && minScore != null ->
             photoRepository.findAllByGalleryIdAndStatusAndScoreAtLeast(galleryId, status, minScore, pageable)
         status != null ->
-            photoRepository.findAllByGalleryIdAndStatus(galleryId, status, pageable)
+            photoRepository.findAllByGalleryIdAndStatusAndExcludedAtIsNull(galleryId, status, pageable)
         minScore != null ->
             photoRepository.findAllByGalleryIdAndScoreAtLeast(galleryId, minScore, pageable)
-        else -> photoRepository.findAllByGalleryId(galleryId, pageable)
+        else -> photoRepository.findAllByGalleryIdAndExcludedAtIsNull(galleryId, pageable)
     }
 
     private fun pageableOf(page: Int, size: Int): PageRequest =

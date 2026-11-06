@@ -46,6 +46,12 @@ data class PhotoResponse(
 
     @field:Schema(description = "마지막 별점 수정 시각. 별점이 없거나 작가·게스트 응답이면 null", example = "2026-11-02T09:30:00Z")
     val ratedAt: ZonedDateTime? = null,
+
+    @field:Schema(description = "셀렉 제외 시각. 실제 삭제·보관 만료와 무관하며 복원하면 null", example = "2026-11-02T09:30:00Z")
+    val excludedAt: ZonedDateTime? = null,
+
+    @field:Schema(description = "셀렉에서 제외한 참여자 id. 복원하면 null", example = "42")
+    val excludedBy: Long? = null,
 ) {
 
     companion object {
@@ -70,6 +76,8 @@ data class PhotoResponse(
             memo = memo,
             ratedBy = ratedBy,
             ratedAt = ratedAt,
+            excludedAt = photo.excludedAt,
+            excludedBy = photo.excludedBy,
         )
     }
 }

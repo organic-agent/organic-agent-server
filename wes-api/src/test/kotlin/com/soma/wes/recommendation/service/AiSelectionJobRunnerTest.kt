@@ -33,6 +33,7 @@ import org.springframework.jdbc.core.JdbcTemplate
 
 @IntegrationTest
 class AiSelectionJobRunnerTest @Autowired constructor(
+    private val exclusions: com.soma.wes.photo.service.PhotoExclusionService,
     private val runner: AiSelectionJobRunner,
     private val recovery: AiSelectionJobRecovery,
     private val aiRecommendationService: AiRecommendationService,
@@ -102,6 +103,45 @@ class AiSelectionJobRunnerTest @Autowired constructor(
 
     private fun requestJob(): Long =
         aiRecommendationService.request(fixture.galleryId, fixture.member.id!!, AiRecommendationRequest()).jobId
+
+    @Test
+    fun `제외한 사진은 전체와 폴더 추천의 다음 후보에서 빠지고 모두 제외해도 빈 결과로 끝난다`() {
+        // given
+        val w = world()
+        executor.reset()
+        val hidden = w.beach.take(2) + w.garden.take(1)
+        exclusions.exclude(fixture.galleryId, fixture.member.requiredId,
+            com.soma.wes.photo.dto.request.ChangePhotoExclusionsRequest(photoIds = hidden))
+
+        // when
+        val job = aiRecommendationService.request(fixture.galleryId, fixture.member.requiredId, AiRecommendationRequest())
+        runner.run(job.jobId)
+
+        // then
+        assertThat(aiSelectionJobRepository.findById(job.jobId).orElseThrow().status).isEqualTo(AiJobStatus.DONE)
+        assertThat(aiRecommendationService.list(fixture.galleryId, fixture.member.requiredId, null).photos.map { it.photo.photoId })
+            .doesNotContainAnyElementsOf(hidden)
+
+        // when
+        val folderJob = aiRecommendationService.request(fixture.galleryId, fixture.member.requiredId,
+            AiRecommendationRequest(detailFolderId = w.beachFolderId))
+        runner.run(folderJob.jobId)
+
+        // then
+        assertThat(aiSelectionJobRepository.findById(folderJob.jobId).orElseThrow().status).isEqualTo(AiJobStatus.DONE)
+        assertThat(aiRecommendationService.list(fixture.galleryId, fixture.member.requiredId, w.beachFolderId).photos.map { it.photo.photoId })
+            .doesNotContainAnyElementsOf(hidden)
+
+        // when
+        exclusions.exclude(fixture.galleryId, fixture.member.requiredId,
+            com.soma.wes.photo.dto.request.ChangePhotoExclusionsRequest(photoIds = w.beach + w.garden + w.unfiled))
+        val emptyJob = aiRecommendationService.request(fixture.galleryId, fixture.member.requiredId, AiRecommendationRequest())
+        runner.run(emptyJob.jobId)
+
+        // then
+        assertThat(aiSelectionJobRepository.findById(emptyJob.jobId).orElseThrow().status).isEqualTo(AiJobStatus.DONE)
+        assertThat(aiRecommendationService.list(fixture.galleryId, fixture.member.requiredId, null).photos).isEmpty()
+    }
 
     @Nested
     @DisplayName("장수를 지정할 때")

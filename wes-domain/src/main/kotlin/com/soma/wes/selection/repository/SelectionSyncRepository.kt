@@ -11,7 +11,7 @@ class SelectionSyncRepository(
 ) {
     fun findByGalleryId(galleryId: Long): SelectionSyncRevision = jdbc.sql(
         """
-        SELECT selection_revision, rating_revision
+        SELECT selection_revision, rating_revision, exclusion_revision
         FROM gallery_selection_sync WHERE gallery_id = :galleryId
         """.trimIndent(),
     ).param("galleryId", galleryId)
@@ -19,6 +19,7 @@ class SelectionSyncRepository(
             SelectionSyncRevision(
                 selectionRevision = rs.getLong("selection_revision"),
                 ratingRevision = rs.getLong("rating_revision"),
+                exclusionRevision = rs.getLong("exclusion_revision"),
             )
         }.optional().orElse(SelectionSyncRevision(selectionRevision = 0, ratingRevision = 0))
 }

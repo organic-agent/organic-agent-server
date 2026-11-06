@@ -8,6 +8,19 @@ import org.springframework.data.repository.query.Param
 
 // [GLOSSARY-1 2026-09-27] PhotoFolderAssignmentRepository → DetailFolderAssignmentRepository (용어집 D9)
 interface DetailFolderAssignmentRepository : JpaRepository<DetailFolderAssignment, Long> {
+
+    @Query("""
+        select a from DetailFolderAssignment a, Photo p
+        where a.photoId = p.id and a.detailFolderId in :detailFolderIds and p.excludedAt is null
+    """)
+    fun findVisibleByDetailFolderIdIn(detailFolderIds: Collection<Long>): List<DetailFolderAssignment>
+
+    @Query("""
+        select a from DetailFolderAssignment a, Photo p
+        where a.photoId = p.id and a.detailFolderId = :detailFolderId and p.excludedAt is null
+    """)
+    fun findVisibleByDetailFolderId(detailFolderId: Long): List<DetailFolderAssignment>
+
     fun findAllByDetailFolderId(detailFolderId: Long): List<DetailFolderAssignment>
     fun findAllByDetailFolderIdIn(detailFolderIds: Collection<Long>): List<DetailFolderAssignment>
     fun findAllByPhotoIdIn(photoIds: Collection<Long>): List<DetailFolderAssignment>

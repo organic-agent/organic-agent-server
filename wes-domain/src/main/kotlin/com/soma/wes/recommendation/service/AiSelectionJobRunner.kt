@@ -100,7 +100,7 @@ class AiSelectionJobRunner(
         val selection = photoSelectionRepository.findById(job.selectionId).orElseThrow()
         val notRejected = aiRecommendationRepository.findAllBySelectionIdAndRound(job.selectionId, round)
             .filter { it.rejectedAt == null }
-        val livePhotoIds = photoRepository.findAllByGalleryIdAndIdIn(selection.galleryId, notRejected.map { it.photoId })
+        val livePhotoIds = photoRepository.findAllByGalleryIdAndIdInAndExcludedAtIsNull(selection.galleryId, notRejected.map { it.photoId })
             .mapTo(mutableSetOf()) { it.requiredId }
         val recommendations = notRejected.filter { it.photoId in livePhotoIds }
         return SavedRound(
@@ -140,9 +140,9 @@ class AiSelectionJobRunner(
 
         // 갤러리 전체는 벡터 없는 요약으로 읽는다 — 점수 정규화·피사체 통계가 전체 행을 보지만 벡터는 안 본다.
         val summaryById = photoAnalysisRepository.findAllAnalyzedSummaryByGalleryId(galleryId).associateBy { it.photoId }
-        val rows = photoRepository.findAllByGalleryIdOrderByDisplayOrderAsc(galleryId).sortedWith(Photo.DISPLAY_ORDER)
+        val rows = photoRepository.findAllByGalleryIdAndExcludedAtIsNullOrderByDisplayOrderAsc(galleryId).sortedWith(Photo.DISPLAY_ORDER)
             .mapNotNull { photo -> summaryById[photo.requiredId]?.let { RecommendablePhotoDto.from(it, photo.metadata?.takenAt) } }
-        if (rows.isEmpty()) throw IllegalStateException("분석 결과가 없다: gallery=$galleryId")
+        if (rows.isEmpty() && summaryById.isEmpty()) throw IllegalStateException("분석 결과가 없다: gallery=$galleryId")
 
         // 범위. 폴더 하나면 그 폴더만 대상이되, 쿼터(폴더별 n장)는 전체 라운드였을 때와 같은 몫으로 정한다 —
         // 그래야 폴더 하나만 다시 받아도 장수가 널뛰지 않는다. 세트 폴더는 그 몫의 재료로만 읽는다.

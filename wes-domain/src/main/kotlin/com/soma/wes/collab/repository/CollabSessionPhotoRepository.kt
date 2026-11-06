@@ -18,7 +18,7 @@ interface CollabSessionPhotoRepository : JpaRepository<CollabSessionPhoto, Long>
     @Query(value = """
         SELECT p.id FROM photos p
         WHERE p.gallery_id = :galleryId AND p.id IN (:photoIds)
-          AND p.deleted_at IS NULL AND p.status <> 'PENDING'
+          AND p.deleted_at IS NULL AND p.excluded_at IS NULL AND p.status <> 'PENDING'
         ORDER BY p.id
         FOR UPDATE
     """, nativeQuery = true)
@@ -34,12 +34,13 @@ interface CollabSessionPhotoRepository : JpaRepository<CollabSessionPhoto, Long>
         SELECT :sessionId, p.gallery_id, p.id, 0, :now, :now
         FROM photos p
         WHERE p.gallery_id = :galleryId AND p.id IN (:photoIds)
+          AND p.deleted_at IS NULL AND p.excluded_at IS NULL AND p.status <> 'PENDING'
         ON CONFLICT (collab_session_id, photo_id) DO NOTHING
     """, nativeQuery = true)
     fun insertMemberships(sessionId: Long, galleryId: Long, photoIds: Collection<Long>, now: ZonedDateTime): Int
 
     /** 범위 ALL. 걸러내기와 잠금은 [lockShareablePhotoIds]가 한다. */
-    @Query(value = "SELECT p.id FROM photos p WHERE p.gallery_id = :galleryId AND p.deleted_at IS NULL", nativeQuery = true)
+    @Query(value = "SELECT p.id FROM photos p WHERE p.gallery_id = :galleryId AND p.deleted_at IS NULL AND p.excluded_at IS NULL", nativeQuery = true)
     fun findGalleryPhotoIds(galleryId: Long): List<Long>
 
     /** 범위 CONCEPT_FOLDERS. 살아 있는 세부 폴더에 배정된 사진만, 여러 컨셉에 걸쳐도 한 번만. */
@@ -73,7 +74,7 @@ interface CollabSessionPhotoRepository : JpaRepository<CollabSessionPhoto, Long>
         FROM collab_sessions s
         JOIN galleries g ON g.id = s.gallery_id AND g.deleted_at IS NULL
         JOIN collab_session_photos m ON m.collab_session_id = s.id AND m.gallery_id = s.gallery_id
-        JOIN photos p ON p.id = m.photo_id AND p.deleted_at IS NULL AND p.status <> 'PENDING'
+        JOIN photos p ON p.id = m.photo_id AND p.deleted_at IS NULL AND p.excluded_at IS NULL AND p.status <> 'PENDING'
         WHERE s.id IN (:sessionIds) AND s.deleted_at IS NULL
         ORDER BY s.id, p.display_order, p.id
     """, nativeQuery = true)
