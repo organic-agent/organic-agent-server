@@ -8,11 +8,11 @@
 
 | 열 | 내용 |
 |---|---|
-| ID | 영역 접두사 + 번호. KT Kotlin 관용구 · LY 레이어·패키지·참조 방향(서비스·서포트 책임 포함) · EP 입구 · TX 트랜잭션 · DM 도메인·엔티티 · DTO · CT 컨트롤러 · EX 예외·에러코드 · RP repository·ORM · INF 인프라·포트 · MG 마이그레이션 · TS 테스트 · CM 공통 포맷·네이밍·주석 · GIT · LT(`scripts/load`). ID에 소문자(`KT-s1`)가 든 것은 권장(부록 A) |
+| ID | 영역 접두사 + 번호. KT Kotlin 관용구 · LY 레이어·패키지·참조 방향(서비스·서포트 책임 포함) · EP 입구 · TX 트랜잭션 · DM 도메인·엔티티 · DTO · CT 컨트롤러 · EX 예외·에러코드 · RP repository·ORM · INF 인프라·포트 · MG 마이그레이션 · TS 테스트 · CM 공통 포맷·네이밍·주석 · GIT · LT(`scripts/load`) · SC(`scripts/` 규격). ID에 소문자(`KT-s1`)가 든 것은 권장(부록 A) |
 | 출처 | 마커가 붙은 규칙 파일(`.claude/` 기준 경로). `CLAUDE.md`의 규칙도 마커가 붙어 있다 |
 | 찾는 법 | **G** 한 줄 grep/ripgrep 명령 · **S** 스크립트·여러 줄 명령(`scripts/audit_scan.py` 또는 셸 반복문) · **J** 코드를 읽고 판단(무엇을 보면 되는지 한 줄) · **G→J** 명령이 후보를 모으고 담당 sonnet이 읽어 판단 |
 | 강제 | **H** 편집 시 hook으로 막을 수 있음(파일 하나만 보고 기계 판정) · **T** 테스트/CI로(여러 파일·구조 대조) · **R** 글 규칙으로만(판단 필요) |
-| 담당 | `script` = G·S 규칙 — 명령 출력 줄이 곧 위반이다 · `test` = 저장소의 테스트가 지킨다(CI `./gradlew test`, 찾는 법에 테스트 클래스 이름) — 스크립트·sonnet은 보지 않는다 · `sonnet-a` 레이어·입구·트랜잭션(LY·EP·TX) · `sonnet-b` 도메인·DTO·예외·Kotlin 판단형(DM·DTO·EX·KT) · `sonnet-c` 저장·인프라·마이그레이션(RP·INF·MG) · `sonnet-d` 컨트롤러·공통·git·load(CT·CM·GIT·LT) · `sonnet-e` 테스트(TS) |
+| 담당 | `script` = G·S 규칙 — 명령 출력 줄이 곧 위반이다 · `test` = 저장소의 테스트가 지킨다(CI `./gradlew test`, 찾는 법에 테스트 클래스 이름) — 스크립트·sonnet은 보지 않는다 · `sonnet-a` 레이어·입구·트랜잭션(LY·EP·TX) · `sonnet-b` 도메인·DTO·예외·Kotlin 판단형(DM·DTO·EX·KT) · `sonnet-c` 저장·인프라·마이그레이션(RP·INF·MG) · `sonnet-d` 컨트롤러·공통·git·load·scripts(CT·CM·GIT·LT·SC) · `sonnet-e` 테스트(TS) |
 
 ### 명령 규약
 
@@ -762,29 +762,66 @@ git branch --format='%(refname:short)' | rg -v '^(develop|main)$' | rg -v '^(fea
 
 </details>
 
-### LT — 부하 측정 스크립트 (`scripts/load`) (4)
+### LT — 부하 측정 스크립트 (`scripts/load`) (3)
 
 | ID | 출처 | 찾는 법 | 강제 | 담당 |
 |---|---|---|---|---|
 | LT-01 | rules/load-test.md | **G→J** `lib/report.sh`를 읽지 않는 `scripts/load/**/*.sh` (규칙이 말한 보조 도구 제외, 남은 후보는 보조 도구인지 읽어 가른다) | T | sonnet-d |
-| LT-02 | rules/load-test.md | **G** `wes-prod`·`/wes/prod`·`easyselect.kr`·`wes-dev`·`/wes/dev` 리터럴 (주석·`lib/` 제외) | H | script |
-| LT-03 | rules/load-test.md | **G** `scripts/load/<하위>/`에 README.md 없음 | T | script |
+| LT-03 | rules/load-test.md | **G** `scripts/load/<하위>/`에 README.md 없음 (기능 이름인지·만든 이슈를 적었는지는 리뷰) | T | script |
 | LT-04 | rules/load-test.md | **G** 하위 폴더 스크립트의 `source scripts/load/lib/report.sh`(저장소 루트 상대 경로) | H | script |
 
-<details><summary>LT 명령 (4)</summary>
+<details><summary>LT 명령 (3)</summary>
 
 ```bash
 # LT-01
 rg --files-without-match 'lib/report\.sh' scripts/load/*.sh scripts/load/*/*.sh | rg -v 'clone-gallery-photos|replay'
-
-# LT-02
-rg -n 'wes-prod|/wes/prod|easyselect\.kr|wes-dev|/wes/dev' scripts/load --glob '*.sh' --glob '*.py' --glob '*.sql' --glob '!**/lib/**' --glob '!**/.venv/**' | rg -v '^[^:]+:[0-9]+:\s*#'
 
 # LT-03
 for d in scripts/load/*/; do case $d in */lib/|*/.venv/) continue;; esac; [ -f ${d}README.md ] || echo $d; done
 
 # LT-04
 rg -n '^\s*(source|\.) .*lib/report\.sh' scripts/load/*/*.sh | rg -v 'dirname'
+
+```
+
+</details>
+
+### SC — 스크립트 규격 (`scripts/`) (8)
+
+| ID | 출처 | 찾는 법 | 강제 | 담당 |
+|---|---|---|---|---|
+| SC-01 | rules/scripts.md | **G** `scripts/` 바로 아래의 파일 | H | script |
+| SC-02 | rules/scripts.md | **G** 환경 인자·비교로 쓰인 `remote` (`lib/env.sh`의 오류 분기 제외) | H | script |
+| SC-03 | rules/scripts.md | **G** 환경 변수에 환경 이름을 기본값으로 대입(`TARGET="local"` 등) | H | script |
+| SC-04 | rules/scripts.md | **G** `dev-tools`·`local`·`load` 안의 `wes-prod`·`/wes/{prod,dev,local}`·`easyselect.kr`·`wes-dev`·`15432/3` 리터럴 (주석 제외 — 값은 `lib/env.sh`에만) | H | script |
+| SC-05 | rules/scripts.md | **S** 맨 위 15줄에 `# 대상:`·`# 바꾸는 것:`·사용 예가 없는 `*.sh`·`*.rb` | H | script |
+| SC-06 | rules/scripts.md | **S** 어느 bash도 부르지 않는 파이썬·js·sql (`ci/` 제외) | T | script |
+| SC-07 | rules/scripts.md | **G** `scripts/ci`에서 줄 맨 앞의 `aws`·`curl`·`wget` 호출 | H | script |
+| SC-08 | rules/scripts.md | **J** `scripts/local/lambda/*.sh` 이름이 AI repo 최상위 모듈(운영 Lambda 함수)과 같고 인자가 페이로드 키 그대로인지 · 앱 설정 `local-script-dir`·`LocalScoreWorkerPool` 경로와 맞는지 | R | sonnet-d |
+
+<details><summary>SC 명령 (7)</summary>
+
+```bash
+# SC-01
+rg --files --max-depth 1 scripts
+
+# SC-02
+rg -n -P '(?<![\w-])remote(?=\s*[|)])|\|\s*remote\b|"remote"' scripts --glob '*.sh' --glob '!**/lib/env.sh' --glob '!**/.venv/**'
+
+# SC-03
+rg -n -P '^\s*(ENV_TARGET|REPORT_TARGET|TARGET|TARGET_ENV)="(local|dev|prod|remote)"' scripts --glob '*.sh'
+
+# SC-04
+rg -n 'wes-prod|/wes/(prod|dev|local)\b|easyselect\.kr|wes-dev|1543[23]' scripts/dev-tools scripts/local scripts/load --glob '*.sh' --glob '*.py' --glob '*.sql' --glob '*.js' --glob '!**/.venv/**' | rg -v '^[^:]+:[0-9]+:\s*(#|//)'
+
+# SC-05
+for f in $(rg --files scripts -g '*.sh' -g '*.rb' -g '!**/.venv/**'); do head -15 "$f" | rg -q '^# 대상:' && head -15 "$f" | rg -q '^# 바꾸는 것:' && head -15 "$f" | rg -q '^#\s+(\(CD 전용\) |bash |ruby |source |\. |scripts/|python3 )' || echo "$f"; done
+
+# SC-06
+for f in $(rg --files scripts -g '*.py' -g '*.js' -g '*.sql' -g '!ci/**' -g '!**/.venv/**'); do rg -q -F "$(basename "$f")" scripts -g '*.sh' || echo "$f"; done
+
+# SC-07
+rg -n -P '^\s*(aws|curl|wget)\s' scripts/ci
 
 ```
 
@@ -808,10 +845,11 @@ rg -n '^\s*(source|\.) .*lib/report\.sh' scripts/load/*/*.sh | rg -v 'dirname'
 | TS | 23 | 15 | 5 | 1 | 2 | 18 | 2 | 3 | 20 | sonnet-e 3 |
 | CM | 10 | 2 | 1 | 4 | 3 | 4 | 0 | 6 | 3 | sonnet-d 7 |
 | GIT | 2 | 2 | 0 | 0 | 0 | 2 | 0 | 0 | 2 | sonnet-d 0 |
-| LT | 4 | 3 | 0 | 1 | 0 | 2 | 2 | 0 | 3 | sonnet-d 1 |
-| **합계** | **169** | 82 | 22 | 26 | 39 | 87 | 28 | 54 | 104 | |
+| LT | 3 | 2 | 0 | 1 | 0 | 1 | 2 | 0 | 2 | sonnet-d 1 |
+| SC | 8 | 5 | 2 | 0 | 1 | 6 | 1 | 1 | 7 | sonnet-d 1 |
+| **합계** | **176** | 86 | 24 | 26 | 40 | 92 | 29 | 55 | 110 | |
 
-담당별: script 104 · sonnet-a 16 · sonnet-b 23 · sonnet-c 12 · sonnet-d 11 · sonnet-e 3  (권장 부록 A 15개는 별도)
+담당별: script 110 · sonnet-a 16 · sonnet-b 23 · sonnet-c 12 · sonnet-d 12 · sonnet-e 3  (권장 부록 A 15개는 별도)
 
 ## 부록 A. 권장(should) 규칙의 검사
 

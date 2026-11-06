@@ -22,7 +22,6 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest
 
-
 @Component
 class S3PhotoStorage(
     private val s3Client: S3Client,

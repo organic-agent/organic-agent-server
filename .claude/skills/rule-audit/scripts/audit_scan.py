@@ -265,10 +265,10 @@ def truncate_list():
                 t = t.replace('public.', ''); dropped.add(t); created.discard(t)
         for m in re.finditer(r'ALTER TABLE (?:ONLY )?(?:public\.)?(\w+)\s+RENAME TO (\w+)', s, re.I):
             created.discard(m.group(1)); created.add(m.group(2))
-    script = read(os.path.join(ROOT, 'scripts/reset-test-data.sh'))
+    script = read(os.path.join(ROOT, 'scripts/dev-tools/reset-test-data.sh'))
     listed = set(re.findall(r'\b([a-z_]+)\b', ' '.join(re.findall(r'TABLES="[^"]*"', script))))
     for t in sorted(created - listed - {'flyway_schema_history', 'scheduler_leader_lease'}):
-        print(f'scripts/reset-test-data.sh:1: TRUNCATE 목록에 {t} 가 없다')
+        print(f'scripts/dev-tools/reset-test-data.sh:1: TRUNCATE 목록에 {t} 가 없다')
 
 
 def errorcode_assert():

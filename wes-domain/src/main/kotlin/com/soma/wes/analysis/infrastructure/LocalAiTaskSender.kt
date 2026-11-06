@@ -13,7 +13,7 @@ import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Component
 
 /**
- * 로컬 프로필의 실행기 — Lambda 함수 하나가 `scripts/lambda/<함수>.sh` 하나다. 이름은 AI repo 최상위 모듈(embedder·score·
+ * 로컬 프로필의 실행기 — Lambda 함수 하나가 `scripts/local/lambda/<함수>.sh` 하나다. 이름은 AI repo 최상위 모듈(embedder·score·
  * categorize)과 같고, 인자는 Lambda 페이로드 키를 그대로 옮긴 것이다(`--gallery-id`, `--photo-ids`, `--job-id`, `--concept-count`).
  * 운영의 EVENT 호출과 같은 의미다: 프로세스를 시작만 하고 기다리지 않는다. 표준 출력은 `/tmp/wes-lambda-<함수>-<galleryId>.log`.
  *

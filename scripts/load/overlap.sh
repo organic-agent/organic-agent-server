@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # 운영에서 업로드가 실제로 얼마나 겹쳤나 — "같은 시간 창 안에 업로드를 시작한 큰 갤러리 수". 읽기 전용.
+# 대상: local | dev | prod
+# 바꾸는 것: 없음(읽기 전용)
 # 계획: docs/plans/2026-10-06/concurrent-upload-load/02-baseline.md 4장(D5 재검토).
 #
-#   scripts/load/overlap.sh [local|remote|dev] --label D5 [--window 10min] [--min-photos 500] [--top 20]
+#   scripts/load/overlap.sh local|dev|prod --label D5 [--window 10min] [--min-photos 500] [--top 20]
 set -euo pipefail
 source "$(dirname "$0")/lib/report.sh"
 report_parse_common "$@"; set -- ${REPORT_REST[@]+"${REPORT_REST[@]}"}
@@ -13,7 +15,7 @@ while [ $# -gt 0 ]; do
     --window) WINDOW="$2"; shift ;;
     --min-photos) MIN_PHOTOS="$2"; shift ;;
     --top) TOP="$2"; shift ;;
-    -h|--help) sed -n 2,5p "$0"; exit 0 ;;
+    -h|--help) sed -n 2,7p "$0"; exit 0 ;;
     *) echo "알 수 없는 인자: $1" >&2; exit 1 ;;
   esac
   shift

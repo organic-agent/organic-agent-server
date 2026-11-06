@@ -11,7 +11,6 @@ import jakarta.persistence.Table
 import org.hibernate.annotations.SQLRestriction
 import java.time.ZonedDateTime
 
-
 /**
  * 하객이 사진에 누른 좋아요. 행의 존재가 곧 좋아요라 값이 될 열이 따로 없다.
  *

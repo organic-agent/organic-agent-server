@@ -83,7 +83,7 @@ docker compose -f docker-compose.local.yml up -d
 
 ### 3. 로컬 AI 분석 (선택)
 
-로컬에는 Lambda가 없다. `local` 프로필의 "AI 분석"은 `scripts/lambda/{embedder,score,categorize}.sh`를 운영의 Lambda 자리에서 띄우고, GPU 워커 자리는 `scripts/gpu/score-worker.sh`가 맡는다. sibling 저장소 `../organic-agent-ai`와 그 venv가 필요하다(`scripts/lib/ai-venv.sh`가 만든다).
+로컬에는 Lambda가 없다. `local` 프로필의 "AI 분석"은 `scripts/local/lambda/{embedder,score,categorize}.sh`를 운영의 Lambda 자리에서 띄우고, GPU 워커 자리는 `scripts/local/gpu/score-worker.sh`가 맡는다. sibling 저장소 `../organic-agent-ai`와 그 venv가 필요하다(`scripts/local/lib/ai-venv.sh`가 만든다).
 
 ---
 
@@ -114,7 +114,7 @@ docker compose -f docker-compose.local.yml up -d
 
 - **운영 반영**: develop → main PR에 `ready-to-merge` 라벨을 붙이면 `ff-merge.yml`이 CI·dev 배포 통과를 확인하고 develop 커밋을 그대로 main에 올린다(fast-forward). 머지 버튼은 쓰지 않는다.
 - **hotfix**: `main`에서 분기해 main으로 PR. 머지되면 `sync-develop.yml`이 develop을 main 위로 맞춘다.
-- **배포 방식**: JAR 빌드 → arm64 이미지를 GHCR에 푸시 → 운영은 ECR로 복사(ASG의 새 서버가 인스턴스 역할로 받는다) → GitHub OIDC로 배포 역할 assume → `scripts/rolling-deploy.sh`가 **앱 서버 한 대씩** ALB 대상에서 빼고 SSM Run Command(`deploy-public-ssm.sh`)로 컨테이너를 교체한 뒤 healthy를 확인하고 다시 넣는다. 한 대라도 실패하면 그 서버를 직전 릴리스로 되돌리고 멈춘다. 관리자 API는 `deploy-admin-api-ssm.sh`로 전용 호스트에 배포한다. 장기 AWS 키·SSH 키는 쓰지 않는다.
+- **배포 방식**: JAR 빌드 → arm64 이미지를 GHCR에 푸시 → 운영은 ECR로 복사(ASG의 새 서버가 인스턴스 역할로 받는다) → GitHub OIDC로 배포 역할 assume → `scripts/deploy/rolling-deploy.sh`가 **앱 서버 한 대씩** ALB 대상에서 빼고 SSM Run Command(`deploy-public-ssm.sh`)로 컨테이너를 교체한 뒤 healthy를 확인하고 다시 넣는다. 한 대라도 실패하면 그 서버를 직전 릴리스로 되돌리고 멈춘다. 관리자 API는 `deploy-admin-api-ssm.sh`로 전용 호스트에 배포한다. 장기 AWS 키·SSH 키는 쓰지 않는다.
 
 ---
 
@@ -138,15 +138,18 @@ docker compose -f docker-compose.local.yml up -d
 └─ docs/                       # 개인 노트 — gitignore 대상. 팀 공유 문서는 WES-DOCS
 ```
 
-### 운영 스크립트 (`scripts/`)
+### 스크립트 (`scripts/`)
 
-| 스크립트 | 용도 |
-|---|---|
-| `db-tunnel.sh [prod\|dev] [port]` | private RDS로 SSM 포트포워딩 |
-| `reset-test-data.sh`, `delete-accounts.sh` | 테스트 데이터 초기화 · 특정 OAuth 계정과 딸린 데이터 삭제 |
-| `lambda/{embedder,score,categorize}.sh`, `gpu/score-worker.sh`, `local-ai.sh` | 로컬 AI 실행기 대역 (Lambda · GPU 워커 한 대) |
-| `load/*.sh` | 부하 실측 — 갤러리 복제 · 타임라인 · 비용 · 사전 점검 |
-| `rolling-deploy.sh`, `deploy-public-ssm.sh`, `deploy-admin-api-ssm.sh` | CD가 쓰는 배포 스크립트 |
+폴더 = 실행 주체. 환경 인자는 `local | dev | prod`이고 필수다(환경별 이름은 `scripts/lib/env.sh`). 규격은 `.claude/rules/scripts.md`.
+
+| 폴더 | 누가 실행하나 | 스크립트 |
+|---|---|---|
+| `deploy/` | CD(서버·러너) | `rolling-deploy.sh`, `deploy-public-ssm.sh`, `deploy-admin-api-ssm.sh`, `configure-admin-alloy-egress.sh` |
+| `ci/` | CI 검사 | `check-admin-deployment-boundary.sh`, `check-workflow-run-size.rb` |
+| `local/` | 로컬 앱(local 프로필) | `lambda/{embedder,score,categorize}.sh`, `gpu/score-worker.sh`, `local-ai.sh` — 로컬 AI 실행기 대역 (Lambda · GPU 워커 한 대) |
+| `dev-tools/` | 사람 | `db-tunnel.sh dev\|prod [port]` (private RDS SSM 포트포워딩) · `reset-test-data.sh`, `delete-accounts.sh` (테스트 데이터 초기화 · 특정 OAuth 계정과 딸린 데이터 삭제) |
+| `load/` | 사람(측정 회차) | 공통 도구(갤러리 복제 · 타임라인 · 비용 · 사전 점검) + `upload/` · `traffic/` · `availability/` 묶음 |
+| `lib/` | source 전용 | `env.sh` (환경 이름 → 값) |
 
 ---
 

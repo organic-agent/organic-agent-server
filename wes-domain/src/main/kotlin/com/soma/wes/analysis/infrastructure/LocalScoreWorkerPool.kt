@@ -16,7 +16,7 @@ import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Component
 
 /**
- * 로컬 프로필의 워커 풀 — EC2 대신 `scripts/gpu/score-worker.sh`를 서브프로세스로 한 번 띄운다(AI repo `score worker --gpu --no-idle-stop`, 큐를 비우고 유휴 30초 뒤 종료).
+ * 로컬 프로필의 워커 풀 — EC2 대신 `scripts/local/gpu/score-worker.sh`를 서브프로세스로 한 번 띄운다(AI repo `score worker --gpu --no-idle-stop`, 큐를 비우고 유휴 30초 뒤 종료).
  * 인스턴스는 하나("local")이고, 프로세스가 살아 있으면 RUNNING, 끝났으면 STOPPED다. 끄기는 프로세스 종료다.
  */
 @Component
@@ -43,7 +43,7 @@ class LocalScoreWorkerPool(
 
     companion object {
         const val INSTANCE_ID = "local"
-        /** `scripts/lambda`(Lambda 대역) 옆의 `scripts/gpu`. 운영의 EC2 워커 한 대에 해당한다. */
+        /** `scripts/local/lambda`(Lambda 대역) 옆의 `scripts/local/gpu`. 운영의 EC2 워커 한 대에 해당한다. */
         const val SCRIPT_NAME = "score-worker.sh"
     }
 

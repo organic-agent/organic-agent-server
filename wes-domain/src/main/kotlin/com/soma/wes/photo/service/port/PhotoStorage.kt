@@ -2,7 +2,6 @@ package com.soma.wes.photo.service.port
 
 import com.soma.wes.photo.dto.PresignedUploadDto
 
-
 interface PhotoStorage {
 
     /**
