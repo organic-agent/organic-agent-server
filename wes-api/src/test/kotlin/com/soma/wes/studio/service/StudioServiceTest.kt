@@ -146,6 +146,44 @@ class StudioServiceTest @Autowired constructor(
     }
 
     @Test
+    fun `두 스튜디오가 동시에 같은 주소로 바꾸면 늦게 저장한 쪽도 중복으로 거절한다`() {
+        // given
+        val firstOwner = userFixture.사용자().requiredId
+        val secondOwner = userFixture.사용자().requiredId
+        val first = studioService.create(firstOwner, CreateStudioRequest("첫 스튜디오", "first-url", null))
+        val second = studioService.create(secondOwner, CreateStudioRequest("둘째 스튜디오", "second-url", null))
+        val firstSaved = CountDownLatch(1)
+        val secondStarted = CountDownLatch(1)
+
+        // when
+        val failure = Executors.newFixedThreadPool(2).use { executor ->
+            // 먼저 온 변경은 저장까지 하고 커밋을 미룬다 — 늦은 쪽의 중복 확인에는 아직 안 보인다.
+            val held = executor.submit {
+                transactionTemplate.executeWithoutResult {
+                    studioService.update(first.id, firstOwner, UpdateStudioRequest("첫 스튜디오", "race-url"))
+                    firstSaved.countDown()
+                    secondStarted.await(10, TimeUnit.SECONDS)
+                    Thread.sleep(300)
+                }
+            }
+            val late = executor.submit<Throwable?> {
+                firstSaved.await(10, TimeUnit.SECONDS)
+                secondStarted.countDown()
+                runCatching { studioService.update(second.id, secondOwner, UpdateStudioRequest("둘째 스튜디오", "race-url")) }
+                    .exceptionOrNull()
+            }
+            held.get(10, TimeUnit.SECONDS)
+            late.get(10, TimeUnit.SECONDS)
+        }
+
+        // then
+        assertThat(failure).isInstanceOf(StudioException::class.java)
+            .extracting("errorCode")
+            .isEqualTo(StudioErrorCode.GALLERY_URL_DUPLICATED)
+        assertThat(studioRepository.findById(second.id).orElseThrow().galleryUrl).isEqualTo("second-url")
+    }
+
+    @Test
     fun `멤버가 스튜디오에서 나가면 소유자에게 알린다`() {
         // given
         val owner = userFixture.사용자()
