@@ -135,7 +135,7 @@ class PhotoExclusionServiceTest @Autowired constructor(
                 softly.assertThat(selections.get(galleryId, memberId).selectedCount).isZero()
                 softly.assertThat(folders.list(galleryId, memberId).flatMap { it.details }.flatMap { it.photoIds }).containsExactly(photoId)
                 softly.assertThat(guestQuery.getLanding(shared.token).photoCount).isEqualTo(1L)
-                softly.assertThat(guestQuery.listPhotos(shared.token, guest.guestToken, 0, 200).contents.single().likeCount).isEqualTo(1L)
+                softly.assertThat(guestQuery.listPhotos(shared.token, null, guest.guestToken, 0, 200).contents.single().likeCount).isEqualTo(1L)
                 softly.assertThat(recommendations.list(galleryId, memberId, null).photos.map { it.photo.photoId }).containsExactly(photoId)
                 softly.assertThat(ratings.list(galleryId, memberId).single().score).isEqualTo(1)
             }
