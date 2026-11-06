@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository
  * 사진 파이프라인의 집계·배치 갱신. 엔티티 루프가 아니라 SQL 한 문장씩이다 — 스윕이 5초마다 갤러리·사진 수천 장을
  * 상대하므로 왕복 수가 곧 비용이다.
  *
- * 전부 `deleted_at IS NULL`을 직접 건다(native SQL은 `@SQLRestriction` 밖이다). 분석 행은 임베더가 첫 배치에서
+ * 전부 `deleted_at IS NULL`을 직접 건다(native SQL은 `@SQLRestriction` 밖이다) — 숨은 행도 보는 [releaseClaim]만 예외다. 분석 행은 임베더가 첫 배치에서
  * 만들므로 LEFT JOIN 해 없는 행을 "아직"으로 읽는다.
  *
  * 네 묶음이 있다 — 진행 카운트([progressOf]), PENDING 보정([findPendingToCheck]·[markUploaded]·[touchPending]·[moveToTrash]),
@@ -226,6 +226,8 @@ class PhotoPipelineRepository(
     /**
      * 호출 자체가 실패한 배치의 배정을 통째로 되돌린다. 시도 수도 돌려놓는다 — 권한·스로틀링은 사진의 잘못이 아니라
      * 상한을 갉아먹으면 안 된다. 다음 스윕이 같은 사진을 다시 집는다.
+     *
+     * 숨은 행도 본다 — 배정한 뒤 휴지통으로 간 사진도 이 서버가 남긴 배정이라 함께 되돌려야, 복원했을 때 시도 수가 깎인 채로 남지 않는다.
      */
     fun releaseClaim(photoIds: Collection<Long>): Int {
         if (photoIds.isEmpty()) return 0
@@ -578,7 +580,7 @@ class PhotoPipelineRepository(
         )
             .param("galleryId", galleryId)
             .update()
-        jdbcClient.sql("UPDATE photos SET dispatched_at = NULL, embed_attempts = 0 WHERE gallery_id = :galleryId")
+        jdbcClient.sql("UPDATE photos SET dispatched_at = NULL, embed_attempts = 0 WHERE gallery_id = :galleryId AND deleted_at IS NULL")
             .param("galleryId", galleryId)
             .update()
         return deleted

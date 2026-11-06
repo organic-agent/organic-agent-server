@@ -11,6 +11,8 @@ interface GalleryMemberRepository : JpaRepository<GalleryMember, Long> {
 
     fun findAllByGalleryId(galleryId: Long): List<GalleryMember>
 
+    fun findAllByGalleryIdIn(galleryIds: Collection<Long>): List<GalleryMember>
+
     fun findAllByUserId(userId: Long): List<GalleryMember>
 
     /** 정원([GalleryMember.MAX_PER_GALLERY]) 검사가 쓴다. 갤러리 행을 잠근 뒤에 세야 한다. */

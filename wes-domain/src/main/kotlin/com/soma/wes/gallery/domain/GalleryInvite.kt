@@ -1,5 +1,7 @@
 package com.soma.wes.gallery.domain
 
+import com.soma.wes.gallery.exception.GalleryErrorCode
+import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.global.BaseEntity
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
@@ -101,7 +103,7 @@ class GalleryInvite(
 
     fun consume() {
         if (isFull) {
-            throw IllegalStateException("초대 사용 횟수를 초과했습니다.")
+            throw GalleryException(GalleryErrorCode.INVITE_FULL)
         }
         usedCount += 1
     }

@@ -17,6 +17,10 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.transaction.support.TransactionTemplate
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 @IntegrationTest
 class StudioServiceTest @Autowired constructor(
@@ -26,6 +30,7 @@ class StudioServiceTest @Autowired constructor(
     private val workspaceMemberRepository: WorkspaceMemberRepository,
     private val userFixture: UserFixture,
     private val notificationRepository: UserNotificationRepository,
+    private val transactionTemplate: TransactionTemplate,
 ) {
     @Test
     fun `스튜디오를 만들면 별도 STUDIO 작업공간과 OWNER 멤버십이 생긴다`() {
@@ -103,6 +108,79 @@ class StudioServiceTest @Autowired constructor(
         }.isInstanceOf(StudioException::class.java)
             .extracting("errorCode")
             .isEqualTo(StudioErrorCode.GALLERY_URL_DUPLICATED)
+    }
+
+    @Test
+    fun `같은 갤러리 주소를 동시에 만들면 늦게 저장한 쪽도 중복으로 거절한다`() {
+        // given
+        val first = userFixture.사용자().requiredId
+        val second = userFixture.사용자().requiredId
+        val firstSaved = CountDownLatch(1)
+        val secondStarted = CountDownLatch(1)
+
+        // when
+        val failure = Executors.newFixedThreadPool(2).use { executor ->
+            // 먼저 온 요청은 저장까지 하고 커밋을 미룬다 — 늦은 쪽의 중복 확인에는 아직 안 보인다.
+            val held = executor.submit {
+                transactionTemplate.executeWithoutResult {
+                    studioService.create(first, CreateStudioRequest("먼저 온 곳", "race-url", null))
+                    firstSaved.countDown()
+                    secondStarted.await(10, TimeUnit.SECONDS)
+                    Thread.sleep(300)
+                }
+            }
+            val late = executor.submit<Throwable?> {
+                firstSaved.await(10, TimeUnit.SECONDS)
+                secondStarted.countDown()
+                runCatching { studioService.create(second, CreateStudioRequest("늦게 온 곳", "race-url", null)) }
+                    .exceptionOrNull()
+            }
+            held.get(10, TimeUnit.SECONDS)
+            late.get(10, TimeUnit.SECONDS)
+        }
+
+        // then
+        assertThat(failure).isInstanceOf(StudioException::class.java)
+            .extracting("errorCode")
+            .isEqualTo(StudioErrorCode.GALLERY_URL_DUPLICATED)
+    }
+
+    @Test
+    fun `두 스튜디오가 동시에 같은 주소로 바꾸면 늦게 저장한 쪽도 중복으로 거절한다`() {
+        // given
+        val firstOwner = userFixture.사용자().requiredId
+        val secondOwner = userFixture.사용자().requiredId
+        val first = studioService.create(firstOwner, CreateStudioRequest("첫 스튜디오", "first-url", null))
+        val second = studioService.create(secondOwner, CreateStudioRequest("둘째 스튜디오", "second-url", null))
+        val firstSaved = CountDownLatch(1)
+        val secondStarted = CountDownLatch(1)
+
+        // when
+        val failure = Executors.newFixedThreadPool(2).use { executor ->
+            // 먼저 온 변경은 저장까지 하고 커밋을 미룬다 — 늦은 쪽의 중복 확인에는 아직 안 보인다.
+            val held = executor.submit {
+                transactionTemplate.executeWithoutResult {
+                    studioService.update(first.id, firstOwner, UpdateStudioRequest("첫 스튜디오", "race-url"))
+                    firstSaved.countDown()
+                    secondStarted.await(10, TimeUnit.SECONDS)
+                    Thread.sleep(300)
+                }
+            }
+            val late = executor.submit<Throwable?> {
+                firstSaved.await(10, TimeUnit.SECONDS)
+                secondStarted.countDown()
+                runCatching { studioService.update(second.id, secondOwner, UpdateStudioRequest("둘째 스튜디오", "race-url")) }
+                    .exceptionOrNull()
+            }
+            held.get(10, TimeUnit.SECONDS)
+            late.get(10, TimeUnit.SECONDS)
+        }
+
+        // then
+        assertThat(failure).isInstanceOf(StudioException::class.java)
+            .extracting("errorCode")
+            .isEqualTo(StudioErrorCode.GALLERY_URL_DUPLICATED)
+        assertThat(studioRepository.findById(second.id).orElseThrow().galleryUrl).isEqualTo("second-url")
     }
 
     @Test

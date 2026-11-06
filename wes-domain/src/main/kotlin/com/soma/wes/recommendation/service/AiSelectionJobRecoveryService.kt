@@ -34,6 +34,10 @@ class AiSelectionJobRecoveryService(
         private val STALE_AFTER: Duration = Duration.ofMinutes(5)
     }
 
+    /**
+     * 트랜잭션 없이 돈다 — 되돌리기([requeueStaleRunning])가 먼저 커밋돼야 다른 스레드에서 도는 잡([AiSelectionJobLauncher])이
+     * PENDING으로 돌아온 행을 본다. 바깥에 트랜잭션을 두면 되돌리기가 거기에 합류해 실행이 커밋보다 앞설 수 있다.
+     */
     fun recover() {
         val orphans = requeueStaleRunning()
         if (orphans > 0) log.warn("실행 중 죽은 AI 추천 잡 {}건을 PENDING으로 되돌림", orphans)

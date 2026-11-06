@@ -19,9 +19,11 @@ interface CollabSessionRepository : JpaRepository<CollabSession, Long> {
     fun existsByIdAndGalleryId(id: Long, galleryId: Long): Boolean
 
 
+    /** 부부의 세션 수정(사진 추가·빼기, 이름, 링크 재발급·폐기, 댓글 삭제)이 잠근다 — 링크로 들어온 하객 반응 저장([findWithLockByCollabToken])과 같은 행으로 줄 세운다. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     fun findWithLockByIdAndGalleryId(id: Long, galleryId: Long): CollabSession?
 
+    /** 하객의 댓글·좋아요 저장(`CollabSessionAccess.requireWritable`·`requireLikable`)이 잠근다 — 폐기·재발급·사진 빼기와 엇갈려 닫힌 링크나 빠진 사진에 반응이 남지 않게. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     fun findWithLockByCollabToken(collabToken: String): CollabSession?
 

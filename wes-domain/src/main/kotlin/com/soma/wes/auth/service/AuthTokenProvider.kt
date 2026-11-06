@@ -1,11 +1,12 @@
 package com.soma.wes.auth.service
 
+import com.soma.wes.auth.config.JwtProperties
 import com.soma.wes.auth.domain.AccessToken
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.auth.domain.RefreshToken
-import com.soma.wes.user.domain.Role
 import com.soma.wes.auth.domain.Subject
 import com.soma.wes.auth.domain.Token
+import com.soma.wes.auth.domain.TokenType
 import com.soma.wes.auth.dto.AccessCacheKeyDto
 import com.soma.wes.auth.dto.TokenClaimsDto
 import com.soma.wes.auth.dto.requireActive
@@ -15,8 +16,7 @@ import com.soma.wes.auth.repository.AuthAccessStatusRepository
 import com.soma.wes.auth.service.port.AccessCache
 import com.soma.wes.auth.service.port.TokenSigner
 import com.soma.wes.auth.support.RefreshTokenStore
-import com.soma.wes.auth.domain.TokenType
-import com.soma.wes.auth.config.JwtProperties
+import com.soma.wes.user.domain.Role
 import com.soma.wes.user.domain.User
 import com.soma.wes.user.repository.UserRepository
 import org.slf4j.LoggerFactory
@@ -25,6 +25,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 
 /**
  * 토큰 정책을 담당한다.
@@ -50,6 +51,7 @@ class AuthTokenProvider(
         private const val ROLE_CLAIM = "role"
     }
 
+    @Transactional(readOnly = true)
     fun generateAccessToken(user: User): AccessToken {
         accessStatusRepository.requireActive(user.requiredId)
         return AccessToken(
@@ -70,6 +72,7 @@ class AuthTokenProvider(
      * refresh token은 발급과 동시에 저장소에 기록한다.
      * 같은 사용자가 다시 발급받으면 이전 토큰은 덮어써져 무효가 된다.
      */
+    @Transactional
     fun generateRefreshToken(user: User): RefreshToken {
         accessStatusRepository.requireActive(user.requiredId)
         val subject = Subject.from(user.requiredId)
@@ -86,6 +89,7 @@ class AuthTokenProvider(
     /**
      * 서명·만료·종류가 유효하면서, 서버가 마지막으로 발급한 것과 일치하는 refresh token인지 확인한다.
      */
+    @Transactional(readOnly = true)
     fun isValidRefreshToken(requestedRefreshToken: RefreshToken): Boolean {
         val subject = try {
             parseSubject(requestedRefreshToken)
@@ -134,6 +138,7 @@ class AuthTokenProvider(
 
     // UserRepository.requireById를 쓰지 않는다. 토큰은 유효한데 주인이 사라진 것이라,
     // 클라이언트가 할 일은 "없는 리소스"(404)가 아니라 "다시 로그인"(401)이다.
+    @Transactional(readOnly = true)
     fun parseUser(token: Token): User {
         val userId = parseSubject(token).toUserId()
         accessStatusRepository.requireActive(userId)
@@ -162,6 +167,7 @@ class AuthTokenProvider(
     private fun TokenClaimsDto.verifiedSubject(): Subject =
         Subject(subject ?: throw TokenException(AuthErrorCode.TOKEN_INVALID))
 
+    @Transactional
     fun logout(user: User) {
         refreshTokenStore.delete(Subject.from(user.requiredId))
     }

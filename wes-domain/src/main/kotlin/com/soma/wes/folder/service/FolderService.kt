@@ -236,6 +236,8 @@ class FolderService(
     /**
      * 사진을 세부 폴더로 옮기거나, 목적지가 null이면 미분류(배정 행 없음)로 뺀다.
      * 하나라도 잘못된 사진이 섞이면 전체를 거절한다. 공유폴더는 컨셉·세부 폴더와 따로 살아서 사진을 옮겨도 영향이 없다.
+     * 같은 사진을 동시에 옮기는 요청은 [GalleryAccessPolicy.requireFolderEditor]가 잡는 갤러리 행 잠금으로 줄을 선다 —
+     * 배정 행은 아직 없을 수 있어 잠글 수 없다.
      */
     @Transactional
     fun movePhotos(galleryId: Long, userId: Long, request: MoveFolderPhotosRequest) {

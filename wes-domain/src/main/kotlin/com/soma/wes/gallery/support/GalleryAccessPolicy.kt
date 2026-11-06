@@ -61,6 +61,8 @@ class GalleryAccessPolicy(
      * 초대 고객도 선택 중에는 분류를 정리한다. 제출과 같은 갤러리 잠금을 잡은 뒤 상태를
      * 확인해야 제출이 끝난 뒤 대기 중이던 이동이 저장되는 일을 막을 수 있다.
      * 작업공간 관리자는 제출 이후에도 기존 관리 권한을 유지한다.
+     *
+     * 컨셉·세부 폴더 만들기·이름 바꾸기·지우기, 세부 폴더 합치기·되돌리기, 사진 이동(`FolderService`).
      */
     @Transactional
     fun requireFolderEditor(galleryId: Long, userId: Long): Gallery {
@@ -76,7 +78,12 @@ class GalleryAccessPolicy(
         return gallery
     }
 
-    /** 개인 갤러리의 두 참여자는 업로드를 함께 하되, 계약 설정은 소유자만 바꾼다. */
+    /**
+     * 개인 갤러리의 두 참여자는 업로드를 함께 하되, 계약 설정은 소유자만 바꾼다.
+     *
+     * 업로드 URL 발급·재발급·업로드 완료·사진 휴지통 이동(`PhotoService`), AI 분석 요청·최근 잡 조회(`AnalysisService`),
+     * AI로 폴더 만들기(`FolderService.createFromAnalysis`).
+     */
     @Transactional(readOnly = true)
     fun requireUploader(galleryId: Long, userId: Long): Gallery {
         val gallery = galleryRepository.requireById(galleryId)
@@ -100,6 +107,12 @@ class GalleryAccessPolicy(
         return gallery
     }
 
+    /**
+     * 보정 결과를 올리고 회차를 끝내는 쪽 — 작업공간 관리자(작가)와 개인 갤러리 참여자. 쓰기가 막힌 갤러리에서는 거절한다.
+     *
+     * 결과 업로드 URL 발급·결과 확정·파일명 매칭·회차 완료(`RetouchService.issueResultUploadUrls`·`completeResults`·
+     * `matchResults`·`completeRound`).
+     */
     @Transactional(readOnly = true)
     fun requireRetouchProcessor(galleryId: Long, userId: Long): Gallery {
         val gallery = galleryRepository.requireById(galleryId)
@@ -110,7 +123,13 @@ class GalleryAccessPolicy(
         return gallery
     }
 
-    /** 선택 마감 후에도 보정 요청은 계속되지만 종료된 갤러리에는 추가할 수 없다. */
+    /**
+     * 선택 마감 후에도 보정 요청은 계속되지만 종료된 갤러리에는 추가할 수 없다.
+     *
+     * 보정 항목 추가·사진별 요청·회차 요청 작성·요청 제출·최종 확정(`RetouchService.addPhotos`·`updatePhoto`·`updateRoundRequest`·
+     * `submitRequests`·`confirm`), 보정 요청 정제(`RetouchRefinementService.refine`), 개인 갤러리 요청서 내보내기에서
+     * 1차 회차를 제출할 때(`PhotoSelectionExportService.export`).
+     */
     @Transactional(readOnly = true)
     fun requireRetouchRequester(galleryId: Long, userId: Long): Gallery {
         val gallery = galleryRepository.requireById(galleryId)
@@ -197,7 +216,12 @@ class GalleryAccessPolicy(
         return gallery
     }
 
-    /** 부부의 내부 대화는 작가에게 공개하지 않는다. 마감 이후에도 대화 조회와 본인 삭제는 남긴다. */
+    /**
+     * 부부의 내부 대화는 작가에게 공개하지 않는다. 마감 이후에도 대화 조회와 본인 삭제는 남긴다.
+     *
+     * 사진 댓글 목록·삭제(`PhotoCommentService`), 별점 목록(`PhotoRatingService.list`), 선택 동기화 번호(`SelectionSyncService.get`),
+     * 요청서 내보내기(`PhotoSelectionExportService.export`), 협업 세션 목록·상세·참여자·사진·댓글 조회(`CollabSessionQueryService`).
+     */
     @Transactional(readOnly = true)
     fun requireParticipantViewer(galleryId: Long, userId: Long): Gallery {
         val gallery = galleryRepository.requireById(galleryId)
@@ -205,7 +229,11 @@ class GalleryAccessPolicy(
         return gallery
     }
 
-    /** 댓글은 선택 결과를 바꾸지 않으므로 제출 여부와 무관하지만, 갤러리의 의견 작성 기한은 지킨다. */
+    /**
+     * 댓글은 선택 결과를 바꾸지 않으므로 제출 여부와 무관하지만, 갤러리의 의견 작성 기한은 지킨다.
+     *
+     * 사진 댓글 쓰기(`PhotoCommentService.write`).
+     */
     @Transactional
     fun requireParticipantWriter(galleryId: Long, userId: Long): Gallery {
         val gallery = galleryRepository.requireWithLockById(galleryId)
@@ -231,7 +259,12 @@ class GalleryAccessPolicy(
         return workspace
     }
 
-    /** 게스트 의견과 링크는 클라이언트의 사적 협업 정보다. 작가에게는 공개하지 않는다. */
+    /**
+     * 게스트 의견과 링크는 클라이언트의 사적 협업 정보다. 작가에게는 공개하지 않는다.
+     *
+     * 협업 세션 열기·사진 추가·빼기·이름 바꾸기·링크 재발급(writable = true), 링크 폐기·댓글 삭제(writable = false)
+     * (`CollabSessionService`).
+     */
     @Transactional
     fun requireCollabManager(galleryId: Long, userId: Long, writable: Boolean): Gallery {
         val gallery = galleryRepository.requireWithLockById(galleryId)
@@ -256,18 +289,6 @@ class GalleryAccessPolicy(
             throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
         }
         return gallery
-    }
-
-    /**
-     * 폴더 전반, 사진 상세, 별점 주기/지우기.
-     */
-    @Transactional(readOnly = true)
-    fun requireManagerOrSelectionEditor(galleryId: Long, userId: Long): Gallery {
-        val gallery = galleryRepository.requireById(galleryId)
-        if (isManager(gallery, userId) || isPersonalParticipant(gallery, userId)) {
-            return gallery
-        }
-        return requireSelectionEditor(galleryId, userId)
     }
 
     private fun isManager(gallery: Gallery, userId: Long): Boolean {

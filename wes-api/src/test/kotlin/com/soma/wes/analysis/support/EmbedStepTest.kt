@@ -300,5 +300,25 @@ class EmbedStepTest @Autowired constructor(
                 softly.assertThat(aiTaskSender.embeddedPhotoIds).containsExactlyElementsOf(photos)
             }
         }
+
+        @Test
+        fun `리셋은 휴지통 사진의 분석 행과 배정 추적을 함께 남긴다`() {
+            // given
+            val (live, trashed) = photoFixture.임베딩된_사진(galleryId, count = 2)
+            jdbcTemplate.update("UPDATE photos SET dispatched_at = now(), embed_attempts = 3 WHERE gallery_id = ?", galleryId)
+            jdbcTemplate.update("UPDATE photos SET deleted_at = now() WHERE id = ?", trashed)
+
+            // when
+            val deleted = photoPipelineRepository.resetAnalysis(galleryId)
+
+            // then
+            val trashedRow = jdbcTemplate.queryForMap("SELECT dispatched_at, embed_attempts FROM photos WHERE id = ?", trashed)
+            assertSoftly { softly ->
+                softly.assertThat(deleted).isEqualTo(1)
+                softly.assertThat(photoAnalysisRepository.findAllById(listOf(live, trashed)).map { it.photoId }).containsExactly(trashed)
+                softly.assertThat(trashedRow["dispatched_at"]).isNotNull()
+                softly.assertThat(trashedRow["embed_attempts"]).isEqualTo(3)
+            }
+        }
     }
 }

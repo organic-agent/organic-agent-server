@@ -78,6 +78,9 @@ class TrashService(
      *
      * 아직 유효한 업로드 URL이 있으면 거절한다 — 삭제 뒤 그 URL로 PUT이 오면 아무 행도
      * 가리키지 않는 객체가 남는다. URL 수명(30분)이 지나면 다시 시도할 수 있다.
+     *
+     * 트랜잭션 없이 돈다 — [TrashEraser]가 선점 → S3 삭제 → 행 삭제를 짧은 트랜잭션으로 나눠 열어, S3를 기다리는 동안
+     * 커넥션을 물지 않는다(TX-05). 여기 트랜잭션을 두면 그 단계들이 모두 합류해 S3 호출 내내 커넥션을 문다.
      */
     fun eraseGallery(galleryId: Long, userId: Long) {
         val workspaceIds = requireWorkspaceIds(userId)
@@ -137,7 +140,7 @@ class TrashService(
         }
     }
 
-    /** 사진들을 원본·미리보기와 함께 즉시 물리 삭제한다. 거절 규칙은 [eraseGallery]와 같다. */
+    /** 사진들을 원본·미리보기와 함께 즉시 물리 삭제한다. 거절 규칙과 트랜잭션 없이 도는 까닭은 [eraseGallery]와 같다. */
     fun erasePhotos(galleryId: Long, userId: Long, request: EraseTrashedPhotosRequest) {
         galleryAccessPolicy.requireManager(galleryId, userId)
 

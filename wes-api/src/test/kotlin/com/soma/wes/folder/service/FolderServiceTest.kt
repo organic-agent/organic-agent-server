@@ -26,6 +26,10 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.transaction.support.TransactionTemplate
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 @IntegrationTest
 class FolderServiceTest @Autowired constructor(
@@ -36,6 +40,7 @@ class FolderServiceTest @Autowired constructor(
     private val photoFixture: PhotoFixture,
     private val assignmentRepository: DetailFolderAssignmentRepository,
     private val jdbcTemplate: JdbcTemplate,
+    private val transactionTemplate: TransactionTemplate,
 ) {
 
     @Nested
@@ -186,6 +191,43 @@ class FolderServiceTest @Autowired constructor(
             assertThatThrownBy {
                 folderService.movePhotos(fixture.galleryId, fixture.photographer.requiredId, MoveFolderPhotosRequest(photoIds, null))
             }.isInstanceOf(FolderException::class.java).extracting("errorCode").isEqualTo(FolderErrorCode.TOO_MANY_PHOTOS)
+        }
+
+        @Test
+        fun `미분류 사진을 동시에 다른 폴더로 옮기면 늦은 쪽이 기다렸다가 덮어쓴다`() {
+            // given
+            val fixture = galleryFixture.멤버와_열린_갤러리()
+            val userId = fixture.photographer.requiredId
+            val photoId = photoFixture.업로드된_사진(fixture.galleryId, 1).single()
+            val concept = folderService.createConcept(fixture.galleryId, userId, CreateConceptFolderRequest("본식"))
+            val first = folderService.createDetail(fixture.galleryId, concept.id, userId, CreateDetailFolderRequest("입장"))
+            val second = folderService.createDetail(fixture.galleryId, concept.id, userId, CreateDetailFolderRequest("행진"))
+            val firstMoved = CountDownLatch(1)
+            val secondStarted = CountDownLatch(1)
+
+            // when
+            Executors.newFixedThreadPool(2).use { executor ->
+                // 먼저 온 이동은 배정 행을 넣고 커밋을 미룬다 — 늦은 쪽이 읽을 때는 아직 미분류다.
+                val held = executor.submit {
+                    transactionTemplate.executeWithoutResult {
+                        folderService.movePhotos(fixture.galleryId, userId, MoveFolderPhotosRequest(listOf(photoId), first.id))
+                        firstMoved.countDown()
+                        secondStarted.await(10, TimeUnit.SECONDS)
+                        Thread.sleep(300)
+                    }
+                }
+                val late = executor.submit {
+                    firstMoved.await(10, TimeUnit.SECONDS)
+                    secondStarted.countDown()
+                    folderService.movePhotos(fixture.galleryId, userId, MoveFolderPhotosRequest(listOf(photoId), second.id))
+                }
+                held.get(10, TimeUnit.SECONDS)
+                late.get(10, TimeUnit.SECONDS)
+            }
+
+            // then
+            assertThat(assignmentRepository.findAllByGalleryIdAndPhotoIdIn(fixture.galleryId, listOf(photoId)).single().detailFolderId)
+                .isEqualTo(second.id)
         }
     }
 

@@ -14,6 +14,11 @@ import java.time.ZonedDateTime
 @Entity
 @Table(name = "detail_folder_assignments")
 class DetailFolderAssignment(
+    /**
+     * [detailFolderId]·[photoId]로도 알 수 있는 값이지만 행에 함께 둔다 — 복합 FK
+     * (`gallery_id, detail_folder_id` → `detail_folders`, `gallery_id, photo_id` → `photos`, V6)가
+     * 사진을 다른 갤러리의 폴더로 옮기는 배정을 DB에서 막고, 갤러리 단위 조회(폴더에 든 사진 id·배치)가 폴더를 거치지 않고 읽는다.
+     */
     @Column(name = "gallery_id", nullable = false, updatable = false)
     val galleryId: Long,
 

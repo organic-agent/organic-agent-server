@@ -123,6 +123,8 @@ interface PhotoRepository : JpaRepository<Photo, Long> {
 
     /**
      * 다음 사진이 받을 노출 순서. 업로드 URL 발급이 쓴다.
+     *
+     * 숨은 행도 본다 — 휴지통 사진의 순서까지 세어야, 그 사진을 복원했을 때 새로 올린 사진과 순서가 겹치지 않는다.
      */
     @Query(
         value = "select coalesce(max(display_order) + 1, 0) from photos where gallery_id = :galleryId",

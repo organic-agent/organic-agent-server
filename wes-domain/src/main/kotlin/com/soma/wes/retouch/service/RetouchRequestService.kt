@@ -14,6 +14,8 @@ import com.soma.wes.trash.service.ProductChildTrashService
 import jakarta.persistence.EntityManager
 import java.time.ZonedDateTime
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Propagation
+import org.springframework.transaction.annotation.Transactional
 
 /** 호출자가 잡은 갤러리 잠금 안에서 선택 제출과 보정 요청을 한 트랜잭션으로 기록한다. */
 @Service
@@ -28,6 +30,7 @@ class RetouchRequestService(
      * `EntityManager.refresh` — 지운 항목은 [ProductChildTrashService]가 SQL로 회차 행의 `version`을 올리므로, 같은 트랜잭션의
      * 회차 엔티티를 다시 읽어야 이어지는 `submit`이 낙관적 잠금에 걸리지 않는다.
      */
+    @Transactional(propagation = Propagation.MANDATORY)
     fun submit(
         gallery: Gallery,
         roundNo: Int,

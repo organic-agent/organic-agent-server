@@ -31,6 +31,11 @@ import jakarta.persistence.UniqueConstraint
 )
 class PhotoSelectionItem(
 
+    /**
+     * [selectionId]로도 알 수 있는 값이지만 행에 함께 둔다 — 복합 FK(`gallery_id, selection_id` → `photo_selections`,
+     * `gallery_id, photo_id` → `photos`, V6)가 다른 갤러리의 사진이 앨범에 담기는 것을 DB에서 막고,
+     * 선택 동기화 트리거(`R__gallery_selection_sync`)가 삭제된 행에서도 갤러리를 바로 안다.
+     */
     @Column(name = "gallery_id", nullable = false, updatable = false)
     val galleryId: Long,
 

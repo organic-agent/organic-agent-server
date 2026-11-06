@@ -20,6 +20,11 @@ import org.hibernate.annotations.SQLRestriction
     indexes = [Index(name = "idx_detail_folders_concept", columnList = "concept_folder_id, sort_order")],
 )
 class DetailFolder(
+    /**
+     * [conceptFolderId]로도 알 수 있는 값이지만 행에 함께 둔다(V5) — 복합 FK(`gallery_id, concept_folder_id` → `concept_folders`)가
+     * 다른 갤러리의 컨셉 아래에 세부 폴더가 생기지 않게 하고, `uk_detail_folders_gallery_id_id`가 배정 행의 복합 FK 대상이 된다.
+     * 경로의 갤러리로 세부 폴더를 찾는 조회(`findByIdAndGalleryId`)도 컨셉을 거치지 않는다.
+     */
     @Column(name = "gallery_id", nullable = false, updatable = false)
     val galleryId: Long,
 

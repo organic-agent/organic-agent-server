@@ -1,8 +1,8 @@
 package com.soma.wes.billing.service
 
+import com.soma.wes.billing.domain.ProCouponStatus
 import com.soma.wes.billing.dto.request.RegisterProCouponRequest
 import com.soma.wes.billing.dto.request.ResolveProCouponRequest
-import com.soma.wes.billing.dto.response.ProCouponLinkResponse
 import com.soma.wes.billing.dto.response.ProCouponResponse
 import com.soma.wes.billing.exception.BillingErrorCode
 import com.soma.wes.billing.exception.BillingException
@@ -67,7 +67,7 @@ class CouponServiceTest @Autowired constructor(
             // then
             val saved = coupons.findById(issued.id).orElseThrow()
             assertSoftly { softly ->
-                softly.assertThat(result.status).isEqualTo(ProCouponLinkResponse.Status.AVAILABLE)
+                softly.assertThat(result.status).isEqualTo(ProCouponStatus.AVAILABLE)
                 softly.assertThat(result.galleryId).isNull()
                 softly.assertThat(saved.userId).isNull()
                 softly.assertThat(saved.registeredAt).isNull()
@@ -89,7 +89,7 @@ class CouponServiceTest @Autowired constructor(
             // then
             val saved = coupons.findById(issued.id).orElseThrow()
             assertSoftly { softly ->
-                softly.assertThat(result.status).isEqualTo(ProCouponLinkResponse.Status.AVAILABLE)
+                softly.assertThat(result.status).isEqualTo(ProCouponStatus.AVAILABLE)
                 softly.assertThat(result.galleryId).isNull()
                 softly.assertThat(saved.registeredAt?.toInstant()).isEqualTo(registered.registeredAt.toInstant())
                 softly.assertThat(saved.consumedAt).isNull()
@@ -113,7 +113,7 @@ class CouponServiceTest @Autowired constructor(
             // then
             val saved = coupons.findById(issued.id).orElseThrow()
             assertSoftly { softly ->
-                softly.assertThat(result.status).isEqualTo(ProCouponLinkResponse.Status.USED)
+                softly.assertThat(result.status).isEqualTo(ProCouponStatus.USED)
                 softly.assertThat(result.galleryId).isEqualTo(gallery.id)
                 softly.assertThat(saved.expiresAt?.toInstant()).isEqualTo(gallery.planExpiresAt?.toInstant())
             }
@@ -197,9 +197,9 @@ class CouponServiceTest @Autowired constructor(
 
             // then
             assertSoftly { softly ->
-                softly.assertThat(disabledResult.status).isEqualTo(ProCouponLinkResponse.Status.DISABLED)
+                softly.assertThat(disabledResult.status).isEqualTo(ProCouponStatus.DISABLED)
                 softly.assertThat(disabledResult.galleryId).isNull()
-                softly.assertThat(usedResult.status).isEqualTo(ProCouponLinkResponse.Status.USED)
+                softly.assertThat(usedResult.status).isEqualTo(ProCouponStatus.USED)
                 softly.assertThat(usedResult.galleryId).isNull()
             }
         }
@@ -236,7 +236,7 @@ class CouponServiceTest @Autowired constructor(
             // then
             assertSoftly { softly ->
                 softly.assertThat(result.couponId).isEqualTo(issued.id)
-                softly.assertThat(result.status).isEqualTo("AVAILABLE")
+                softly.assertThat(result.status).isEqualTo(ProCouponStatus.AVAILABLE)
                 softly.assertThat(result.expiresAt).isNull()
                 softly.assertThat(result.consumedAt).isNull()
                 softly.assertThat(result.galleryId).isNull()
@@ -259,7 +259,7 @@ class CouponServiceTest @Autowired constructor(
             assertSoftly { softly ->
                 softly.assertThat(repeated.couponId).isEqualTo(first.couponId)
                 softly.assertThat(repeated.registeredAt.toInstant()).isEqualTo(first.registeredAt.toInstant())
-                softly.assertThat(repeated.status).isEqualTo("AVAILABLE")
+                softly.assertThat(repeated.status).isEqualTo(ProCouponStatus.AVAILABLE)
                 softly.assertThat(repeated.expiresAt).isNull()
                 softly.assertThat(coupons.count()).isEqualTo(1L)
             }
@@ -308,7 +308,7 @@ class CouponServiceTest @Autowired constructor(
 
             // then
             assertSoftly { softly ->
-                softly.assertThat(result.status).isEqualTo("USED")
+                softly.assertThat(result.status).isEqualTo(ProCouponStatus.USED)
                 softly.assertThat(result.galleryId).isEqualTo(gallery.id)
                 softly.assertThat(result.expiresAt?.toInstant()).isEqualTo(gallery.planExpiresAt?.toInstant())
                 softly.assertThat(coupons.count()).isEqualTo(1L)
@@ -390,7 +390,7 @@ class CouponServiceTest @Autowired constructor(
             assertThat(target.getMyBenefits(owner.requiredId).coupons).isEmpty()
             disabled.changeEnabled(true, ZonedDateTime.now(clock))
             coupons.saveAndFlush(disabled)
-            assertThat(target.register(owner.requiredId, RegisterProCouponRequest(issued.code)).status).isEqualTo("AVAILABLE")
+            assertThat(target.register(owner.requiredId, RegisterProCouponRequest(issued.code)).status).isEqualTo(ProCouponStatus.AVAILABLE)
         }
 
         @Test
@@ -405,7 +405,7 @@ class CouponServiceTest @Autowired constructor(
             val result = target.getMyBenefits(owner.requiredId).coupons.single()
 
             // then
-            assertThat(result.status).isEqualTo("DISABLED")
+            assertThat(result.status).isEqualTo(ProCouponStatus.DISABLED)
             assertThat(result.expiresAt).isNull()
         }
     }

@@ -23,6 +23,8 @@ import com.soma.wes.workspace.domain.WorkspaceMember
 import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository
+import org.hibernate.exception.ConstraintViolationException
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -38,6 +40,11 @@ class StudioService(
     private val galleryMemberRepository: GalleryMemberRepository,
     private val activityRecorder: ActivityRecorder,
 ) {
+
+    companion object {
+        /** 스튜디오 주소 유니크 제약 이름(V1). 동시에 같은 주소를 쓰면 이 제약이 마지막으로 막는다. */
+        private const val GALLERY_URL_UNIQUE = "uk_studios_gallery_url"
+    }
 
     @Transactional
     fun create(userId: Long, request: CreateStudioRequest): StudioResponse {
@@ -56,7 +63,7 @@ class StudioService(
             ),
         )
 
-        val studio = studioRepository.save(
+        val studio = saveUnique(
             Studio.create(
                 userId = workspace.requiredId,
                 name = request.name,
@@ -116,6 +123,7 @@ class StudioService(
         validateGalleryUrlChange(studio, normalizedGalleryUrl)
 
         studio.update(request.name, normalizedGalleryUrl, request.contact, request.description)
+        saveUnique(studio)
         workspaceRepository.findWithLockById(studio.workspaceId)?.rename(request.name)
         return StudioResponse.from(studio, WorkspaceRole.OWNER)
     }
@@ -135,10 +143,29 @@ class StudioService(
         val normalizedGalleryUrl = Studio.validateGalleryUrl(request.galleryUrl)
         validateGalleryUrlChange(studio, normalizedGalleryUrl)
         studio.update(request.name, normalizedGalleryUrl, request.contact, request.description)
+        saveUnique(studio)
         workspaceRepository.findWithLockById(studio.workspaceId)?.rename(request.name)
 
         return StudioResponse.from(studio, WorkspaceRole.OWNER)
     }
+
+    /**
+     * 주소 중복의 마지막 문은 유니크 제약([GALLERY_URL_UNIQUE])이다. 새 주소는 아직 아무 행도 갖지 않아 잠글 행이 없으므로,
+     * 동시에 온 같은 주소는 앞선 중복 확인을 둘 다 지난다. 그 자리에서 바로 써서(flush) 늦은 쪽도 409로 돌려보낸다.
+     * 다른 제약 위반은 주소 탓이 아니므로 그대로 던진다(#47에서 만들고 #59에서 빠졌던 처리).
+     */
+    private fun saveUnique(studio: Studio): Studio =
+        try {
+            studioRepository.saveAndFlush(studio)
+        } catch (exception: DataIntegrityViolationException) {
+            if (violatedConstraint(exception) != GALLERY_URL_UNIQUE) throw exception
+            throw StudioException(StudioErrorCode.GALLERY_URL_DUPLICATED)
+        }
+
+    private fun violatedConstraint(exception: DataIntegrityViolationException): String? =
+        generateSequence<Throwable>(exception) { it.cause }
+            .filterIsInstance<ConstraintViolationException>()
+            .firstNotNullOfOrNull { it.constraintName }
 
     private fun findStudiosFor(userId: Long): List<Studio> {
         val workspaceIds = workspaceMemberRepository.findAllByUserId(userId).map { it.workspaceId }
@@ -267,9 +294,8 @@ class StudioService(
     private fun deleteStudio(studio: Studio, userId: Long) {
         workspaceRepository.findWithLockById(studio.workspaceId)
             ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
-        val galleryRecipients = galleryRepository.findAllByWorkspaceId(studio.workspaceId)
-            .flatMap { gallery -> galleryMemberRepository.findAllByGalleryId(gallery.requiredId) }
-            .map { it.userId }
+        val galleryIds = galleryRepository.findAllByWorkspaceId(studio.workspaceId).map { it.requiredId }
+        val galleryRecipients = galleryMemberRepository.findAllByGalleryIdIn(galleryIds).map { it.userId }
         val recipients = (workspaceMemberRepository.findAllByWorkspaceId(studio.workspaceId)
             .map { it.userId }
             + galleryRecipients)

@@ -1,5 +1,6 @@
 package com.soma.wes.gallery.service
 
+import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryStatus
 import com.soma.wes.gallery.domain.GalleryStage
 import com.soma.wes.gallery.domain.GalleryWorkflowStatus
@@ -151,5 +152,20 @@ class GalleryServiceTest @Autowired constructor(
         }.isInstanceOf(GalleryException::class.java)
             .extracting("errorCode")
             .isEqualTo(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+    }
+
+    @Test
+    fun `빈 제목과 너무 긴 제목은 도메인 오류로 거절한다`() {
+        // given
+        val fixture = galleryFixture.멤버와_열린_갤러리()
+
+        // when & then
+        for (title in listOf("   ", "가".repeat(Gallery.MAX_TITLE_LENGTH + 1))) {
+            assertThatThrownBy {
+                galleryService.rename(fixture.galleryId, fixture.photographer.requiredId, RenameGalleryRequest(title))
+            }.isInstanceOf(GalleryException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(GalleryErrorCode.INVALID_TITLE)
+        }
     }
 }

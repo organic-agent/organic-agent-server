@@ -11,6 +11,7 @@ interface GalleryInviteRepository : JpaRepository<GalleryInvite, Long> {
 
     fun findByToken(token: String): GalleryInvite?
 
+    /** 초대 수락(`GalleryInviteService.accept`·`acceptPartner`)이 잠근다 — 폐기·만료·남은 횟수 확인과 사용 횟수 증가 사이에 다른 수락이 끼어 max_uses를 넘기지 않게. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     fun findWithLockByToken(token: String): GalleryInvite?
 
