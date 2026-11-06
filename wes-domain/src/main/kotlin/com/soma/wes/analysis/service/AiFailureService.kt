@@ -17,6 +17,7 @@ import java.time.ZonedDateTime
 import org.slf4j.LoggerFactory
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 
 /**
  * Lambda 가 끝내 실패한 호출 하나(실패 큐, #286 (c) ②)에 반응한다 — **직접 다시 보내지 않고, 그 작업의 재전송 대기를 앞당기기만 한다.**
@@ -44,6 +45,7 @@ class AiFailureService(
         private const val MAX_LOGGED_ERROR = 200
     }
 
+    @Transactional
     fun handle(failure: AiFailureDto) {
         val now = ZonedDateTime.now(clock)
         when (val task = failure.task) {

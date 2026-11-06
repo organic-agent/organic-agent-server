@@ -9,6 +9,11 @@ enum class GalleryErrorCode(
     override val message: String,
 ) : ErrorCode {
 
+    /**
+     * 작업공간 갤러리 개설(`POST /galleries`)에 개인 작업공간을 지정한 경우.
+     * 개인 갤러리는 무료 1회·프로 쿠폰 같은 이용권을 소비해야 열리므로 `POST /galleries/personal`로만 만든다 —
+     * 이 경로를 열어 두면 이용권 없이 개인 갤러리를 만들 수 있다.
+     */
     PERSONAL_CHECKOUT_REQUIRED(HttpStatus.PAYMENT_REQUIRED, "GALLERY_402_1", "개인 갤러리는 무료 또는 프로 이용권으로 개설해 주세요."),
     GALLERY_ARCHIVED(HttpStatus.FORBIDDEN, "GALLERY_403_6", "종료된 갤러리는 열람만 가능합니다."),
     FOLDERS_ALREADY_SAVED(HttpStatus.CONFLICT, "GALLERY_409_2", "사진 정리가 이미 완료되었습니다."),
@@ -46,6 +51,9 @@ enum class GalleryErrorCode(
     INVALID_INVITE_EXPIRY(HttpStatus.BAD_REQUEST, "GALLERY_400_6", "초대 만료 시각은 현재보다 뒤여야 합니다."),
     INVALID_INVITE_MAX_USES(HttpStatus.BAD_REQUEST, "GALLERY_400_7", "초대 사용 가능 횟수는 1~100이어야 합니다."),
 
+    /** 제목은 컨트롤러 `@Valid`도 막지만, 서비스가 직접 제목을 정해 넣는 경로에서는 이 코드가 유일한 문이다. */
+    INVALID_TITLE(HttpStatus.BAD_REQUEST, "GALLERY_400_10", "갤러리 제목은 1자 이상 100자 이하여야 합니다."),
+
     /** 멤버도 담당 작가도 아닌 사용자의 접근. */
     GALLERY_ACCESS_DENIED(HttpStatus.FORBIDDEN, "GALLERY_403_1", "갤러리에 접근할 권한이 없습니다."),
     GALLERY_NOT_OPEN(HttpStatus.FORBIDDEN, "GALLERY_403_2", "지금은 사진을 고를 수 없는 갤러리입니다."),
@@ -74,6 +82,11 @@ enum class GalleryErrorCode(
     GALLERY_NOT_FOUND(HttpStatus.NOT_FOUND, "GALLERY_404_1", "존재하지 않는 갤러리입니다."),
     MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "GALLERY_404_2", "갤러리 멤버가 아닙니다."),
     INVITE_NOT_FOUND(HttpStatus.NOT_FOUND, "GALLERY_404_3", "존재하지 않는 초대 링크입니다."),
+    /**
+     * 초대 링크 토큰으로 미리보기·수락할 때 그 토큰을 찾지 못했거나, 링크가 가리키는 작업공간이 없거나 스튜디오가 정지된 경우.
+     * [INVITE_NOT_FOUND]는 작가·멤버가 갤러리(작업공간) 안에서 현재 초대를 찾는 관리 경로의 404이고,
+     * [INVITE_REVOKED]는 토큰은 맞지만 폐기된 링크(410)다. 토큰 경로는 링크가 없는 것과 쓸 수 없는 곳을 가리키는 것을 구분하지 않는다.
+     */
     INVITE_INVALID(HttpStatus.NOT_FOUND, "GALLERY_404_4", "유효하지 않은 초대 링크입니다."),
 
     INVITE_FULL(HttpStatus.CONFLICT, "GALLERY_409_1", "초대 링크의 사용 가능 횟수를 모두 소진했습니다."),

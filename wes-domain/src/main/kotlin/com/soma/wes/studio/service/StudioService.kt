@@ -279,9 +279,8 @@ class StudioService(
     private fun deleteStudio(studio: Studio, userId: Long) {
         workspaceRepository.findWithLockById(studio.workspaceId)
             ?: throw StudioException(StudioErrorCode.STUDIO_NOT_FOUND)
-        val galleryRecipients = galleryRepository.findAllByWorkspaceId(studio.workspaceId)
-            .flatMap { gallery -> galleryMemberRepository.findAllByGalleryId(gallery.requiredId) }
-            .map { it.userId }
+        val galleryIds = galleryRepository.findAllByWorkspaceId(studio.workspaceId).map { it.requiredId }
+        val galleryRecipients = galleryMemberRepository.findAllByGalleryIdIn(galleryIds).map { it.userId }
         val recipients = (workspaceMemberRepository.findAllByWorkspaceId(studio.workspaceId)
             .map { it.userId }
             + galleryRecipients)

@@ -20,7 +20,6 @@ import com.soma.wes.workspace.domain.WorkspaceRole
 import com.soma.wes.workspace.domain.WorkspaceType
 import com.soma.wes.workspace.repository.WorkspaceMemberRepository
 import com.soma.wes.workspace.repository.WorkspaceRepository
-import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionSynchronization
@@ -121,18 +120,27 @@ class UserService(
         val ownedPersonalWorkspaces = ownedWorkspaces.filter { it.type == WorkspaceType.PERSONAL }
         val galleryMemberships = galleryMemberRepository.findAllByUserId(id)
 
-        val ownedStudioWorkspaces = ownedWorkspaces.filter { workspace ->
-            workspace.type == WorkspaceType.STUDIO &&
-                workspaceMemberRepository.findAllWithLockByWorkspaceId(workspace.requiredId)
-                    .count { it.role == WorkspaceRole.OWNER } == 1
-        }
+        val studioOwnerCounts = workspaceMemberRepository
+            .findAllWithLockByWorkspaceIdIn(ownedWorkspaces.filter { it.type == WorkspaceType.STUDIO }.map { it.requiredId })
+            .filter { it.role == WorkspaceRole.OWNER }
+            .groupingBy { it.workspaceId }
+            .eachCount()
+        val ownedStudioWorkspaces = ownedWorkspaces.filter { studioOwnerCounts[it.requiredId] == 1 }
         val deletedWorkspaces = ownedPersonalWorkspaces + ownedStudioWorkspaces
         val deletedWorkspaceIds = deletedWorkspaces.map { it.requiredId }.toSet()
 
-        for (membership in memberships.filter { it.workspaceId !in deletedWorkspaceIds }) {
-            val workspace = workspaceRepository.findByIdOrNull(membership.workspaceId) ?: continue
+        val leftWorkspaceIds = memberships.map { it.workspaceId }.filter { it !in deletedWorkspaceIds }
+        val galleries = galleryRepository.findAllById(galleryMemberships.map { it.galleryId })
+        val galleryById = galleries.associateBy { it.requiredId }
+        val relatedWorkspaceIds = leftWorkspaceIds + deletedWorkspaceIds + galleries.map { it.workspaceId }
+        val membersByWorkspaceId = workspaceMemberRepository.findAllByWorkspaceIdIn(relatedWorkspaceIds.toSet())
+            .groupBy { it.workspaceId }
+        val workspaceById = workspaceRepository.findAllById(leftWorkspaceIds).associateBy { it.requiredId }
+
+        for (workspaceId in leftWorkspaceIds) {
+            val workspace = workspaceById[workspaceId] ?: continue
             notificationPublisher.publish(
-                userIds = workspaceMemberRepository.findAllByWorkspaceId(workspace.requiredId)
+                userIds = membersByWorkspaceId[workspaceId].orEmpty()
                     .filter { it.role == WorkspaceRole.OWNER && it.userId != id }.map { it.userId },
                 type = UserNotificationType.WORKSPACE_MEMBER_LEFT,
                 scope = if (workspace.type == WorkspaceType.STUDIO) UserNotificationScope.STUDIO else UserNotificationScope.GLOBAL,
@@ -142,13 +150,13 @@ class UserService(
             )
         }
 
-        deletedWorkspaces.forEach { workspace ->
-            val galleryRecipients = galleryRepository.findAllByWorkspaceId(workspace.requiredId)
-                .flatMap { gallery -> galleryMemberRepository.findAllByGalleryId(gallery.requiredId) }
-                .map { it.userId }
-            val recipients = (workspaceMemberRepository.findAllByWorkspaceId(workspace.requiredId)
-                .map { it.userId }
-                + galleryRecipients)
+        val deletedGalleries = galleryRepository.findAllByWorkspaceIdIn(deletedWorkspaceIds)
+        val workspaceIdByGalleryId = deletedGalleries.associate { it.requiredId to it.workspaceId }
+        val galleryMemberIdsByWorkspaceId = galleryMemberRepository.findAllByGalleryIdIn(workspaceIdByGalleryId.keys)
+            .groupBy(keySelector = { workspaceIdByGalleryId.getValue(it.galleryId) }, valueTransform = { it.userId })
+        for (workspace in deletedWorkspaces) {
+            val recipients = (membersByWorkspaceId[workspace.requiredId].orEmpty().map { it.userId }
+                + galleryMemberIdsByWorkspaceId[workspace.requiredId].orEmpty())
                 .filterNot { it == id }
             notificationPublisher.publish(
                 userIds = recipients,
@@ -161,8 +169,8 @@ class UserService(
         }
 
         for (membership in galleryMemberships) {
-            val gallery = galleryRepository.findByIdOrNull(membership.galleryId) ?: continue
-            val owners = workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId)
+            val gallery = galleryById[membership.galleryId] ?: continue
+            val owners = membersByWorkspaceId[gallery.workspaceId].orEmpty()
                 .filter { it.role == WorkspaceRole.OWNER }
                 .map { it.userId }
             notificationPublisher.publish(

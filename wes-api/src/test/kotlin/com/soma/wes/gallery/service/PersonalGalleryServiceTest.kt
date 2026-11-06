@@ -1,5 +1,6 @@
 package com.soma.wes.gallery.service
 
+import com.soma.wes.billing.domain.ProCouponStatus
 import com.soma.wes.billing.fixture.BillingFixture
 import com.soma.wes.billing.repository.FreeGalleryClaimRepository
 import com.soma.wes.billing.service.CouponService
@@ -283,7 +284,7 @@ class PersonalGalleryServiceTest @Autowired constructor(
                 softly.assertThat(result.planId).isEqualTo("pro")
                 softly.assertThat(result.planMaxPhotoCount).isEqualTo(10_000)
                 softly.assertThat(result.planExpiresAt).isBetween(before.plusYears(1), after.plusYears(1))
-                softly.assertThat(used.status).isEqualTo("USED")
+                softly.assertThat(used.status).isEqualTo(ProCouponStatus.USED)
                 softly.assertThat(used.galleryId).isEqualTo(result.id)
                 softly.assertThat(used.expiresAt).isEqualTo(result.planExpiresAt)
                 softly.assertThat(benefits.getMyBenefits(user.requiredId).freePlanAvailable).isTrue()
@@ -320,7 +321,7 @@ class PersonalGalleryServiceTest @Autowired constructor(
             assertThatThrownBy { target.create(user.requiredId, request) }
                 .isInstanceOf(BillingException::class.java)
                 .extracting("errorCode").isEqualTo(BillingErrorCode.COUPON_ALREADY_USED)
-            assertThat(benefits.getMyBenefits(user.requiredId).coupons.single().status).isEqualTo("USED")
+            assertThat(benefits.getMyBenefits(user.requiredId).coupons.single().status).isEqualTo(ProCouponStatus.USED)
         }
 
         @Test
@@ -335,7 +336,7 @@ class PersonalGalleryServiceTest @Autowired constructor(
                 selectionDeadline = ZonedDateTime.now(clock).plusYears(2),
             )) }.isInstanceOf(GalleryException::class.java)
                 .extracting("errorCode").isEqualTo(GalleryErrorCode.SELECTION_DEADLINE_AFTER_PLAN_EXPIRY)
-            assertThat(benefits.getMyBenefits(user.requiredId).coupons.single().status).isEqualTo("AVAILABLE")
+            assertThat(benefits.getMyBenefits(user.requiredId).coupons.single().status).isEqualTo(ProCouponStatus.AVAILABLE)
             assertThat(target.create(user.requiredId, CreatePersonalGalleryRequest(
                 title = "정상 프로", planId = "pro", couponId = coupon.requiredId,
             )).planId).isEqualTo("pro")

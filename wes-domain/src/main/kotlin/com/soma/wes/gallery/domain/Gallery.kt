@@ -311,8 +311,8 @@ class Gallery(
          * 돌아서, 서비스가 직접 제목을 정해 넣는 경로는 이 문이 유일한 검증이다.
          */
         private fun validateTitle(title: String) {
-            require(title.isNotBlank() && title.length <= MAX_TITLE_LENGTH) {
-                "갤러리 제목은 비어 있을 수 없고 $MAX_TITLE_LENGTH 자 이하여야 합니다."
+            if (title.isBlank() || title.length > MAX_TITLE_LENGTH) {
+                throw GalleryException(GalleryErrorCode.INVALID_TITLE)
             }
         }
 

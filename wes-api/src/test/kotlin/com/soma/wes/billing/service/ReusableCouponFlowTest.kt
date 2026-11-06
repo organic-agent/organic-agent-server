@@ -1,9 +1,9 @@
 package com.soma.wes.billing.service
 
 import com.soma.wes.billing.domain.CouponUsagePolicy
+import com.soma.wes.billing.domain.ProCouponStatus
 import com.soma.wes.billing.dto.request.RegisterProCouponRequest
 import com.soma.wes.billing.dto.request.ResolveProCouponRequest
-import com.soma.wes.billing.dto.response.ProCouponLinkResponse
 import com.soma.wes.billing.exception.BillingErrorCode
 import com.soma.wes.billing.exception.BillingException
 import com.soma.wes.billing.fixture.BillingFixture
@@ -61,7 +61,7 @@ class ReusableCouponFlowTest @Autowired constructor(
             softly.assertThat(listOf(first.id, second.id, third.id).distinct()).hasSize(3)
             softly.assertThat(coupons.findById(issued.id).orElseThrow().useCount).isEqualTo(3L)
             softly.assertThat(uses.count()).isEqualTo(3L)
-            softly.assertThat(benefit.status).isEqualTo("AVAILABLE")
+            softly.assertThat(benefit.status).isEqualTo(ProCouponStatus.AVAILABLE)
             softly.assertThat(benefit.galleryId).isEqualTo(second.id)
             softly.assertThat(target.resolve(owner.requiredId, ResolveProCouponRequest(issued.code)).galleryId).isNull()
             softly.assertThat(target.getMyBenefits(other.requiredId).coupons.single().galleryId).isEqualTo(third.id)
@@ -84,7 +84,7 @@ class ReusableCouponFlowTest @Autowired constructor(
         assertThatThrownBy {
             galleries.create(owner.requiredId, CreatePersonalGalleryRequest(title = "두 번", planId = "pro", couponId = issued.id))
         }.isInstanceOf(BillingException::class.java).extracting("errorCode").isEqualTo(BillingErrorCode.COUPON_ALREADY_USED)
-        assertThat(target.register(owner.requiredId, RegisterProCouponRequest(issued.code)).status).isEqualTo("USED")
+        assertThat(target.register(owner.requiredId, RegisterProCouponRequest(issued.code)).status).isEqualTo(ProCouponStatus.USED)
         assertThat(coupons.findById(issued.id).orElseThrow().useCount).isEqualTo(2L)
         assertThat(uses.count()).isEqualTo(2L)
     }
@@ -107,8 +107,8 @@ class ReusableCouponFlowTest @Autowired constructor(
             galleries.create(owner.requiredId, CreatePersonalGalleryRequest(title = "마감 후 사용", planId = "pro", couponId = issued.id))
         }.isInstanceOf(BillingException::class.java).extracting("errorCode").isEqualTo(BillingErrorCode.COUPON_EXPIRED)
         assertSoftly { softly ->
-            softly.assertThat(target.getMyBenefits(owner.requiredId).coupons.single().status).isEqualTo("EXPIRED")
-            softly.assertThat(target.resolve(owner.requiredId, ResolveProCouponRequest(issued.code)).status).isEqualTo(ProCouponLinkResponse.Status.EXPIRED)
+            softly.assertThat(target.getMyBenefits(owner.requiredId).coupons.single().status).isEqualTo(ProCouponStatus.EXPIRED)
+            softly.assertThat(target.resolve(owner.requiredId, ResolveProCouponRequest(issued.code)).status).isEqualTo(ProCouponStatus.EXPIRED)
             softly.assertThat(uses.findAll().single().expiresAt).isEqualTo(expiresAt)
             softly.assertThat(expiresAt.isAfter(now.plusMonths(11))).isTrue()
             softly.assertThat(coupons.findById(issued.id).orElseThrow().useCount).isEqualTo(1L)

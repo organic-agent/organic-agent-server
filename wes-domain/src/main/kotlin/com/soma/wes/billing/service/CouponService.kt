@@ -1,6 +1,7 @@
 package com.soma.wes.billing.service
 
 import com.soma.wes.billing.domain.ProCouponRegistration
+import com.soma.wes.billing.domain.ProCouponStatus
 import com.soma.wes.billing.dto.request.RegisterProCouponRequest
 import com.soma.wes.billing.dto.request.ResolveProCouponRequest
 import com.soma.wes.billing.dto.response.MyBenefitsResponse
@@ -43,10 +44,10 @@ class CouponService(
             ?: throw BillingException(BillingErrorCode.COUPON_NOT_FOUND)
         val usage = if (coupon.reusable) uses.findFirstByCouponIdAndUserIdOrderByConsumedAtDescIdDesc(coupon.requiredId, userId) else null
         val consumed = if (coupon.reusable) usage != null else coupon.consumedAt != null
-        val status = ProCouponResponse.status(coupon = coupon, used = consumed, at = ZonedDateTime.now(clock))
+        val status = ProCouponStatus.of(coupon = coupon, used = consumed, at = ZonedDateTime.now(clock))
         val usedGalleryId = if (coupon.reusable) usage?.galleryId else coupon.galleryId
         val galleryId = usedGalleryId?.takeIf {
-            status == "USED" && galleryAccess.isMetadataViewer(galleryId = it, userId = userId)
+            status == ProCouponStatus.USED && galleryAccess.isMetadataViewer(galleryId = it, userId = userId)
         }
         return ProCouponLinkResponse.of(status = status, galleryId = galleryId)
     }

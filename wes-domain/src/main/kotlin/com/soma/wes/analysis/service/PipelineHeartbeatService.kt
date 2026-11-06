@@ -29,6 +29,10 @@ class PipelineHeartbeatService(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
+    /**
+     * 트랜잭션 없이 돈다 — [AnalysisSweepWatch.check]가 멈춤을 디스코드로 알리는 동안 커넥션을 물지 않게(TX-05).
+     * 네 개의 수는 로그 한 줄의 근사치라 같은 스냅샷일 필요가 없다.
+     */
     fun beat() {
         sweepWatch.check()
         val dispatchedSince = ZonedDateTime.now(clock).minus(properties.embedRedispatchAfter)
