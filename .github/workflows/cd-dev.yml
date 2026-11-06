@@ -168,8 +168,8 @@ jobs:
           sparse-checkout: |
             docker-compose.dev.yml
             monitoring/config.alloy
-            scripts/deploy-public-ssm.sh
-            scripts/rolling-deploy.sh
+            scripts/deploy/deploy-public-ssm.sh
+            scripts/deploy/rolling-deploy.sh
           sparse-checkout-cone-mode: false
 
       - name: AWS 자격증명 설정 (OIDC — 장기 액세스 키 없음)
@@ -221,7 +221,7 @@ jobs:
             echo "AWS_REGION=${AWS_REGION}"
           } > release.env
           aws s3 cp --only-show-errors release.env "${BUNDLE}/release.env"
-          aws s3 cp --only-show-errors scripts/deploy-public-ssm.sh "${BUNDLE}/deploy-public-ssm.sh"
+          aws s3 cp --only-show-errors scripts/deploy/deploy-public-ssm.sh "${BUNDLE}/deploy-public-ssm.sh"
           aws s3 cp --only-show-errors docker-compose.dev.yml "${BUNDLE}/docker-compose.yml"
           aws s3 cp --only-show-errors monitoring/config.alloy "${BUNDLE}/config.alloy"
 
@@ -238,9 +238,9 @@ jobs:
           IMAGE_REPOSITORY: ${{ steps.release.outputs.image_repository }}
           COMPOSE_FILE: docker-compose.dev.yml
           ALLOY_FILE: monitoring/config.alloy
-          DEPLOY_SCRIPT: scripts/deploy-public-ssm.sh
+          DEPLOY_SCRIPT: scripts/deploy/deploy-public-ssm.sh
           COMMENT_PREFIX: wes-api dev deploy
-        run: bash scripts/rolling-deploy.sh
+        run: bash scripts/deploy/rolling-deploy.sh
 
       # 교체가 실패해 서버가 직전 릴리스로 돌아갔다면 묶음·태그도 직전으로 — ASG 새 서버가 서버들과 같은 버전으로 뜨게.
       - name: 교체 실패 시 배포 묶음·이미지 태그를 직전 릴리스로
@@ -283,8 +283,8 @@ jobs:
             docker-compose.admin-api.dev.yml
             deploy/wes-admin-alloy-egress.service
             monitoring/config.admin.alloy
-            scripts/configure-admin-alloy-egress.sh
-            scripts/deploy-admin-api-ssm.sh
+            scripts/deploy/configure-admin-alloy-egress.sh
+            scripts/deploy/deploy-admin-api-ssm.sh
           sparse-checkout-cone-mode: false
 
       # 공개 API 배포 역할을 넓히지 않고 wes-dev-admin에만 명령 가능한 전용 역할을 사용한다(infra environments/dev admin_api_deploy).
@@ -312,7 +312,7 @@ jobs:
           INSTANCE_ID="${{ steps.admin_instance.outputs.id }}"
           COMPOSE_B64=$(base64 -w0 docker-compose.admin-api.dev.yml)
           ALLOY_B64=$(base64 -w0 monitoring/config.admin.alloy)
-          ALLOY_EGRESS_B64=$(base64 -w0 scripts/configure-admin-alloy-egress.sh)
+          ALLOY_EGRESS_B64=$(base64 -w0 scripts/deploy/configure-admin-alloy-egress.sh)
           # 부팅 때 Loki 주소를 읽는 유닛의 파라미터 경로를 dev 관리자 프리픽스로 바꿔 보낸다 — dev 호스트 롤은 운영 프리픽스를 못 읽는다.
           sed "s|^Environment=LOKI_PARAMETER=/wes/admin-api/prod/|Environment=LOKI_PARAMETER=${ADMIN_PARAMETER_PREFIX}/|" \
             deploy/wes-admin-alloy-egress.service > alloy-egress.dev.service
@@ -331,7 +331,7 @@ jobs:
             --arg alloy_b64 "$ALLOY_B64" \
             --arg alloy_egress_b64 "$ALLOY_EGRESS_B64" \
             --arg alloy_egress_unit_b64 "$ALLOY_EGRESS_UNIT_B64" \
-            --rawfile script scripts/deploy-admin-api-ssm.sh \
+            --rawfile script scripts/deploy/deploy-admin-api-ssm.sh \
             '
               def env_line($name; $value):
                 "export \($name)=\($value | @sh)\n";

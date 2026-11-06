@@ -46,7 +46,7 @@ docker run --rm -e PGPASSWORD -e PGOPTIONS='-c default_transaction_read_only=on'
 
 ```bash
 # 백그라운드로 실행 (Bash run_in_background)
-bash scripts/db-tunnel.sh 2>&1 | grep -v "Password"
+bash scripts/dev-tools/db-tunnel.sh prod 2>&1 | grep -v "Password"
 ```
 
 `nc -z localhost 15432`가 열릴 때까지 대기(수 초). 터널은 유휴 시 끊길 수 있다 —

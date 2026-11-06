@@ -15,7 +15,6 @@ import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.util.AntPathMatcher
 import org.springframework.web.filter.OncePerRequestFilter
 
-
 class JwtAuthFilter(
     private val authTokenProvider: AuthTokenProvider,
     private val authenticationEntryPoint: CustomAuthenticationEntryPoint,

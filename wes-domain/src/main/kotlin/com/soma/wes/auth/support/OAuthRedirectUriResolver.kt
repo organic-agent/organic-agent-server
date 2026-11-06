@@ -6,7 +6,6 @@ import org.springframework.stereotype.Component
 import org.springframework.web.util.UriComponentsBuilder
 import java.net.URI
 
-
 @Component
 class OAuthRedirectUriResolver(
     @Value("\${cors.allowed-origins}")

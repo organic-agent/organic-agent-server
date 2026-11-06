@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # 부하 측정 비용 — 대상 갤러리의 측정 창(T0 → 마지막 DONE + 꼬리) 동안 쓴 Lambda·GPU·Bedrock·S3 요청을 지표로 세어 단가를 곱한다. 읽기 전용.
+# 대상: dev | prod
+# 바꾸는 것: 없음(읽기 전용)
 # 계획: docs/plans/2026-10-06/concurrent-upload-load/02-baseline.md 2.4(비용 어림 → 6장 실제 값).
 #
 #   scripts/load/cost.sh dev --label R2-cost --ids 101,102 [--tail 5min]       # dev 스택(wes-dev-* 함수·GPU)
-#   scripts/load/cost.sh remote --label R1-1-cost --ids 101,102 [--tail 5min]    # 운영
+#   scripts/load/cost.sh prod --label R1-1-cost --ids 101,102 [--tail 5min]    # 운영
 #
 #   --ids    대상 갤러리 id (쉼표). 창은 min(T0) → max(DONE) + tail. DONE 없는 갤러리가 있으면 지금까지.
 #   --tail   DONE 뒤에 더 볼 시간(GPU 자기 정지·마지막 Lambda 꼬리). 기본 5min
@@ -25,13 +27,13 @@ while [ $# -gt 0 ]; do
     --tail) TAIL="$2"; shift ;;
     --print-window) PRINT_WINDOW=1 ;;
     --window) WINDOW="$2"; shift ;;
-    -h|--help) sed -n 2,15p "$0"; exit 0 ;;
+    -h|--help) sed -n 2,17p "$0"; exit 0 ;;
     *) echo "알 수 없는 인자: $1" >&2; exit 1 ;;
   esac
   shift
 done
 [ -n "$IDS" ] || { echo "--ids 가 필요하다 (--help)" >&2; exit 1; }
-[ "$REPORT_TARGET" != local ] || { echo "비용은 AWS 지표라 remote·dev 만 의미가 있다." >&2; exit 1; }
+[ "$REPORT_TARGET" != local ] || { echo "비용은 AWS 지표라 dev·prod 만 의미가 있다." >&2; exit 1; }
 report_connect
 
 # 단가(USD) — 서울 리전 공시가. Bedrock 은 categorize 가 쓰는 us-east-1 교차 리전 프로필.

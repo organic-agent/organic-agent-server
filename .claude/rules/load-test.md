@@ -17,11 +17,11 @@ paths:
 ```
 N차 테스트 (회차 ID · 무엇을 · 조건 · 반복)
   준비  = (터널·Docker 등 먼저 띄울 것이 있으면)
-  script = scripts/load/timeline.sh remote --label R1-1 --ids 1234 --limit 7min
+  script = scripts/load/timeline.sh dev --label R1-1 --ids 1234 --limit 7min
   볼 곳 = (출력에서 확인할 섹션·판정 줄)
 ```
 
-- DB 터널(`scripts/db-tunnel.sh` 운영 15432, `scripts/db-tunnel.sh dev` dev 15433)은 **Claude가 백그라운드로 직접 띄운다** —
+- DB 터널(`scripts/dev-tools/db-tunnel.sh prod` 운영 15432, `scripts/dev-tools/db-tunnel.sh dev` dev 15433)은 **Claude가 백그라운드로 직접 띄운다** —
   사용자에게 띄워 달라고 하지 않는다. 출력은 `/dev/null`로 버린다(스크립트가 비밀번호를 찍는다). SSM 세션은 유휴로 끊기므로
   쓰기 직전에 열려 있는지 확인한다. 터널만 해당하고, 회차 실행 자체는 위 기본·예외를 따른다.
 - 사용자가 결과를 붙여 주면 그때 해석하고 다음 회차 명령을 준다.
@@ -30,17 +30,19 @@ N차 테스트 (회차 ID · 무엇을 · 조건 · 반복)
 
 ## 대상 환경
 
-스크립트 첫 인자: `local`(로컬 docker pg) · `remote`(운영) · `dev`(dev 스택). 2026-10-08부터 측정 회차는 **dev**에서 돈다 — 운영에는 읽기 조회만.
+환경 인자(필수): `local`(로컬 docker pg) · `dev`(dev 스택) · `prod`(운영). 2026-10-08부터 측정 회차는 **dev**에서 돈다 — 운영에는 읽기 조회만.
+옛 이름 `remote`는 "prod로 바뀌었다" 오류로 멈춘다(2026-11-06, 옛 기록의 명령 줄은 `remote` → `prod`로 읽는다).
 
-- 환경마다 다른 이름은 `report_parse_common`이 정한다: `ENV_NAME`·`SSM_PREFIX`(`/wes/{prod,dev}`)·`RESOURCE_PREFIX`(`wes`·`wes-dev`, Lambda·ECR 이름 앞)·`GPU_TAG_NAME`·`TUNNEL_PORT`·`DEPLOY_WORKFLOW`. 스크립트에 운영 이름을 적어 넣지 않는다. <!-- LT-02 -->
+- 환경마다 다른 이름은 `report_parse_common`이 `scripts/lib/env.sh`로 정한다: `ENV_NAME`·`SSM_PREFIX`(`/wes/{local,dev,prod}`)·`RESOURCE_PREFIX`(`wes`·`wes-dev`, Lambda·ECR 이름 앞)·`GPU_TAG_NAME`·`TUNNEL_PORT`·`DEPLOY_WORKFLOW`·`API_BASE`·`APP_DIR`. 스크립트에 운영·dev 이름을 적어 넣지 않는다 — 규칙은 `scripts.md`(SC-02~SC-04).
 - dev AI 이미지는 AI repo CD가 밀지 않는다(손으로 민다). 회차마다 `precheck.sh dev`가 이미지가 AI main보다 오래되지 않았는지 본다.
 - GPU를 끈 회차(R6·R7)는 `precheck.sh dev --gpu off`로 시작 조건을 본다.
 
 ## 스크립트 위치
 
-- 여러 측정에 쓰는 공통 도구는 `scripts/load/` 바로 아래(`precheck`·`timeline`·`cost`·`overlap`·`lib/report.sh`).
-- **한 개선(이슈) 전용 도구는 그 계획 이름의 하위 폴더**에 모은다 — 예: `scripts/load/upload-5x-10min/`(#274). 폴더에 README(파일별 하는 일·쓰기 여부·순서)를 둔다. <!-- LT-03 -->
-- 하위 폴더 스크립트는 공통 라이브러리를 `$(dirname "$0")/../lib/report.sh`로 읽는다. <!-- LT-04 --> 파이썬 가상환경은 그 폴더의 `.venv`(gitignore).
+- 여러 측정에 쓰는 공통 도구는 `scripts/load/` 바로 아래(`precheck`·`timeline`·`cost`·`overlap`·`env-snapshot`·`clone-gallery-photos`), 라이브러리는 `scripts/load/lib/`(`report.sh`·`venv.sh`).
+- **도구 묶음은 측정 대상(기능) 이름의 하위 폴더**에 모은다 — `upload/`(업로드 재생·DB 표본) · `traffic/`(사용자 트래픽 k6·풀·장애 주입) · `availability/`(배포·장애 때 끊김).
+  이슈 이름으로 짓지 않는다 — 이슈가 닫힌 뒤에도 다음 회차가 같은 묶음을 다시 쓴다. 폴더에 README(만든 이슈·파일별 하는 일·쓰기 여부·순서)를 둔다. <!-- LT-03 -->
+- 하위 폴더 스크립트는 공통 라이브러리를 `$(dirname "$0")/../lib/report.sh`로 읽는다(저장소 루트로 `cd` 하기 전에). <!-- LT-04 --> 파이썬 가상환경은 `scripts/load/lib/.venv`(`venv.sh`, gitignore).
 
 ## 출력 형식
 
@@ -48,6 +50,6 @@ N차 테스트 (회차 ID · 무엇을 · 조건 · 반복)
 
 - `report_parse_common` → `report_connect` → `report_begin "측정" "대상"` → `report_section` · `report_sql` · `report_verdict` → `report_end`
 - 머리말에 회차 라벨·측정 시각(KST)·환경·커밋·실행한 명령이 찍힌다. `--label`은 계획서 회차 ID(R1-1 등)로 준다.
-- remote·dev 조회는 `default_transaction_read_only=on` 세션이다. 쓰기가 필요한 스크립트는 lib의 `report_sql`을 쓰지 말고 따로 연결한다.
+- dev·prod 조회는 `default_transaction_read_only=on` 세션이다. 쓰기가 필요한 스크립트는 lib의 `report_sql`을 쓰지 말고 따로 연결한다.
 - 출력은 `docs/experiments/load-runs/{label}-{시각}.txt`에도 색 없이 저장된다(`LOAD_RUNS_DIR`로 바꿈).
 - 판정은 `report_verdict pass|fail|info "기준" "실측"` — 계획서 6장 표의 기준을 그대로 쓴다.

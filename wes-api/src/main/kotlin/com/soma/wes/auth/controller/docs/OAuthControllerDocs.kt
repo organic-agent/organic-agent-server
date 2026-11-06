@@ -16,7 +16,6 @@ import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 
-
 @Tag(name = "[OAuth]", description = "소셜 로그인 API")
 interface OAuthControllerDocs {
 

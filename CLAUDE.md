@@ -81,28 +81,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   공개 API는 `config/application-api-runtime.yml`(DB 커넥션 풀 분리·관리 포트 등 공개 앱 실행 설정)도 import한다 — 관리자 앱은 쓰지 않는다.
   시크릿과 인프라 파생 값은 시작 시 AWS Parameter Store에서 온다(공개 API `/wes/{local,dev,prod}/`, 관리자 API `/wes/admin-api/{local,dev,prod}/`).
 
-## 운영 스크립트 (`scripts/`, 추적됨)
+## 스크립트 (`scripts/`, 추적됨)
 
-- **`remote` 인자는 dev가 아니라 운영이다**(운영 DB 터널 15432 · `/wes/prod`). `remote` 대상 실행과 운영 DB 쓰기는 Claude가 하지 않는다 —
-  사용자가 직접 실행한다(Bash hook이 막는다). dev는 `dev` 인자가 있는 스크립트만 쓴다.
-- `db-tunnel.sh [prod|dev] [port]` — private RDS로 SSM 포트포워딩 (기본 prod 15432, dev 15433). 자격증명은 실행 시
+폴더 = 실행 주체 — `deploy/`(CD가 서버·러너에서) · `ci/`(CI 검사) · `local/`(로컬 앱의 AI 대역) · `dev-tools/`(사람이 손으로) ·
+`load/`(측정 회차) · `lib/`(공용 라이브러리, `env.sh`). 규격(환경 인자·머리 주석·언어)은 `.claude/rules/scripts.md`.
+
+- **환경 인자는 `local | dev | prod`이고 필수다**(기본값 없음). 옛 이름 `remote`는 "prod로 바뀌었다" 오류로 멈춘다.
+  `prod` 데이터 쓰기와 운영 DB 쓰기는 Claude가 하지 않는다 — 사용자가 직접 실행한다(Bash hook이 `prod`·`remote`를 막는다).
+  환경별 이름(SSM·터널 포트·리소스 접두사·API 주소)은 `scripts/lib/env.sh`에만 있다.
+- `dev-tools/db-tunnel.sh dev|prod [port]` — private RDS로 SSM 포트포워딩 (prod 15432, dev 15433). 자격증명은 실행 시
   Parameter Store에서 읽는다. 운영 DB 조회는 `PGOPTIONS='-c default_transaction_read_only=on'`을 붙인 읽기 전용 세션으로만.
-- `reset-test-data.sh [local|remote] [--all] [--with-s3]` — 수동 테스트 데이터 초기화(`remote` = **운영**).
+- `dev-tools/reset-test-data.sh local|dev|prod [--all] [--with-s3]` — 수동 테스트 데이터 초기화.
   계정은 기본 보존(토큰 유지). TRUNCATE 목록 규칙은 `.claude/rules/migration.md` 참조.
-- `delete-accounts.sh [local|remote] --email a@x.com [--email …] [--with-s3]` — 특정 OAuth 계정과
-  그 계정에 딸린 워크스페이스·갤러리·사진·S3 객체만 삭제(`remote` = **운영**). 다른 사용자·관리자 계정은 남긴다.
-- `lambda/{embedder,score}.sh --gallery-id G --photo-ids 1,2,3` · `lambda/categorize.sh --gallery-id G --job-id J` — **로컬 Lambda
+- `dev-tools/delete-accounts.sh local|dev|prod --email a@x.com [--email …] [--with-s3]` — 특정 OAuth 계정과
+  그 계정에 딸린 워크스페이스·갤러리·사진·S3 객체만 삭제. 다른 사용자·관리자 계정은 남긴다.
+- `local/lambda/{embedder,score}.sh --gallery-id G --photo-ids 1,2,3` · `local/lambda/categorize.sh --gallery-id G --job-id J` — **로컬 Lambda
   대역.** 운영 Lambda 함수 하나 = 스크립트 하나(AI repo 최상위 모듈과 같은 이름), 인자는 Lambda 페이로드 키 그대로. 로컬 wes
   (local 프로필)의 `analysis` 스윕이 배정·categorize 때 이것을 띄운다(`LocalAiTaskSender`, 운영의 EVENT 자리).
-  접속 정보는 `lib/ai-env.sh`.
-- `gpu/score-worker.sh` — **로컬 GPU 워커 대역.** 운영의 EC2 score 워커 한 대에 해당한다(AI repo `score worker --gpu --no-idle-stop`, 큐를 비우고 유휴 30초 뒤 종료).
+  접속 정보는 `local/lib/ai-env.sh`.
+- `local/gpu/score-worker.sh` — **로컬 GPU 워커 대역.** 운영의 EC2 score 워커 한 대에 해당한다(AI repo `score worker --gpu --no-idle-stop`, 큐를 비우고 유휴 30초 뒤 종료).
   로컬 wes 에서 `app.analysis.gpu.enabled=true` 면 `ScoreStep` 이 "켜기" 자리에서 이것을 띄운다(`LocalScoreWorkerPool`).
-- `local-ai.sh <galleryId> [--skip-embed] [--skip-analyze]` — 위 셋을 잡 없이 갤러리 전체로 순서대로 도는 지름길(배정·폴더는
+- `local/local-ai.sh <galleryId> [--skip-embed] [--skip-analyze]` — 위 셋을 잡 없이 갤러리 전체로 순서대로 도는 지름길(배정·폴더는
   저장되지 않음). 로컬 pg + 로컬 버킷(`/wes/local/app.storage.bucket`)을 쓴다.
-- `load/clone-gallery-photos.sh [local|dev|remote] --source G --count N [--strip embed|score|categorize]` — 부하 실측용. 원본 갤러리의
+- `load/clone-gallery-photos.sh local|dev|prod --source G --count N [--strip embed|score|categorize]` — 부하 실측용. 원본 갤러리의
   사진·분석 행을 새 갤러리 N개로 복제한다(같은 S3 객체를 가리켜 업로드 없음). `--strip`으로 그 단계부터 파이프라인이 다시 돌게 한다.
-  `dev` = dev 스택(15433, `/wes/dev`), `remote` = **운영**(15432, `/wes/prod`).
-- AI venv는 `scripts/lib/ai-venv.sh`가 `<모듈>/.venv`에 만든다(score venv에 categorize 포함).
+- AI venv는 `scripts/local/lib/ai-venv.sh`가 `<모듈>/.venv`에 만든다(score venv에 categorize 포함).
 
 ## 규칙 강제 장치
 
@@ -111,7 +114,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **편집·명령 직전(PreToolUse hook, `.claude/hooks/guard_*.py`)** — 되돌릴 수 없는 것만 막는다.
   - develop에 이미 들어간(= dev·운영 DB에 적용된) `V*__*.sql` 마이그레이션의 Edit·Write와 Bash 수정·삭제(`sed -i`·`rm`·`>>` 등) → 새 V 파일로.
     이 브랜치에서 새로 만든 V 파일은 커밋한 뒤에도 고칠 수 있다.
-  - 운영 데이터 쓰기(`remote` 데이터 스크립트, 읽기 전용 옵션 없는 15432 `psql`)와 운영 배포(main push, `ready-to-merge` 라벨,
+  - 운영 데이터 쓰기(`prod`·옛 `remote` 데이터 스크립트, 읽기 전용 옵션 없는 15432 `psql`)와 운영 배포(main push, `ready-to-merge` 라벨,
     `gh workflow run cd-prod`, base가 main인 `gh pr merge`, 배포 스크립트 직접 실행) → 사용자에게 `! <명령>`으로 직접 실행을 부탁한다.
 - **답을 끝낼 때(Stop hook, `.claude/hooks/stop_check.py`)** — `origin/develop`과 갈라진 지점 대비 바꾼 파일에서 규칙 위반 수가 늘면
   끝내지 못하고 고친다. 규칙이 허용하는 경우라고 판단되면 까닭을 말하고 넘어간다(같은 내용으로는 다시 막지 않는다).
@@ -131,6 +134,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 계층별 컨벤션 → `controller.md`, `entrypoint.md`(scheduler·listener 입구), `domain.md`, `dto.md`, `service.md`, `repository.md`,
   `infrastructure.md`, `support.md`
 - 테스트 작성 (통합 테스트 인프라, 픽스처, 단언) → `test.md`
+- 스크립트 폴더(실행 주체)·환경 인자(`local|dev|prod`, 필수)·머리 주석·언어 → `scripts.md`
 - 부하 측정 스크립트·회차 진행 (회차는 사용자가 실행, 출력은 `scripts/load/lib/report.sh`) → `load-test.md`
 
 `.claude/spec/` — 스킬·작업에서 필요할 때만 참조 (자동 로드 아님)

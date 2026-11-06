@@ -37,7 +37,6 @@ import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.ZonedDateTime
 
-
 @Service
 class GalleryService(
     private val galleryRepository: GalleryRepository,

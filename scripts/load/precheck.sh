@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # 측정 회차 시작 조건 확인 — 배포된 코드 · AI 이미지 최신 · GPU 워커 꺼짐 · 분석 설정 · 다른 분석 잡 없음 · 점수 밀린 사진 없음. 읽기 전용.
+# 대상: dev | prod
+# 바꾸는 것: 없음(읽기 전용)
 # 계획: docs/plans/2026-10-06/concurrent-upload-load/02-baseline.md 2.0(dev 환경)·2.3("매 회 시작 조건").
 #
-#   scripts/load/precheck.sh dev --label R2-pre          # dev 스택 (터널: scripts/db-tunnel.sh dev)
-#   scripts/load/precheck.sh remote --label R1-1-pre     # 운영
+#   scripts/load/precheck.sh dev --label R2-pre          # dev 스택 (터널: scripts/dev-tools/db-tunnel.sh dev)
+#   scripts/load/precheck.sh prod --label R1-1-pre     # 운영
 #
 #   --gpu off   GPU 를 끈 회차(R6·R7) — app.analysis.gpu.enabled=false 를 통과로 본다. 기본은 켜진 설정(true)을 기대한다
 set -euo pipefail
@@ -14,7 +16,7 @@ EXPECT_GPU="true"
 while [ $# -gt 0 ]; do
   case "$1" in
     --gpu) [ "$2" = off ] && EXPECT_GPU="false"; shift ;;
-    -h|--help) sed -n 2,8p "$0"; exit 0 ;;
+    -h|--help) sed -n 2,10p "$0"; exit 0 ;;
     *) echo "알 수 없는 인자: $1" >&2; exit 1 ;;
   esac
   shift

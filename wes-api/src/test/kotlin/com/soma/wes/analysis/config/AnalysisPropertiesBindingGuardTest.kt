@@ -29,7 +29,7 @@ class AnalysisPropertiesBindingGuardTest {
                 "app.analysis.embedder-function-name=wes-embedder",
                 "app.analysis.score-function-name=wes-score",
                 "app.analysis.categorize-function-name=wes-categorize",
-                "app.analysis.local-script-dir=scripts/lambda",
+                "app.analysis.local-script-dir=scripts/local/lambda",
                 "app.analysis.embed-batch-size=40",
                 "app.analysis.gpu.enabled=true",
                 "app.analysis.gpu.idle-stop-after=PT3M",
@@ -43,7 +43,7 @@ class AnalysisPropertiesBindingGuardTest {
                     softly.assertThat(lambda.embedderFunctionName).isEqualTo("wes-embedder")
                     softly.assertThat(lambda.scoreFunctionName).isEqualTo("wes-score")
                     softly.assertThat(lambda.categorizeFunctionName).isEqualTo("wes-categorize")
-                    softly.assertThat(local.localScriptDir).isEqualTo("scripts/lambda")
+                    softly.assertThat(local.localScriptDir).isEqualTo("scripts/local/lambda")
                     softly.assertThat(analysis.embedBatchSize).isEqualTo(40)
                     softly.assertThat(analysis.gpu.enabled).isTrue()
                     softly.assertThat(analysis.gpu.idleStopAfter).isEqualTo(Duration.ofMinutes(3))
