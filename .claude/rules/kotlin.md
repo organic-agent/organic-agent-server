@@ -21,7 +21,7 @@ Java를 Kotlin 문법으로 옮긴 코드가 아니라 Kotlin으로 생각한 �
 | 코드가 전제를 어김 (저장 전 id, 도달 불가 분기, 비어선 안 되는 결과) | 개발자 버그 | `checkNotNull(x) { "이유" }`, `error("이유")` |
 
 - 불변식 위반은 500이 맞다 — ErrorCode를 만들어 4xx로 포장하면 버그가 클라이언트 탓으로 보인다. <!-- EX-04 -->
-- 불변식 메시지에는 **무엇이 왜 불가능한지**를 적는다: `error("아직 저장되지 않은 RetouchRound 다")`.
+- 불변식 메시지에는 **무엇이 왜 불가능한지**를 적는다: `error("아직 저장되지 않은 RetouchRound 다")`. <!-- EX-06 -->
 - `requiredId` 형태는 하나로 맞춘다: `val requiredId: Long get() = checkNotNull(id) { "…" }` — `checkNotNull` + 메시지 있음이
   규칙이고, 메시지 문구는 자유다(`id ?: error(…)`·메시지 없는 형태는 쓰지 않는다). <!-- EX-05 -->
 - 기동 시 설정값 검증(`@ConfigurationProperties`의 `init`·`@PostConstruct`에서 `require`·`check`)은 개발자 불변식 쪽이다 —

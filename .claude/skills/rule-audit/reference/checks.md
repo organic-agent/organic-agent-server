@@ -10,17 +10,17 @@
 |---|---|
 | ID | 영역 접두사 + 번호. KT Kotlin 관용구 · LY 레이어·패키지·참조 방향(서비스·서포트 책임 포함) · EP 입구 · TX 트랜잭션 · DM 도메인·엔티티 · DTO · CT 컨트롤러 · EX 예외·에러코드 · RP repository·ORM · INF 인프라·포트 · MG 마이그레이션 · TS 테스트 · CM 공통 포맷·네이밍·주석 · GIT · LT(`scripts/load`) · SC(`scripts/` 규격). ID에 소문자(`KT-s1`)가 든 것은 권장(부록 A) |
 | 출처 | 마커가 붙은 규칙 파일(`.claude/` 기준 경로). `CLAUDE.md`의 규칙도 마커가 붙어 있다 |
-| 찾는 법 | **G** 한 줄 grep/ripgrep 명령 · **S** 스크립트·여러 줄 명령(`scripts/audit_scan.py` 또는 셸 반복문) · **J** 코드를 읽고 판단(무엇을 보면 되는지 한 줄) · **G→J** 명령이 후보를 모으고 담당 sonnet이 읽어 판단 |
+| 찾는 법 | **G** 한 줄 grep/ripgrep 명령 · **S** 스크립트·여러 줄 명령(`scripts/audit_scan.py` 또는 셸 반복문) · **J** 코드를 읽고 판단(무엇을 보면 되는지 한 줄) · **G→J** 명령이 후보를 모으고 담당 판단 에이전트가 읽어 판단 |
 | 강제 | **H** 편집 시 hook으로 막을 수 있음(파일 하나만 보고 기계 판정) · **T** 테스트/CI로(여러 파일·구조 대조) · **R** 글 규칙으로만(판단 필요) |
-| 담당 | `script` = G·S 규칙 — 명령 출력 줄이 곧 위반이다 · `test` = 저장소의 테스트가 지킨다(CI `./gradlew test`, 찾는 법에 테스트 클래스 이름) — 스크립트·sonnet은 보지 않는다 · `sonnet-a` 레이어·입구·트랜잭션(LY·EP·TX) · `sonnet-b` 도메인·DTO·예외·Kotlin 판단형(DM·DTO·EX·KT) · `sonnet-c` 저장·인프라·마이그레이션(RP·INF·MG) · `sonnet-d` 컨트롤러·공통·git·load·scripts(CT·CM·GIT·LT·SC) · `sonnet-e` 테스트(TS) |
+| 담당 | `script` = G·S 규칙 — 명령 출력 줄이 곧 위반이다 · `test` = 저장소의 테스트가 지킨다(CI `./gradlew test`, 찾는 법에 테스트 클래스 이름) — 스크립트·판단 에이전트는 보지 않는다 · `judge-a` 레이어·입구·트랜잭션(LY·EP·TX) · `judge-b` 도메인·DTO·예외·Kotlin 판단형(DM·DTO·EX·KT) · `judge-c` 저장·인프라·마이그레이션(RP·INF·MG) · `judge-d` 컨트롤러·공통·git·load·scripts(CT·CM·GIT·LT·SC) · `judge-e` 테스트(TS) |
 
 ### 명령 규약
 
 - 저장소 루트(`wes/`)에서 실행한다. 검색은 `rg`(ripgrep)로 쓴다 — 이 환경의 `grep`은 ugrep 래퍼라 옵션이 다르다. 특히 **`rg -L`은 `--follow`**라서 "패턴이 없는 파일"은 `--files-without-match`로 쓴다. Kotlin 파일 필터는 `-t kotlin`이다.
 - 출력 한 줄 = 후보 한 곳(또는 파일 하나). 출력이 없으면 그 검사로는 위반이 없다.
 - **G·S(`script`)**: 출력 줄이 그대로 위반이다. 스크립트가 보고한다.
-- **G→J**: 명령이 **후보 목록**을 만들고, 그 규칙의 담당 sonnet이 후보를 읽어 진짜 위반만 가른다(오탐·규칙이 허용한 예외를 걸러 낸다). 후보가 규칙의 예외인지는 규칙 파일의 해당 문장으로 판단한다.
-- **J**: 담당 sonnet이 해당 코드를 직접 읽고 판단한다. 읽을 범위는 「찾는 법」 한 줄이 말해 준다.
+- **G→J**: 명령이 **후보 목록**을 만들고, 그 규칙의 담당 판단 에이전트가 후보를 읽어 진짜 위반만 가른다(오탐·규칙이 허용한 예외를 걸러 낸다). 후보가 규칙의 예외인지는 규칙 파일의 해당 문장으로 판단한다.
+- **J**: 담당 판단 에이전트가 해당 코드를 직접 읽고 판단한다. 읽을 범위는 「찾는 법」 한 줄이 말해 준다.
 - 허용 목록은 쓰지 않는다 — 규칙이 허용한다고 적은 예외(규칙 파일에 있는 것)만 예외다. 기존 코드의 예외 처리는 이 문서의 몫이 아니다.
 - 멀티라인 검사는 한 위반이 한 줄로 찍히도록 `-U -P`와 앞쪽 단언(lookahead)으로 쓴다.
 - 보고 형식: `ID 경로:줄 한 줄 설명`. 규칙 문구는 보고서에 옮겨 적지 말고 ID만 쓴다.
@@ -36,27 +36,27 @@
 | KT-01 | rules/kotlin.md | **G** `!!` 토큰 | H | script |
 | KT-02 | rules/kotlin.md | **G** `lateinit`·`@Autowired` (main) | H | script |
 | KT-03 | rules/kotlin.md | **G** `String.format`·`".format(` | H | script |
-| KT-04 | rules/kotlin.md | **G→J** `"…" + x` 후보를 읽어 정규식 문자열 같은 오탐을 거른다 | H | sonnet-b |
+| KT-04 | rules/kotlin.md | **G→J** `"…" + x` 후보를 읽어 정규식 문자열 같은 오탐을 거른다 | H | judge-b |
 | KT-05 | rules/kotlin.md | **G** `.findById(` (`findByIdOrNull`은 걸리지 않는다) · 선언 시그니처의 `Optional<` | H | script |
 | KT-06 | rules/kotlin.md | **G** `?.let … ?: run` 한 줄·줄바꿈 형태 | H | script |
 | KT-07 | rules/kotlin.md | **G** `return@forEach` | H | script |
-| KT-08 | rules/kotlin.md | **G→J** `x.forEach {` 후보 중 nullable 수신자·체인 끝이 아닌 것 | R | sonnet-b |
+| KT-08 | rules/kotlin.md | **G→J** `x.forEach {` 후보 중 nullable 수신자·체인 끝이 아닌 것 | R | judge-b |
 | KT-09 | rules/kotlin.md | **G** `run {`·`with(` (함수 이름이 `run`인 선언은 제외) | H | script |
-| KT-10 | rules/kotlin.md | **J** 중첩된 `let/apply/also` · 여러 줄 람다의 `it` | R | sonnet-b |
-| KT-11 | rules/kotlin.md | **J** 손으로 쓴 누적 루프 · 루프 안 선형 탐색 | R | sonnet-b |
-| KT-12 | rules/kotlin.md | **G→J** `runCatching` 사용처를 모아 자리·로그 유무를 읽는다 | R | sonnet-b |
+| KT-10 | rules/kotlin.md | **J** 중첩된 `let/apply/also` · 여러 줄 람다의 `it` | R | judge-b |
+| KT-11 | rules/kotlin.md | **J** 손으로 쓴 누적 루프 · 루프 안 선형 탐색 | R | judge-b |
+| KT-12 | rules/kotlin.md | **G→J** `runCatching` 사용처를 모아 자리·로그 유무를 읽는다 | R | judge-b |
 | KT-13 | rules/kotlin.md | **G** `Result<…>` 타입 | H | script |
 | KT-14 | rules/kotlin.md | **G** `@JvmOverloads` | H | script |
-| KT-15 | rules/kotlin.md | **G→J** 파일 이름 찾기(find) + 확장 함수가 도메인 행위인지 읽기 | H | sonnet-b |
+| KT-15 | rules/kotlin.md | **G→J** 파일 이름 찾기(find) + 확장 함수가 도메인 행위인지 읽기 | H | judge-b |
 | KT-16 | rules/kotlin.md | **S** `when` 분기가 enum·sealed 이름(`X.Y`) 또는 enum 상수 이름(`Y`)인데 `else`가 있다 | T | script |
-| KT-17 | rules/kotlin.md | **J** 문자열 리터럴 비교·분기  | R | sonnet-b |
+| KT-17 | rules/kotlin.md | **J** 문자열 리터럴 비교·분기  | R | judge-b |
 | KT-18 | rules/kotlin.md | **G** `@JvmInline value class` 타입이 `domain/`·`repository/` 필드·시그니처에 나오는지 | T | script |
-| KT-19 | rules/kotlin.md | **J** 엔티티 두 개를 `==`·`in`·`contains`·`toSet`으로 비교하는 곳 | R | sonnet-b |
-| KT-20 | rules/kotlin.md | **G→J** 스프링 애노테이션 붙은 `object` + `object` 안의 `var` | H | sonnet-b |
-| KT-21 | rules/kotlin.md | **G→J** public 시그니처의 `Mutable*` (G) · `var` 정당성(J) | H | sonnet-b |
+| KT-19 | rules/kotlin.md | **J** 엔티티 두 개를 `==`·`in`·`contains`·`toSet`으로 비교하는 곳 | R | judge-b |
+| KT-20 | rules/kotlin.md | **G→J** 스프링 애노테이션 붙은 `object` + `object` 안의 `var` | H | judge-b |
+| KT-21 | rules/kotlin.md | **G→J** public 시그니처의 `Mutable*` (G) · `var` 정당성(J) | H | judge-b |
 | KT-22 | rules/kotlin.md | **G** `ZonedDateTime/Instant/… .now()` 무인자 | H | script |
-| KT-23 | rules/kotlin.md | **J** `=` 본문인데 분기·여러 단계가 있는 서비스·support 메서드 (컨트롤러는 CT-04) | R | sonnet-b |
-| KT-24 | rules/kotlin.md | **J** `Long, Long, Long` 나란한 위치 인자 호출 · `Dto(a, b)` 위치 호출 | R | sonnet-b |
+| KT-23 | rules/kotlin.md | **J** `=` 본문인데 분기·여러 단계가 있는 서비스·support 메서드 (컨트롤러는 CT-04) | R | judge-b |
+| KT-24 | rules/kotlin.md | **J** `Long, Long, Long` 나란한 위치 인자 호출 · `Dto(a, b)` 위치 호출 | R | judge-b |
 
 <details><summary>KT 명령 (18)</summary>
 
@@ -131,21 +131,21 @@ rg -n -t kotlin '\b(ZonedDateTime|OffsetDateTime|LocalDateTime|LocalDate|LocalTi
 | LY-04 | rules/infrastructure.md | **G** 도메인별로 `infrastructure/`의 `import com.soma.wes.<다른 도메인>` (global 제외) | T | script |
 | LY-05 | rules/infrastructure.md | **G** `service/*`의 최상위 `interface` | T | script |
 | LY-06 | rules/project-structure.md | **G** `com/soma/wes/infrastructure` 디렉터리 | T | script |
-| LY-07 | rules/common.md | **G→J** 대문자·밑줄·하이픈이 든 디렉터리(G) + 새 도메인 이름(J) | T | sonnet-a |
+| LY-07 | rules/common.md | **G→J** 대문자·밑줄·하이픈이 든 디렉터리(G) + 새 도메인 이름(J) | T | judge-a |
 | LY-08 | rules/project-structure.md | **S** 도메인 아래 2~3단계 디렉터리 중 목록 밖 | T | script |
 | LY-09 | rules/project-structure.md | **G** `wes-domain`·`wes-api`에 admin 디렉터리 / `wes-domain`에 controller 디렉터리·Application 클래스 | T | script |
 | LY-10 | rules/service.md | **G** `class …Controller`인데 `@RestController`가 없는 파일 | H | script |
-| LY-11 | rules/service.md | **J** 컨트롤러가 호출하는 public 서비스 메서드의 반환 타입·파라미터 순서 | R | sonnet-a |
-| LY-12 | rules/service.md | **J** 컨트롤러가 부르는 서비스 public 메서드의 첫 문장 | R | sonnet-a |
-| LY-13 | rules/service.md | **J** `findById…` 뒤에 `.galleryId ==`·`!=` 비교가 따라오는 곳 | R | sonnet-a |
-| LY-14 | rules/service.md | **J** 중복·정원 검사를 하는 쓰기에서 잠금 호출(`requireWithLockById`·`findWithLock…`) 유무 | R | sonnet-a |
-| LY-15 | rules/service.md | **J** id 목록을 받는 쓰기 메서드의 필터링·건너뜀 | R | sonnet-a |
-| LY-16 | rules/service.md | **J** `save` 뒤에 `throw`가 오는 흐름 | R | sonnet-a |
-| LY-17 | rules/service.md | **J** `List<Long>`·`Collection<Long>` 요청 필드를 받는 서비스의 상한 검사 | R | sonnet-a |
-| LY-18 | rules/service.md | **J** `for`·`map` 안의 `find…`·`toResponse`·`jdbc` 호출 | R | sonnet-a |
+| LY-11 | rules/service.md | **J** 컨트롤러가 호출하는 public 서비스 메서드의 반환 타입·파라미터 순서 | R | judge-a |
+| LY-12 | rules/service.md | **J** 컨트롤러가 부르는 서비스 public 메서드의 첫 문장 | R | judge-a |
+| LY-13 | rules/service.md | **J** `findById…` 뒤에 `.galleryId ==`·`!=` 비교가 따라오는 곳 | R | judge-a |
+| LY-14 | rules/service.md | **J** 중복·정원 검사를 하는 쓰기에서 잠금 호출(`requireWithLockById`·`findWithLock…`) 유무 | R | judge-a |
+| LY-15 | rules/service.md | **J** id 목록을 받는 쓰기 메서드의 필터링·건너뜀 | R | judge-a |
+| LY-16 | rules/service.md | **J** `save` 뒤에 `throw`가 오는 흐름 | R | judge-a |
+| LY-17 | rules/service.md | **J** `List<Long>`·`Collection<Long>` 요청 필드를 받는 서비스의 상한 검사 | R | judge-a |
+| LY-18 | rules/service.md | **J** `for`·`map` 안의 `find…`·`toResponse`·`jdbc` 호출 | R | judge-a |
 | LY-19 | rules/support.md | **G** `*Policy*`·`*Access*` 파일의 public `fun can…` | H | script |
-| LY-20 | rules/support.md | **J** `require*` public 메서드의 KDoc 유무·내용 | R | sonnet-a |
-| LY-21 | rules/support.md | **J** support의 검증 메서드 이름·예외 종류, 서비스끼리 복제된 검증 | R | sonnet-a |
+| LY-20 | rules/support.md | **J** `require*` public 메서드의 KDoc 유무·내용 | R | judge-a |
+| LY-21 | rules/support.md | **J** support의 검증 메서드 이름·예외 종류, 서비스끼리 복제된 검증 | R | judge-a |
 
 <details><summary>LY 명령 (11)</summary>
 
@@ -196,9 +196,9 @@ rg -n -t kotlin -g '*Policy*' -g '*Access*' '\bfun can[A-Z]' wes-*/src/main/kotl
 | EP-01 | rules/entrypoint.md | **G** `@Scheduled`가 든 파일 중 `/scheduler/` 밖 | H | script |
 | EP-02 | rules/entrypoint.md | **G** 리스너·러너 표지가 든 파일 중 `/listener/` 밖 | H | script |
 | EP-03 | rules/entrypoint.md | **G** `scheduler/`·`listener/` 안 파일 이름 | T | script |
-| EP-04 | rules/entrypoint.md | **G→J** 입구 파일의 `…repository.` import(G) + 본문의 분기 판단(J) | R | sonnet-a |
+| EP-04 | rules/entrypoint.md | **G→J** 입구 파일의 `…repository.` import(G) + 본문의 분기 판단(J) | R | judge-a |
 | EP-05 | rules/entrypoint.md | **G** `@Scheduled` 직후 `fun`의 첫 문장이 리더 가드가 아니다(규칙에 적힌 예외 제외) | T | script |
-| EP-06 | rules/entrypoint.md | **J** 각 `@Scheduled`가 부르는 service 메서드의 멱등·잠금 방식 | R | sonnet-a |
+| EP-06 | rules/entrypoint.md | **J** 각 `@Scheduled`가 부르는 service 메서드의 멱등·잠금 방식 | R | judge-a |
 | EP-07 | rules/entrypoint.md | **G** 입구 파일(service 안 입구 제외)의 `@Transactional` | H | script |
 
 <details><summary>EP 명령 (6)</summary>
@@ -234,9 +234,9 @@ rg -l -t kotlin '^[ \t]*@(Scheduled|EventListener|TransactionalEventListener|Sqs
 |---|---|---|---|---|
 | TX-01 | rules/service.md | **G** 줄머리(0열)의 `@Transactional` | H | script |
 | TX-02 | rules/service.md | **G** `@Transactional` 다음 `private fun` | H | script |
-| TX-03 | rules/service.md | **J** 클래스 안에서 자기 `@Transactional` 메서드를 부르는 곳(오버로드 포함) | R | sonnet-a |
-| TX-04 | rules/service.md | **J** 서비스 public 메서드의 표기와 실제 DB 접근 일치 | R | sonnet-a |
-| TX-05 | rules/service.md | **J** `@Transactional` 메서드 안의 네트워크 호출(`exists`·`copy`·`deleteAll`·`send`·OAuth) — `presign*`·키 조립·`isAvailable`은 제외 | R | sonnet-a |
+| TX-03 | rules/service.md | **J** 클래스 안에서 자기 `@Transactional` 메서드를 부르는 곳(오버로드 포함) | R | judge-a |
+| TX-04 | rules/service.md | **J** 서비스 public 메서드의 표기와 실제 DB 접근 일치 | R | judge-a |
+| TX-05 | rules/service.md | **J** `@Transactional` 메서드 안의 네트워크 호출(`exists`·`copy`·`deleteAll`·`send`·OAuth) — `presign*`·키 조립·`isAvailable`은 제외 | R | judge-a |
 
 <details><summary>TX 명령 (2)</summary>
 
@@ -260,15 +260,15 @@ rg -nUP -t kotlin '@Transactional[^\n]*\n(\s*@[^\n]*\n)*\s*private fun' wes-*/sr
 | DM-01 | rules/domain.md | **G** `@Entity`·`@Embeddable` 다음 `data class` | H | script |
 | DM-02 | rules/domain.md | **G** `@Entity` 파일 중 `BaseEntity()` 상속이 없는 것 (있으면 KDoc 사유를 읽는다) | H | script |
 | DM-03 | rules/domain.md | **G** `@Column`(한 줄형·무인자) 중 `name =`이 없는 줄 (`updatable`은 J) | H | script |
-| DM-04 | rules/domain.md | **J** 엔티티의 `var`가 실제로 바뀌는지, AI 소유 컬럼이 `val`인지 | R | sonnet-b |
-| DM-05 | rules/domain.md | **G→J** `domain/`의 `init {` (G) + 생성자 안 `require`(EX-01) | H | sonnet-b |
-| DM-06 | rules/common.md | **J** 서비스가 엔티티 생성자를 직접 부르는 곳이 `of`가 있는 엔티티인지 | R | sonnet-b |
-| DM-07 | rules/domain.md | **J** 마이그레이션의 UK/CHECK 대비 서비스 검증 · 역정규화 컬럼의 KDoc | R | sonnet-b |
+| DM-04 | rules/domain.md | **J** 엔티티의 `var`가 실제로 바뀌는지, AI 소유 컬럼이 `val`인지 | R | judge-b |
+| DM-05 | rules/domain.md | **G→J** `domain/`의 `init {` (G) + 생성자 안 `require`(EX-01) | H | judge-b |
+| DM-06 | rules/common.md | **J** 서비스가 엔티티 생성자를 직접 부르는 곳이 `of`가 있는 엔티티인지 | R | judge-b |
+| DM-07 | rules/domain.md | **J** 마이그레이션의 UK/CHECK 대비 서비스 검증 · 역정규화 컬럼의 KDoc | R | judge-b |
 | DM-08 | rules/domain.md | **S** 엔티티·`@Embeddable`·`@MappedSuperclass`의 companion 뒤에 멤버가 더 있다 | H | script |
-| DM-09 | rules/domain.md | **J** 같은 정렬·상수 리터럴이 도메인마다 복제되었는지 | R | sonnet-b |
+| DM-09 | rules/domain.md | **J** 같은 정렬·상수 리터럴이 도메인마다 복제되었는지 | R | judge-b |
 | DM-10 | rules/domain.md | **S** `EntityNullabilityGuardTest` — 엔티티 메타데이터(Kotlin 타입의 nullable)·`@Column(nullable)`과 `information_schema.columns.is_nullable` 비교(Docker 필요) | T | test |
 | DM-11 | rules/domain.md | **G** `@Entity` 파일의 `var` 본문 프로퍼티 중 다음 줄이 `protected set`이 아닌 것 | H | script |
-| DM-12 | rules/domain.md | **G→J** `x.prop = …` 대입 후보를 읽어 엔티티인지 가른다(엔티티가 아닌 라이브러리 객체 대입은 거른다) | R | sonnet-b |
+| DM-12 | rules/domain.md | **G→J** `x.prop = …` 대입 후보를 읽어 엔티티인지 가른다(엔티티가 아닌 라이브러리 객체 대입은 거른다) | R | judge-b |
 | DM-13 | rules/domain.md | **G** `@Column` 중 `nullable =`이 없는 줄(값이 맞는지는 DM-10 테스트) | H | script |
 
 <details><summary>DM 명령 (7)</summary>
@@ -314,8 +314,8 @@ rg -n -t kotlin '@Column\b' wes-*/src/main/kotlin | rg -v '@Column\(.*nullable\s
 | DTO-04 | rules/dto.md | **G** `service/`·`support/`·`infrastructure/` 안의 `data class` 선언 + 들여쓴 `sealed`/`enum` | H | script |
 | DTO-05 | rules/dto.md | **G** `dto/request`·`dto/response` 최상위 타입 이름 접미사 | H | script |
 | DTO-06 | rules/dto.md | **S** 요청 DTO의 필드·응답 DTO의 `?` 필드 중 바로 위에 `@field:Schema`가 없는 것(필드 단위) | H | script |
-| DTO-07 | rules/dto.md | **J** 요청 DTO의 필드 검증 애노테이션 유무, 서비스의 2차 방어(`EMPTY_PHOTO_IDS` 류) | R | sonnet-b |
-| DTO-08 | rules/dto.md | **G→J** `@field:Size(max = 숫자)` 리터럴이 도메인 상수와 같은 값인지 | R | sonnet-b |
+| DTO-07 | rules/dto.md | **J** 요청 DTO의 필드 검증 애노테이션 유무, 서비스의 2차 방어(`EMPTY_PHOTO_IDS` 류) | R | judge-b |
+| DTO-08 | rules/dto.md | **G→J** `@field:Size(max = 숫자)` 리터럴이 도메인 상수와 같은 값인지 | R | judge-b |
 | DTO-09 | rules/dto.md | **G** `dto/response`의 `val x: <엔티티·값객체>` | T | script |
 | DTO-10 | rules/repository.md | **G** `repository/`(projection 제외) 안의 `data class` | H | script |
 
@@ -360,14 +360,14 @@ rg -n -t kotlin -g '**/repository/**/*' -g '!**/projection/**' '^\s*(private |in
 | ID | 출처 | 찾는 법 | 강제 | 담당 |
 |---|---|---|---|---|
 | CT-01 | rules/controller.md | **G** `controller/`의 `…repository.`·`…infrastructure.`·엔티티 클래스 import | T | script |
-| CT-02 | rules/controller.md | **G→J** 정책 클래스 import(G) + 본문의 분기·매핑(J) | R | sonnet-d |
+| CT-02 | rules/controller.md | **G→J** 정책 클래스 import(G) + 본문의 분기·매핑(J) | R | judge-d |
 | CT-03 | rules/controller.md | **G** `@RequestMapping`이 없거나 두 접두사로 시작하지 않는 컨트롤러 | H | script |
 | CT-04 | rules/controller.md | **G** `=` 본문 `fun`(여러 줄 시그니처 포함) · `@ResponseStatus` | H | script |
 | CT-05 | rules/controller.md | **S** 바인딩 애노테이션 순서가 principal→path→header·param→body가 아닌 `fun` | H | script |
 | CT-06 | rules/controller.md | **G** `@Valid` 없는 `@RequestBody` | H | script |
 | CT-07 | rules/controller.md | **G** `ControllerDocs`를 구현하지 않는 `@RestController` · docs 밖의 문서 애노테이션 | H | script |
-| CT-08 | rules/controller.md | **G→J** `permitAll`·`requestMatchers` 사용처가 `PublicPaths` 경유인지 | R | sonnet-d |
-| CT-09 | rules/common.md | **G→J** 경로 리터럴의 대문자·밑줄(G) + 복수형 여부(J) | H | sonnet-d |
+| CT-08 | rules/controller.md | **G→J** `permitAll`·`requestMatchers` 사용처가 `PublicPaths` 경유인지 | R | judge-d |
+| CT-09 | rules/common.md | **G→J** 경로 리터럴의 대문자·밑줄(G) + 복수형 여부(J) | H | judge-d |
 | CT-10 | CLAUDE.md (마커 없음) | **G** `MultipartFile`·`@RequestPart` | H | script |
 
 <details><summary>CT 명령 (10)</summary>
@@ -407,15 +407,16 @@ rg -n -t kotlin 'MultipartFile|@RequestPart|MultipartHttpServletRequest' wes-*/s
 
 </details>
 
-### EX — 예외·에러코드 (5)
+### EX — 예외·에러코드 (6)
 
 | ID | 출처 | 찾는 법 | 강제 | 담당 |
 |---|---|---|---|---|
-| EX-01 | rules/common.md | **G→J** `require(`·`check(`·`throw Illegal…Exception` 후보 — 후보를 읽어 요청·비즈니스 실패인지, 설정 검증·불변식인지 가른다 | R | sonnet-b |
+| EX-01 | rules/common.md | **G→J** `require(`·`check(`·`throw Illegal…Exception` 후보 — 후보를 읽어 요청·비즈니스 실패인지, 설정 검증·불변식인지 가른다 | R | judge-b |
 | EX-02 | rules/common.md | **S** `enum class …ErrorCode`마다 `ErrorCodeFormatTest`에 `X.entries`가 있는지 | T | script |
-| EX-03 | rules/common.md | **J** 의미가 이름만으로 안 보이는 에러코드의 KDoc 유무 | R | sonnet-b |
-| EX-04 | rules/kotlin.md | **G→J** 메시지 없는 `checkNotNull(x)`(G) + 메시지 품질(J) | H | sonnet-b |
+| EX-03 | rules/common.md | **J** 의미가 이름만으로 안 보이는 에러코드의 KDoc 유무 | R | judge-b |
+| EX-04 | rules/kotlin.md | **J** `{Domain}Exception`을 던지는 곳 중 조건이 클라이언트가 만들 수 없는 상태(저장 전 id · 도달 불가 분기 · 방금 쓴 행이 없음)인 것 — 불변식이 4xx로 포장됨 | R | judge-b |
 | EX-05 | rules/kotlin.md | **G** `requiredId` 정의 중 `checkNotNull(id) {` 형태가 아닌 것 | H | script |
+| EX-06 | rules/kotlin.md | **G→J** 메시지 없는 `checkNotNull(x)`(G) + 메시지가 "무엇이 왜 불가능한지"인지(J) | H | judge-b |
 
 <details><summary>EX 명령 (4)</summary>
 
@@ -426,15 +427,15 @@ rg -n -t kotlin '(^|[^A-Za-z_.])(require|check)\(|\bthrow (Illegal|Runtime|Unsup
 # EX-02
 f=$(rg --files -g 'ErrorCodeFormatTest*' wes-*/src/test/kotlin); for n in $(rg -o -I -N -t kotlin 'enum class \w+ErrorCode' wes-*/src/main/kotlin | sed 's/enum class //'); do rg -q "$n\.entries" $f || echo $n; done
 
-# EX-04
-rg -n -t kotlin 'checkNotNull\(' wes-*/src/main/kotlin | rg -v 'checkNotNull\(.*\) \{|checkNotNull\($'
-
 # EX-05
 rg -nUP -t kotlin 'val requiredId: Long(?=\s*\n?\s*get\(\) = (?!checkNotNull\(id\) \{))' wes-*/src/main/kotlin
 
+# EX-06
+rg -n -t kotlin 'checkNotNull\(' wes-*/src/main/kotlin | rg -v 'checkNotNull\(.*\) \{|checkNotNull\($'
+
 ```
 
-명령 없음(J 또는 별도 테스트 실행): EX-03
+명령 없음(J 또는 별도 테스트 실행): EX-03, EX-04
 
 </details>
 
@@ -445,14 +446,14 @@ rg -nUP -t kotlin 'val requiredId: Long(?=\s*\n?\s*get\(\) = (?!checkNotNull\(id
 | RP-01 | rules/repository.md | **S** native `@Query` 앞 KDoc 유무 · `JdbcClient` repository 클래스 KDoc 유무 · `EntityManager` 사용 줄 (근거의 질은 J) | R | script |
 | RP-02 | rules/repository.md | **G** `JdbcTemplate`류 사용 (`BulkRepository` 제외) | H | script |
 | RP-03 | rules/repository.md | **S** `repository/*`에 파일명과 같은 최상위 타입이 없거나 repository가 둘 이상 (SQL 상수 파일 제외) | H | script |
-| RP-04 | rules/repository.md | **G→J** 최상위 `fun XRepository.require…` 목록을 보고 사용처가 둘 이상인지 읽는다 | R | sonnet-c |
-| RP-05 | rules/repository.md | **G→J** `@Lock` 다음 `fun` 이름에 `WithLock`/`lock` 없음(G) + KDoc 한 줄(J) | H | sonnet-c |
+| RP-04 | rules/repository.md | **G→J** 최상위 `fun XRepository.require…` 목록을 보고 사용처가 둘 이상인지 읽는다 | R | judge-c |
+| RP-05 | rules/repository.md | **G→J** `@Lock` 다음 `fun` 이름에 `WithLock`/`lock` 없음(G) + KDoc 한 줄(J) | H | judge-c |
 | RP-06 | rules/repository.md | **G** `@Modifying` 중 두 옵션이 모두 `true`가 아닌 줄 | H | script |
 | RP-07 | rules/repository.md | **G** `@Modifying` 다음 `fun`의 반환 타입이 `Int`가 아니다 | H | script |
-| RP-08 | rules/repository.md | **J** `@Modifying` 메서드 KDoc의 선행 조건 문장 | R | sonnet-c |
+| RP-08 | rules/repository.md | **J** `@Modifying` 메서드 KDoc의 선행 조건 문장 | R | judge-c |
 | RP-09 | rules/repository.md | **G** `batchUpdate`가 `*BulkRepository` 밖에 있음 · `*BulkRepository`에 `MANDATORY` 없음 | H | script |
-| RP-10 | rules/repository.md | **J** 소프트 삭제 테이블을 읽는 native·JDBC SQL의 `deleted_at` 조건 / KDoc | R | sonnet-c |
-| RP-11 | rules/repository.md | **J** JDBC 쓰기 + 같은 트랜잭션의 엔티티 접근 혼용 지점 | R | sonnet-c |
+| RP-10 | rules/repository.md | **J** 소프트 삭제 테이블을 읽는 native·JDBC SQL의 `deleted_at` 조건 / KDoc | R | judge-c |
+| RP-11 | rules/repository.md | **J** JDBC 쓰기 + 같은 트랜잭션의 엔티티 접근 혼용 지점 | R | judge-c |
 | RP-12 | rules/repository.md | **G** `…Projection` 타입이 `/projection/` 밖 | H | script |
 | RP-13 | rules/repository.md | **G** `repository/*` 함수 파라미터의 `List<Long>`·`Set<Long>` | H | script |
 | RP-14 | rules/repository.md | **G** `JdbcClient`·`JdbcTemplate`을 쓰는 파일이 `/repository/` 밖 (리더 임대 제외) | T | script |
@@ -507,14 +508,14 @@ rg -l -t kotlin '\bJdbcClient\b|\bJdbcTemplate\b' wes-*/src/main/kotlin | rg -v 
 | INF-02 | rules/infrastructure.md | **G** `service/port`의 벤더·web 타입 import·사용 | T | script |
 | INF-03 | rules/infrastructure.md | **G** `service/port/*` 안 class·enum·sealed 선언 | H | script |
 | INF-04 | rules/infrastructure.md | **G** `service/`·`support/`·`controller/`의 `…infrastructure.` import | T | script |
-| INF-05 | rules/infrastructure.md | **G→J** `infrastructure/*` 파일 이름 목록을 보고 기술·`Local` 접두를 확인 | R | sonnet-c |
+| INF-05 | rules/infrastructure.md | **G→J** `infrastructure/*` 파일 이름 목록을 보고 기술·`Local` 접두를 확인 | R | judge-c |
 | INF-06 | rules/infrastructure.md | **G** `infrastructure/`의 `@Bean`·`@ConfigurationProperties`; `config` 밖의 `@ConfigurationProperties` | H | script |
-| INF-07 | rules/infrastructure.md | **J** 어댑터의 catch → 도메인 예외 변환 / 서비스의 벤더 예외 import(INF-01) | R | sonnet-c |
-| INF-08 | rules/infrastructure.md | **G→J** 어댑터 로거 선언 형태(G) + 로그 내용의 층(J) | H | sonnet-c |
-| INF-09 | rules/infrastructure.md | **J** 어댑터 안의 `retry`·`fallback`·`while` 재시도 루프 | R | sonnet-c |
-| INF-10 | rules/infrastructure.md | **J** 어댑터의 배치 호출에서 상수·`hasErrors()` 확인 | R | sonnet-c |
+| INF-07 | rules/infrastructure.md | **J** 어댑터의 catch → 도메인 예외 변환 / 서비스의 벤더 예외 import(INF-01) | R | judge-c |
+| INF-08 | rules/infrastructure.md | **G→J** 어댑터 로거 선언 형태(G) + 로그 내용의 층(J) | H | judge-c |
+| INF-09 | rules/infrastructure.md | **J** 어댑터 안의 `retry`·`fallback`·`while` 재시도 루프 | R | judge-c |
+| INF-10 | rules/infrastructure.md | **J** 어댑터의 배치 호출에서 상수·`hasErrors()` 확인 | R | judge-c |
 | INF-11 | CLAUDE.md (마커 없음) | **G** `"galleries/`·`"previews/` 리터럴이 `S3PhotoStorage` 밖에 있음 | T | script |
-| INF-12 | CLAUDE.md (마커 없음) | **J** `AiTaskSender.send`·Lambda 호출이 사진 한 장씩 도는 루프 | R | sonnet-c |
+| INF-12 | CLAUDE.md (마커 없음) | **J** `AiTaskSender.send`·Lambda 호출이 사진 한 장씩 도는 루프 | R | judge-c |
 
 <details><summary>INF 명령 (8)</summary>
 
@@ -562,7 +563,7 @@ rg -n -t kotlin '"previews/|"galleries/' wes-*/src/main/kotlin | rg -v 'S3PhotoS
 | MG-07 | rules/migration.md | **S** Kotlin 상수와 현재 `photo_analysis.embedding` 차원 비교 (인프라 repo는 이 저장소 밖) | T | script |
 | MG-08 | rules/migration.md | **S** BEGIN/END 마커 쌍 불일치 파일 (새 테이블에 GRANT가 필요한지는 J) | T | script |
 | MG-09 | rules/migration.md | **S** 마이그레이션이 만든 테이블 중 TRUNCATE 목록에 없는 것 (`scheduler_leader_lease` 제외) | T | script |
-| MG-10 | rules/migration.md | **J** native·JDBC SQL의 `deleted_at` 조건, `sub_scores` 갱신 SQL (RP-10과 같은 점검) | R | sonnet-c |
+| MG-10 | rules/migration.md | **J** native·JDBC SQL의 `deleted_at` 조건, `sub_scores` 갱신 SQL (RP-10과 같은 점검) | R | judge-c |
 
 <details><summary>MG 명령 (8)</summary>
 
@@ -603,13 +604,13 @@ python3 -I .claude/skills/rule-audit/scripts/audit_scan.py truncate
 |---|---|---|---|---|
 | TS-01 | rules/test.md | **G** 테스트 소스에 `repository/`·`domain/` 디렉터리 | H | script |
 | TS-02 | rules/test.md | **G** `MockMvc`가 든 테스트 파일 중 이름이 `~ContractTest`가 아닌 것 | H | script |
-| TS-03 | rules/test.md | **J** ContractTest들의 단언 내용과 위치 | R | sonnet-e |
+| TS-03 | rules/test.md | **J** ContractTest들의 단언 내용과 위치 | R | judge-e |
 | TS-04 | rules/test.md | **S** `~Test`(ContractTest·회귀 가드 제외) 파일명에서 접미사를 뗀 이름이 main의 클래스에 없다 | T | script |
 | TS-05 | rules/test.md | **S** 대상 클래스는 있으나 테스트 패키지가 다르다 | T | script |
 | TS-06 | rules/test.md | **G** 테스트 파일 이름의 `Integration` | H | script |
 | TS-07 | rules/test.md | **S** `@IntegrationTest`·`@SpringBootTest`·`@DataJpaTest`·`@WebMvcTest`가 없는 `~Test`(UnitTest·ContractTest 제외) | H | script |
 | TS-08 | rules/test.md | **G** `@TestPropertySource`·목 빈·스파이 빈 애노테이션 줄, 들여쓴 `@TestConfiguration` | H | script |
-| TS-09 | rules/test.md | **G→J** `@SpringBootTest`인데 `DatabaseClearExtension`·`@IntegrationTest`가 없는 파일 중 DB를 쓰는 것 | R | sonnet-e |
+| TS-09 | rules/test.md | **G→J** `@SpringBootTest`인데 `DatabaseClearExtension`·`@IntegrationTest`가 없는 파일 중 DB를 쓰는 것 | R | judge-e |
 | TS-10 | rules/test.md | **G** 코드 줄의 `deleteAllInBatch(` | H | script |
 | TS-11 | rules/test.md | **S** `*Fixture` 중 `@Component` 없음 · `/fixture/` 밖 · 영문 이름 `fun` | H | script |
 | TS-12 | rules/test.md | **G** `fun {signUp\|save\|create}User(` | H | script |
@@ -617,7 +618,7 @@ python3 -I .claude/skills/rule-audit/scripts/audit_scan.py truncate
 | TS-14 | rules/test.md | **G** 코드 줄머리의 `@TestComponent` | H | script |
 | TS-15 | rules/test.md | **G** `ReflectionTestUtils` | H | script |
 | TS-16 | rules/test.md | **G** 테스트 파일의 `AtomicLong(` | H | script |
-| TS-17 | rules/test.md | **J** 테스트가 검증하는 동작을 같은 테스트의 given에서 픽스처가 이미 수행하는지 | R | sonnet-e |
+| TS-17 | rules/test.md | **J** 테스트가 검증하는 동작을 같은 테스트의 given에서 픽스처가 이미 수행하는지 | R | judge-e |
 | TS-18 | rules/test.md | **G** `@Nested` 다음 비-inner `class` · 백틱 없는 `@Test fun` | H | script |
 | TS-19 | rules/test.md | **G** `@Test`가 있는데 단계 주석이 하나도 없는 파일 | H | script |
 | TS-20 | rules/test.md | **G** `import kotlin.test.`·`org.junit.jupiter.api.Assertions`·`org.junit.Assert` | H | script |
@@ -703,14 +704,14 @@ rg -n -t kotlin '\b(ZonedDateTime|OffsetDateTime|LocalDateTime|LocalDate|Instant
 |---|---|---|---|---|
 | CM-01 | rules/common.md | **G** `import …*` | H | script |
 | CM-02 | rules/common.md | **G** import 줄 뒤에 빈 줄이 둘 이상 | H | script |
-| CM-03 | rules/common.md | **G→J** 선언 파라미터 마지막 줄에 쉼표가 없다(G, 호출부 쉼표는 J) | H | sonnet-d |
-| CM-04 | rules/common.md | **J** 비교·상한·키 이름으로 쓰인 리터럴 | R | sonnet-d |
-| CM-05 | rules/common.md | **G→J** `config` 밖의 `@ConfigurationProperties`(G, INF-06과 같은 명령) + 코드 속 운영 조정값(J) | R | sonnet-d |
+| CM-03 | rules/common.md | **G→J** 선언 파라미터 마지막 줄에 쉼표가 없다(G, 호출부 쉼표는 J) | H | judge-d |
+| CM-04 | rules/common.md | **J** 비교·상한·키 이름으로 쓰인 리터럴 | R | judge-d |
+| CM-05 | rules/common.md | **G→J** `config` 밖의 `@ConfigurationProperties`(G, INF-06과 같은 명령) + 코드 속 운영 조정값(J) | R | judge-d |
 | CM-06 | rules/common.md | **S** 그 밖 클래스의 companion 앞에 member `fun`이 있거나 뒤에 member `val/var`가 있다 | H | script |
-| CM-07 | rules/common.md | **J** 단계 사이 빈 줄 없이 뭉친 서비스 메서드 | R | sonnet-d |
-| CM-08 | rules/common.md | **J** private 메서드와 호출 위치의 거리 | R | sonnet-d |
-| CM-09 | rules/common.md | **G→J** 대문자·밑줄 시작 `fun`(G) + 접두사와 반환 타입의 일치(J) | R | sonnet-d |
-| CM-10 | rules/common.md | **G→J** 영문 주석 줄(G) + 반복·리뷰어용 주석(J) | R | sonnet-d |
+| CM-07 | rules/common.md | **J** 단계 사이 빈 줄 없이 뭉친 서비스 메서드 | R | judge-d |
+| CM-08 | rules/common.md | **J** private 메서드와 호출 위치의 거리 | R | judge-d |
+| CM-09 | rules/common.md | **G→J** 대문자·밑줄 시작 `fun`(G) + 접두사와 반환 타입의 일치(J) | R | judge-d |
+| CM-10 | rules/common.md | **G→J** 영문 주석 줄(G) + 반복·리뷰어용 주석(J) | R | judge-d |
 
 <details><summary>CM 명령 (7)</summary>
 
@@ -766,7 +767,7 @@ git branch --format='%(refname:short)' | rg -v '^(develop|main)$' | rg -v '^(fea
 
 | ID | 출처 | 찾는 법 | 강제 | 담당 |
 |---|---|---|---|---|
-| LT-01 | rules/load-test.md | **G→J** `lib/report.sh`를 읽지 않는 `scripts/load/**/*.sh` (규칙이 말한 보조 도구 제외, 남은 후보는 보조 도구인지 읽어 가른다) | T | sonnet-d |
+| LT-01 | rules/load-test.md | **G→J** `lib/report.sh`를 읽지 않는 `scripts/load/**/*.sh` (규칙이 말한 보조 도구 제외, 남은 후보는 보조 도구인지 읽어 가른다) | T | judge-d |
 | LT-03 | rules/load-test.md | **G** `scripts/load/<하위>/`에 README.md 없음 (기능 이름인지·만든 이슈를 적었는지는 리뷰) | T | script |
 | LT-04 | rules/load-test.md | **G** 하위 폴더 스크립트의 `source scripts/load/lib/report.sh`(저장소 루트 상대 경로) | H | script |
 
@@ -797,7 +798,7 @@ rg -n '^\s*(source|\.) .*lib/report\.sh' scripts/load/*/*.sh | rg -v 'dirname'
 | SC-05 | rules/scripts.md | **S** 맨 위 15줄에 `# 대상:`·`# 바꾸는 것:`·사용 예가 없는 `*.sh`·`*.rb` | H | script |
 | SC-06 | rules/scripts.md | **S** 어느 bash도 부르지 않는 파이썬·js·sql (`ci/` 제외) | T | script |
 | SC-07 | rules/scripts.md | **G** `scripts/ci`에서 줄 맨 앞의 `aws`·`curl`·`wget` 호출 | H | script |
-| SC-08 | rules/scripts.md | **J** `scripts/local/lambda/*.sh` 이름이 AI repo 최상위 모듈(운영 Lambda 함수)과 같고 인자가 페이로드 키 그대로인지 · 앱 설정 `local-script-dir`·`LocalScoreWorkerPool` 경로와 맞는지 | R | sonnet-d |
+| SC-08 | rules/scripts.md | **J** `scripts/local/lambda/*.sh` 이름이 AI repo 최상위 모듈(운영 Lambda 함수)과 같고 인자가 페이로드 키 그대로인지 · 앱 설정 `local-script-dir`·`LocalScoreWorkerPool` 경로와 맞는지 | R | judge-d |
 
 <details><summary>SC 명령 (7)</summary>
 
@@ -829,27 +830,27 @@ rg -n -P '^\s*(aws|curl|wget)\s' scripts/ci
 
 ## 3. 규칙 수 요약
 
-| 영역 | 규칙 수 | G | S | G→J | J | 강제 H | T | R | script | sonnet 담당 |
+| 영역 | 규칙 수 | G | S | G→J | J | 강제 H | T | R | script | 판단 에이전트 담당 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| KT | 24 | 11 | 1 | 6 | 6 | 15 | 1 | 8 | 12 | sonnet-b 12 |
-| LY | 21 | 9 | 1 | 1 | 10 | 2 | 9 | 10 | 10 | sonnet-a 11 |
-| EP | 7 | 5 | 0 | 1 | 1 | 3 | 2 | 2 | 5 | sonnet-a 2 |
-| TX | 5 | 2 | 0 | 0 | 3 | 2 | 0 | 3 | 2 | sonnet-a 3 |
-| DM | 12 | 4 | 2 | 2 | 4 | 6 | 1 | 5 | 6 | sonnet-b 6 |
-| DTO | 10 | 6 | 2 | 1 | 1 | 8 | 0 | 2 | 8 | sonnet-b 2 |
-| CT | 10 | 6 | 1 | 3 | 0 | 8 | 0 | 2 | 7 | sonnet-d 3 |
-| EX | 5 | 1 | 1 | 2 | 1 | 2 | 1 | 2 | 2 | sonnet-b 3 |
-| RP | 14 | 7 | 2 | 2 | 3 | 8 | 1 | 5 | 9 | sonnet-c 5 |
-| INF | 12 | 6 | 0 | 2 | 4 | 3 | 4 | 5 | 6 | sonnet-c 6 |
-| MG | 10 | 3 | 6 | 0 | 1 | 4 | 5 | 1 | 9 | sonnet-c 1 |
-| TS | 23 | 15 | 5 | 1 | 2 | 18 | 2 | 3 | 20 | sonnet-e 3 |
-| CM | 10 | 2 | 1 | 4 | 3 | 4 | 0 | 6 | 3 | sonnet-d 7 |
-| GIT | 2 | 2 | 0 | 0 | 0 | 2 | 0 | 0 | 2 | sonnet-d 0 |
-| LT | 3 | 2 | 0 | 1 | 0 | 1 | 2 | 0 | 2 | sonnet-d 1 |
-| SC | 8 | 5 | 2 | 0 | 1 | 6 | 1 | 1 | 7 | sonnet-d 1 |
-| **합계** | **176** | 86 | 24 | 26 | 40 | 92 | 29 | 55 | 110 | |
+| KT | 24 | 11 | 1 | 6 | 6 | 15 | 1 | 8 | 12 | judge-b 12 |
+| LY | 21 | 9 | 1 | 1 | 10 | 2 | 9 | 10 | 10 | judge-a 11 |
+| EP | 7 | 5 | 0 | 1 | 1 | 3 | 2 | 2 | 5 | judge-a 2 |
+| TX | 5 | 2 | 0 | 0 | 3 | 2 | 0 | 3 | 2 | judge-a 3 |
+| DM | 12 | 4 | 2 | 2 | 4 | 6 | 1 | 5 | 6 | judge-b 6 |
+| DTO | 10 | 6 | 2 | 1 | 1 | 8 | 0 | 2 | 8 | judge-b 2 |
+| CT | 10 | 6 | 1 | 3 | 0 | 8 | 0 | 2 | 7 | judge-d 3 |
+| EX | 6 | 1 | 1 | 2 | 2 | 2 | 1 | 3 | 2 | judge-b 4 |
+| RP | 14 | 7 | 2 | 2 | 3 | 8 | 1 | 5 | 9 | judge-c 5 |
+| INF | 12 | 6 | 0 | 2 | 4 | 3 | 4 | 5 | 6 | judge-c 6 |
+| MG | 10 | 3 | 6 | 0 | 1 | 4 | 5 | 1 | 9 | judge-c 1 |
+| TS | 23 | 15 | 5 | 1 | 2 | 18 | 2 | 3 | 20 | judge-e 3 |
+| CM | 10 | 2 | 1 | 4 | 3 | 4 | 0 | 6 | 3 | judge-d 7 |
+| GIT | 2 | 2 | 0 | 0 | 0 | 2 | 0 | 0 | 2 | judge-d 0 |
+| LT | 3 | 2 | 0 | 1 | 0 | 1 | 2 | 0 | 2 | judge-d 1 |
+| SC | 8 | 5 | 2 | 0 | 1 | 6 | 1 | 1 | 7 | judge-d 1 |
+| **합계** | **177** | 86 | 24 | 26 | 41 | 92 | 29 | 56 | 110 | |
 
-담당별: script 110 · sonnet-a 16 · sonnet-b 23 · sonnet-c 12 · sonnet-d 12 · sonnet-e 3  (권장 부록 A 15개는 별도)
+담당별: script 110 · judge-a 16 · judge-b 24 · judge-c 12 · judge-d 12 · judge-e 3  (권장 부록 A 15개는 별도)
 
 ## 부록 A. 권장(should) 규칙의 검사
 
@@ -858,18 +859,18 @@ rg -n -P '^\s*(aws|curl|wget)\s' scripts/ci
 | ID | 출처 | 찾는 법 | 강제 | 담당 |
 |---|---|---|---|---|
 | KT-s1 | rules/kotlin.md | **G** | H | script |
-| KT-s2 | rules/kotlin.md | **J** | R | sonnet-b |
-| KT-s3 | rules/kotlin.md | **J** | R | sonnet-b |
-| KT-s4 | rules/kotlin.md | **J** | R | sonnet-b |
+| KT-s2 | rules/kotlin.md | **J** | R | judge-b |
+| KT-s3 | rules/kotlin.md | **J** | R | judge-b |
+| KT-s4 | rules/kotlin.md | **J** | R | judge-b |
 | LY-s1 | rules/support.md | **S** | R | script |
-| LY-s2 | rules/service.md | **J** | R | sonnet-a |
-| RP-s1 | rules/repository.md | **J** | R | sonnet-c |
-| DTO-s1 | rules/dto.md | **J** | R | sonnet-b |
-| CT-s1 | rules/controller.md | **J** | R | sonnet-d |
-| TS-s1 | rules/test.md | **J** | R | sonnet-e |
+| LY-s2 | rules/service.md | **J** | R | judge-a |
+| RP-s1 | rules/repository.md | **J** | R | judge-c |
+| DTO-s1 | rules/dto.md | **J** | R | judge-b |
+| CT-s1 | rules/controller.md | **J** | R | judge-d |
+| TS-s1 | rules/test.md | **J** | R | judge-e |
 | TS-s2 | rules/test.md | **G** | T | script |
-| CM-s1 | rules/common.md | **J** | R | sonnet-d |
-| CM-s2 | rules/common.md | **J** | R | sonnet-d |
+| CM-s1 | rules/common.md | **J** | R | judge-d |
+| CM-s2 | rules/common.md | **J** | R | judge-d |
 | MG-s1 | rules/migration.md | **G** | H | script |
 
 ```bash
