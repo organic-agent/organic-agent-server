@@ -28,6 +28,12 @@ data class GalleryMemberResponse(
     @field:Schema(description = "초대를 수락한 시각")
     val joinedAt: ZonedDateTime?,
     val role: GalleryParticipantRole = GalleryParticipantRole.CLIENT,
+    @field:Schema(
+        description = "이 사람이 고른 색 키(소문자). 부부 화면에서 상대의 체크·별점을 칠하는 기준이다. 고르지 않았으면 null이고 웹이 들어온 순서로 기본 색을 준다.",
+        example = "coral",
+        allowableValues = ["sky", "coral", "apricot", "lemon", "sage", "mint", "rose"],
+    )
+    val color: String? = null,
 ) {
 
     companion object {
@@ -38,6 +44,7 @@ data class GalleryMemberResponse(
             email = user.email,
             joinedAt = member.createdAt,
             role = if (member.role == WorkspaceRole.OWNER) GalleryParticipantRole.OWNER else GalleryParticipantRole.PARTNER,
+            color = user.color?.key,
         )
 
         fun of(member: GalleryMember, user: User) = GalleryMemberResponse(
@@ -46,6 +53,7 @@ data class GalleryMemberResponse(
             nickname = user.nickname,
             email = user.email,
             joinedAt = member.createdAt,
+            color = user.color?.key,
         )
     }
 }

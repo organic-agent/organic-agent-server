@@ -3,6 +3,7 @@ package com.soma.wes.user.controller.docs
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.global.exception.ErrorResponse
 import com.soma.wes.user.dto.response.UserResponse
+import com.soma.wes.user.dto.request.ChangeUserColorRequest
 import com.soma.wes.user.dto.request.UpdateUserRequest
 import com.soma.wes.user.dto.response.UserWorkspaceResponse
 import io.swagger.v3.oas.annotations.Operation
@@ -74,6 +75,36 @@ interface UserControllerDocs {
 
     @Operation(summary = "내 닉네임 수정", description = "OAuth 제공자의 닉네임과 별개로 서비스 닉네임을 저장한다.")
     fun updateMe(loginUser: LoginUser, request: UpdateUserRequest): ResponseEntity<UserResponse>
+
+    @Operation(
+        summary = "내 색 바꾸기",
+        description = """
+            부부 화면에서 나를 칠하는 색을 계정에 저장한다. 내 다른 기기와 파트너 화면에서 같은 색이 보이게 하려는 것이다.
+            웹이 정한 7개 소문자 키 중 하나를 보내고, null을 보내면 고른 색을 지운다(웹이 들어온 순서로 기본 색을 준다).
+            상대 색은 갤러리 멤버 목록(GET /api/v1/galleries/{galleryId}/members)의 color로 읽는다.
+            닉네임 수정(PATCH /me)은 색을 건드리지 않는다.
+        """,
+    )
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "바꾼 뒤의 내 정보(color 포함)"),
+        ApiResponse(
+            responseCode = "400",
+            description = "7개 키 밖의 값(대문자 포함)",
+            content = [
+                Content(
+                    mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = Schema(implementation = ErrorResponse::class),
+                    examples = [
+                        ExampleObject(
+                            name = "모르는 색 키",
+                            value = """{"code": "USER_400_2", "message": "선택할 수 없는 색입니다."}""",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    )
+    fun changeMyColor(loginUser: LoginUser, request: ChangeUserColorRequest): ResponseEntity<UserResponse>
 
     @Operation(
         summary = "내 스튜디오·갤러리 소속 조회",

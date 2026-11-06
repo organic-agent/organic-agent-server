@@ -8,6 +8,9 @@ import com.soma.wes.studio.repository.StudioRepository
 import com.soma.wes.support.IntegrationTest
 import com.soma.wes.user.domain.Role
 import com.soma.wes.user.domain.User
+import com.soma.wes.user.domain.UserColor
+import com.soma.wes.user.dto.request.ChangeUserColorRequest
+import com.soma.wes.user.dto.request.UpdateUserRequest
 import com.soma.wes.user.exception.UserErrorCode
 import com.soma.wes.user.exception.UserException
 import com.soma.wes.user.fixture.UserFixture
@@ -20,6 +23,8 @@ import com.soma.wes.workspace.repository.WorkspaceRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.assertj.core.api.SoftAssertions.assertSoftly
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 
@@ -131,5 +136,71 @@ class UserServiceTest @Autowired constructor(
             .isEqualTo("새 이름")
         assertThatThrownBy { userService.update(user.requiredId, com.soma.wes.user.dto.request.UpdateUserRequest("  ")) }
             .isInstanceOf(UserException::class.java).extracting("errorCode").isEqualTo(UserErrorCode.INVALID_NICKNAME)
+    }
+
+    @Nested
+    @DisplayName("내 색을 바꿀 때")
+    inner class ChangeColor {
+
+        @Test
+        fun `웹 키로 저장하면 내 정보에 같은 키로 실려 온다`() {
+            // 기기마다 따로 두면 다른 기기와 파트너 화면에서 안 보인다 — 계정에서 다시 읽어도 같아야 한다.
+            // given
+            val user = userFixture.계정만("color-save")
+
+            // when
+            val changed = userService.changeColor(user.requiredId, ChangeUserColorRequest(color = "coral"))
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(changed.color).isEqualTo("coral")
+                softly.assertThat(userService.getUser(user.requiredId).color).isEqualTo("coral")
+                softly.assertThat(userRepository.findById(user.requiredId).orElseThrow().color).isEqualTo(UserColor.CORAL)
+            }
+        }
+
+        @Test
+        fun `null을 보내면 고른 색을 지운다`() {
+            // given
+            val user = userFixture.계정만("color-clear")
+            userService.changeColor(user.requiredId, ChangeUserColorRequest(color = "sky"))
+
+            // when
+            val cleared = userService.changeColor(user.requiredId, ChangeUserColorRequest(color = null))
+
+            // then
+            assertThat(cleared.color).isNull()
+            assertThat(userService.getUser(user.requiredId).color).isNull()
+        }
+
+        @Test
+        fun `일곱 키 밖이거나 대문자면 거절하고 색을 바꾸지 않는다`() {
+            // given
+            val user = userFixture.계정만("color-invalid")
+            userService.changeColor(user.requiredId, ChangeUserColorRequest(color = "mint"))
+
+            // when & then
+            for (key in listOf("purple", "SKY", "")) {
+                assertThatThrownBy { userService.changeColor(user.requiredId, ChangeUserColorRequest(color = key)) }
+                    .isInstanceOf(UserException::class.java)
+                    .extracting("errorCode")
+                    .isEqualTo(UserErrorCode.INVALID_COLOR)
+            }
+            assertThat(userService.getUser(user.requiredId).color).isEqualTo("mint")
+        }
+
+        @Test
+        fun `닉네임을 고쳐도 색은 그대로다`() {
+            // 웹은 닉네임 수정에 nickname만 보낸다. 같은 API였다면 "안 보낸 색"이 지움으로 읽힐 수 있었다.
+            // given
+            val user = userFixture.계정만("color-nickname")
+            userService.changeColor(user.requiredId, ChangeUserColorRequest(color = "rose"))
+
+            // when
+            val updated = userService.update(user.requiredId, UpdateUserRequest("새 이름"))
+
+            // then
+            assertThat(updated.color).isEqualTo("rose")
+        }
     }
 }

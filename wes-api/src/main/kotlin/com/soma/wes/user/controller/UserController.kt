@@ -2,6 +2,7 @@ package com.soma.wes.user.controller
 
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.user.controller.docs.UserControllerDocs
+import com.soma.wes.user.dto.request.ChangeUserColorRequest
 import com.soma.wes.user.dto.request.UpdateUserRequest
 import com.soma.wes.user.dto.response.UserResponse
 import com.soma.wes.user.dto.response.UserWorkspaceResponse
@@ -12,6 +13,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
@@ -38,6 +40,16 @@ class UserController(
         @Valid @RequestBody request: UpdateUserRequest,
     ): ResponseEntity<UserResponse> {
         return ResponseEntity.ok(userService.update(loginUser.id, request))
+    }
+
+    @PutMapping("/me/color")
+    override fun changeMyColor(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @Valid @RequestBody request: ChangeUserColorRequest,
+    ): ResponseEntity<UserResponse> {
+        val result = userService.changeColor(loginUser.id, request)
+
+        return ResponseEntity.ok(result)
     }
 
     @GetMapping("/me/workspaces")

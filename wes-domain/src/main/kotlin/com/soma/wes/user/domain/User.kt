@@ -78,6 +78,12 @@ class User(
     var profileImageUrl: String? = profileImageUrl
         protected set
 
+    /** 부부 화면에서 이 사람을 칠하는 색. null이면 아직 고르지 않았고, 웹이 들어온 순서로 기본 색을 준다. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "color", nullable = true, length = 20)
+    var color: UserColor? = null
+        protected set
+
     fun updateProfile(nickname: String, email: String?) {
         this.nickname = nickname
         this.email = email
@@ -86,6 +92,10 @@ class User(
     fun updateNickname(nickname: String) {
         if (nickname.isBlank() || nickname.length > MAX_NICKNAME_LENGTH) throw UserException(UserErrorCode.INVALID_NICKNAME)
         this.nickname = nickname
+    }
+
+    fun changeColor(color: UserColor?) {
+        this.color = color
     }
 
     fun syncProviderProfile(email: String?, profileImageUrl: String?) {

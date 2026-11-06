@@ -30,6 +30,8 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.put
+import org.springframework.http.MediaType
 
 @IntegrationTest
 class ProfileAndInviteContractTest @Autowired constructor(
@@ -139,5 +141,38 @@ class ProfileAndInviteContractTest @Autowired constructor(
         userRepository.deleteById(issuer.requiredId)
         assertThat(invites.preview(galleryToken, guest.requiredId).inviterNickname).isNull()
         assertThat(invites.preview(studioToken, guest.requiredId).inviterNickname).isNull()
+    }
+
+    @Test
+    fun `내 색은 소문자 키로 주고받고 null로 지우며 모르는 키는 USER_400_2다`() {
+        // given
+        val user = users.계정만("color-contract")
+        val token = tokens.generateAccessToken(user).value
+        fun putColor(body: String) = mvc.put("/api/v1/users/me/color") {
+            header("Authorization", "Bearer $token")
+            contentType = MediaType.APPLICATION_JSON
+            content = body
+        }
+
+        // when & then
+        putColor("""{"color":"sky"}""").andExpect {
+            status { isOk() }
+            jsonPath("$.color") { value("sky") }
+        }
+        mvc.get("/api/v1/users/me") { header("Authorization", "Bearer $token") }.andExpect {
+            jsonPath("$.color") { value("sky") }
+        }
+        putColor("""{"color":"PURPLE"}""").andExpect {
+            status { isBadRequest() }
+            jsonPath("$.code") { value("USER_400_2") }
+        }
+        putColor("""{"color":null}""").andExpect {
+            status { isOk() }
+            jsonPath("$.color") { value(null) }
+        }
+        mvc.put("/api/v1/users/me/color") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"color":"sky"}"""
+        }.andExpect { status { isUnauthorized() } }
     }
 }
