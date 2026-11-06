@@ -1,7 +1,7 @@
 ---
 name: rule-audit
 description: |
-  `.claude/rules`의 필수 규칙으로 서버 코드 전체를 검토한다. 기계로 찾을 수 있는 규칙은 스크립트가, 읽고 판단할 규칙은 담당 그룹별 서브 에이전트(sonnet 5개)가 맡고, 메인은 합쳐서 보고서를 쓴다.
+  `.claude/rules`의 필수 규칙으로 서버 코드 전체를 검토한다. 기계로 찾을 수 있는 규칙은 스크립트가, 읽고 판단할 규칙은 담당 그룹별 서브 에이전트(5개, 모델은 에이전트 정의가 정한다)가 맡고, 메인은 합쳐서 보고서를 쓴다.
   Trigger: "/rule-audit", "규칙 검토 돌려줘", "규칙대로 짜였는지 전체 점검"
   Do NOT use for: 변경분 리뷰(→ code-review), 한 도메인 리팩터링 진단(→ refactor-domain), 테스트 보강(→ qa-domain)
   Boundary: 코드를 고치지 않는다. 보고서만 쓴다. 위반을 고치는 일은 별도 이슈로.
@@ -29,25 +29,25 @@ python3 -I .claude/skills/rule-audit/scripts/run_checks.py <출력 폴더>
 
 - `script-violations.md`: script 담당 규칙의 위반 — 출력 줄이 곧 위반이다.
 - `candidates/<ID>.txt`: G→J 규칙의 후보.
-- `work-sonnet-<a~e>.md`: 그룹별 작업 목록.
+- `work-judge-<a~e>.md`: 그룹별 작업 목록.
 - `run-summary.md`: 명령 오류 · 허용 목록 · ID별 줄 수. **명령 오류가 있으면 그 ID를 보고서에 "검사 실패"로 적는다**(0건으로 세지 않는다).
 
-## Phase 2: 판단형 규칙 (sonnet 5개, 한 메시지에서 병렬)
+## Phase 2: 판단형 규칙 (에이전트 5개, 한 메시지에서 병렬)
 
 작업 목록 파일이 있는 그룹마다 `rule-auditor` 에이전트를 하나씩 띄운다. **프롬프트는 아래 틀 그대로** — 어디를 특히 보라는 말, 예상 위반, 이전 결과를 덧붙이지 않는다(검토 결과가 메인의 짐작을 따라가지 않게).
 
 ```
-담당 그룹: sonnet-<x>
-작업 목록: <출력 폴더>/work-sonnet-<x>.md
+담당 그룹: judge-<x>
+작업 목록: <출력 폴더>/work-judge-<x>.md
 후보 파일 폴더: <출력 폴더>/candidates/
 작업 목록의 규칙을 정의대로 검토하고 정해진 형식으로 보고하라.
 ```
 
-`subagent_type: "rule-auditor"`(모델 sonnet, 도구 Read·Grep·Glob·Bash로 고정 — `.claude/agents/rule-auditor.md`).
+`subagent_type: "rule-auditor"`(모델 haiku·도구 Read·Grep·Glob·Bash는 `.claude/agents/rule-auditor.md`가 고정한다 — `model` 인자를 따로 넘기지 않는다).
 
 ## Phase 3: 합치기 (메인)
 
-1. 각 그룹의 응답을 `<출력 폴더>/sonnet-<x>.md`로 그대로 저장한다.
+1. 각 그룹의 응답을 `<출력 폴더>/judge-<x>.md`로 그대로 저장한다.
 2. `<출력 폴더>/report.md`를 쓴다:
    - 머리말: 실행 시각 · 걸린 시간(Phase 0 시작 → 지금) · 브랜치·커밋(`git rev-parse --short HEAD`) · 에이전트별 토큰(알 수 있으면)
    - 영역별 표: | ID | 담당 | 위반 수 | 대표 위치 2~3 |
@@ -70,5 +70,7 @@ python3 -I .claude/skills/rule-audit/scripts/run_checks.py <출력 폴더>
 
 ## 운영 메모
 
+- 판단형 모델은 haiku다(2026-11-06). 같은 블라인드 시험을 Sonnet 5회·Haiku 4회 반복해 정확도는 같은 범위, 정가 환산 비용은 Haiku가 약 2.5배 낮았다.
+  모델을 바꿀 때는 에이전트 정의의 `model` 한 줄만 고치고, 같은 시험을 반복해 정한다(한 번의 비교는 회차 간 흔들림보다 작을 수 있다).
 - 허용 목록(`reference/allowlist-*.txt`, 첫 줄 `# rules: ID…`)은 정리 전 기존 위반을 묶어 새 위반만 보이게 한다. **줄어들기만 해야 한다** — 고쳐진 줄은 지우고, 새 규칙을 도입할 때만 새 목록을 만든다.
 - 규칙을 더하거나 지우면 규칙 파일의 `<!-- ID -->`와 `checks.md`의 행·명령을 같은 커밋에서 맞춘다. `check_ids.py`가 어긋남을 잡는다.

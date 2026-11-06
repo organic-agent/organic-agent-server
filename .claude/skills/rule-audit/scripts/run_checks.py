@@ -4,7 +4,7 @@
     python3 -I .claude/skills/rule-audit/scripts/run_checks.py <출력 폴더>
 
 - `script` 담당(G·S): 출력 줄이 곧 위반 → <출력>/script-violations.md
-- G→J 담당: 출력 줄은 후보 → <출력>/candidates/<ID>.txt (담당 sonnet이 읽는다)
+- G→J 담당: 출력 줄은 후보 → <출력>/candidates/<ID>.txt (담당 판단 에이전트가 읽는다)
 - 담당별 작업 목록 → <출력>/work-<담당>.md (ID · 출처 · 찾는 법 · 후보 파일)
 - 허용 목록(reference/allowlist-*.txt)이 있으면 그 줄을 위반에서 빼고, 고쳐져서 더는 안 걸리는 줄을 따로 적는다.
 

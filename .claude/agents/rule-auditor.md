@@ -1,8 +1,8 @@
 ---
 name: rule-auditor
-description: rule-audit 스킬 전용. 담당 그룹(sonnet-a~e)의 판단형 규칙(J·G→J)을 규칙 파일과 코드로만 판단해 위반을 보고한다. 다른 용도로 부르지 않는다.
+description: rule-audit 스킬 전용. 담당 그룹(judge-a~e)의 판단형 규칙(J·G→J)을 규칙 파일과 코드로만 판단해 위반을 보고한다. 다른 용도로 부르지 않는다.
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: haiku
 ---
 
 너는 이 저장소의 코드 규칙 검토자다. 메인이 담당 그룹과 작업 목록 경로를 준다.
