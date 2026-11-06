@@ -94,7 +94,7 @@ paths:
 
 ## 새 테이블의 부수 작업
 
-- `scripts/reset-test-data.sh`의 `TRUNCATE` 목록에 추가한다. V9부터 FK가 있어서, 비우려는
+- `scripts/dev-tools/reset-test-data.sh`의 `TRUNCATE` 목록에 추가한다. V9부터 FK가 있어서, 비우려는
   테이블을 참조하는 테이블이 하나라도 빠지면 Postgres가 문장 전체를 거절한다. <!-- MG-09 -->
 - 소프트 삭제 대상 테이블을 native SQL로 읽는다면 `deleted_at IS NULL`을 직접 건다 —
   `@SQLRestriction`은 JPA 경로만 지킨다 (rules/repository.md 참조). <!-- MG-10 -->

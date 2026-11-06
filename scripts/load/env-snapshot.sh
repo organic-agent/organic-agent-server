@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 # 측정 환경 스냅샷 — 회차 결과를 해석하는 데 필요한 인프라·설정·연결·데이터 규모를 한 화면에 남긴다. 읽기 전용.
+# 대상: dev | prod
+# 바꾸는 것: 없음(읽기 전용)
 # 계획: docs/plans/2026-10-08/upload-5x-10min/02-baseline.md (측정 환경)
 #
-#   scripts/load/env-snapshot.sh dev --label ENV-dev          # 준비: scripts/db-tunnel.sh dev
-#   scripts/load/env-snapshot.sh remote --label ENV-prod      # 운영(읽기만)
+#   scripts/load/env-snapshot.sh dev --label ENV-dev          # 준비: scripts/dev-tools/db-tunnel.sh dev
+#   scripts/load/env-snapshot.sh prod --label ENV-prod      # 운영(읽기만)
 #
 # 담는 것: 앱 서버 · RDS(클래스·스토리지·파라미터·지표) · Lambda(메모리·동시성·VPC) · GPU 워커 · 커넥션 고정분과 예산 ·
 #          주기 작업(@Scheduled) · 데이터 규모(행 수·크기·인덱스)
 set -euo pipefail
 source "$(dirname "$0")/lib/report.sh"
 report_parse_common "$@"; set -- ${REPORT_REST[@]+"${REPORT_REST[@]}"}
-case "${1:-}" in -h|--help) sed -n 2,9p "$0"; exit 0 ;; esac
+case "${1:-}" in -h|--help) sed -n 2,11p "$0"; exit 0 ;; esac
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 report_connect
 report_begin "측정 환경 스냅샷" "$ENV_NAME 스택 · 리전 $REGION"

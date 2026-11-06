@@ -102,7 +102,7 @@ effort: xhigh
      먼저 그 분기의 테스트를 (`write-test` 규칙대로) 추가한 뒤 진행한다.
    - 다른 도메인은 호출부 수정만 한다 (시그니처가 바뀐 경우).
    - 클래스·패키지를 옮기면 테스트 패키지도 미러링해 옮긴다.
-   - 엔티티 필드·테이블을 없애면 `.claude/rules/migration.md`를 따르고 `scripts/reset-test-data.sh` TRUNCATE 목록을 맞춘다.
+   - 엔티티 필드·테이블을 없애면 `.claude/rules/migration.md`를 따르고 `scripts/dev-tools/reset-test-data.sh` TRUNCATE 목록을 맞춘다.
    - 엔드포인트를 없애면 `controller/docs`의 `*ControllerDocs`, 요청·응답 DTO, 전용 ErrorCode까지 함께 정리한다.
 2. `./gradlew compileKotlin compileTestKotlin`
 3. `./gradlew :wes-api:test --tests "com.soma.wes.{domain}.*"` — 기준선보다 실패가 늘면 그 항목을 되돌리고 원인을 보고한다.

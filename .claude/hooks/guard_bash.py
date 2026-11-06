@@ -2,7 +2,7 @@
 """PreToolUse(Bash) — 되돌릴 수 없는 명령을 Claude가 실행하지 못하게 막는다. 필요하면 사용자가 `! <명령>`으로 직접 실행한다.
 
 막는 것(계획 D14 A):
-  ① 운영 데이터 쓰기 — `remote`(= 운영 15432·/wes/prod) 대상 데이터 스크립트, 읽기 전용 옵션 없는 운영 15432 `psql`
+  ① 운영 데이터 쓰기 — `prod`(= 운영 15432·/wes/prod, 옛 이름 `remote` 도) 대상 데이터 스크립트, 읽기 전용 옵션 없는 운영 15432 `psql`
   ② 운영 배포 — main으로 가는 `git push`, `gh workflow run cd-prod`, base가 main인 `gh pr merge`, `ready-to-merge` 라벨,
      배포 스크립트 직접 실행
   ③ develop에 이미 들어간(= 적용된) 마이그레이션을 Bash로 고치기·지우기 — `sed -i`·`rm`·`mv`·리다이렉트 등
@@ -198,8 +198,8 @@ def check_segment(segment, exported):
         return None
     if prog in SHELLS and args[:1] == ['-c'] and len(args) > 1:
         return check_command(args[1])
-    if prog in REMOTE_DATA_SCRIPTS and 'remote' in args:
-        return f'{prog} remote 는 운영 DB(15432·/wes/prod)를 바꾼다'
+    if prog in REMOTE_DATA_SCRIPTS and ('prod' in args or 'remote' in args):
+        return f'{prog} prod 는 운영 DB(15432·/wes/prod)를 바꾼다(옛 이름 remote 도 같다)'
     if prog in DEPLOY_SCRIPTS:
         return f'{prog} 는 배포 스크립트다 — 배포는 CD(cd-dev/cd-prod)가 한다'
     if (prog == 'psql' or (prog == 'docker' and 'psql' in tokens)) and '15432' in segment \

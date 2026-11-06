@@ -1,5 +1,5 @@
 # dev 관리자 호스트(wes-dev-admin) compose. docker-compose.admin-api.prod.yml과 같은 규격이고 프로필과 로그 env 라벨만 다르다.
-# cd-dev.yml이 이 파일을 보내고, 배포 스크립트(scripts/deploy-admin-api-ssm.sh)가 서버의 docker-compose.admin-api.prod.yml 자리에 둔다.
+# cd-dev.yml이 이 파일을 보내고, 배포 스크립트(scripts/deploy/deploy-admin-api-ssm.sh)가 서버의 docker-compose.admin-api.prod.yml 자리에 둔다.
 services:
   wes-admin-api:
     image: ghcr.io/${OWNER_LOWERCASE}/wes-admin-api:${IMAGE_TAG:?IMAGE_TAG must be set}

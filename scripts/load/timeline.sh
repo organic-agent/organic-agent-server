@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # 부하 측정 타임라인 — 갤러리마다 업로드 시작(T0) → AI 폴더 완료(T_done) 단계별 경과와 판정. 읽기 전용.
+# 대상: local | dev | prod
+# 바꾸는 것: 없음(읽기 전용)
 # 계획: docs/plans/2026-10-06/concurrent-upload-load/02-baseline.md 1장(P2).
 #
-#   scripts/load/timeline.sh [local|remote|dev] --label R1-1 --ids 101,102 [--limit 7min] [--title "..."]
-#   scripts/load/timeline.sh [local|remote|dev] --label R1-0 --recent 10           # 최근 큰 갤러리(사진 ≥ 500) 10개
+#   scripts/load/timeline.sh local|dev|prod --label R1-1 --ids 101,102 [--limit 7min] [--title "..."]
+#   scripts/load/timeline.sh local|dev|prod --label R1-0 --recent 10           # 최근 큰 갤러리(사진 ≥ 500) 10개
 #
 #   --ids       대상 갤러리 id (쉼표)
 #   --recent N  ids 대신 업로드 시작이 최근인 큰 갤러리 N개
@@ -20,7 +22,7 @@ while [ $# -gt 0 ]; do
     --recent) RECENT="$2"; shift ;;
     --limit) LIMIT="$2"; shift ;;
     --events) EVENTS="true" ;;
-    -h|--help) sed -n 2,12p "$0"; exit 0 ;;
+    -h|--help) sed -n 2,13p "$0"; exit 0 ;;
     *) echo "알 수 없는 인자: $1" >&2; exit 1 ;;
   esac
   shift

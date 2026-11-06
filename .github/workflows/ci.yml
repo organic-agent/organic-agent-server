@@ -71,10 +71,10 @@ jobs:
           key: gradle-build-cache-${{ runner.os }}-${{ github.sha }}
 
       - name: GitHub Actions run 길이 제한 검사
-        run: ruby ./scripts/check-workflow-run-size.rb
+        run: ruby ./scripts/ci/check-workflow-run-size.rb
 
       - name: 관리자 배포 경계 검사
-        run: bash ./scripts/check-admin-deployment-boundary.sh
+        run: bash ./scripts/ci/check-admin-deployment-boundary.sh
 
       - name: 테스트 결과 출력
         uses: EnricoMi/publish-unit-test-result-action@v2

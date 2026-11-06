@@ -72,5 +72,5 @@ repository는 쿼리 메서드가 계속 붙는 자리라 한 파일에 모이�
   `repository/` 옆에 둘 수 있다.
 - 예외: 서버 생명주기에 붙은 인프라의 SQL(`global/cluster/PostgresLeaderLeaseStore` — 리더 임대)은 `repository/` 밖에 둔다. <!-- RP-14 -->
 - id 뭉치를 받는 파라미터는 `Collection<Long>`으로 받는다 — 호출자가 List든 Set이든 상관없다. <!-- RP-13 -->
-- 새 테이블을 만들면 `scripts/reset-test-data.sh`의 TRUNCATE 목록에 추가한다 — V9 이후 FK 때문에
+- 새 테이블을 만들면 `scripts/dev-tools/reset-test-data.sh`의 TRUNCATE 목록에 추가한다 — V9 이후 FK 때문에
   참조하는 테이블이 하나라도 빠지면 문 전체가 거절된다. 의도된 제외: `scheduler_leader_lease`(비우면 도는 서버의 리더 자리가 사라진다).
