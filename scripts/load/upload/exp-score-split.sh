@@ -13,7 +13,7 @@
 set -euo pipefail
 source "$(dirname "$0")/../lib/report.sh"
 cd "$(dirname "$0")/../../.."
-report_parse_common dev "$@"; set -- ${REPORT_REST[@]+"${REPORT_REST[@]}"}
+report_parse_common "$@"; set -- ${REPORT_REST[@]+"${REPORT_REST[@]}"}
 SOURCE=20; BATCHES=60; PIPELINE=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -25,6 +25,7 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+[ "$REPORT_TARGET" = "dev" ] || { echo "dev 전용이다(쓰기)." >&2; exit 1; }
 [ -f "$PIPELINE" ] || { echo "--pipeline 실험 pipeline.py 경로가 필요하다" >&2; exit 1; }
 report_connect
 write_sql() {

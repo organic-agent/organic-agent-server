@@ -12,13 +12,20 @@
 
 WES_REGION="ap-northeast-2"
 REGION="${REGION:-$WES_REGION}"
-ENV_TARGET="${ENV_TARGET:-}"
+# 셸 환경 변수에서 물려받지 않는다 — export 해 둔 값이 숨은 기본값이 되지 않게.
+ENV_TARGET=""; ENV_TAKEN=""
 ENV_CHOICES="local | dev | prod"
 
 # 인자 하나가 환경 이름이면 ENV_TARGET 에 담고 0, 아니면 1. `remote` 는 바로 멈춘다.
+# 서로 다른 환경이 두 번 오면(`dev … prod`) 멈춘다 — 뒤의 것이 조용히 이기지 않게. 같은 값 반복은 괜찮다.
 env_take() {
   case "${1:-}" in
-    local|dev|prod) ENV_TARGET="$1"; env_vars; return 0 ;;
+    local|dev|prod)
+      if [ -n "$ENV_TAKEN" ] && [ "$ENV_TAKEN" != "$1" ]; then
+        echo "환경 인자가 둘이다($ENV_TAKEN · $1). 하나만 줄 것." >&2
+        exit 2
+      fi
+      ENV_TAKEN="$1"; ENV_TARGET="$1"; env_vars; return 0 ;;
     remote)
       echo "환경 이름 'remote' 는 'prod' 로 바뀌었다(운영). 운영이 맞으면 prod 로 다시 실행할 것." >&2
       exit 2 ;;
@@ -73,6 +80,14 @@ env_db_connect() {
     DB_PASSWORD=$(aws ssm get-parameter --region "$REGION" --name "$SSM_PREFIX/spring.datasource.password" \
       --with-decryption --query 'Parameter.Value' --output text)
   fi
+}
+
+# 이미 정한 환경에서 다른 환경으로 일부러 옮긴다 — 두 환경을 명령 줄로 함께 받은 스크립트만(예: seed-dev.sh --from prod dev).
+env_switch() {
+  case "${1:-}" in
+    local|dev|prod) ENV_TARGET="$1"; env_vars ;;
+    *) echo "환경은 $ENV_CHOICES 중 하나: ${1:-(없음)}" >&2; exit 2 ;;
+  esac
 }
 
 # 다른 환경의 값을 잠깐 빌린다 — 두 환경을 일부러 함께 쓰는 스크립트(운영 버킷 읽기 → dev 버킷 쓰기)용.

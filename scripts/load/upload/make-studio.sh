@@ -14,5 +14,6 @@ cd "$(dirname "$0")/../../.."
 env_take "${1:-}" && shift || true
 env_require
 [ "$ENV_TARGET" = "dev" ] || { echo "dev 전용이다(쓰기)." >&2; exit 1; }
+case "${1:-}" in -h|--help) sed -n 2,9p "$0"; exit 0 ;; esac   # 환경 인자 뒤의 도움말도
 source scripts/load/lib/venv.sh
 exec "$REPLAY_PY" scripts/load/upload/replay.py studio --api "$API_BASE" --ssm-prefix "$SSM_PREFIX" "$@"

@@ -50,6 +50,15 @@ NEW_KEY="'previews/galleries/' || gallery_id || '/' || regexp_replace(preview_ke
 report_begin "복제 갤러리 미리보기 제 경로로 옮기기" "dev 갤러리 $FROM~$TO · 버킷 $BUCKET"
 
 if [ "$CHECK_ONLY" = "false" ]; then
+  # 복사 전에 새 키가 겹치는지 본다 — 같은 갤러리에 파일명이 같은 미리보기가 둘이거나, 새 키를 이미 다른 사진이 쓰면
+  # 한 사진의 미리보기가 다른 사진으로 덮인다. 겹치면 복사·DB 갱신 없이 멈춘다.
+  MOVES="SELECT id, $NEW_KEY AS k FROM photos WHERE $MISPLACED"
+  DUP=$(psql_write -c "SELECT count(*) FROM (SELECT k FROM ($MOVES) m GROUP BY k HAVING count(*) > 1) d")
+  TAKEN=$(psql_write -c "SELECT count(*) FROM photos p JOIN ($MOVES) m ON p.preview_key = m.k AND p.id <> m.id")
+  if [ "$DUP" != "0" ] || [ "$TAKEN" != "0" ]; then
+    echo "새 키가 겹친다 — 같은 새 키를 받는 키 ${DUP}개 · 이미 다른 사진이 쓰는 새 키 ${TAKEN}개. 복사하지 않고 멈춘다." >&2
+    exit 1
+  fi
   PAIRS_FILE=$(mktemp -t relocate-pairs.XXXXXX)
   trap 'rm -f "$PAIRS_FILE"' EXIT
   psql_write -F $'\t' -c "SELECT preview_key, $NEW_KEY FROM photos WHERE $MISPLACED" > "$PAIRS_FILE"

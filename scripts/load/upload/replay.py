@@ -31,6 +31,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
@@ -43,6 +44,21 @@ ISSUE_BATCH = 100          # 웹이 업로드 URL을 받는 묶음 크기
 COMPLETE_FLUSH_SECONDS = 1.0
 COMPLETE_MAX_BATCH = 100
 
+
+
+def require_dev_prefix(ssm_prefix: str) -> None:
+    """dev 전용 가드 — SSM 경로의 마지막 이름이 정확히 dev 인지 본다(부분 문자열 아님).
+    값 자체는 부르는 bash 가 scripts/lib/env.sh 에서 정해 넘긴다."""
+    if ssm_prefix.rstrip("/").rsplit("/", 1)[-1] != "dev":
+        sys.exit(f"dev 전용이다 — SSM 경로가 dev 여야 한다: {ssm_prefix}")
+
+
+def require_dev(api: str, ssm_prefix: str) -> None:
+    """dev 전용 가드 — 위에 더해 API 호스트의 첫 이름이 정확히 dev 인지(쿼리·조각에 dev 를 붙여 통과하지 못하게)."""
+    require_dev_prefix(ssm_prefix)
+    host = urlparse(api).hostname or ""
+    if host.split(".")[0] != "dev":
+        sys.exit(f"dev 전용이다 — API 호스트가 dev 여야 한다: {api}")
 
 
 def log(msg: str) -> None:
@@ -62,8 +78,7 @@ def s3_client():
 # ─────────────────────────────── studio ───────────────────────────────
 
 def cmd_studio(args: argparse.Namespace) -> None:
-    if "dev" not in args.api:
-        sys.exit("dev 전용이다 — API가 dev 여야 한다")
+    require_dev(args.api, args.ssm_prefix)
     secret = ssm(f"{args.ssm_prefix}/jwt.secret", decrypt=True)
     api = Api(args.api, mint_jwt(secret, args.user_id, args.role, args.provider_id, ttl_seconds=600))
     _, body = api.post("/api/v1/studios", {"name": args.name, "galleryUrl": args.gallery_url}, attempts=1)
@@ -76,6 +91,7 @@ def cmd_studio(args: argparse.Namespace) -> None:
 
 def cmd_seed(args: argparse.Namespace) -> None:
     src_bucket = ssm(f"{args.src_ssm_prefix}/app.storage.bucket")
+    require_dev_prefix(args.ssm_prefix)   # 씨앗은 dev 버킷에만 쓴다(API 는 쓰지 않음)
     dst_bucket = ssm(f"{args.ssm_prefix}/app.storage.bucket")
     if "dev" not in dst_bucket:
         sys.exit(f"씨앗 대상이 dev 버킷이 아니다: {dst_bucket}")
@@ -212,8 +228,9 @@ def cmd_run(args: argparse.Namespace) -> None:
         tt = json.load(f)
     photos = tt["photos"][: args.limit] if args.limit else tt["photos"]
     bucket = tt["bucket"]
-    if "dev" not in bucket or "dev" not in args.api:
-        sys.exit("dev 전용이다 — 버킷·API 둘 다 dev 여야 한다")
+    require_dev(args.api, args.ssm_prefix)
+    if "dev" not in bucket:
+        sys.exit(f"dev 전용이다 — 시각표의 버킷이 dev 가 아니다: {bucket}")
     speed = args.speed
 
     secret = ssm(f"{args.ssm_prefix}/jwt.secret", decrypt=True)

@@ -28,7 +28,7 @@ done
 [ "$ENV_TARGET" = "dev" ] || { echo "씨앗은 dev 에만 쓴다 — 쓰는 환경 인자 dev 가 필요하다." >&2; exit 1; }
 DST_SSM_PREFIX="$SSM_PREFIX"
 # 원본 환경 DB 는 읽기 전용 세션(report_scalar)으로만 읽는다.
-env_take "$FROM" || { echo "--from 은 local | dev | prod 중 하나" >&2; exit 1; }
+env_switch "$FROM"
 report_connect
 
 OUT_DIR="docs/experiments/load-seed"; mkdir -p "$OUT_DIR"

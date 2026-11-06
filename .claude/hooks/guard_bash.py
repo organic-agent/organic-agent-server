@@ -14,7 +14,7 @@ import json, os, re, shlex, subprocess, sys
 ROOT = os.environ.get('CLAUDE_PROJECT_DIR') or os.getcwd()
 BASE_REF = 'origin/develop'
 READ_ONLY = 'default_transaction_read_only=on'
-REMOTE_DATA_SCRIPTS = {'reset-test-data.sh', 'delete-accounts.sh', 'clone-gallery-photos.sh'}
+REMOTE_DATA_SCRIPTS = {'reset-test-data.sh', 'delete-accounts.sh', 'clone-gallery-photos.sh', 'exp-score-split.sh'}
 DEPLOY_SCRIPTS = {'rolling-deploy.sh', 'deploy-public-ssm.sh', 'deploy-admin-api-ssm.sh'}
 # 래퍼와, 그 래퍼에서 값을 하나 더 받는 옵션. 옵션을 건너뛰지 않으면 `command -p git push …`가 git으로 안 보인다.
 WRAPPERS = {

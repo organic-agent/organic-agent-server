@@ -22,6 +22,7 @@ cd "$(dirname "$0")/../../.."
 env_take "${1:-}" && shift || true
 env_require
 [ "$ENV_TARGET" = "dev" ] || { echo "dev 전용이다(쓰기)." >&2; exit 1; }
+case "${1:-}" in -h|--help) sed -n 2,17p "$0"; exit 0 ;; esac   # 환경 인자 뒤의 도움말도
 TT="docs/experiments/load-seed/48-timetable.json"
 ARGS=()
 while [ $# -gt 0 ]; do
