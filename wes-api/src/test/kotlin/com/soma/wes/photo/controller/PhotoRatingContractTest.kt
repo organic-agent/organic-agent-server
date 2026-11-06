@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.put
 
@@ -68,5 +69,32 @@ class PhotoRatingContractTest @Autowired constructor(
     fun `별점 전체 조회는 인증을 요구한다`() {
         // when & then
         mvc.get("/api/v1/galleries/1/photo-ratings").andExpect { status { isUnauthorized() } }
+    }
+
+    @Test
+    fun `별점 기록은 지운 줄의 점수를 null로 두고 인증을 요구한다`() {
+        // given
+        val gallery = galleries.멤버와_열린_갤러리()
+        val photoId = photos.업로드된_사진(gallery.galleryId, count = 1).single()
+        val token = tokens.generateAccessToken(gallery.member).value
+        val base = "/api/v1/galleries/${gallery.galleryId}/photos/$photoId"
+        mvc.put("$base/rating") {
+            header("Authorization", "Bearer $token")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"score":4}"""
+        }
+        mvc.delete("$base/rating") { header("Authorization", "Bearer $token") }
+
+        // when & then
+        mvc.get("$base/rating-history") { header("Authorization", "Bearer $token") }.andExpect {
+            status { isOk() }
+            jsonPath("$.length()") { value(2) }
+            jsonPath("$[0].id") { isNumber() }
+            jsonPath("$[0].score") { value(null) }
+            jsonPath("$[0].ratedBy") { value(gallery.member.requiredId) }
+            jsonPath("$[0].ratedAt") { isString() }
+            jsonPath("$[1].score") { value(4) }
+        }
+        mvc.get("$base/rating-history").andExpect { status { isUnauthorized() } }
     }
 }

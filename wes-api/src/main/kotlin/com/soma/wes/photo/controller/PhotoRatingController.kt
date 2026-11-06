@@ -3,6 +3,7 @@ package com.soma.wes.photo.controller
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.photo.controller.docs.PhotoRatingControllerDocs
 import com.soma.wes.photo.dto.request.RatePhotoRequest
+import com.soma.wes.photo.dto.response.PhotoRatingHistoryResponse
 import com.soma.wes.photo.dto.response.PhotoRatingResponse
 import com.soma.wes.photo.service.PhotoRatingService
 import jakarta.validation.Valid
@@ -54,5 +55,16 @@ class PhotoRatingController(
         val status = HttpStatus.NO_CONTENT
 
         return ResponseEntity.status(status).build()
+    }
+
+    @GetMapping("/photos/{photoId}/rating-history")
+    override fun history(
+        @AuthenticationPrincipal loginUser: LoginUser,
+        @PathVariable galleryId: Long,
+        @PathVariable photoId: Long,
+    ): ResponseEntity<List<PhotoRatingHistoryResponse>> {
+        val result = photoRatingService.history(galleryId, photoId, loginUser.id)
+
+        return ResponseEntity.ok(result)
     }
 }
