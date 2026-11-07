@@ -66,7 +66,12 @@ class FolderController(
         @Valid @RequestBody request: CreateDetailFolderRequest,
     ): ResponseEntity<DetailFolderResponse> {
         return ResponseEntity.status(HttpStatus.CREATED)
-            .body(folderService.createDetail(galleryId, conceptId, loginUser.id, request))
+            .body(folderService.createDetail(
+                galleryId = galleryId,
+                conceptId = conceptId,
+                userId = loginUser.id,
+                request = request,
+            ))
     }
 
     @PatchMapping("/concept-folders/{conceptId}")
@@ -76,7 +81,12 @@ class FolderController(
         @PathVariable conceptId: Long,
         @Valid @RequestBody request: RenameFolderRequest,
     ): ResponseEntity<ConceptFolderResponse> {
-        return ResponseEntity.ok(folderService.renameConcept(galleryId, conceptId, loginUser.id, request))
+        return ResponseEntity.ok(folderService.renameConcept(
+            galleryId = galleryId,
+            conceptId = conceptId,
+            userId = loginUser.id,
+            request = request,
+        ))
     }
 
     @PatchMapping("/concept-folders/{conceptId}/detail-folders/{detailId}")
@@ -87,7 +97,13 @@ class FolderController(
         @PathVariable detailId: Long,
         @Valid @RequestBody request: RenameFolderRequest,
     ): ResponseEntity<DetailFolderResponse> {
-        return ResponseEntity.ok(folderService.renameDetail(galleryId, conceptId, detailId, loginUser.id, request))
+        return ResponseEntity.ok(folderService.renameDetail(
+            galleryId = galleryId,
+            conceptId = conceptId,
+            detailId = detailId,
+            userId = loginUser.id,
+            request = request,
+        ))
     }
 
     @PostMapping("/category-assignments/move")
@@ -108,7 +124,13 @@ class FolderController(
         @PathVariable detailId: Long,
         @Valid @RequestBody request: MergeDetailFolderRequest,
     ): ResponseEntity<MergeDetailFolderResponse> {
-        return ResponseEntity.ok(folderService.mergeDetail(galleryId, conceptId, detailId, loginUser.id, request))
+        return ResponseEntity.ok(folderService.mergeDetail(
+            galleryId = galleryId,
+            conceptId = conceptId,
+            detailId = detailId,
+            userId = loginUser.id,
+            request = request,
+        ))
     }
 
     @PostMapping("/detail-folder-merges/{mergeId}/undo")
@@ -117,7 +139,11 @@ class FolderController(
         @PathVariable galleryId: Long,
         @PathVariable mergeId: Long,
     ): ResponseEntity<UndoDetailFolderMergeResponse> {
-        return ResponseEntity.ok(folderService.undoMerge(galleryId, mergeId, loginUser.id))
+        return ResponseEntity.ok(folderService.undoMerge(
+            galleryId = galleryId,
+            mergeId = mergeId,
+            userId = loginUser.id,
+        ))
     }
 
     @DeleteMapping("/concept-folders/{conceptId}/detail-folders/{detailId}")
@@ -127,7 +153,12 @@ class FolderController(
         @PathVariable conceptId: Long,
         @PathVariable detailId: Long,
     ): ResponseEntity<Unit> {
-        folderService.deleteDetail(galleryId, conceptId, detailId, loginUser.id)
+        folderService.deleteDetail(
+            galleryId = galleryId,
+            conceptId = conceptId,
+            detailId = detailId,
+            userId = loginUser.id,
+        )
         return ResponseEntity.noContent().build()
     }
 
@@ -137,7 +168,7 @@ class FolderController(
         @PathVariable galleryId: Long,
         @PathVariable conceptId: Long,
     ): ResponseEntity<Unit> {
-        folderService.deleteConcept(galleryId, conceptId, loginUser.id)
+        folderService.deleteConcept(galleryId = galleryId, conceptId = conceptId, userId = loginUser.id)
         return ResponseEntity.noContent().build()
     }
 }

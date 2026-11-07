@@ -57,7 +57,7 @@ class GalleryInviteController(
         @PathVariable galleryId: Long,
         @PathVariable inviteId: Long,
     ): ResponseEntity<Unit> {
-        galleryInviteService.revoke(galleryId, inviteId, loginUser.id)
+        galleryInviteService.revoke(galleryId = galleryId, inviteId = inviteId, userId = loginUser.id)
         val status = HttpStatus.NO_CONTENT
 
         return ResponseEntity.status(status).build()

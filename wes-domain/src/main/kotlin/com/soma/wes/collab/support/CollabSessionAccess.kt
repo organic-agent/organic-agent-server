@@ -160,7 +160,11 @@ class CollabSessionAccess(
         if (userId != null && canUserReact(access, userId)) {
             return participantRepository.findByCollabSessionIdAndUserId(access.sessionId, userId)
                 ?: participantRepository.save(
-                    CollabParticipant.user(access.sessionId, userId, userRepository.requireById(userId).nickname),
+                    CollabParticipant.user(
+                        sessionId = access.sessionId,
+                        userId = userId,
+                        nickname = userRepository.requireById(userId).nickname,
+                    ),
                 )
         }
         return findGuest(access, guestToken) ?: throw CollabException(CollabErrorCode.GUEST_NOT_IDENTIFIED)

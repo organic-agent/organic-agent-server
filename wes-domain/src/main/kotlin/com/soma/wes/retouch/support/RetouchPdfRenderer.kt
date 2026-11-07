@@ -273,7 +273,7 @@ class RetouchPdfRenderer(
     ) {
         var text = displayable(value, font).replace('\n', ' ')
         if (maxWidth != null) {
-            while (text.length > 1 && font.getStringWidth(text) * size / FONT_UNITS > maxWidth) text = text.dropLast(2) + "…"
+            while (text.length > 1 && font.getStringWidth(text) * size / FONT_UNITS > maxWidth) text = "${text.dropLast(2)}…"
         }
         stream.beginText(); stream.setFont(font, size); stream.setNonStrokingColor(color)
         stream.newLineAtOffset(x, y); stream.showText(text); stream.endText()

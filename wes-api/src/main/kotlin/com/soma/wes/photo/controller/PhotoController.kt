@@ -95,7 +95,7 @@ class PhotoController(
         @PathVariable galleryId: Long,
         @PathVariable photoId: Long,
     ): ResponseEntity<PhotoDetailResponse> {
-        val result = photoService.get(galleryId, photoId, loginUser.id)
+        val result = photoService.get(galleryId = galleryId, photoId = photoId, userId = loginUser.id)
 
         return ResponseEntity.ok(result)
     }

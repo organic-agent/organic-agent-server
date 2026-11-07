@@ -22,7 +22,11 @@ support가 service를, infrastructure가 service·repository를 참조하면 안
   `checkNotNull`·`error`로 500을 낸다 — `kotlin.md`의 "실패의 두 종류" 참조.)
 - 에러코드 형식: `ERROR_NAME(HttpStatus.XXX, "{DOMAIN}_{HTTP상태}_{N}", "한글 메시지")` —
   `ErrorCodeFormatTest`가 형식을 강제하므로 새 enum은 그 테스트 목록에 추가한다. <!-- EX-02 -->
-- 자명하지 않은 에러코드에는 KDoc으로 "언제, 왜"를 남긴다 (`RecommendationErrorCode` 참조). <!-- EX-03 -->
+- 자명하지 않은 에러코드에는 KDoc으로 "언제, 왜"를 남긴다 (`RecommendationErrorCode` 참조). 자명하지 않은 것은 셋이다:
+  ① 같은 enum에 이름·메시지만으로 구분이 안 되는 짝이 있다(`INVITE_NOT_FOUND`·`INVITE_INVALID`·`INVITE_REVOKED`)
+  ② HTTP 상태가 이름에서 예상되는 것과 다르다(403 대신 404로 존재를 숨김, 요청이 아니라 서버 탓이라 503)
+  ③ 웹이 그 코드를 보고 재시도·다른 안내처럼 다르게 행동해야 한다(`RANKING_NOT_READY`).
+  그 밖(`PHOTO_NOT_FOUND`처럼 이름과 메시지가 다 말하는 것)에는 달지 않는다 — 이름을 되풀이할 뿐이다. <!-- EX-03 -->
 
 ## 객체 생성
 

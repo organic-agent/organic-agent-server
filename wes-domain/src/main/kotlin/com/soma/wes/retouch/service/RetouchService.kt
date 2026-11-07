@@ -278,6 +278,9 @@ class RetouchService(
 
     /**
      * S3 PUT을 마친 결과들을 항목에 기록한다. 회차가 끝나기 전에는 다시 올린 key로 덮어쓴다.
+     *
+     * 트랜잭션 없이 돈다 — S3 `exists`를 기다리는 동안 커넥션과 갤러리 잠금을 물지 않는다(TX-05). 그 사이 회차가 끝나거나
+     * 갤러리가 마감될 수 있어, 쓰기 구간(`transactionTemplate`)에서 갤러리·회차를 잠그고 인가와 상태를 다시 확인한다.
      */
     fun completeResults(
         galleryId: Long,

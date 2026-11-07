@@ -9,6 +9,7 @@ import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.recommendation.domain.AiRecommendation
 import com.soma.wes.recommendation.domain.AiSelectionJob
 import com.soma.wes.recommendation.domain.AiSelectionMode
+import com.soma.wes.recommendation.domain.PhotoSubject
 import com.soma.wes.recommendation.dto.MmrPickDto
 import com.soma.wes.recommendation.dto.RecommendablePhotoDto
 import com.soma.wes.recommendation.dto.SavedAiSelectionRoundDto
@@ -69,10 +70,6 @@ class AiSelectionJobRunner(
         private const val SUBJECTS_TRUSTED = true
         private const val PREF_MIN_SELECTED = 5
         private const val UNFILED = "미분류"
-        private const val UNKNOWN = "unknown"
-
-        /** 단체 사진은 폴더 추천에서 뺀다 — 고를 대상이 아니라는 판단(2026-10-04). */
-        private const val GROUP = "group"
 
         /** 범위 밖 행의 벡터 자리. 조회 조건이 벡터 있는 행만 고르므로 범위 안 사진에는 오지 않는다. */
         private val NO_EMBEDDING = FloatArray(0)
@@ -259,7 +256,7 @@ class AiSelectionJobRunner(
             DoubleArray(n) { rows[it].aestheticPct },
         )
         val types = rows.map { it.subjects }
-        val prefOn = SUBJECTS_TRUSTED && nSelected >= PREF_MIN_SELECTED && types.any { it != UNKNOWN }
+        val prefOn = SUBJECTS_TRUSTED && nSelected >= PREF_MIN_SELECTED && types.any { it != PhotoSubject.UNKNOWN }
         val stats = if (prefOn) {
             val mask = BooleanArray(n).also { m -> selectedIdx.forEach { m[it] = true } }
             RecommendationScoring.typeStats(types, mask)
@@ -315,7 +312,7 @@ class AiSelectionJobRunner(
             if (folder.photoIds.isEmpty()) continue
             val folderPicks = if (scoped) {
                 val allMembers = allMembersByFolder.getValue(folder.folderId)
-                val groupShots = allMembers.filter { rows[it].subjects == GROUP }.toSet()
+                val groupShots = allMembers.filter { rows[it].subjects == PhotoSubject.GROUP }.toSet()
                 val cap = world.requestedCount ?: FolderCoverage.cap(folder.photoIds.size, world.target)
                 val result = FolderCoverage.select(
                     members = allMembers,
@@ -353,7 +350,7 @@ class AiSelectionJobRunner(
                     breakdown["balance_z"] = round3(combined.balanceZ[i])
                     breakdown["affinity_z"] = round3(combined.affinityZ[i])
                 }
-                if (prefOn || scoped) breakdown["subjects"] = row.subjects
+                if (prefOn || scoped) breakdown["subjects"] = row.subjects.aiValue
 
                 picks += PlannedPick(
                     photoId = row.photoId,
