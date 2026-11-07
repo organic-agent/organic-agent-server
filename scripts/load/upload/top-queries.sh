@@ -2,7 +2,7 @@
 # 무거운 쿼리 순위 — pg_stat_statements 로 측정 회차 동안 DB 시간·버퍼·임시 파일을 가장 많이 쓴 쿼리를 본다.
 # 대상: local | dev | prod (prod 는 순위 조회만)
 # 바꾸는 것: --setup·--reset 이면 그 DB 의 pg_stat_statements(확장·통계). 순위 조회는 없음(읽기 전용)
-# 계획: docs/plans/2026-10-08/upload-5x-10min/03-options.md §4 "어느 쿼리가 메모리·시간을 쓰나" (D-3 근거). PI 는 조직 SCP로 조회 불가.
+# 계획: docs/design-method/cases/274-upload-5x-10min/03-options.md §4 "어느 쿼리가 메모리·시간을 쓰나" (D-3 근거). PI 는 조직 SCP로 조회 불가.
 #
 #   scripts/load/upload/top-queries.sh dev --setup                      # 한 번: 확장 만들기 (쓰기)
 #   scripts/load/upload/top-queries.sh dev --reset                      # 회차 직전: 통계 비우기 (쓰기)

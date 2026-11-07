@@ -2,7 +2,7 @@
 # 실험 E-SPLIT — dev GPU 1대에서 점수 워커를 설정 4가지(V0~V3)로 같은 원본 사진에 돌려 처리량·단계 시간·CLIP 품질을 비교한다. dev 전용(쓰기).
 # 대상: dev
 # 바꾸는 것: dev DB 복제 행(끝나면 삭제) · dev GPU 1대 켜기 · 기본 워커 유닛 멈춤
-# 설계: docs/plans/2026-10-08/upload-5x-10min/04-exp-score-split.md · ADR 0002.
+# 설계: docs/plans/2026-10-08/upload-5x-10min/04-exp-score-split.md · ADR docs/design-method/cases/274-upload-5x-10min/adr/0002.
 #
 #   scripts/load/upload/exp-score-split.sh dev --label E-SPLIT-1 --pipeline <실험 브랜치의 score/score/service/pipeline.py> [--source 20] [--batches 60]
 #

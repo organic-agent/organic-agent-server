@@ -2,7 +2,7 @@
 # DB 연결 샘플 — 측정 회차와 같이 띄워 두면 N초마다 연결 수를 사용자·애플리케이션·상태별로 센다. 가드레일 G-1(연결 ≤ 63) 판정. 읽기 전용.
 # 대상: local | dev | prod
 # 바꾸는 것: 없음(읽기 전용)
-# 계획: docs/plans/2026-10-08/upload-5x-10min/01-drivers.md G-1 · 02-baseline.md P3.
+# 계획: docs/design-method/cases/274-upload-5x-10min/01-drivers.md G-1 · docs/plans/2026-10-08/upload-5x-10min/02-baseline.md P3.
 #
 #   scripts/load/upload/sample-db.sh dev --label B-2-1-db [--interval 5] [--limit 63]     # Ctrl+C 로 끝내면 요약과 판정
 #
