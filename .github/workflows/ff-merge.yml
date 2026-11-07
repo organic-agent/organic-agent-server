@@ -4,10 +4,9 @@ name: "[PROD] develop → main FF 머지"
 # develop과 같은 SHA를 main에 두지 못한다 — 이 워크플로가 develop의 SHA를 그대로 main에 민다.
 #
 # 조건: PR(base main, head develop)이 열려 있고, write 이상 권한자가 `ready-to-merge` 라벨을 붙였고, head SHA의 체크가 전부 통과.
-# 마지막 조건이 늦게 채워지는 경우를 위해 두 이벤트에서 다시 확인한다:
-#   - 라벨 부착 (pull_request labeled)
-#   - CI·dev 배포 완료 (workflow_run) — `check_suite`는 Actions가 만든 스위트에 대해 이벤트가 나지 않아 쓰지 않는다.
-#     workflow_run은 기본 브랜치(main)에 있는 이 파일로만 돈다.
+# 방아쇠는 base가 main인 PR의 라벨 부착 하나뿐이다(#387). 기능 PR(base develop)의 라벨이나 develop CI 완료로는 뜨지 않는다.
+# 라벨을 붙인 때 체크가 아직 돌고 있으면 검증 단계가 끝날 때까지 기다린다(CHECK_POLL_SECONDS 간격, CHECK_WAIT_MINUTES 한도).
+# 예전에는 이 경우를 workflow_run(CI·dev 배포 완료)으로 다시 확인했지만, 그 방아쇠는 운영 반영 PR이 없어도 develop CI마다 떠서 뺐다.
 #
 # GITHUB_TOKEN의 push는 다른 워크플로를 띄우지 않으므로, push 뒤 운영 CD(cd-prod.yml)를 workflow_dispatch로 직접 띄운다.
 # main에 브랜치 보호(푸시 제한)를 걸면 이 push가 막힌다 — 그때는 github-actions 우회 허용이나 PAT·GitHub App 토큰이 필요하다.
@@ -15,12 +14,9 @@ name: "[PROD] develop → main FF 머지"
 on:
   pull_request:
     types: [labeled]
-  workflow_run:
-    workflows: ["공통 CI", "[DEV] Build and Deploy"]
-    types: [completed]
-    branches: [develop]
+    branches: [main]
 
-# 라벨과 CI 완료가 겹쳐도 한 번에 하나만 돈다(sync-develop.yml과 같은 그룹). 뒤에 온 실행은 main이 이미 그 SHA면 아무것도 하지 않는다.
+# 라벨을 여러 번 붙여도 한 번에 하나만 돈다(sync-develop.yml과 같은 그룹). 뒤에 온 실행은 main이 이미 그 SHA면 아무것도 하지 않는다.
 concurrency:
   group: wes-main-develop-sync
   cancel-in-progress: false
@@ -33,82 +29,78 @@ permissions:
 
 jobs:
   ff-merge:
-    if: |
-      (github.event_name == 'pull_request' && github.event.label.name == 'ready-to-merge') ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    # base main 필터는 on: 에서 끝났다. 여기서는 라벨 이름만 거른다.
+    if: github.event.label.name == 'ready-to-merge'
     runs-on: ubuntu-latest
+    # 체크 대기(CHECK_WAIT_MINUTES) + 머지·배포 호출 여유
+    timeout-minutes: 40
 
     steps:
       - name: PR 조회 및 조건 검증
         id: validate
         uses: actions/github-script@v7
+        env:
+          CHECK_POLL_SECONDS: '30'
+          CHECK_WAIT_MINUTES: '30'
         with:
           script: |
             const { owner, repo } = context.repo;
-            let prNumber, headSha;
-
-            if (context.eventName === 'pull_request') {
-              const pr = context.payload.pull_request;
-              if (pr.base.ref !== 'main' || pr.head.ref !== 'develop' || pr.state !== 'open') {
-                core.info('develop → main PR이 아니다');
-                core.setOutput('ready', 'false');
-                return;
-              }
-
-              // 라벨을 붙인 사람의 저장소 권한 확인
-              const { data: perm } = await github.rest.repos.getCollaboratorPermissionLevel({
-                owner, repo, username: context.payload.sender.login,
-              });
-              if (!['admin', 'write'].includes(perm.permission)) {
-                core.info(`라벨 부착자 권한 부족: ${perm.permission}`);
-                core.setOutput('ready', 'false');
-                return;
-              }
-
-              prNumber = pr.number;
-              headSha = pr.head.sha;
-            } else {
-              const { data: prs } = await github.rest.pulls.list({
-                owner, repo, state: 'open', base: 'main', head: `${owner}:develop`,
-              });
-              if (prs.length === 0) {
-                core.info('열린 develop → main PR이 없다');
-                core.setOutput('ready', 'false');
-                return;
-              }
-
-              prNumber = prs[0].number;
-              headSha = prs[0].head.sha;
-
-              if (context.payload.workflow_run.head_sha !== headSha) {
-                core.info('완료된 실행이 PR head SHA의 것이 아니다');
-                core.setOutput('ready', 'false');
-                return;
-              }
-            }
-
-            // ready-to-merge 라벨 확인 (workflow_run 경로, 라벨 부착 뒤 제거된 경우)
-            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: prNumber });
-            if (!pr.labels.some(l => l.name === 'ready-to-merge')) {
-              core.info('ready-to-merge 라벨이 없다');
+            const event = context.payload.pull_request;
+            if (event.head.ref !== 'develop' || event.state !== 'open') {
+              core.info('develop → main PR이 아니다');
               core.setOutput('ready', 'false');
               return;
             }
 
-            // head SHA의 체크 전부 확인 — 공통 CI와 dev 배포(cd-dev.yml)가 같은 SHA에 체크를 남긴다.
-            // 이 워크플로 자신의 체크(진행 중·이전 실행)는 뺀다.
-            const checkRuns = await github.paginate(github.rest.checks.listForRef, {
-              owner, repo, ref: headSha, per_page: 100,
+            // 라벨을 붙인 사람의 저장소 권한 확인
+            const { data: perm } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner, repo, username: context.payload.sender.login,
             });
-            const ciRuns = checkRuns.filter(r => r.name !== context.job);
-            const pending = ciRuns.filter(r =>
-              r.status !== 'completed' || !['success', 'skipped', 'neutral'].includes(r.conclusion)
-            );
-            if (ciRuns.length === 0 || pending.length > 0) {
-              core.info(`아직 통과하지 않은 체크: ${pending.map(r => `${r.name}(${r.status}/${r.conclusion})`).join(', ') || '없음(체크 0개)'}`);
+            if (!['admin', 'write'].includes(perm.permission)) {
+              core.info(`라벨 부착자 권한 부족: ${perm.permission}`);
               core.setOutput('ready', 'false');
               return;
             }
+
+            // head SHA의 체크가 전부 끝날 때까지 기다린다 — 공통 CI와 dev 배포(cd-dev.yml)가 같은 SHA에 체크를 남긴다.
+            // 기다리는 동안 develop에 새 커밋이 오면 새 head SHA의 체크를 본다. 라벨이 떨어지거나 PR이 닫히면 멈춘다.
+            // 이 워크플로 자신의 체크(진행 중·이전 실행)는 뺀다.
+            const pollMs = Number(process.env.CHECK_POLL_SECONDS) * 1000;
+            const deadline = Date.now() + Number(process.env.CHECK_WAIT_MINUTES) * 60 * 1000;
+            let headSha;
+            while (true) {
+              const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: event.number });
+              if (pr.state !== 'open' || !pr.labels.some(l => l.name === 'ready-to-merge')) {
+                core.info('PR이 닫혔거나 ready-to-merge 라벨이 떨어졌다');
+                core.setOutput('ready', 'false');
+                return;
+              }
+              headSha = pr.head.sha;
+
+              const checkRuns = await github.paginate(github.rest.checks.listForRef, {
+                owner, repo, ref: headSha, per_page: 100,
+              });
+              const ciRuns = checkRuns.filter(r => r.name !== context.job);
+              const failed = ciRuns.filter(r =>
+                r.status === 'completed' && !['success', 'skipped', 'neutral'].includes(r.conclusion)
+              );
+              if (failed.length > 0) {
+                core.setFailed(`실패한 체크가 있다: ${failed.map(r => `${r.name}(${r.conclusion})`).join(', ')} — 고친 뒤 라벨을 다시 붙인다`);
+                core.setOutput('ready', 'false');
+                return;
+              }
+              const running = ciRuns.filter(r => r.status !== 'completed');
+              if (ciRuns.length > 0 && running.length === 0) break;
+
+              if (Date.now() >= deadline) {
+                core.setFailed(`체크가 ${process.env.CHECK_WAIT_MINUTES}분 안에 끝나지 않았다: ${running.map(r => r.name).join(', ') || '체크 0개'} — 끝난 뒤 라벨을 다시 붙인다`);
+                core.setOutput('ready', 'false');
+                return;
+              }
+              core.info(`체크 대기 중(${headSha.slice(0, 8)}): ${running.map(r => `${r.name}(${r.status})`).join(', ') || '아직 체크가 없다'}`);
+              await new Promise(resolve => setTimeout(resolve, pollMs));
+            }
+            const prNumber = event.number;
 
             core.setOutput('ready', 'true');
             core.setOutput('head_sha', headSha);
