@@ -36,11 +36,10 @@
 | KT-01 | rules/kotlin.md | **G** `!!` 토큰 | H | script |
 | KT-02 | rules/kotlin.md | **G** `lateinit`·`@Autowired` (main) | H | script |
 | KT-03 | rules/kotlin.md | **G** `String.format`·`".format(` | H | script |
-| KT-04 | rules/kotlin.md | **G→J** `"…" + x` 후보를 읽어 정규식 문자열 같은 오탐을 거른다 | H | judge-b |
+| KT-04 | rules/kotlin.md | **G→J** `"…" + x` 후보를 읽어 정규식 문자열 같은 오탐과, 상수식 자리(애노테이션 값·`const val`)의 리터럴 줄 나눔을 거른다 | H | judge-b |
 | KT-05 | rules/kotlin.md | **G** `.findById(` (`findByIdOrNull`은 걸리지 않는다) · 선언 시그니처의 `Optional<` | H | script |
 | KT-06 | rules/kotlin.md | **G** `?.let … ?: run` 한 줄·줄바꿈 형태 | H | script |
 | KT-07 | rules/kotlin.md | **G** `return@forEach` | H | script |
-| KT-08 | rules/kotlin.md | **G→J** `x.forEach {` 후보 중 nullable 수신자·체인 끝이 아닌 것 | R | judge-b |
 | KT-09 | rules/kotlin.md | **G** `run {`·`with(` (함수 이름이 `run`인 선언은 제외) | H | script |
 | KT-10 | rules/kotlin.md | **J** 중첩된 `let/apply/also` · 여러 줄 람다의 `it` | R | judge-b |
 | KT-11 | rules/kotlin.md | **J** 손으로 쓴 누적 루프 · 루프 안 선형 탐색 | R | judge-b |
@@ -49,14 +48,14 @@
 | KT-14 | rules/kotlin.md | **G** `@JvmOverloads` | H | script |
 | KT-15 | rules/kotlin.md | **G→J** 파일 이름 찾기(find) + 확장 함수가 도메인 행위인지 읽기 | H | judge-b |
 | KT-16 | rules/kotlin.md | **S** `when` 분기가 enum·sealed 이름(`X.Y`) 또는 enum 상수 이름(`Y`)인데 `else`가 있다 | T | script |
-| KT-17 | rules/kotlin.md | **J** 문자열 리터럴 비교·분기  | R | judge-b |
+| KT-17 | rules/kotlin.md | **J** 문자열 리터럴 비교·분기 (다른 쪽이 주인인 컬럼은 계산 입구에서 enum으로 바꿨는지) | R | judge-b |
 | KT-18 | rules/kotlin.md | **G** `@JvmInline value class` 타입이 `domain/`·`repository/` 필드·시그니처에 나오는지 | T | script |
 | KT-19 | rules/kotlin.md | **J** 엔티티 두 개를 `==`·`in`·`contains`·`toSet`으로 비교하는 곳 | R | judge-b |
 | KT-20 | rules/kotlin.md | **G→J** 스프링 애노테이션 붙은 `object` + `object` 안의 `var` | H | judge-b |
 | KT-21 | rules/kotlin.md | **G→J** public 시그니처의 `Mutable*` (G) · `var` 정당성(J) | H | judge-b |
 | KT-22 | rules/kotlin.md | **G** `ZonedDateTime/Instant/… .now()` 무인자 | H | script |
 | KT-23 | rules/kotlin.md | **J** `=` 본문인데 분기·여러 단계가 있는 서비스·support 메서드 (컨트롤러는 CT-04) | R | judge-b |
-| KT-24 | rules/kotlin.md | **J** `Long, Long, Long` 나란한 위치 인자 호출 · `Dto(a, b)` 위치 호출 | R | judge-b |
+| KT-24 | rules/kotlin.md | **J** 같은 타입 3개 이상 위치 인자 호출(`Long, Long, Long`, 2개는 위반 아님) · `Dto(a, b)` 위치 호출 | R | judge-b |
 
 <details><summary>KT 명령 (18)</summary>
 
@@ -81,9 +80,6 @@ rg -nU -t kotlin '\?\.let[^\n]*\?:\s*run\b|\}\s*\n\s*\?:\s*run\s*\{' wes-*/src/m
 
 # KT-07
 rg -n -t kotlin 'return@forEach' wes-*/src/main/kotlin
-
-# KT-08
-rg -n -t kotlin '[A-Za-z0-9_)\]]\.forEach \{' wes-*/src/main/kotlin | rg -v '\?\.forEach'
 
 # KT-09
 rg -n -t kotlin '(^|[^A-Za-z_.])with\(|(^|[^A-Za-z_.?])run\s*\{|\.run\s*\{' wes-*/src/main/kotlin
@@ -136,10 +132,10 @@ rg -n -t kotlin '\b(ZonedDateTime|OffsetDateTime|LocalDateTime|LocalDate|LocalTi
 | LY-09 | rules/project-structure.md | **G** `wes-domain`·`wes-api`에 admin 디렉터리 / `wes-domain`에 controller 디렉터리·Application 클래스 | T | script |
 | LY-10 | rules/service.md | **G** `class …Controller`인데 `@RestController`가 없는 파일 | H | script |
 | LY-11 | rules/service.md | **J** 컨트롤러가 호출하는 public 서비스 메서드의 반환 타입·파라미터 순서 | R | judge-a |
-| LY-12 | rules/service.md | **J** 컨트롤러가 부르는 서비스 public 메서드의 첫 문장 | R | judge-a |
+| LY-12 | rules/service.md | **J** 컨트롤러가 부르는 서비스 public 메서드의 첫 문장이 범위에 맞는 인가인지(갤러리 = 정책 클래스, 스튜디오 = 서비스 private `require*`) | R | judge-a |
 | LY-13 | rules/service.md | **J** `findById…` 뒤에 `.galleryId ==`·`!=` 비교가 따라오는 곳 | R | judge-a |
 | LY-14 | rules/service.md | **J** 중복·정원 검사를 하는 쓰기에서 잠금 호출(`requireWithLockById`·`findWithLock…`) 유무 | R | judge-a |
-| LY-15 | rules/service.md | **J** id 목록을 받는 쓰기 메서드의 필터링·건너뜀 | R | judge-a |
+| LY-15 | rules/service.md | **J** id 목록을 받는 쓰기 메서드의 필터링·건너뜀 (이미 목표 상태인 항목의 건너뜀은 KDoc이 있으면 허용) | R | judge-a |
 | LY-16 | rules/service.md | **J** `save` 뒤에 `throw`가 오는 흐름 | R | judge-a |
 | LY-17 | rules/service.md | **J** `List<Long>`·`Collection<Long>` 요청 필드를 받는 서비스의 상한 검사 | R | judge-a |
 | LY-18 | rules/service.md | **J** `for`·`map` 안의 `find…`·`toResponse`·`jdbc` 호출 | R | judge-a |
@@ -235,7 +231,7 @@ rg -l -t kotlin '^[ \t]*@(Scheduled|EventListener|TransactionalEventListener|Sqs
 | TX-01 | rules/service.md | **G** 줄머리(0열)의 `@Transactional` | H | script |
 | TX-02 | rules/service.md | **G** `@Transactional` 다음 `private fun` | H | script |
 | TX-03 | rules/service.md | **J** 클래스 안에서 자기 `@Transactional` 메서드를 부르는 곳(오버로드 포함) | R | judge-a |
-| TX-04 | rules/service.md | **J** 서비스 public 메서드의 표기와 실제 DB 접근 일치 | R | judge-a |
+| TX-04 | rules/service.md | **J** 서비스 public 메서드의 표기와 실제 DB 접근 일치 (네트워크를 끼어 무표기인 메서드는 KDoc "트랜잭션 없이 돈다 — 왜" 유무) | R | judge-a |
 | TX-05 | rules/service.md | **J** `@Transactional` 메서드 안의 네트워크 호출(`exists`·`copy`·`deleteAll`·`send`·OAuth) — `presign*`·키 조립·`isAvailable`은 제외 | R | judge-a |
 
 <details><summary>TX 명령 (2)</summary>
@@ -260,7 +256,7 @@ rg -nUP -t kotlin '@Transactional[^\n]*\n(\s*@[^\n]*\n)*\s*private fun' wes-*/sr
 | DM-01 | rules/domain.md | **G** `@Entity`·`@Embeddable` 다음 `data class` | H | script |
 | DM-02 | rules/domain.md | **G** `@Entity` 파일 중 `BaseEntity()` 상속이 없는 것 (있으면 KDoc 사유를 읽는다) | H | script |
 | DM-03 | rules/domain.md | **G** `@Column`(한 줄형·무인자) 중 `name =`이 없는 줄 (`updatable`은 J) | H | script |
-| DM-04 | rules/domain.md | **J** 엔티티의 `var`가 실제로 바뀌는지, AI 소유 컬럼이 `val`인지 | R | judge-b |
+| DM-04 | rules/domain.md | **J** 엔티티의 `var`가 실제로 바뀌는지(엔티티 메서드·SQL·관리자 앱 어느 쪽이든), AI 소유 컬럼이 `val`인지 | R | judge-b |
 | DM-05 | rules/domain.md | **G→J** `domain/`의 `init {` (G) + 생성자 안 `require`(EX-01) | H | judge-b |
 | DM-06 | rules/common.md | **J** 서비스가 엔티티 생성자를 직접 부르는 곳이 `of`가 있는 엔티티인지 | R | judge-b |
 | DM-07 | rules/domain.md | **J** 마이그레이션의 UK/CHECK 대비 서비스 검증 · 역정규화 컬럼의 KDoc | R | judge-b |
@@ -314,7 +310,7 @@ rg -n -t kotlin '@Column\b' wes-*/src/main/kotlin | rg -v '@Column\(.*nullable\s
 | DTO-04 | rules/dto.md | **G** `service/`·`support/`·`infrastructure/` 안의 `data class` 선언 + 들여쓴 `sealed`/`enum` | H | script |
 | DTO-05 | rules/dto.md | **G** `dto/request`·`dto/response` 최상위 타입 이름 접미사 | H | script |
 | DTO-06 | rules/dto.md | **S** 요청 DTO의 필드·응답 DTO의 `?` 필드 중 바로 위에 `@field:Schema`가 없는 것(필드 단위) | H | script |
-| DTO-07 | rules/dto.md | **J** 요청 DTO의 필드 검증 애노테이션 유무, 서비스의 2차 방어(`EMPTY_PHOTO_IDS` 류) | R | judge-b |
+| DTO-07 | rules/dto.md | **J** 요청 DTO 필드마다 애노테이션 또는 서비스·도메인의 구체 에러 코드 검사 중 하나가 있는지 | R | judge-b |
 | DTO-08 | rules/dto.md | **G→J** `@field:Size(max = 숫자)` 리터럴이 도메인 상수와 같은 값인지 | R | judge-b |
 | DTO-09 | rules/dto.md | **G** `dto/response`의 `val x: <엔티티·값객체>` | T | script |
 | DTO-10 | rules/repository.md | **G** `repository/`(projection 제외) 안의 `data class` | H | script |
@@ -413,7 +409,7 @@ rg -n -t kotlin 'MultipartFile|@RequestPart|MultipartHttpServletRequest' wes-*/s
 |---|---|---|---|---|
 | EX-01 | rules/common.md | **G→J** `require(`·`check(`·`throw Illegal…Exception` 후보 — 후보를 읽어 요청·비즈니스 실패인지, 설정 검증·불변식인지 가른다 | R | judge-b |
 | EX-02 | rules/common.md | **S** `enum class …ErrorCode`마다 `ErrorCodeFormatTest`에 `X.entries`가 있는지 | T | script |
-| EX-03 | rules/common.md | **J** 의미가 이름만으로 안 보이는 에러코드의 KDoc 유무 | R | judge-b |
+| EX-03 | rules/common.md | **J** 규칙의 세 경우(구분 안 되는 짝·예상과 다른 HTTP 상태·웹이 다르게 행동)에 드는 에러코드의 KDoc 유무 | R | judge-b |
 | EX-04 | rules/kotlin.md | **J** `{Domain}Exception`을 던지는 곳 중 조건이 클라이언트가 만들 수 없는 상태(저장 전 id · 도달 불가 분기 · 방금 쓴 행이 없음)인 것 — 불변식이 4xx로 포장됨 | R | judge-b |
 | EX-05 | rules/kotlin.md | **G** `requiredId` 정의 중 `checkNotNull(id) {` 형태가 아닌 것 | H | script |
 | EX-06 | rules/kotlin.md | **G→J** 메시지 없는 `checkNotNull(x)`(G) + 메시지가 "무엇이 왜 불가능한지"인지(J) | H | judge-b |
@@ -508,7 +504,7 @@ rg -l -t kotlin '\bJdbcClient\b|\bJdbcTemplate\b' wes-*/src/main/kotlin | rg -v 
 | INF-02 | rules/infrastructure.md | **G** `service/port`의 벤더·web 타입 import·사용 | T | script |
 | INF-03 | rules/infrastructure.md | **G** `service/port/*` 안 class·enum·sealed 선언 | H | script |
 | INF-04 | rules/infrastructure.md | **G** `service/`·`support/`·`controller/`의 `…infrastructure.` import | T | script |
-| INF-05 | rules/infrastructure.md | **G→J** `infrastructure/*` 파일 이름 목록을 보고 기술·`Local` 접두를 확인 | R | judge-c |
+| INF-05 | rules/infrastructure.md | **G→J** `infrastructure/*` 파일 이름 목록을 보고 기술·`Local`·`Disabled`·`InMemory` 접두를 확인 | R | judge-c |
 | INF-06 | rules/infrastructure.md | **G** `infrastructure/`의 `@Bean`·`@ConfigurationProperties`; `config` 밖의 `@ConfigurationProperties` | H | script |
 | INF-07 | rules/infrastructure.md | **J** 어댑터의 catch → 도메인 예외 변환 / 서비스의 벤더 예외 import(INF-01) | R | judge-c |
 | INF-08 | rules/infrastructure.md | **G→J** 어댑터 로거 선언 형태(G) + 로그 내용의 층(J) | H | judge-c |

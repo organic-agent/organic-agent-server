@@ -40,7 +40,12 @@ class PhotoRatingController(
         @PathVariable photoId: Long,
         @Valid @RequestBody request: RatePhotoRequest,
     ): ResponseEntity<PhotoRatingResponse> {
-        val result = photoRatingService.rate(galleryId, photoId, loginUser.id, request)
+        val result = photoRatingService.rate(
+            galleryId = galleryId,
+            photoId = photoId,
+            userId = loginUser.id,
+            request = request,
+        )
 
         return ResponseEntity.ok(result)
     }
@@ -51,7 +56,7 @@ class PhotoRatingController(
         @PathVariable galleryId: Long,
         @PathVariable photoId: Long,
     ): ResponseEntity<Unit> {
-        photoRatingService.clear(galleryId, photoId, loginUser.id)
+        photoRatingService.clear(galleryId = galleryId, photoId = photoId, userId = loginUser.id)
         val status = HttpStatus.NO_CONTENT
 
         return ResponseEntity.status(status).build()
@@ -63,7 +68,7 @@ class PhotoRatingController(
         @PathVariable galleryId: Long,
         @PathVariable photoId: Long,
     ): ResponseEntity<List<PhotoRatingHistoryResponse>> {
-        val result = photoRatingService.history(galleryId, photoId, loginUser.id)
+        val result = photoRatingService.history(galleryId = galleryId, photoId = photoId, userId = loginUser.id)
 
         return ResponseEntity.ok(result)
     }

@@ -35,7 +35,7 @@ class GalleryMemberController(
         @PathVariable galleryId: Long,
         @PathVariable memberId: Long,
     ): ResponseEntity<Unit> {
-        galleryMemberService.remove(galleryId, memberId, loginUser.id)
+        galleryMemberService.remove(galleryId = galleryId, memberId = memberId, userId = loginUser.id)
         val status = HttpStatus.NO_CONTENT
 
         return ResponseEntity.status(status).build()

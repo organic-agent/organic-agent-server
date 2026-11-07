@@ -70,7 +70,13 @@ class FolderService(
         val concept = requireConcept(galleryId, conceptId)
         val sortOrder = detailRepository.findNextSortOrderByConceptFolderId(conceptId)
         val detail = detailRepository.save(
-            DetailFolder(galleryId, concept.requiredId, FolderName.requireValid(request.name), sortOrder, FolderSource.USER),
+            DetailFolder(
+                galleryId = galleryId,
+                conceptFolderId = concept.requiredId,
+                name = FolderName.requireValid(request.name),
+                sortOrder = sortOrder,
+                createdSource = FolderSource.USER,
+            ),
         )
         activityRecorder.recordGallery(galleryId)
         return DetailFolderResponse.of(detail, emptyList())

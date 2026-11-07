@@ -418,9 +418,9 @@ class AiSelectionJobRunnerTest @Autowired constructor(
 
         /**
          * 배경: 한 폴더 30장 = 연사 10개 × 3장(연사마다 다른 방향의 임베딩, 점수는 앞 사진일수록 높다). 연사 0은 단체 사진.
-         * 계약 장수 4장이라 상한은 min(4, ceil(30 × 10%)) = 3장이다.
+         * 계약 장수 4장이라 상한은 min(4, ceil(30 × 10%)) = 3장이다. [firstBurstSubjects]로 연사 0의 피사체 값을 바꾼다.
          */
-        private fun bigFolder(): Pair<List<List<Long>>, Long> {
+        private fun bigFolder(firstBurstSubjects: String = "group"): Pair<List<List<Long>>, Long> {
             val photos = photoFixture.업로드된_사진(fixture.galleryId, 30)
             photos.forEachIndexed { i, photoId ->
                 val burst = i / 3
@@ -428,7 +428,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
                 recommendationFixture.분석_결과(
                     photoId,
                     embedGroupId = 1,
-                    subjects = if (burst == 0) "group" else "couple",
+                    subjects = if (burst == 0) firstBurstSubjects else "couple",
                     burstId = burst,
                     burstRank = i % 3,
                     technicalPct = 90.0 - i,
@@ -465,6 +465,25 @@ class AiSelectionJobRunnerTest @Autowired constructor(
                 softly.assertThat(picked).isSubsetOf(bursts.map { it.first() })
                 softly.assertThat((job.result!!["coverage"] as Map<*, *>).mapValues { (_, v) -> (v as Number).toInt() })
                     .isEqualTo(mapOf("pieces" to 10, "skippedPieces" to 1, "nearDuplicates" to 0, "cap" to 3, "groupExcluded" to 3))
+            }
+        }
+
+        @Test
+        fun `AI가 모르는 피사체 값은 미상으로 읽어 단체로 빼지 않는다`() {
+            // given — 연사 0의 피사체가 wes가 모르는 값이다
+            val (bursts, folderId) = bigFolder(firstBurstSubjects = "pet")
+
+            // when
+            val response = requestFolderJob(folderId)
+            runner.run(response.jobId)
+
+            // then — 점수가 가장 높은 연사 0이 그대로 후보다
+            val job = aiSelectionJobRepository.findById(response.jobId).orElseThrow()
+            val picked = aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1).map { it.photoId }
+            assertSoftly { softly ->
+                softly.assertThat(job.status).isEqualTo(AiJobStatus.DONE)
+                softly.assertThat(picked).contains(bursts[0].first())
+                softly.assertThat(((job.result!!["coverage"] as Map<*, *>)["groupExcluded"] as Number).toInt()).isZero()
             }
         }
 

@@ -12,7 +12,9 @@ paths:
 - 일반 `class`(data class 금지) + `BaseEntity` 상속. <!-- DM-01 DM-02 --> 예외: 추가만 하고 고치지 않는 이력 행(`AnalysisJobEvent`)은 상속하지 않을 수 있다 — KDoc에 사유. `@Id @GeneratedValue`는 본문에 두고,
   non-null id가 필요한 자리는 `requiredId` 접근자를 쓴다.
 - `@Column`은 `name`을 명시하고, 생성 후 바뀌지 않는 값은 `updatable = false`까지 적는다 <!-- DM-03 -->
-  (`RetouchPhoto.galleryId`). 바뀌는 필드만 `var`, 나머지는 `val`. <!-- DM-04 -->
+  (`RetouchPhoto.galleryId`). 바뀌는 필드만 `var`, 나머지는 `val`. "바뀐다"는 DB 행이 사는 동안 값이 바뀌는 것이다 —
+  누가 바꾸든(엔티티 메서드·SQL 벌크 UPDATE·관리자 앱) `var`다. 휴지통 SQL이 채우고 복원이 비우는 `deletedAt`이 그 예다.
+  `val`은 "만든 뒤 바뀌지 않는다"는 약속이라, 다른 경로로 바뀌는 값에 쓰면 거짓 신호가 된다. <!-- DM-04 -->
 - **엔티티의 `var`에는 `protected set`을 붙이고, 상태는 엔티티 메서드로만 바꾼다** (`gallery.open()`, `gallery.applyPass(pass)`,
   `gallery.archiveAfter(days, now)`, `invite.revoke(now)`). Kotlin의 `var`는 public setter를 만들어 서비스가
   `gallery.status = OPEN`처럼 직접 대입할 수 있게 되고, 그러면 상태 전이 검증(`open()`)을 건너뛰고 같은 계산(보관 기한)이

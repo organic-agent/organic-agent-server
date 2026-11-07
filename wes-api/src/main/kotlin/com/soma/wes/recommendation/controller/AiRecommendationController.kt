@@ -47,7 +47,7 @@ class AiRecommendationController(
         @PathVariable galleryId: Long,
         @RequestParam(required = false) folderId: Long?,
     ): ResponseEntity<AiRecommendationListResponse> {
-        val result = aiRecommendationService.list(galleryId, loginUser.id, folderId)
+        val result = aiRecommendationService.list(galleryId = galleryId, userId = loginUser.id, folderId = folderId)
 
         return ResponseEntity.ok(result)
     }

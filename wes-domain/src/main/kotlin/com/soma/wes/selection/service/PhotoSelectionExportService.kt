@@ -65,7 +65,7 @@ class PhotoSelectionExportService(
             listOf(photoId.toString(), photo.originalFileName, note?.requestText.orEmpty(), points)
                 .joinToString(",", transform = ::csvCell)
         }
-        return (CSV_BOM + "photo_id,filename,request,point_requests\r\n" + rows.joinToString("\r\n") + "\r\n")
+        return "${CSV_BOM}photo_id,filename,request,point_requests\r\n${rows.joinToString("\r\n")}\r\n"
             .toByteArray(Charsets.UTF_8)
     }
 

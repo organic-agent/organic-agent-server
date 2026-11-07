@@ -55,7 +55,7 @@ class CollabSessionController(
         @PathVariable galleryId: Long,
         @PathVariable sessionId: Long,
     ): ResponseEntity<CollabSessionResponse> {
-        return ResponseEntity.ok(queryService.get(galleryId, sessionId, loginUser.id))
+        return ResponseEntity.ok(queryService.get(galleryId = galleryId, sessionId = sessionId, userId = loginUser.id))
     }
 
     @PatchMapping("/{sessionId}")
@@ -65,7 +65,12 @@ class CollabSessionController(
         @PathVariable sessionId: Long,
         @Valid @RequestBody request: RenameCollabSessionRequest,
     ): ResponseEntity<CollabSessionResponse> {
-        return ResponseEntity.ok(service.rename(galleryId, sessionId, loginUser.id, request))
+        return ResponseEntity.ok(service.rename(
+            galleryId = galleryId,
+            sessionId = sessionId,
+            userId = loginUser.id,
+            request = request,
+        ))
     }
 
     @DeleteMapping("/{sessionId}")
@@ -74,7 +79,7 @@ class CollabSessionController(
         @PathVariable galleryId: Long,
         @PathVariable sessionId: Long,
     ): ResponseEntity<Unit> {
-        service.revoke(galleryId, sessionId, loginUser.id)
+        service.revoke(galleryId = galleryId, sessionId = sessionId, userId = loginUser.id)
         return ResponseEntity.noContent().build()
     }
 
@@ -84,7 +89,7 @@ class CollabSessionController(
         @PathVariable galleryId: Long,
         @PathVariable sessionId: Long,
     ): ResponseEntity<CollabSessionResponse> {
-        return ResponseEntity.ok(service.republish(galleryId, sessionId, loginUser.id))
+        return ResponseEntity.ok(service.republish(galleryId = galleryId, sessionId = sessionId, userId = loginUser.id))
     }
 
     @PostMapping("/{sessionId}/photos")
@@ -94,7 +99,12 @@ class CollabSessionController(
         @PathVariable sessionId: Long,
         @Valid @RequestBody request: CollabPhotoIdsRequest,
     ): ResponseEntity<CollabSessionResponse> {
-        return ResponseEntity.ok(service.addPhotos(galleryId, sessionId, loginUser.id, request))
+        return ResponseEntity.ok(service.addPhotos(
+            galleryId = galleryId,
+            sessionId = sessionId,
+            userId = loginUser.id,
+            request = request,
+        ))
     }
 
     @DeleteMapping("/{sessionId}/photos")
@@ -104,7 +114,12 @@ class CollabSessionController(
         @PathVariable sessionId: Long,
         @Valid @RequestBody request: CollabPhotoIdsRequest,
     ): ResponseEntity<CollabSessionResponse> {
-        return ResponseEntity.ok(service.removePhotos(galleryId, sessionId, loginUser.id, request))
+        return ResponseEntity.ok(service.removePhotos(
+            galleryId = galleryId,
+            sessionId = sessionId,
+            userId = loginUser.id,
+            request = request,
+        ))
     }
 
     @GetMapping("/{sessionId}/participants")
@@ -113,7 +128,11 @@ class CollabSessionController(
         @PathVariable galleryId: Long,
         @PathVariable sessionId: Long,
     ): ResponseEntity<List<CollabParticipantResponse>> {
-        return ResponseEntity.ok(queryService.listParticipants(galleryId, sessionId, loginUser.id))
+        return ResponseEntity.ok(queryService.listParticipants(
+            galleryId = galleryId,
+            sessionId = sessionId,
+            userId = loginUser.id,
+        ))
     }
 
     @GetMapping("/{sessionId}/photos")
@@ -124,7 +143,13 @@ class CollabSessionController(
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "200") size: Int,
     ): ResponseEntity<CollabPhotoPageResponse> {
-        return ResponseEntity.ok(queryService.listPhotos(galleryId, sessionId, loginUser.id, page, size))
+        return ResponseEntity.ok(queryService.listPhotos(
+            galleryId = galleryId,
+            sessionId = sessionId,
+            userId = loginUser.id,
+            page = page,
+            size = size,
+        ))
     }
 
     @DeleteMapping("/{sessionId}/comments/{commentId}")
@@ -134,7 +159,12 @@ class CollabSessionController(
         @PathVariable sessionId: Long,
         @PathVariable commentId: Long,
     ): ResponseEntity<Unit> {
-        service.deleteComment(galleryId, sessionId, commentId, loginUser.id)
+        service.deleteComment(
+            galleryId = galleryId,
+            sessionId = sessionId,
+            commentId = commentId,
+            userId = loginUser.id,
+        )
         return ResponseEntity.noContent().build()
     }
 
@@ -147,7 +177,14 @@ class CollabSessionController(
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "50") size: Int,
     ): ResponseEntity<PageResponse<CollabCommentResponse>> {
-        val result = queryService.listPhotoComments(galleryId, sessionId, photoId, loginUser.id, page, size)
+        val result = queryService.listPhotoComments(
+            galleryId = galleryId,
+            sessionId = sessionId,
+            photoId = photoId,
+            userId = loginUser.id,
+            page = page,
+            size = size,
+        )
 
         return ResponseEntity.ok(result)
     }

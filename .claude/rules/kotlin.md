@@ -59,10 +59,9 @@ Java를 Kotlin 문법으로 옮긴 코드가 아니라 Kotlin으로 생각한 �
 ## 컬렉션 연산
 
 - for문으로 map·filter·집계를 손으로 짜지 않는다: `map`, `filter`, `associateBy`, `associateWith`,
-  `groupBy`, `partition`, `sumOf`, `maxByOrNull`, `firstOrNull`, `chunked`, `windowed`, `zip`. <!-- KT-11 -->
-- 부수효과 반복은 **`for`가 기본**이다. `forEach`는 수신자가 nullable(`photos?.forEach`)이거나
-  긴 체인의 끝(`...filter { }.forEach { }`)일 때만 쓴다 (Kotlin 공식 코딩 컨벤션).
-  결과를 모으는 `forEach { list.add(..) }`는 `map`이다. <!-- KT-08 -->
+  `groupBy`, `partition`, `sumOf`, `maxByOrNull`, `firstOrNull`, `chunked`, `windowed`, `zip`.
+  `forEach { list.add(..) }`로 결과를 모으는 것도 같다 — `map`이다. <!-- KT-11 -->
+- 부수효과만 있는 반복은 `for`와 `forEach` 중 편한 쪽을 쓴다 — 동작 차이가 없어 팀원 스타일에 맡긴다(2026-11-07, 규칙 아님).
 - **`return@forEach`는 쓰지 않는다** — "이번 항목 건너뛰기"는 `for` + `continue`로 쓴다. `return`이라는 단어 때문에
   "함수가 끝난다"로 읽힌다. 값을 돌려주는 람다의 조기 반환(`return@execute false`, `?: return@mapNotNull null`,
   `return@any`·`return@all`)은 다른 탈출이 없으므로 허용한다. <!-- KT-07 -->
@@ -101,8 +100,9 @@ Java를 Kotlin 문법으로 옮긴 코드가 아니라 Kotlin으로 생각한 �
 
 - 본문이 식 하나인 짧은 위임·변환은 expression body(`= ...`). 분기·단계가 있는 유스케이스는
   블록 body — `common.md`의 "단계를 빈 줄로 구분"이 보이지 않게 되기 때문이다. <!-- KT-23 -->
-- 인자 2개 이상의 생성자·DTO 호출은 named argument (`common.md`). 같은 타입 인자가 나란히 있는
-  함수(`Long, Long, Long`) 호출도 named argument로 쓴다 — 순서 실수를 컴파일러가 못 잡는다. <!-- KT-24 -->
+- 인자 2개 이상의 생성자·DTO 호출은 named argument (`common.md`). 같은 타입 인자가 **3개 이상**인
+  함수(`Long, Long, Long`) 호출도 named argument로 쓴다 — 순서 실수를 컴파일러가 못 잡는다. 같은 타입 2개는 위치 인자로
+  둬도 된다 — 저장소 전체가 `(galleryId, userId)`처럼 부모 → 자식 → 사용자 순서(LY-11)를 지켜 읽는 사람이 순서를 안다. <!-- KT-24 -->
 - 기본값 인자로 오버로드를 대체한다. `@JvmOverloads`는 Java 호출자가 없으면 쓰지 않는다. <!-- KT-14 -->
 - **확장 함수**의 자리는 쓰는 범위가 정한다 (Kotlin 공식 컨벤션: "모든 사용처가 쓰면 클래스 옆에,
   한 사용처만 쓰면 그 옆에, 확장만 모은 파일은 만들지 않는다"):
@@ -117,7 +117,10 @@ Java를 Kotlin 문법으로 옮긴 코드가 아니라 Kotlin으로 생각한 �
 - **닫힌 상태·결과 집합은 `enum` 또는 `sealed interface`**, 분기는 `else` 없는 `when`으로 쓴다 —
   새 상태를 추가하면 처리하지 않은 분기가 컴파일 에러가 되게 한다. `else -> error(...)`는
   문자열·정수처럼 열린 입력을 받을 때만. <!-- KT-16 -->
-- 문자열 키로 분기하는 코드(`"balance" ->`, `material.map("balance")`)는 enum/sealed로 올릴 신호다. <!-- KT-17 -->
+- 문자열 키로 분기하는 코드(`"balance" ->`, `material.map("balance")`)는 enum/sealed로 올릴 신호다.
+  다른 쪽(AI 실행기)이 주인인 컬럼의 문자열은 엔티티·projection에서 문자열 그대로 두고, 그 값으로 분기하는 계산의
+  입구에서 enum으로 바꾼다 — 모르는 값은 `UNKNOWN`으로 받는다(`PhotoSubject.from`). 엔티티를 enum으로 두면 상대가 새 값을
+  쓰는 순간 읽기가 실패한다. <!-- KT-17 -->
 - 의미가 다른 같은 원시 타입이 섞이면 `@JvmInline value class` (`AccessToken`, `Subject`).
   단, JPA 엔티티 필드·Spring Data 메서드 시그니처에는 쓰지 않는다 — 매핑이 깨진다. <!-- KT-18 -->
 - **`data class`는 값을 나르는 것에 쓴다** — DTO, `@ConfigurationProperties`, 조회 결과 행(projection·JDBC 매핑),
@@ -136,5 +139,7 @@ Java를 Kotlin 문법으로 옮긴 코드가 아니라 Kotlin으로 생각한 �
 
 ## 문자열·시간
 
-- 문자열 조립은 템플릿(`"$a/$b"`), 여러 줄은 `trimIndent()`된 raw string. `+` 연결과 `String.format` 금지. <!-- KT-03 KT-04 -->
+- 문자열 조립은 템플릿(`"$a/$b"`), 여러 줄은 `trimIndent()`된 raw string. `+` 연결과 `String.format` 금지.
+  `+` 금지는 값(변수·호출 결과)을 넣는 조립에 대한 것이다. 상수식만 들어가는 자리(애노테이션 값·`const val`)는
+  `trimIndent()`를 부를 수 없으므로, 긴 리터럴을 줄로 나누는 `"…" +` 연결은 허용한다(`*ControllerDocs`의 `description`, `@Query`). <!-- KT-03 KT-04 -->
 - 현재 시각은 주입받은 `Clock`으로 (`ZonedDateTime.now(clock)`) — `now()` 무인자 호출은 테스트를 막는다. <!-- KT-22 -->

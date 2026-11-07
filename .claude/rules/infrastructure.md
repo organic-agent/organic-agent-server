@@ -23,7 +23,10 @@ paths:
 - `{domain}/infrastructure`의 **어댑터**가 그것을 구현하며, 기술 이름을 앞에 붙인다
   (`S3PhotoStorage`, `LambdaAiTaskSender`). 서비스는 port만 주입받는다. <!-- INF-04 -->
   예외로 `@Profile("local")` 전용 대역 어댑터는 기술 이름 대신 `Local`을 붙인다 — 운영 어댑터와 짝이 되는
-  것은 "어디서 도느냐"라서다 (`Ec2ScoreWorkerPool` ↔ `LocalScoreWorkerPool`, `LambdaAiTaskSender` ↔ `LocalAiTaskSender`). <!-- INF-05 -->
+  것은 "어디서 도느냐"라서다 (`Ec2ScoreWorkerPool` ↔ `LocalScoreWorkerPool`, `LambdaAiTaskSender` ↔ `LocalAiTaskSender`).
+  설정으로 기능을 끈 상태의 대역(`isEnabled = false`, 부르면 실패)은 `Disabled`를 붙인다 — 프로필이 아니라 설정으로 골라져
+  모든 환경에서 뜰 수 있어 `Local`은 틀린 이름이다(`BedrockStructuredLlmClient` ↔ `DisabledStructuredLlmClient`).
+  메모리에 두는 구현의 `InMemory`는 기술 이름으로 본다(`InMemoryActivityBuffer`, `InMemoryAccessCache`). <!-- INF-05 -->
 - SDK 클라이언트 빈과 프로퍼티는 그 도메인의 `config`에 둔다 (`embedding/config/AwsLambdaConfig`).
   두 번째 도메인이 같은 클라이언트를 쓰게 되는 날에만 `global/config`로 올린다. <!-- INF-06 -->
 
