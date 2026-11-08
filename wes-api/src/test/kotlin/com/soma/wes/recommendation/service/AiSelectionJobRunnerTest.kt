@@ -579,7 +579,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
         }
 
         @Test
-        fun `하객이 좋아요한 사진은 그 사진만 약하게 올라 같은 점수의 다른 사진보다 먼저 추천된다`() {
+        fun `하객이 좋아요한 사진은 약하게 올라 같은 점수의 다른 사진보다 먼저 추천된다`() {
             // given
             val (bursts, _, folderId) = flatWorld()
             collabFixture.하객_좋아요(fixture, listOf(bursts[8][0]))

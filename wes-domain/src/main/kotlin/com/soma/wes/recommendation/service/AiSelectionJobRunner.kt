@@ -192,8 +192,8 @@ class AiSelectionJobRunner(
         val rejected = aiRecommendationRepository.findAllBySelectionIdAndRejectedAtIsNotNull(selection.requiredId)
             .mapTo(mutableSetOf()) { it.photoId }
         val previousRound = aiRecommendationRepository.findFirstBySelectionIdOrderByRoundDesc(selection.requiredId)?.round ?: 0
-        val likedPhotoIds = reactions.values
-            .filter { reaction -> reaction.rating?.let { RecommendationReaction.likeWeight(it, weights) } != null }
+        val anchorPhotoIds = reactions.values
+            .filter { reaction -> reaction.guestLikes > 0 || reaction.rating?.let { RecommendationReaction.likeWeight(it, weights) } != null }
             .mapTo(mutableSetOf()) { it.photoId }
 
         return World(
@@ -201,7 +201,7 @@ class AiSelectionJobRunner(
             selectionId = selection.requiredId,
             galleryId = galleryId,
             rows = rows,
-            embeddings = loadEmbeddings(rows, folders, scopeFolderIds, likedPhotoIds),
+            embeddings = loadEmbeddings(rows, folders, scopeFolderIds, anchorPhotoIds),
             folders = folders,
             quotaFolders = if (scopeFolderIds == null) folders else setFolders.ifEmpty { folders },
             scopeFolderIds = scopeFolderIds,
@@ -220,22 +220,22 @@ class AiSelectionJobRunner(
 
     /**
      * 벡터는 이번 라운드가 도는 사진만 읽는다 — 폴더 이상치 판정과 MMR이 폴더 안에서만 벡터를 비교하기 때문이다.
-     * 폴더 범위면 그 폴더의 사진, 전체 라운드면 세트 전 폴더 + 미분류 = 분석된 사진 전부다. 4~5점 사진([likedPhotoIds])은
-     * 범위 밖이어도 읽는다 — 다른 폴더의 4~5점과 닮은 정도도 별점 가산에 들어가야 한다.
+     * 폴더 범위면 그 폴더의 사진, 전체 라운드면 세트 전 폴더 + 미분류 = 분석된 사진 전부다. 반응한 사진([anchorPhotoIds] — 4~5점·하객 좋아요)은
+     * 범위 밖이어도 읽는다 — 다른 폴더에서 반응한 사진과 닮은 정도도 가산에 들어가야 한다.
      * 반환은 [rows]와 같은 인덱스의 배열이고, 범위 밖 행은 빈 배열이다 — 계산은 범위 폴더의 사진 인덱스만 넘기므로 닿지 않는다.
      */
     private fun loadEmbeddings(
         rows: List<RecommendablePhotoDto>,
         folders: List<FolderSetDetailDto>,
         scopeFolderIds: List<Long>?,
-        likedPhotoIds: Set<Long>,
+        anchorPhotoIds: Set<Long>,
     ): Array<FloatArray> {
         val rowIds = rows.map { it.photoId }
         val wanted = if (scopeFolderIds == null) {
             rowIds
         } else {
             val analyzed = rowIds.toSet()
-            (folders.flatMap { it.photoIds } + likedPhotoIds).filter { it in analyzed }.distinct()
+            (folders.flatMap { it.photoIds } + anchorPhotoIds).filter { it in analyzed }.distinct()
         }
         val vectorById = photoAnalysisRepository.findAllEmbeddingByPhotoIdIn(wanted)
             .associate { it.photoId to normalized(it.embedding) }
@@ -281,8 +281,11 @@ class AiSelectionJobRunner(
         }
         val combined = RecommendationScoring.combine(priorRaw, if (prefOn) types else null, stats)
         val liked = likedByIndex(world, indexById).filterKeys { world.embeddings[it].isNotEmpty() }
-        val guestLiked = world.reactions.values.filter { it.guestLikes > 0 }.mapNotNullTo(mutableSetOf()) { indexById[it.photoId] }
-        val reactionBoost = RecommendationReaction.boost(world.embeddings, liked, guestLiked, world.weights)
+        val guestLiked = world.reactions.values.filter { it.guestLikes > 0 }
+            .mapNotNull { indexById[it.photoId] }.filter { world.embeddings[it].isNotEmpty() }
+            .associateWith { world.weights.guestLike }
+        val anchors = (liked.keys + guestLiked.keys).associateWith { maxOf(liked[it] ?: 0.0, guestLiked[it] ?: 0.0) }
+        val reactionBoost = RecommendationReaction.boost(world.embeddings, anchors, world.weights)
         val score = DoubleArray(n) { combined.score[it] + reactionBoost[it] }
         val ratedOut = world.reactions.values.filter { it.rating == RecommendationReaction.EXCLUDED_SCORE }
             .mapNotNullTo(mutableSetOf()) { indexById[it.photoId] }
