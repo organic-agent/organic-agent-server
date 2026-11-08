@@ -2,7 +2,9 @@ package com.soma.wes.photo.fixture
 
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.domain.PhotoAnalysis
+import com.soma.wes.photo.domain.PhotoRating
 import com.soma.wes.photo.repository.PhotoAnalysisRepository
+import com.soma.wes.photo.repository.PhotoRatingRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.support.TestSequence
 import java.time.Clock
@@ -14,6 +16,7 @@ import org.springframework.stereotype.Component
 class PhotoFixture(
     private val photoRepository: PhotoRepository,
     private val photoAnalysisRepository: PhotoAnalysisRepository,
+    private val photoRatingRepository: PhotoRatingRepository,
     private val jdbcTemplate: JdbcTemplate,
     private val clock: Clock,
 ) {
@@ -31,6 +34,10 @@ class PhotoFixture(
         업로드된_사진(galleryId, count).onEach { photoId ->
             벡터_적재(photoId, FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also { it[0] = 1f })
         }
+
+    /** 사진에 별점을 매긴 상태. 사진당 하나다 — 매긴 사람은 감사용이라 테스트에 의미가 없다. */
+    fun 별점(photoId: Long, score: Int, ratedBy: Long): PhotoRating =
+        photoRatingRepository.save(PhotoRating.of(photoId = photoId, score = score, ratedBy = ratedBy))
 
     /** 사진에 벡터를 싣는다. 임베더 Lambda가 분석 행을 UPSERT 하는 것을 흉내 낸다 — 사진 상태는 건드리지 않는다. */
     fun 벡터_적재(photoId: Long, vector: FloatArray): PhotoAnalysis =

@@ -39,6 +39,20 @@ interface CollabPhotoLikeRepository : JpaRepository<CollabPhotoLike, Long> {
         @Param("photoIds") photoIds: Collection<Long>,
     ): List<CollabLikeCountProjection>
 
+    /**
+     * 갤러리의 모든 협업 세션에서 사진마다 좋아요가 몇 개씩인지. 추천이 하객 반응으로 읽는다. 아무도 누르지 않은 사진은 결과에 없다.
+     * 지운 세션·휴지통에 든 좋아요는 `@SQLRestriction`이 뺀다.
+     */
+    @Query(
+        """
+        SELECT l.photoId AS photoId, COUNT(l) AS count
+        FROM CollabPhotoLike l, CollabSession s
+        WHERE s.id = l.collabSessionId AND s.galleryId = :galleryId
+        GROUP BY l.photoId
+        """,
+    )
+    fun countByGalleryId(@Param("galleryId") galleryId: Long): List<CollabLikeCountProjection>
+
     fun deleteAllByCollabSessionIdAndPhotoIdIn(collabSessionId: Long, photoIds: Collection<Long>)
     fun deleteAllByCollabSessionId(collabSessionId: Long)
 }
