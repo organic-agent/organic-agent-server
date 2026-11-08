@@ -40,12 +40,12 @@ class ProductChildTrashService(
 
     @Transactional(propagation = Propagation.MANDATORY)
     fun deleteParticipantComment(sessionId: Long, commentId: Long, participantId: Long): Boolean =
-        deleteOwnComment(sessionId, commentId, participantId)
+        deleteOwnComment(sessionId = sessionId, commentId = commentId, participantId = participantId)
 
     /** [deleteParticipantComment]와 같다. 같은 클래스의 트랜잭션 메서드를 부르지 않게 둘 다 [deleteOwnComment]로 간다. */
     @Transactional(propagation = Propagation.MANDATORY)
     fun deleteGuestComment(sessionId: Long, commentId: Long, participantId: Long): Boolean =
-        deleteOwnComment(sessionId, commentId, participantId)
+        deleteOwnComment(sessionId = sessionId, commentId = commentId, participantId = participantId)
 
     private fun deleteOwnComment(sessionId: Long, commentId: Long, participantId: Long): Boolean =
         deleteCollabComment(
@@ -68,19 +68,24 @@ class ProductChildTrashService(
 
     @Transactional(propagation = Propagation.MANDATORY)
     fun cancelParticipantLike(sessionId: Long, photoId: Long, participantId: Long): Boolean =
-        cancelOwnLike(sessionId, photoId, participantId)
+        cancelOwnLike(sessionId = sessionId, photoId = photoId, participantId = participantId)
 
     /** [cancelParticipantLike]와 같다. 같은 클래스의 트랜잭션 메서드를 부르지 않게 둘 다 [cancelOwnLike]로 간다. */
     @Transactional(propagation = Propagation.MANDATORY)
     fun cancelGuestLike(sessionId: Long, photoId: Long, participantId: Long): Boolean =
-        cancelOwnLike(sessionId, photoId, participantId)
+        cancelOwnLike(sessionId = sessionId, photoId = photoId, participantId = participantId)
 
     private fun cancelOwnLike(sessionId: Long, photoId: Long, participantId: Long): Boolean {
         if (!repository.lockActiveCollaboration(sessionId)) return false
         if (!repository.lockCollabPhoto(sessionId, photoId)) return false
 
         val deletedAt = ZonedDateTime.now(clock)
-        val likeId = repository.softDeleteLike(sessionId, photoId, participantId, deletedAt) ?: return false
+        val likeId = repository.softDeleteLike(
+            sessionId = sessionId,
+            photoId = photoId,
+            participantId = participantId,
+            deletedAt = deletedAt,
+        ) ?: return false
         completeCollaborationDelete(
             sessionId = sessionId,
             resourceType = RESOURCE_LIKE,
@@ -124,7 +129,12 @@ class ProductChildTrashService(
         if (!repository.lockActiveCollaboration(sessionId)) return false
 
         val deletedAt = ZonedDateTime.now(clock)
-        val deletedId = repository.softDeleteComment(sessionId, commentId, authorParticipantId, deletedAt) ?: return false
+        val deletedId = repository.softDeleteComment(
+            sessionId = sessionId,
+            commentId = commentId,
+            authorParticipantId = authorParticipantId,
+            deletedAt = deletedAt,
+        ) ?: return false
         completeCollaborationDelete(
             sessionId = sessionId,
             resourceType = RESOURCE_COMMENT,

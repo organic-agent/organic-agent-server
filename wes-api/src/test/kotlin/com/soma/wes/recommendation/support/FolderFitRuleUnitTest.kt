@@ -34,6 +34,21 @@ class FolderFitRuleUnitTest {
     }
 
     @Test
+    fun `같은 장면의 조금 다른 구도는 빼지 않는다`() {
+        // given — 0~5는 (1,0) 근처, 6은 중심과 코사인 0.85(격차 약 0.15 — MIN_GAP 0.20 안)
+        val emb = arrayOf(
+            unit(1f, 0f), unit(1f, 0.02f), unit(1f, -0.02f), unit(1f, 0.03f), unit(1f, -0.03f), unit(1f, 0.01f),
+            unit(0.85f, 0.527f),
+        )
+
+        // when
+        val misfit = FolderFitRule.misfits(emb, members = emb.indices.toList())
+
+        // then
+        assertThat(misfit).isEmpty()
+    }
+
+    @Test
     fun `작은 폴더는 판정하지 않는다`() {
         // given — 5장, 하나는 직각 방향이지만 MIN_FOLDER_SIZE 미만
         val emb = arrayOf(unit(1f, 0f), unit(1f, 0f), unit(1f, 0f), unit(1f, 0f), unit(0f, 1f))

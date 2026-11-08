@@ -1,5 +1,6 @@
 package com.soma.wes.recommendation.support
 
+import com.soma.wes.recommendation.domain.PhotoSubject
 import com.soma.wes.recommendation.dto.RecommendablePhotoDto
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.SoftAssertions.assertSoftly
@@ -197,7 +198,7 @@ class FolderCoverageUnitTest {
         photoId = photoId,
         technicalPct = 50.0,
         aestheticPct = 50.0,
-        subjects = "couple",
+        subjects = PhotoSubject.COUPLE,
         burstId = burstId,
         burstRank = burstRank,
         subScores = emptyMap(),

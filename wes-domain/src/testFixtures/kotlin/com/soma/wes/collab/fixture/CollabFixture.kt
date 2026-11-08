@@ -4,8 +4,10 @@ import com.soma.wes.folder.dto.request.CreateConceptFolderRequest
 import com.soma.wes.folder.dto.request.CreateDetailFolderRequest
 import com.soma.wes.folder.dto.request.MoveFolderPhotosRequest
 import com.soma.wes.folder.service.FolderService
+import com.soma.wes.collab.dto.request.EnterCollabRequest
 import com.soma.wes.collab.dto.request.OpenCollabSessionRequest
 import com.soma.wes.collab.dto.response.CollabSessionResponse
+import com.soma.wes.collab.service.CollabGuestService
 import com.soma.wes.collab.service.CollabSessionService
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
@@ -20,6 +22,7 @@ class CollabFixture(
     private val photoFixture: PhotoFixture,
     private val folderService: FolderService,
     private val sessionService: CollabSessionService,
+    private val guestService: CollabGuestService,
     private val jdbcTemplate: JdbcTemplate,
 ) {
     fun 사진이_있는_세션(gallery: OpenGallery = galleryFixture.멤버와_열린_갤러리()): SharedCollab {
@@ -46,6 +49,18 @@ class CollabFixture(
             OpenCollabSessionRequest(conceptFolderId = concept.id, name = "본식 의견"),
         )
         return SharedCollab(gallery = gallery, session = session, conceptId = concept.id, detailId = detail.id, photoId = photoId)
+    }
+
+    /** [photoIds]를 담은 공유폴더를 열고, 하객 한 명이 들어와 그 사진들에 좋아요를 누른 상태. */
+    fun 하객_좋아요(gallery: OpenGallery, photoIds: List<Long>) {
+        val session = sessionService.open(
+            gallery.galleryId,
+            gallery.member.requiredId,
+            OpenCollabSessionRequest(name = "하객 의견", photoIds = photoIds),
+        )
+        val collabToken = session.collabUrl.substringAfterLast('/')
+        val guest = guestService.enter(collabToken, EnterCollabRequest(nickname = "하객"))
+        photoIds.forEach { photoId -> guestService.like(collabToken, photoId, guest.guestToken) }
     }
 
     /** 공유폴더를 휴지통에 넣은 상태. 삭제는 trash 도메인의 SQL이 하는 일이라 엔티티에 쓰는 메서드가 없다. */

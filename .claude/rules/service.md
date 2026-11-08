@@ -23,7 +23,12 @@ paths:
   클래스 레벨은 나중에 추가되는 메서드까지 조용히 등록해서, 네트워크를 부르는 새 메서드가 커넥션을 문 채
   기다리게 된다(아래 TX-05).
   쓰기는 `@Transactional`, 읽기는 `@Transactional(readOnly = true)`, DB를 안 만지는 메서드는
-  무표기 (`EmbeddingService.run`이 일부러 비어 있는 이유). <!-- TX-04 -->
+  무표기 (`EmbeddingService.run`이 일부러 비어 있는 이유).
+  DB를 만지지만 중간에 네트워크를 기다리는 메서드(아래 TX-05)도 무표기로 두고, 안의 DB 접근을 짧은 트랜잭션으로 나눈다 —
+  쓰기 구간이 하나면 다른 빈의 `@Transactional` 메서드(기본, `TrashService` → `TrashEraser`), 외부 호출 사이에 짧은 구간이
+  여럿 끼면 `transactionTemplate`(`AiSelectionJobRunner`), 커밋 뒤 발송은 `afterCommit`. 구간 사이에 데이터가 바뀔 수 있으니
+  쓰기 구간은 조건부 UPDATE·잠금·선점(claim)으로 다시 확인한다. KDoc에 "트랜잭션 없이 돈다 — 왜"와 그 사이의 변경·실패를
+  무엇이 막는지 적는다(`TrashEraser`, `RetouchService.completeResults`). <!-- TX-04 -->
 - **트랜잭션 안에서 네트워크를 기다리지 않는다.** S3에 요청하는 호출(`exists`·`copy`·`deleteAll`), Lambda `send`, <!-- TX-05 -->
   OAuth 호출은 트랜잭션 밖에서 하거나 `afterCommit`으로 미룬다 — 커넥션을 문 채 기다리면 풀이 마른다(#346).
   서명 URL 만들기(`presign*`)·키 조립(`galleryPrefix`·`buildKey`)·`isAvailable`처럼 서버 안에서 끝나는 호출은
@@ -34,9 +39,12 @@ paths:
 
 ## 유스케이스의 뼈대
 
-1. **첫 줄은 인가.** 정책 클래스의 `require*`를 부른다. 어느 문이 맞는지는 "보는 것인가,
-   고르는 것인가"로 정한다 — 순수 조회는 `requireViewer`, 선택 행위는 `requireCouple` 또는
-   `requirePhotographerOrCouple` (CLAUDE.md의 역할 정의 참조). <!-- LY-12 -->
+1. **첫 줄은 인가.** 갤러리 범위는 정책 클래스(`GalleryAccessPolicy`·`CollabSessionAccess`)의 `require*`를 부른다.
+   어느 문이 맞는지는 "보는 것인가, 고르는 것인가"로 정한다 — 순수 조회는 `requireViewer`, 선택 행위는
+   `requireCouple` 또는 `requirePhotographerOrCouple` (CLAUDE.md의 역할 정의 참조).
+   정책 클래스가 없는 범위(스튜디오)는 그 서비스의 private `require*`가 첫 줄이다 — 같은 범위 인가를 두 서비스 이상이
+   쓰게 되면 정책 클래스로 올린다. 본인 행위(탈퇴)는 "내 행"을 찾는 것이 인가를 겸한다. 트랜잭션 블록
+   (`readTransaction.execute { }`) 안의 첫 줄도 첫 줄로 본다. <!-- LY-12 -->
 2. **자원은 스코프째 찾는다.** `findByIdAndGalleryId`처럼 부모 id를 함께 걸어 찾고, 없으면
    도메인 예외로 404를 던진다 (repository.md 참조). id만으로 찾은 뒤 소유자를 비교하지 않는다. <!-- LY-13 -->
 3. **스코프 불변식을 지키는 쓰기는 스코프의 행을 먼저 잠근다.** 부모 스코프 사진 중복은 부모 행
@@ -44,7 +52,9 @@ paths:
    되는, 반드시 존재하는 행"이다 — 아직 없을 수 있는 행은 뮤텍스가 못 된다. <!-- LY-14 -->
 4. **전부 아니면 거절.** 배치 요청에 잘못된 항목이 섞이면 맞는 것만 처리하지 말고 전체를
    거절한다 (중복 409, 남의 갤러리 사진 400). 부분 성공은 성공처럼 보이는데 무엇이 빠졌는지
-   아무도 말할 수 없다. <!-- LY-15 -->
+   아무도 말할 수 없다. 단, 목표 상태를 요청하는 배치(빼기·지우기)에서 **이미 그 상태인 항목은 실패가 아니다** —
+   건너뛰고, 응답으로 처리 뒤 상태 전체를 돌려준다(`PhotoSelectionService.deselect`: 부부가 동시에 같은 사진을 빼도
+   한쪽 요청의 나머지가 사라지지 않는다). KDoc에 그 까닭을 적는다. <!-- LY-15 -->
 5. **검증이 저장보다 먼저다.** 거절될 요청이 부산물(빈 컨셉 폴더, 이름 없는 세션)을 남기지 않게,
    저장 전에 전부 검증한다 (`FolderService.movePhotos`, `CollabSessionService.open` 전례). <!-- LY-16 -->
 

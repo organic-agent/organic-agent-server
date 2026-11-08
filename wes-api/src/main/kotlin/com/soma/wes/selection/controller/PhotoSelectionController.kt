@@ -67,7 +67,7 @@ class PhotoSelectionController(
         @PathVariable galleryId: Long,
         @PathVariable photoId: Long,
     ): ResponseEntity<Unit> {
-        photoSelectionService.deselectPhoto(galleryId, photoId, loginUser.id)
+        photoSelectionService.deselectPhoto(galleryId = galleryId, photoId = photoId, userId = loginUser.id)
         val status = HttpStatus.NO_CONTENT
 
         return ResponseEntity.status(status).build()

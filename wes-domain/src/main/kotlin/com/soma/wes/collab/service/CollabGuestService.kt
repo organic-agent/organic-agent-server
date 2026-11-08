@@ -99,7 +99,11 @@ class CollabGuestService(
         if (!comment.isWrittenBy(participant.requiredId)) {
             throw CollabException(CollabErrorCode.COMMENT_NOT_OWNED)
         }
-        if (!productChildTrashService.deleteParticipantComment(access.sessionId, commentId, participant.requiredId)) {
+        if (!productChildTrashService.deleteParticipantComment(
+            sessionId = access.sessionId,
+            commentId = commentId,
+            participantId = participant.requiredId,
+        )) {
             throw CollabException(CollabErrorCode.COMMENT_NOT_FOUND)
         }
         activityRecorder.recordGallery(access.session.galleryId)
@@ -119,12 +123,14 @@ class CollabGuestService(
         val participant = sessionAccess.requireParticipant(access, userId, guestToken)
         requireSharedPhoto(access.session, photoId)
         if (likeRepository.existsByCollabSessionIdAndPhotoIdAndParticipantId(
-                access.sessionId,
-                photoId,
-                participant.requiredId,
+                collabSessionId = access.sessionId,
+                photoId = photoId,
+                participantId = participant.requiredId,
             )
         ) return
-        likeRepository.save(CollabPhotoLike(access.sessionId, photoId, participant.requiredId))
+        likeRepository.save(
+            CollabPhotoLike(collabSessionId = access.sessionId, photoId = photoId, participantId = participant.requiredId),
+        )
         activityRecorder.recordGallery(access.session.galleryId)
     }
 
@@ -141,7 +147,11 @@ class CollabGuestService(
         val access = sessionAccess.requireLikable(collabToken, photoId)
         val participant = sessionAccess.requireParticipant(access, userId, guestToken)
         requireSharedPhoto(access.session, photoId)
-        if (productChildTrashService.cancelParticipantLike(access.sessionId, photoId, participant.requiredId)) {
+        if (productChildTrashService.cancelParticipantLike(
+            sessionId = access.sessionId,
+            photoId = photoId,
+            participantId = participant.requiredId,
+        )) {
             activityRecorder.recordGallery(access.session.galleryId)
         }
     }

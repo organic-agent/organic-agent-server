@@ -99,7 +99,7 @@ class StudioController(
         @PathVariable workspaceId: Long,
         @PathVariable memberId: Long,
     ): ResponseEntity<Unit> {
-        studioService.removeMember(workspaceId, memberId, loginUser.id)
+        studioService.removeMember(workspaceId = workspaceId, memberId = memberId, userId = loginUser.id)
         return ResponseEntity.noContent().build()
     }
 
@@ -127,7 +127,12 @@ class StudioController(
         @PathVariable memberId: Long,
         @Valid @RequestBody request: ChangeStudioMemberRoleRequest,
     ): ResponseEntity<StudioMemberResponse> {
-        return ResponseEntity.ok(studioService.changeMemberRole(workspaceId, memberId, loginUser.id, request))
+        return ResponseEntity.ok(studioService.changeMemberRole(
+            workspaceId = workspaceId,
+            memberId = memberId,
+            userId = loginUser.id,
+            request = request,
+        ))
     }
 
     @GetMapping("/me")

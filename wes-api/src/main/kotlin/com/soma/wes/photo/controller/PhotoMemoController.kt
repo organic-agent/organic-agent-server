@@ -29,7 +29,12 @@ class PhotoMemoController(
         @PathVariable photoId: Long,
         @Valid @RequestBody request: WritePhotoMemoRequest,
     ): ResponseEntity<PhotoMemoResponse> {
-        val result = photoMemoService.write(galleryId, photoId, loginUser.id, request)
+        val result = photoMemoService.write(
+            galleryId = galleryId,
+            photoId = photoId,
+            userId = loginUser.id,
+            request = request,
+        )
 
         return ResponseEntity.ok(result)
     }
@@ -40,7 +45,7 @@ class PhotoMemoController(
         @PathVariable galleryId: Long,
         @PathVariable photoId: Long,
     ): ResponseEntity<Unit> {
-        photoMemoService.clear(galleryId, photoId, loginUser.id)
+        photoMemoService.clear(galleryId = galleryId, photoId = photoId, userId = loginUser.id)
         val status = HttpStatus.NO_CONTENT
 
         return ResponseEntity.status(status).build()

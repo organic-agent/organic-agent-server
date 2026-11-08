@@ -59,6 +59,12 @@ class RetouchRefinementService(
         private const val TIMEOUT_SECONDS = 20L
     }
 
+    /**
+     * 보정 요청 원문을 LLM으로 다듬어 돌려준다. 저장하지 않는다.
+     *
+     * 트랜잭션 없이 돈다 — 미리보기 S3 읽기와 LLM 호출(최대 [TIMEOUT_SECONDS]초)을 기다리는 동안 커넥션을 물지 않는다(TX-05).
+     * DB는 인가와 사진 행 읽기뿐이고 각 호출이 짧은 읽기로 끝난다. 쓰는 것이 없어 그 사이의 변경을 막을 일도 없다.
+     */
     fun refine(galleryId: Long, userId: Long, request: RefineRetouchRequest): RefineRetouchResponse {
         accessPolicy.requireRetouchRequester(galleryId, userId)
         validate(request)

@@ -65,7 +65,12 @@ class RetouchController(
         @PathVariable photoId: Long,
         @Valid @RequestBody request: UpdateRetouchPhotoRequest,
     ): ResponseEntity<RetouchPhotoResponse> {
-        val result = retouchService.updatePhoto(galleryId, photoId, loginUser.id, request)
+        val result = retouchService.updatePhoto(
+            galleryId = galleryId,
+            photoId = photoId,
+            userId = loginUser.id,
+            request = request,
+        )
 
         return ResponseEntity.ok(result)
     }

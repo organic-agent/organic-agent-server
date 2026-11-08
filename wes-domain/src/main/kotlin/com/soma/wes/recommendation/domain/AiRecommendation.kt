@@ -17,7 +17,8 @@ import org.hibernate.type.SqlTypes
  *
  * 추천은 **사진에 붙는다**. 화면은 사진마다 가장 최근 라운드의 행을 읽으므로(라운드 전체 교체가 아니다),
  * 사진을 다른 폴더로 옮겨도 표시는 따라간다. 잡이 돌면 그 잡의 범위(폴더 하나 또는 전체)에 든 사진의
- * 기존 행을 지우고 새 라운드로 다시 적는다 — 거절 행([rejectedAt])은 지우지 않고 남겨 다음 계산이 뺀다.
+ * 기존 행에 [replacedAt]을 채우고 새 라운드로 다시 적는다 — 지우지 않고 남긴 행이 "보여줬는데 안 담음"의 기록이다(#391 ADR 0001).
+ * 거절 행([rejectedAt])은 갈지 않고 남겨 다음 계산이 뺀다.
  * accepted/unselected/accept_mode는 반응 API가 생길 때 매핑한다.
  */
 @Entity
@@ -69,6 +70,14 @@ class AiRecommendation(
     /** 부부가 이 추천을 거절한 시각. 다음 라운드는 거절된 사진을 후보에서 뺀다. */
     @Column(name = "rejected_at", nullable = true)
     val rejectedAt: ZonedDateTime? = null
+
+    /**
+     * 다음 추천이 이 행을 갈아 치운 시각. null이면 지금 화면에 보이는 추천이다. 채우는 쪽은 실행기의 벌크 UPDATE
+     * ([com.soma.wes.recommendation.repository.AiRecommendationRepository.markReplacedBySelectionIdAndPhotoIdIn])뿐이다.
+     */
+    @Column(name = "replaced_at", nullable = true)
+    var replacedAt: ZonedDateTime? = null
+        protected set
 
     val requiredId: Long
         get() = checkNotNull(id) { "아직 저장되지 않은 AiRecommendation 이다" }

@@ -32,7 +32,13 @@ class PhotoCommentController(
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "50") size: Int,
     ): ResponseEntity<PageResponse<PhotoCommentResponse>> {
-        val result = service.list(galleryId, photoId, loginUser.id, page, size)
+        val result = service.list(
+            galleryId = galleryId,
+            photoId = photoId,
+            userId = loginUser.id,
+            page = page,
+            size = size,
+        )
         return ResponseEntity.ok(result)
     }
 
@@ -43,7 +49,7 @@ class PhotoCommentController(
         @PathVariable photoId: Long,
         @Valid @RequestBody request: WritePhotoCommentRequest,
     ): ResponseEntity<PhotoCommentResponse> {
-        val result = service.write(galleryId, photoId, loginUser.id, request)
+        val result = service.write(galleryId = galleryId, photoId = photoId, userId = loginUser.id, request = request)
         val status = HttpStatus.CREATED
         return ResponseEntity.status(status).body(result)
     }
@@ -55,7 +61,7 @@ class PhotoCommentController(
         @PathVariable photoId: Long,
         @PathVariable commentId: Long,
     ): ResponseEntity<Unit> {
-        service.delete(galleryId, photoId, commentId, loginUser.id)
+        service.delete(galleryId = galleryId, photoId = photoId, commentId = commentId, userId = loginUser.id)
         val status = HttpStatus.NO_CONTENT
         return ResponseEntity.status(status).build()
     }

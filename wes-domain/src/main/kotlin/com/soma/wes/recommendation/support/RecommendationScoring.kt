@@ -1,6 +1,7 @@
 package com.soma.wes.recommendation.support
 
 import com.soma.wes.recommendation.dto.RecommendationCombinedScoreDto
+import com.soma.wes.recommendation.domain.PhotoSubject
 import com.soma.wes.recommendation.dto.RecommendationTypeStatDto
 import kotlin.math.sqrt
 
@@ -24,8 +25,6 @@ object RecommendationScoring {
      * 피사체 판정(`subjects`)이 틀릴 수 있어 순서를 흔드는 정도로만 둔다.
      */
     const val W_SPOUSE_BALANCE = 0.5
-    const val BRIDE = "bride"
-    const val GROOM = "groom"
     private const val EPS = 1e-12
 
     fun z(values: DoubleArray): DoubleArray {
@@ -40,7 +39,7 @@ object RecommendationScoring {
         DoubleArray(technicalPct.size) { W_TECHNICAL * technicalPct[it] + W_AESTHETIC * aestheticPct[it] }
 
     /** 유형별 집계 — 갤러리 비율, 부족분(deficit), 선택 lift. 전부 [-1, 1] 안의 비율. */
-    fun typeStats(types: List<String>, selected: BooleanArray): Map<String, RecommendationTypeStatDto> {
+    fun typeStats(types: List<PhotoSubject>, selected: BooleanArray): Map<PhotoSubject, RecommendationTypeStatDto> {
         val n = types.size
         val nSel = selected.count { it }
         return types.toSortedSet().associateWith { type ->
@@ -60,7 +59,7 @@ object RecommendationScoring {
         }
     }
 
-    fun combine(priorRaw: DoubleArray, types: List<String>?, stats: Map<String, RecommendationTypeStatDto>?): RecommendationCombinedScoreDto {
+    fun combine(priorRaw: DoubleArray, types: List<PhotoSubject>?, stats: Map<PhotoSubject, RecommendationTypeStatDto>?): RecommendationCombinedScoreDto {
         val pz = z(priorRaw)
         val zeros = DoubleArray(pz.size)
         if (types == null || stats == null) return RecommendationCombinedScoreDto(pz, pz, zeros, zeros)
@@ -80,16 +79,16 @@ object RecommendationScoring {
      *
      * 둘 다 하나도 안 담았으면 0이다.
      */
-    fun spouseBalance(types: List<String>, selected: Collection<Int>): DoubleArray {
-        val bride = selected.count { types[it] == BRIDE }
-        val groom = selected.count { types[it] == GROOM }
+    fun spouseBalance(types: List<PhotoSubject>, selected: Collection<Int>): DoubleArray {
+        val bride = selected.count { types[it] == PhotoSubject.BRIDE }
+        val groom = selected.count { types[it] == PhotoSubject.GROOM }
         if (bride + groom == 0) return DoubleArray(types.size)
         val tilt = (groom - bride).toDouble() / (bride + groom)
         return DoubleArray(types.size) {
             when (types[it]) {
-                BRIDE -> W_SPOUSE_BALANCE * maxOf(0.0, tilt)
-                GROOM -> W_SPOUSE_BALANCE * maxOf(0.0, -tilt)
-                else -> 0.0
+                PhotoSubject.BRIDE -> W_SPOUSE_BALANCE * maxOf(0.0, tilt)
+                PhotoSubject.GROOM -> W_SPOUSE_BALANCE * maxOf(0.0, -tilt)
+                PhotoSubject.COUPLE, PhotoSubject.GROUP, PhotoSubject.UNKNOWN -> 0.0
             }
         }
     }

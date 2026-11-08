@@ -1,6 +1,7 @@
 package com.soma.wes.recommendation.repository
 
 import com.soma.wes.recommendation.domain.AiRecommendation
+import java.time.ZonedDateTime
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
@@ -33,25 +34,27 @@ interface AiRecommendationRepository : JpaRepository<AiRecommendation, Long> {
     /** 부부가 거절한 추천. 라운드와 무관하게 다음 후보에서 뺀다. */
     fun findAllBySelectionIdAndRejectedAtIsNotNull(selectionId: Long): List<AiRecommendation>
 
-    /** 셀렉의 추천 전부(모든 라운드). 화면은 여기서 사진마다 가장 최근 것을 고른다. */
+    /** 셀렉의 추천 전부(모든 라운드, 갈린 행 포함). 화면은 여기서 사진마다 가장 최근 것을 고르고 갈린·거절 행을 뺀다. */
     fun findAllBySelectionId(selectionId: Long): List<AiRecommendation>
 
     /**
      * 컨텍스트를 비우지 않는다 — 같은 트랜잭션에서 먼저 읽어 둔 잡 엔티티가 분리되면 라운드 번호 갱신이 사라진다.
-     * 이 시점에 컨텍스트에 추천 엔티티는 없다.
+     * 이 시점에 컨텍스트에 추천 엔티티는 없다. JPQL 벌크라 `version`·`updated_at`을 손으로 올린다(RP-11).
      *
-     * 잡 범위에 든 사진의 기존 추천을 지운다 — 새 라운드를 적기 전의 리셋. 거절 행은 남긴다(다음 계산이
-     * 거절을 빼는 근거이고, 화면은 거절 행을 그리지 않는다).
+     * 잡 범위에 든 사진의 지금 보이는 추천을 "갈림"으로 표시한다 — 새 라운드를 적기 전의 리셋. 지우지 않고 남겨 노출 기록이 된다.
+     * 거절 행과 이미 갈린 행은 건드리지 않는다.
      */
     @Modifying(clearAutomatically = false, flushAutomatically = true)
     @Query(
         """
-        DELETE FROM AiRecommendation r
-        WHERE r.selectionId = :selectionId AND r.photoId IN :photoIds AND r.rejectedAt IS NULL
+        UPDATE AiRecommendation r
+        SET r.replacedAt = :at, r.updatedAt = :at, r.version = r.version + 1
+        WHERE r.selectionId = :selectionId AND r.photoId IN :photoIds AND r.rejectedAt IS NULL AND r.replacedAt IS NULL
         """,
     )
-    fun deleteCurrentBySelectionIdAndPhotoIdIn(
+    fun markReplacedBySelectionIdAndPhotoIdIn(
         @Param("selectionId") selectionId: Long,
         @Param("photoIds") photoIds: Collection<Long>,
+        @Param("at") at: ZonedDateTime,
     ): Int
 }
