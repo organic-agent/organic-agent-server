@@ -5,6 +5,7 @@ import com.soma.wes.folder.support.AiFolderSetReader
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.photo.domain.Photo
 import com.soma.wes.photo.repository.PhotoAnalysisRepository
+import com.soma.wes.photo.repository.PhotoRatingRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.recommendation.domain.AiRecommendation
 import com.soma.wes.recommendation.domain.AiSelectionJob
@@ -20,6 +21,7 @@ import com.soma.wes.recommendation.support.FolderCoverage
 import com.soma.wes.recommendation.support.FolderFitRule
 import com.soma.wes.recommendation.support.FolderQuota
 import com.soma.wes.recommendation.support.MmrSelector
+import com.soma.wes.recommendation.support.RecommendationReaction
 import com.soma.wes.recommendation.support.RecommendationScoring
 import com.soma.wes.selection.domain.PhotoSelection
 import com.soma.wes.selection.repository.PhotoSelectionItemRepository
@@ -37,13 +39,14 @@ import org.springframework.transaction.support.TransactionTemplate
 /**
  * 폴더별 추천 한 라운드 — AI repo `recommend/draft.run`의 자리다.
  *
- *     폴더마다 f:  후보 = f.photos − 담은 사진 − 거절 − 폴더와 동떨어진 사진([FolderFitRule])
+ *     폴더마다 f:  후보 = f.photos − 담은 사진 − 거절 − 1점 − 폴더와 동떨어진 사진([FolderFitRule])
  *                  (이전 라운드 노출은 제외하지 않는다)
  *                  n_f = max(1, round(remaining·|f|/Σ|f'|)),  n_f ≤ ceil(|f|·0.5)
  *                  연사당 1장 → MMR → n_f장, 폴더 안 점수 순위가 rank
  *     미분류(세트에 없는 사진)는 가상 폴더로 같은 규칙.
  *     폴더 범위 잡은 위 몫 대신 [FolderCoverage] — 연사마다 한 장, 폴더 사진의 10%(최대 골라야 하는 장수), 단체 사진 제외,
  *     담은 사진이 든 연사 제외, 신랑·신부 균형 가산점. 갤러리 몫·담은 수와 무관하다.
+ *     점수에는 부부 반응([RecommendationReaction] — 4~5점과 닮은 만큼 가산)이 두 흐름 모두 더해진다.
  *     추천 INSERT + 라운드 확정 → DONE.
  *
  * 품질로 사진을 제거하는 단계는 없다. 트랜잭션은 읽기·적재·닫기 단계마다 짧게 끊는다. 실패는 잡에 FAILED로 남는다.
@@ -57,6 +60,7 @@ class AiSelectionJobRunner(
     private val galleryRepository: GalleryRepository,
     private val photoRepository: PhotoRepository,
     private val photoAnalysisRepository: PhotoAnalysisRepository,
+    private val photoRatingRepository: PhotoRatingRepository,
     private val folderSetReader: AiFolderSetReader,
     private val transactionTemplate: TransactionTemplate,
     private val clock: Clock,
@@ -183,13 +187,15 @@ class AiSelectionJobRunner(
         val rejected = aiRecommendationRepository.findAllBySelectionIdAndRejectedAtIsNotNull(selection.requiredId)
             .mapTo(mutableSetOf()) { it.photoId }
         val previousRound = aiRecommendationRepository.findFirstBySelectionIdOrderByRoundDesc(selection.requiredId)?.round ?: 0
+        val ratings = photoRatingRepository.findAllByGalleryId(galleryId).associate { it.photoId to it.score }
+        val likedPhotoIds = ratings.filterValues { RecommendationReaction.likeWeight(it) != null }.keys
 
         return World(
             job = JobRef(jobId, job.mode, job.round),
             selectionId = selection.requiredId,
             galleryId = galleryId,
             rows = rows,
-            embeddings = loadEmbeddings(rows, folders, scopeFolderIds),
+            embeddings = loadEmbeddings(rows, folders, scopeFolderIds, likedPhotoIds),
             folders = folders,
             quotaFolders = if (scopeFolderIds == null) folders else setFolders.ifEmpty { folders },
             scopeFolderIds = scopeFolderIds,
@@ -198,6 +204,7 @@ class AiSelectionJobRunner(
             rejected = rejected,
             target = gallery.maxSelectablePhotoCount ?: DEFAULT_TARGET,
             previousRound = previousRound,
+            ratings = ratings,
         )
     }
 
@@ -206,20 +213,22 @@ class AiSelectionJobRunner(
 
     /**
      * 벡터는 이번 라운드가 도는 사진만 읽는다 — 폴더 이상치 판정과 MMR이 폴더 안에서만 벡터를 비교하기 때문이다.
-     * 폴더 범위면 그 폴더의 사진, 전체 라운드면 세트 전 폴더 + 미분류 = 분석된 사진 전부다.
+     * 폴더 범위면 그 폴더의 사진, 전체 라운드면 세트 전 폴더 + 미분류 = 분석된 사진 전부다. 4~5점 사진([likedPhotoIds])은
+     * 범위 밖이어도 읽는다 — 다른 폴더의 4~5점과 닮은 정도도 별점 가산에 들어가야 한다.
      * 반환은 [rows]와 같은 인덱스의 배열이고, 범위 밖 행은 빈 배열이다 — 계산은 범위 폴더의 사진 인덱스만 넘기므로 닿지 않는다.
      */
     private fun loadEmbeddings(
         rows: List<RecommendablePhotoDto>,
         folders: List<FolderSetDetailDto>,
         scopeFolderIds: List<Long>?,
+        likedPhotoIds: Set<Long>,
     ): Array<FloatArray> {
         val rowIds = rows.map { it.photoId }
         val wanted = if (scopeFolderIds == null) {
             rowIds
         } else {
             val analyzed = rowIds.toSet()
-            folders.flatMap { it.photoIds }.filter { it in analyzed }
+            (folders.flatMap { it.photoIds } + likedPhotoIds).filter { it in analyzed }.distinct()
         }
         val vectorById = photoAnalysisRepository.findAllEmbeddingByPhotoIdIn(wanted)
             .associate { it.photoId to normalized(it.embedding) }
@@ -264,10 +273,13 @@ class AiSelectionJobRunner(
             null
         }
         val combined = RecommendationScoring.combine(priorRaw, if (prefOn) types else null, stats)
-        val score = combined.score
+        val ratingBoost = RecommendationReaction.ratingBoost(world.embeddings, likedByIndex(world, indexById))
+        val score = DoubleArray(n) { combined.score[it] + ratingBoost[it] }
+        val ratedOut = world.ratings.filterValues { it == RecommendationReaction.EXCLUDED_SCORE }.keys
+            .mapNotNullTo(mutableSetOf()) { indexById[it] }
 
         // 폴더별 선택
-        val exclude = (selectedIdx + world.rejected.mapNotNull { indexById[it] }).toSet()
+        val exclude = (selectedIdx + world.rejected.mapNotNull { indexById[it] } + ratedOut).toSet()
         // 범위 폴더가 세트에 없는 폴더(사용자가 만든 것)면 쿼터 재료에 끼워 넣어 같은 규칙으로 몫을 정한다.
         val quotaSizes = (quotaFolders + folders.filter { f -> quotaFolders.none { it.folderId == f.folderId } })
             .filter { it.photoIds.isNotEmpty() }
@@ -303,9 +315,9 @@ class AiSelectionJobRunner(
 
         // 폴더 범위는 점수 = 백분위 z + 신랑·신부 균형 가산점. 전체 라운드의 유형 균형·선호 항은 쓰지 않는다.
         val spouse = if (scoped) RecommendationScoring.spouseBalance(types, selectedIdx) else DoubleArray(n)
-        val folderScore = if (scoped) DoubleArray(n) { combined.priorZ[it] + spouse[it] } else score
+        val folderScore = if (scoped) DoubleArray(n) { combined.priorZ[it] + spouse[it] + ratingBoost[it] } else score
         val selectedSet = selectedIdx.toSet()
-        val rejectedSet = world.rejected.mapNotNull { indexById[it] }.toSet()
+        val rejectedSet = world.rejected.mapNotNull { indexById[it] }.toSet() + ratedOut
         val coverage = linkedMapOf("pieces" to 0, "skippedPieces" to 0, "nearDuplicates" to 0, "cap" to 0, "groupExcluded" to 0)
 
         for (folder in folders.sortedByDescending { it.photoIds.size }) {
@@ -343,6 +355,7 @@ class AiSelectionJobRunner(
                     "burst_id" to row.burstId,   // [GLOSSARY-2 2026-09-27] 근거 키 cluster_id → burst_id (V23이 기존 행도 옮긴다)
                     "folder" to "${folder.conceptName}›${folder.name}", "folder_size" to folder.photoIds.size,
                     "folder_rank" to pick.folderRank, "folder_quota" to pick.quota,
+                    "rating_z" to round3(ratingBoost[i]),
                 )
                 if (scoped) {
                     breakdown["spouse_z"] = round3(spouse[i])
@@ -371,8 +384,17 @@ class AiSelectionJobRunner(
             preferenceOn = prefOn,
             misfitPhotoIds = misfitPhotoIds,
             coverage = coverage.takeIf { scoped },
+            ratingExcluded = ratedOut.size,
+            ratingLiked = world.ratings.values.count { RecommendationReaction.likeWeight(it) != null },
         )
     }
+
+    /** 4~5점 사진의 행 인덱스 → 가산 무게. 분석이 안 끝나 행이 없는 사진은 빠진다. */
+    private fun likedByIndex(world: World, indexById: Map<Long, Int>): Map<Int, Double> =
+        world.ratings.mapNotNull { (photoId, rating) ->
+            val weight = RecommendationReaction.likeWeight(rating) ?: return@mapNotNull null
+            indexById[photoId]?.let { it to weight }
+        }.toMap()
 
     // ── 적재 ──
 
@@ -420,6 +442,7 @@ class AiSelectionJobRunner(
             "misfit" to draft.misfitPhotoIds.size, "misfitPhotoIds" to draft.misfitPhotoIds,
             "coverage" to draft.coverage,
             "preferenceOn" to draft.preferenceOn,
+            "ratingExcluded" to draft.ratingExcluded, "ratingLiked" to draft.ratingLiked,
             "elapsedSeconds" to timing.elapsedSeconds(),
             "timing" to timing.toMap(),
         )
@@ -482,6 +505,8 @@ class AiSelectionJobRunner(
         val rejected: Set<Long>,
         val target: Int,
         val previousRound: Int,
+        /** 갤러리의 별점(사진 → 1~5). 사진당 하나다. */
+        val ratings: Map<Long, Int>,
     )
 
     private class PlannedPick(
@@ -503,5 +528,9 @@ class AiSelectionJobRunner(
         val misfitPhotoIds: List<Long>,
         /** 폴더 범위 잡의 연사 조각·상한·제외 수. 전체 라운드는 null. */
         val coverage: Map<String, Int>?,
+        /** 1점이라 후보에서 뺀 사진 수(분석된 사진 중). */
+        val ratingExcluded: Int,
+        /** 가산의 기준이 된 4~5점 사진 수. */
+        val ratingLiked: Int,
     )
 }
