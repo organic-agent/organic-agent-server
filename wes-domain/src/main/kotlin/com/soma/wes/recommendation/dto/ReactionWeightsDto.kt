@@ -16,6 +16,10 @@ data class ReactionWeightsDto(
     val neighborMax: Double,
     /** 이보다 덜 닮으면(코사인) 다른 사진은 가산을 받지 않는다. */
     val similarityFloor: Double,
+    /** "보여줬는데 안 담음" 한 번당 감점(z 단위). */
+    val seenPenalty: Double,
+    /** 감점을 세는 횟수 상한 — 그 뒤로는 더 내리지 않는다(좋아한 사진이 영영 사라지지 않게). */
+    val seenCap: Int,
 ) {
 
     companion object {
@@ -41,6 +45,12 @@ data class ReactionWeightsDto(
          */
         const val DEFAULT_SIMILARITY_FLOOR = 0.90
 
+        /** 무시 한 번당 감점. 5점 사진(가산 1.0)도 세 번 무시하면 평균 근처까지 내려오는 크기다(#391 3단계 결정). */
+        const val DEFAULT_SEEN_PENALTY = 0.3
+
+        /** 무시 횟수 상한. */
+        const val DEFAULT_SEEN_CAP = 3
+
         val DEFAULT = ReactionWeightsDto(
             rating = DEFAULT_RATING,
             five = DEFAULT_FIVE,
@@ -48,6 +58,8 @@ data class ReactionWeightsDto(
             guestLike = DEFAULT_GUEST_LIKE,
             neighborMax = DEFAULT_NEIGHBOR_MAX,
             similarityFloor = DEFAULT_SIMILARITY_FLOOR,
+            seenPenalty = DEFAULT_SEEN_PENALTY,
+            seenCap = DEFAULT_SEEN_CAP,
         )
     }
 }

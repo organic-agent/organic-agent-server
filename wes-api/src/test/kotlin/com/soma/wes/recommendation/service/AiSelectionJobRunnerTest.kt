@@ -362,7 +362,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             ).jobId
 
         @Test
-        fun `그 폴더의 추천만 지우고 다시 쓰며 다른 폴더의 추천은 남는다`() {
+        fun `그 폴더의 추천만 갈아 새로 쓰며 갈린 행은 남고 다른 폴더의 추천은 그대로다`() {
             // given — 전체 라운드 뒤 해변 폴더만 다시 받는다
             val w = world()
             runner.run(requestJob())
@@ -374,12 +374,14 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             // when
             runner.run(requestFolderJob(w.beachFolderId))
 
-            // then — 해변은 새 라운드(2)로 1장(6장 폴더의 10% 올림), 정원·미분류 행은 id까지 그대로
-            val after = aiRecommendationRepository.findAllBySelectionId(selectionId)
+            // then — 해변은 새 라운드(2)로 1장(6장 폴더의 10% 올림), 1라운드 해변 행은 갈린 채 남고, 정원·미분류 행은 id까지 그대로
+            val all = aiRecommendationRepository.findAllBySelectionId(selectionId)
+            val after = all.filter { it.replacedAt == null }
             val listed = aiRecommendationService.list(fixture.galleryId, fixture.member.id!!, folderId = null)
             assertSoftly { softly ->
                 softly.assertThat(after.filter { it.folderId == w.beachFolderId }.map { it.round }).containsOnly(2)
                 softly.assertThat(after.filter { it.folderId == w.beachFolderId }).hasSize(1)
+                softly.assertThat(all.filter { it.replacedAt != null }.map { it.round to it.folderId }).isNotEmpty().containsOnly(1 to w.beachFolderId)
                 softly.assertThat(after.filter { it.folderId == w.gardenFolderId }.map { it.requiredId }).containsExactlyElementsOf(gardenBefore)
                 softly.assertThat(after.filter { it.folderId == null }.map { it.requiredId }).containsExactlyElementsOf(unfiledBefore)
                 softly.assertThat(listed.photos.map { it.photo.photoId }).hasSize(3)
@@ -403,9 +405,9 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             // when — 정원만 다시 추천
             runner.run(requestFolderJob(w.gardenFolderId))
 
-            // then — 옮겨 온 사진은 정원 범위에 들어 1라운드 표시가 리셋되고(다시 뽑히면 2라운드), 정원의 추천은
+            // then — 옮겨 온 사진은 정원 범위에 들어 1라운드 표시가 갈리고(다시 뽑히면 2라운드), 정원의 추천은
             // 2라운드로 새로 적히며, 해변에 남은 사진의 추천은 1라운드 그대로다
-            val after = aiRecommendationRepository.findAllBySelectionId(selectionId)
+            val after = aiRecommendationRepository.findAllBySelectionId(selectionId).filter { it.replacedAt == null }
             val gardenNow = after.filter { it.folderId == w.gardenFolderId }
             assertSoftly { softly ->
                 softly.assertThat(gardenView.photos.map { it.photo.photoId }).contains(moved)
@@ -492,21 +494,21 @@ class AiSelectionJobRunnerTest @Autowired constructor(
         }
 
         @Test
-        fun `같은 폴더를 다시 받으면 같은 사진이 같은 순서로 나온다`() {
-            // given
+        fun `보여준 기록이 없으면 같은 입력에 같은 사진이 같은 순서로 나온다`() {
+            // given — 같은 폴더를 두 번 계산하되, 두 번째 전에 첫 라운드 행을 지워 노출 기록이 없게 한다
             val (_, folderId) = bigFolder()
             val first = requestFolderJob(folderId)
             runner.run(first.jobId)
-            // 다음 라운드가 같은 폴더의 이번 행을 지우고 다시 쓰므로 먼저 읽어 둔다.
             val round1 = aiRecommendationRepository.findAllBySelectionIdAndRound(first.selectionId, 1)
                 .sortedBy { it.rank }.map { it.photoId }
+            jdbcTemplate.update("DELETE FROM ai_recommendations WHERE selection_id = ?", first.selectionId)
 
             // when
             val second = requestFolderJob(folderId)
             runner.run(second.jobId)
 
             // then
-            val round2 = aiRecommendationRepository.findAllBySelectionIdAndRound(second.selectionId, 2)
+            val round2 = aiRecommendationRepository.findAllBySelectionIdAndRound(second.selectionId, 1)
                 .sortedBy { it.rank }.map { it.photoId }
             assertSoftly { softly ->
                 softly.assertThat(round1).hasSize(3)
@@ -545,7 +547,8 @@ class AiSelectionJobRunnerTest @Autowired constructor(
                 fixture.galleryId, fixture.member.requiredId, AiRecommendationRequest(detailFolderId = detailFolderId),
             )
             runner.run(response.jobId)
-            return aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1).sortedBy { it.rank }
+            val round = checkNotNull(aiSelectionJobRepository.findById(response.jobId).orElseThrow().round) { "잡이 라운드를 남기지 않았다" }
+            return aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, round).sortedBy { it.rank }
         }
 
         @Test
@@ -593,6 +596,68 @@ class AiSelectionJobRunnerTest @Autowired constructor(
                 softly.assertThat(picks.first().photoId).isEqualTo(bursts[8][0])
                 softly.assertThat(picks.first().scoreBreakdown["reaction_z"]).isEqualTo(ReactionWeightsDto.DEFAULT_GUEST_LIKE)
                 softly.assertThat(job.result).containsEntry("guestLiked", 1)
+            }
+        }
+
+        /**
+         * 배경: 해변 폴더 27장 = 장면 3개 × 연사 3개 × 컷 3장. 같은 장면의 연사끼리는 코사인 약 0.90(다른 조각이지만 같은 묶음),
+         * 연사 안 세 컷은 같은 벡터(거의 같은 컷), 장면끼리는 직각이다. 점수는 모두 같다. 상한 3장 = 장면마다 한 장.
+         */
+        private fun sceneWorld(): Pair<List<List<Long>>, Long> {
+            val photos = photoFixture.업로드된_사진(fixture.galleryId, 27)
+            photos.forEachIndexed { i, photoId ->
+                val burst = i / 3
+                val scene = burst / 3
+                val vector = FloatArray(PhotoAnalysis.EMBEDDING_DIMENSION).also {
+                    it[10 + scene] = 0.95f
+                    it[30 + burst] = 0.312f
+                }
+                photoFixture.벡터_적재(photoId, vector)
+                recommendationFixture.분석_결과(photoId, embedGroupId = 1, burstId = burst, burstRank = i % 3, technicalPct = 70.0, aestheticPct = 70.0)
+            }
+            val analysisJobId = recommendationFixture.분석_잡(fixture.galleryId)
+            recommendationFixture.컨셉_배정(analysisJobId, fixture.galleryId, embedGroupId = 1, conceptName = "야외 자연", detailName = "해변")
+            val folderId = aiFolderMaterializer.materialize(fixture.galleryId).flatMap { it.details }.single().id
+            return photos.chunked(3) to folderId
+        }
+
+        @Test
+        fun `재추천하면 보여줬는데 안 담은 사진과 같은 연사의 거의 같은 컷이 내려가 같은 장면의 다른 연사가 나온다`() {
+            // given — 첫 추천은 장면마다 photoId가 가장 작은 연사(0·3·6)의 첫 컷이다
+            val (bursts, folderId) = sceneWorld()
+            val first = runFolderJob(folderId)
+
+            // when
+            val second = runFolderJob(folderId)
+
+            // then — 장면은 그대로(장면마다 한 장), 연사는 바뀐다. 같은 연사의 다른 컷도 함께 내려가 다시 나오지 않는다
+            val burstOf = bursts.flatMapIndexed { burst, cuts -> cuts.map { it to burst } }.toMap()
+            val job = aiSelectionJobRepository.findAll().maxBy { it.requiredId }
+            val listed = aiRecommendationService.list(fixture.galleryId, fixture.member.requiredId, folderId = null)
+            assertSoftly { softly ->
+                softly.assertThat(first.map { burstOf.getValue(it.photoId) }).containsExactlyInAnyOrder(0, 3, 6)
+                softly.assertThat(second.map { burstOf.getValue(it.photoId) }).containsExactlyInAnyOrder(1, 4, 7)
+                softly.assertThat(second.map { it.scoreBreakdown["seen_z"] }).containsOnly(0.0)
+                softly.assertThat(job.result).containsEntry("ignoredPhotos", 3)
+                softly.assertThat(listed.photos.map { it.photo.photoId }).containsExactlyInAnyOrderElementsOf(second.map { it.photoId })
+            }
+        }
+
+        @Test
+        fun `보여줬는데 안 담은 뒤에 5점을 주면 마음이 바뀐 것으로 보고 감점하지 않는다`() {
+            // given — 첫 추천의 1위에, 보여준 뒤 5점을 준다
+            val (_, _, folderId) = flatWorld()
+            val shownThenLiked = runFolderJob(folderId).first().photoId
+            photoFixture.별점(shownThenLiked, score = 5, ratedBy = fixture.member.requiredId)
+
+            // when
+            val second = runFolderJob(folderId)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(second.first().photoId).isEqualTo(shownThenLiked)
+                softly.assertThat(second.first().scoreBreakdown["reaction_z"]).isEqualTo(1.0)
+                softly.assertThat(second.first().scoreBreakdown["seen_z"]).isEqualTo(0.0)
             }
         }
 

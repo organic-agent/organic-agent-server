@@ -74,6 +74,24 @@ class RecommendationReactionUnitTest {
         }
     }
 
+    @Test
+    fun `보여줬는데 안 담은 사진과 같은 연사의 거의 같은 컷에 같은 감점을 주고 세 번에서 멈춘다`() {
+        // given — 0: 무시 5번, 1: 0과 같은 연사·같은 벡터, 2: 같은 연사지만 코사인 0.9(거의 같은 컷 아님), 3: 다른 연사·같은 벡터
+        val emb = arrayOf(unit(1.0), unit(1.0), unit(0.9), unit(1.0))
+        val bursts = intArrayOf(7, 7, 7, 8)
+
+        // when
+        val penalty = RecommendationReaction.seenPenalty(emb, bursts, mapOf(0 to 5), weights)
+
+        // then — 0.3 × min(5, 3)
+        assertSoftly { softly ->
+            softly.assertThat(penalty[0]).isCloseTo(weights.seenPenalty * weights.seenCap, within(1e-9))
+            softly.assertThat(penalty[1]).isEqualTo(penalty[0])
+            softly.assertThat(penalty[2]).isZero()
+            softly.assertThat(penalty[3]).isZero()
+        }
+    }
+
     /** 첫 축과 코사인이 [cos]인 단위 벡터. */
     private fun unit(cos: Double) = floatArrayOf(cos.toFloat(), sqrt(1 - cos * cos).toFloat())
 }

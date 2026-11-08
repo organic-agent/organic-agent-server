@@ -178,11 +178,11 @@ class AiRecommendationService(
                 viewUrlsExpire = false,
             )
 
-        // 사진마다 가장 최근 라운드의 행 하나. 거절 행은 표시하지 않는다(다음 계산이 뺄 근거로만 남는다).
+        // 사진마다 가장 최근 라운드의 행 하나. 거절 행과 다음 추천에 갈린 행은 표시하지 않는다(다음 계산의 근거로만 남는다).
         val latestByPhoto = aiRecommendationRepository.findAllBySelectionId(selectionId)
             .groupBy { it.photoId }
             .mapNotNull { (_, rows) -> rows.maxBy { it.round } }
-            .filter { it.rejectedAt == null }
+            .filter { it.rejectedAt == null && it.replacedAt == null }
         val currentFolderByPhoto = aiFolderSetReader.detailIdsByPhotoId(latestByPhoto.map { it.photoId })
         val visible = when (folderId) {
             null -> latestByPhoto
