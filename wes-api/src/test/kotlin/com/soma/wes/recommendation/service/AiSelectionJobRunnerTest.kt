@@ -1,5 +1,6 @@
 package com.soma.wes.recommendation.service
 
+import com.soma.wes.collab.fixture.CollabFixture
 import com.soma.wes.folder.support.AiFolderMaterializer
 import com.soma.wes.gallery.fixture.GalleryFixture
 import com.soma.wes.gallery.fixture.OpenGallery
@@ -9,6 +10,7 @@ import com.soma.wes.recommendation.domain.AiJobStatus
 import com.soma.wes.recommendation.domain.AiRecommendation
 import com.soma.wes.recommendation.domain.AiSelectionJob
 import com.soma.wes.recommendation.domain.AiSelectionMode
+import com.soma.wes.recommendation.dto.ReactionWeightsDto
 import com.soma.wes.recommendation.dto.request.AiRecommendationRequest
 import com.soma.wes.recommendation.exception.RecommendationErrorCode
 import com.soma.wes.recommendation.exception.RecommendationException
@@ -46,6 +48,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
     private val photoFixture: PhotoFixture,
     private val recommendationFixture: RecommendationFixture,
     private val selectionFixture: SelectionFixture,
+    private val collabFixture: CollabFixture,
     private val photoSelectionService: PhotoSelectionService,
     private val llm: FakeStructuredLlmClient,
     private val executor: ManualAiJobExecutor,
@@ -558,7 +561,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             assertSoftly { softly ->
                 softly.assertThat(picks).hasSize(3)
                 softly.assertThat(picks.first().photoId).isEqualTo(bursts[7][0])
-                softly.assertThat(picks.first().scoreBreakdown["rating_z"]).isEqualTo(1.0)
+                softly.assertThat(picks.first().scoreBreakdown["reaction_z"]).isEqualTo(1.0)
             }
         }
 
@@ -573,6 +576,24 @@ class AiSelectionJobRunnerTest @Autowired constructor(
 
             // then
             assertThat(picks.first().photoId).isIn(bursts[9])
+        }
+
+        @Test
+        fun `하객이 좋아요한 사진은 그 사진만 약하게 올라 같은 점수의 다른 사진보다 먼저 추천된다`() {
+            // given
+            val (bursts, _, folderId) = flatWorld()
+            collabFixture.하객_좋아요(fixture, listOf(bursts[8][0]))
+
+            // when
+            val picks = runFolderJob(folderId)
+
+            // then
+            val job = aiSelectionJobRepository.findAll().maxBy { it.requiredId }
+            assertSoftly { softly ->
+                softly.assertThat(picks.first().photoId).isEqualTo(bursts[8][0])
+                softly.assertThat(picks.first().scoreBreakdown["reaction_z"]).isEqualTo(ReactionWeightsDto.DEFAULT_GUEST_LIKE)
+                softly.assertThat(job.result).containsEntry("guestLiked", 1)
+            }
         }
 
         @Test
@@ -593,7 +614,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             assertSoftly { softly ->
                 softly.assertThat(folderPicks.map { it.photoId }).doesNotContain(disliked)
                 softly.assertThat(fullPicks.map { it.photoId }).isNotEmpty().doesNotContain(disliked)
-                softly.assertThat(job.result).containsEntry("ratingExcluded", 1).containsEntry("ratingLiked", 0)
+                softly.assertThat(job.result).containsEntry("ratingExcluded", 1).containsEntry("ratingLiked", 0).containsEntry("guestLiked", 0)
             }
         }
     }
