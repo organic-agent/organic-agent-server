@@ -48,7 +48,8 @@ import org.springframework.transaction.support.TransactionTemplate
  *     미분류(세트에 없는 사진)는 가상 폴더로 같은 규칙.
  *     폴더 범위 잡은 위 몫 대신 [FolderCoverage] — 연사마다 한 장, 폴더 사진의 10%(최대 골라야 하는 장수), 단체 사진 제외,
  *     담은 사진이 든 연사 제외, 신랑·신부 균형 가산점. 갤러리 몫·담은 수와 무관하다.
- *     점수에는 반응([RecommendationReaction] — 4~5점과 닮은 만큼, 하객 좋아요는 그 사진만 가산)이 두 흐름 모두 더해진다.
+ *     점수에는 반응([RecommendationReaction] — 4~5점·하객 좋아요와 닮은 만큼 가산, 보여줬는데 안 담은 사진과 거의 같은 컷은 감점)이
+ *     두 흐름 모두 더해진다.
  *     반응은 [PhotoReactionReader]가 사진당 한 줄로, 계수는 [ReactionWeightsProvider]가 갤러리마다 준다.
  *     추천 INSERT + 라운드 확정 → DONE.
  *
@@ -127,7 +128,7 @@ class AiSelectionJobRunner(
         val round = job.round ?: return null
         val selection = requireSelection(job.selectionId)
         val notRejected = aiRecommendationRepository.findAllBySelectionIdAndRound(job.selectionId, round)
-            .filter { it.rejectedAt == null }
+            .filter { it.rejectedAt == null && it.replacedAt == null }
         val livePhotoIds = photoRepository.findAllByGalleryIdAndIdInAndExcludedAtIsNull(selection.galleryId, notRejected.map { it.photoId })
             .mapTo(mutableSetOf()) { it.requiredId }
         val recommendations = notRejected.filter { it.photoId in livePhotoIds }
@@ -193,7 +194,10 @@ class AiSelectionJobRunner(
             .mapTo(mutableSetOf()) { it.photoId }
         val previousRound = aiRecommendationRepository.findFirstBySelectionIdOrderByRoundDesc(selection.requiredId)?.round ?: 0
         val anchorPhotoIds = reactions.values
-            .filter { reaction -> reaction.guestLikes > 0 || reaction.rating?.let { RecommendationReaction.likeWeight(it, weights) } != null }
+            .filter { reaction ->
+                reaction.guestLikes > 0 || reaction.ignored > 0 ||
+                    reaction.rating?.let { RecommendationReaction.likeWeight(it, weights) } != null
+            }
             .mapTo(mutableSetOf()) { it.photoId }
 
         return World(
@@ -286,7 +290,11 @@ class AiSelectionJobRunner(
             .associateWith { world.weights.guestLike }
         val anchors = (liked.keys + guestLiked.keys).associateWith { maxOf(liked[it] ?: 0.0, guestLiked[it] ?: 0.0) }
         val reactionBoost = RecommendationReaction.boost(world.embeddings, anchors, world.weights)
-        val score = DoubleArray(n) { combined.score[it] + reactionBoost[it] }
+        val ignored = world.reactions.values.filter { it.ignored > 0 && !it.selected }
+            .mapNotNull { reaction -> indexById[reaction.photoId]?.let { it to reaction.ignored } }.toMap()
+        val seenPenalty = RecommendationReaction.seenPenalty(world.embeddings, IntArray(n) { rows[it].burstId }, ignored, world.weights)
+        val reaction = DoubleArray(n) { reactionBoost[it] - seenPenalty[it] }
+        val score = DoubleArray(n) { combined.score[it] + reaction[it] }
         val ratedOut = world.reactions.values.filter { it.rating == RecommendationReaction.EXCLUDED_SCORE }
             .mapNotNullTo(mutableSetOf()) { indexById[it.photoId] }
 
@@ -327,7 +335,7 @@ class AiSelectionJobRunner(
 
         // 폴더 범위는 점수 = 백분위 z + 신랑·신부 균형 가산점. 전체 라운드의 유형 균형·선호 항은 쓰지 않는다.
         val spouse = if (scoped) RecommendationScoring.spouseBalance(types, selectedIdx) else DoubleArray(n)
-        val folderScore = if (scoped) DoubleArray(n) { combined.priorZ[it] + spouse[it] + reactionBoost[it] } else score
+        val folderScore = if (scoped) DoubleArray(n) { combined.priorZ[it] + spouse[it] + reaction[it] } else score
         val selectedSet = selectedIdx.toSet()
         val rejectedSet = world.rejected.mapNotNull { indexById[it] }.toSet() + ratedOut
         val coverage = linkedMapOf("pieces" to 0, "skippedPieces" to 0, "nearDuplicates" to 0, "cap" to 0, "groupExcluded" to 0)
@@ -367,7 +375,7 @@ class AiSelectionJobRunner(
                     "burst_id" to row.burstId,   // [GLOSSARY-2 2026-09-27] 근거 키 cluster_id → burst_id (V23이 기존 행도 옮긴다)
                     "folder" to "${folder.conceptName}›${folder.name}", "folder_size" to folder.photoIds.size,
                     "folder_rank" to pick.folderRank, "folder_quota" to pick.quota,
-                    "reaction_z" to round3(reactionBoost[i]),
+                    "reaction_z" to round3(reactionBoost[i]), "seen_z" to round3(0.0 - seenPenalty[i]),
                 )
                 if (scoped) {
                     breakdown["spouse_z"] = round3(spouse[i])
@@ -399,6 +407,7 @@ class AiSelectionJobRunner(
             ratingExcluded = ratedOut.size,
             ratingLiked = liked.size,
             guestLiked = guestLiked.size,
+            ignoredPhotos = ignored.size,
         )
     }
 
@@ -415,14 +424,15 @@ class AiSelectionJobRunner(
         val job = requireJob(world.job.id)
         val roundNo = if (world.job.mode == AiSelectionMode.DRAFT) 1 else world.previousRound + 1
         val now = ZonedDateTime.now(clock)
-        // 리셋 — 이 잡의 범위에 든 사진의 기존 추천을 지운다. 폴더 범위면 그 폴더의 지금 사진, 전체면 분석된
-        // 사진 전부다. 범위 밖 사진(다른 폴더, 옮겨 나간 사진)의 추천은 남고, 거절 행도 남긴다.
+        // 리셋 — 이 잡의 범위에 든 사진의 지금 보이는 추천을 "갈림"으로 표시한다(지우지 않는다 — 노출 기록, #391 ADR 0001).
+        // 폴더 범위면 그 폴더의 지금 사진, 전체면 분석된 사진 전부다. 범위 밖 사진(다른 폴더, 옮겨 나간 사진)의 추천은 그대로 보이고,
+        // 거절 행도 남긴다.
         val scopePhotoIds = when (world.scopeFolderIds) {
             null -> world.rows.map { it.photoId }
             else -> world.folders.flatMap { it.photoIds }
         }
         if (scopePhotoIds.isNotEmpty()) {
-            aiRecommendationRepository.deleteCurrentBySelectionIdAndPhotoIdIn(world.selectionId, scopePhotoIds)
+            aiRecommendationRepository.markReplacedBySelectionIdAndPhotoIdIn(world.selectionId, scopePhotoIds, now)
         }
         aiRecommendationRepository.saveAll(
             draft.picks.map { pick ->
@@ -456,6 +466,7 @@ class AiSelectionJobRunner(
             "coverage" to draft.coverage,
             "preferenceOn" to draft.preferenceOn,
             "ratingExcluded" to draft.ratingExcluded, "ratingLiked" to draft.ratingLiked, "guestLiked" to draft.guestLiked,
+            "ignoredPhotos" to draft.ignoredPhotos,
             "elapsedSeconds" to timing.elapsedSeconds(),
             "timing" to timing.toMap(),
         )
@@ -548,5 +559,7 @@ class AiSelectionJobRunner(
         val ratingLiked: Int,
         /** 하객 좋아요로 가산한 사진 수(분석된 사진 중). */
         val guestLiked: Int,
+        /** "보여줬는데 안 담음"으로 감점의 기준이 된 사진 수(분석된 사진 중, 담은 사진 제외). */
+        val ignoredPhotos: Int,
     )
 }

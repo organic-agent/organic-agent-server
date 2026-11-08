@@ -71,6 +71,7 @@ paths:
 - `photo_labels`(V46, #348, 셀렉 도우미 라벨 색인)는 도우미를 접으며 V50에서 지웠다 — 쓰는 score 워커가 머지되지 않았고 서버는 읽지 않았다.
   photoselect GRANT 계약은 V50 블록이 V46 블록을 통째로 대체한다(`photo_labels` 줄을 뺌, V23 블록과 같은 내용).
 - `ai_selection_jobs`·`ai_recommendations`는 2026-09-04부터 이 서버가 쓴다(추천 실행기 `AiSelectionJobRunner`).
+  V52 `ai_recommendations.replaced_at` — 재추천이 범위의 옛 추천 행을 지우지 않고 갈린 시각만 남긴다(노출 기록, #391). 화면은 `replaced_at IS NULL`만 그린다.
   AI repo는 더 이상 이 테이블을 쓰지 않는다. 비교샷 테이블 `ai_pair_verdicts`는 기능과 함께 V22에서 지웠다 —
   photoselect GRANT 계약도 V22 블록이 V16 블록을 통째로 대체한다.
 - 공용 선호 가중치 `preference_models`(V14)는 V33에서 지웠다. 쓰는 Lambda(`wes-preference`)가 배포된 적이 없고

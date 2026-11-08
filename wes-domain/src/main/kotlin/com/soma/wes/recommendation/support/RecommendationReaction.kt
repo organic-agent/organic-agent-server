@@ -18,6 +18,8 @@ import com.soma.wes.recommendation.dto.ReactionWeightsDto
  * 자체 > 아주 닮음 > 그냥 닮음이 분명히 갈려야 한다(작성자 결정 2026-11-08) — 추천의 일은 반응한 사진과 닮은 다른 사진을 찾는 것이지만,
  * 반응한 사진 자체가 가장 높아야 신뢰가 선다. 하객 좋아요는 부부 본인의 행동이 아니라 무게를 작게 두고 같은 곡선을 탄다.
  * 계수는 갤러리마다 [ReactionWeightsDto]로 받는다.
+ *
+ *     보여줬는데 안 담음: [seenPenalty] — 그 사진과 거의 같은 컷에 0.3씩, 세 번까지(별점 뒤 노출만)
  * 임베딩은 정규화돼 있다고 본다(내적 = 코사인). 벡터가 비어 있는 행(범위 밖)은 0이다.
  */
 object RecommendationReaction {
@@ -44,6 +46,32 @@ object RecommendationReaction {
             weights.rating * usable.maxOf { (h, weight) -> weight * closeness(emb, i, h, weights) }
         }
     }
+
+    /**
+     * "보여줬는데 안 담음" 감점. [ignored]는 행 인덱스 → 무시 횟수다. 무시된 사진과, 같은 연사에서 그 사진과 거리가
+     * [FolderCoverage.SAME_SHOT_DISTANCE] 미만인 거의 같은 컷에 같은 감점을 준다 — 한 장만 내리면 거의 같은 컷이 대표로 올라와
+     * "또 같은 사진"이 된다(#391 3단계). 감점 = seenPenalty · min(횟수, seenCap), 한 사진에 여럿이 닿으면 가장 큰 횟수.
+     */
+    fun seenPenalty(
+        emb: Array<FloatArray>,
+        burstIds: IntArray,
+        ignored: Map<Int, Int>,
+        weights: ReactionWeightsDto,
+    ): DoubleArray {
+        val penalty = DoubleArray(emb.size)
+        val byBurst = ignored.keys.groupBy { burstIds[it] }
+        for (i in emb.indices) {
+            val count = byBurst[burstIds[i]].orEmpty()
+                .filter { h -> h == i || isSameShot(emb, i, h) }
+                .maxOfOrNull { h -> ignored.getValue(h) }
+                ?: continue
+            penalty[i] = weights.seenPenalty * minOf(count, weights.seenCap)
+        }
+        return penalty
+    }
+
+    private fun isSameShot(emb: Array<FloatArray>, i: Int, h: Int): Boolean =
+        emb[i].isNotEmpty() && emb[h].isNotEmpty() && 1 - dot(emb[i], emb[h]) < FolderCoverage.SAME_SHOT_DISTANCE
 
     private fun closeness(emb: Array<FloatArray>, i: Int, h: Int, weights: ReactionWeightsDto): Double {
         if (i == h) return 1.0
