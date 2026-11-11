@@ -81,6 +81,9 @@ enum class UserNotificationType {
     SELECTION_SUBMITTED,
     RETOUCH_REQUESTED,
     RETOUCH_COMPLETED,
+    ALBUM_SENT,
+    ALBUM_RETURNED,
+    ALBUM_CONFIRMED,
 }
 
 enum class UserNotificationScope {

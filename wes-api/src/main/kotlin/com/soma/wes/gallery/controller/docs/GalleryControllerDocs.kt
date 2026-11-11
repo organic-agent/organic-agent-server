@@ -130,7 +130,7 @@ interface GalleryControllerDocs {
         summary = "내 갤러리 목록",
         description = "작가는 스튜디오의 갤러리 전부를, 예비 부부는 초대받아 들어온 갤러리를 받는다. " +
             "예비 부부에게는 아직 열리지 않은(DRAFT) 갤러리가 보이지 않는다. " +
-            "stage를 지정하면 UPLOAD부터 ARCHIVED까지 6단계 중 하나로 필터링한다.",
+            "stage를 지정하면 UPLOAD부터 ARCHIVED까지 7단계 중 하나로 필터링한다.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "조회 성공"),

@@ -1,5 +1,6 @@
 package com.soma.wes.gallery.domain
 
+import com.soma.wes.album.domain.AlbumStatus
 import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.global.BaseEntity
@@ -158,16 +159,16 @@ class Gallery(
 
     fun close() {
         if (stage == GalleryStage.ARCHIVED) return
-        if (status == GalleryStatus.DRAFT) {
+        if (status == GalleryStatus.DRAFT || stage == GalleryStage.ALBUM) {
             throw GalleryException(GalleryErrorCode.INVALID_STATUS_TRANSITION)
         }
-        status = GalleryStatus.CLOSED
-        stage = GalleryStage.ARCHIVED
-        workflowStatus = GalleryWorkflowStatus.ARCHIVED
+        archive()
     }
 
     fun reopen(selectionDeadline: ZonedDateTime?, at: ZonedDateTime) {
-        if (stage == GalleryStage.ARCHIVED || (status != GalleryStatus.CLOSED && stage != GalleryStage.SELECTION_IN_PROGRESS)) {
+        if (stage in setOf(GalleryStage.ARCHIVED, GalleryStage.ALBUM) ||
+            (status != GalleryStatus.CLOSED && stage != GalleryStage.SELECTION_IN_PROGRESS)
+        ) {
             throw GalleryException(GalleryErrorCode.INVALID_STATUS_TRANSITION)
         }
         validateDeadlineNotPassed(selectionDeadline, at)
@@ -178,6 +179,9 @@ class Gallery(
     }
 
     fun changeWorkflowStatus(workflowStatus: GalleryWorkflowStatus) {
+        if (stage == GalleryStage.ALBUM && workflowStatus == GalleryWorkflowStatus.ARCHIVED) {
+            throw GalleryException(GalleryErrorCode.INVALID_STATUS_TRANSITION)
+        }
         this.workflowStatus = workflowStatus
         if (workflowStatus == GalleryWorkflowStatus.ARCHIVED) {
             stage = GalleryStage.ARCHIVED
@@ -194,6 +198,11 @@ class Gallery(
 
     @Column(name = "retouch_confirmed_at", nullable = true)
     var retouchConfirmedAt: ZonedDateTime? = null
+        protected set
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "album_status", nullable = false, length = 20)
+    var albumStatus: AlbumStatus = AlbumStatus.NONE
         protected set
 
     @Column(name = "archived_until", nullable = true)
@@ -233,12 +242,55 @@ class Gallery(
 
     fun markRetouchConfirmed(at: ZonedDateTime) {
         retouchConfirmedAt = at
+        if (albumStatus == AlbumStatus.DRAFT) {
+            startAlbumComposition()
+        } else {
+            archive()
+        }
+    }
+
+    /** 보정 확정 뒤 처음 앨범을 만들 수도 있다. 수동 종료와 보관 만료는 유지한다. */
+    fun requireAlbumDraftWritable(at: ZonedDateTime) {
+        if (stage == GalleryStage.ALBUM) return
+        if (stage == GalleryStage.ARCHIVED && albumStatus == AlbumStatus.NONE && retouchConfirmedAt != null &&
+            archivedUntil?.isAfter(at) != false
+        ) return
+        requireWritable(at)
+    }
+
+    fun markAlbumDrafted() {
+        albumStatus = AlbumStatus.DRAFT
+        if (retouchConfirmedAt != null) startAlbumComposition()
+    }
+
+    private fun startAlbumComposition() {
+        status = GalleryStatus.CLOSED
+        stage = GalleryStage.ALBUM
+        workflowStatus = GalleryWorkflowStatus.IN_PROGRESS
+        archivedUntil = null
+    }
+
+    fun markAlbumSent() {
+        albumStatus = AlbumStatus.SENT_EDIT
+    }
+
+    fun markAlbumReturned() {
+        albumStatus = AlbumStatus.RETURNED
+    }
+
+    fun markAlbumConfirmed() {
+        albumStatus = AlbumStatus.CONFIRMED
+        archive()
+    }
+
+    private fun archive() {
         status = GalleryStatus.CLOSED
         stage = GalleryStage.ARCHIVED
         workflowStatus = GalleryWorkflowStatus.ARCHIVED
     }
 
     fun requireWritable(at: ZonedDateTime) {
+        if (stage == GalleryStage.ALBUM) throw GalleryException(GalleryErrorCode.GALLERY_RETOUCH_CONFIRMED)
         if (stage == GalleryStage.ARCHIVED || planExpiresAt?.let { !it.isAfter(at) } == true) {
             throw GalleryException(GalleryErrorCode.GALLERY_ARCHIVED)
         }

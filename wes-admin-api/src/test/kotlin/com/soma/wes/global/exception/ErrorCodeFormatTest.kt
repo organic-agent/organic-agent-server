@@ -1,6 +1,7 @@
 package com.soma.wes.global.exception
 
 import com.soma.wes.admin.exception.AdminErrorCode
+import com.soma.wes.album.exception.AlbumErrorCode
 import com.soma.wes.billing.exception.BillingErrorCode
 import com.soma.wes.analysis.exception.AnalysisErrorCode
 import com.soma.wes.auth.exception.AuthErrorCode
@@ -30,7 +31,7 @@ import org.junit.jupiter.api.Test
 class ErrorCodeFormatTest {
 
     private val allErrorCodes: List<ErrorCode> =
-        GlobalErrorCode.entries + AdminErrorCode.entries + AuthErrorCode.entries + AuthorizationErrorCode.entries + UserErrorCode.entries +
+        GlobalErrorCode.entries + AlbumErrorCode.entries + AdminErrorCode.entries + AuthErrorCode.entries + AuthorizationErrorCode.entries + UserErrorCode.entries +
             StudioErrorCode.entries + GalleryErrorCode.entries + PhotoErrorCode.entries +
             FolderErrorCode.entries + SelectionErrorCode.entries +
             RetouchErrorCode.entries + CollabErrorCode.entries + TrashErrorCode.entries +

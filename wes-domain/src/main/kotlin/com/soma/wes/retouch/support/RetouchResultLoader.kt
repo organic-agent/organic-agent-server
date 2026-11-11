@@ -60,6 +60,15 @@ class RetouchResultLoader(
         return retouchPhotoRepository.findAllByGalleryIdAndIdIn(galleryId, retouchPhotoIds)
             .filter { it.roundId in sentIds }
     }
+
+    /** 앨범 편집기에 필요한 사진별 최신 발송 결과를 한 번에 찾는다. */
+    fun findLatestSentKeys(galleryId: Long, photoIds: Collection<Long>): Map<Long, String> {
+        if (photoIds.isEmpty()) return emptyMap()
+        return retouchPhotoRepository.findResultsByRoundDesc(galleryId, photoIds, RetouchRoundStatus.COMPLETED)
+            .distinctBy { it.photoId }
+            .associate { it.photoId to it.resultKey }
+    }
+
     private fun sentRoundIds(galleryId: Long): Set<Long> =
         retouchRoundRepository.findAllByGalleryIdOrderByRoundNoAsc(galleryId)
             .filter { it.status == RetouchRoundStatus.COMPLETED }.mapTo(mutableSetOf()) { it.requiredId }

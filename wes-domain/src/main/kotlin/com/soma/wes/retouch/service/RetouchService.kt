@@ -5,8 +5,6 @@ import com.soma.wes.gallery.config.GalleryLifecycleProperties
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.domain.GalleryStage
 import com.soma.wes.gallery.repository.GalleryMemberRepository
-import com.soma.wes.gallery.repository.GalleryRepository
-import com.soma.wes.gallery.repository.requireWithLockById
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.notification.domain.UserNotificationScope
 import com.soma.wes.notification.domain.UserNotificationType
@@ -56,7 +54,6 @@ import org.springframework.transaction.support.TransactionTemplate
 @Service
 class RetouchService(
     private val galleryAccessPolicy: GalleryAccessPolicy,
-    private val galleryRepository: GalleryRepository,
     private val retouchRoundRepository: RetouchRoundRepository,
     private val retouchPhotoRepository: RetouchPhotoRepository,
     private val retouchPhotoLoader: RetouchPhotoLoader,
@@ -115,9 +112,8 @@ class RetouchService(
      */
     @Transactional
     fun addPhotos(galleryId: Long, userId: Long, request: AddRetouchPhotosRequest): RetouchOverviewResponse {
-        galleryAccessPolicy.requireRetouchRequester(galleryId, userId)
+        val gallery = galleryAccessPolicy.requireRetouchRequester(galleryId, userId, lockGallery = true)
 
-        val gallery = galleryRepository.requireWithLockById(galleryId)
         val round = loadOrCreateDraftingRound(gallery)
 
         val photos = retouchPhotoLoader.loadPhotos(galleryId, request.photoIds)
@@ -172,10 +168,8 @@ class RetouchService(
         userId: Long,
         request: UpdateRetouchPhotoRequest,
     ): RetouchPhotoResponse {
-        galleryAccessPolicy.requireRetouchRequester(galleryId, userId)
+        galleryAccessPolicy.requireRetouchRequester(galleryId, userId, lockGallery = true)
 
-        // 항목 하나의 갱신이지만 갤러리 행을 잠근다 — 제출과 겹치면 잠긴 회차에 요청이 적힌다.
-        galleryRepository.requireWithLockById(galleryId)
         val round = retouchRoundRepository.findByGalleryIdAndStatus(galleryId, RetouchRoundStatus.DRAFTING)
             ?: throw RetouchException(RetouchErrorCode.PHOTO_NOT_IN_ROUND)
         val item = retouchPhotoRepository.findByRoundIdAndPhotoId(round.requiredId, photoId)
@@ -198,10 +192,8 @@ class RetouchService(
         userId: Long,
         request: UpdateRetouchRoundRequest,
     ): RetouchOverviewResponse {
-        galleryAccessPolicy.requireRetouchRequester(galleryId, userId)
+        val gallery = galleryAccessPolicy.requireRetouchRequester(galleryId, userId, lockGallery = true)
 
-        // 제출과 겹치면 잠긴 회차에 요청이 적히므로 사진 단위 요청과 같이 갤러리 행을 잠근다.
-        val gallery = galleryRepository.requireWithLockById(galleryId)
         val round = retouchRoundRepository.findByGalleryIdAndRoundNo(galleryId, roundNo)
             ?: throw RetouchException(RetouchErrorCode.ROUND_NOT_FOUND)
 
@@ -248,10 +240,9 @@ class RetouchService(
         userId: Long,
         request: IssueResultUploadUrlsRequest,
     ): IssueResultUploadUrlsResponse {
-        val authorizedGallery = galleryAccessPolicy.requireRetouchProcessor(galleryId, userId)
-        requirePersonalResultRound(authorizedGallery, roundNo)
+        val gallery = galleryAccessPolicy.requireRetouchProcessor(galleryId, userId, lockGallery = true)
+        requirePersonalResultRound(gallery, roundNo)
 
-        val gallery = galleryRepository.requireWithLockById(galleryId)
         val round = findRequestedRound(galleryId, roundNo)
         loadItemsInRound(round.requiredId, request.files.map { it.photoId })
 
@@ -306,9 +297,7 @@ class RetouchService(
         }
 
         return transactionTemplate.execute {
-            galleryAccessPolicy.requireRetouchProcessor(galleryId, userId)
-            val gallery = galleryRepository.requireWithLockById(galleryId)
-            gallery.requireWritable(ZonedDateTime.now(clock))
+            val gallery = galleryAccessPolicy.requireRetouchProcessor(galleryId, userId, lockGallery = true)
             requirePersonalResultRound(gallery, roundNo)
             val lockedRound = lockRequestedRound(galleryId, roundNo)
             val items = loadItemsInRound(lockedRound.requiredId, request.results.map { it.photoId })
@@ -364,10 +353,9 @@ class RetouchService(
      */
     @Transactional
     fun completeRound(galleryId: Long, roundNo: Int, userId: Long): RetouchOverviewResponse {
-        val gallery = galleryAccessPolicy.requireRetouchProcessor(galleryId, userId)
+        val gallery = galleryAccessPolicy.requireRetouchProcessor(galleryId, userId, lockGallery = true)
         requireStudioRoundAction(galleryId)
 
-        galleryRepository.requireWithLockById(galleryId)
         val round = lockRequestedRound(galleryId, roundNo)
         val items = retouchPhotoRepository.findAllByRoundId(round.requiredId)
         if (items.isEmpty() || items.any { !it.hasResult }) {
@@ -418,9 +406,9 @@ class RetouchService(
         userId: Long,
         request: SubmitRetouchRequestsRequest,
     ): RetouchOverviewResponse {
-        galleryAccessPolicy.requireRetouchRequester(galleryId, userId)
+        val gallery = galleryAccessPolicy.requireRetouchRequester(galleryId, userId, lockGallery = true)
         requireStudioRoundAction(galleryId)
-        val gallery = galleryRepository.requireWithLockById(galleryId)
+
         val selection = selectionRepository.findByGalleryId(galleryId)
             ?: throw RetouchException(RetouchErrorCode.PHOTO_NOT_SELECTED)
         if (!selection.isSubmitted && !galleryAccessPolicy.isPersonalGallery(galleryId)) {
@@ -476,12 +464,12 @@ class RetouchService(
         return MatchRetouchResultsResponse(matches = matches)
     }
 
-    /** 보정본을 받은 클라이언트가 최종 확정하면 읽기 전용 보관 단계로 끝난다. */
+    /** 보정을 확정할 때 스튜디오 초안이 있으면 앨범 단계로 넘긴다. 보관 기한은 앨범까지 끝난 시점부터 계산한다. */
     @Transactional
     fun confirm(galleryId: Long, userId: Long): RetouchOverviewResponse {
-        galleryAccessPolicy.requireRetouchRequester(galleryId, userId)
+        val gallery = galleryAccessPolicy.requireRetouchRequester(galleryId, userId, lockGallery = true)
         requireStudioRoundAction(galleryId)
-        val gallery = galleryRepository.requireWithLockById(galleryId)
+
         val latest = retouchRoundRepository.findFirstByGalleryIdOrderByRoundNoDesc(galleryId)
             ?: throw RetouchException(RetouchErrorCode.ROUND_NOT_FOUND)
         if (latest.status != RetouchRoundStatus.COMPLETED) {
@@ -489,7 +477,7 @@ class RetouchService(
         }
         val now = ZonedDateTime.now(clock)
         gallery.markRetouchConfirmed(now)
-        if (gallery.archivedUntil == null) lifecycleProperties.archivedRetentionDays?.let {
+        if (gallery.stage == GalleryStage.ARCHIVED && gallery.archivedUntil == null) lifecycleProperties.archivedRetentionDays?.let {
             gallery.archiveAfter(it, now)
         }
         notificationPublisher.publish(

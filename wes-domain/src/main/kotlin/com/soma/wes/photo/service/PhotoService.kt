@@ -254,7 +254,7 @@ class PhotoService(
      */
     @Transactional
     fun moveToTrash(galleryId: Long, userId: Long, request: DeletePhotosRequest): PhotoCountResponse {
-        galleryAccessPolicy.requireUploader(galleryId, userId)
+        galleryAccessPolicy.requireUploader(galleryId, userId, lockGallery = true)
 
         val photos = checkAndLoadPhotos(galleryId, request.photoIds)
         val now = ZonedDateTime.now(clock)

@@ -1,6 +1,8 @@
 package com.soma.wes.retouch.repository
 
 import com.soma.wes.retouch.domain.RetouchPhoto
+import com.soma.wes.retouch.domain.RetouchRoundStatus
+import com.soma.wes.retouch.repository.projection.RetouchResultKey
 import com.soma.wes.retouch.repository.projection.RetouchRoundPhotoCount
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
@@ -17,6 +19,19 @@ interface RetouchPhotoRepository : JpaRepository<RetouchPhoto, Long> {
     fun findAllByGalleryIdAndIdIn(galleryId: Long, ids: Collection<Long>): List<RetouchPhoto>
 
     fun countByRoundId(roundId: Long): Long
+
+    /** 사진별 최신 결과를 앞에 둔다. 한 회차에서 결과를 생략한 사진은 이전 완료 회차의 결과를 쓴다. */
+    @Query(
+        "select rp.photoId as photoId, rp.resultKey as resultKey " +
+            "from RetouchPhoto rp join RetouchRound r on r.id = rp.roundId and r.galleryId = rp.galleryId " +
+            "where rp.galleryId = :galleryId and rp.photoId in :photoIds and rp.resultKey is not null " +
+            "and r.status = :status order by r.roundNo desc",
+    )
+    fun findResultsByRoundDesc(
+        @Param("galleryId") galleryId: Long,
+        @Param("photoIds") photoIds: Collection<Long>,
+        @Param("status") status: RetouchRoundStatus,
+    ): List<RetouchResultKey>
 
     /** 회차 목록 요약에 쓴다. 회차 수만큼 count 질의를 반복하지 않기 위한 한 번의 집계다. */
     @Query(
