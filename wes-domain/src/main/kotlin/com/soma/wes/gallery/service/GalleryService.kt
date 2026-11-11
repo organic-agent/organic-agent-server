@@ -1,6 +1,7 @@
 package com.soma.wes.gallery.service
 
 import com.soma.wes.activity.support.ActivityRecorder
+import com.soma.wes.album.domain.AlbumStatus
 import com.soma.wes.gallery.config.GalleryLifecycleProperties
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.dto.request.RequestSelectionIncreaseRequest
@@ -93,12 +94,15 @@ class GalleryService(
         return (asManager + asCouple)
             .distinctBy { it.requiredId }
             .filter { stage == null || it.stage == stage }
-            .map(GalleryResponse::from)
+            .map { GalleryResponse.from(it, showAlbumDraft = it.workspaceId in operatingWorkspaceIds) }
     }
 
     @Transactional(readOnly = true)
-    fun get(galleryId: Long, userId: Long): GalleryResponse =
-        GalleryResponse.from(galleryAccessPolicy.requireMetadataViewer(galleryId, userId))
+    fun get(galleryId: Long, userId: Long): GalleryResponse {
+        val gallery = galleryAccessPolicy.requireMetadataViewer(galleryId, userId)
+        val showAlbumDraft = gallery.albumStatus != AlbumStatus.DRAFT || galleryAccessPolicy.isStudioManager(galleryId, userId)
+        return GalleryResponse.from(gallery, showAlbumDraft = showAlbumDraft)
+    }
 
     @Transactional
     fun changeMaxSelectablePhotoCount(

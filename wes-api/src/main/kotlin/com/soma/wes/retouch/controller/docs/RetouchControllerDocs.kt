@@ -204,7 +204,7 @@ interface RetouchControllerDocs {
     @Operation(summary = "보정 파일명 자동 매칭", description = "확장자를 제외한 파일명을 비교한다. 후보가 여러 개면 photoId=null이며 클라이언트가 후보를 선택해 upload-urls의 photoId로 보낸다.")
     fun matchResults(loginUser: LoginUser, galleryId: Long, roundNo: Int, request: MatchRetouchResultsRequest): ResponseEntity<MatchRetouchResultsResponse>
 
-    @Operation(summary = "클라이언트 보정 확정", description = "스튜디오 갤러리 전용이다. 최신 회차를 작가가 보낸 후에만 확정할 수 있으며 갤러리는 읽기 전용 보관 상태가 된다.")
+    @Operation(summary = "클라이언트 보정 확정", description = "스튜디오 갤러리 전용이다. 최신 회차를 작가가 보낸 후에 확정할 수 있다. 앨범 초안이 있으면 ALBUM으로, 그 외에는 ARCHIVED로 전환한다.")
     fun confirm(loginUser: LoginUser, galleryId: Long): ResponseEntity<RetouchOverviewResponse>
 
     @Operation(

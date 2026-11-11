@@ -85,8 +85,8 @@ class GalleryAccessPolicy(
      * AI로 폴더 만들기(`FolderService.createFromAnalysis`).
      */
     @Transactional(readOnly = true)
-    fun requireUploader(galleryId: Long, userId: Long): Gallery {
-        val gallery = galleryRepository.requireById(galleryId)
+    fun requireUploader(galleryId: Long, userId: Long, lockGallery: Boolean = false): Gallery {
+        val gallery = findGallery(galleryId, lockGallery)
         if (!isManager(gallery, userId) && !isPersonalParticipant(gallery, userId)) {
             throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
         }
@@ -114,8 +114,8 @@ class GalleryAccessPolicy(
      * `matchResults`·`completeRound`).
      */
     @Transactional(readOnly = true)
-    fun requireRetouchProcessor(galleryId: Long, userId: Long): Gallery {
-        val gallery = galleryRepository.requireById(galleryId)
+    fun requireRetouchProcessor(galleryId: Long, userId: Long, lockGallery: Boolean = false): Gallery {
+        val gallery = findGallery(galleryId, lockGallery)
         if (!isManager(gallery, userId) && !isPersonalParticipant(gallery, userId)) {
             throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
         }
@@ -131,11 +131,44 @@ class GalleryAccessPolicy(
      * 1차 회차를 제출할 때(`PhotoSelectionExportService.export`).
      */
     @Transactional(readOnly = true)
-    fun requireRetouchRequester(galleryId: Long, userId: Long): Gallery {
-        val gallery = galleryRepository.requireById(galleryId)
+    fun requireRetouchRequester(galleryId: Long, userId: Long, lockGallery: Boolean = false): Gallery {
+        val gallery = findGallery(galleryId, lockGallery)
         requireParticipant(gallery, userId)
         gallery.requireWritable(ZonedDateTime.now(clock))
         return gallery
+    }
+
+    /** 스튜디오 앨범을 읽는 사람은 운영 중인 스튜디오의 구성원 또는 초대 고객이다. */
+    @Transactional(readOnly = true)
+    fun requireStudioAlbumViewer(galleryId: Long, userId: Long): Gallery {
+        val gallery = galleryRepository.requireById(galleryId)
+        requireStudioWorkspace(gallery)
+        if (!isManager(gallery, userId)) requireParticipant(gallery, userId)
+        return gallery
+    }
+
+    /** 초안 저장·발송·확정과 보정 확정을 직렬화하기 위해 갤러리부터 잠근다. */
+    @Transactional
+    fun requireStudioAlbumManager(galleryId: Long, userId: Long): Gallery {
+        val gallery = galleryRepository.requireWithLockById(galleryId)
+        requireStudioWorkspace(gallery)
+        if (!isManager(gallery, userId)) throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        return gallery
+    }
+
+    /** 발송 후 고객 사본을 저장하고 제출한다. 발송과 같은 잠금을 사용한다. */
+    @Transactional
+    fun requireStudioAlbumClient(galleryId: Long, userId: Long): Gallery {
+        val gallery = galleryRepository.requireWithLockById(galleryId)
+        requireStudioWorkspace(gallery)
+        requireParticipant(gallery, userId)
+        return gallery
+    }
+
+    private fun requireStudioWorkspace(gallery: Gallery) {
+        if (findWorkspace(gallery.workspaceId)?.type != WorkspaceType.STUDIO) {
+            throw GalleryException(GalleryErrorCode.GALLERY_ACCESS_DENIED)
+        }
     }
 
     /**
@@ -315,6 +348,10 @@ class GalleryAccessPolicy(
         return workspace.type == WorkspaceType.PERSONAL &&
             workspaceMemberRepository.existsByWorkspaceIdAndUserIdAndRoleIn(gallery.workspaceId, userId, ACTIVE_WORKSPACE_ROLES)
     }
+
+    /** 쓰기 트랜잭션은 단계 전이와 순서를 맞추기 위해 첫 조회부터 잠글 수 있다. */
+    private fun findGallery(galleryId: Long, lockGallery: Boolean): Gallery =
+        if (lockGallery) galleryRepository.requireWithLockById(galleryId) else galleryRepository.requireById(galleryId)
 
     private fun findWorkspace(workspaceId: Long): WorkspaceAccessDto? {
         val cache = accessCache ?: return loadWorkspace(workspaceId)

@@ -16,6 +16,7 @@ enum class GalleryErrorCode(
      */
     PERSONAL_CHECKOUT_REQUIRED(HttpStatus.PAYMENT_REQUIRED, "GALLERY_402_1", "개인 갤러리는 무료 또는 프로 이용권으로 개설해 주세요."),
     GALLERY_ARCHIVED(HttpStatus.FORBIDDEN, "GALLERY_403_6", "종료된 갤러리는 열람만 가능합니다."),
+    GALLERY_RETOUCH_CONFIRMED(HttpStatus.CONFLICT, "GALLERY_409_4", "보정이 확정되어 앨범만 편집할 수 있습니다."),
     FOLDERS_ALREADY_SAVED(HttpStatus.CONFLICT, "GALLERY_409_2", "사진 정리가 이미 완료되었습니다."),
     INVALID_INCREASE_REQUEST(HttpStatus.BAD_REQUEST, "GALLERY_400_8", "현재 계약 장수보다 큰 장수를 요청해 주세요."),
     PHOTO_PLAN_LIMIT_EXCEEDED(HttpStatus.CONFLICT, "GALLERY_409_3", "요금제의 최대 사진 장수를 초과했습니다."),
