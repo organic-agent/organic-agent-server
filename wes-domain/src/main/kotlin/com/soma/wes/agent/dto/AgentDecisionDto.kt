@@ -1,6 +1,7 @@
 package com.soma.wes.agent.dto
 
 import com.soma.wes.agent.domain.AgentActionOp
+import com.soma.wes.agent.domain.AgentCheckCode
 import com.soma.wes.agent.domain.ExplainTopic
 import com.soma.wes.agent.domain.PhotoFilter
 import com.soma.wes.agent.domain.StatsMetric
@@ -39,8 +40,19 @@ sealed interface AgentDecisionDto {
         val unsupported: List<UnsupportedCondition> = emptyList(),
     ) : AgentDecisionDto
 
+    /** 폴더 이름 바꾸기 — 세부 폴더면 [detailFolderId]까지. 계획만 만들고, 사용자가 확인하면 실행 창구가 바꾼다. */
+    data class PlanRename(
+        val target: FolderTarget,
+        val name: String,
+    ) : AgentDecisionDto
+
     data class Clarify(
         val question: String,
+    ) : AgentDecisionDto
+
+    /** 제출 전 점검. [focus]가 있으면 그 항목 하나의 사진·폴더를 연다 — 앞 점검 답의 "세 번째 거 보여줘". */
+    data class Check(
+        val focus: AgentCheckCode? = null,
     ) : AgentDecisionDto
 
     /** 사용법·상태 질문 — 주제 하나. 문장은 서비스가 지금 상태로 채운다. */

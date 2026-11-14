@@ -1,5 +1,6 @@
 package com.soma.wes.agent.dto.request
 
+import com.soma.wes.agent.domain.AgentCheckCode
 import com.soma.wes.agent.domain.AgentReplyKind
 import com.soma.wes.agent.domain.AgentTurnRole
 import com.soma.wes.agent.domain.PhotoFilter
@@ -54,6 +55,9 @@ data class AgentMessageRequest(
 
         @field:Schema(description = "ASSISTANT만 — 응답 view.filter 그대로. 없으면 null")
         val filter: PhotoFilter? = null,
+
+        @field:Schema(description = "ASSISTANT만 — 점검 응답 check.items의 code를 순서대로. 없으면 비운다")
+        val checkCodes: List<AgentCheckCode> = emptyList(),
     )
 
     @Schema(description = "가리킨 폴더. 세부 폴더면 detailFolderId까지")

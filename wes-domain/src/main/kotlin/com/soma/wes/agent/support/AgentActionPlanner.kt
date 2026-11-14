@@ -39,6 +39,7 @@ class AgentActionPlanner {
             AgentActionOp.SELECT_ADD -> matched.filter { !it.selected }
             AgentActionOp.SELECT_REMOVE -> matched.filter { it.selected }
             AgentActionOp.MOVE -> matched.filter { it.detailFolderId != decision.targetDetailFolderId }
+            AgentActionOp.RENAME_CONCEPT, AgentActionOp.RENAME_DETAIL -> error("이름 바꾸기는 사진 계획이 아니다 — AgentDecisionReader가 plan_action에서 거른다")
         }
         val steps = if (targets.isEmpty()) {
             emptyList()
@@ -69,13 +70,14 @@ class AgentActionPlanner {
             AgentActionOp.SELECT_REMOVE -> snapshot.photos.count { it.selected }
             AgentActionOp.SELECT_ADD -> snapshot.photos.count { !it.selected }
             AgentActionOp.MOVE -> snapshot.photos.size
+            AgentActionOp.RENAME_CONCEPT, AgentActionOp.RENAME_DETAIL -> error("이름 바꾸기는 사진 계획이 아니다")
         }
         return changing * PERCENT >= changeable * BROAD_SHARE_PERCENT
     }
 
     /** 선택 여부만 건 조건은 좁히지 않는다 — "고른 거 다 빼줘"는 빼기의 대상 그 자체다. */
     private fun PhotoFilter.narrows(): Boolean =
-        hasFolder() || subjects.isNotEmpty() || orientation != null || burstRepresentativeOnly
+        hasFolder() || subjects.isNotEmpty() || orientation != null || burstRepresentativeOnly || addedBy != null || hasReactionCondition()
 
     private fun overLimitBy(snapshot: AgentGallerySnapshotDto, op: AgentActionOp, adding: Int): Int {
         val limit = snapshot.maxSelectablePhotoCount ?: return 0

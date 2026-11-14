@@ -1,10 +1,13 @@
 package com.soma.wes.agent.support
 
 import com.soma.wes.agent.domain.AgentActionOp
+import com.soma.wes.agent.domain.AgentCheckCode
 import com.soma.wes.agent.domain.StatsMetric
 import com.soma.wes.agent.domain.StatsScope
 import com.soma.wes.agent.domain.UnsupportedCondition
+import com.soma.wes.agent.dto.AgentCheckItemDto
 import com.soma.wes.agent.dto.response.AgentMessageResponse
+import com.soma.wes.folder.domain.FolderName
 import org.springframework.stereotype.Component
 
 /**
@@ -18,6 +21,9 @@ class AgentReplyWriter {
 
         const val IMBALANCE_RATIO = 2
         private const val ROW_SEPARATOR = " · "
+
+        /** 빈 컨셉을 이름으로 부르는 최대 수 — 나머지는 "외 n개". */
+        private const val MAX_NAMED_CONCEPTS = 3
 
         /** 균형을 말하는 집계 — 고른 사람이 정한 칸(폴더·피사체)만. 방향·별점은 치우침이 문제가 아니다. */
         private val BALANCED_METRICS = setOf(StatsMetric.BY_CONCEPT, StatsMetric.BY_DETAIL, StatsMetric.BY_SUBJECTS)
@@ -96,11 +102,46 @@ class AgentReplyWriter {
             AgentActionOp.SELECT_ADD -> "사진 ${action.photoCount}장을 선택에 넣을게요."
             AgentActionOp.SELECT_REMOVE -> "고른 사진 중 ${action.photoCount}장을 뺄게요."
             AgentActionOp.MOVE -> "사진 ${action.photoCount}장을 '${targetName ?: "미분류"}'(으)로 옮길게요."
+            AgentActionOp.RENAME_CONCEPT, AgentActionOp.RENAME_DETAIL -> error("이름 바꾸기 계획의 답은 rename()이 쓴다")
         }
         val skipped = if (action.skippedPhotoCount > 0) " 이미 그 상태인 ${action.skippedPhotoCount}장은 뺐어요." else ""
         val overLimit = if (action.overLimitBy > 0) " 넣으면 계약 장수를 ${action.overLimitBy}장 넘어서 실행되지 않아요. 조건을 좁혀 주세요." else ""
         val broad = if (action.broad) " 대부분의 사진이 바뀌는 큰 변경이에요. 정말 이대로 할지 확인해 주세요." else ""
         return "$main$skipped$overLimit$broad${unsupportedNote(unsupported)}"
+    }
+
+    fun rename(currentName: String, newName: String): String = "'$currentName' 폴더 이름을 '$newName'(으)로 바꿀게요."
+
+    fun sameName(name: String): String = "이미 '$name'(이)라는 이름이에요."
+
+    fun nameTooLong(): String = "폴더 이름은 ${FolderName.MAX_LENGTH}자까지예요. 더 짧은 이름으로 말해 주세요."
+
+    fun folderNotEditable(): String = "선택을 이미 제출해서 폴더 이름을 바꿀 수 없어요."
+
+    /** 걸린 항목을 번호 붙여 한 줄씩 — history로 돌아오면 판단기가 "세 번째 거"를 이 번호로 푼다. */
+    fun check(selectedCount: Int, items: List<AgentCheckItemDto>): String {
+        if (selectedCount == 0) return "아직 고른 사진이 없어요. 사진을 고른 뒤에 점검해 드릴게요."
+        if (items.isEmpty()) return "고른 ${selectedCount}장, 제출 전에 걸리는 것이 없어요."
+        val lines = items.mapIndexed { index, item -> "${index + 1}. ${checkLine(item)}" }
+        return "제출 전에 볼 것 ${items.size}가지예요.\n${lines.joinToString("\n")}"
+    }
+
+    fun checkLine(item: AgentCheckItemDto): String =
+        when (item.code) {
+            AgentCheckCode.OVER_LIMIT -> "계약 ${item.limit}장보다 ${item.count}장 많아요."
+            AgentCheckCode.EMPTY_CONCEPT -> "${conceptNames(item.conceptNames)} 컨셉에서 고른 사진이 없어요."
+            AgentCheckCode.BURST_DUPLICATE -> "같은 연사에서 2장 이상 고른 묶음이 ${item.burstGroups}개(${item.count}장)예요."
+            AgentCheckCode.SUBJECT_IMBALANCE -> "신부 단독 ${item.brideCount}장, 신랑 단독 ${item.groomCount}장으로 한쪽에 치우쳐 있어요."
+            AgentCheckCode.LOW_RATED_SELECTED -> "1점 준 사진 ${item.count}장이 선택에 담겨 있어요."
+        }
+
+    fun checkNotFound(): String = "지금은 그 항목이 걸리지 않아요. 다시 점검해 볼까요?"
+
+    /** 컨셉이 많으면 앞 [MAX_NAMED_CONCEPTS]개만 이름으로. */
+    private fun conceptNames(names: List<String>): String {
+        val named = names.take(MAX_NAMED_CONCEPTS).joinToString(", ") { "'$it'" }
+        val rest = names.size - MAX_NAMED_CONCEPTS
+        return if (rest > 0) "$named 외 ${rest}개" else named
     }
 
     fun noPartner(): String = "배우자분이 아직 갤러리에 들어오지 않아서 그 조건으로는 거를 수 없어요."

@@ -2,6 +2,7 @@ package com.soma.wes.agent.infrastructure
 
 import com.soma.wes.agent.domain.AgentActionOp
 import com.soma.wes.agent.domain.AgentActor
+import com.soma.wes.agent.domain.AgentCheckCode
 import com.soma.wes.agent.domain.AgentSubject
 import com.soma.wes.agent.domain.ExplainTopic
 import com.soma.wes.agent.domain.PhotoFilter
@@ -27,7 +28,8 @@ class AgentDecisionReader(
 
     companion object {
 
-        const val FALLBACK_QUESTION = "무엇을 도와드릴까요? 폴더 찾기·사진 거르기·세기·선택 넣고 빼기·폴더 옮기기·사용법 안내를 할 수 있어요."
+        const val FALLBACK_QUESTION = "무엇을 도와드릴까요? 폴더 찾기·사진 거르기·세기·선택 넣고 빼기·폴더 옮기기·폴더 이름 바꾸기·사용법 안내를 할 수 있어요."
+        const val RENAME_UNCLEAR = "어느 폴더 이름을 무엇으로 바꿀지 다시 말해 주세요."
 
         /** 시스템 프롬프트의 폴더 id 표기 — 'c12'는 컨셉, 'd31'은 세부 폴더. */
         private const val CONCEPT_PREFIX = "c"
@@ -58,6 +60,8 @@ class AgentDecisionReader(
                 unsupported = unsupported(input.path("unsupported")),
             )
             AgentDecisionTools.PLAN_ACTION -> planAction(input)
+            AgentDecisionTools.PLAN_RENAME -> planRename(input, context)
+            AgentDecisionTools.CHECK_SELECTION -> AgentDecisionDto.Check(focus = AgentCheckCode.fromCode(input.path("focus").asString("")))
             AgentDecisionTools.EXPLAIN -> AgentDecisionDto.Explain(topic = ExplainTopic.fromCode(input.path("topic").asString("")) ?: ExplainTopic.UNKNOWN)
             AgentDecisionTools.ASK_CLARIFICATION -> AgentDecisionDto.Clarify(
                 question = input.path("question").asString("").trim().ifEmpty { FALLBACK_QUESTION },
@@ -66,26 +70,30 @@ class AgentDecisionReader(
         }
     }
 
-    /** 'c12'는 컨셉, 'd31'은 세부 폴더. 세부 폴더는 속한 컨셉을 찾아 함께 적는다. */
-    private fun folderTargets(node: JsonNode, context: AgentContextDto): List<AgentDecisionDto.FolderTarget> {
-        val conceptIdByDetailId = context.concepts.flatMap { concept -> concept.details.map { it.id to concept.id } }.toMap()
-        val conceptIds = context.concepts.map { it.id }.toSet()
-        return node.mapNotNull { target ->
-            val ref = target.asString("")
-            val id = ref.drop(1).toLongOrNull()
-            when {
-                id == null -> null
-                ref.startsWith(CONCEPT_PREFIX) -> AgentDecisionDto.FolderTarget(conceptFolderId = id).takeIf { id in conceptIds }
-                ref.startsWith(DETAIL_PREFIX) -> conceptIdByDetailId[id]?.let { conceptId ->
-                    AgentDecisionDto.FolderTarget(conceptFolderId = conceptId, detailFolderId = id)
-                }
-                else -> null
-            }
+    private fun folderTargets(node: JsonNode, context: AgentContextDto): List<AgentDecisionDto.FolderTarget> =
+        node.mapNotNull { folderTarget(it.asString(""), context) }
+
+    /** 'c12'는 컨셉, 'd31'은 세부 폴더. 세부 폴더는 속한 컨셉을 찾아 함께 적는다. 이 갤러리에 없는 id는 null. */
+    private fun folderTarget(ref: String, context: AgentContextDto): AgentDecisionDto.FolderTarget? {
+        val id = ref.drop(1).toLongOrNull() ?: return null
+        return when {
+            ref.startsWith(CONCEPT_PREFIX) -> AgentDecisionDto.FolderTarget(conceptFolderId = id).takeIf { context.concepts.any { it.id == id } }
+            ref.startsWith(DETAIL_PREFIX) -> context.concepts.firstOrNull { concept -> concept.details.any { it.id == id } }
+                ?.let { concept -> AgentDecisionDto.FolderTarget(conceptFolderId = concept.id, detailFolderId = id) }
+            else -> null
         }
     }
 
+    /** 이 갤러리에 없는 폴더를 고르거나 이름이 비면 되묻는다 — 지어낸 id로 계획을 만들지 않는다. */
+    private fun planRename(input: JsonNode, context: AgentContextDto): AgentDecisionDto {
+        val target = folderTarget(input.path("folder").asString(""), context)
+        val name = input.path("name").asString("").trim()
+        if (target == null || name.isEmpty()) return AgentDecisionDto.Clarify(RENAME_UNCLEAR)
+        return AgentDecisionDto.PlanRename(target = target, name = name)
+    }
+
     private fun planAction(input: JsonNode): AgentDecisionDto {
-        val op = enumOf<AgentActionOp>(input.path("op")) ?: return AgentDecisionDto.Clarify(FALLBACK_QUESTION)
+        val op = enumOf<AgentActionOp>(input.path("op"))?.takeUnless { it.isRename } ?: return AgentDecisionDto.Clarify(FALLBACK_QUESTION)
         val target = input.path("target").takeIf { it.isIntegralNumber }?.asLong()
         return AgentDecisionDto.PlanAction(
             op = op,

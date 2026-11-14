@@ -12,7 +12,7 @@ import java.sql.ResultSet
  * 도우미가 보는 갤러리 사진 전부를 한 번에 읽는다.
  *
  * 질문마다 조건이 달라 조건별 SQL을 만들지 않고, 사진 행을 모두 읽어 서버에서 거르고 센다 — 7천 장 갤러리도
- * 한 번의 읽기(수십 ms)라 판단 한 번(약 1.5초)에 비해 작다. 업로드가 끝나고 휴지통에 가지 않은 사진만 센다.
+ * 한 번의 읽기(수십 ms)라 판단 한 번(약 1.5초)에 비해 작다. 업로드가 끝나고 휴지통에 가지 않았으며 셀렉에서 제외하지 않은 사진만 센다(#365 — 사진 목록·폴더·추천과 같다).
  *
  * 반응(좋아요·댓글·별점·메모)과 누가 했는지(담기·별점·메모·댓글)도 사진당 서브쿼리 하나씩이다 — 전부 `photo_id` 인덱스 탐색이라 7천 장에 수십 ms 안이다.
  * 댓글은 부부 댓글(`photo_comments`)과 하객 댓글(`collab_photo_comments`)을 합쳐 센다 — "댓글 달린 사진"은 누가 남겼든 같은 뜻이다.
@@ -71,6 +71,7 @@ class AgentPhotoQueryRepository(
             LEFT JOIN detail_folders df ON df.id = x.detail_folder_id AND df.deleted_at IS NULL
             WHERE p.gallery_id = :galleryId
               AND p.deleted_at IS NULL
+              AND p.excluded_at IS NULL
               AND p.status = :uploaded
             ORDER BY p.display_order, p.id
             """.trimIndent(),

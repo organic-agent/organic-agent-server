@@ -1,6 +1,8 @@
 package com.soma.wes.agent.dto.response
 
 import com.soma.wes.agent.domain.AgentActionStep
+import com.soma.wes.agent.domain.AgentCheckCode
+import com.soma.wes.agent.domain.AgentCheckSeverity
 import com.soma.wes.agent.domain.AgentReplyKind
 import com.soma.wes.agent.domain.AgentScreen
 import com.soma.wes.agent.domain.ExplainTopic
@@ -13,13 +15,13 @@ import io.swagger.v3.oas.annotations.media.Schema
 @Schema(description = "도우미의 답. 모든 종류가 같은 모양이고, kind에 맞는 칸만 찬다")
 data class AgentMessageResponse(
 
-    @field:Schema(description = "FIND_FOLDER·FILTER_PHOTOS·STATS·PLAN_ACTION·CLARIFY·EXPLAIN")
+    @field:Schema(description = "FIND_FOLDER·FILTER_PHOTOS·STATS·PLAN_ACTION·CLARIFY·EXPLAIN·CHECK")
     val kind: AgentReplyKind,
 
     @field:Schema(description = "화면에 보일 답 한 줄. 숫자는 서버가 센 값이다", example = "블랙수트에서 두 분이 함께 나온 사진 24장을 선택에 넣을게요.")
     val reply: String,
 
-    @field:Schema(description = "화면을 이렇게 바꾼다 — 폴더 열기·필터. FIND_FOLDER·FILTER_PHOTOS·PLAN_ACTION")
+    @field:Schema(description = "화면을 이렇게 바꾼다 — 폴더 열기·필터. FIND_FOLDER·FILTER_PHOTOS·PLAN_ACTION, 점검 한 항목을 열 때 CHECK")
     val view: View? = null,
 
     @field:Schema(description = "폴더 후보가 여럿일 때 2~3개. FIND_FOLDER")
@@ -36,7 +38,33 @@ data class AgentMessageResponse(
 
     @field:Schema(description = "사용법·상태 답의 주제와 갈 수 있는 화면. EXPLAIN")
     val explain: Explain? = null,
+
+    @field:Schema(description = "제출 전 점검 결과. CHECK. 항목 순서가 reply의 번호 순서다")
+    val check: Check? = null,
 ) {
+
+    @Schema(description = "제출 전 점검")
+    data class Check(
+        val selectedCount: Int,
+        @field:Schema(description = "계약 장수. 없으면 null")
+        val limit: Int? = null,
+        @field:Schema(description = "걸린 항목만. 비어 있으면 걸리는 것이 없다")
+        val items: List<CheckItem>,
+    )
+
+    @Schema(description = "점검 항목 하나")
+    data class CheckItem(
+        @field:Schema(description = "OVER_LIMIT·EMPTY_CONCEPT·BURST_DUPLICATE·SUBJECT_IMBALANCE·LOW_RATED_SELECTED")
+        val code: AgentCheckCode,
+        @field:Schema(description = "WARN = 제출을 막거나 빠뜨린 것, INFO = 참고. 웹이 아이콘을 고른다")
+        val severity: AgentCheckSeverity,
+        @field:Schema(description = "항목의 장수(EMPTY_CONCEPT은 컨셉 수, SUBJECT_IMBALANCE는 신부·신랑 단독 장수의 차)")
+        val count: Int,
+        @field:Schema(description = "\"그 사진 보기\" 대상 사진 id. BURST_DUPLICATE·LOW_RATED_SELECTED만, 고른 사진이라 계약 장수 안이다")
+        val photoIds: List<Long> = emptyList(),
+        @field:Schema(description = "\"그 폴더 보기\" 대상 컨셉 id. EMPTY_CONCEPT만")
+        val conceptFolderIds: List<Long> = emptyList(),
+    )
 
     @Schema(description = "사용법·상태 답")
     data class Explain(

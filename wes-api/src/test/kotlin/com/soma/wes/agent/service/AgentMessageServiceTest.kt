@@ -1,7 +1,9 @@
 package com.soma.wes.agent.service
 
 import com.soma.wes.agent.domain.AgentActionOp
+import com.soma.wes.agent.domain.AgentActionStep
 import com.soma.wes.agent.domain.AgentActor
+import com.soma.wes.agent.domain.AgentCheckCode
 import com.soma.wes.agent.domain.AgentReplyKind
 import com.soma.wes.agent.domain.AgentScreen
 import com.soma.wes.agent.domain.AgentSubject
@@ -31,6 +33,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.jdbc.core.JdbcTemplate
 
 @IntegrationTest
 class AgentMessageServiceTest @Autowired constructor(
@@ -38,6 +41,7 @@ class AgentMessageServiceTest @Autowired constructor(
     private val fakeDecisionClient: FakeDecisionClient,
     private val agentFixture: AgentFixture,
     private val selectionFixture: SelectionFixture,
+    private val jdbcTemplate: JdbcTemplate,
 ) {
 
     @BeforeEach
@@ -309,6 +313,31 @@ class AgentMessageServiceTest @Autowired constructor(
     inner class Explain {
 
         @Test
+        fun `서비스 개념 주제는 서버가 정한 문장으로 답한다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+            val topics = listOf(
+                ExplainTopic.AI_FOLDERS,
+                ExplainTopic.FOLDER_LEVELS,
+                ExplainTopic.BURST,
+                ExplainTopic.SUBJECTS,
+                ExplainTopic.EXCLUDED_PHOTOS,
+                ExplainTopic.GALLERY_TYPE,
+            )
+
+            // when
+            val replies = topics.associateWith { topic -> send(scene, AgentDecisionDto.Explain(topic)).reply }
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(replies.values).allSatisfy { reply -> assertThat(reply).isNotBlank().doesNotContain("모르는 내용") }
+                softly.assertThat(replies[ExplainTopic.GALLERY_TYPE]).startsWith("여기는 작가님이 사진을 올리고 두 분을 초대한 스튜디오 갤러리예요.")
+                softly.assertThat(replies[ExplainTopic.EXCLUDED_PHOTOS]).contains("원본은 지워지지 않고")
+            }
+        }
+
+
+        @Test
         fun `남은 장수를 물으면 계약 장수와 고른 장수로 답한다`() {
             // given
             val scene = agentFixture.웨딩_갤러리(maxSelectablePhotoCount = 10)
@@ -537,6 +566,148 @@ class AgentMessageServiceTest @Autowired constructor(
                 softly.assertThat(response.kind).isEqualTo(AgentReplyKind.CLARIFY)
                 softly.assertThat(response.reply).contains("이미 제출")
             }
+        }
+    }
+
+    @Nested
+    @DisplayName("폴더 이름 바꾸기를 계획할 때")
+    inner class PlanRename {
+
+        @Test
+        fun `계획 순간의 이름을 예상 이름으로 담고 아직 바꾸지 않는다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+            val target = AgentDecisionDto.FolderTarget(conceptFolderId = scene.outdoorConceptId, detailFolderId = scene.sunsetDetailId)
+
+            // when
+            val response = send(scene, AgentDecisionDto.PlanRename(target = target, name = "석양"))
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.kind).isEqualTo(AgentReplyKind.PLAN_ACTION)
+                softly.assertThat(response.reply).isEqualTo("'노을' 폴더 이름을 '석양'(으)로 바꿀게요.")
+                softly.assertThat(response.action?.steps?.single()).isEqualTo(
+                    AgentActionStep(
+                        op = AgentActionOp.RENAME_DETAIL,
+                        conceptFolderId = scene.outdoorConceptId,
+                        detailFolderId = scene.sunsetDetailId,
+                        name = "석양",
+                        expectedName = "노을",
+                    ),
+                )
+                softly.assertThat(response.view?.detailFolderId).isEqualTo(scene.sunsetDetailId)
+            }
+        }
+
+        @Test
+        fun `이미 그 이름이면 계획 없이 알려 준다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+            val target = AgentDecisionDto.FolderTarget(conceptFolderId = scene.outdoorConceptId)
+
+            // when
+            val response = send(scene, AgentDecisionDto.PlanRename(target = target, name = "야외"))
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.kind).isEqualTo(AgentReplyKind.CLARIFY)
+                softly.assertThat(response.action).isNull()
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("제출 전에 점검할 때")
+    inner class Check {
+
+        @Test
+        fun `걸린 항목만 정해 둔 순서로 세고 숫자는 같은 상태의 SQL과 같다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리(maxSelectablePhotoCount = 2)
+            val selectionId = selectionFixture.셀렉(scene.galleryId)
+            selectionFixture.담긴_사진(selectionId, listOf(scene.photoIds[0], scene.photoIds[1], scene.photoIds[8]))
+            agentFixture.별점(scene, 8, scene.memberId, score = 1)
+
+            // when
+            val response = send(scene, AgentDecisionDto.Check())
+
+            // then
+            val items = response.check?.items.orEmpty()
+            val lowRatedBySql = checkNotNull(jdbcTemplate.queryForObject(
+                """
+                SELECT count(*) FROM photo_selection_items i JOIN photo_ratings r ON r.photo_id = i.photo_id
+                WHERE i.selection_id = ? AND r.score = 1
+                """.trimIndent(),
+                Int::class.java,
+                selectionId,
+            )) { "count(*)는 늘 한 행이다" }
+            assertSoftly { softly ->
+                softly.assertThat(response.kind).isEqualTo(AgentReplyKind.CHECK)
+                softly.assertThat(items.map { it.code to it.count }).containsExactly(
+                    AgentCheckCode.OVER_LIMIT to 1,
+                    AgentCheckCode.EMPTY_CONCEPT to 1,
+                    AgentCheckCode.BURST_DUPLICATE to 2,
+                    AgentCheckCode.LOW_RATED_SELECTED to lowRatedBySql,
+                )
+                softly.assertThat(items[1].conceptFolderIds).containsExactly(scene.outdoorConceptId)
+                softly.assertThat(items[2].photoIds).containsExactly(scene.photoIds[0], scene.photoIds[1])
+                softly.assertThat(response.check?.selectedCount).isEqualTo(3)
+                softly.assertThat(response.reply).isEqualTo(
+                    """
+                    제출 전에 볼 것 4가지예요.
+                    1. 계약 2장보다 1장 많아요.
+                    2. '야외' 컨셉에서 고른 사진이 없어요.
+                    3. 같은 연사에서 2장 이상 고른 묶음이 1개(2장)예요.
+                    4. 1점 준 사진 1장이 선택에 담겨 있어요.
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        @Test
+        fun `걸리는 것이 없으면 고른 장수와 함께 그렇다고 말한다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리(maxSelectablePhotoCount = 5)
+            selectionFixture.담긴_사진(selectionFixture.셀렉(scene.galleryId), listOf(scene.photoIds[3], scene.photoIds[5]))
+
+            // when
+            val response = send(scene, AgentDecisionDto.Check())
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.check?.items).isEmpty()
+                softly.assertThat(response.reply).isEqualTo("고른 2장, 제출 전에 걸리는 것이 없어요.")
+            }
+        }
+
+        @Test
+        fun `한 항목을 가리키면 지금 상태로 다시 세어 그 사진을 연다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+            selectionFixture.담긴_사진(selectionFixture.셀렉(scene.galleryId), listOf(scene.photoIds[0], scene.photoIds[1]))
+
+            // when
+            val response = send(scene, AgentDecisionDto.Check(focus = AgentCheckCode.BURST_DUPLICATE))
+            val missing = send(scene, AgentDecisionDto.Check(focus = AgentCheckCode.LOW_RATED_SELECTED))
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.view?.photoIds).containsExactly(scene.photoIds[0], scene.photoIds[1])
+                softly.assertThat(response.reply).isEqualTo("같은 연사에서 2장 이상 고른 묶음이 1개(2장)예요.")
+                softly.assertThat(missing.kind).isEqualTo(AgentReplyKind.CLARIFY)
+            }
+        }
+
+        @Test
+        fun `고른 사진이 없으면 점검하지 않는다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+
+            // when
+            val response = send(scene, AgentDecisionDto.Check())
+
+            // then
+            assertThat(response.reply).isEqualTo("아직 고른 사진이 없어요. 사진을 고른 뒤에 점검해 드릴게요.")
         }
     }
 

@@ -44,6 +44,7 @@ object AgentDecisionPrompt {
             "가족·부모님·하객이 좋아한"은 likedByGuests, "댓글 달린"은 hasComments, "별 n개 이상"은 minRating, "n점짜리·딱 n점"은 minRating=maxRating=n, "메모 남긴"은 hasMemo 로 거른다 — 반응은 읽기만 한다.
             지금 데이터로 거를 수 없는 조건은 unsupported에 넣는다(폴더 이름으로 대신하지 말 것, 단 사용자가 폴더를 지목했으면 폴더로).
             못 거르는 조건만 있어도 원래 하려던 일의 도구를 고른다 — 있는지·몇 장인지 물으면 stats, 넣거나 빼라면 plan_action.
+            "제출해도 돼?·빠진 거 없어?·점검해줘"는 check_selection. 폴더 이름을 바꿔 달라면 plan_rename.
             사진 넣기·빼기·옮기기는 plan_action으로 계획만 만든다. 제출·삭제·별점을 대신 해 달라면 할 수 없다고 ask_clarification으로 알린다.
             "어떻게 해?"·"언제까지?"·"몇 번 남았어?"·"몇 장 남았어?"처럼 사용법이나 지금 상태를 물으면 explain으로 주제를 고른다. 목록 밖이면 unknown.
             폴더 목록(shot_order = 촬영 순서, id의 c=컨셉 d=세부, 세부의 subject = 그 폴더 사진 대부분의 피사체 — "신부 단독 폴더"는 이것으로 찾는다):
@@ -73,6 +74,9 @@ object AgentDecisionPrompt {
                 "후보 ${numbered.joinToString(" ")}"
             },
             turn.filter?.let { "필터 ${objectMapper.writeValueAsString(it)}" },
+            turn.checkCodes.takeIf { it.isNotEmpty() }?.let { codes ->
+                "점검 ${codes.mapIndexed { index, code -> "${index + 1}=${code.code}" }.joinToString(" ")}"
+            },
         )
         return if (notes.isEmpty()) turn.text else "${turn.text}\n[${notes.joinToString(" · ")}]"
     }

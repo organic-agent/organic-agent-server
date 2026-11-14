@@ -1,9 +1,11 @@
 package com.soma.wes.agent.service
 
 import com.soma.wes.agent.domain.AgentActionOp
+import com.soma.wes.agent.domain.AgentActionStep
 import com.soma.wes.agent.domain.AgentReplyKind
 import com.soma.wes.agent.domain.AgentTurnRole
 import com.soma.wes.agent.domain.PhotoFilter
+import com.soma.wes.agent.dto.AgentCheckItemDto
 import com.soma.wes.agent.dto.AgentContextDto
 import com.soma.wes.agent.dto.AgentDecisionDto
 import com.soma.wes.agent.dto.PhotoReactionsDto
@@ -23,6 +25,8 @@ import com.soma.wes.agent.support.AgentQuestionLimiter
 import com.soma.wes.agent.repository.AgentReactionQueryRepository
 import com.soma.wes.agent.support.AgentReplyWriter
 import com.soma.wes.agent.support.AgentStatsCounter
+import com.soma.wes.agent.support.AgentSubmitChecker
+import com.soma.wes.folder.domain.FolderName
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.Timer
@@ -46,6 +50,7 @@ class AgentMessageService(
     private val agentActionPlanner: AgentActionPlanner,
     private val agentReplyWriter: AgentReplyWriter,
     private val agentExplainWriter: AgentExplainWriter,
+    private val agentSubmitChecker: AgentSubmitChecker,
     private val agentReactionQueryRepository: AgentReactionQueryRepository,
     private val agentQuestionLimiter: AgentQuestionLimiter,
     private val meterRegistry: MeterRegistry,
@@ -88,8 +93,10 @@ class AgentMessageService(
             is AgentDecisionDto.FilterPhotos -> filterPhotos(snapshot, decision)
             is AgentDecisionDto.Stats -> stats(snapshot, decision)
             is AgentDecisionDto.PlanAction -> planAction(snapshot, decision)
+            is AgentDecisionDto.PlanRename -> planRename(snapshot, decision)
             is AgentDecisionDto.Clarify -> clarify(decision.question)
             is AgentDecisionDto.Explain -> explain(snapshot, decision)
+            is AgentDecisionDto.Check -> check(snapshot, decision)
         }
     }
 
@@ -117,6 +124,7 @@ class AgentMessageService(
                     AgentDecisionDto.FolderTarget(conceptFolderId = it.conceptFolderId, detailFolderId = it.detailFolderId)
                 },
                 filter = turn.filter,
+                checkCodes = turn.checkCodes,
             )
         }
     }
@@ -210,6 +218,37 @@ class AgentMessageService(
         )
     }
 
+    /**
+     * 이름 바꾸기 계획 — 계획 순간의 이름을 [AgentActionStep.expectedName]에 담아, 확인을 누르기 전에 배우자가 바꿨으면 실행이 건너뛴다.
+     * 초대받은 부부는 제출 뒤 폴더를 못 바꾼다(`requireFolderEditor`) — 개인 갤러리 부부는 제출 뒤에도 바꾼다.
+     */
+    private fun planRename(snapshot: AgentGallerySnapshotDto, decision: AgentDecisionDto.PlanRename): AgentMessageResponse {
+        if (!snapshot.selectionEditable && !snapshot.personal) return clarify(agentReplyWriter.folderNotEditable())
+        if (decision.name.length > FolderName.MAX_LENGTH) return clarify(agentReplyWriter.nameTooLong())
+        val concept = snapshot.concepts.firstOrNull { it.id == decision.target.conceptFolderId } ?: return clarify(agentReplyWriter.noFolder())
+        val detailId = decision.target.detailFolderId
+        val currentName = if (detailId == null) {
+            concept.name
+        } else {
+            concept.details.firstOrNull { it.id == detailId }?.name ?: return clarify(agentReplyWriter.noFolder())
+        }
+        if (currentName == decision.name) return clarify(agentReplyWriter.sameName(currentName))
+
+        val step = AgentActionStep(
+            op = if (detailId == null) AgentActionOp.RENAME_CONCEPT else AgentActionOp.RENAME_DETAIL,
+            conceptFolderId = concept.id,
+            detailFolderId = detailId,
+            name = decision.name,
+            expectedName = currentName,
+        )
+        return AgentMessageResponse(
+            kind = AgentReplyKind.PLAN_ACTION,
+            reply = agentReplyWriter.rename(currentName, decision.name),
+            view = AgentMessageResponse.View(conceptFolderId = concept.id, detailFolderId = detailId),
+            action = AgentMessageResponse.Action(steps = listOf(step), photoCount = 0, skippedPhotoCount = 0, overLimitBy = 0),
+        )
+    }
+
     private fun detailName(snapshot: AgentGallerySnapshotDto, detailId: Long): String? =
         snapshot.concepts.firstNotNullOfOrNull { concept ->
             concept.details.firstOrNull { it.id == detailId }?.let { detail -> "${concept.name} > ${detail.name}" }
@@ -247,4 +286,44 @@ class AgentMessageService(
             explain = AgentMessageResponse.Explain(topic = decision.topic, links = links),
         )
     }
+
+    /**
+     * 제출 전 점검 — 서버가 센 숫자와 정해 둔 문장(C-1). [AgentDecisionDto.Check.focus]가 있으면 그 항목 하나의 사진·컨셉을 연다.
+     * 그 항목이 지금은 걸리지 않으면(그사이 고쳤으면) 그렇다고 말한다 — 앞 답의 사진 id를 다시 쓰지 않고 지금 상태로 다시 센다.
+     */
+    private fun check(snapshot: AgentGallerySnapshotDto, decision: AgentDecisionDto.Check): AgentMessageResponse {
+        val items = agentSubmitChecker.check(snapshot)
+        val selectedCount = snapshot.photos.count { it.selected }
+        val focus = decision.focus
+        if (focus == null) {
+            return AgentMessageResponse(
+                kind = AgentReplyKind.CHECK,
+                reply = agentReplyWriter.check(selectedCount, items),
+                check = checkResponse(snapshot, selectedCount, items),
+            )
+        }
+
+        val item = items.firstOrNull { it.code == focus } ?: return clarify(agentReplyWriter.checkNotFound())
+        return AgentMessageResponse(
+            kind = AgentReplyKind.CHECK,
+            reply = agentReplyWriter.checkLine(item),
+            view = AgentMessageResponse.View(conceptFolderId = item.conceptFolderIds.singleOrNull(), photoIds = item.photoIds.takeIf { it.isNotEmpty() }),
+            check = checkResponse(snapshot, selectedCount, listOf(item)),
+        )
+    }
+
+    private fun checkResponse(snapshot: AgentGallerySnapshotDto, selectedCount: Int, items: List<AgentCheckItemDto>) =
+        AgentMessageResponse.Check(
+            selectedCount = selectedCount,
+            limit = snapshot.maxSelectablePhotoCount,
+            items = items.map { item ->
+                AgentMessageResponse.CheckItem(
+                    code = item.code,
+                    severity = item.code.severity,
+                    count = item.count,
+                    photoIds = item.photoIds,
+                    conceptFolderIds = item.conceptFolderIds,
+                )
+            },
+        )
 }

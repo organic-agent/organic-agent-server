@@ -1,5 +1,6 @@
 package com.soma.wes.agent.dto
 
+import com.soma.wes.agent.domain.AgentCheckCode
 import com.soma.wes.agent.domain.AgentReplyKind
 import com.soma.wes.agent.domain.AgentTurnRole
 import com.soma.wes.agent.domain.PhotoFilter
@@ -14,4 +15,5 @@ data class AgentTurnDto(
     val kind: AgentReplyKind? = null,
     val folderCandidates: List<AgentDecisionDto.FolderTarget> = emptyList(),
     val filter: PhotoFilter? = null,
+    val checkCodes: List<AgentCheckCode> = emptyList(),
 )

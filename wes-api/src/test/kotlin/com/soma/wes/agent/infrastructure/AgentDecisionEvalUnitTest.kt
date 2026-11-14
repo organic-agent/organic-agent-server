@@ -144,6 +144,12 @@ class AgentDecisionEvalUnitTest {
                 "target" to decision.targetDetailFolderId,
                 "unsupported" to decision.unsupported.map { it.name.lowercase() },
             )
+            is AgentDecisionDto.PlanRename -> mapOf(
+                "intent" to "rename",
+                "folder" to (decision.target.detailFolderId?.let { "d$it" } ?: "c${decision.target.conceptFolderId}"),
+                "name" to decision.name,
+            )
+            is AgentDecisionDto.Check -> mapOf("intent" to "check", "focus" to decision.focus?.code)
             is AgentDecisionDto.Clarify -> mapOf("intent" to "clarify", "question" to decision.question)
             is AgentDecisionDto.Explain -> mapOf("intent" to "explain", "topic" to decision.topic.code)
         }
@@ -160,6 +166,11 @@ class AgentDecisionEvalUnitTest {
             filter.hasComments?.let { put("has_comments", it) }
             filter.minRating?.let { put("min_rating", it) }
             filter.hasMemo?.let { put("has_memo", it) }
+            filter.maxRating?.let { put("max_rating", it) }
+            filter.addedBy?.let { put("added_by", it.name.lowercase()) }
+            filter.ratedBy?.let { put("rated_by", it.name.lowercase()) }
+            filter.memoBy?.let { put("memo_by", it.name.lowercase()) }
+            filter.commentedBy?.let { put("commented_by", it.name.lowercase()) }
         }
 
     private fun context(catalog: JsonNode): AgentContextDto {

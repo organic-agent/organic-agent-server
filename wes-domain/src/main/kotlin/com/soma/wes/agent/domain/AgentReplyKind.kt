@@ -9,4 +9,6 @@ enum class AgentReplyKind {
     CLARIFY,
     /** 사용법·상태 답(#348 ⑤). 문장과 주제, 갈 수 있는 화면 버튼. */
     EXPLAIN,
+    /** 제출 전 점검(#403 ④). 서버가 센 항목과 번호 붙은 문장. 읽기만 한다. */
+    CHECK,
 }

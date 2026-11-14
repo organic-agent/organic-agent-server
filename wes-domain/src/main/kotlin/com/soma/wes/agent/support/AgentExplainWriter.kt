@@ -16,7 +16,10 @@ import java.time.format.DateTimeFormatter
  * LLM이 쓰지 않으니 지어내는 답이 구조적으로 0이다(QA-8). 주제 밖은 "모른다"로 끝내고 작가에게 돌린다.
  *
  * 규칙 출처: 제출·되돌리기 `PhotoSelectionService`(계약 장수 딱 맞춰야 제출, 되돌리기는 작가만, 개인 갤러리는 내보내기·취소) ·
- * 보정 `RetouchRound`(회차 단위, 제출된 회차 수 = 쓴 횟수) · 공유 `CollabSession`(링크 7일) · 별점·메모·댓글 컨트롤러 문서 · 휴지통은 작가만.
+ * 보정 `RetouchRound`(회차 단위, 제출된 회차 수 = 쓴 횟수) · 공유 `CollabSession`(링크 7일) · 별점·메모·댓글 컨트롤러 문서 · 휴지통은 작가만 ·
+ * 부부 댓글은 작가에게 안 보임(`GalleryAccessPolicy.requireParticipantViewer`).
+ * 개념 주제(#403): AI 폴더 categorize(비슷한 사진 그룹·연사 묶음 + 이름) → `FolderStep` 물질화 · 사진은 세부 폴더 하나에(`detail_folder_assignments(photo_id)` UK),
+ * 없으면 미분류 · 연사 대표 `burst_rank = 0` · 피사체 `photo_analysis.subjects`(CLIP) · 사진 제외 `PhotoExclusionControllerDocs`(원본·별점·메모 유지, 확정 뒤 409, 복원 있음).
  */
 @Component
 class AgentExplainWriter(
@@ -46,6 +49,16 @@ class AgentExplainWriter(
         ExplainTopic.DOWNLOAD -> "원본 파일은 이 화면에서 내려받을 수 없어요. 보정 결과는 보정 화면에서 확인하고, 최종 전달은 작가님이 해요." to listOf(link("보정 화면으로", AgentScreen.RETOUCH))
         ExplainTopic.AI_RECOMMEND -> "AI 추천은 폴더마다 계약 장수에 비례해 점수 순으로 골라 배지로 표시해요. 비슷한 연사에서는 대표 한 장만 추천해요. " +
             "셀렉 화면의 AI 추천 버튼으로 요청하고, 추천은 참고일 뿐 선택은 두 분이 정해요." to listOf(link("AI 추천 요청", AgentScreen.RECOMMEND))
+        ExplainTopic.AI_FOLDERS -> "AI 폴더는 올린 사진을 AI가 분석해 비슷한 사진끼리 컨셉 폴더로 묶고, 그 안을 다시 세부 폴더로 나눈 거예요. 폴더 이름도 AI가 붙였어요. " +
+            "AI가 나눈 거라 어긋날 수 있으니 사진을 다른 폴더로 옮기거나 이름을 바꿔도 돼요. 이름 바꾸기는 저한테 말해도 돼요." to emptyList()
+        ExplainTopic.FOLDER_LEVELS -> "컨셉 폴더는 의상·장소 같은 촬영 컨셉 단위의 큰 묶음이고, 세부 폴더는 그 안에서 더 비슷한 장면끼리 나눈 묶음이에요. " +
+            "사진 한 장은 세부 폴더 하나에만 들어가고, 어느 폴더에도 없는 사진은 미분류예요." to emptyList()
+        ExplainTopic.BURST -> "연사는 거의 같은 장면을 연달아 찍은 사진 묶음이에요. 묶음마다 AI가 가장 잘 나온 한 장을 대표 컷으로 골라 둬요. " +
+            "'대표 컷만 보여줘'라고 하면 묶음마다 한 장씩 볼 수 있어요." to emptyList()
+        ExplainTopic.SUBJECTS -> "AI가 사진마다 신부 단독·신랑 단독·두 분 함께·단체 중 하나로 나눠 둬요. 사진만 보고 판단해서 틀릴 수 있어요. " +
+            "'신부 단독 사진만'처럼 물으면 모아 볼 수 있어요." to emptyList()
+        ExplainTopic.EXCLUDED_PHOTOS -> excludedPhotos(snapshot)
+        ExplainTopic.GALLERY_TYPE -> galleryType(snapshot)
         ExplainTopic.UNKNOWN -> "그건 제가 아직 모르는 내용이에요. 작가님께 여쭤봐 주세요." to emptyList()
     }
 
@@ -116,7 +129,23 @@ class AgentExplainWriter(
         if (snapshot.personal) {
             "사진마다 메모 한 칸을 적을 수 있어요. 두 분이 같은 칸을 함께 쓰고 다시 적으면 덮어써요. '메모 남긴 사진만'으로 모아 볼 수 있어요." to emptyList()
         } else {
-            "초대받은 갤러리에서는 메모 대신 사진 댓글을 써요. 작가님과 두 분이 같이 보는 글이에요." to emptyList()
+            "초대받은 갤러리에서는 메모 대신 사진 댓글을 써요. 두 분만 보는 글이고 작가님에게는 보이지 않아요." to emptyList()
+        }
+
+    private fun excludedPhotos(snapshot: AgentGallerySnapshotDto): Pair<String, List<AgentMessageResponse.Explain.Link>> {
+        val base = "사진 제외는 셀렉에서 사진을 치우는 기능이에요. 원본은 지워지지 않고 별점·메모도 남아요. " +
+            "제외한 사진은 사진 목록·폴더·AI 추천에서 안 보이고, 선택에 담겨 있었다면 함께 빠져요. 제외 폴더에서 언제든 되돌릴 수 있어요."
+        val lock = if (snapshot.selectionEditable) "" else " 지금은 선택을 마쳐서 새로 제외할 수 없어요."
+        return "$base$lock" to listOf(link("셀렉 화면으로", AgentScreen.SELECTION))
+    }
+
+    private fun galleryType(snapshot: AgentGallerySnapshotDto): Pair<String, List<AgentMessageResponse.Explain.Link>> =
+        if (snapshot.personal) {
+            "여기는 개인 갤러리예요. 두 분이 직접 사진을 올리고 고르며, 작가님 없이 고르기를 마치면 '요청서 내보내기'로 끝내요. " +
+                "스튜디오 갤러리는 작가님이 사진을 올리고 두 분을 초대해, 계약 장수를 맞춰 작가님께 제출하는 방식이에요." to emptyList()
+        } else {
+            "여기는 작가님이 사진을 올리고 두 분을 초대한 스튜디오 갤러리예요. 계약 장수를 딱 맞춰 작가님께 제출하고, 제출을 되돌리는 건 작가님만 할 수 있어요. " +
+                "개인 갤러리는 두 분이 직접 사진을 올려 고르고 요청서를 내보내는 방식이에요." to emptyList()
         }
 
     private fun link(label: String, to: AgentScreen) = AgentMessageResponse.Explain.Link(label = label, to = to)

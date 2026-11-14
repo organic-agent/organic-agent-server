@@ -1,10 +1,11 @@
 package com.soma.wes.agent.infrastructure
 
+import com.soma.wes.agent.domain.AgentCheckCode
 import com.soma.wes.agent.domain.ExplainTopic
 import com.soma.wes.agent.dto.AgentToolDefinitionDto
 
 /**
- * 판단기에게 보여 주는 도구 여섯 개. 정의(이름·설명·입력 모양)만 주고 실행하지 않는다 — 모델이 고른 도구와 인자가 곧 주문서다.
+ * 판단기에게 보여 주는 도구 여덟 개. 정의(이름·설명·입력 모양)만 주고 실행하지 않는다 — 모델이 고른 도구와 인자가 곧 주문서다.
  *
  * 설명 문장이 정확도를 좌우한다(AI repo 기준선: 오답 대부분이 집계 범위·단위 선택). 문장을 바꾸면 질문 세트로 다시 잰다.
  * 모양은 AI repo 프로토타입(`agent_eval.py`)과 같고, 신뢰도(confidence)는 뺐다 — 기준선에서 오답을 거르지 못했다.
@@ -15,6 +16,8 @@ object AgentDecisionTools {
     const val FILTER_PHOTOS = "filter_photos"
     const val STATS = "stats"
     const val PLAN_ACTION = "plan_action"
+    const val PLAN_RENAME = "plan_rename"
+    const val CHECK_SELECTION = "check_selection"
     const val ASK_CLARIFICATION = "ask_clarification"
     const val EXPLAIN = "explain"
 
@@ -93,13 +96,36 @@ object AgentDecisionTools {
             """.trimIndent(),
         ),
         tool(
+            name = PLAN_RENAME,
+            description = "컨셉 폴더나 세부 폴더의 이름을 바꾸는 계획을 만든다. 사용자가 확인해야 실행된다. 폴더를 새로 만들거나 합치지는 못한다.",
+            schema = """
+                {"type": "object", "properties": {
+                  "folder": {"type": "string", "description": "바꿀 폴더 'c<id>'(컨셉) 또는 'd<id>'(세부)"},
+                  "name": {"type": "string", "description": "새 이름. 사용자가 말한 그대로, 따옴표·'으로' 같은 조사는 빼고"}
+                }, "required": ["folder", "name"]}
+            """.trimIndent(),
+        ),
+        tool(
+            name = CHECK_SELECTION,
+            description = """
+                고른 사진을 제출 전에 점검한다 — 장수 초과·안 고른 컨셉·같은 연사 중복·신랑 신부 치우침·1점 사진. 서버가 세어 답한다.
+                '제출해도 돼?·빠진 거 없어?·점검해줘·확인해줘'에 쓴다. 앞 점검 답의 'n번째 거 보여줘'는 focus에 그 번호의 점검 code를 넣는다.
+            """.trimIndent(),
+            schema = """
+                {"type": "object", "properties": {"focus": {"enum": ${checkCodes()}, "description": "한 항목만 볼 때"}}}
+            """.trimIndent(),
+        ),
+        tool(
             name = EXPLAIN,
             description = """
                 사용법이나 지금 상태를 물으면 주제 하나를 고른다 — 서버가 지금 갤러리 상태로 답을 채운다.
                 submit=제출 방법·제출 가능 여부, withdraw=제출 되돌리기, deadline=선택 마감 언제까지, max_photos=계약 장수·몇 장 남았나,
                 retouch_rounds=보정 몇 번·보정 요청 방법, share_family=가족·부모님에게 보여 주기, rating=별점 매기기, memo=메모, comment=댓글,
-                delete_photo=사진 지우기, download=원본·파일 내려받기, ai_recommend=AI 추천이 뭔지·요청 방법, unknown=이 목록 밖의 사용법.
-                사진을 거르거나 세는 말이 아니라 "어떻게 해?"·"언제까지?"·"몇 번 남았어?"처럼 방법·상태를 묻는 말에 쓴다.
+                delete_photo=사진 지우기, download=원본·파일 내려받기, ai_recommend=AI 추천이 뭔지·요청 방법,
+                ai_folders=AI 폴더가 뭔지·어떻게 나뉘었나, folder_levels=컨셉 폴더와 세부 폴더 차이·미분류, burst=연사·대표 컷이 뭔지,
+                subjects=신랑·신부·커플 구분은 어떻게 하나·틀릴 수 있나, excluded_photos=사진 제외·제외 폴더·되돌리기,
+                gallery_type=개인 갤러리와 스튜디오(초대) 갤러리 차이, unknown=이 목록 밖의 사용법·개념.
+                사진을 거르거나 세는 말이 아니라 "어떻게 해?"·"언제까지?"·"몇 번 남았어?"·"~가 뭐야?"처럼 방법·상태·개념을 묻는 말에 쓴다.
             """.trimIndent(),
             schema = """
                 {"type": "object", "properties": {"topic": {"enum": ${topicCodes()}}}, "required": ["topic"]}
@@ -113,6 +139,8 @@ object AgentDecisionTools {
             """.trimIndent(),
         ),
     )
+
+    private fun checkCodes(): String = AgentCheckCode.entries.joinToString(", ", "[", "]") { "\"${it.code}\"" }
 
     private fun topicCodes(): String = ExplainTopic.entries.joinToString(", ", "[", "]") { "\"${it.code}\"" }
 
