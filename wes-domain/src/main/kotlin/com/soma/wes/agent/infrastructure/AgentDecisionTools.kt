@@ -97,7 +97,8 @@ object AgentDecisionTools {
         ),
         tool(
             name = PLAN_RENAME,
-            description = "컨셉 폴더나 세부 폴더의 이름을 바꾸는 계획을 만든다. 사용자가 확인해야 실행된다. 폴더를 새로 만들거나 합치지는 못한다.",
+            description = "컨셉 폴더나 세부 폴더의 이름만 바꾸는 계획을 만든다. 사용자가 확인해야 실행된다. " +
+                "'A 폴더를 B로 합쳐줘·몰아줘'처럼 한 폴더의 사진을 다른 폴더로 보내는 말은 이 도구가 아니라 plan_action move 다.",
             schema = """
                 {"type": "object", "properties": {
                   "folder": {"type": "string", "description": "바꿀 폴더 'c<id>'(컨셉) 또는 'd<id>'(세부)"},
