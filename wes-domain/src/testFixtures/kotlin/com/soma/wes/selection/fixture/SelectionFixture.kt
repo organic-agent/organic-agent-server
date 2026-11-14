@@ -5,11 +5,14 @@ import com.soma.wes.selection.domain.PhotoSelectionItem
 import com.soma.wes.selection.repository.PhotoSelectionItemRepository
 import com.soma.wes.selection.repository.PhotoSelectionRepository
 import org.springframework.stereotype.Component
+import java.time.Clock
+import java.time.ZonedDateTime
 
 @Component
 class SelectionFixture(
     private val photoSelectionRepository: PhotoSelectionRepository,
     private val photoSelectionItemRepository: PhotoSelectionItemRepository,
+    private val clock: Clock,
 ) {
 
     /** 갤러리의 선택 앨범 행. 정상 경로에서는 부부가 처음 담을 때 생기는 것을 배경으로 미리 만든다. */
@@ -31,5 +34,13 @@ class SelectionFixture(
                 )
             },
         )
+    }
+
+    /** 부부가 제출한 상태. 담긴 사진이 한 장 이상 있어야 한다 — 빈 앨범은 제출되지 않는다. */
+    fun 제출(selectionId: Long, userId: Long) {
+        val selection = photoSelectionRepository.findById(selectionId).orElseThrow()
+        val selectedCount = photoSelectionItemRepository.findAllBySelectionId(selectionId).size
+        selection.submit(selectedCount = selectedCount, submittedByUserId = userId, at = ZonedDateTime.now(clock))
+        photoSelectionRepository.saveAndFlush(selection)
     }
 }
