@@ -1,10 +1,10 @@
 ---
 name: open-pr
 description: |
-  PR을 생성한다. pull_request_template.md 규격에 맞춰 본문을 작성하고 gh pr create를 실행한다.
+  PR을 생성한다. pull_request_template.md 규격에 맞춰 본문을 작성하고 gh pr create로 만들면서 작성자 assignee와 타입 라벨을 단다.
   Trigger: "PR 날려줘", "PR 만들어줘", "PR 생성해줘", "PR 올려줘"
   Do NOT use for: 커밋·푸시(→ commit-push), 이슈·브랜치 생성(→ open-issue), 코드 리뷰
-  Boundary: PR 생성까지만 수행한다. 머지, 리뷰 요청, 라벨 설정은 범위 밖이다.
+  Boundary: PR 생성과 assignee(작성자 본인)·타입 라벨 달기까지 수행한다. 머지, 리뷰 요청, `ready-to-merge` 라벨은 범위 밖이다.
 allowed-tools: Bash(git *), Bash(gh *), Read, Write
 model: sonnet
 effort: xhigh
@@ -49,7 +49,9 @@ effort: xhigh
    그대로 따르라. 템플릿의 안내 문구(`❗️...`)는 지우고 실제 내용으로 채운다.
 2. `.claude/spec/git-convention.md`를 Read로 읽어 PR 제목의 커밋 메시지 형식을 확인하라.
 3. `.claude/spec/issue-pr-writing.md`를 Read로 읽어라. **본문은 이 가이드대로 쓴다** — 템플릿은 섹션 이름을,
-   가이드는 섹션 안을 채우는 방법(한 줄 요약, 왜/무엇을/확인 세 칸, 전→후 표, 한 줄에 한 사실)을 정한다.
+   가이드는 섹션 안을 채우는 방법(한 줄 요약, 왜/무엇을/확인 세 칸, 전→후 표, 사람이 말하듯 쓰는 말투)을 정한다.
+   - **말투**: 칸 안의 설명은 `~했습니다`·`~입니다`로 끝나는 완결된 문장으로, 동료에게 설명하듯 쓴다. 명사형 끝맺음(`~추가`·`~함`)과
+     화살표·가운뎃점으로 이은 메모는 쓰지 않는다. 표는 전→후·측정값처럼 나란히 비교할 때만 쓴다(가이드 "말투" 절)
    - 맨 위: `>` 한 줄 요약. 머지·배포 순서처럼 놓치면 사고가 나는 조건이 있을 때만 `> [!WARNING]` 하나
    - `1. 연관 이슈`: `- close #{이슈번호}`
    - `2. 구현 사항`: `### 왜` / `### 무엇을 바꿨나`(이름·동작은 `전 | 후` 표) / `### 어떻게 확인했나` / `### 판단` 순서.
@@ -82,10 +84,25 @@ effort: xhigh
    ```
    - 원격 브랜치가 없거나 해시가 다르면 push되지 않은 커밋이 있는 것이다.
      사용자에게 알리고 중단하라 (commit-push 스킬로 먼저 올려야 한다).
-3. 다음 명령으로 PR을 생성하라:
+3. 달 라벨을 정하라 — PR 제목의 타입과 같은 저장소 라벨이다. 라벨 이름에 이모지가 붙어 있으니 `gh label list`로 정확한 이름을 확인한다:
+
+   | 제목 타입 | 라벨 |
+   |---|---|
+   | feat | `🌼 feat` |
+   | fix | `🔨fix` |
+   | refactor | `🧹refactor` |
+   | test | `🧪 test` |
+   | docs | `📚 docs` |
+   | cicd | `🚦cicd` |
+   | chore | `⚡️chore` |
+   | hotfix | `🚑 hotfix` |
+
+   - **`ready-to-merge`는 절대 달지 않는다** — develop → main 운영 반영을 일으키는 라벨이다(hook이 막는다).
+4. 다음 명령으로 PR을 생성하라. 작성자 본인을 assignee로, 3의 라벨을 함께 단다:
    ```bash
-   gh pr create --title "{제목}" --body-file {본문파일} --base {대상 브랜치}
+   gh pr create --title "{제목}" --body-file {본문파일} --base {대상 브랜치} --assignee @me --label "{라벨}"
    ```
-4. 생성된 PR URL을 제목·base와 함께 사용자에게 보고하라.
+   - 라벨 이름이 틀려 실패하면 `gh label list`로 다시 확인해 고친다. PR이 이미 만들어진 뒤라면 `gh pr edit {번호} --add-assignee @me --add-label "{라벨}"`로 단다.
+5. `gh pr view {번호} --json assignees,labels`로 assignee·라벨이 붙었는지 확인하고, PR URL·제목·base·assignee·라벨을 함께 사용자에게 보고하라.
 
 > Skip 조건: 없음 (필수 Phase)
