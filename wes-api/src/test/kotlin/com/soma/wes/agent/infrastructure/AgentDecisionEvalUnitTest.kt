@@ -1,8 +1,11 @@
 package com.soma.wes.agent.infrastructure
 
+import com.soma.wes.agent.domain.AgentSubject
 import com.soma.wes.agent.domain.PhotoFilter
 import com.soma.wes.agent.dto.AgentContextDto
 import com.soma.wes.agent.dto.AgentDecisionDto
+import com.soma.wes.agent.dto.AgentTurnDto
+import com.soma.wes.agent.dto.request.AgentMessageRequest
 import com.soma.wes.agent.exception.AgentException
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
@@ -14,6 +17,7 @@ import tools.jackson.databind.JsonNode
 import tools.jackson.databind.json.JsonMapper
 import java.io.File
 import java.time.Duration
+import tools.jackson.module.kotlin.KotlinModule
 
 /**
  * 질문 세트 측정(강화 계획 1단계). AI repo 질문 세트(원문 62 · 바꿔 말하기 124)를 판단기로 판단해 프로토타입과 같은 모양의
@@ -23,15 +27,16 @@ import java.time.Duration
  *   AGENT_EVAL_LABEL=sonnet-4-6 AGENT_EVAL_RUNS=3 \
  *     ./gradlew :wes-api:test --rerun --tests '*AgentDecisionEvalUnitTest*'
  *
- * 운영 판단기 구현([ConverseDecisionClient])으로 실제 Bedrock을 부른다 — 돈이 든다(102문항 1회 ≈ $0.4).
+ * 운영 판단기 구현([ConverseDecisionClient])으로 실제 Bedrock을 부른다 — 돈이 든다(세트 v3 134문항 1회 ≈ $0.6).
  * bedrock 손잡이는 운영 기본값(도구 강제·캐시 켬)에서 시작한다: AGENT_EVAL_FORCE_TOOL=0·AGENT_EVAL_CACHE=0으로 끄고, AGENT_EVAL_NO_THINKING=1로 생각을 끈다.
  * 문항마다 지연(ms)·토큰을 남기고, 프로세스의 첫 호출은 콜드(`cold`)로 표시해 채점기가 지연 백분위에서 뺀다.
- * 판단기가 받는 문맥은 그 폴더의 `out/catalog.json`(갤러리 1, dataset2 7,189장)과 고른 사진 30장(골든 세트)이다.
+ * 판단기가 받는 문맥은 그 폴더의 `out/catalog.json`(갤러리 1, dataset2 7,189장, 세부 폴더 subject 포함)과 고른 사진 30장(골든 세트)이다.
+ * 세트 v3의 꼬리질문 문항은 `history`(웹이 돌려보내는 요청 칸과 같은 모양)를 판단 문맥에 싣는다.
  */
 @EnabledIfEnvironmentVariable(named = "AGENT_EVAL", matches = "1")
 class AgentDecisionEvalUnitTest {
 
-    private val mapper = JsonMapper.builder().build()
+    private val mapper = JsonMapper.builder().addModule(KotlinModule.Builder().build()).build()
     private val dir = File(checkNotNull(System.getenv("AGENT_EVAL_DIR")) { "AGENT_EVAL_DIR 에 질문 세트 폴더를 준다" })
     private val model = System.getenv("AGENT_EVAL_MODEL") ?: DEFAULT_MODEL
     private val label = System.getenv("AGENT_EVAL_LABEL") ?: "bedrock-$model"
@@ -44,7 +49,7 @@ class AgentDecisionEvalUnitTest {
         private const val DEFAULT_MODEL = "global.anthropic.claude-sonnet-4-6"
         private const val SELECTED_COUNT = 30
         private const val NANOS_PER_MILLI = 1_000_000
-        /** 세트 파일. 세트 v2(#348 PR-2)는 AGENT_EVAL_SETS=questions_v2 로 고른다. */
+        /** 세트 파일. 세트 v2(#348 PR-2)는 AGENT_EVAL_SETS=questions_v2, v3(#403)은 questions_v3 로 고른다. */
         private val QUESTION_FILES = (System.getenv("AGENT_EVAL_SETS") ?: "questions,questions_paraphrase").split(",").map { "$it.jsonl" }
         private val TIMEOUT: Duration = Duration.ofSeconds(30)
     }
@@ -70,7 +75,7 @@ class AgentDecisionEvalUnitTest {
         usage.clear()
         val startedAt = System.nanoTime()
         val decision = try {
-            decide(question.path("text").asString(), context)
+            decide(question.path("text").asString(), context.copy(history = history(question)))
         } catch (e: AgentException) {
             AgentDecisionDto.Clarify("판단 실패: ${e.message}")
         } catch (e: SdkException) {
@@ -91,6 +96,22 @@ class AgentDecisionEvalUnitTest {
             "pred" to prototypePrediction(decision),
         )
     }
+
+    /** 문항의 `history`는 요청 DTO와 같은 모양이다 — 서비스와 같은 변환으로 판단 문맥에 싣는다. */
+    private fun history(question: JsonNode): List<AgentTurnDto> =
+        question.path("history").values().map { node ->
+            val turn = mapper.treeToValue(node, AgentMessageRequest.Turn::class.java)
+            AgentTurnDto(
+                role = turn.role,
+                text = turn.text,
+                kind = turn.kind,
+                folderCandidates = turn.folderCandidates.map {
+                    AgentDecisionDto.FolderTarget(conceptFolderId = it.conceptFolderId, detailFolderId = it.detailFolderId)
+                },
+                filter = turn.filter,
+                checkCodes = turn.checkCodes,
+            )
+        }
 
     /** 원 응답에서 토큰 수(캐시 읽기 포함)를 꺼낸다. */
     private fun decide(question: String, context: AgentContextDto): AgentDecisionDto {
@@ -188,6 +209,7 @@ class AgentDecisionEvalUnitTest {
                             id = detail.path("id").asLong(),
                             name = detail.path("name").asString(),
                             photoCount = detail.path("photos").asInt(),
+                            mainSubject = AgentSubject.fromAnalysis(detail.path("subject").asString(null)),
                         )
                     },
                 )
