@@ -1,0 +1,14 @@
+package com.soma.wes.agent.domain
+
+/** 질문 하나에 돌려주는 답의 종류. 화면이 무엇을 할지(폴더 열기·필터·답만·확인 버튼)가 여기서 갈린다. */
+enum class AgentReplyKind {
+    FIND_FOLDER,
+    FILTER_PHOTOS,
+    STATS,
+    PLAN_ACTION,
+    CLARIFY,
+    /** 사용법·상태 답(#348 ⑤). 문장과 주제, 갈 수 있는 화면 버튼. */
+    EXPLAIN,
+    /** 제출 전 점검(#403 ④). 서버가 센 항목과 번호 붙은 문장. 읽기만 한다. */
+    CHECK,
+}
