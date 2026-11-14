@@ -16,3 +16,5 @@ wes-admin-api/src/test/kotlin/com/soma/wes/admin/resource/AdminRetouchArtifactSe
 wes-admin-api/src/test/kotlin/com/soma/wes/admin/resource/AdminWorkflowControllerTest.kt
 wes-admin-api/src/test/kotlin/com/soma/wes/admin/resource/AdminWorkflowExecutorTest.kt
 wes-admin-api/src/test/kotlin/com/soma/wes/admin/resource/AdminWorkflowServiceTest.kt
+# 셀렉 도우미 질문 세트 측정 하네스(#403) — 클래스 하나의 테스트가 아니라 AGENT_EVAL=1 일 때만 실제 Bedrock으로 세트를 돌린다. scripts/dev-tools/agent-eval.sh 가 이 이름으로 부른다
+wes-api/src/test/kotlin/com/soma/wes/agent/infrastructure/AgentDecisionEvalUnitTest.kt

@@ -324,6 +324,8 @@ class AgentActionServiceTest @Autowired constructor(
                     AgentActionStep(op = AgentActionOp.SELECT_ADD, photoIds = scene.photoIds.take(2)),
                 )
             }.isInstanceOf(SelectionException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(SelectionErrorCode.MAX_SELECTABLE_PHOTO_COUNT_EXCEEDED)
             assertSoftly { softly ->
                 softly.assertThat(folderByPhotoId(scene)).isEqualTo(before)
                 softly.assertThat(selectedPhotoIds(selectionId)).isEmpty()
