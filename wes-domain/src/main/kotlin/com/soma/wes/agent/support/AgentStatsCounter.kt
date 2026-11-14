@@ -35,7 +35,7 @@ class AgentStatsCounter(
             StatsScope.SELECTED -> decision.filter.copy(selected = true)
             StatsScope.GALLERY -> decision.filter
         }
-        val photos = agentPhotoFinder.find(snapshot.photos, filter)
+        val photos = agentPhotoFinder.find(snapshot, filter)
 
         val rows = when (decision.metric) {
             StatsMetric.COUNT -> emptyList()

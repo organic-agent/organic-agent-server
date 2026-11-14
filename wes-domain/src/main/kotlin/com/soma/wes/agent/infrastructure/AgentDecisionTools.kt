@@ -32,7 +32,12 @@ object AgentDecisionTools {
             "likedByGuests": {"type": "boolean", "description": "true=가족·하객이 좋아요 누른 사진만, false=아무도 안 누른 사진만"},
             "hasComments": {"type": "boolean", "description": "true=댓글 달린 사진만, false=댓글 없는 사진만"},
             "minRating": {"type": "integer", "minimum": 1, "maximum": 5, "description": "별점이 이 값 이상인 사진만. '별 5개 준 거'=5, '별 4개 이상'=4"},
-            "hasMemo": {"type": "boolean", "description": "true=메모 남긴 사진만, false=메모 없는 사진만"}
+            "maxRating": {"type": "integer", "minimum": 1, "maximum": 5, "description": "별점이 이 값 이하인 사진만. '1점짜리'=minRating 1 + maxRating 1, '2점 이하'=2"},
+            "hasMemo": {"type": "boolean", "description": "true=메모 남긴 사진만, false=메모 없는 사진만"},
+            "addedBy": {"enum": ["me", "partner"], "description": "이 사람이 선택에 담은 사진만. me=말하는 사람, partner=배우자(남편·아내)"},
+            "ratedBy": {"enum": ["me", "partner"], "description": "이 사람이 (마지막으로) 별점을 준 사진만"},
+            "memoBy": {"enum": ["me", "partner"], "description": "이 사람이 (마지막으로) 메모를 쓴 사진만"},
+            "commentedBy": {"enum": ["me", "partner"], "description": "이 사람이 댓글을 단 사진만"}
           }
         }
     """.trimIndent()

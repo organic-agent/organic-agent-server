@@ -10,6 +10,10 @@ import java.time.ZonedDateTime
  */
 data class AgentGallerySnapshotDto(
     val galleryId: Long,
+    /** 지금 묻는 사람 — [com.soma.wes.agent.domain.AgentActor.ME]. */
+    val viewerUserId: Long,
+    /** 나를 뺀 부부 참여자 — [com.soma.wes.agent.domain.AgentActor.PARTNER]. 배우자가 아직 없으면 비어 있다. */
+    val partnerUserIds: Set<Long>,
     val maxSelectablePhotoCount: Int?,
     /** 선택 앨범이 아직 제출되지 않았는가. 제출 뒤에는 실행 계획을 만들지 않는다. */
     val selectionEditable: Boolean,

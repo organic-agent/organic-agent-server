@@ -2,11 +2,13 @@ package com.soma.wes.agent.service
 
 import com.soma.wes.agent.domain.AgentActionOp
 import com.soma.wes.agent.domain.AgentReplyKind
+import com.soma.wes.agent.domain.AgentTurnRole
 import com.soma.wes.agent.domain.PhotoFilter
 import com.soma.wes.agent.dto.AgentContextDto
 import com.soma.wes.agent.dto.AgentDecisionDto
 import com.soma.wes.agent.dto.PhotoReactionsDto
 import com.soma.wes.agent.dto.AgentGallerySnapshotDto
+import com.soma.wes.agent.dto.AgentTurnDto
 import com.soma.wes.agent.dto.request.AgentMessageRequest
 import com.soma.wes.agent.dto.response.AgentMessageResponse
 import com.soma.wes.agent.exception.AgentErrorCode
@@ -28,7 +30,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 
 /**
- * 셀렉 도우미의 질문 창구. 질문 하나 → 판단 한 번 → 답 하나다. 이전 대화는 기억하지 않는다.
+ * 셀렉 도우미의 질문 창구. 질문 하나 → 판단 한 번 → 답 하나다. 대화는 저장하지 않는다 — 웹이 최근 대화를 돌려보내면 판단 문맥으로만 쓴다.
  *
  * 아무것도 쓰지 않는다. 사진을 넣고 빼고 옮기는 일은 계획만 돌려주고, 사용자가 확인하면 [AgentActionService]가 한다.
  * 트랜잭션이 없다 — 갤러리는 [AgentGalleryLoader]가 읽고 닫은 뒤에 판단(Bedrock)을 기다린다.
@@ -72,10 +74,11 @@ class AgentMessageService(
 
         val question = request.text.trim()
         if (question.isEmpty()) throw AgentException(AgentErrorCode.EMPTY_QUESTION)
+        val history = loadHistory(request.history)
         agentQuestionLimiter.acquire(userId)
 
-        val snapshot = agentGalleryLoader.load(galleryId)
-        val context = agentContextBuilder.build(snapshot, request.screen)
+        val snapshot = agentGalleryLoader.load(galleryId, userId)
+        val context = agentContextBuilder.build(snapshot, request.screen, history)
 
         val decision = decide(question, context)
         log.info("셀렉 도우미 판단: galleryId={}, decision={}", galleryId, decision::class.simpleName)
@@ -87,6 +90,34 @@ class AgentMessageService(
             is AgentDecisionDto.PlanAction -> planAction(snapshot, decision)
             is AgentDecisionDto.Clarify -> clarify(decision.question)
             is AgentDecisionDto.Explain -> explain(snapshot, decision)
+        }
+    }
+
+    /**
+     * 웹이 돌려보낸 최근 대화를 판단 문맥으로 옮긴다. 모양(개수·USER로 시작해 번갈아·ASSISTANT로 끝남·길이)을 어기면 400이다 —
+     * Converse는 user·assistant가 번갈아 와야 받는다. 내용은 믿지 않는다: 폴더 id는 열 때 [candidate]가, 사진은 [AgentPhotoFinder]가 다시 본다.
+     */
+    private fun loadHistory(turns: List<AgentMessageRequest.Turn>): List<AgentTurnDto> {
+        if (turns.size > AgentMessageRequest.MAX_HISTORY || turns.size % 2 != 0) throw AgentException(AgentErrorCode.INVALID_HISTORY)
+
+        return turns.mapIndexed { index, turn ->
+            val expectedRole = if (index % 2 == 0) AgentTurnRole.USER else AgentTurnRole.ASSISTANT
+            val maxLength = when (turn.role) {
+                AgentTurnRole.USER -> AgentMessageRequest.MAX_TEXT_LENGTH
+                AgentTurnRole.ASSISTANT -> AgentMessageRequest.MAX_ASSISTANT_TEXT_LENGTH
+            }
+            val text = turn.text.trim()
+            if (turn.role != expectedRole || text.isEmpty() || text.length > maxLength) throw AgentException(AgentErrorCode.INVALID_HISTORY)
+
+            AgentTurnDto(
+                role = turn.role,
+                text = text,
+                kind = turn.kind,
+                folderCandidates = turn.folderCandidates.map {
+                    AgentDecisionDto.FolderTarget(conceptFolderId = it.conceptFolderId, detailFolderId = it.detailFolderId)
+                },
+                filter = turn.filter,
+            )
         }
     }
 
@@ -130,7 +161,8 @@ class AgentMessageService(
     }
 
     private fun filterPhotos(snapshot: AgentGallerySnapshotDto, decision: AgentDecisionDto.FilterPhotos): AgentMessageResponse {
-        val photos = agentPhotoFinder.find(snapshot.photos, decision.filter)
+        if (isPartnerMissing(snapshot, decision.filter)) return clarify(agentReplyWriter.noPartner())
+        val photos = agentPhotoFinder.find(snapshot, decision.filter)
         val reactions = reactions(decision.filter, photos.map { it.photoId })
 
         return AgentMessageResponse(
@@ -141,7 +173,12 @@ class AgentMessageService(
         )
     }
 
+    /** 배우자가 아직 갤러리에 없는데 배우자를 가리키면, 0장이라고 답하지 않고 그 까닭을 말한다(#403 5-3). */
+    private fun isPartnerMissing(snapshot: AgentGallerySnapshotDto, filter: PhotoFilter): Boolean =
+        filter.refersToPartner() && snapshot.partnerUserIds.isEmpty()
+
     private fun stats(snapshot: AgentGallerySnapshotDto, decision: AgentDecisionDto.Stats): AgentMessageResponse {
+        if (isPartnerMissing(snapshot, decision.filter)) return clarify(agentReplyWriter.noPartner())
         val stats = agentStatsCounter.count(snapshot, decision)
 
         return AgentMessageResponse(
@@ -157,10 +194,11 @@ class AgentMessageService(
      */
     private fun planAction(snapshot: AgentGallerySnapshotDto, decision: AgentDecisionDto.PlanAction): AgentMessageResponse {
         if (!snapshot.selectionEditable) return clarify(agentReplyWriter.notEditable())
+        if (isPartnerMissing(snapshot, decision.filter)) return clarify(agentReplyWriter.noPartner())
         val targetId = decision.targetDetailFolderId.takeIf { decision.op == AgentActionOp.MOVE }
         val targetName = if (targetId == null) null else detailName(snapshot, targetId) ?: return clarify(MOVE_TARGET_UNKNOWN)
 
-        val matched = agentPhotoFinder.find(snapshot.photos, decision.filter)
+        val matched = agentPhotoFinder.find(snapshot, decision.filter)
         val action = agentActionPlanner.plan(snapshot, decision, matched)
 
         return AgentMessageResponse(

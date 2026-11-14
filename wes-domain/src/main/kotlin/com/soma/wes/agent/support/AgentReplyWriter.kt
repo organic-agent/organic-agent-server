@@ -19,7 +19,7 @@ class AgentReplyWriter {
         const val IMBALANCE_RATIO = 2
         private const val ROW_SEPARATOR = " · "
 
-        /** 균형을 말하는 집계 — 고른 사람이 정한 칸(폴더·피사체)만. 방향·별점·라벨은 치우침이 문제가 아니다. */
+        /** 균형을 말하는 집계 — 고른 사람이 정한 칸(폴더·피사체)만. 방향·별점은 치우침이 문제가 아니다. */
         private val BALANCED_METRICS = setOf(StatsMetric.BY_CONCEPT, StatsMetric.BY_DETAIL, StatsMetric.BY_SUBJECTS)
     }
 
@@ -27,7 +27,8 @@ class AgentReplyWriter {
         if (candidates.size == 1) {
             "'${candidates.single().name}' 폴더를 열었어요."
         } else {
-            "이 중 어느 폴더일까요? ${candidates.joinToString(ROW_SEPARATOR) { it.name }} — 가장 비슷한 첫 번째를 열었어요."
+            val numbered = candidates.mapIndexed { index, candidate -> "${index + 1}. ${candidate.name}" }
+            "이 중 어느 폴더일까요? ${numbered.joinToString(ROW_SEPARATOR)} — 가장 비슷한 첫 번째를 열었어요."
         }
 
     fun noFolder(): String = "말씀하신 폴더를 찾지 못했어요. 폴더 이름이나 찍은 순서로 다시 말해 주세요."
@@ -101,6 +102,8 @@ class AgentReplyWriter {
         val broad = if (action.broad) " 대부분의 사진이 바뀌는 큰 변경이에요. 정말 이대로 할지 확인해 주세요." else ""
         return "$main$skipped$overLimit$broad${unsupportedNote(unsupported)}"
     }
+
+    fun noPartner(): String = "배우자분이 아직 갤러리에 들어오지 않아서 그 조건으로는 거를 수 없어요."
 
     fun notEditable(): String = "선택을 이미 제출해서 사진을 넣거나 빼거나 옮길 수 없어요."
 

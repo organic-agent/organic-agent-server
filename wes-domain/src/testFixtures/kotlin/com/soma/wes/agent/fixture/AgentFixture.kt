@@ -101,6 +101,22 @@ class AgentFixture(
         collabGuestService.writeComment(collabToken, scene.photoIds[3], null, guest.guestToken, WriteCollabCommentRequest(content = "이 사진이 제일 예뻐요"))
     }
 
+    /** 같은 갤러리의 두 번째 부부 참여자. 묻는 사람([AgentScene.memberId])에게는 배우자다. */
+    fun 배우자(scene: AgentScene): Long = galleryFixture.멤버(scene.galleryId).requiredId
+
+    /** 별점은 사진당 한 줄이라 나중에 매긴 사람이 앞사람을 덮는다 — 서비스로 남겨 그 규칙을 탄다. */
+    fun 별점(scene: AgentScene, photoIndex: Int, userId: Long, score: Int) {
+        photoRatingService.rate(scene.galleryId, scene.photoIds[photoIndex], userId, RatePhotoRequest(score = score))
+    }
+
+    fun 댓글(scene: AgentScene, photoIndex: Int, userId: Long) {
+        photoCommentService.write(scene.galleryId, scene.photoIds[photoIndex], userId, WritePhotoCommentRequest(content = "좋다"))
+    }
+
+    fun 메모(scene: AgentScene, photoIndex: Int, userId: Long) {
+        photoFixture.메모_적재(scene.photoIds[photoIndex], userId)
+    }
+
     private data class PhotoSpec(
         val subjects: String,
         val burstId: Int,

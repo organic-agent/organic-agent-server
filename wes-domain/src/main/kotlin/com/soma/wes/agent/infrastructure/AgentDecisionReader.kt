@@ -1,6 +1,7 @@
 package com.soma.wes.agent.infrastructure
 
 import com.soma.wes.agent.domain.AgentActionOp
+import com.soma.wes.agent.domain.AgentActor
 import com.soma.wes.agent.domain.AgentSubject
 import com.soma.wes.agent.domain.ExplainTopic
 import com.soma.wes.agent.domain.PhotoFilter
@@ -104,9 +105,17 @@ class AgentDecisionReader(
             burstRepresentativeOnly = node.path("burstRep").asBoolean(false),
             likedByGuests = node.path("likedByGuests").takeIf { it.isBoolean }?.asBoolean(),
             hasComments = node.path("hasComments").takeIf { it.isBoolean }?.asBoolean(),
-            minRating = node.path("minRating").takeIf { it.isIntegralNumber }?.asInt()?.coerceIn(PhotoFilter.MIN_RATING, PhotoFilter.MAX_RATING),
+            minRating = rating(node.path("minRating")),
+            maxRating = rating(node.path("maxRating")),
             hasMemo = node.path("hasMemo").takeIf { it.isBoolean }?.asBoolean(),
+            addedBy = enumOf<AgentActor>(node.path("addedBy")),
+            ratedBy = enumOf<AgentActor>(node.path("ratedBy")),
+            memoBy = enumOf<AgentActor>(node.path("memoBy")),
+            commentedBy = enumOf<AgentActor>(node.path("commentedBy")),
         )
+
+    private fun rating(node: JsonNode): Int? =
+        node.takeIf { it.isIntegralNumber }?.asInt()?.coerceIn(PhotoFilter.MIN_RATING, PhotoFilter.MAX_RATING)
 
     private fun unsupported(node: JsonNode): List<UnsupportedCondition> =
         node.mapNotNull { enumOf<UnsupportedCondition>(it) }.distinct()

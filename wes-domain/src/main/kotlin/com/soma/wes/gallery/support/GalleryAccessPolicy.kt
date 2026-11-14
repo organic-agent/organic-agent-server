@@ -275,6 +275,25 @@ class GalleryAccessPolicy(
         return gallery
     }
 
+    /**
+     * 이 갤러리의 부부 참여자 — [requireParticipant]와 같은 기준이다(개인 갤러리는 작업공간 소유자·초대된 MEMBER, 스튜디오 갤러리는 초대 멤버).
+     *
+     * 셀렉 도우미가 "배우자"를 나를 뺀 참여자로 푼다(`AgentGalleryLoader`).
+     */
+    @Transactional(readOnly = true)
+    fun findParticipantUserIds(galleryId: Long): Set<Long> {
+        val gallery = galleryRepository.requireById(galleryId)
+        val workspace = findWorkspace(gallery.workspaceId) ?: return emptySet()
+
+        if (workspace.type == WorkspaceType.PERSONAL) {
+            return workspaceMemberRepository.findAllByWorkspaceId(gallery.workspaceId)
+                .filter { it.role == WorkspaceRole.MEMBER || it.userId == workspace.personalOwnerUserId }
+                .map { it.userId }
+                .toSet()
+        }
+        return galleryMemberRepository.findAllByGalleryId(galleryId).map { it.userId }.toSet()
+    }
+
     /** 부부(초대 고객·개인 갤러리 참여자)인지 확인하고, 판단에 쓴 작업공간을 돌려준다. */
     private fun requireParticipant(gallery: Gallery, userId: Long): WorkspaceAccessDto {
         val workspace = findWorkspace(gallery.workspaceId)

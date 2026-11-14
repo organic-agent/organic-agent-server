@@ -1,9 +1,11 @@
 package com.soma.wes.agent.service
 
 import com.soma.wes.agent.domain.AgentActionOp
+import com.soma.wes.agent.domain.AgentActor
 import com.soma.wes.agent.domain.AgentReplyKind
 import com.soma.wes.agent.domain.AgentScreen
 import com.soma.wes.agent.domain.AgentSubject
+import com.soma.wes.agent.domain.AgentTurnRole
 import com.soma.wes.agent.domain.ExplainTopic
 import com.soma.wes.agent.domain.PhotoFilter
 import com.soma.wes.agent.domain.StatsMetric
@@ -43,9 +45,14 @@ class AgentMessageServiceTest @Autowired constructor(
         fakeDecisionClient.reset()
     }
 
-    private fun send(scene: AgentScene, decision: AgentDecisionDto, text: String = "질문"): AgentMessageResponse {
+    private fun send(
+        scene: AgentScene,
+        decision: AgentDecisionDto,
+        text: String = "질문",
+        history: List<AgentMessageRequest.Turn> = emptyList(),
+    ): AgentMessageResponse {
         fakeDecisionClient.decision = decision
-        return agentMessageService.send(scene.galleryId, scene.memberId, AgentMessageRequest(text = text))
+        return agentMessageService.send(scene.galleryId, scene.memberId, AgentMessageRequest(text = text, history = history))
     }
 
     @Nested
@@ -73,6 +80,73 @@ class AgentMessageServiceTest @Autowired constructor(
                 softly.assertThat(context.selectedCount).isEqualTo(2)
                 softly.assertThat(context.maxSelectablePhotoCount).isEqualTo(5)
             }
+        }
+
+        @Test
+        fun `세부 폴더마다 사진 대부분의 피사체를 주고 섞였으면 비운다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+
+            // when
+            send(scene, AgentDecisionDto.Clarify("되묻기"))
+
+            // then
+            val subjectByDetail = fakeDecisionClient.contexts.single().concepts.flatMap { it.details }.associate { it.name to it.mainSubject }
+            assertThat(subjectByDetail).isEqualTo(mapOf("화이트A" to null, "정원" to AgentSubject.COUPLE, "노을" to AgentSubject.COUPLE))
+        }
+
+        @Test
+        fun `웹이 돌려보낸 최근 대화를 후보 폴더와 필터까지 판단 문맥으로 넘긴다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+            val filter = PhotoFilter(conceptFolderIds = listOf(scene.outdoorConceptId))
+            val history = listOf(
+                AgentMessageRequest.Turn(role = AgentTurnRole.USER, text = "노을 폴더 어디 있어?"),
+                AgentMessageRequest.Turn(
+                    role = AgentTurnRole.ASSISTANT,
+                    text = "이 중 어느 폴더일까요? 1. 야외 > 정원 · 2. 야외 > 노을",
+                    kind = AgentReplyKind.FIND_FOLDER,
+                    folderCandidates = listOf(
+                        AgentMessageRequest.FolderRef(conceptFolderId = scene.outdoorConceptId, detailFolderId = scene.gardenDetailId),
+                        AgentMessageRequest.FolderRef(conceptFolderId = scene.outdoorConceptId, detailFolderId = scene.sunsetDetailId),
+                    ),
+                    filter = filter,
+                ),
+            )
+
+            // when
+            send(scene, AgentDecisionDto.Clarify("되묻기"), text = "두 번째 거 열어줘", history = history)
+
+            // then
+            val turns = fakeDecisionClient.contexts.single().history
+            assertSoftly { softly ->
+                softly.assertThat(turns.map { it.role }).containsExactly(AgentTurnRole.USER, AgentTurnRole.ASSISTANT)
+                softly.assertThat(turns.last().folderCandidates.map { it.detailFolderId }).containsExactly(scene.gardenDetailId, scene.sunsetDetailId)
+                softly.assertThat(turns.last().filter).isEqualTo(filter)
+            }
+        }
+
+        @Test
+        fun `최근 대화가 모양을 어기면 판단하지 않고 거절한다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+            val user = AgentMessageRequest.Turn(role = AgentTurnRole.USER, text = "질문")
+            val assistant = AgentMessageRequest.Turn(role = AgentTurnRole.ASSISTANT, text = "답")
+            val invalidHistories = listOf(
+                listOf(user),
+                listOf(assistant, user),
+                List(4) { listOf(user, assistant) }.flatten(),
+                listOf(user.copy(text = "가".repeat(AgentMessageRequest.MAX_TEXT_LENGTH + 1)), assistant),
+            )
+
+            // when & then
+            for (history in invalidHistories) {
+                assertThatThrownBy { send(scene, AgentDecisionDto.Clarify("되묻기"), history = history) }
+                    .isInstanceOf(AgentException::class.java)
+                    .extracting("errorCode")
+                    .isEqualTo(AgentErrorCode.INVALID_HISTORY)
+            }
+            assertThat(fakeDecisionClient.contexts).isEmpty()
         }
     }
 
@@ -462,6 +536,91 @@ class AgentMessageServiceTest @Autowired constructor(
             assertSoftly { softly ->
                 softly.assertThat(response.kind).isEqualTo(AgentReplyKind.CLARIFY)
                 softly.assertThat(response.reply).contains("이미 제출")
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("누가 했는지로 거를 때")
+    inner class Actor {
+
+        @Test
+        fun `내가 담은 사진과 배우자가 담은 사진을 묻는 사람 기준으로 가른다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+            val partnerId = agentFixture.배우자(scene)
+            val selectionId = selectionFixture.셀렉(scene.galleryId)
+            selectionFixture.담긴_사진(selectionId, scene.photoIds.take(2), addedByUserId = scene.memberId)
+            selectionFixture.담긴_사진(selectionId, listOf(scene.photoIds[2]), addedByUserId = partnerId, sortOrderFrom = 2)
+
+            // when
+            val mine = send(scene, AgentDecisionDto.FilterPhotos(PhotoFilter(addedBy = AgentActor.ME)))
+            val partners = send(scene, AgentDecisionDto.FilterPhotos(PhotoFilter(addedBy = AgentActor.PARTNER)))
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(mine.view?.photoIds).containsExactly(scene.photoIds[0], scene.photoIds[1])
+                softly.assertThat(partners.view?.photoIds).containsExactly(scene.photoIds[2])
+            }
+        }
+
+        @Test
+        fun `배우자가 준 1점은 마지막으로 매긴 사람이 배우자인 1점 사진만이다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+            val partnerId = agentFixture.배우자(scene)
+            agentFixture.별점(scene, 0, scene.memberId, score = 1)
+            agentFixture.별점(scene, 1, partnerId, score = 1)
+            agentFixture.별점(scene, 2, partnerId, score = 5)
+            agentFixture.별점(scene, 3, partnerId, score = 1)
+            agentFixture.별점(scene, 3, scene.memberId, score = 1)
+            val filter = PhotoFilter(ratedBy = AgentActor.PARTNER, minRating = 1, maxRating = 1)
+
+            // when
+            val response = send(scene, AgentDecisionDto.FilterPhotos(filter))
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.view?.photoIds).containsExactly(scene.photoIds[1])
+                softly.assertThat(response.view?.reactions?.map { it.photoId }).containsExactly(scene.photoIds[1])
+            }
+        }
+
+        @Test
+        fun `배우자가 댓글 단 사진과 내가 메모한 사진을 거른다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+            val partnerId = agentFixture.배우자(scene)
+            agentFixture.댓글(scene, 4, partnerId)
+            agentFixture.댓글(scene, 5, scene.memberId)
+            agentFixture.메모(scene, 6, scene.memberId)
+            agentFixture.메모(scene, 7, partnerId)
+
+            // when
+            val commented = send(scene, AgentDecisionDto.FilterPhotos(PhotoFilter(commentedBy = AgentActor.PARTNER)))
+            val memo = send(scene, AgentDecisionDto.FilterPhotos(PhotoFilter(memoBy = AgentActor.ME)))
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(commented.view?.photoIds).containsExactly(scene.photoIds[4])
+                softly.assertThat(memo.view?.photoIds).containsExactly(scene.photoIds[6])
+            }
+        }
+
+        @Test
+        fun `배우자가 아직 없으면 0장이라 답하지 않고 그 까닭을 말한다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+
+            // when
+            val filtered = send(scene, AgentDecisionDto.FilterPhotos(PhotoFilter(addedBy = AgentActor.PARTNER)))
+            val counted = send(scene, AgentDecisionDto.Stats(StatsMetric.COUNT, StatsScope.GALLERY, PhotoFilter(ratedBy = AgentActor.PARTNER)))
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(filtered.kind).isEqualTo(AgentReplyKind.CLARIFY)
+                softly.assertThat(filtered.reply).contains("배우자분이 아직 갤러리에 들어오지 않아서")
+                softly.assertThat(counted.kind).isEqualTo(AgentReplyKind.CLARIFY)
             }
         }
     }

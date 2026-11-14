@@ -25,8 +25,9 @@ class AgentGalleryLoader(
     private val galleryAccessPolicy: GalleryAccessPolicy,
 ) {
 
+    /** [userId]는 묻는 사람이다 — 나·배우자 조건을 이 사람 기준으로 푼다. */
     @Transactional(readOnly = true)
-    fun load(galleryId: Long): AgentGallerySnapshotDto {
+    fun load(galleryId: Long, userId: Long): AgentGallerySnapshotDto {
         val gallery = galleryRepository.requireById(galleryId)
         val selection = photoSelectionRepository.findByGalleryId(galleryId)
 
@@ -37,6 +38,8 @@ class AgentGalleryLoader(
 
         return AgentGallerySnapshotDto(
             galleryId = galleryId,
+            viewerUserId = userId,
+            partnerUserIds = galleryAccessPolicy.findParticipantUserIds(galleryId) - userId,
             maxSelectablePhotoCount = gallery.maxSelectablePhotoCount,
             selectionEditable = selection?.isSubmitted != true,
             concepts = concepts.map { concept ->

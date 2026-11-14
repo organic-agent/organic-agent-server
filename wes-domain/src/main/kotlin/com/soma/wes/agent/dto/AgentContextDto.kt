@@ -1,5 +1,6 @@
 package com.soma.wes.agent.dto
 
+import com.soma.wes.agent.domain.AgentSubject
 import com.soma.wes.agent.domain.PhotoFilter
 
 /**
@@ -13,6 +14,8 @@ data class AgentContextDto(
     val selectedCount: Int,
     val maxSelectablePhotoCount: Int?,
     val screen: Screen?,
+    /** 웹이 돌려보낸 최근 대화, 오래된 것부터. 판단기가 "두 번째 거"·"아까 그 폴더"를 푼다. */
+    val history: List<AgentTurnDto> = emptyList(),
 ) {
 
     data class Concept(
@@ -30,6 +33,8 @@ data class AgentContextDto(
         val id: Long,
         val name: String,
         val photoCount: Int,
+        /** 폴더 사진 대부분이 이 피사체면 그것, 섞였으면 null. 사진 피사체로 그때그때 센다 — 폴더에 저장된 값이 아니다. */
+        val mainSubject: AgentSubject? = null,
     )
 
     /** 사용자가 지금 보고 있는 화면. "지금 보이는 거"를 이것으로 푼다. */

@@ -53,6 +53,7 @@ class ConverseDecisionClient(
         /** 도구 인자만 받는다. 프로토타입 기준 출력은 100토큰 안팎이다. */
         const val MAX_TOKENS = 600
         private const val NANOS_PER_MILLI = 1_000_000
+        private const val USER_ROLE = "user"
         private val CACHE_POINT: CachePointBlock = CachePointBlock.builder().type(CachePointType.DEFAULT).build()
     }
 
@@ -97,13 +98,24 @@ class ConverseDecisionClient(
         val builder = ConverseRequest.builder()
             .modelId(modelId)
             .system(system)
-            .messages(Message.builder().role("user").content(ContentBlock.fromText(question)).build())
+            .messages(messages(question, context))
             .toolConfig(tools)
             .inferenceConfig { it.maxTokens(MAX_TOKENS) }
         if (disableThinking) {
             builder.additionalModelRequestFields(Document.mapBuilder().putDocument("thinking", Document.mapBuilder().putString("type", "disabled").build()).build())
         }
         return builder.build()
+    }
+
+    /** 앞 대화 턴(오래된 것부터) 다음에 지금 질문. 서비스가 USER로 시작해 번갈아 ASSISTANT로 끝나는 것을 확인했다. */
+    private fun messages(question: String, context: AgentContextDto): List<Message> {
+        val previous = context.history.map { turn ->
+            Message.builder()
+                .role(turn.role.name.lowercase())
+                .content(ContentBlock.fromText(AgentDecisionPrompt.turn(turn, objectMapper)))
+                .build()
+        }
+        return previous + Message.builder().role(USER_ROLE).content(ContentBlock.fromText(question)).build()
     }
 
     private fun toolConfiguration(): ToolConfiguration {

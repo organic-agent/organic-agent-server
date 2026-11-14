@@ -1,6 +1,8 @@
 package com.soma.wes.agent.support
 
+import com.soma.wes.agent.domain.AgentActor
 import com.soma.wes.agent.domain.PhotoFilter
+import com.soma.wes.agent.dto.AgentGallerySnapshotDto
 import com.soma.wes.agent.repository.projection.AgentPhotoRow
 import org.springframework.stereotype.Component
 
@@ -14,8 +16,14 @@ class AgentPhotoFinder {
         const val BURST_REPRESENTATIVE_RANK = 0
     }
 
-    fun find(photos: List<AgentPhotoRow>, filter: PhotoFilter): List<AgentPhotoRow> =
-        photos.filter { photo -> matches(photo, filter) }
+    /** 나·배우자 조건은 [snapshot]의 묻는 사람 기준으로 푼다. */
+    fun find(snapshot: AgentGallerySnapshotDto, filter: PhotoFilter): List<AgentPhotoRow> {
+        val actors = mapOf(
+            AgentActor.ME to setOf(snapshot.viewerUserId),
+            AgentActor.PARTNER to snapshot.partnerUserIds,
+        )
+        return snapshot.photos.filter { photo -> matches(photo, filter) && matchesActors(photo, filter, actors) }
+    }
 
     private fun matches(photo: AgentPhotoRow, filter: PhotoFilter): Boolean {
         if (filter.hasFolder() && !inFolder(photo, filter)) return false
@@ -26,8 +34,19 @@ class AgentPhotoFinder {
         if (filter.likedByGuests != null && (photo.likeCount > 0) != filter.likedByGuests) return false
         if (filter.hasComments != null && (photo.commentCount > 0) != filter.hasComments) return false
         if (filter.minRating != null && (photo.rating == null || photo.rating < filter.minRating)) return false
+        if (filter.maxRating != null && (photo.rating == null || photo.rating > filter.maxRating)) return false
         if (filter.hasMemo != null && photo.hasMemo != filter.hasMemo) return false
         return true
+    }
+
+    private fun matchesActors(photo: AgentPhotoRow, filter: PhotoFilter, actors: Map<AgentActor, Set<Long>>): Boolean {
+        fun did(actor: AgentActor?, userId: Long?): Boolean = actor == null || (userId != null && userId in actors.getValue(actor))
+
+        if (!did(filter.addedBy, photo.addedByUserId)) return false
+        if (!did(filter.ratedBy, photo.ratedByUserId)) return false
+        if (!did(filter.memoBy, photo.memoByUserId)) return false
+        val commenter = filter.commentedBy ?: return true
+        return photo.commentAuthorIds.any { it in actors.getValue(commenter) }
     }
 
     private fun inFolder(photo: AgentPhotoRow, filter: PhotoFilter): Boolean =

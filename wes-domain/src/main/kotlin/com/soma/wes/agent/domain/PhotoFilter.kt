@@ -22,8 +22,18 @@ data class PhotoFilter(
     val hasComments: Boolean? = null,
     /** 별점이 이 값 이상인 사진만(1~5). 별점 없는 사진은 안 걸린다. */
     val minRating: Int? = null,
+    /** 별점이 이 값 이하인 사진만(1~5). "1점짜리"는 minRating = maxRating = 1이다. */
+    val maxRating: Int? = null,
     /** true면 메모가 있는 사진만, false면 메모 없는 사진만. */
     val hasMemo: Boolean? = null,
+    /** 이 사람이 선택에 담은 사진만(`photo_selection_items.added_by_user_id`). */
+    val addedBy: AgentActor? = null,
+    /** 마지막으로 별점을 매긴 사람이 이 사람인 사진만 — 별점은 사진당 한 줄이라 앞사람의 별점은 덮인다(`photo_ratings.rated_by`). */
+    val ratedBy: AgentActor? = null,
+    /** 마지막으로 메모를 쓴 사람이 이 사람인 사진만(`photo_memos.updated_by`, 사진당 한 줄). */
+    val memoBy: AgentActor? = null,
+    /** 이 사람이 부부 댓글을 단 사진만(`photo_comments.author_id`). 하객 댓글은 사람이 아니라 이름표라 안 본다. */
+    val commentedBy: AgentActor? = null,
 ) {
 
     companion object {
@@ -37,5 +47,10 @@ data class PhotoFilter(
     fun hasFolder(): Boolean = conceptFolderIds.isNotEmpty() || detailFolderIds.isNotEmpty()
 
     /** 반응(좋아요·댓글·별점·메모)으로 거르는가 — 그 결과엔 반응 본문을 같이 싣는다. */
-    fun hasReactionCondition(): Boolean = likedByGuests != null || hasComments != null || minRating != null || hasMemo != null
+    fun hasReactionCondition(): Boolean =
+        likedByGuests != null || hasComments != null || minRating != null || maxRating != null || hasMemo != null ||
+            ratedBy != null || memoBy != null || commentedBy != null
+
+    /** 배우자를 가리키는가 — 배우자가 아직 없는 갤러리에서는 거르지 않고 되묻는다. */
+    fun refersToPartner(): Boolean = AgentActor.PARTNER in listOf(addedBy, ratedBy, memoBy, commentedBy)
 }

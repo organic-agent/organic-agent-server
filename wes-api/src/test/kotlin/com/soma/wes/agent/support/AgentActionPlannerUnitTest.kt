@@ -89,6 +89,8 @@ class AgentActionPlannerUnitTest {
         }
         return AgentGallerySnapshotDto(
             galleryId = 1,
+            viewerUserId = 1,
+            partnerUserIds = emptySet(),
             maxSelectablePhotoCount = null,
             selectionEditable = true,
             concepts = emptyList(),
