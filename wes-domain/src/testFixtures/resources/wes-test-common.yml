@@ -89,6 +89,9 @@ jwt:
   refresh-token-expiration: 14d
 
 app:
+  # 셀렉 도우미를 켠 채로 본다. 판단기는 FakeDecisionClient(FakeLlmConfig)라 Bedrock을 부르지 않는다.
+  agent:
+    enabled: true
   gallery-lifecycle:
     enabled: false
   admin:

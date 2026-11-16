@@ -199,8 +199,13 @@ app:
     # 폴더 단계만 따로 도는 주기 — categorize 결과가 오면 다음 스윕을 기다리지 않는다. 할 일 없으면 잡 조회 한 번.
     folder-interval: PT1S
 
+  agent:
+    # 셀렉 도우미 스위치(#403). app.llm.enabled와 함께 켜져야 판단기가 선다 — 운영 app.llm.enabled는 보정 다듬기로 이미 true라
+    # 배포와 켜기를 나눈다. dev·prod는 Parameter Store(/wes/{env}/app.agent.enabled)가 켠다. 꺼져 있으면 도우미만 503.
+    enabled: false
+
   llm:
-    # Bedrock(Anthropic Messages) 호출. 지금은 보정 요청 다듬기만 쓴다 — 꺼져 있으면 다듬지 못했다고 답한다.
+    # Bedrock(Anthropic Messages) 호출. 보정 요청 다듬기와 셀렉 도우미(app.agent.enabled도 필요)가 쓴다 — 꺼져 있으면 다듬지 못했다고 답한다.
     # prod는 Parameter Store(/wes/prod/app.llm.enabled=true)가 켠다. 로컬에서 켜려면 개발자 AWS
     # 자격증명에 bedrock:InvokeModel이 있어야 한다.
     enabled: false
