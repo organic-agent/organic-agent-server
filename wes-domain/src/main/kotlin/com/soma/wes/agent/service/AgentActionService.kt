@@ -1,5 +1,6 @@
 package com.soma.wes.agent.service
 
+import com.soma.wes.agent.config.AgentProperties
 import com.soma.wes.agent.domain.AgentActionOp
 import com.soma.wes.agent.domain.AgentActionStep
 import com.soma.wes.agent.dto.AgentAppliedStepDto
@@ -15,8 +16,11 @@ import com.soma.wes.folder.repository.ConceptFolderRepository
 import com.soma.wes.folder.repository.DetailFolderAssignmentRepository
 import com.soma.wes.folder.repository.DetailFolderRepository
 import com.soma.wes.folder.service.FolderService
+import com.soma.wes.gallery.repository.GalleryRepository
+import com.soma.wes.gallery.repository.requireWithLockById
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.config.StorageProperties
+import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.selection.dto.request.DeselectPhotosRequest
 import com.soma.wes.selection.dto.request.SelectPhotosRequest
 import com.soma.wes.selection.repository.PhotoSelectionItemRepository
@@ -36,10 +40,14 @@ import org.springframework.transaction.annotation.Transactional
  * 이름 바꾸기는 실행 순간의 이름이 계획의 [AgentActionStep.expectedName]과 다르면 건너뛴다(QA-11).
  * 한계: 빼고 다시 넣은 사진은 앨범 맨 뒤로 가고, 이동을 되돌린 사진의 배정 출처는 사람(USER)이 된다.
  * 옮기기 되돌리기는 그사이 배우자가 옮긴 사진도 이전 폴더로 되돌린다 — 이름 바꾸기와 달리 확인하지 않는다(#403 범위 밖).
+ *
+ * 지금 상태를 읽기 전에 쓰기 서비스와 같은 갤러리 잠금을 먼저 잡는다. 잠금 전에 읽으면 그사이 커밋된 배우자의 변경을 놓쳐
+ * 되돌리기가 옛 상태로 돌아간다. 도우미 스위치(`app.agent.enabled`)가 꺼지면 실행·되돌리기도 판단과 같은 503으로 막는다.
  */
 @Service
 class AgentActionService(
     private val galleryAccessPolicy: GalleryAccessPolicy,
+    private val galleryRepository: GalleryRepository,
     private val photoSelectionService: PhotoSelectionService,
     private val folderService: FolderService,
     private val photoSelectionRepository: PhotoSelectionRepository,
@@ -47,21 +55,27 @@ class AgentActionService(
     private val detailFolderAssignmentRepository: DetailFolderAssignmentRepository,
     private val conceptFolderRepository: ConceptFolderRepository,
     private val detailFolderRepository: DetailFolderRepository,
+    private val photoRepository: PhotoRepository,
     private val storageProperties: StorageProperties,
+    private val agentProperties: AgentProperties,
 ) {
 
     /** 동작을 순서대로 한 트랜잭션에서 실행한다. 하나라도 거절되면 아무것도 바뀌지 않는다. */
     @Transactional
     fun execute(galleryId: Long, userId: Long, request: AgentActionRequest): AgentActionResponse {
+        if (!agentProperties.enabled) throw AgentException(AgentErrorCode.DECISION_UNAVAILABLE)
         galleryAccessPolicy.requireParticipantViewer(galleryId, userId)
 
         validateSteps(request.steps)
 
         val results = request.steps.mapNotNull { step -> apply(galleryId = galleryId, userId = userId, step = step) }
+        val undo = results.reversed().flatMap { it.undo }
+        // 옮기기 하나가 이전 폴더마다 되돌리기 하나로 갈라져 늘 수 있다. 실행 창구가 받지 못할 되돌리기는 돌려주지 않고 전체를 거절한다.
+        if (undo.size > AgentActionRequest.MAX_STEPS) throw AgentException(AgentErrorCode.INVALID_ACTION)
 
         return AgentActionResponse(
             applied = results.map { it.applied },
-            undo = AgentActionRequest(steps = results.reversed().flatMap { it.undo }),
+            undo = AgentActionRequest(steps = undo),
         )
     }
 
@@ -102,6 +116,7 @@ class AgentActionService(
 
     /** 이미 담긴 사진은 건너뛴다. 담기 한 번의 상한(`app.storage.max-batch-size`)을 넘으면 나눠 담는다. */
     private fun selectAdd(galleryId: Long, userId: Long, photoIds: List<Long>): AgentAppliedStepDto? {
+        galleryRepository.requireWithLockById(galleryId)
         val selected = selectedPhotoIds(galleryId)
         val adding = photoIds.filter { it !in selected }
         if (adding.isEmpty()) return null
@@ -116,7 +131,9 @@ class AgentActionService(
         )
     }
 
+    /** 앨범에 없는 사진은 건너뛴다 — 기존 빼기 API(`PhotoSelectionService.deselect`)와 같다. */
     private fun selectRemove(galleryId: Long, userId: Long, photoIds: List<Long>): AgentAppliedStepDto? {
+        galleryRepository.requireWithLockById(galleryId)
         val selected = selectedPhotoIds(galleryId)
         val removing = photoIds.filter { it in selected }
         if (removing.isEmpty()) return null
@@ -134,8 +151,15 @@ class AgentActionService(
         return photoSelectionItemRepository.findAllBySelectionId(selection.requiredId).map { it.photoId }.toSet()
     }
 
-    /** 이미 그 폴더에 있는 사진은 건너뛴다. 되돌리기는 이전 폴더(미분류 포함)마다 이동 하나다. */
+    /**
+     * 이미 그 폴더에 있는 사진은 건너뛴다. 되돌리기는 이전 폴더(미분류 포함)마다 이동 하나다.
+     * 건너뛰기 전에 사진이 다 이 갤러리에 있는지 본다 — 미분류로 옮길 때 남의 사진은 "이미 미분류"로 보여 조용히 빠지기 때문이다.
+     */
     private fun move(galleryId: Long, userId: Long, photoIds: List<Long>, targetDetailFolderId: Long?): AgentAppliedStepDto? {
+        galleryAccessPolicy.requireFolderEditor(galleryId, userId)
+        if (photoRepository.findAllByGalleryIdAndIdInAndExcludedAtIsNull(galleryId, photoIds).size != photoIds.size) {
+            throw FolderException(FolderErrorCode.PHOTO_NOT_FOUND)
+        }
         val previousFolderByPhotoId = detailFolderAssignmentRepository.findAllByGalleryIdAndPhotoIdIn(galleryId, photoIds)
             .associate { it.photoId to it.detailFolderId }
         val moving = photoIds.filter { previousFolderByPhotoId[it] != targetDetailFolderId }

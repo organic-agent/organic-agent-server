@@ -118,7 +118,12 @@ class AgentExplainWriter(
         val current = when (snapshot.latestRetouchRoundStatus) {
             RetouchRoundStatus.DRAFTING -> " 지금 회차는 작성 중이에요."
             RetouchRoundStatus.REQUESTED -> " 지금 회차는 제출돼 작가님이 작업 중이라 요청을 고칠 수 없어요."
-            RetouchRoundStatus.COMPLETED -> " 지난 회차는 끝났고 다음 회차를 시작할 수 있어요."
+            RetouchRoundStatus.COMPLETED ->
+                if (max == null || used < max) {
+                    " 지난 회차는 끝났고 다음 회차를 시작할 수 있어요."
+                } else {
+                    " 지난 회차는 끝났고 계약 보정 횟수를 모두 써서 다음 회차는 시작할 수 없어요."
+                }
             null -> ""
         }
         return "$count$current 보정은 셀렉을 제출한 뒤 보정 화면에서 사진마다 요청문과 포인트를 적어 회차 단위로 제출해요." to

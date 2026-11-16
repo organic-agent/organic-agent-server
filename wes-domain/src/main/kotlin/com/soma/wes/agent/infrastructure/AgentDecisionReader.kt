@@ -21,6 +21,7 @@ import tools.jackson.databind.ObjectMapper
  *
  * 도구 없이 글로만 답하면 그 글을 되묻기로 쓴다. 모델이 이 갤러리에 없는 폴더 id를 지어내면 그 id는 버린다(폴더 찾기).
  * 조건 속의 없는 id는 아무 사진에도 걸리지 않아 그대로 둔다 — 버리면 조건이 넓어져 "전부 옮기기"가 될 수 있다.
+ * 같은 까닭으로 조건 칸에 모르는 값(목록에 없는 피사체·방향·사람, 숫자가 아닌 폴더 id)이 있으면 그 칸을 버리지 않고 되묻는다.
  */
 class AgentDecisionReader(
     private val objectMapper: ObjectMapper,
@@ -30,6 +31,10 @@ class AgentDecisionReader(
 
         const val FALLBACK_QUESTION = "무엇을 도와드릴까요? 폴더 찾기·사진 거르기·세기·선택 넣고 빼기·폴더 옮기기·폴더 이름 바꾸기·사용법 안내를 할 수 있어요."
         const val RENAME_UNCLEAR = "어느 폴더 이름을 무엇으로 바꿀지 다시 말해 주세요."
+        const val FILTER_UNCLEAR = "조건 일부를 알아듣지 못했어요. 어떤 사진을 말씀하시는지 다시 말해 주세요."
+
+        /** 사진 조건(`filter`)을 받는 도구. */
+        private val FILTER_TOOLS = setOf(AgentDecisionTools.FILTER_PHOTOS, AgentDecisionTools.STATS, AgentDecisionTools.PLAN_ACTION)
 
         /** 시스템 프롬프트의 폴더 id 표기 — 'c12'는 컨셉, 'd31'은 세부 폴더. */
         private const val CONCEPT_PREFIX = "c"
@@ -46,6 +51,9 @@ class AgentDecisionReader(
             return AgentDecisionDto.Clarify(text?.trim()?.ifEmpty { null } ?: FALLBACK_QUESTION)
         }
         val input = objectMapper.readTree(arguments?.ifBlank { null } ?: "{}")
+        if (toolName in FILTER_TOOLS && hasUnknownValue(input.path("filter"))) {
+            return AgentDecisionDto.Clarify(FILTER_UNCLEAR)
+        }
 
         return when (toolName) {
             AgentDecisionTools.FIND_FOLDER -> AgentDecisionDto.FindFolder(targets = folderTargets(input.path("targets"), context))
@@ -121,6 +129,21 @@ class AgentDecisionReader(
             memoBy = enumOf<AgentActor>(node.path("memoBy")),
             commentedBy = enumOf<AgentActor>(node.path("commentedBy")),
         )
+
+    /** 값을 줬는데 알아들을 수 없는 칸이 있는가. 비운 칸(없음·null·빈 문자열)은 조건이 없다는 뜻이라 괜찮다. */
+    private fun hasUnknownValue(node: JsonNode): Boolean {
+        val badFolderId = listOf("concepts", "details").any { field -> node.path(field).any { !it.isIntegralNumber } }
+        val badSubject = node.path("subjects").any { AgentSubject.fromAnalysis(it.asString("")) == null }
+        val enumFields = listOf(
+            "orientation" to enumOf<PhotoOrientation>(node.path("orientation")),
+            "addedBy" to enumOf<AgentActor>(node.path("addedBy")),
+            "ratedBy" to enumOf<AgentActor>(node.path("ratedBy")),
+            "memoBy" to enumOf<AgentActor>(node.path("memoBy")),
+            "commentedBy" to enumOf<AgentActor>(node.path("commentedBy")),
+        )
+        val badEnum = enumFields.any { (field, parsed) -> parsed == null && node.path(field).asString("").isNotEmpty() }
+        return badFolderId || badSubject || badEnum
+    }
 
     private fun rating(node: JsonNode): Int? =
         node.takeIf { it.isIntegralNumber }?.asInt()?.coerceIn(PhotoFilter.MIN_RATING, PhotoFilter.MAX_RATING)

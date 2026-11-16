@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository
  * 거른 사진들의 반응 본문(별점·메모·댓글·좋아요한 사람)을 읽는다 — "가족이 좋아한 사진만"처럼 반응으로 거른 결과에 같이 싣는다(#348 ③).
  * 갤러리 전체 읽기([AgentPhotoQueryRepository])에 본문까지 얹으면 7천 장 × 문장이라, 조건에 걸린 사진만 따로 읽는다.
  * 댓글은 부부 댓글(`photo_comments`, 닉네임)과 하객 댓글(`collab_photo_comments`, 이름표)을 합쳐 최근 것부터 사진당 몇 개만.
+ * 사진 id는 방금 거른 결과지만, 그사이 휴지통에 간 사진의 반응은 싣지 않도록 세 쿼리 모두 활성 사진(`deleted_at IS NULL`)만 본다.
  */
 @Repository
 class AgentReactionQueryRepository(
@@ -27,7 +28,7 @@ class AgentReactionQueryRepository(
             FROM photos p
             LEFT JOIN photo_ratings r ON r.photo_id = p.id
             LEFT JOIN photo_memos m ON m.photo_id = p.id
-            WHERE p.id IN (:ids) AND (r.photo_id IS NOT NULL OR m.photo_id IS NOT NULL)
+            WHERE p.id IN (:ids) AND p.deleted_at IS NULL AND (r.photo_id IS NOT NULL OR m.photo_id IS NOT NULL)
             """.trimIndent(),
         ).param("ids", photoIds).query { rs, _ -> Triple(rs.getLong("photo_id"), rs.getInt("score").takeUnless { rs.wasNull() }, rs.getString("content")) }.list()
 
@@ -43,6 +44,7 @@ class AgentReactionQueryRepository(
                     SELECT photo_id, NULL, participant_id, content, created_at
                     FROM collab_photo_comments WHERE photo_id IN (:ids) AND deleted_at IS NULL
                 ) c
+                JOIN photos p ON p.id = c.photo_id AND p.deleted_at IS NULL
                 LEFT JOIN users u ON u.id = c.user_id
                 LEFT JOIN collab_participants cp ON cp.id = c.participant_id
             ) x WHERE rn <= :limit
@@ -54,6 +56,7 @@ class AgentReactionQueryRepository(
             """
             SELECT k.photo_id, cp.nickname
             FROM collab_photo_likes k
+            JOIN photos p ON p.id = k.photo_id AND p.deleted_at IS NULL
             JOIN collab_participants cp ON cp.id = k.participant_id
             JOIN collab_sessions cs ON cs.id = k.collab_session_id AND cs.deleted_at IS NULL
             WHERE k.photo_id IN (:ids) AND k.deleted_at IS NULL

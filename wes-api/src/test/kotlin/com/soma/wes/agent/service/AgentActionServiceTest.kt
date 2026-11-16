@@ -8,6 +8,8 @@ import com.soma.wes.agent.exception.AgentException
 import com.soma.wes.agent.fixture.AgentFixture
 import com.soma.wes.agent.fixture.AgentScene
 import com.soma.wes.folder.dto.request.RenameFolderRequest
+import com.soma.wes.folder.exception.FolderErrorCode
+import com.soma.wes.folder.exception.FolderException
 import com.soma.wes.folder.repository.ConceptFolderRepository
 import com.soma.wes.folder.repository.DetailFolderAssignmentRepository
 import com.soma.wes.folder.repository.DetailFolderRepository
@@ -283,6 +285,46 @@ class AgentActionServiceTest @Autowired constructor(
     @Nested
     @DisplayName("요청을 확인할 때")
     inner class Guard {
+
+        @Test
+        fun `되돌리기가 실행 창구 상한을 넘으면 전체를 거절하고 아무것도 바뀌지 않는다`() {
+            // given — 옮기기 하나가 이전 폴더 셋(흰 드레스·정원·미분류)으로 갈라져 되돌리기 3개, 이름 바꾸기 98개가 각자 1개
+            val scene = agentFixture.웨딩_갤러리()
+            val before = folderByPhotoId(scene)
+            val move = AgentActionStep(
+                op = AgentActionOp.MOVE,
+                photoIds = listOf(scene.photoIds[0], scene.photoIds[4], scene.photoIds[8]),
+                targetDetailFolderId = scene.sunsetDetailId,
+            )
+            val names = listOf("야외") + (1..98).map { "야외 $it" }
+            val renames = names.zipWithNext { current, next ->
+                AgentActionStep(op = AgentActionOp.RENAME_CONCEPT, conceptFolderId = scene.outdoorConceptId, name = next, expectedName = current)
+            }
+
+            // when & then
+            assertThatThrownBy { execute(scene, move, *renames.toTypedArray()) }
+                .isInstanceOf(AgentException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(AgentErrorCode.INVALID_ACTION)
+            assertSoftly { softly ->
+                softly.assertThat(folderByPhotoId(scene)).isEqualTo(before)
+                softly.assertThat(conceptFolderRepository.findByIdAndGalleryId(scene.outdoorConceptId, scene.galleryId)?.name).isEqualTo("야외")
+            }
+        }
+
+        @Test
+        fun `미분류로 옮길 때 다른 갤러리 사진이 섞이면 건너뛰지 않고 거절한다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+            val otherPhotoId = agentFixture.웨딩_갤러리().photoIds.first()
+            val step = AgentActionStep(op = AgentActionOp.MOVE, photoIds = listOf(scene.photoIds[0], otherPhotoId), targetDetailFolderId = null)
+
+            // when & then
+            assertThatThrownBy { execute(scene, step) }
+                .isInstanceOf(FolderException::class.java)
+                .extracting("errorCode")
+                .isEqualTo(FolderErrorCode.PHOTO_NOT_FOUND)
+        }
 
         @Test
         fun `빈 계획은 거절한다`() {

@@ -130,7 +130,10 @@ class PhotoFixture(
             INSERT INTO photo_analysis (photo_id, subjects, technical_pct, aesthetic_pct, burst_id, burst_rank, embed_group_id, created_at, updated_at)
             VALUES (?, ?, 50.0, 50.0, ?, ?, 1, now(), now())
             ON CONFLICT (photo_id) DO UPDATE SET subjects = EXCLUDED.subjects, burst_id = EXCLUDED.burst_id,
-                burst_rank = EXCLUDED.burst_rank, updated_at = now()
+                burst_rank = EXCLUDED.burst_rank,
+                technical_pct = COALESCE(photo_analysis.technical_pct, EXCLUDED.technical_pct),
+                aesthetic_pct = COALESCE(photo_analysis.aesthetic_pct, EXCLUDED.aesthetic_pct),
+                embed_group_id = COALESCE(photo_analysis.embed_group_id, EXCLUDED.embed_group_id), updated_at = now()
             """.trimIndent(),
             photoId,
             subjects,

@@ -45,18 +45,23 @@ class AgentReplyWriter {
         return "$main$reactions${unsupportedNote(unsupported)}"
     }
 
-    fun stats(stats: AgentMessageResponse.Stats, unsupported: List<UnsupportedCondition>): String {
+    /**
+     * [filtered]는 고른 사진 전체가 아니라 조건(폴더·피사체·별점 등)에 맞는 것만 셌다는 뜻이다. 그 수를 전체 선택량처럼 말하면
+     * "신부 사진 2장 골랐어"에 "8장 남았어요"가 붙으니, 조건을 건 집계는 계약 잔여량을 말하지 않는다.
+     */
+    fun stats(stats: AgentMessageResponse.Stats, unsupported: List<UnsupportedCondition>, filtered: Boolean = false): String {
         val main = when (stats.metric) {
-            StatsMetric.COUNT -> count(stats)
+            StatsMetric.COUNT -> count(stats, filtered)
             StatsMetric.DUPLICATES -> duplicates(stats)
             StatsMetric.BY_CONCEPT, StatsMetric.BY_DETAIL, StatsMetric.BY_SUBJECTS, StatsMetric.BY_ORIENTATION,
-            StatsMetric.BY_RATING -> distribution(stats)
+            StatsMetric.BY_RATING -> distribution(stats, filtered)
         }
         return "$main${unsupportedNote(unsupported)}"
     }
 
-    private fun count(stats: AgentMessageResponse.Stats): String {
+    private fun count(stats: AgentMessageResponse.Stats, filtered: Boolean): String {
         if (stats.scope == StatsScope.GALLERY) return "조건에 맞는 사진이 갤러리에 ${stats.total}장 있어요."
+        if (filtered) return "고른 사진 중 조건에 맞는 사진은 ${stats.total}장이에요."
         val limit = stats.limit ?: return "지금 ${stats.total}장 골랐어요."
         return when {
             stats.total > limit -> "지금 ${stats.total}장 골랐어요. 계약 ${limit}장보다 ${stats.total - limit}장 많아요."
@@ -67,15 +72,28 @@ class AgentReplyWriter {
 
     private fun duplicates(stats: AgentMessageResponse.Stats): String {
         val (groups, extra) = stats.rows.map { it.count }
+        if (stats.scope == StatsScope.GALLERY) {
+            if (groups == 0) return "갤러리에 비슷한 연사 컷이 두 장 이상인 묶음은 없어요."
+            return "갤러리에 비슷한 연사 컷이 두 장 이상인 묶음이 ${groups}개예요. 묶음마다 대표 한 장만 보면 ${extra}장 덜 봐도 돼요."
+        }
         if (groups == 0) return "비슷한 연사 컷을 겹쳐 고른 것은 없어요."
         return "비슷한 연사 컷을 두 장 이상 고른 묶음이 ${groups}개예요. 묶음마다 한 장만 남기면 ${extra}장 줄일 수 있어요."
     }
 
-    private fun distribution(stats: AgentMessageResponse.Stats): String {
+    private fun distribution(stats: AgentMessageResponse.Stats, filtered: Boolean): String {
+        val selectedScope = stats.scope == StatsScope.SELECTED
         if (stats.total == 0) {
-            return if (stats.scope == StatsScope.SELECTED) "아직 고른 사진이 없어요." else "조건에 맞는 사진이 없어요."
+            return when {
+                selectedScope && filtered -> "고른 사진 중 조건에 맞는 사진이 없어요."
+                selectedScope -> "아직 고른 사진이 없어요."
+                else -> "조건에 맞는 사진이 없어요."
+            }
         }
-        val scope = if (stats.scope == StatsScope.SELECTED) "고른 ${stats.total}장" else "${stats.total}장"
+        val scope = when {
+            selectedScope && filtered -> "고른 사진 중 조건에 맞는 ${stats.total}장"
+            selectedScope -> "고른 ${stats.total}장"
+            else -> "${stats.total}장"
+        }
         val listed = stats.rows.joinToString(ROW_SEPARATOR) { "${it.label} ${it.count}장" }
         return "$scope 중 ${listed}이에요.${balanceNote(stats)}"
     }

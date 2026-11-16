@@ -11,17 +11,20 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.http.ResponseEntity
 
-@Tag(name = "[Agent]", description = "셀렉 화면의 대화형 도우미 — 말로 폴더를 찾고, 사진을 거르고(라벨·반응 포함), 세고, 넣고 빼고 옮기고, 사용법·상태를 묻는다")
+@Tag(name = "[Agent]", description = "셀렉 화면의 대화형 도우미 — 말로 폴더를 찾고, 사진을 거르고(반응·누가 했는지 포함), 세고, 넣고 빼고 옮기고, 폴더 이름을 바꾸고, 제출 전에 점검하고, 사용법·상태를 묻는다")
 interface AgentControllerDocs {
 
     @Operation(
         summary = "도우미에게 묻기",
         description = """
-            질문 하나에 답 하나다. 이전 대화는 기억하지 않는다 — 지금 화면(열린 폴더·필터)을 screen으로 같이 보내면
-            "지금 보이는 거"를 그것으로 푼다. 판단은 LLM 한 번(평소 1.5초 안팎)이고, 숫자와 답 문장은 서버가 센 값으로 만든다.
+            질문 하나에 답 하나다. 서버는 대화를 저장하지 않는다 — 웹이 최근 3턴을 history로 같이 보내면 "두 번째 거"·"아까 그 폴더"를
+            그것으로 풀고, 지금 화면(열린 폴더·필터)을 screen으로 같이 보내면 "지금 보이는 거"를 그것으로 푼다.
+            history 모양(개수·순서·길이)이 어긋나면 400(AGENT_400_4)이고, 웹은 대화를 비우고 다시 묻는다. 판단은 LLM 한 번(평소 1.5초 안팎)이고, 숫자와 답 문장은 서버가 센 값으로 만든다.
 
-            이 창구는 아무것도 바꾸지 않는다. 넣기·빼기·옮기기는 kind=PLAN_ACTION으로 계획만 돌려주고,
+            이 창구는 아무것도 바꾸지 않는다. 넣기·빼기·옮기기·폴더 이름 바꾸기는 kind=PLAN_ACTION으로 계획만 돌려주고,
             사용자가 [확인]을 누르면 action.steps를 실행 창구로 보낸다. 제출·철회·삭제·별점은 하지 않는다.
+
+            사용자 한 명이 10분에 60번까지 묻는다(`app.agent.max-questions`·`window`). 넘으면 429(AGENT_429_1)다.
 
             부부만 쓴다. 신랑인지 신부인지는 묻지 않는다 — "나만 나온"처럼 화자를 가리키면 도우미가 되묻는다(kind=CLARIFY).
         """,
@@ -30,6 +33,7 @@ interface AgentControllerDocs {
         ApiResponse(responseCode = "200", description = "답"),
         ApiResponse(responseCode = "400", description = "빈 질문이거나 300자를 넘는 질문", content = []),
         ApiResponse(responseCode = "403", description = "갤러리의 부부가 아니거나(작가 포함) 아직 열리지 않은 갤러리", content = []),
+        ApiResponse(responseCode = "429", description = "질문 상한 초과(10분에 60번) — 판단 실패(503)와 달리 잠시 기다려야 한다", content = []),
         ApiResponse(responseCode = "503", description = "도우미가 꺼져 있거나 판단(Bedrock)이 실패 — 잠시 뒤 다시 묻는다", content = []),
     )
     fun send(loginUser: LoginUser, galleryId: Long, request: AgentMessageRequest): ResponseEntity<AgentMessageResponse>
@@ -52,6 +56,7 @@ interface AgentControllerDocs {
         ApiResponse(responseCode = "403", description = "갤러리의 부부가 아니거나 선택 마감·갤러리 닫힘", content = []),
         ApiResponse(responseCode = "404", description = "없는 세부 폴더로 옮기기", content = []),
         ApiResponse(responseCode = "409", description = "이미 제출된 선택", content = []),
+        ApiResponse(responseCode = "503", description = "도우미가 꺼져 있음(`app.agent.enabled=false`) — 실행·되돌리기 모두", content = []),
     )
     fun execute(loginUser: LoginUser, galleryId: Long, request: AgentActionRequest): ResponseEntity<AgentActionResponse>
 }

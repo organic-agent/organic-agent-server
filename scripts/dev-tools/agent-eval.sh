@@ -28,7 +28,11 @@ echo "== 1. 예측: $LABEL (bedrock · $MODEL · ${RUNS}회) =="
 
 echo "== 2. 채점 =="
 docker start agent-test-pg >/dev/null
-until docker exec agent-test-pg pg_isready -U wes -q; do sleep 1; done
+for _ in $(seq 1 30); do
+  docker exec agent-test-pg pg_isready -U wes -q && break
+  sleep 1
+done
+docker exec agent-test-pg pg_isready -U wes -q || { echo "agent-test-pg 가 30초 안에 준비되지 않았다" >&2; exit 1; }
 (cd "$EVAL_DIR" && ./reset_db.sh && "$PYTHON" grade_wes.py "$LABEL")
 
 echo "== 3. 회차 비교 =="

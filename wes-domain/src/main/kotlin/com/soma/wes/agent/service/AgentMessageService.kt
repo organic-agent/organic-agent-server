@@ -191,7 +191,7 @@ class AgentMessageService(
 
         return AgentMessageResponse(
             kind = AgentReplyKind.STATS,
-            reply = agentReplyWriter.stats(stats, decision.unsupported),
+            reply = agentReplyWriter.stats(stats, decision.unsupported, filtered = decision.filter.copy(selected = null) != PhotoFilter()),
             stats = stats,
             unsupported = decision.unsupported,
         )
