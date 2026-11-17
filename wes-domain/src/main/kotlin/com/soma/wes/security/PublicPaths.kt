@@ -16,6 +16,7 @@ object PublicPaths {
         "/api/v1/oauth/**",
         "/login/oauth2/code/**",
         "/api/v1/auth/reissue",
+        "/api/v1/auth/review-login",
         "/api/v1/collab/**",
     )
 }

@@ -36,6 +36,9 @@ enum class AuthErrorCode(
     // 401 — provider가 발급한 토큰이 거부된 경우
     OAUTH_ACCESS_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "AUTH_401_8", "소셜 로그인 토큰이 유효하지 않습니다."),
 
+    // 심사용 링크가 꺼졌거나·만료됐거나·코드가 틀림. 어느 쪽인지 가리지 않는다(코드 추측 방지).
+    REVIEW_LINK_NOT_FOUND(HttpStatus.NOT_FOUND, "AUTH_404_1", "유효하지 않은 심사용 링크입니다."),
+
     USER_SUSPENDED(HttpStatus.FORBIDDEN, "AUTH_403_1", "정지된 사용자 계정입니다."),
     STUDIO_SUSPENDED(HttpStatus.FORBIDDEN, "AUTH_403_2", "정지된 스튜디오 계정입니다."),
 

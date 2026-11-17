@@ -2,6 +2,7 @@ package com.soma.wes.auth.service
 
 import com.soma.wes.activity.repository.ActivityRepository
 import com.soma.wes.auth.config.AccessCacheProperties
+import com.soma.wes.auth.config.ReviewLoginProperties
 import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.auth.exception.AuthErrorCode
 import com.soma.wes.auth.exception.TokenException
@@ -148,6 +149,7 @@ class AccessCacheFlowTest @Autowired constructor(
                 authTokenProvider = authTokenProvider,
                 activityRepository = activityRepository,
                 accessCache = cache,
+                reviewLoginProperties = ReviewLoginProperties(),
             )
 
             // when

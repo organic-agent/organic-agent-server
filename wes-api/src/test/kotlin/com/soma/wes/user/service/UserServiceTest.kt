@@ -1,6 +1,11 @@
 package com.soma.wes.user.service
 
+import com.soma.wes.activity.repository.ActivityRepository
+import com.soma.wes.auth.config.ReviewLoginProperties
 import com.soma.wes.auth.domain.OAuthProvider
+import com.soma.wes.auth.service.AuthTokenProvider
+import com.soma.wes.gallery.repository.GalleryMemberRepository
+import com.soma.wes.notification.service.port.UserNotificationPublisher
 import com.soma.wes.gallery.domain.Gallery
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.studio.domain.Studio
@@ -37,7 +42,37 @@ class UserServiceTest @Autowired constructor(
     private val studioRepository: StudioRepository,
     private val galleryRepository: GalleryRepository,
     private val userFixture: UserFixture,
+    private val galleryMemberRepository: GalleryMemberRepository,
+    private val notificationPublisher: UserNotificationPublisher,
+    private val authTokenProvider: AuthTokenProvider,
+    private val activityRepository: ActivityRepository,
 ) {
+
+    @Test
+    fun `심사용 링크 계정은 탈퇴할 수 없다`() {
+        // given
+        val reviewer = userFixture.사용자("심사위원")
+        val service = UserService(
+            userRepository = userRepository,
+            workspaceRepository = workspaceRepository,
+            workspaceMemberRepository = workspaceMemberRepository,
+            studioRepository = studioRepository,
+            galleryRepository = galleryRepository,
+            galleryMemberRepository = galleryMemberRepository,
+            notificationPublisher = notificationPublisher,
+            authTokenProvider = authTokenProvider,
+            activityRepository = activityRepository,
+            accessCache = null,
+            reviewLoginProperties = ReviewLoginProperties(userId = reviewer.requiredId),
+        )
+
+        // when & then
+        assertThatThrownBy { service.delete(reviewer.requiredId) }
+            .isInstanceOf(UserException::class.java)
+            .extracting("errorCode")
+            .isEqualTo(UserErrorCode.REVIEW_ACCOUNT_UNDELETABLE)
+        assertThat(userRepository.findById(reviewer.requiredId)).isPresent
+    }
 
     @Test
     fun `id로 사용자 정보를 조회한다`() {

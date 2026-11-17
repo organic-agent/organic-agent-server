@@ -2,8 +2,11 @@ package com.soma.wes.auth.controller
 
 import com.soma.wes.auth.controller.docs.AuthControllerDocs
 import com.soma.wes.auth.dto.request.ReissueRequest
+import com.soma.wes.auth.dto.request.ReviewLoginRequest
+import com.soma.wes.auth.dto.response.LoginResponse
 import com.soma.wes.auth.dto.response.ReissueResponse
 import com.soma.wes.auth.service.AuthTokenService
+import com.soma.wes.auth.service.ReviewLoginService
 import com.soma.wes.auth.domain.LoginUser
 import jakarta.validation.Valid
 import org.springframework.http.ResponseEntity
@@ -20,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/v1/auth")
 class AuthController(
     private val authTokenService: AuthTokenService,
+    private val reviewLoginService: ReviewLoginService,
 ) : AuthControllerDocs {
 
     /**
@@ -32,6 +36,16 @@ class AuthController(
         val result = authTokenService.reissue(request)
 
         return ResponseEntity.ok(result)
+    }
+
+    /**
+     * 심사용 링크의 코드로 정해 둔 심사용 개인 계정에 로그인한다. 소셜 로그인과 같은 토큰을 준다.
+     */
+    @PostMapping("/review-login")
+    override fun reviewLogin(
+        @Valid @RequestBody request: ReviewLoginRequest,
+    ): ResponseEntity<LoginResponse> {
+        return ResponseEntity.ok(reviewLoginService.login(request))
     }
 
     @PostMapping("/logout")
