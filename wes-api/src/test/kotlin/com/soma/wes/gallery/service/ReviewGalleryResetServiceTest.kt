@@ -12,6 +12,7 @@ import com.soma.wes.gallery.repository.GalleryProgressResetRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.support.GalleryAccessPolicy
 import com.soma.wes.photo.fixture.PhotoFixture
+import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.recommendation.fixture.RecommendationFixture
 import com.soma.wes.retouch.fixture.RetouchFixture
 import com.soma.wes.selection.fixture.SelectionFixture
@@ -45,6 +46,7 @@ class ReviewGalleryResetServiceTest @Autowired constructor(
     private val selectionRepository: PhotoSelectionRepository,
     private val conceptAssignmentLoader: ConceptAssignmentLoader,
     private val aiFolderMaterializer: AiFolderMaterializer,
+    private val photoAnalysisRepository: PhotoAnalysisRepository,
     private val clock: Clock,
     private val jdbc: JdbcClient,
     private val transactionTemplate: TransactionTemplate,
@@ -58,6 +60,7 @@ class ReviewGalleryResetServiceTest @Autowired constructor(
         selectionRepository = selectionRepository,
         conceptAssignmentLoader = conceptAssignmentLoader,
         aiFolderMaterializer = aiFolderMaterializer,
+        photoAnalysisRepository = photoAnalysisRepository,
         clock = clock,
     )
 
@@ -128,6 +131,23 @@ class ReviewGalleryResetServiceTest @Autowired constructor(
         // then
         assertThat(count("SELECT count(*) FROM concept_folders WHERE gallery_id = :galleryId", gallery.galleryId)).isEqualTo(0L)
         assertThat(galleryRepository.findByIdOrNull(gallery.galleryId)?.stage).isEqualTo(GalleryStage.UPLOAD)
+    }
+
+    @Test
+    fun `사진을 모두 휴지통에 넣은 갤러리도 폴더 없이 초기화한다`() {
+        // given
+        val (gallery, photoIds) = analyzedGallery()
+        photoFixture.별점(photoIds[0], score = 4, ratedBy = gallery.ownerId)
+        jdbc.sql("UPDATE photos SET deleted_at = now() WHERE gallery_id = :galleryId")
+            .param("galleryId", gallery.galleryId).update()
+
+        // when
+        reset(gallery.ownerId, gallery.galleryId, gallery.ownerId)
+
+        // then
+        val g = gallery.galleryId
+        assertThat(count("SELECT count(*) FROM concept_folders WHERE gallery_id = :galleryId", g)).isEqualTo(0L)
+        assertThat(count("SELECT count(*) FROM photo_ratings r JOIN photos p ON p.id = r.photo_id WHERE p.gallery_id = :galleryId", g)).isEqualTo(0L)
     }
 
     @Test
