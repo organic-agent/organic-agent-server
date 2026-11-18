@@ -1,6 +1,7 @@
 package com.soma.wes.user.service
 
 import com.soma.wes.activity.repository.ActivityRepository
+import com.soma.wes.auth.config.ReviewLoginProperties
 import com.soma.wes.auth.dto.AccessCacheKeyDto
 import com.soma.wes.auth.service.AuthTokenProvider
 import com.soma.wes.auth.service.port.AccessCache
@@ -41,6 +42,7 @@ class UserService(
     private val authTokenProvider: AuthTokenProvider,
     private val activityRepository: ActivityRepository,
     private val accessCache: AccessCache?,
+    private val reviewLoginProperties: ReviewLoginProperties,
 ) {
 
     @Transactional(readOnly = true)
@@ -131,6 +133,9 @@ class UserService(
 
     @Transactional
     fun delete(id: Long) {
+        if (reviewLoginProperties.isReviewAccount(id)) {
+            throw UserException(UserErrorCode.REVIEW_ACCOUNT_UNDELETABLE)
+        }
         val user = userRepository.requireById(id)
         val memberships = workspaceMemberRepository.findAllByUserId(id)
         val ownedWorkspaceIds = memberships.filter { it.role == WorkspaceRole.OWNER }.map { it.workspaceId }

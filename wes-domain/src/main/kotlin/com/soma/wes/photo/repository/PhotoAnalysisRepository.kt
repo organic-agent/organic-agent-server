@@ -54,6 +54,16 @@ interface PhotoAnalysisRepository : JpaRepository<PhotoAnalysis, Long> {
     )
     fun findAllGroupingByGalleryIdOrderByDisplay(@Param("galleryId") galleryId: Long): List<PhotoAnalysisGrouping>
 
+    /** [findAllGroupingByGalleryIdOrderByDisplay]가 한 장이라도 돌려줄지 — 폴더로 나눌 사진이 있는지만 묻는 자리에서 쓴다. */
+    @Query(
+        """
+        SELECT count(a) > 0
+        FROM PhotoAnalysis a JOIN Photo p ON p.id = a.photoId
+        WHERE p.galleryId = :galleryId AND a.embedGroupId IS NOT NULL
+        """,
+    )
+    fun existsGroupingByGalleryId(@Param("galleryId") galleryId: Long): Boolean
+
     /**
      * 갤러리에 폴더로는 분류됐지만 순위(백분위)가 아직인 사진이 있는가 — 화질 점수(2단계)가 다 차고 rank 모드가 돌기 전의 창이다.
      * 그 창에서 추천을 돌리면 순위 없는 사진이 재료에서 조용히 빠진다(#274 2물결).
