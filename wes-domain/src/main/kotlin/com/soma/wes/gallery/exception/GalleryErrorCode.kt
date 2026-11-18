@@ -59,6 +59,9 @@ enum class GalleryErrorCode(
     GALLERY_ACCESS_DENIED(HttpStatus.FORBIDDEN, "GALLERY_403_1", "갤러리에 접근할 권한이 없습니다."),
     GALLERY_NOT_OPEN(HttpStatus.FORBIDDEN, "GALLERY_403_2", "지금은 사진을 고를 수 없는 갤러리입니다."),
 
+    /** 갤러리 작업 초기화는 되돌릴 수 없어 심사용 링크 계정에만 연다. 갤러리 참여자여도 일반 사용자는 여기서 막힌다. */
+    REVIEW_RESET_NOT_ALLOWED(HttpStatus.FORBIDDEN, "GALLERY_403_7", "심사용 계정만 갤러리를 초기화할 수 있습니다."),
+
     /**
      * 담당 작가가 자기 갤러리의 초대를 수락하려는 경우.
      *

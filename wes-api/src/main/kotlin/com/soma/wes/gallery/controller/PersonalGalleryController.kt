@@ -6,6 +6,7 @@ import com.soma.wes.gallery.dto.request.CreatePersonalGalleryRequest
 import com.soma.wes.gallery.dto.request.UpdatePersonalGalleryRequest
 import com.soma.wes.gallery.dto.response.GalleryResponse
 import com.soma.wes.gallery.service.PersonalGalleryService
+import com.soma.wes.gallery.service.ReviewGalleryResetService
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -19,7 +20,10 @@ import org.springframework.web.bind.annotation.RestController
 
 @RestController
 @RequestMapping("/api/v1/galleries")
-class PersonalGalleryController(private val service: PersonalGalleryService) : PersonalGalleryControllerDocs {
+class PersonalGalleryController(
+    private val service: PersonalGalleryService,
+    private val reviewResetService: ReviewGalleryResetService,
+) : PersonalGalleryControllerDocs {
     @PostMapping("/personal")
     override fun create(@AuthenticationPrincipal loginUser: LoginUser, @Valid @RequestBody request: CreatePersonalGalleryRequest): ResponseEntity<GalleryResponse> {
         val status = HttpStatus.CREATED
@@ -28,5 +32,10 @@ class PersonalGalleryController(private val service: PersonalGalleryService) : P
     @PatchMapping("/{galleryId}/personal")
     override fun update(@AuthenticationPrincipal loginUser: LoginUser, @PathVariable galleryId: Long, @Valid @RequestBody request: UpdatePersonalGalleryRequest): ResponseEntity<GalleryResponse> {
         return ResponseEntity.ok(service.update(galleryId, loginUser.id, request))
+    }
+
+    @PostMapping("/{galleryId}/personal/reset")
+    override fun reset(@AuthenticationPrincipal loginUser: LoginUser, @PathVariable galleryId: Long): ResponseEntity<GalleryResponse> {
+        return ResponseEntity.ok(reviewResetService.reset(galleryId, loginUser.id))
     }
 }

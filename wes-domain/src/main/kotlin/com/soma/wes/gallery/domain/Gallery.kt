@@ -296,6 +296,20 @@ class Gallery(
         }
     }
 
+    /**
+     * 사진을 올린 직후의 진행 상태로 되돌린다(심사용 갤러리 초기화). 폴더 저장·셀렉·보정·앨범·종료 표시를 모두 지운다.
+     * 이용권(기간·장수)과 이름·목표일·장수 설정은 그대로다.
+     */
+    fun resetProgress() {
+        status = GalleryStatus.OPEN
+        stage = GalleryStage.UPLOAD
+        workflowStatus = GalleryWorkflowStatus.DRAFT
+        foldersSavedAt = null
+        retouchConfirmedAt = null
+        albumStatus = AlbumStatus.NONE
+        archivedUntil = null
+    }
+
     fun markSelectionCompleted() {
         stage = GalleryStage.SELECTION_COMPLETED
     }
