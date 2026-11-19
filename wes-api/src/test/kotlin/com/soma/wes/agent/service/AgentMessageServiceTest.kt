@@ -4,6 +4,7 @@ import com.soma.wes.agent.domain.AgentActionOp
 import com.soma.wes.agent.domain.AgentActionStep
 import com.soma.wes.agent.domain.AgentActor
 import com.soma.wes.agent.domain.AgentCheckCode
+import com.soma.wes.agent.domain.AgentPendingOp
 import com.soma.wes.agent.domain.AgentReplyKind
 import com.soma.wes.agent.domain.AgentScreen
 import com.soma.wes.agent.domain.AgentSubject
@@ -309,6 +310,213 @@ class AgentMessageServiceTest @Autowired constructor(
     }
 
     @Nested
+    @DisplayName("대상을 몰라 되물을 때")
+    inner class PendingClarify {
+
+        private fun sendWithScreen(scene: AgentScene, decision: AgentDecisionDto, screen: AgentMessageRequest.Screen): AgentMessageResponse {
+            fakeDecisionClient.decision = decision
+            return agentMessageService.send(scene.galleryId, scene.memberId, AgentMessageRequest(text = "이거 넣어줘", screen = screen))
+        }
+
+        @Test
+        fun `빼기는 고른 사진이 있는 컨셉과 장수를 선택지로 붙이고 하려던 일을 싣는다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+            selectionFixture.담긴_사진(selectionFixture.셀렉(scene.galleryId), scene.photoIds.take(3))
+
+            // when
+            val response = send(scene, AgentDecisionDto.Clarify(question = "어떤 사진을 뺄까요?", pending = AgentPendingOp.SELECT_REMOVE), text = "다 빼줘")
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.kind).isEqualTo(AgentReplyKind.CLARIFY)
+                softly.assertThat(response.pendingOp).isEqualTo(AgentPendingOp.SELECT_REMOVE)
+                softly.assertThat(response.reply).isEqualTo("지금 고른 3장은 1. 화이트 3장이에요. 어디서 뺄까요? 폴더 이름이나 조건으로 말씀해 주세요.")
+                softly.assertThat(response.folderCandidates?.map { it.conceptFolderId to it.detailFolderId }).containsExactly(scene.whiteConceptId to null)
+                softly.assertThat(response.action).isNull()
+            }
+        }
+
+        @Test
+        fun `고른 사진이 없으면 선택지 없이 뺄 사진이 없다고 말한다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+
+            // when
+            val response = send(scene, AgentDecisionDto.Clarify(question = "어떤 사진을 뺄까요?", pending = AgentPendingOp.SELECT_REMOVE))
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.reply).isEqualTo("아직 고른 사진이 없어서 뺄 사진이 없어요.")
+                softly.assertThat(response.pendingOp).isNull()
+                softly.assertThat(response.folderCandidates).isNull()
+            }
+        }
+
+        @Test
+        fun `폴더가 열린 화면의 넣기는 폴더 전체인지 한 장인지 묻는다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+            val screen = AgentMessageRequest.Screen(conceptFolderId = scene.outdoorConceptId, detailFolderId = scene.gardenDetailId)
+
+            // when
+            val response = sendWithScreen(scene, AgentDecisionDto.Clarify(question = "어떤 사진인가요?", pending = AgentPendingOp.SELECT_ADD), screen)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.reply).isEqualTo("열린 '야외 > 정원' 폴더 사진 전부(3장)를 넣을까요, 사진 한 장을 말씀하신 건가요? 한 장이면 그 사진의 체크박스로 넣어 주세요.")
+                softly.assertThat(response.pendingOp).isEqualTo(AgentPendingOp.SELECT_ADD)
+                softly.assertThat(response.folderCandidates?.map { it.detailFolderId }).containsExactly(scene.gardenDetailId)
+            }
+        }
+
+        @Test
+        fun `화면에 폴더가 없으면 넣기는 컨셉을 선택지로 붙인다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+
+            // when
+            val response = send(scene, AgentDecisionDto.Clarify(question = "어떤 사진을 넣을까요?", pending = AgentPendingOp.SELECT_ADD))
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.reply).isEqualTo("어떤 사진을 넣을까요? 1. 야외 · 2. 화이트 — 폴더 이름이나 별점·피사체 같은 조건으로 말씀해 주세요.")
+                softly.assertThat(response.folderCandidates?.map { it.conceptFolderId }).containsExactly(scene.outdoorConceptId, scene.whiteConceptId)
+            }
+        }
+
+        @Test
+        fun `이름 바꾸기는 판단기 문장에 폴더 후보 번호를 덧붙이고 이 갤러리에 없는 폴더는 버린다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+            val decision = AgentDecisionDto.Clarify(
+                question = "어느 폴더를 무슨 이름으로 바꿀까요?",
+                pending = AgentPendingOp.RENAME,
+                folders = listOf(
+                    AgentDecisionDto.FolderTarget(conceptFolderId = scene.outdoorConceptId, detailFolderId = scene.gardenDetailId),
+                    AgentDecisionDto.FolderTarget(conceptFolderId = scene.outdoorConceptId, detailFolderId = scene.sunsetDetailId),
+                    AgentDecisionDto.FolderTarget(conceptFolderId = -1),
+                ),
+            )
+
+            // when
+            val response = send(scene, decision)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.reply).isEqualTo("어느 폴더를 무슨 이름으로 바꿀까요? 1. 야외 > 정원 · 2. 야외 > 노을")
+                softly.assertThat(response.pendingOp).isEqualTo(AgentPendingOp.RENAME)
+                softly.assertThat(response.folderCandidates).hasSize(2)
+            }
+        }
+
+        @Test
+        fun `되돌려 받은 하려던 일을 판단 문맥에 싣는다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+            val history = listOf(
+                AgentMessageRequest.Turn(role = AgentTurnRole.USER, text = "다 빼줘"),
+                AgentMessageRequest.Turn(
+                    role = AgentTurnRole.ASSISTANT,
+                    text = "지금 고른 3장은 1. 화이트 3장이에요. 어디서 뺄까요?",
+                    kind = AgentReplyKind.CLARIFY,
+                    folderCandidates = listOf(AgentMessageRequest.FolderRef(conceptFolderId = scene.whiteConceptId)),
+                    pendingOp = AgentPendingOp.SELECT_REMOVE,
+                ),
+            )
+
+            // when
+            send(scene, AgentDecisionDto.Clarify("되묻기"), text = "화이트", history = history)
+
+            // then
+            assertThat(fakeDecisionClient.contexts.single().history.last().pendingOp).isEqualTo(AgentPendingOp.SELECT_REMOVE)
+        }
+
+        @Test
+        fun `제출한 뒤에는 선택지 없이 바꿀 수 없다고 말한다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+            val selectionId = selectionFixture.셀렉(scene.galleryId)
+            selectionFixture.담긴_사진(selectionId, scene.photoIds.take(1))
+            selectionFixture.제출(selectionId, scene.memberId)
+
+            // when
+            val response = send(scene, AgentDecisionDto.Clarify(question = "어떤 사진을 뺄까요?", pending = AgentPendingOp.SELECT_REMOVE))
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.reply).isEqualTo("선택을 이미 제출해서 사진을 넣거나 빼거나 옮길 수 없어요.")
+                softly.assertThat(response.pendingOp).isNull()
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("못 거르는 조건만 있을 때")
+    inner class UnsupportedOnly {
+
+        @Test
+        fun `거르라면 사진을 보여 주지 않고 못 거른다고만 말한다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+            val decision = AgentDecisionDto.FilterPhotos(filter = PhotoFilter(), unsupported = listOf(UnsupportedCondition.COMPOSITION))
+
+            // when
+            val response = send(scene, decision)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.kind).isEqualTo(AgentReplyKind.FILTER_PHOTOS)
+                softly.assertThat(response.view).isNull()
+                softly.assertThat(response.unsupported).containsExactly(UnsupportedCondition.COMPOSITION)
+                softly.assertThat(response.reply).startsWith("구도(으)로는 아직 거르지 못해요.")
+            }
+        }
+
+        @Test
+        fun `세라면 전체 장수를 세지 않는다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+            val decision = AgentDecisionDto.Stats(
+                metric = StatsMetric.COUNT,
+                scope = StatsScope.SELECTED,
+                unsupported = listOf(UnsupportedCondition.FACE),
+            )
+
+            // when
+            val response = send(scene, decision)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.stats).isNull()
+                softly.assertThat(response.reply).startsWith("눈 감김·표정(으)로는 아직 거르지 못해요.")
+            }
+        }
+
+        @Test
+        fun `고른 사진 범위와 함께 빼라고 해도 고른 사진 전부를 빼는 계획을 만들지 않는다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+            selectionFixture.담긴_사진(selectionFixture.셀렉(scene.galleryId), scene.photoIds.take(3))
+            val decision = AgentDecisionDto.PlanAction(
+                op = AgentActionOp.SELECT_REMOVE,
+                filter = PhotoFilter(selected = true),
+                unsupported = listOf(UnsupportedCondition.FACE),
+            )
+
+            // when
+            val response = send(scene, decision)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.kind).isEqualTo(AgentReplyKind.CLARIFY)
+                softly.assertThat(response.action).isNull()
+                softly.assertThat(response.reply).contains("어떤 사진을 바꿀지 정할 수 없어요")
+            }
+        }
+    }
+
+    @Nested
     @DisplayName("사용법·상태를 물을 때")
     inner class Explain {
 
@@ -383,6 +591,42 @@ class AgentMessageServiceTest @Autowired constructor(
             assertSoftly { softly ->
                 softly.assertThat(response.reply).startsWith("계약 보정 3회 중 0회를 썼어요. 보정은 셀렉을 제출한 뒤")
                 softly.assertThat(response.explain?.links?.map { it.to }).containsExactly(AgentScreen.RETOUCH)
+            }
+        }
+
+        @Test
+        fun `고르기·빼기와 도우미가 할 일과 되돌리기는 서버가 정한 문장으로 답한다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+
+            // when
+            val selectHow = send(scene, AgentDecisionDto.Explain(ExplainTopic.SELECT_HOW))
+            val capabilities = send(scene, AgentDecisionDto.Explain(ExplainTopic.CAPABILITIES))
+            val undo = send(scene, AgentDecisionDto.Explain(ExplainTopic.UNDO))
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(selectHow.reply).startsWith("사진에 마우스를 올리면 왼쪽 위에 체크박스가 보여요.")
+                softly.assertThat(selectHow.explain?.links?.map { it.to }).containsExactly(AgentScreen.SELECTION)
+                softly.assertThat(capabilities.reply).contains("제출·사진 삭제·별점 매기기는 직접 해 주셔야 해요")
+                softly.assertThat(undo.reply).startsWith("제가 실행한 일은 결과 아래 '되돌리기' 버튼으로")
+            }
+        }
+
+        @Test
+        fun `배우자 초대는 스튜디오 갤러리면 작가에게 돌리고 배우자가 이미 있으면 그렇다고 말한다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+
+            // when
+            val beforeJoin = send(scene, AgentDecisionDto.Explain(ExplainTopic.INVITE_PARTNER))
+            agentFixture.배우자(scene)
+            val afterJoin = send(scene, AgentDecisionDto.Explain(ExplainTopic.INVITE_PARTNER))
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(beforeJoin.reply).isEqualTo("이 갤러리는 작가님이 두 분을 초대하는 스튜디오 갤러리라, 배우자분 초대는 담당 작가님께 요청해 주세요.")
+                softly.assertThat(afterJoin.reply).isEqualTo("배우자분은 이미 이 갤러리에 함께 계세요.")
             }
         }
 
@@ -466,6 +710,38 @@ class AgentMessageServiceTest @Autowired constructor(
 
             // then
             assertThat(response.reply).isEqualTo("지금 3장 골랐어요. 계약 5장까지 2장 남았어요.")
+        }
+
+        @Test
+        fun `신랑 신부 비율은 고른 사진이 없으면 갤러리 전체로 세고 그렇다고 말한다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+
+            // when
+            val response = send(scene, AgentDecisionDto.Stats(metric = StatsMetric.BY_SUBJECTS, scope = StatsScope.SELECTED))
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.stats?.scope).isEqualTo(StatsScope.GALLERY)
+                softly.assertThat(response.stats?.total).isEqualTo(scene.photoIds.size)
+                softly.assertThat(response.reply).startsWith("아직 고른 사진이 없어서 갤러리 전체로 셌어요. 갤러리 전체 ${scene.photoIds.size}장 중")
+            }
+        }
+
+        @Test
+        fun `폴더 수를 세면 화면 순서대로 컨셉마다 세부 폴더 수를 센다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+
+            // when
+            val response = send(scene, AgentDecisionDto.Stats(metric = StatsMetric.FOLDER_COUNT, scope = StatsScope.GALLERY))
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.stats?.rows?.map { it.label to it.count }).containsExactly("야외" to 2, "화이트" to 1)
+                softly.assertThat(response.stats?.total).isEqualTo(2)
+                softly.assertThat(response.reply).isEqualTo("컨셉 폴더 2개, 세부 폴더 3개예요. 야외(세부 2개) · 화이트(세부 1개)")
+            }
         }
 
         @Test

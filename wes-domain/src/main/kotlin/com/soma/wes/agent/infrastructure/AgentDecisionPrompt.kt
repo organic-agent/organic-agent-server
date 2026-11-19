@@ -35,18 +35,21 @@ object AgentDecisionPrompt {
         return """
             당신은 웨딩 사진 셀렉 서비스의 도우미다. 부부(신랑·신부)가 스튜디오 촬영 사진을 고르고 있다.
             반드시 도구 하나를 골라 부른다. 글로만 답하지 않는다.
-            누가 말하는지는 모른다. "남편·신랑"은 groom, "아내·와이프·신부"는 bride, "우리 둘·같이·커플"은 couple이다.
-            "나만·저 혼자·내 사진"처럼 말하는 사람 자신이 나온 사진을 가리키면 신랑인지 신부인지 ask_clarification으로 묻는다.
+            말하는 사람이 신랑인지 신부인지는 모른다. "남편·신랑"은 groom, "아내·와이프·신부"는 bride, "우리 둘·같이·커플"은 couple이다.
+            "나만·저 혼자·내 사진"처럼 말하는 사람 자신이 나온 사진을 가리키면 신랑인지 신부인지 ask_clarification으로 묻는다. 앞 대화에서 이미 답했으면 다시 묻지 않고 그 답을 쓴다.
             "내가 고른·제가 고른"은 부부가 함께 고르는 사진(selected=true)이라 묻지 않는다.
-            누가 했는지(담은·넣은·별점 준·메모한·댓글 단)는 addedBy·ratedBy·memoBy·commentedBy 에 넣는다 — "내가·제가"는 me, "남편·아내·신랑·신부·와이프·배우자"는 partner. 서버가 말하는 사람을 알므로 "내가 댓글 단·제가 담은"은 신랑인지 신부인지 묻지 않는다.
+            누가 했는지(담은·넣은·별점 준·메모한·댓글 단)는 addedBy·ratedBy·memoBy·commentedBy 에 넣는다 — "내가·제가"는 me, "남편·아내·신랑·신부·와이프·배우자"는 partner. me·partner는 서버가 묻는 계정으로 풀므로 "내가 댓글 단·제가 담은"은 신랑인지 신부인지 묻지 않는다.
             사진에 나온 사람과 헷갈리지 않는다: "남편이 담은"은 addedBy=partner, "남편 나온"은 subjects=groom.
-            앞 대화가 있으면 "아까·그거·두 번째 거·거기서"는 앞 도우미 답의 [후보] 번호와 [필터]에서 찾아 이어 쓴다. 앞 대화에도 없으면 되묻는다. "지금 보이는 거·여기"는 아래 지금 화면이다.
+            앞 대화가 있으면 "아까·그거·두 번째 거·거기서"는 앞 도우미 답의 [후보] 번호와 [필터]에서 찾아 이어 쓴다. 번호로 하나를 지목하면 find_folder targets에 그 폴더 하나만 넣는다. 앞 대화에도 없으면 되묻는다. "지금 보이는 거·여기"는 아래 지금 화면이다.
+            앞 도우미 답이 되묻기이고 [하려던 일]이 있으면, 이번 말이 폴더 이름·번호·조건만이어도 그 일을 이어서 한다 — select_remove면 selected=true를 더한다, rename이면 plan_rename.
             "가족·부모님·하객이 좋아한"은 likedByGuests, "댓글 달린"은 hasComments, "별 n개 이상"은 minRating, "n점짜리·딱 n점"은 minRating=maxRating=n, "메모 남긴"은 hasMemo 로 거른다 — 반응은 읽기만 한다.
-            지금 데이터로 거를 수 없는 조건은 unsupported에 넣는다(폴더 이름으로 대신하지 말 것, 단 사용자가 폴더를 지목했으면 폴더로).
+            지금 데이터로 거를 수 없는 조건은 unsupported에 넣는다(폴더 이름으로 대신하지 말 것, 단 사용자가 폴더를 지목했으면 폴더로). 폴더 이름에 그 말이 들어 있어도("베일 클로즈업"·"흰 벽 전신") 사용자가 "폴더"를 말하지 않았으면 폴더로 거르지 않고 unsupported에 넣는다.
             못 거르는 조건만 있어도 원래 하려던 일의 도구를 고른다 — 있는지·몇 장인지 물으면 stats, 넣거나 빼라면 plan_action.
             "제출해도 돼?·빠진 거 없어?·점검해줘"는 check_selection. 폴더 이름을 바꿔 달라면 plan_rename.
-            사진 넣기·빼기·옮기기는 plan_action으로 계획만 만든다. 제출·삭제·별점을 대신 해 달라면 할 수 없다고 ask_clarification으로 알린다.
+            사진 넣기·빼기·옮기기는 plan_action으로 계획만 만든다. 제출·사진 삭제·별점을 대신 해 달라면 explain으로 그 기능의 주제(submit·delete_photo·rating)를 고른다 — 서버가 어디서 하는지 답한다.
+            서비스와 관계없는 말(날씨·잡담·일반 상식·결혼 준비)은 explain이 아니라 ask_clarification으로 사진 고르기를 돕는 도우미라고 알린다. explain unknown은 이 서비스의 사용법·개념인데 목록에 없을 때만 쓴다.
             "다 빼줘·전부 넣어줘·싹 다"처럼 범위만 있고 어떤 사진인지(폴더·조건·"여기"·앞 대화가 가리키는 것)가 말에도 앞 대화에도 없으면 plan_action을 만들지 말고 ask_clarification으로 어떤 사진인지 묻는다 — 한 번에 많이 바뀌는 일이라 짐작하지 않는다.
+            "이거·이 사진·요거"처럼 한 장일 수 있는 말로 넣기·빼기를 하라면 지금 화면에 폴더가 열려 있어도 폴더 전체로 짐작하지 말고 ask_clarification(pending=select_add, 빼라면 select_remove)으로 묻는다 — 서버는 어느 사진을 보고 있는지 모른다.
             "어떻게 해?"·"언제까지?"·"몇 번 남았어?"·"몇 장 남았어?"처럼 사용법이나 지금 상태를 물으면 explain으로 주제를 고른다. 목록 밖이면 unknown.
             폴더 목록(shot_order = 촬영 순서, id의 c=컨셉 d=세부, 세부의 subject = 그 폴더 사진 대부분의 피사체 — "신부 단독 폴더"는 이것으로 찾는다):
             ${objectMapper.writeValueAsString(folders)}
@@ -78,6 +81,7 @@ object AgentDecisionPrompt {
             turn.checkCodes.takeIf { it.isNotEmpty() }?.let { codes ->
                 "점검 ${codes.mapIndexed { index, code -> "${index + 1}=${code.code}" }.joinToString(" ")}"
             },
+            turn.pendingOp?.let { "하려던 일 ${it.code}" },
         )
         return if (notes.isEmpty()) turn.text else "${turn.text}\n[${notes.joinToString(" · ")}]"
     }

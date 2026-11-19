@@ -3,6 +3,7 @@ package com.soma.wes.agent.infrastructure
 import com.soma.wes.agent.domain.AgentActionOp
 import com.soma.wes.agent.domain.AgentActor
 import com.soma.wes.agent.domain.AgentCheckCode
+import com.soma.wes.agent.domain.AgentPendingOp
 import com.soma.wes.agent.domain.AgentSubject
 import com.soma.wes.agent.domain.ExplainTopic
 import com.soma.wes.agent.domain.PhotoFilter
@@ -73,6 +74,8 @@ class AgentDecisionReader(
             AgentDecisionTools.EXPLAIN -> AgentDecisionDto.Explain(topic = ExplainTopic.fromCode(input.path("topic").asString("")) ?: ExplainTopic.UNKNOWN)
             AgentDecisionTools.ASK_CLARIFICATION -> AgentDecisionDto.Clarify(
                 question = input.path("question").asString("").trim().ifEmpty { FALLBACK_QUESTION },
+                pending = enumOf<AgentPendingOp>(input.path("pending")),
+                folders = folderTargets(input.path("folders"), context),
             )
             else -> AgentDecisionDto.Clarify(FALLBACK_QUESTION)
         }

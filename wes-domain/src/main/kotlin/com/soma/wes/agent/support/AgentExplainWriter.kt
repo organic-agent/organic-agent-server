@@ -20,6 +20,8 @@ import java.time.format.DateTimeFormatter
  * 부부 댓글은 작가에게 안 보임(`GalleryAccessPolicy.requireParticipantViewer`).
  * 개념 주제(#403): AI 폴더 categorize(비슷한 사진 그룹·연사 묶음 + 이름) → `FolderStep` 물질화 · 사진은 세부 폴더 하나에(`detail_folder_assignments(photo_id)` UK),
  * 없으면 미분류 · 연사 대표 `burst_rank = 0` · 피사체 `photo_analysis.subjects`(CLIP) · 사진 제외 `PhotoExclusionControllerDocs`(원본·별점·메모 유지, 확정 뒤 409, 복원 있음).
+ * 배우자 초대(#412): 개인 갤러리는 소유자만 파트너 링크 발급(`GalleryInviteService.issue` requireManager, PERSONAL_PARTNER 정원 2·7일), 스튜디오는 작가가 초대 · 웹 '초대' 모달의 '파트너' 탭.
+ * 고르기·빼기(#412): 웹 셀렉 화면의 체크박스(마우스를 올리면 왼쪽 위)·빼기 확인 모달·Shift 범위 선택 · 되돌리기는 도우미 실행 결과의 '되돌리기' 버튼.
  */
 @Component
 class AgentExplainWriter(
@@ -59,7 +61,26 @@ class AgentExplainWriter(
             "'신부 단독 사진만'처럼 물으면 모아 볼 수 있어요." to emptyList()
         ExplainTopic.EXCLUDED_PHOTOS -> excludedPhotos(snapshot)
         ExplainTopic.GALLERY_TYPE -> galleryType(snapshot)
+        ExplainTopic.SELECT_HOW -> selectHow(snapshot)
+        ExplainTopic.CAPABILITIES -> "폴더 찾기, 별점·피사체·가족 반응 같은 조건으로 사진 거르기, 장수 세기, 제출 전 점검, 사용법 안내를 할 수 있어요. " +
+            "선택에 넣고 빼기·폴더 옮기기·폴더 이름 바꾸기는 제가 계획을 보여 드리고 확인을 누르면 실행해요. 제출·사진 삭제·별점 매기기는 직접 해 주셔야 해요." to emptyList()
+        ExplainTopic.UNDO -> "제가 실행한 일은 결과 아래 '되돌리기' 버튼으로 바로 취소할 수 있어요. 저는 지난 대화를 기억하지 않아서 말로는 되돌려 드리지 못해요." to emptyList()
+        ExplainTopic.INVITE_PARTNER -> invitePartner(snapshot)
         ExplainTopic.UNKNOWN -> "그건 제가 아직 모르는 내용이에요. 작가님께 여쭤봐 주세요." to emptyList()
+    }
+
+    private fun selectHow(snapshot: AgentGallerySnapshotDto): Pair<String, List<AgentMessageResponse.Explain.Link>> {
+        if (!snapshot.selectionEditable) return "이미 제출해서 지금은 담기·빼기가 막혀 있어요." to emptyList()
+        return "사진에 마우스를 올리면 왼쪽 위에 체크박스가 보여요. 체크하면 선택에 담기고, 체크를 풀면 한 번 확인한 뒤 빠져요. " +
+            "Shift를 누른 채 누르면 여러 장을 한 번에 고를 수 있어요. 저한테 '블랙수트에서 별 4개 이상 넣어줘'·'1점짜리 빼줘'처럼 말해도 돼요." to
+            listOf(link("셀렉 화면으로", AgentScreen.SELECTION))
+    }
+
+    private fun invitePartner(snapshot: AgentGallerySnapshotDto): Pair<String, List<AgentMessageResponse.Explain.Link>> {
+        if (snapshot.partnerUserIds.isNotEmpty()) return "배우자분은 이미 이 갤러리에 함께 계세요." to emptyList()
+        if (!snapshot.personal) return "이 갤러리는 작가님이 두 분을 초대하는 스튜디오 갤러리라, 배우자분 초대는 담당 작가님께 요청해 주세요." to emptyList()
+        return "갤러리 화면의 '초대' 버튼에서 '파트너' 탭을 열어 링크를 만들어 보내면, 배우자분이 그 링크로 들어와 함께 올리고 고를 수 있어요. " +
+            "링크는 갤러리를 만든 분만 만들 수 있고, 한 번만 쓰이며 7일 동안 유효해요." to emptyList()
     }
 
     private fun submit(snapshot: AgentGallerySnapshotDto): Pair<String, List<AgentMessageResponse.Explain.Link>> {

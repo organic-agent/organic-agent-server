@@ -49,14 +49,21 @@ class AgentReplyWriter {
      * [filtered]는 고른 사진 전체가 아니라 조건(폴더·피사체·별점 등)에 맞는 것만 셌다는 뜻이다. 그 수를 전체 선택량처럼 말하면
      * "신부 사진 2장 골랐어"에 "8장 남았어요"가 붙으니, 조건을 건 집계는 계약 잔여량을 말하지 않는다.
      */
-    fun stats(stats: AgentMessageResponse.Stats, unsupported: List<UnsupportedCondition>, filtered: Boolean = false): String {
+    fun stats(
+        stats: AgentMessageResponse.Stats,
+        unsupported: List<UnsupportedCondition>,
+        filtered: Boolean = false,
+        noneSelected: Boolean = false,
+    ): String {
         val main = when (stats.metric) {
             StatsMetric.COUNT -> count(stats, filtered)
             StatsMetric.DUPLICATES -> duplicates(stats)
+            StatsMetric.FOLDER_COUNT -> folderCount(stats)
             StatsMetric.BY_CONCEPT, StatsMetric.BY_DETAIL, StatsMetric.BY_SUBJECTS, StatsMetric.BY_ORIENTATION,
             StatsMetric.BY_RATING -> distribution(stats, filtered)
         }
-        return "$main${unsupportedNote(unsupported)}"
+        val fallback = if (noneSelected) "아직 고른 사진이 없어서 갤러리 전체로 셌어요. " else ""
+        return "$fallback$main${unsupportedNote(unsupported)}"
     }
 
     private fun count(stats: AgentMessageResponse.Stats, filtered: Boolean): String {
@@ -68,6 +75,13 @@ class AgentReplyWriter {
             stats.total == limit -> "지금 ${stats.total}장 골랐어요. 계약 ${limit}장을 꽉 채웠어요."
             else -> "지금 ${stats.total}장 골랐어요. 계약 ${limit}장까지 ${limit - stats.total}장 남았어요."
         }
+    }
+
+    private fun folderCount(stats: AgentMessageResponse.Stats): String {
+        if (stats.total == 0) return "아직 폴더가 없어요."
+        val details = stats.rows.sumOf { it.count }
+        val listed = stats.rows.joinToString(ROW_SEPARATOR) { "${it.label}(세부 ${it.count}개)" }
+        return "컨셉 폴더 ${stats.total}개, 세부 폴더 ${details}개예요. $listed"
     }
 
     private fun duplicates(stats: AgentMessageResponse.Stats): String {
@@ -92,7 +106,8 @@ class AgentReplyWriter {
         val scope = when {
             selectedScope && filtered -> "고른 사진 중 조건에 맞는 ${stats.total}장"
             selectedScope -> "고른 ${stats.total}장"
-            else -> "${stats.total}장"
+            filtered -> "갤러리에서 조건에 맞는 ${stats.total}장"
+            else -> "갤러리 전체 ${stats.total}장"
         }
         val listed = stats.rows.joinToString(ROW_SEPARATOR) { "${it.label} ${it.count}장" }
         return "$scope 중 ${listed}이에요.${balanceNote(stats)}"
@@ -162,10 +177,45 @@ class AgentReplyWriter {
         return if (rest > 0) "$named 외 ${rest}개" else named
     }
 
+    /** 못 거르는 조건만 있을 때 — 전체를 결과처럼 보여 주지 않는다(#412 결정 3). */
+    fun unsupportedOnly(unsupported: List<UnsupportedCondition>): String =
+        "${labels(unsupported)}(으)로는 아직 거르지 못해요. 폴더나 별점·피사체 같은 조건을 같이 말씀해 주시면 그 조건으로 보여 드릴게요."
+
+    /** 못 거르는 조건만으로 넣기·빼기·옮기기를 하라면 — 조건이 없는 셈이라 전부가 바뀐다. 계획을 만들지 않는다. */
+    fun unsupportedOnlyPlan(unsupported: List<UnsupportedCondition>): String =
+        "${labels(unsupported)}(으)로는 아직 거르지 못해서 어떤 사진을 바꿀지 정할 수 없어요. 폴더나 별점·피사체 같은 조건으로 말씀해 주세요."
+
+    private fun labels(unsupported: List<UnsupportedCondition>): String = unsupported.joinToString(", ") { it.label }
+
+    /** 빼기 대상을 되물을 때 — 고른 사진이 있는 컨셉과 장수를 번호로(#412 결정 9). 번호는 응답 folderCandidates 순서다. */
+    fun removeChoices(selectedCount: Int, rows: List<AgentMessageResponse.Stats.Row>): String {
+        val numbered = rows.mapIndexed { index, row -> "${index + 1}. ${row.label} ${row.count}장" }
+        return "지금 고른 ${selectedCount}장은 ${numbered.joinToString(ROW_SEPARATOR)}이에요. 어디서 뺄까요? 폴더 이름이나 조건으로 말씀해 주세요."
+    }
+
+    fun nothingToRemove(): String = "아직 고른 사진이 없어서 뺄 사진이 없어요."
+
+    /** 넣기 대상을 되물을 때 — 컨셉을 번호로. */
+    fun addChoices(conceptNames: List<String>): String {
+        val numbered = conceptNames.mapIndexed { index, name -> "${index + 1}. $name" }
+        return "어떤 사진을 넣을까요? ${numbered.joinToString(ROW_SEPARATOR)} — 폴더 이름이나 별점·피사체 같은 조건으로 말씀해 주세요."
+    }
+
+    /** 폴더가 열린 화면의 "이거 넣어줘" — 한 장일 수 있어 폴더 전체로 짐작하지 않는다(#412 결정 5). */
+    fun addFromScreen(folderName: String, photoCount: Int): String =
+        "열린 '$folderName' 폴더 사진 전부(${photoCount}장)를 넣을까요, 사진 한 장을 말씀하신 건가요? 한 장이면 그 사진의 체크박스로 넣어 주세요."
+
+    /** 판단기의 되묻기 문장 뒤에 폴더 후보를 번호로. 후보가 하나면 붙이지 않는다 — 문장이 이미 그 폴더를 말한다. */
+    fun withFolderChoices(question: String, candidates: List<AgentMessageResponse.FolderCandidate>): String {
+        if (candidates.size < 2) return question
+        val numbered = candidates.mapIndexed { index, candidate -> "${index + 1}. ${candidate.name}" }
+        return "$question ${numbered.joinToString(ROW_SEPARATOR)}"
+    }
+
     fun noPartner(): String = "배우자분이 아직 갤러리에 들어오지 않아서 그 조건으로는 거를 수 없어요."
 
     fun notEditable(): String = "선택을 이미 제출해서 사진을 넣거나 빼거나 옮길 수 없어요."
 
     private fun unsupportedNote(unsupported: List<UnsupportedCondition>): String =
-        if (unsupported.isEmpty()) "" else " (${unsupported.joinToString(", ") { it.label }}(으)로는 아직 거르지 못해서 그 조건은 빼고 봤어요.)"
+        if (unsupported.isEmpty()) "" else " (${labels(unsupported)}(으)로는 아직 거르지 못해서 그 조건은 빼고 봤어요.)"
 }

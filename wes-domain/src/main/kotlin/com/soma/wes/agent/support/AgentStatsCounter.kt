@@ -31,6 +31,7 @@ class AgentStatsCounter(
     }
 
     fun count(snapshot: AgentGallerySnapshotDto, decision: AgentDecisionDto.Stats): AgentMessageResponse.Stats {
+        if (decision.metric == StatsMetric.FOLDER_COUNT) return folderCount(snapshot, decision.scope)
         val filter = when (decision.scope) {
             StatsScope.SELECTED -> decision.filter.copy(selected = true)
             StatsScope.GALLERY -> decision.filter
@@ -45,6 +46,7 @@ class AgentStatsCounter(
             StatsMetric.BY_ORIENTATION -> byOrientation(photos)
             StatsMetric.BY_RATING -> byRating(photos)
             StatsMetric.DUPLICATES -> duplicates(photos)
+            StatsMetric.FOLDER_COUNT -> error("폴더 수는 사진을 세지 않아 위에서 끝난다")
         }
 
         return AgentMessageResponse.Stats(
@@ -55,6 +57,16 @@ class AgentStatsCounter(
             limit = snapshot.maxSelectablePhotoCount,
         )
     }
+
+    /** 컨셉을 화면의 폴더 순서 그대로, 칸마다 세부 폴더 수. total은 컨셉 수다 — 사진을 세지 않는다. */
+    private fun folderCount(snapshot: AgentGallerySnapshotDto, scope: StatsScope): AgentMessageResponse.Stats =
+        AgentMessageResponse.Stats(
+            metric = StatsMetric.FOLDER_COUNT,
+            scope = scope,
+            rows = snapshot.concepts.map { concept -> row(concept.name, concept.details.size) },
+            total = snapshot.concepts.size,
+            limit = snapshot.maxSelectablePhotoCount,
+        )
 
     private fun byConcept(snapshot: AgentGallerySnapshotDto, photos: List<AgentPhotoRow>): List<AgentMessageResponse.Stats.Row> {
         val countByConceptId = photos.groupingBy { it.conceptFolderId }.eachCount()

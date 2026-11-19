@@ -1,6 +1,7 @@
 package com.soma.wes.agent.dto.request
 
 import com.soma.wes.agent.domain.AgentCheckCode
+import com.soma.wes.agent.domain.AgentPendingOp
 import com.soma.wes.agent.domain.AgentReplyKind
 import com.soma.wes.agent.domain.AgentTurnRole
 import com.soma.wes.agent.domain.PhotoFilter
@@ -58,6 +59,9 @@ data class AgentMessageRequest(
 
         @field:Schema(description = "ASSISTANT만 — 점검 응답 check.items의 code를 순서대로. 없으면 비운다")
         val checkCodes: List<AgentCheckCode> = emptyList(),
+
+        @field:Schema(description = "ASSISTANT만 — 되묻기 응답의 pendingOp 그대로. 다음 질문이 대상만 말해도(\"블랙수트\") 그 일로 잇는다. 없으면 null")
+        val pendingOp: AgentPendingOp? = null,
     )
 
     @Schema(description = "가리킨 폴더. 세부 폴더면 detailFolderId까지")

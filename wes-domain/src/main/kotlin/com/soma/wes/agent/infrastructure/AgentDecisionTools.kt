@@ -70,13 +70,13 @@ object AgentDecisionTools {
         tool(
             name = STATS,
             description = """
-                고른 사진(scope=selected) 또는 갤러리 전체(scope=gallery)를 센다. 셀렉 화면이라 범위를 말하지 않으면 고른 사진이다.
+                고른 사진(scope=selected) 또는 갤러리 전체(scope=gallery)를 센다. 셀렉 화면이라 범위를 말하지 않으면 고른 사진이다 — '비율·균형·몰렸어?'도 '전체·찍은'을 말하지 않으면 selected.
                 '컨셉별·카테고리별'은 by_concept, '세부 폴더별'은 by_detail, '누가 나왔나·인물 비율'은 by_subjects, '비슷한 거·중복'은 duplicates,
-                '별점별·별 몇 개씩'은 by_rating.
+                '별점별·별 몇 개씩'은 by_rating, '폴더 몇 개·폴더 목록 보여줘'는 folder_count(폴더 수만 센다 — '안 고른 폴더'는 by_concept).
             """.trimIndent(),
             schema = """
                 {"type": "object", "properties": {
-                  "metric": {"enum": ["count", "by_concept", "by_detail", "by_subjects", "by_orientation", "by_rating", "duplicates"]},
+                  "metric": {"enum": ["count", "by_concept", "by_detail", "by_subjects", "by_orientation", "by_rating", "duplicates", "folder_count"]},
                   "scope": {"enum": ["selected", "gallery"]},
                   "filter": $FILTER_SCHEMA,
                   "unsupported": $UNSUPPORTED_SCHEMA
@@ -125,7 +125,9 @@ object AgentDecisionTools {
                 delete_photo=사진 지우기, download=원본·파일 내려받기, ai_recommend=AI 추천이 뭔지·요청 방법,
                 ai_folders=AI 폴더가 뭔지·어떻게 나뉘었나, folder_levels=컨셉 폴더와 세부 폴더 차이·미분류, burst=연사·대표 컷이 뭔지,
                 subjects=신랑·신부·커플 구분은 어떻게 하나·틀릴 수 있나, excluded_photos=사진 제외·제외 폴더·되돌리기,
-                gallery_type=개인 갤러리와 스튜디오(초대) 갤러리 차이, unknown=이 목록 밖의 사용법·개념.
+                gallery_type=개인 갤러리와 스튜디오(초대) 갤러리 차이, select_how=사진 고르는 법·선택에서 빼는 법·선택 취소,
+                capabilities=도우미가 뭘 할 수 있나·뭘 물어보면 되나, undo=방금 한 일 취소·되돌리기, invite_partner=배우자·파트너를 갤러리에 초대하는 법,
+                unknown=이 목록 밖의 사용법·개념.
                 사진을 거르거나 세는 말이 아니라 "어떻게 해?"·"언제까지?"·"몇 번 남았어?"·"~가 뭐야?"처럼 방법·상태·개념을 묻는 말에 쓴다.
             """.trimIndent(),
             schema = """
@@ -134,9 +136,17 @@ object AgentDecisionTools {
         ),
         tool(
             name = ASK_CLARIFICATION,
-            description = "무엇을 원하는지 불명확하거나 할 수 없는 일이면 사용자에게 존댓말 한 문장으로 되묻거나 알린다. 이모지는 쓰지 않는다.",
+            description = """
+                무엇을 원하는지 불명확하거나 할 수 없는 일이면 사용자에게 존댓말 한 문장으로 되묻거나 알린다. 이모지는 쓰지 않는다.
+                넣기·빼기·옮기기·이름 바꾸기를 하려는데 대상(어떤 사진·어느 폴더)이나 새 이름이 없어 묻는 것이면 pending에 그 일을 넣는다 — 서버가 지금 상태로 선택지를 붙인다.
+                고를 폴더 후보가 있으면 folders에 넣고, question에는 폴더 목록을 쓰지 않는다(서버가 번호를 붙여 덧붙인다).
+            """.trimIndent(),
             schema = """
-                {"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]}
+                {"type": "object", "properties": {
+                  "question": {"type": "string"},
+                  "pending": {"enum": ["select_add", "select_remove", "move", "rename"], "description": "대상이 없어 못 한 일"},
+                  "folders": {"type": "array", "items": {"type": "string"}, "description": "고를 폴더 후보 'c<id>' 또는 'd<id>'"}
+                }, "required": ["question"]}
             """.trimIndent(),
         ),
     )
