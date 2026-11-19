@@ -1,6 +1,7 @@
 package com.soma.wes.agent.infrastructure
 
 import com.soma.wes.agent.domain.AgentActionOp
+import com.soma.wes.agent.domain.AgentPendingOp
 import com.soma.wes.agent.domain.AgentSubject
 import com.soma.wes.agent.dto.AgentContextDto
 import com.soma.wes.agent.dto.AgentDecisionDto
@@ -46,6 +47,33 @@ class AgentDecisionReaderUnitTest {
             assertThat(plan.filter.conceptFolderIds).containsExactly(2L)
             assertThat(plan.filter.subjects).containsExactly(AgentSubject.BRIDE)
         }
+    }
+
+    @Test
+    fun `되묻기의 하려던 일과 폴더 후보를 읽고 모르는 일과 없는 폴더는 버린다`() {
+        // given
+        val withFolders = context.copy(
+            concepts = listOf(AgentContextDto.Concept(id = 4, name = "블랙수트", shotOrder = 1, timeRange = null, photoCount = 10, details = emptyList())),
+        )
+
+        // when
+        val known = reader.read(
+            AgentDecisionTools.ASK_CLARIFICATION,
+            """{"question":"어느 폴더로 옮길까요?","pending":"move","folders":["c4","c99"]}""",
+            text = null,
+            context = withFolders,
+        )
+        val unknown = reader.read(AgentDecisionTools.ASK_CLARIFICATION, """{"question":"무엇을 할까요?","pending":"delete"}""", text = null, context = context)
+
+        // then
+        assertThat(known).isEqualTo(
+            AgentDecisionDto.Clarify(
+                question = "어느 폴더로 옮길까요?",
+                pending = AgentPendingOp.MOVE,
+                folders = listOf(AgentDecisionDto.FolderTarget(conceptFolderId = 4)),
+            ),
+        )
+        assertThat(unknown).isEqualTo(AgentDecisionDto.Clarify("무엇을 할까요?"))
     }
 
     @Test

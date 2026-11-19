@@ -2,6 +2,7 @@ package com.soma.wes.agent.dto
 
 import com.soma.wes.agent.domain.AgentActionOp
 import com.soma.wes.agent.domain.AgentCheckCode
+import com.soma.wes.agent.domain.AgentPendingOp
 import com.soma.wes.agent.domain.ExplainTopic
 import com.soma.wes.agent.domain.PhotoFilter
 import com.soma.wes.agent.domain.StatsMetric
@@ -46,8 +47,14 @@ sealed interface AgentDecisionDto {
         val name: String,
     ) : AgentDecisionDto
 
+    /**
+     * 되묻기. 넣기·빼기·옮기기·이름 바꾸기의 대상이 없어 묻는 것이면 [pending]에 그 일을 싣는다 — 서버가 지금 상태로 선택지를 붙인다(#412 결정 9).
+     * [folders]는 판단기가 고른 폴더 후보(옮기기·이름 바꾸기). 넣기·빼기의 선택지는 서버가 센다.
+     */
     data class Clarify(
         val question: String,
+        val pending: AgentPendingOp? = null,
+        val folders: List<FolderTarget> = emptyList(),
     ) : AgentDecisionDto
 
     /** 제출 전 점검. [focus]가 있으면 그 항목 하나의 사진·폴더를 연다 — 앞 점검 답의 "세 번째 거 보여줘". */

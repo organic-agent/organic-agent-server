@@ -2,6 +2,7 @@ package com.soma.wes.agent.service
 
 import com.soma.wes.agent.domain.AgentActionOp
 import com.soma.wes.agent.domain.AgentActionStep
+import com.soma.wes.agent.domain.AgentPendingOp
 import com.soma.wes.agent.domain.AgentReplyKind
 import com.soma.wes.agent.domain.AgentTurnRole
 import com.soma.wes.agent.domain.PhotoFilter
@@ -65,6 +66,9 @@ class AgentMessageService(
 
         /** 후보가 많으면 고르기 어렵다. 2~3개만 보여 준다. */
         const val MAX_FOLDER_CANDIDATES = 3
+
+        /** 되묻기 선택지 수. 컨셉은 보통 4~6개라 다 보이되, 긴 목록이 답 한 줄(600자, history 상한)을 넘지 않게. */
+        const val MAX_CLARIFY_CHOICES = 6
         const val MOVE_TARGET_UNKNOWN = "어느 폴더로 옮길지 찾지 못했어요. 폴더 이름으로 다시 말해 주세요."
 
         /** 판단 한 번의 지연. `result` 태그는 고른 주문서 종류 또는 판단 실패(`Unavailable`)다 — 응답 시간 목표(p50 1.6초)를 운영에서 본다. */
@@ -97,7 +101,7 @@ class AgentMessageService(
             is AgentDecisionDto.Stats -> stats(snapshot, decision)
             is AgentDecisionDto.PlanAction -> planAction(snapshot, decision)
             is AgentDecisionDto.PlanRename -> planRename(snapshot, decision)
-            is AgentDecisionDto.Clarify -> clarify(decision.question)
+            is AgentDecisionDto.Clarify -> clarify(snapshot, decision, request.screen)
             is AgentDecisionDto.Explain -> explain(snapshot, decision)
             is AgentDecisionDto.Check -> check(snapshot, decision)
         }
@@ -128,6 +132,7 @@ class AgentMessageService(
                 },
                 filter = turn.filter,
                 checkCodes = turn.checkCodes,
+                pendingOp = turn.pendingOp,
             )
         }
     }
@@ -312,6 +317,68 @@ class AgentMessageService(
     )
 
     private fun clarify(question: String) = AgentMessageResponse(kind = AgentReplyKind.CLARIFY, reply = question)
+
+    /**
+     * 판단기의 되묻기. 하려던 일([AgentDecisionDto.Clarify.pending])이 있으면 지금 상태로 선택지를 붙이고 그 일을 응답에 실어 다음 질문으로 잇게 한다
+     * (#412 결정 9). 선택지 문장과 숫자는 서버가 만든다 — 판단기 문장은 넣기·빼기에서 버리고, 옮기기·이름 바꾸기에서는 폴더 번호를 덧붙인다.
+     * 하려던 일이 없거나 이미 제출해 할 수 없으면 판단기 문장 그대로다.
+     */
+    private fun clarify(
+        snapshot: AgentGallerySnapshotDto,
+        decision: AgentDecisionDto.Clarify,
+        screen: AgentMessageRequest.Screen?,
+    ): AgentMessageResponse {
+        val pending = decision.pending ?: return clarify(decision.question)
+        if (pending != AgentPendingOp.RENAME && !snapshot.selectionEditable) return clarify(agentReplyWriter.notEditable())
+
+        return when (pending) {
+            AgentPendingOp.SELECT_REMOVE -> removeChoices(snapshot)
+            AgentPendingOp.SELECT_ADD -> addChoices(snapshot, screen)
+            AgentPendingOp.MOVE, AgentPendingOp.RENAME -> {
+                val candidates = decision.folders.mapNotNull { candidate(snapshot, it) }
+                pendingClarify(agentReplyWriter.withFolderChoices(decision.question, candidates), pending, candidates)
+            }
+        }
+    }
+
+    /** 고른 사진이 있는 컨셉만, 화면의 폴더 순서로. 미분류에만 고른 사진은 선택지가 되지 않는다 — 장수 문장은 전체 고른 수로 말한다. */
+    private fun removeChoices(snapshot: AgentGallerySnapshotDto): AgentMessageResponse {
+        val selected = snapshot.photos.filter { it.selected }
+        if (selected.isEmpty()) return clarify(agentReplyWriter.nothingToRemove())
+
+        val countByConceptId = selected.groupingBy { it.conceptFolderId }.eachCount()
+        val concepts = snapshot.concepts.filter { (countByConceptId[it.id] ?: 0) > 0 }.take(MAX_CLARIFY_CHOICES)
+        val rows = concepts.map { AgentMessageResponse.Stats.Row(label = it.name, count = countByConceptId.getValue(it.id)) }
+        val candidates = concepts.map { AgentMessageResponse.FolderCandidate(conceptFolderId = it.id, name = it.name) }
+        return pendingClarify(agentReplyWriter.removeChoices(selected.size, rows), AgentPendingOp.SELECT_REMOVE, candidates)
+    }
+
+    /** 화면에 폴더가 열려 있으면 그 폴더 전체인지 한 장인지(#412 결정 5), 아니면 컨셉을 선택지로. */
+    private fun addChoices(snapshot: AgentGallerySnapshotDto, screen: AgentMessageRequest.Screen?): AgentMessageResponse {
+        val conceptId = screen?.conceptFolderId
+        val open = conceptId?.let { candidate(snapshot, AgentDecisionDto.FolderTarget(conceptFolderId = it, detailFolderId = screen.detailFolderId)) }
+        if (open != null) {
+            val count = snapshot.photos.count { photo ->
+                photo.conceptFolderId == open.conceptFolderId && (open.detailFolderId == null || photo.detailFolderId == open.detailFolderId)
+            }
+            return pendingClarify(agentReplyWriter.addFromScreen(open.name, count), AgentPendingOp.SELECT_ADD, listOf(open))
+        }
+
+        val concepts = snapshot.concepts.take(MAX_CLARIFY_CHOICES)
+        val candidates = concepts.map { AgentMessageResponse.FolderCandidate(conceptFolderId = it.id, name = it.name) }
+        return pendingClarify(agentReplyWriter.addChoices(concepts.map { it.name }), AgentPendingOp.SELECT_ADD, candidates)
+    }
+
+    private fun pendingClarify(
+        reply: String,
+        pending: AgentPendingOp,
+        candidates: List<AgentMessageResponse.FolderCandidate>,
+    ) = AgentMessageResponse(
+        kind = AgentReplyKind.CLARIFY,
+        reply = reply,
+        folderCandidates = candidates.takeIf { it.isNotEmpty() },
+        pendingOp = pending,
+    )
 
     private fun explain(snapshot: AgentGallerySnapshotDto, decision: AgentDecisionDto.Explain): AgentMessageResponse {
         val (reply, links) = agentExplainWriter.write(snapshot, decision.topic)

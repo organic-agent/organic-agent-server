@@ -3,6 +3,7 @@ package com.soma.wes.agent.dto.response
 import com.soma.wes.agent.domain.AgentActionStep
 import com.soma.wes.agent.domain.AgentCheckCode
 import com.soma.wes.agent.domain.AgentCheckSeverity
+import com.soma.wes.agent.domain.AgentPendingOp
 import com.soma.wes.agent.domain.AgentReplyKind
 import com.soma.wes.agent.domain.AgentScreen
 import com.soma.wes.agent.domain.ExplainTopic
@@ -24,8 +25,11 @@ data class AgentMessageResponse(
     @field:Schema(description = "화면을 이렇게 바꾼다 — 폴더 열기·필터. FIND_FOLDER·FILTER_PHOTOS·PLAN_ACTION, 점검 한 항목을 열 때 CHECK")
     val view: View? = null,
 
-    @field:Schema(description = "폴더 후보가 여럿일 때 2~3개. FIND_FOLDER")
+    @field:Schema(description = "폴더 후보. FIND_FOLDER는 여럿일 때 2~3개, CLARIFY는 되묻기의 선택지(reply의 번호 순서). 없으면 null")
     val folderCandidates: List<FolderCandidate>? = null,
+
+    @field:Schema(description = "CLARIFY만 — 대상을 몰라 되묻기 전에 하려던 일. 다음 질문의 history ASSISTANT 턴에 그대로 돌려보낸다. 없으면 null")
+    val pendingOp: AgentPendingOp? = null,
 
     @field:Schema(description = "센 결과. STATS")
     val stats: Stats? = null,

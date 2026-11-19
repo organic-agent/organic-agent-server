@@ -135,9 +135,17 @@ object AgentDecisionTools {
         ),
         tool(
             name = ASK_CLARIFICATION,
-            description = "무엇을 원하는지 불명확하거나 할 수 없는 일이면 사용자에게 존댓말 한 문장으로 되묻거나 알린다. 이모지는 쓰지 않는다.",
+            description = """
+                무엇을 원하는지 불명확하거나 할 수 없는 일이면 사용자에게 존댓말 한 문장으로 되묻거나 알린다. 이모지는 쓰지 않는다.
+                넣기·빼기·옮기기·이름 바꾸기를 하려는데 대상(어떤 사진·어느 폴더)이나 새 이름이 없어 묻는 것이면 pending에 그 일을 넣는다 — 서버가 지금 상태로 선택지를 붙인다.
+                고를 폴더 후보가 있으면 folders에 넣고, question에는 폴더 목록을 쓰지 않는다(서버가 번호를 붙여 덧붙인다).
+            """.trimIndent(),
             schema = """
-                {"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]}
+                {"type": "object", "properties": {
+                  "question": {"type": "string"},
+                  "pending": {"enum": ["select_add", "select_remove", "move", "rename"], "description": "대상이 없어 못 한 일"},
+                  "folders": {"type": "array", "items": {"type": "string"}, "description": "고를 폴더 후보 'c<id>' 또는 'd<id>'"}
+                }, "required": ["question"]}
             """.trimIndent(),
         ),
     )

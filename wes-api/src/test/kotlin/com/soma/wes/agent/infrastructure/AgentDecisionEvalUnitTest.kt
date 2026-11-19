@@ -110,6 +110,7 @@ class AgentDecisionEvalUnitTest {
                 },
                 filter = turn.filter,
                 checkCodes = turn.checkCodes,
+                pendingOp = turn.pendingOp,
             )
         }
 
@@ -181,7 +182,7 @@ class AgentDecisionEvalUnitTest {
                 "name" to decision.name,
             )
             is AgentDecisionDto.Check -> mapOf("intent" to "check", "focus" to decision.focus?.code)
-            is AgentDecisionDto.Clarify -> mapOf("intent" to "clarify", "question" to decision.question)
+            is AgentDecisionDto.Clarify -> mapOf("intent" to "clarify", "question" to decision.question, "pending" to decision.pending?.code)
             is AgentDecisionDto.Explain -> mapOf("intent" to "explain", "topic" to decision.topic.code)
         }
 

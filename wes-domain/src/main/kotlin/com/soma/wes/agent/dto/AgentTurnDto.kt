@@ -1,6 +1,7 @@
 package com.soma.wes.agent.dto
 
 import com.soma.wes.agent.domain.AgentCheckCode
+import com.soma.wes.agent.domain.AgentPendingOp
 import com.soma.wes.agent.domain.AgentReplyKind
 import com.soma.wes.agent.domain.AgentTurnRole
 import com.soma.wes.agent.domain.PhotoFilter
@@ -16,4 +17,6 @@ data class AgentTurnDto(
     val folderCandidates: List<AgentDecisionDto.FolderTarget> = emptyList(),
     val filter: PhotoFilter? = null,
     val checkCodes: List<AgentCheckCode> = emptyList(),
+    /** 앞 되묻기가 하려던 일(#412). 이번 말이 대상만이어도 이 일로 잇는다. */
+    val pendingOp: AgentPendingOp? = null,
 )

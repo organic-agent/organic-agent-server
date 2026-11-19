@@ -41,6 +41,7 @@ object AgentDecisionPrompt {
             누가 했는지(담은·넣은·별점 준·메모한·댓글 단)는 addedBy·ratedBy·memoBy·commentedBy 에 넣는다 — "내가·제가"는 me, "남편·아내·신랑·신부·와이프·배우자"는 partner. me·partner는 서버가 묻는 계정으로 풀므로 "내가 댓글 단·제가 담은"은 신랑인지 신부인지 묻지 않는다.
             사진에 나온 사람과 헷갈리지 않는다: "남편이 담은"은 addedBy=partner, "남편 나온"은 subjects=groom.
             앞 대화가 있으면 "아까·그거·두 번째 거·거기서"는 앞 도우미 답의 [후보] 번호와 [필터]에서 찾아 이어 쓴다. 번호로 하나를 지목하면 find_folder targets에 그 폴더 하나만 넣는다. 앞 대화에도 없으면 되묻는다. "지금 보이는 거·여기"는 아래 지금 화면이다.
+            앞 도우미 답이 되묻기이고 [하려던 일]이 있으면, 이번 말이 폴더 이름·번호·조건만이어도 그 일을 이어서 한다 — select_remove면 selected=true를 더한다, rename이면 plan_rename.
             "가족·부모님·하객이 좋아한"은 likedByGuests, "댓글 달린"은 hasComments, "별 n개 이상"은 minRating, "n점짜리·딱 n점"은 minRating=maxRating=n, "메모 남긴"은 hasMemo 로 거른다 — 반응은 읽기만 한다.
             지금 데이터로 거를 수 없는 조건은 unsupported에 넣는다(폴더 이름으로 대신하지 말 것, 단 사용자가 폴더를 지목했으면 폴더로).
             못 거르는 조건만 있어도 원래 하려던 일의 도구를 고른다 — 있는지·몇 장인지 물으면 stats, 넣거나 빼라면 plan_action.
@@ -79,6 +80,7 @@ object AgentDecisionPrompt {
             turn.checkCodes.takeIf { it.isNotEmpty() }?.let { codes ->
                 "점검 ${codes.mapIndexed { index, code -> "${index + 1}=${code.code}" }.joinToString(" ")}"
             },
+            turn.pendingOp?.let { "하려던 일 ${it.code}" },
         )
         return if (notes.isEmpty()) turn.text else "${turn.text}\n[${notes.joinToString(" · ")}]"
     }

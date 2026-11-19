@@ -187,6 +187,31 @@ class AgentReplyWriter {
 
     private fun labels(unsupported: List<UnsupportedCondition>): String = unsupported.joinToString(", ") { it.label }
 
+    /** 빼기 대상을 되물을 때 — 고른 사진이 있는 컨셉과 장수를 번호로(#412 결정 9). 번호는 응답 folderCandidates 순서다. */
+    fun removeChoices(selectedCount: Int, rows: List<AgentMessageResponse.Stats.Row>): String {
+        val numbered = rows.mapIndexed { index, row -> "${index + 1}. ${row.label} ${row.count}장" }
+        return "지금 고른 ${selectedCount}장은 ${numbered.joinToString(ROW_SEPARATOR)}이에요. 어디서 뺄까요? 폴더 이름이나 조건으로 말씀해 주세요."
+    }
+
+    fun nothingToRemove(): String = "아직 고른 사진이 없어서 뺄 사진이 없어요."
+
+    /** 넣기 대상을 되물을 때 — 컨셉을 번호로. */
+    fun addChoices(conceptNames: List<String>): String {
+        val numbered = conceptNames.mapIndexed { index, name -> "${index + 1}. $name" }
+        return "어떤 사진을 넣을까요? ${numbered.joinToString(ROW_SEPARATOR)} — 폴더 이름이나 별점·피사체 같은 조건으로 말씀해 주세요."
+    }
+
+    /** 폴더가 열린 화면의 "이거 넣어줘" — 한 장일 수 있어 폴더 전체로 짐작하지 않는다(#412 결정 5). */
+    fun addFromScreen(folderName: String, photoCount: Int): String =
+        "열린 '$folderName' 폴더 사진 전부(${photoCount}장)를 넣을까요, 사진 한 장을 말씀하신 건가요? 한 장이면 그 사진의 체크박스로 넣어 주세요."
+
+    /** 판단기의 되묻기 문장 뒤에 폴더 후보를 번호로. 후보가 하나면 붙이지 않는다 — 문장이 이미 그 폴더를 말한다. */
+    fun withFolderChoices(question: String, candidates: List<AgentMessageResponse.FolderCandidate>): String {
+        if (candidates.size < 2) return question
+        val numbered = candidates.mapIndexed { index, candidate -> "${index + 1}. ${candidate.name}" }
+        return "$question ${numbered.joinToString(ROW_SEPARATOR)}"
+    }
+
     fun noPartner(): String = "배우자분이 아직 갤러리에 들어오지 않아서 그 조건으로는 거를 수 없어요."
 
     fun notEditable(): String = "선택을 이미 제출해서 사진을 넣거나 빼거나 옮길 수 없어요."
