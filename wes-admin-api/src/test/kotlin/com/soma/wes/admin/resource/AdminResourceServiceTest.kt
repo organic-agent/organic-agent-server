@@ -3,6 +3,7 @@ package com.soma.wes.admin.resource
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
 import com.soma.wes.admin.fixture.AdminAccountFixture
+import com.soma.wes.admin.resource.domain.AdminResourceSort
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.dto.request.ChangeAdminResourceStateRequest
 import com.soma.wes.admin.resource.dto.request.CreateAdminResourceRequest
@@ -62,6 +63,38 @@ class AdminResourceServiceTest @Autowired constructor(
 
         assertThat(updated.version).isEqualTo(1)
         assertThat(updated.label).isEqualTo("정정된 사용자")
+    }
+
+    @Test
+    fun `통합 검색은 기본으로 최근 수정 순이고 CREATED를 고르면 최근 생성 순이다`() {
+        val actor = adminAccountFixture.관리자("search-sort")
+        val older = createSortUser(actor.requiredId, "older")
+        val newer = createSortUser(actor.requiredId, "newer")
+        setTimestamps(older.id, createdAt = "2026-01-01T00:00:00Z", updatedAt = "2026-03-01T00:00:00Z")
+        setTimestamps(newer.id, createdAt = "2026-02-01T00:00:00Z", updatedAt = "2026-02-01T00:00:00Z")
+
+        val byUpdated = service.search("정렬확인", setOf(AdminResourceType.USER), 0, 20)
+        val byCreated = service.search("정렬확인", setOf(AdminResourceType.USER), 0, 20, AdminResourceSort.CREATED)
+
+        assertThat(byUpdated.contents.map { it.id }).containsExactly(older.id, newer.id)
+        assertThat(byCreated.contents.map { it.id }).containsExactly(newer.id, older.id)
+    }
+
+    private fun createSortUser(actorAdminId: Long, suffix: String) = service.create(
+        actorAdminId,
+        AdminResourceType.USER,
+        CreateAdminResourceRequest(
+            mapOf("provider" to "KAKAO", "providerId" to "sort-$suffix", "nickname" to "정렬확인 $suffix"),
+        ),
+        "127.0.0.1",
+    )
+
+    private fun setTimestamps(userId: Long, createdAt: String, updatedAt: String) {
+        jdbcClient.sql("UPDATE users SET created_at = CAST(:createdAt AS timestamptz), updated_at = CAST(:updatedAt AS timestamptz) WHERE id = :id")
+            .param("createdAt", createdAt)
+            .param("updatedAt", updatedAt)
+            .param("id", userId)
+            .update()
     }
 
     @Test

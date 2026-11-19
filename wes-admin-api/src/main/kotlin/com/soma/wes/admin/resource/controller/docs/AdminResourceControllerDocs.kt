@@ -1,6 +1,7 @@
 package com.soma.wes.admin.resource.controller.docs
 
 import com.soma.wes.admin.domain.AdminLoginUser
+import com.soma.wes.admin.resource.domain.AdminResourceSort
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.domain.AdminRetouchArtifactType
 import com.soma.wes.admin.resource.dto.request.AdminPhotoAccessRequest
@@ -45,8 +46,8 @@ interface AdminResourceControllerDocs {
     @Operation(summary = "휴지통 배치 복원", description = "배치에 묶인 데이터를 한 번에 되살린다. version 확인은 하지 않는다. 배치가 없으면 404(ADMIN_404_6), 정리(PURGING)가 시작됐거나 복구 기한이 지났으면 410(ADMIN_410_2), ACTIVE가 아니거나 되살린 행 수가 배치 기록과 다르면 409(ADMIN_409_10)이다. 사진이 루트인 배치는 갤러리 사진 한도를 다시 지킨다.")
     fun restoreTrashBatch(loginUser: AdminLoginUser, batchId: Long, servletRequest: HttpServletRequest): ResponseEntity<AdminTrashBatchResponse>
 
-    @Operation(summary = "리소스 검색", description = "query는 대소문자를 무시한 부분 일치이고, types를 생략하면 모든 종류에서 찾는다. 최근 수정 순으로 돌려주며 삭제 여부는 deleted로 표시한다. page가 0보다 작거나 size가 1~100 밖이면 400(ADMIN_400_6)이다.")
-    fun search(loginUser: AdminLoginUser, query: String?, types: Set<AdminResourceType>?, page: Int, size: Int, servletRequest: HttpServletRequest): ResponseEntity<AdminResourcePageResponse>
+    @Operation(summary = "리소스 검색", description = "query는 대소문자를 무시한 부분 일치이고, types를 생략하면 모든 종류에서 찾는다. sort가 UPDATED(기본)면 최근 수정 순, CREATED면 최근 생성 순으로 돌려주며 삭제 여부는 deleted로 표시한다. page가 0보다 작거나 size가 1~100 밖이면 400(ADMIN_400_6)이다.")
+    fun search(loginUser: AdminLoginUser, query: String?, types: Set<AdminResourceType>?, page: Int, size: Int, sort: AdminResourceSort, servletRequest: HttpServletRequest): ResponseEntity<AdminResourcePageResponse>
 
     @Operation(summary = "리소스 상세", description = "종류와 id로 상세와 현재 version을 읽는다. 없으면 404(ADMIN_404_4)이다.")
     fun get(loginUser: AdminLoginUser, type: AdminResourceType, id: Long, servletRequest: HttpServletRequest): ResponseEntity<AdminResourceResponse>
