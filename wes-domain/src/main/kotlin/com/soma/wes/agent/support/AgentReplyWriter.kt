@@ -53,6 +53,7 @@ class AgentReplyWriter {
         val main = when (stats.metric) {
             StatsMetric.COUNT -> count(stats, filtered)
             StatsMetric.DUPLICATES -> duplicates(stats)
+            StatsMetric.FOLDER_COUNT -> folderCount(stats)
             StatsMetric.BY_CONCEPT, StatsMetric.BY_DETAIL, StatsMetric.BY_SUBJECTS, StatsMetric.BY_ORIENTATION,
             StatsMetric.BY_RATING -> distribution(stats, filtered)
         }
@@ -68,6 +69,13 @@ class AgentReplyWriter {
             stats.total == limit -> "지금 ${stats.total}장 골랐어요. 계약 ${limit}장을 꽉 채웠어요."
             else -> "지금 ${stats.total}장 골랐어요. 계약 ${limit}장까지 ${limit - stats.total}장 남았어요."
         }
+    }
+
+    private fun folderCount(stats: AgentMessageResponse.Stats): String {
+        if (stats.total == 0) return "아직 폴더가 없어요."
+        val details = stats.rows.sumOf { it.count }
+        val listed = stats.rows.joinToString(ROW_SEPARATOR) { "${it.label}(세부 ${it.count}개)" }
+        return "컨셉 폴더 ${stats.total}개, 세부 폴더 ${details}개예요. $listed"
     }
 
     private fun duplicates(stats: AgentMessageResponse.Stats): String {

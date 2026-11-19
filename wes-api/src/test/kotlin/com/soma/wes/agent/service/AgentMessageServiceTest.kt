@@ -387,6 +387,25 @@ class AgentMessageServiceTest @Autowired constructor(
         }
 
         @Test
+        fun `고르기·빼기와 도우미가 할 일과 되돌리기는 서버가 정한 문장으로 답한다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+
+            // when
+            val selectHow = send(scene, AgentDecisionDto.Explain(ExplainTopic.SELECT_HOW))
+            val capabilities = send(scene, AgentDecisionDto.Explain(ExplainTopic.CAPABILITIES))
+            val undo = send(scene, AgentDecisionDto.Explain(ExplainTopic.UNDO))
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(selectHow.reply).startsWith("사진에 마우스를 올리면 왼쪽 위에 체크박스가 보여요.")
+                softly.assertThat(selectHow.explain?.links?.map { it.to }).containsExactly(AgentScreen.SELECTION)
+                softly.assertThat(capabilities.reply).contains("제출·사진 삭제·별점 매기기는 직접 해 주셔야 해요")
+                softly.assertThat(undo.reply).startsWith("제가 실행한 일은 결과 아래 '되돌리기' 버튼으로")
+            }
+        }
+
+        @Test
         fun `마감이 없으면 없다고 말하고 모르는 주제는 작가에게 돌린다`() {
             // given
             val scene = agentFixture.웨딩_갤러리()
@@ -466,6 +485,22 @@ class AgentMessageServiceTest @Autowired constructor(
 
             // then
             assertThat(response.reply).isEqualTo("지금 3장 골랐어요. 계약 5장까지 2장 남았어요.")
+        }
+
+        @Test
+        fun `폴더 수를 세면 화면 순서대로 컨셉마다 세부 폴더 수를 센다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+
+            // when
+            val response = send(scene, AgentDecisionDto.Stats(metric = StatsMetric.FOLDER_COUNT, scope = StatsScope.GALLERY))
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.stats?.rows?.map { it.label to it.count }).containsExactly("야외" to 2, "화이트" to 1)
+                softly.assertThat(response.stats?.total).isEqualTo(2)
+                softly.assertThat(response.reply).isEqualTo("컨셉 폴더 2개, 세부 폴더 3개예요. 야외(세부 2개) · 화이트(세부 1개)")
+            }
         }
 
         @Test

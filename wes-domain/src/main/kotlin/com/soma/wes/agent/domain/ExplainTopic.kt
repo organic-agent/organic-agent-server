@@ -4,6 +4,7 @@ package com.soma.wes.agent.domain
  * 사용법·상태·서비스 개념 질문의 닫힌 주제(#348 ⑤, #403 B-1). 판단기는 주제만 고르고 문장은 [com.soma.wes.agent.support.AgentExplainWriter]가
  * 지금 갤러리 상태로 채운다 — 지어내는 답 0(QA-8). 주제 밖은 [UNKNOWN]("모른다").
  *
+ * 고르기·빼기·도우미가 할 일·되돌리기(#412)는 정답표 결정 6·7 — "사진 어떻게 빼?"가 제출 주제로 답하던 것을 막는다.
  * 목록은 부부 권한 기준의 제품 사실에서 왔다(예: 사진 삭제·제출 되돌리기는 작가만). 주제를 늘릴 때는 코드로 사실을 확인하고 템플릿을 같이 쓴다.
  */
 enum class ExplainTopic(val label: String) {
@@ -25,6 +26,9 @@ enum class ExplainTopic(val label: String) {
     SUBJECTS("신랑·신부 구분"),
     EXCLUDED_PHOTOS("사진 제외"),
     GALLERY_TYPE("개인·스튜디오 갤러리"),
+    SELECT_HOW("고르기·빼기"),
+    CAPABILITIES("도우미가 할 수 있는 일"),
+    UNDO("방금 한 일 되돌리기"),
     UNKNOWN("모름"),
     ;
 

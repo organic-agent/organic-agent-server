@@ -72,11 +72,11 @@ object AgentDecisionTools {
             description = """
                 고른 사진(scope=selected) 또는 갤러리 전체(scope=gallery)를 센다. 셀렉 화면이라 범위를 말하지 않으면 고른 사진이다.
                 '컨셉별·카테고리별'은 by_concept, '세부 폴더별'은 by_detail, '누가 나왔나·인물 비율'은 by_subjects, '비슷한 거·중복'은 duplicates,
-                '별점별·별 몇 개씩'은 by_rating.
+                '별점별·별 몇 개씩'은 by_rating, '폴더 몇 개·폴더 목록'은 folder_count(사진이 아니라 폴더를 센다).
             """.trimIndent(),
             schema = """
                 {"type": "object", "properties": {
-                  "metric": {"enum": ["count", "by_concept", "by_detail", "by_subjects", "by_orientation", "by_rating", "duplicates"]},
+                  "metric": {"enum": ["count", "by_concept", "by_detail", "by_subjects", "by_orientation", "by_rating", "duplicates", "folder_count"]},
                   "scope": {"enum": ["selected", "gallery"]},
                   "filter": $FILTER_SCHEMA,
                   "unsupported": $UNSUPPORTED_SCHEMA
@@ -125,7 +125,8 @@ object AgentDecisionTools {
                 delete_photo=사진 지우기, download=원본·파일 내려받기, ai_recommend=AI 추천이 뭔지·요청 방법,
                 ai_folders=AI 폴더가 뭔지·어떻게 나뉘었나, folder_levels=컨셉 폴더와 세부 폴더 차이·미분류, burst=연사·대표 컷이 뭔지,
                 subjects=신랑·신부·커플 구분은 어떻게 하나·틀릴 수 있나, excluded_photos=사진 제외·제외 폴더·되돌리기,
-                gallery_type=개인 갤러리와 스튜디오(초대) 갤러리 차이, unknown=이 목록 밖의 사용법·개념.
+                gallery_type=개인 갤러리와 스튜디오(초대) 갤러리 차이, select_how=사진 고르는 법·선택에서 빼는 법·선택 취소,
+                capabilities=도우미가 뭘 할 수 있나·뭘 물어보면 되나, undo=방금 한 일 취소·되돌리기, unknown=이 목록 밖의 사용법·개념.
                 사진을 거르거나 세는 말이 아니라 "어떻게 해?"·"언제까지?"·"몇 번 남았어?"·"~가 뭐야?"처럼 방법·상태·개념을 묻는 말에 쓴다.
             """.trimIndent(),
             schema = """
