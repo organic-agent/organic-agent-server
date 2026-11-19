@@ -72,7 +72,7 @@ object AgentDecisionTools {
             description = """
                 고른 사진(scope=selected) 또는 갤러리 전체(scope=gallery)를 센다. 셀렉 화면이라 범위를 말하지 않으면 고른 사진이다.
                 '컨셉별·카테고리별'은 by_concept, '세부 폴더별'은 by_detail, '누가 나왔나·인물 비율'은 by_subjects, '비슷한 거·중복'은 duplicates,
-                '별점별·별 몇 개씩'은 by_rating, '폴더 몇 개·폴더 목록'은 folder_count(사진이 아니라 폴더를 센다).
+                '별점별·별 몇 개씩'은 by_rating, '폴더 몇 개·폴더 목록 보여줘'는 folder_count(폴더 수만 센다 — '안 고른 폴더'는 by_concept).
             """.trimIndent(),
             schema = """
                 {"type": "object", "properties": {

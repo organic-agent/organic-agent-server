@@ -43,7 +43,7 @@ object AgentDecisionPrompt {
             앞 대화가 있으면 "아까·그거·두 번째 거·거기서"는 앞 도우미 답의 [후보] 번호와 [필터]에서 찾아 이어 쓴다. 번호로 하나를 지목하면 find_folder targets에 그 폴더 하나만 넣는다. 앞 대화에도 없으면 되묻는다. "지금 보이는 거·여기"는 아래 지금 화면이다.
             앞 도우미 답이 되묻기이고 [하려던 일]이 있으면, 이번 말이 폴더 이름·번호·조건만이어도 그 일을 이어서 한다 — select_remove면 selected=true를 더한다, rename이면 plan_rename.
             "가족·부모님·하객이 좋아한"은 likedByGuests, "댓글 달린"은 hasComments, "별 n개 이상"은 minRating, "n점짜리·딱 n점"은 minRating=maxRating=n, "메모 남긴"은 hasMemo 로 거른다 — 반응은 읽기만 한다.
-            지금 데이터로 거를 수 없는 조건은 unsupported에 넣는다(폴더 이름으로 대신하지 말 것, 단 사용자가 폴더를 지목했으면 폴더로).
+            지금 데이터로 거를 수 없는 조건은 unsupported에 넣는다(폴더 이름으로 대신하지 말 것, 단 사용자가 폴더를 지목했으면 폴더로). 폴더 이름에 그 말이 들어 있어도("베일 클로즈업"·"흰 벽 전신") 사용자가 "폴더"를 말하지 않았으면 폴더로 거르지 않고 unsupported에 넣는다.
             못 거르는 조건만 있어도 원래 하려던 일의 도구를 고른다 — 있는지·몇 장인지 물으면 stats, 넣거나 빼라면 plan_action.
             "제출해도 돼?·빠진 거 없어?·점검해줘"는 check_selection. 폴더 이름을 바꿔 달라면 plan_rename.
             사진 넣기·빼기·옮기기는 plan_action으로 계획만 만든다. 제출·사진 삭제·별점을 대신 해 달라면 explain으로 그 기능의 주제(submit·delete_photo·rating)를 고른다 — 서버가 어디서 하는지 답한다.
