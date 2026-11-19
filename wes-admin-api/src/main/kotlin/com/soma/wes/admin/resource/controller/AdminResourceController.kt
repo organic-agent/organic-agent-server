@@ -2,6 +2,7 @@ package com.soma.wes.admin.resource.controller
 
 import com.soma.wes.admin.domain.AdminLoginUser
 import com.soma.wes.admin.resource.controller.docs.AdminResourceControllerDocs
+import com.soma.wes.admin.resource.domain.AdminResourceSort
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.dto.response.AdminAnalysisFailuresResponse
 import com.soma.wes.admin.resource.dto.request.AdminReprocessRequest
@@ -124,9 +125,10 @@ class AdminResourceController(
         @RequestParam(required = false) types: Set<AdminResourceType>?,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "50") size: Int,
+        @RequestParam(defaultValue = "UPDATED") sort: AdminResourceSort,
         servletRequest: HttpServletRequest,
     ): ResponseEntity<AdminResourcePageResponse> {
-        val response = resourceService.search(query, types.orEmpty(), page, size)
+        val response = resourceService.search(query, types.orEmpty(), page, size, sort)
         return ResponseEntity.ok(response)
     }
 

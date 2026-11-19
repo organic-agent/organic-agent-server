@@ -2,6 +2,7 @@ package com.soma.wes.admin.resource.repository
 
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
+import com.soma.wes.admin.resource.domain.AdminResourceSort
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.dto.response.AdminOperationRecordResponse
 import com.soma.wes.admin.resource.dto.response.AdminOperationalIssueResponse
@@ -540,6 +541,7 @@ class AdminResourceRepository(
         types: Set<AdminResourceType>,
         page: Int,
         size: Int,
+        sort: AdminResourceSort,
     ): AdminResourcePageResponse {
         val selected = (types.ifEmpty { AdminResourceType.entries.toSet() }).map(::definition)
         val normalizedQuery = query?.trim()?.takeIf(String::isNotEmpty)?.lowercase(Locale.ROOT)
@@ -550,7 +552,7 @@ class AdminResourceRepository(
             SELECT resource_type, id, version, label, deleted, created_at, updated_at
             FROM ($union) resources
             $where
-            ORDER BY updated_at DESC NULLS LAST, resource_type, id DESC
+            ORDER BY ${sort.orderBy}
             LIMIT :limit OFFSET :offset
         """.trimIndent()
 

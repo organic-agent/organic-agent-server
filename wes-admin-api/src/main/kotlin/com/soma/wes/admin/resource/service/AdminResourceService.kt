@@ -2,6 +2,7 @@ package com.soma.wes.admin.resource.service
 
 import com.soma.wes.admin.exception.AdminErrorCode
 import com.soma.wes.admin.exception.AdminException
+import com.soma.wes.admin.resource.domain.AdminResourceSort
 import com.soma.wes.admin.resource.domain.AdminResourceType
 import com.soma.wes.admin.resource.dto.response.AdminResourcePageResponse
 import com.soma.wes.admin.resource.dto.response.AdminResourceResponse
@@ -30,11 +31,12 @@ class AdminResourceService(
         types: Set<AdminResourceType>,
         page: Int,
         size: Int,
+        sort: AdminResourceSort = AdminResourceSort.UPDATED,
     ): AdminResourcePageResponse {
         if (page < 0 || size !in 1..MAX_PAGE_SIZE) {
             throw AdminException(AdminErrorCode.INVALID_RESOURCE_FIELDS)
         }
-        return repository.search(query, types, page, size)
+        return repository.search(query, types, page, size, sort)
     }
 
     @Transactional(readOnly = true)
