@@ -614,6 +614,23 @@ class AgentMessageServiceTest @Autowired constructor(
         }
 
         @Test
+        fun `배우자 초대는 스튜디오 갤러리면 작가에게 돌리고 배우자가 이미 있으면 그렇다고 말한다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+
+            // when
+            val beforeJoin = send(scene, AgentDecisionDto.Explain(ExplainTopic.INVITE_PARTNER))
+            agentFixture.배우자(scene)
+            val afterJoin = send(scene, AgentDecisionDto.Explain(ExplainTopic.INVITE_PARTNER))
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(beforeJoin.reply).isEqualTo("이 갤러리는 작가님이 두 분을 초대하는 스튜디오 갤러리라, 배우자분 초대는 담당 작가님께 요청해 주세요.")
+                softly.assertThat(afterJoin.reply).isEqualTo("배우자분은 이미 이 갤러리에 함께 계세요.")
+            }
+        }
+
+        @Test
         fun `마감이 없으면 없다고 말하고 모르는 주제는 작가에게 돌린다`() {
             // given
             val scene = agentFixture.웨딩_갤러리()
