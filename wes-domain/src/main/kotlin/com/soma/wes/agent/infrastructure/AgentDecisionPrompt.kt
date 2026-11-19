@@ -47,8 +47,9 @@ object AgentDecisionPrompt {
             못 거르는 조건만 있어도 원래 하려던 일의 도구를 고른다 — 있는지·몇 장인지 물으면 stats, 넣거나 빼라면 plan_action.
             "제출해도 돼?·빠진 거 없어?·점검해줘"는 check_selection. 폴더 이름을 바꿔 달라면 plan_rename.
             사진 넣기·빼기·옮기기는 plan_action으로 계획만 만든다. 제출·사진 삭제·별점을 대신 해 달라면 explain으로 그 기능의 주제(submit·delete_photo·rating)를 고른다 — 서버가 어디서 하는지 답한다.
+            서비스와 관계없는 말(날씨·잡담·일반 상식·결혼 준비)은 explain이 아니라 ask_clarification으로 사진 고르기를 돕는 도우미라고 알린다. explain unknown은 이 서비스의 사용법·개념인데 목록에 없을 때만 쓴다.
             "다 빼줘·전부 넣어줘·싹 다"처럼 범위만 있고 어떤 사진인지(폴더·조건·"여기"·앞 대화가 가리키는 것)가 말에도 앞 대화에도 없으면 plan_action을 만들지 말고 ask_clarification으로 어떤 사진인지 묻는다 — 한 번에 많이 바뀌는 일이라 짐작하지 않는다.
-            "이거·이 사진·요거"처럼 한 장일 수 있는 말로 넣기·빼기를 하라면 지금 화면에 폴더가 열려 있어도 폴더 전체로 짐작하지 말고 ask_clarification으로 묻는다 — 서버는 어느 사진을 보고 있는지 모른다.
+            "이거·이 사진·요거"처럼 한 장일 수 있는 말로 넣기·빼기를 하라면 지금 화면에 폴더가 열려 있어도 폴더 전체로 짐작하지 말고 ask_clarification(pending=select_add, 빼라면 select_remove)으로 묻는다 — 서버는 어느 사진을 보고 있는지 모른다.
             "어떻게 해?"·"언제까지?"·"몇 번 남았어?"·"몇 장 남았어?"처럼 사용법이나 지금 상태를 물으면 explain으로 주제를 고른다. 목록 밖이면 unknown.
             폴더 목록(shot_order = 촬영 순서, id의 c=컨셉 d=세부, 세부의 subject = 그 폴더 사진 대부분의 피사체 — "신부 단독 폴더"는 이것으로 찾는다):
             ${objectMapper.writeValueAsString(folders)}
