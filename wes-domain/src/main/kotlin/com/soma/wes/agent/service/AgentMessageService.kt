@@ -5,6 +5,9 @@ import com.soma.wes.agent.domain.AgentActionStep
 import com.soma.wes.agent.domain.AgentReplyKind
 import com.soma.wes.agent.domain.AgentTurnRole
 import com.soma.wes.agent.domain.PhotoFilter
+import com.soma.wes.agent.domain.StatsMetric
+import com.soma.wes.agent.domain.StatsScope
+import com.soma.wes.agent.domain.UnsupportedCondition
 import com.soma.wes.agent.dto.AgentCheckItemDto
 import com.soma.wes.agent.dto.AgentContextDto
 import com.soma.wes.agent.dto.AgentDecisionDto
@@ -168,8 +171,16 @@ class AgentMessageService(
         )
     }
 
+    /** 못 거르는 조건만 있으면 사진을 보여 주지 않는다 — 갤러리 전체를 "결과"로 보이면 걸러진 줄 안다(#412 결정 3). */
     private fun filterPhotos(snapshot: AgentGallerySnapshotDto, decision: AgentDecisionDto.FilterPhotos): AgentMessageResponse {
         if (isPartnerMissing(snapshot, decision.filter)) return clarify(agentReplyWriter.noPartner())
+        if (isUnsupportedOnly(decision.filter, decision.unsupported)) {
+            return AgentMessageResponse(
+                kind = AgentReplyKind.FILTER_PHOTOS,
+                reply = agentReplyWriter.unsupportedOnly(decision.unsupported),
+                unsupported = decision.unsupported,
+            )
+        }
         val photos = agentPhotoFinder.find(snapshot, decision.filter)
         val reactions = reactions(decision.filter, photos.map { it.photoId })
 
@@ -185,13 +196,35 @@ class AgentMessageService(
     private fun isPartnerMissing(snapshot: AgentGallerySnapshotDto, filter: PhotoFilter): Boolean =
         filter.refersToPartner() && snapshot.partnerUserIds.isEmpty()
 
+    /** 못 거르는 조건·고른 사진 범위만으로는 고른 사진 전체가 된다 — 걸러진 것처럼 세거나 바꾸지 않는다. */
+    private fun isUnsupportedOnly(filter: PhotoFilter, unsupported: List<UnsupportedCondition>): Boolean =
+        unsupported.isNotEmpty() && filter.copy(selected = null) == PhotoFilter()
+
+    /**
+     * 신랑·신부 비율은 고른 사진이 있으면 고른 사진, 0장이면 갤러리 전체로 센다 — 셀렉 중에 묻는 비율은 "고른 것의 균형"이고,
+     * 0장일 때 "고른 사진이 없어요"는 묻는 말에 답이 아니다(#412 결정 4). 답 첫머리에 기준을 밝힌다.
+     */
     private fun stats(snapshot: AgentGallerySnapshotDto, decision: AgentDecisionDto.Stats): AgentMessageResponse {
         if (isPartnerMissing(snapshot, decision.filter)) return clarify(agentReplyWriter.noPartner())
-        val stats = agentStatsCounter.count(snapshot, decision)
+        if (isUnsupportedOnly(decision.filter, decision.unsupported)) {
+            return AgentMessageResponse(
+                kind = AgentReplyKind.STATS,
+                reply = agentReplyWriter.unsupportedOnly(decision.unsupported),
+                unsupported = decision.unsupported,
+            )
+        }
+        val noneSelected = decision.metric == StatsMetric.BY_SUBJECTS && decision.scope == StatsScope.SELECTED && snapshot.photos.none { it.selected }
+        val counted = if (noneSelected) decision.copy(scope = StatsScope.GALLERY) else decision
+        val stats = agentStatsCounter.count(snapshot, counted)
 
         return AgentMessageResponse(
             kind = AgentReplyKind.STATS,
-            reply = agentReplyWriter.stats(stats, decision.unsupported, filtered = decision.filter.copy(selected = null) != PhotoFilter()),
+            reply = agentReplyWriter.stats(
+                stats,
+                decision.unsupported,
+                filtered = decision.filter.copy(selected = null) != PhotoFilter(),
+                noneSelected = noneSelected,
+            ),
             stats = stats,
             unsupported = decision.unsupported,
         )
@@ -199,10 +232,12 @@ class AgentMessageService(
 
     /**
      * 제출된 선택은 바꿀 수 없어 계획을 만들지 않는다. 이동할 폴더가 이 갤러리에 없으면(판단기가 지어낸 id) 되묻는다.
+     * 못 거르는 조건만 있으면("고른 것 중 눈 감은 거 빼줘") 조건이 없는 셈이라 고른 사진 전부가 바뀐다 — 계획 없이 되묻는다.
      */
     private fun planAction(snapshot: AgentGallerySnapshotDto, decision: AgentDecisionDto.PlanAction): AgentMessageResponse {
         if (!snapshot.selectionEditable) return clarify(agentReplyWriter.notEditable())
         if (isPartnerMissing(snapshot, decision.filter)) return clarify(agentReplyWriter.noPartner())
+        if (isUnsupportedOnly(decision.filter, decision.unsupported)) return clarify(agentReplyWriter.unsupportedOnlyPlan(decision.unsupported))
         val targetId = decision.targetDetailFolderId.takeIf { decision.op == AgentActionOp.MOVE }
         val targetName = if (targetId == null) null else detailName(snapshot, targetId) ?: return clarify(MOVE_TARGET_UNKNOWN)
 

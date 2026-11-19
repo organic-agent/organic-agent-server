@@ -309,6 +309,71 @@ class AgentMessageServiceTest @Autowired constructor(
     }
 
     @Nested
+    @DisplayName("못 거르는 조건만 있을 때")
+    inner class UnsupportedOnly {
+
+        @Test
+        fun `거르라면 사진을 보여 주지 않고 못 거른다고만 말한다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+            val decision = AgentDecisionDto.FilterPhotos(filter = PhotoFilter(), unsupported = listOf(UnsupportedCondition.COMPOSITION))
+
+            // when
+            val response = send(scene, decision)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.kind).isEqualTo(AgentReplyKind.FILTER_PHOTOS)
+                softly.assertThat(response.view).isNull()
+                softly.assertThat(response.unsupported).containsExactly(UnsupportedCondition.COMPOSITION)
+                softly.assertThat(response.reply).startsWith("구도(으)로는 아직 거르지 못해요.")
+            }
+        }
+
+        @Test
+        fun `세라면 전체 장수를 세지 않는다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+            val decision = AgentDecisionDto.Stats(
+                metric = StatsMetric.COUNT,
+                scope = StatsScope.SELECTED,
+                unsupported = listOf(UnsupportedCondition.FACE),
+            )
+
+            // when
+            val response = send(scene, decision)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.stats).isNull()
+                softly.assertThat(response.reply).startsWith("눈 감김·표정(으)로는 아직 거르지 못해요.")
+            }
+        }
+
+        @Test
+        fun `고른 사진 범위와 함께 빼라고 해도 고른 사진 전부를 빼는 계획을 만들지 않는다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+            selectionFixture.담긴_사진(selectionFixture.셀렉(scene.galleryId), scene.photoIds.take(3))
+            val decision = AgentDecisionDto.PlanAction(
+                op = AgentActionOp.SELECT_REMOVE,
+                filter = PhotoFilter(selected = true),
+                unsupported = listOf(UnsupportedCondition.FACE),
+            )
+
+            // when
+            val response = send(scene, decision)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.kind).isEqualTo(AgentReplyKind.CLARIFY)
+                softly.assertThat(response.action).isNull()
+                softly.assertThat(response.reply).contains("어떤 사진을 바꿀지 정할 수 없어요")
+            }
+        }
+    }
+
+    @Nested
     @DisplayName("사용법·상태를 물을 때")
     inner class Explain {
 
@@ -485,6 +550,22 @@ class AgentMessageServiceTest @Autowired constructor(
 
             // then
             assertThat(response.reply).isEqualTo("지금 3장 골랐어요. 계약 5장까지 2장 남았어요.")
+        }
+
+        @Test
+        fun `신랑 신부 비율은 고른 사진이 없으면 갤러리 전체로 세고 그렇다고 말한다`() {
+            // given
+            val scene = agentFixture.웨딩_갤러리()
+
+            // when
+            val response = send(scene, AgentDecisionDto.Stats(metric = StatsMetric.BY_SUBJECTS, scope = StatsScope.SELECTED))
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(response.stats?.scope).isEqualTo(StatsScope.GALLERY)
+                softly.assertThat(response.stats?.total).isEqualTo(scene.photoIds.size)
+                softly.assertThat(response.reply).startsWith("아직 고른 사진이 없어서 갤러리 전체로 셌어요. 갤러리 전체 ${scene.photoIds.size}장 중")
+            }
         }
 
         @Test
