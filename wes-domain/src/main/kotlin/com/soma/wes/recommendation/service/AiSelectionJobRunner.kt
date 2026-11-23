@@ -4,6 +4,7 @@ import com.soma.wes.folder.dto.FolderSetDetailDto
 import com.soma.wes.folder.support.AiFolderSetReader
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.photo.domain.Photo
+import com.soma.wes.photo.domain.SubScoreKey
 import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.photo.repository.PhotoRepository
 import com.soma.wes.recommendation.domain.AiRecommendation
@@ -274,6 +275,7 @@ class AiSelectionJobRunner(
         val priorRaw = RecommendationScoring.prior(
             DoubleArray(n) { rows[it].technicalPct },
             DoubleArray(n) { rows[it].aestheticPct },
+            rows.map { it.subScore(SubScoreKey.RECO_BASE) },
         )
         val types = rows.map { it.subjects }
         val prefOn = SUBJECTS_TRUSTED && nSelected >= PREF_MIN_SELECTED && types.any { it != PhotoSubject.UNKNOWN }
@@ -377,6 +379,7 @@ class AiSelectionJobRunner(
                     "folder_rank" to pick.folderRank, "folder_quota" to pick.quota,
                     "reaction_z" to round3(reactionBoost[i]), "seen_z" to round3(0.0 - seenPenalty[i]),
                 )
+                row.subScore(SubScoreKey.RECO_BASE)?.let { breakdown["reco_base"] = round1(it) }
                 if (scoped) {
                     breakdown["spouse_z"] = round3(spouse[i])
                 } else {

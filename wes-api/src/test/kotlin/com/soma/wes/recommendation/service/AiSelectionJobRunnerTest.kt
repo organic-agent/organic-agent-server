@@ -494,6 +494,39 @@ class AiSelectionJobRunnerTest @Autowired constructor(
         }
 
         @Test
+        fun `추천 기본 점수가 폴더 사진 전부에 있으면 화질·미학 대신 그 점수로 연사의 대표 컷을 고른다`() {
+            // given — 화질·미학은 앞 사진일수록 높고, 추천 기본 점수는 뒤 사진일수록 높다
+            val (bursts, folderId) = bigFolder(firstBurstSubjects = "couple")
+            bursts.flatten().forEachIndexed { i, photoId -> recommendationFixture.추천_기본_점수(photoId, i * 100.0 / 29) }
+
+            // when
+            val response = requestFolderJob(folderId)
+            runner.run(response.jobId)
+
+            // then — 연사마다 마지막 컷이 대표이고, 점수가 가장 높은 마지막 연사의 컷이 들어 있다
+            val picks = aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1)
+            assertSoftly { softly ->
+                softly.assertThat(picks.map { it.photoId }).hasSize(3).isSubsetOf(bursts.map { it.last() }).contains(bursts.last().last())
+                softly.assertThat(picks.map { it.scoreBreakdown["reco_base"] }).doesNotContainNull()
+            }
+        }
+
+        @Test
+        fun `추천 기본 점수가 없는 사진이 한 장이라도 있으면 지금처럼 화질·미학으로 고른다`() {
+            // given — 마지막 한 장만 추천 기본 점수가 없다
+            val (bursts, folderId) = bigFolder(firstBurstSubjects = "couple")
+            bursts.flatten().dropLast(1).forEachIndexed { i, photoId -> recommendationFixture.추천_기본_점수(photoId, i * 100.0 / 29) }
+
+            // when
+            val response = requestFolderJob(folderId)
+            runner.run(response.jobId)
+
+            // then
+            val picked = aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1).map { it.photoId }
+            assertThat(picked).hasSize(3).isSubsetOf(bursts.map { it.first() }).contains(bursts.first().first())
+        }
+
+        @Test
         fun `보여준 기록이 없으면 같은 입력에 같은 사진이 같은 순서로 나온다`() {
             // given — 같은 폴더를 두 번 계산하되, 두 번째 전에 첫 라운드 행을 지워 노출 기록이 없게 한다
             val (_, folderId) = bigFolder()

@@ -26,4 +26,10 @@ enum class SubScoreKey(val key: String) {
 
     /** 미학 원점수. 백분위가 아니라 절대 하한 게이트에 쓴다. */
     AESTHETIC_SCORE("aesthetic_score"),
+
+    /**
+     * 추천 기본 점수(0~100, 갤러리 안 백분위). categorize 단계가 얼굴 값(눈 감김·웃음)이 찬 갤러리에만 더한다 —
+     * 이전에 분석한 갤러리에는 없다. 쓰는 규칙은 `RecommendationScoring.prior`.
+     */
+    RECO_BASE("reco_base"),
 }
