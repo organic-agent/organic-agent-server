@@ -27,6 +27,36 @@ class RecommendationScoringUnitTest {
     }
 
     @Test
+    fun `추천 기본 점수가 사진 전부에 있으면 그 값을 기본 점수로 쓴다`() {
+        // given
+        val technical = doubleArrayOf(90.0, 10.0)
+        val aesthetic = doubleArrayOf(80.0, 20.0)
+
+        // when
+        val prior = RecommendationScoring.prior(technical, aesthetic, listOf(5.0, 95.0))
+
+        // then
+        assertThat(prior.toList()).containsExactly(5.0, 95.0)
+    }
+
+    @Test
+    fun `추천 기본 점수가 한 장이라도 없으면 전부 화질·미학 백분위로 계산한다`() {
+        // given
+        val technical = doubleArrayOf(90.0, 10.0)
+        val aesthetic = doubleArrayOf(80.0, 20.0)
+
+        // when
+        val partial = RecommendationScoring.prior(technical, aesthetic, listOf(5.0, null))
+        val none = RecommendationScoring.prior(technical, aesthetic, listOf(null, null))
+
+        // then
+        assertSoftly { softly ->
+            softly.assertThat(partial.toList()).containsExactly(85.0, 15.0)
+            softly.assertThat(none.toList()).containsExactly(85.0, 15.0)
+        }
+    }
+
+    @Test
     fun `신랑·신부 단독 컷을 하나도 안 담았으면 가산점이 없다`() {
         // given
         val types = listOf(COUPLE, BRIDE, GROOM)

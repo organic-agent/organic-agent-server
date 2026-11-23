@@ -8,7 +8,8 @@ import kotlin.math.sqrt
 /**
  * v3 점수식 — AI repo `recommend/scoring.py`의 자리다.
  *
- *     prior(p) = w_t·technical_pct + w_a·aesthetic_pct          (갤러리 내 백분위)
+ *     prior(p) = reco_base                                      (갤러리 사진 전부에 있을 때 — AI repo categorize `service/reco.py`)
+ *              = w_t·technical_pct + w_a·aesthetic_pct          (그 밖 — 이전에 분석한 갤러리. 둘 다 갤러리 내 백분위 0~100)
  *     score(p) = z(prior) [+ w_bal·z(deficit(type p)) + w_pref·z(affinity(type p))]
  *
  * 대괄호는 4단계 — 피사체를 믿고 담은 사진이 충분할 때만 붙는다. 폴더별 추천에서도 점수는 갤러리 내 백분위 그대로다.
@@ -35,8 +36,18 @@ object RecommendationScoring {
         return DoubleArray(values.size) { (values[it] - mean) / divisor }
     }
 
-    fun prior(technicalPct: DoubleArray, aestheticPct: DoubleArray): DoubleArray =
-        DoubleArray(technicalPct.size) { W_TECHNICAL * technicalPct[it] + W_AESTHETIC * aestheticPct[it] }
+    /**
+     * 사진별 기본 점수. [recoBase]가 사진 전부에 있으면 그 값이고, 한 장이라도 없으면 전부 화질·미학 백분위 식이다.
+     *
+     * 섞지 않는 이유: `reco_base`는 (거름 → 연사 크기 → 눈 감김·웃음 규격) 순서의 백분위라 화질·미학 식과 뜻이 다르다.
+     * 한 갤러리 안에서 두 값을 나란히 놓고 표준화하면 순서가 의미를 잃는다. categorize 는 갤러리 단위로 쓰거나 안 쓰므로
+     * 일부만 있는 것은 분석이 진행 중이거나 어긋난 상태다.
+     */
+    fun prior(technicalPct: DoubleArray, aestheticPct: DoubleArray, recoBase: List<Double?>): DoubleArray {
+        val base = recoBase.filterNotNull()
+        if (base.isNotEmpty() && base.size == technicalPct.size) return base.toDoubleArray()
+        return DoubleArray(technicalPct.size) { W_TECHNICAL * technicalPct[it] + W_AESTHETIC * aestheticPct[it] }
+    }
 
     /** 유형별 집계 — 갤러리 비율, 부족분(deficit), 선택 lift. 전부 [-1, 1] 안의 비율. */
     fun typeStats(types: List<PhotoSubject>, selected: BooleanArray): Map<PhotoSubject, RecommendationTypeStatDto> {
