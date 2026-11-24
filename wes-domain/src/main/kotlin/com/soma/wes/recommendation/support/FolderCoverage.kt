@@ -1,5 +1,6 @@
 package com.soma.wes.recommendation.support
 
+import com.soma.wes.photo.domain.SubScoreKey
 import com.soma.wes.recommendation.dto.FolderCoverageDto
 import com.soma.wes.recommendation.dto.RecommendablePhotoDto
 import java.time.LocalDateTime
@@ -12,6 +13,7 @@ import kotlin.math.ceil
  *     후보 = 담은 사진이 든 조각을 통째로 뺀 나머지 조각마다 점수 최고 컷 (제외 사진은 대표가 될 수 없다)
  *     거르기 = 후보를 점수순으로 보며, 이미 남긴 후보와 거리가 [SAME_SHOT_DISTANCE] 미만이면 버린다
  *     n장 = 남은 후보가 n 이하면 전부, 넘으면 임베딩 평균 연결로 n묶음 → 묶음마다 점수 최고 1장
+ *     약한 컷 = 고른 컷 중 눈·웃음 점수(`reco_cut`)가 고른 컷 평균보다 낮은 것을 뺀다. 연사마다 가장 나은 한 장은 남긴다
  *     순서 = 점수 내림차순, 동점은 photoId 오름차순
  *
  * 랜덤이 없다 — 같은 입력이면 같은 조각·같은 묶음·같은 순서다. 임베딩은 정규화돼 있다고 본다(내적 = 코사인).
@@ -67,12 +69,33 @@ object FolderCoverage {
             distinct.any { emb[it].isEmpty() } -> distinct.take(n)
             else -> scenes(distinct, emb, n).map { scene -> scene.minWith(better) }
         }
+        val kept = withoutWeakCuts(picks, rows)
         return FolderCoverageDto(
-            picks = picks.sortedWith(better),
+            picks = kept.sortedWith(better),
             pieces = pieces.size,
             skippedPieces = pieces.size - open.size,
             nearDuplicates = reps.size - distinct.size,
+            weakCuts = picks.size - kept.size,
         )
+    }
+
+    /**
+     * 자리를 채우려고 약한 컷이 나가지 않게, 고른 컷 중 눈·웃음 점수가 그 평균보다 낮은 것을 뺀다. 장수는 상한이지 목표가 아니다.
+     *
+     * 연사마다 고른 컷 중 가장 나은 한 장은 평균 아래여도 남긴다 — 장면을 없애지 않고, 같은 장면에서 더 뽑힌 컷만 거른다.
+     * 연사 번호가 없는 사진(-1)은 한 장이 한 연사다. 점수가 한 장이라도 없으면(이전에 분석한 갤러리) 아무것도 빼지 않는다.
+     *
+     * 근거(운영 66번, 2026-11-24): 연사 11장 중 10번째인 눈이 반쯤 감긴 컷이 자기 조각의 1등이라 추천됐다. 이 규칙으로
+     * 폴더 셋의 추천 57장 중 6장이 빠지고 추천되는 연사 수는 그대로다.
+     */
+    fun withoutWeakCuts(picks: List<Int>, rows: List<RecommendablePhotoDto>): List<Int> {
+        val cut = picks.associateWith { rows[it].subScore(SubScoreKey.RECO_CUT) ?: return picks }
+        if (picks.size < 2) return picks
+        val mean = cut.values.average()
+        val bestOfBurst = picks.groupBy { if (rows[it].burstId < 0) -1 - it else rows[it].burstId }
+            .values.map { burst -> burst.maxWith(compareBy<Int> { cut.getValue(it) }.thenByDescending { rows[it].photoId }) }
+            .toSet()
+        return picks.filter { cut.getValue(it) >= mean || it in bestOfBurst }
     }
 
     /** 점수순 후보에서, 앞서 남긴 후보와 같은 컷으로 보이는 것을 버린다. 벡터가 없는 후보는 비교하지 않고 남긴다. */

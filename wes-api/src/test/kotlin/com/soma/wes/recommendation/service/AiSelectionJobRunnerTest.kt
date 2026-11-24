@@ -470,7 +470,7 @@ class AiSelectionJobRunnerTest @Autowired constructor(
                 softly.assertThat(picked.map { burstOf.getValue(it) }).doesNotHaveDuplicates().doesNotContain(0, 1)
                 softly.assertThat(picked).isSubsetOf(bursts.map { it.first() })
                 softly.assertThat((job.result!!["coverage"] as Map<*, *>).mapValues { (_, v) -> (v as Number).toInt() })
-                    .isEqualTo(mapOf("pieces" to 10, "skippedPieces" to 1, "nearDuplicates" to 0, "cap" to 3, "groupExcluded" to 3))
+                    .isEqualTo(mapOf("pieces" to 10, "skippedPieces" to 1, "nearDuplicates" to 0, "weakCuts" to 0, "cap" to 3, "groupExcluded" to 3))
             }
         }
 
@@ -508,6 +508,29 @@ class AiSelectionJobRunnerTest @Autowired constructor(
             assertSoftly { softly ->
                 softly.assertThat(picks.map { it.photoId }).hasSize(3).isSubsetOf(bursts.map { it.last() }).contains(bursts.last().last())
                 softly.assertThat(picks.map { it.scoreBreakdown["reco_base"] }).doesNotContainNull()
+            }
+        }
+
+        @Test
+        fun `눈·웃음 점수가 평균보다 낮아도 연사마다 한 장씩인 추천은 그대로 나가고 근거에 점수를 남긴다`() {
+            // given — 연사마다 한 장씩 추천되는 폴더. 눈·웃음 점수는 사진마다 다르다
+            val (bursts, folderId) = bigFolder(firstBurstSubjects = "couple")
+            bursts.flatten().forEachIndexed { i, photoId ->
+                recommendationFixture.추천_기본_점수(photoId, i * 100.0 / 29)
+                recommendationFixture.추천_컷_점수(photoId, i / 10.0 - 1.5)
+            }
+
+            // when
+            val response = requestFolderJob(folderId)
+            runner.run(response.jobId)
+
+            // then — 장면을 없애지 않는다: 평균 아래인 컷도 그 연사의 유일한 추천이면 남는다
+            val job = aiSelectionJobRepository.findById(response.jobId).orElseThrow()
+            val picks = aiRecommendationRepository.findAllBySelectionIdAndRound(response.selectionId, 1)
+            assertSoftly { softly ->
+                softly.assertThat(picks).hasSize(3)
+                softly.assertThat(picks.map { it.scoreBreakdown["reco_cut"] }).doesNotContainNull()
+                softly.assertThat(((job.result!!["coverage"] as Map<*, *>)["weakCuts"] as Number).toInt()).isZero()
             }
         }
 
