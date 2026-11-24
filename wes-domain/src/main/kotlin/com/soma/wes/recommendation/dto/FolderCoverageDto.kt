@@ -9,4 +9,6 @@ data class FolderCoverageDto(
     val skippedPieces: Int,
     /** 앞서 남긴 후보와 같은 컷으로 보여 거른 후보 수. */
     val nearDuplicates: Int,
+    /** 눈·웃음 점수가 추천 평균보다 낮아 뺀 컷 수. 같은 연사의 더 나은 컷은 추천에 남아 있다. */
+    val weakCuts: Int = 0,
 )

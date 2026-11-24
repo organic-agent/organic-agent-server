@@ -186,6 +186,73 @@ class FolderCoverageUnitTest {
         }
     }
 
+    @Nested
+    @DisplayName("눈·웃음 점수가 있으면")
+    inner class WeakCuts {
+
+        @Test
+        fun `추천 평균보다 낮은 컷은 빼고 연사마다 가장 나은 한 장은 남긴다`() {
+            // given — 연사 1에서 두 컷(0.9 · -1.0), 연사 2 · 3은 한 컷씩(0.5 · -0.8). 평균은 -0.1
+            val rows = listOf(
+                row(photoId = 1, burstId = 1, cut = 0.9),
+                row(photoId = 2, burstId = 1, cut = -1.0),
+                row(photoId = 3, burstId = 2, cut = 0.5),
+                row(photoId = 4, burstId = 3, cut = -0.8),
+            )
+
+            // when
+            val kept = FolderCoverage.withoutWeakCuts(listOf(0, 1, 2, 3), rows)
+
+            // then — 2번 사진만 빠진다. 4번은 평균 아래지만 그 연사의 유일한 컷이다
+            assertThat(kept).containsExactly(0, 2, 3)
+        }
+
+        @Test
+        fun `연사 번호가 없는 사진은 한 장이 한 연사라 빠지지 않는다`() {
+            // given
+            val rows = listOf(row(photoId = 1, burstId = -1, cut = 0.9), row(photoId = 2, burstId = -1, cut = -1.0))
+
+            // when
+            val kept = FolderCoverage.withoutWeakCuts(listOf(0, 1), rows)
+
+            // then
+            assertThat(kept).containsExactly(0, 1)
+        }
+
+        @Test
+        fun `점수가 한 장이라도 없으면 아무것도 빼지 않는다`() {
+            // given — 이전에 분석한 갤러리
+            val rows = listOf(row(photoId = 1, burstId = 1, cut = 0.9), row(photoId = 2, burstId = 1), row(photoId = 3, burstId = 1, cut = -1.0))
+
+            // when
+            val kept = FolderCoverage.withoutWeakCuts(listOf(0, 1, 2), rows)
+
+            // then
+            assertThat(kept).containsExactly(0, 1, 2)
+        }
+
+        @Test
+        fun `폴더 추천은 약한 컷을 뺀 장수만 내보내고 뺀 수를 남긴다`() {
+            // given — 한 연사가 두 장면으로 흘러 조각이 둘이다. 둘째 조각의 컷은 눈이 반쯤 감겼다. 다른 연사 하나가 더 있다
+            val rows = listOf(
+                row(photoId = 1, burstId = 1, takenAt = BASE, cut = 0.8),
+                row(photoId = 2, burstId = 1, takenAt = BASE.plusSeconds(1), cut = -1.2),
+                row(photoId = 3, burstId = 2, cut = 0.4),
+            )
+            val emb = arrayOf(axis(0), axis(1), axis(2))
+            val score = doubleArrayOf(0.9, 0.8, 0.7)
+
+            // when
+            val result = FolderCoverage.select(rows.indices.toList(), emptySet(), emptySet(), rows, score, emb, n = 10)
+
+            // then
+            assertSoftly { softly ->
+                softly.assertThat(result.picks).containsExactly(0, 2)
+                softly.assertThat(result.weakCuts).isEqualTo(1)
+            }
+        }
+    }
+
     private fun select(
         rows: List<RecommendablePhotoDto>,
         score: DoubleArray,
@@ -194,14 +261,14 @@ class FolderCoverageUnitTest {
         excluded: Set<Int> = emptySet(),
     ) = FolderCoverage.select(rows.indices.toList(), selected, excluded, rows, score, Array(rows.size) { axis(rows[it].burstId) }, n)
 
-    private fun row(photoId: Long, burstId: Int, burstRank: Int = 0, takenAt: LocalDateTime? = null) = RecommendablePhotoDto(
+    private fun row(photoId: Long, burstId: Int, burstRank: Int = 0, takenAt: LocalDateTime? = null, cut: Double? = null) = RecommendablePhotoDto(
         photoId = photoId,
         technicalPct = 50.0,
         aestheticPct = 50.0,
         subjects = PhotoSubject.COUPLE,
         burstId = burstId,
         burstRank = burstRank,
-        subScores = emptyMap(),
+        subScores = cut?.let { mapOf("reco_cut" to it) } ?: emptyMap(),
         takenAt = takenAt,
     )
 

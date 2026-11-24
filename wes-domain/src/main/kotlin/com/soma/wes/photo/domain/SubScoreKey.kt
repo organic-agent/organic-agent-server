@@ -32,4 +32,10 @@ enum class SubScoreKey(val key: String) {
      * 이전에 분석한 갤러리에는 없다. 쓰는 규칙은 `RecommendationScoring.prior`.
      */
     RECO_BASE("reco_base"),
+
+    /**
+     * 컷의 눈·웃음 점수(표준화된 값, 클수록 좋다). `reco_base`와 같이 있거나 같이 없다. `reco_base`는 연사 크기가 먼저라
+     * 컷의 좋고 나쁨만 따로 볼 수 없어, 폴더 추천에서 약한 컷을 뺄 때는 이 값을 본다(`FolderCoverage.withoutWeakCuts`).
+     */
+    RECO_CUT("reco_cut"),
 }

@@ -340,7 +340,7 @@ class AiSelectionJobRunner(
         val folderScore = if (scoped) DoubleArray(n) { combined.priorZ[it] + spouse[it] + reaction[it] } else score
         val selectedSet = selectedIdx.toSet()
         val rejectedSet = world.rejected.mapNotNull { indexById[it] }.toSet() + ratedOut
-        val coverage = linkedMapOf("pieces" to 0, "skippedPieces" to 0, "nearDuplicates" to 0, "cap" to 0, "groupExcluded" to 0)
+        val coverage = linkedMapOf("pieces" to 0, "skippedPieces" to 0, "nearDuplicates" to 0, "weakCuts" to 0, "cap" to 0, "groupExcluded" to 0)
 
         for (folder in folders.sortedByDescending { it.photoIds.size }) {
             if (folder.photoIds.isEmpty()) continue
@@ -360,6 +360,7 @@ class AiSelectionJobRunner(
                 coverage.merge("pieces", result.pieces, Int::plus)
                 coverage.merge("skippedPieces", result.skippedPieces, Int::plus)
                 coverage.merge("nearDuplicates", result.nearDuplicates, Int::plus)
+                coverage.merge("weakCuts", result.weakCuts, Int::plus)
                 coverage.merge("cap", cap, Int::plus)
                 coverage.merge("groupExcluded", groupShots.size, Int::plus)
                 result.picks.mapIndexed { rank, i -> MmrPickDto(index = i, folderRank = rank + 1, quota = cap) }
@@ -380,6 +381,7 @@ class AiSelectionJobRunner(
                     "reaction_z" to round3(reactionBoost[i]), "seen_z" to round3(0.0 - seenPenalty[i]),
                 )
                 row.subScore(SubScoreKey.RECO_BASE)?.let { breakdown["reco_base"] = round1(it) }
+                row.subScore(SubScoreKey.RECO_CUT)?.let { breakdown["reco_cut"] = round3(it) }
                 if (scoped) {
                     breakdown["spouse_z"] = round3(spouse[i])
                 } else {

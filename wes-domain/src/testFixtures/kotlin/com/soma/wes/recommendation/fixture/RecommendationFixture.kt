@@ -44,6 +44,14 @@ class RecommendationFixture(
         )
     }
 
+    /** categorize 가 추천 기본 점수와 함께 더하는 컷의 눈·웃음 점수(`sub_scores.reco_cut`). [분석_결과] 뒤에 부른다. */
+    fun 추천_컷_점수(photoId: Long, recoCut: Double) {
+        jdbcTemplate.update(
+            "UPDATE photo_analysis SET sub_scores = sub_scores || jsonb_build_object('reco_cut', ?::float8) WHERE photo_id = ?",
+            recoCut, photoId,
+        )
+    }
+
     /** SCORE 잡만 끝난 상태 — `pipeline_version`은 있지만 CATEGORIZE가 채우는 백분위·그룹은 아직 비어 있다. */
     fun 점수만(photoId: Long, subjects: String = "couple") {
         jdbcTemplate.update(
