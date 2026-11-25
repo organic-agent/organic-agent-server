@@ -4,6 +4,7 @@ import com.soma.wes.auth.domain.AccessToken
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.auth.domain.OAuthProvider
 import com.soma.wes.auth.domain.RefreshToken
+import com.soma.wes.auth.dto.RefreshRotationDto
 import com.soma.wes.auth.exception.AuthErrorCode
 import com.soma.wes.auth.exception.TokenException
 import com.soma.wes.support.IntegrationTest
@@ -101,7 +102,7 @@ class AuthTokenProviderTest @Autowired constructor(
     inner class HandleRefreshToken {
 
         @Test
-        fun `방금 발급한 refresh token은 유효하다`() {
+        fun `방금 발급한 refresh token으로 재발급된다`() {
             // given
             val user = signUp("kakao-auth-3")
 
@@ -109,17 +110,17 @@ class AuthTokenProviderTest @Autowired constructor(
             val refreshToken = authTokenProvider.generateRefreshToken(user)
 
             // then
-            assertThat(authTokenProvider.isValidRefreshToken(refreshToken)).isTrue()
+            assertThat(authTokenProvider.rotateRefreshToken(refreshToken)).isInstanceOf(RefreshRotationDto.Rotated::class.java)
         }
 
         @Test
-        fun `위조된 refresh token은 유효하지 않다`() {
+        fun `위조된 refresh token은 거절한다`() {
             // when & then
-            assertThat(authTokenProvider.isValidRefreshToken(RefreshToken("not-a-jwt"))).isFalse()
+            assertThat(authTokenProvider.rotateRefreshToken(RefreshToken("not-a-jwt"))).isEqualTo(RefreshRotationDto.Rejected)
         }
 
         @Test
-        fun `로그아웃하면 refresh token이 무효가 된다`() {
+        fun `로그아웃한 refresh token은 거절한다`() {
             // given
             val user = signUp("kakao-auth-4")
             val refreshToken = authTokenProvider.generateRefreshToken(user)
@@ -128,7 +129,7 @@ class AuthTokenProviderTest @Autowired constructor(
             authTokenProvider.logout(user)
 
             // then
-            assertThat(authTokenProvider.isValidRefreshToken(refreshToken)).isFalse()
+            assertThat(authTokenProvider.rotateRefreshToken(refreshToken)).isEqualTo(RefreshRotationDto.Rejected)
         }
 
         @Test

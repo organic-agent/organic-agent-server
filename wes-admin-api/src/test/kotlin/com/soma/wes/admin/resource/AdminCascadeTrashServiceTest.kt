@@ -464,8 +464,8 @@ class AdminCascadeTrashServiceTest @Autowired constructor(
             .query { rs, _ -> rs.getLong("id") }.single()
         jdbcClient.sql(
             """
-            INSERT INTO refresh_tokens (user_id, token, expires_at, version, created_at, updated_at)
-            VALUES (:userId, 'active-refresh', CURRENT_TIMESTAMP + INTERVAL '1 day', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            INSERT INTO refresh_tokens (user_id, token_hash, issued_at, expires_at, version, created_at, updated_at)
+            VALUES (:userId, 'active-refresh-hash', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 day', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """.trimIndent(),
         ).param("userId", target.id).update()
 

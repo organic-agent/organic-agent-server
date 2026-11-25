@@ -4,10 +4,12 @@ import com.soma.wes.auth.config.JwtProperties
 import com.soma.wes.auth.domain.AccessToken
 import com.soma.wes.auth.domain.LoginUser
 import com.soma.wes.auth.domain.RefreshToken
+import com.soma.wes.auth.domain.RefreshTokenMatch
 import com.soma.wes.auth.domain.Subject
 import com.soma.wes.auth.domain.Token
 import com.soma.wes.auth.domain.TokenType
 import com.soma.wes.auth.dto.AccessCacheKeyDto
+import com.soma.wes.auth.dto.RefreshRotationDto
 import com.soma.wes.auth.dto.TokenClaimsDto
 import com.soma.wes.auth.dto.requireActive
 import com.soma.wes.auth.exception.AuthErrorCode
@@ -26,6 +28,7 @@ import org.springframework.security.core.Authentication
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.util.UUID
 
 /**
  * 토큰 정책을 담당한다.
@@ -49,56 +52,93 @@ class AuthTokenProvider(
         private const val TOKEN_TYPE_CLAIM = "type"
         private const val PROVIDER_ID_CLAIM = "providerId"
         private const val ROLE_CLAIM = "role"
+
+        /** refresh 토큰이 속한 로그인 묶음. 재발급은 잇고 새 로그인은 새로 만든다([RefreshTokenMatch]). */
+        private const val FAMILY_CLAIM = "fam"
     }
 
     @Transactional(readOnly = true)
     fun generateAccessToken(user: User): AccessToken {
         accessStatusRepository.requireActive(user.requiredId)
-        return AccessToken(
-            tokenSigner.sign(
-                subject = Subject.from(user.requiredId),
-                expiresIn = jwtProperties.accessTokenExpiration,
-                claims = mapOf(
-                    TOKEN_TYPE_CLAIM to TokenType.ACCESS.name,
-                    // 인증 주체 정보는 토큰에서 복원하고, 계정 활성 상태만 DB에서 확인한다.
-                    PROVIDER_ID_CLAIM to user.providerId,
-                    ROLE_CLAIM to user.role.name,
-                ),
-            ),
-        )
+        return signAccessToken(user)
     }
 
     /**
-     * refresh token은 발급과 동시에 저장소에 기록한다.
-     * 같은 사용자가 다시 발급받으면 이전 토큰은 덮어써져 무효가 된다.
+     * 로그인할 때 refresh token을 발급한다. 새 로그인 묶음을 만들고 발급과 동시에 저장소에 기록한다.
+     * 같은 사용자가 다시 로그인하면 이전 토큰은 덮어써져 무효가 된다.
      */
     @Transactional
     fun generateRefreshToken(user: User): RefreshToken {
         accessStatusRepository.requireActive(user.requiredId)
+        return issueRefreshToken(user, familyId = UUID.randomUUID().toString())
+    }
+
+    /**
+     * refresh token으로 access token과 refresh token을 함께 재발급한다(rotation).
+     *
+     * 저장된 행을 잠근 채 견주고 교체하므로, 같은 토큰으로 동시에 온 요청 중 하나만 재발급된다. 받아 주는 것은
+     * 서버가 마지막으로 발급한 토큰뿐이다. 같은 로그인에서 이미 교체된 토큰이 유예 시간이 지나 다시 오면 복사된 토큰이
+     * 쓰이고 있는 것이라, 저장된 토큰을 지워 그 로그인을 끊는다([RefreshTokenMatch.REUSED]).
+     * 거절은 값([RefreshRotationDto.Rejected])으로 돌려준다 — 끊은 결과가 롤백되지 않게 하려는 것이다.
+     *
+     * 계정이 정지됐거나 주인이 사라진 토큰은 지금처럼 그 이유의 [TokenException]으로 끝난다.
+     */
+    @Transactional
+    fun rotateRefreshToken(requested: RefreshToken): RefreshRotationDto {
+        val claims = try {
+            verifiedClaims(requested)
+        } catch (e: TokenException) {
+            // /reissue에 대한 무효·만료 refresh token 시도를 남겨 남용 탐지에 쓴다.
+            log.debug("유효하지 않은 refresh token: {}", e.message)
+            return RefreshRotationDto.Rejected
+        }
+        val subject = claims.verifiedSubject()
+        val familyId = claims[FAMILY_CLAIM] as? String
+
+        when (refreshTokenStore.matchForUpdate(subject, requested, familyId)) {
+            RefreshTokenMatch.MATCH -> Unit
+            RefreshTokenMatch.MISSING, RefreshTokenMatch.SUPERSEDED, RefreshTokenMatch.RACED -> return RefreshRotationDto.Rejected
+            RefreshTokenMatch.REUSED -> {
+                refreshTokenStore.delete(subject)
+                log.warn("교체된 refresh token 재사용 탐지 — 로그인을 끊는다 userId={} family={}", subject.value, familyId)
+                return RefreshRotationDto.Rejected
+            }
+        }
+
+        val user = loadActiveUser(subject)
+        // 묶음을 모르는 V54 이전 토큰은 여기서 새 묶음을 받는다.
+        return RefreshRotationDto.Rotated(
+            accessToken = signAccessToken(user),
+            refreshToken = issueRefreshToken(user, familyId = familyId ?: UUID.randomUUID().toString()),
+        )
+    }
+
+    private fun signAccessToken(user: User): AccessToken = AccessToken(
+        tokenSigner.sign(
+            subject = Subject.from(user.requiredId),
+            expiresIn = jwtProperties.accessTokenExpiration,
+            claims = mapOf(
+                TOKEN_TYPE_CLAIM to TokenType.ACCESS.name,
+                // 인증 주체 정보는 토큰에서 복원하고, 계정 활성 상태만 DB에서 확인한다.
+                PROVIDER_ID_CLAIM to user.providerId,
+                ROLE_CLAIM to user.role.name,
+            ),
+        ),
+    )
+
+    private fun issueRefreshToken(user: User, familyId: String): RefreshToken {
         val subject = Subject.from(user.requiredId)
         val refreshToken = RefreshToken(
             tokenSigner.sign(
                 subject = subject,
                 expiresIn = jwtProperties.refreshTokenExpiration,
-                claims = mapOf(TOKEN_TYPE_CLAIM to TokenType.REFRESH.name),
+                claims = mapOf(
+                    TOKEN_TYPE_CLAIM to TokenType.REFRESH.name,
+                    FAMILY_CLAIM to familyId,
+                ),
             ),
         )
-        return refreshTokenStore.save(subject, refreshToken)
-    }
-
-    /**
-     * 서명·만료·종류가 유효하면서, 서버가 마지막으로 발급한 것과 일치하는 refresh token인지 확인한다.
-     */
-    @Transactional(readOnly = true)
-    fun isValidRefreshToken(requestedRefreshToken: RefreshToken): Boolean {
-        val subject = try {
-            parseSubject(requestedRefreshToken)
-        } catch (e: TokenException) {
-            // /reissue에 대한 무효·만료 refresh token 시도를 남겨 남용 탐지에 쓴다.
-            log.debug("유효하지 않은 refresh token: {}", e.message)
-            return false
-        }
-        return refreshTokenStore.find(subject) == requestedRefreshToken
+        return refreshTokenStore.save(subject, refreshToken, familyId)
     }
 
     /**
@@ -139,8 +179,10 @@ class AuthTokenProvider(
     // UserRepository.requireById를 쓰지 않는다. 토큰은 유효한데 주인이 사라진 것이라,
     // 클라이언트가 할 일은 "없는 리소스"(404)가 아니라 "다시 로그인"(401)이다.
     @Transactional(readOnly = true)
-    fun parseUser(token: Token): User {
-        val userId = parseSubject(token).toUserId()
+    fun parseUser(token: Token): User = loadActiveUser(parseSubject(token))
+
+    private fun loadActiveUser(subject: Subject): User {
+        val userId = subject.toUserId()
         accessStatusRepository.requireActive(userId)
         return userRepository.findByIdOrNull(userId)
             ?: throw TokenException(AuthErrorCode.TOKEN_OWNER_NOT_FOUND)
