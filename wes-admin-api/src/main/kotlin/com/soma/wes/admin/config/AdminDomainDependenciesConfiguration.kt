@@ -3,6 +3,7 @@ package com.soma.wes.admin.config
 import com.soma.wes.activity.repository.ActivityRepository
 import com.soma.wes.activity.support.ActivityRecorder
 import com.soma.wes.billing.support.CouponCodes
+import com.soma.wes.gallery.repository.GalleryProgressResetRepository
 import com.soma.wes.gallery.support.GalleryPhotoQuota
 import com.soma.wes.admin.resource.config.AdminWorkflowExecutorProperties
 import com.soma.wes.collab.config.CollabProperties
@@ -24,6 +25,7 @@ import com.soma.wes.gallery.config.GalleryInviteProperties
 import com.soma.wes.gallery.config.MockGalleryProperties
 import com.soma.wes.gallery.service.GalleryService
 import com.soma.wes.gallery.support.GalleryAccessPolicy
+import com.soma.wes.gallery.support.GalleryProgressResetter
 import com.soma.wes.gallery.support.GalleryInviteUrlResolver
 import com.soma.wes.global.SecureTokenGenerator
 import com.soma.wes.global.config.AnalysisPoolRoute
@@ -104,6 +106,8 @@ import org.springframework.context.annotation.Import
     CollabLinkResolver::class,
     GalleryAccessPolicy::class,
     GalleryService::class,
+    GalleryProgressResetter::class,
+    GalleryProgressResetRepository::class,
     PhotoService::class,
     PhotoPipelineRepository::class,
     PhotoSelectionService::class,

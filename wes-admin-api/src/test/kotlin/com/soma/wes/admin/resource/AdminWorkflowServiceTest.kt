@@ -109,6 +109,60 @@ class AdminWorkflowServiceTest @Autowired constructor(
     }
 
     @Test
+    fun `관리자 초기화는 작업 기록과 멤버·초대를 지우고 사진과 분석은 남긴 채 AI 폴더를 다시 만든다`() {
+        // given
+        val actor = adminAccountFixture.관리자("workflow-reset")
+        val graph = createGraph(actor.requiredId, "reset", withPhoto = true)
+        val galleryId = graph.gallery.id
+        val photoId = graph.photo!!.id
+        prepareAiCategoryAnalysis(galleryId, photoId)
+        execute(
+            actor.requiredId,
+            AdminResourceType.GALLERY,
+            galleryId,
+            AdminWorkflowAction.RUN_CATEGORIZATION,
+            graph.gallery.version,
+            "reset-categorization-001",
+        )
+        val member = createUser(actor.requiredId, "reset-member")
+        jdbcClient.sql("INSERT INTO gallery_members (gallery_id, user_id, created_at, updated_at) VALUES (:galleryId, :userId, now(), now())")
+            .param("galleryId", galleryId).param("userId", member.id).update()
+        jdbcClient.sql(
+            """
+            INSERT INTO gallery_invites (gallery_id, token, kind, max_uses, used_count, expires_at, created_at, updated_at)
+            VALUES (:galleryId, 'reset-invite-token', 'GALLERY_MEMBER', 2, 1, now() + interval '7 days', now(), now())
+            """.trimIndent(),
+        ).param("galleryId", galleryId).update()
+        jdbcClient.sql("INSERT INTO photo_ratings (photo_id, score, rated_by, created_at, updated_at) VALUES (:photoId, 5, :userId, now(), now())")
+            .param("photoId", photoId).param("userId", member.id).update()
+        jdbcClient.sql("UPDATE concept_folders SET name = '바꾼 이름' WHERE gallery_id = :galleryId")
+            .param("galleryId", galleryId).update()
+        val version = resourceService.get(AdminResourceType.GALLERY, galleryId).version
+
+        // when
+        val result = execute(
+            actor.requiredId,
+            AdminResourceType.GALLERY,
+            galleryId,
+            AdminWorkflowAction.RESET_GALLERY_PROGRESS,
+            version,
+            "reset-progress-001",
+        )
+
+        // then
+        fun count(sql: String): Long = jdbcClient.sql(sql).param("galleryId", galleryId).query(Long::class.java).single()
+        assertThat(result.details).containsEntry("stage", "UPLOAD")
+        assertThat(count("SELECT count(*) FROM gallery_members WHERE gallery_id = :galleryId")).isZero()
+        assertThat(count("SELECT count(*) FROM gallery_invites WHERE gallery_id = :galleryId")).isZero()
+        assertThat(count("SELECT count(*) FROM photo_ratings r JOIN photos p ON p.id = r.photo_id WHERE p.gallery_id = :galleryId")).isZero()
+        assertThat(count("SELECT count(*) FROM photos WHERE gallery_id = :galleryId")).isEqualTo(1L)
+        assertThat(count("SELECT count(*) FROM photo_analysis a JOIN photos p ON p.id = a.photo_id WHERE p.gallery_id = :galleryId")).isEqualTo(1L)
+        assertThat(count("SELECT count(*) FROM concept_folders WHERE gallery_id = :galleryId AND name = '웨딩'")).isEqualTo(1L)
+        assertThat(count("SELECT count(*) FROM detail_folder_assignments WHERE gallery_id = :galleryId")).isEqualTo(1L)
+        assertThat(resourceService.get(AdminResourceType.GALLERY, galleryId).version).isGreaterThan(version)
+    }
+
+    @Test
     fun `액션 계약은 잘못된 대상과 필드를 예약 전에 거절하고 완료 응답을 멱등 재생한다`() {
         val actor = adminAccountFixture.관리자("workflow-contract-owner")
         val graph = createGraph(actor.requiredId, "contract")
