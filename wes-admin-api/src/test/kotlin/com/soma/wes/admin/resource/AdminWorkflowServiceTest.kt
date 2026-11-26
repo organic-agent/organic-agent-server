@@ -217,8 +217,8 @@ class AdminWorkflowServiceTest @Autowired constructor(
 
         jdbcClient.sql(
             """
-            INSERT INTO refresh_tokens (user_id, token, expires_at, version, created_at, updated_at)
-            VALUES (:userId, 'refresh-token', CURRENT_TIMESTAMP + INTERVAL '1 day', 0,
+            INSERT INTO refresh_tokens (user_id, token_hash, issued_at, expires_at, version, created_at, updated_at)
+            VALUES (:userId, 'refresh-token-hash', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 day', 0,
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """.trimIndent(),
         ).param("userId", graph.user.id).update()

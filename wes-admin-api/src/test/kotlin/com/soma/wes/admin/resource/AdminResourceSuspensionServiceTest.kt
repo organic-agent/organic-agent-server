@@ -107,8 +107,8 @@ class AdminResourceSuspensionServiceTest @Autowired constructor(
     private fun insertRefreshToken(userId: Long, token: String) {
         jdbcClient.sql(
             """
-            INSERT INTO refresh_tokens (user_id, token, expires_at, version, created_at, updated_at)
-            VALUES (:userId, :token, CURRENT_TIMESTAMP + INTERVAL '1 day', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            INSERT INTO refresh_tokens (user_id, token_hash, issued_at, expires_at, version, created_at, updated_at)
+            VALUES (:userId, :token, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 day', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """.trimIndent(),
         )
             .param("userId", userId)
