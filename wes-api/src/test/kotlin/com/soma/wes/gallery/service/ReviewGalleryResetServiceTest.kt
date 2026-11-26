@@ -1,6 +1,5 @@
 package com.soma.wes.gallery.service
 
-import com.soma.wes.analysis.support.ConceptAssignmentLoader
 import com.soma.wes.auth.config.ReviewLoginProperties
 import com.soma.wes.folder.support.AiFolderMaterializer
 import com.soma.wes.gallery.domain.GalleryStage
@@ -8,11 +7,10 @@ import com.soma.wes.gallery.exception.GalleryErrorCode
 import com.soma.wes.gallery.exception.GalleryException
 import com.soma.wes.gallery.fixture.PersonalGallery
 import com.soma.wes.gallery.fixture.PersonalGalleryFixture
-import com.soma.wes.gallery.repository.GalleryProgressResetRepository
 import com.soma.wes.gallery.repository.GalleryRepository
 import com.soma.wes.gallery.support.GalleryAccessPolicy
+import com.soma.wes.gallery.support.GalleryProgressResetter
 import com.soma.wes.photo.fixture.PhotoFixture
-import com.soma.wes.photo.repository.PhotoAnalysisRepository
 import com.soma.wes.recommendation.fixture.RecommendationFixture
 import com.soma.wes.retouch.fixture.RetouchFixture
 import com.soma.wes.selection.fixture.SelectionFixture
@@ -27,7 +25,6 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.transaction.support.TransactionTemplate
-import java.time.Clock
 
 /**
  * 심사용 계정 id는 설정값이라, 설정마다 컨텍스트를 띄우지 않도록 공용 컨텍스트의 빈으로 서비스를 직접 조립한다.
@@ -41,13 +38,10 @@ class ReviewGalleryResetServiceTest @Autowired constructor(
     private val retouchFixture: RetouchFixture,
     private val userFixture: UserFixture,
     private val accessPolicy: GalleryAccessPolicy,
+    private val progressResetter: GalleryProgressResetter,
     private val galleryRepository: GalleryRepository,
-    private val resetRepository: GalleryProgressResetRepository,
     private val selectionRepository: PhotoSelectionRepository,
-    private val conceptAssignmentLoader: ConceptAssignmentLoader,
     private val aiFolderMaterializer: AiFolderMaterializer,
-    private val photoAnalysisRepository: PhotoAnalysisRepository,
-    private val clock: Clock,
     private val jdbc: JdbcClient,
     private val transactionTemplate: TransactionTemplate,
 ) {
@@ -55,13 +49,7 @@ class ReviewGalleryResetServiceTest @Autowired constructor(
     private fun serviceFor(reviewerId: Long) = ReviewGalleryResetService(
         reviewLoginProperties = ReviewLoginProperties(userId = reviewerId),
         accessPolicy = accessPolicy,
-        galleryRepository = galleryRepository,
-        resetRepository = resetRepository,
-        selectionRepository = selectionRepository,
-        conceptAssignmentLoader = conceptAssignmentLoader,
-        aiFolderMaterializer = aiFolderMaterializer,
-        photoAnalysisRepository = photoAnalysisRepository,
-        clock = clock,
+        progressResetter = progressResetter,
     )
 
     /** 직접 조립한 서비스에는 트랜잭션 프록시가 없어 운영과 같은 한 트랜잭션으로 감싼다. */

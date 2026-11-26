@@ -25,6 +25,9 @@ enum class AdminWorkflowAction(
         setOf("selectionDeadline"),
     ),
     RUN_CATEGORIZATION(setOf(AdminResourceType.GALLERY)),
+
+    /** 갤러리를 AI 분석 직후로 되돌린다 — 사람의 작업 기록과 멤버·초대를 지우고 폴더를 AI 분석으로 다시 만든다. 시연 갤러리 반복용. */
+    RESET_GALLERY_PROGRESS(setOf(AdminResourceType.GALLERY)),
     REISSUE_GALLERY_INVITE(
         setOf(AdminResourceType.GALLERY),
         optionalFields = setOf("kind", "maxUses", "expiresAt"),

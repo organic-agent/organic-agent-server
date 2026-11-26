@@ -20,6 +20,7 @@ import com.soma.wes.folder.support.AiFolderMaterializer
 import com.soma.wes.collab.support.CollabLinkResolver
 import com.soma.wes.gallery.domain.GalleryInviteKind
 import com.soma.wes.gallery.service.GalleryInviteService
+import com.soma.wes.gallery.support.GalleryProgressResetter
 import com.soma.wes.gallery.support.GalleryInviteUrlResolver
 import com.soma.wes.global.SecureTokenGenerator
 import com.soma.wes.global.filter.HttpLoggingFilter
@@ -56,6 +57,7 @@ class AdminWorkflowService(
     private val collabLinkResolver: CollabLinkResolver,
     // [REFACTOR-SUPPORT 2026-09-27] AiFolderMaterializeService.materializeFromAnalysis → folder/support/AiFolderMaterializer.materialize
     private val aiFolderMaterializer: AiFolderMaterializer,
+    private val galleryProgressResetter: GalleryProgressResetter,
     private val objectMapper: ObjectMapper,
     private val transactionTemplate: TransactionTemplate,
     private val clock: Clock,
@@ -364,6 +366,16 @@ class AdminWorkflowService(
                 "conceptFolderCount" to folders.size,
                 "detailFolderCount" to folders.sumOf { it.details.size },
                 "assignedPhotoCount" to folders.sumOf { concept -> concept.details.sumOf { it.photoIds.size } },
+            ))
+        }
+        AdminWorkflowAction.RESET_GALLERY_PROGRESS -> {
+            requireType(type, AdminResourceType.GALLERY)
+            // 버전을 먼저 올린다. 초기화가 갤러리 엔티티를 고친 뒤 SQL로 올리면 커밋 때 엔티티의 낡은 버전과 부딪힌다.
+            workflowRepository.bumpResourceVersion(type, id, request.expectedVersion)
+            val gallery = galleryProgressResetter.reset(id, withMembership = true)
+            WorkflowExecutionDto(details = mapOf(
+                "stage" to gallery.stage.name,
+                "publicStatus" to gallery.status.name,
             ))
         }
         AdminWorkflowAction.REISSUE_GALLERY_INVITE -> {
